@@ -26,7 +26,11 @@ import {
   handleExportAllDone,
   handleExportAllError,
   refreshRenderedSpecFileKey,
+  runGenerate,
+  runCreateDocFrame,
+  setAnthropicKey,
 } from './actions';
+import { resolveComponentImage } from './ai';
 import {
   renderFigmaConnection,
   renderPhase,
@@ -61,6 +65,14 @@ refs.extractBtn.addEventListener('click', () => {
 refs.downloadBtn.addEventListener('click', () => runDownload(refs, state));
 refs.sendBtn.addEventListener('click', () => {
   runSendToDocs(refs, state).catch(() => { /* handled inside */ });
+});
+
+refs.generateBtn.addEventListener('click', () => {
+  runGenerate(refs, state).catch(() => { /* handled inside */ });
+});
+refs.createFrameBtn.addEventListener('click', () => runCreateDocFrame(refs, state));
+refs.anthropicKeyInput.addEventListener('change', () => {
+  setAnthropicKey(state, refs.anthropicKeyInput.value);
 });
 
 // Keep state.renderedMd in sync with user edits to the preview.
@@ -192,6 +204,35 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'exportAllError': {
       handleExportAllError(refs, state, msg.message);
+      break;
+    }
+
+    case 'anthropicKey': {
+      state.anthropicKey = msg.value;
+      refs.anthropicKeyInput.value = msg.value ?? '';
+      break;
+    }
+
+    case 'componentImage': {
+      resolveComponentImage({ base64: msg.base64, mediaType: msg.mediaType });
+      break;
+    }
+
+    case 'componentImageError': {
+      // Fail open → generation proceeds text-only.
+      resolveComponentImage(null);
+      break;
+    }
+
+    case 'docFrameDone': {
+      showBanner(refs, 'info', `Created ${msg.frameName}`);
+      refs.createFrameBtn.disabled = false;
+      break;
+    }
+
+    case 'docFrameError': {
+      showBanner(refs, 'error', `Frame failed: ${msg.message}`);
+      refs.createFrameBtn.disabled = false;
       break;
     }
   }
