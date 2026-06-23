@@ -1,5 +1,6 @@
 import type { SerializedNode } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
+import type { DocFrameModel } from './ui/docModel';
 
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource }
@@ -21,7 +22,12 @@ export type MainToUi =
   | { type: 'exportAllStart'; total: number; fileKey: string; skippedAtoms: number }
   | { type: 'exportComponent'; index: number; total: number; node: SerializedNode }
   | { type: 'exportAllDone' }
-  | { type: 'exportAllError'; message: string };
+  | { type: 'exportAllError'; message: string }
+  | { type: 'anthropicKey'; value: string | null }
+  | { type: 'componentImage'; base64: string; mediaType: string }
+  | { type: 'componentImageError'; message: string }
+  | { type: 'docFrameDone'; frameName: string }
+  | { type: 'docFrameError'; message: string };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -29,4 +35,7 @@ export type UiToMain =
   | { type: 'setFileKeyOverride'; value: string | null }
   | { type: 'notify'; message: string }
   | { type: 'openBrowser'; url: string }
-  | { type: 'requestExportAll'; includeAtoms: boolean };
+  | { type: 'requestExportAll'; includeAtoms: boolean }
+  | { type: 'setAnthropicKey'; value: string | null }
+  | { type: 'requestComponentImage'; nodeId: string }
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string };
