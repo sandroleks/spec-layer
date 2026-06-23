@@ -9,10 +9,12 @@
  */
 
 import { extract, renderSpec } from '@spec-layer/extractor';
-import type { SerializedNode, IntermediateSpec } from '@spec-layer/extractor';
+import type { SerializedNode, IntermediateSpec, ProseDrafts } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { canSendToDocs } from './sendGuard';
+import { generateProse } from './ai';
+import { buildDocModel, ALL_SECTIONS, type SectionId } from './docModel';
 import type { Refs } from './dom';
 import {
   showBanner,
@@ -45,6 +47,10 @@ export interface UiState {
   currentExtractedAt: string;
   renderedMd: string;
   docsEndpoint: string;
+  // Standalone AI flow: BYO Anthropic key (mirrored to clientStorage via main)
+  // and the most recent generated prose drafts used to fill AI sections.
+  anthropicKey: string | null;
+  generatedProse: ProseDrafts | null;
   // Export-all accumulator. Carries the structured `spec` (not just markdown)
   // so the zip can emit the `.spec-data` sidecars that power the docs variant
   // grid — matching what "Send to docs" persists.
@@ -67,6 +73,8 @@ export function createState(): UiState {
     currentExtractedAt: '',
     renderedMd: '',
     docsEndpoint: 'http://localhost:3000',
+    anthropicKey: null,
+    generatedProse: null,
     exportItems: [],
     exportFileKey: '',
     exportTotal: 0,
@@ -129,6 +137,103 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
   renderPhase(refs, state);
 
   send({ type: 'notify', message: `Spec extracted for ${name}` });
+}
+
+// ---------------------------------------------------------------------------
+// Implicit extraction — make the legacy Download/Send and the new AI/frame
+// actions work without a visible Extract button. If a spec is already present it
+// is reused; otherwise we extract the current node on demand.
+// ---------------------------------------------------------------------------
+
+export function ensureExtracted(state: UiState): boolean {
+  if (state.currentSpec) return true;
+  if (!state.currentNode) return false;
+  const { spec, markdown, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
+  state.currentSpec = spec;
+  state.renderedMd = markdown;
+  state.currentExtractedAt = extractedAt;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Generate with AI — draft guideline prose for the AI-flagged sections that are
+// currently checked. Requires an Anthropic key; extracts implicitly first.
+// ---------------------------------------------------------------------------
+
+export async function runGenerate(refs: Refs, state: UiState): Promise<void> {
+  clearBanners(refs);
+
+  // Only worth a round-trip if at least one AI-flagged section is selected.
+  const aiSelected = ALL_SECTIONS.filter(
+    (s) => s.ai && refs.sectionChecks[s.id]?.checked,
+  );
+  if (aiSelected.length === 0) {
+    showBanner(refs, 'info', 'Select an AI section (e.g. Definition) to generate prose.');
+    return;
+  }
+
+  if (!state.anthropicKey) {
+    showBanner(refs, 'error', 'Add your Anthropic API key in Settings.');
+    return;
+  }
+
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
+    return;
+  }
+
+  showBanner(refs, 'info', 'Generating with AI…');
+  refs.generateBtn.disabled = true;
+
+  try {
+    const prose = await generateProse(
+      state.currentSpec!,
+      state.anthropicKey,
+      state.currentNode!.id,
+    );
+    state.generatedProse = prose;
+    showBanner(refs, 'info', 'Prose generated. Create the doc frame to place it.');
+    send({ type: 'notify', message: `Prose generated for ${state.currentSpec!.name}` });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Generate failed: ${msg}`);
+  } finally {
+    refs.generateBtn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create doc frame — assemble a DocFrameModel from the checked sections and ask
+// the main thread to build/place the Guidelines frame. Success/failure banners
+// arrive via the docFrameDone/docFrameError handlers (Task 10).
+// ---------------------------------------------------------------------------
+
+export function runCreateDocFrame(refs: Refs, state: UiState): void {
+  clearBanners(refs);
+
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
+    return;
+  }
+
+  const selected = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) {
+    if (refs.sectionChecks[id]?.checked) selected.add(id);
+  }
+
+  const model = buildDocModel(state.currentSpec!, state.generatedProse, selected);
+  send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
+  showBanner(refs, 'info', 'Building frame…');
+}
+
+// ---------------------------------------------------------------------------
+// API-key plumbing — update state + persist via the main thread. Task 10 wires
+// the input event to this; the state mutation lives here for testability.
+// ---------------------------------------------------------------------------
+
+export function setAnthropicKey(state: UiState, value: string): void {
+  state.anthropicKey = value || null;
+  send({ type: 'setAnthropicKey', value: state.anthropicKey });
 }
 
 // ---------------------------------------------------------------------------
