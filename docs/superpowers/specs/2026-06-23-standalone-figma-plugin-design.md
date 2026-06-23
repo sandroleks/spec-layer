@@ -66,9 +66,7 @@ New `MainToUi`:
 `DocFrameModel` is defined in `docModel.ts` and imported by both `messages.ts` and `docFrame.ts`.
 
 ### Node identity (which node to export / where to place the frame)
-`main.ts` does not currently retain the selected node — `postSelection` serializes and discards it. To support `requestComponentImage` and frame placement:
-- Extend the existing `selection` `MainToUi` message to carry the resolved component's `nodeId`. The UI stores it in state.
-- `requestComponentImage` and `renderDocFrame` pass that `nodeId`; main re-resolves it via `figma.getNodeByIdAsync(nodeId)` (selection may have changed). Frame placement reads the node's `x/y/width` to position the guidelines frame to its right.
+`main.ts` does not retain the selected node — `postSelection` serializes and discards it. But the UI already has the node id: the `selection` message carries `node: SerializedNode`, and `SerializedNode.id` is the node id (it becomes `spec.figmaNode`). So **no change to the `selection` message is needed** — the UI passes `state.currentNode.id` as `nodeId` on both `requestComponentImage` and `renderDocFrame`. Main re-resolves it via `figma.getNodeByIdAsync(nodeId)` (selection may have changed) and reads `x/y/width` to position the guidelines frame to its right.
 
 ### Image export details (`requestComponentImage`)
 - `node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 2 } })` returns a `Uint8Array`.
