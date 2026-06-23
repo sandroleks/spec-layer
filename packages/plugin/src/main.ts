@@ -4,6 +4,7 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain } from './messages';
 import { resolveFileKey } from './fileKey';
 import { collectExportPlan } from './collectComponents';
+import { buildDocFrame } from './docFrame';
 
 // ---------------------------------------------------------------------------
 // NodeResolver — wraps async Figma APIs
@@ -290,6 +291,37 @@ figma.ui.onmessage = async (raw: unknown) => {
         console.error('[export-all] failed:', message);
         const errMsg: MainToUi = { type: 'exportAllError', message };
         figma.ui.postMessage(errMsg);
+      }
+      break;
+    }
+
+    case 'renderDocFrame': {
+      try {
+        const frame = await buildDocFrame(msg.model);
+        // Replace an existing frame with the same name on the current page.
+        const existing = figma.currentPage.findOne(
+          n => n.type === 'FRAME' && n.name === msg.model.title,
+        ) as FrameNode | null;
+        let x = 0, y = 0;
+        if (existing) {
+          x = existing.x; y = existing.y;
+          existing.remove();
+        } else {
+          // Re-resolve the component by id (selection may have changed since extract).
+          const comp = await figma.getNodeByIdAsync(msg.nodeId);
+          if (comp && 'x' in comp && 'width' in comp) {
+            const c = comp as SceneNode & { x: number; y: number; width: number };
+            x = c.x + c.width + 80; y = c.y;
+          }
+        }
+        frame.x = x; frame.y = y;
+        figma.currentPage.appendChild(frame);
+        figma.currentPage.selection = [frame];
+        figma.viewport.scrollAndZoomIntoView([frame]);
+        figma.ui.postMessage({ type: 'docFrameDone', frameName: frame.name } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       }
       break;
     }
