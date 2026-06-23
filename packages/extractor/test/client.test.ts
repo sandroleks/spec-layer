@@ -14,11 +14,20 @@ function memStore() {
   return { store: m, get: async (k: string) => m.get(k) ?? null, set: async (k: string, v: string) => { m.set(k, v); } };
 }
 
+interface ContentBlock {
+  type: string;
+  source?: { type: string; media_type?: string; data?: string; url?: string };
+  text?: string;
+}
+interface RequestBody {
+  messages: Array<{ role: string; content: ContentBlock[] }>;
+}
+
 describe('draftProse base64 image', () => {
   it('sends a base64 image content block when imageBase64 is provided', async () => {
-    let captured: any;
-    const fetcher = (async (_url: string, init: any) => {
-      captured = JSON.parse(init.body);
+    let captured: RequestBody | undefined;
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as RequestBody;
       return { ok: true, json: async () => ({ content: [{ text: PROSE }] }) };
     }) as unknown as typeof fetch;
     const { get, set } = memStore();
@@ -26,8 +35,8 @@ describe('draftProse base64 image', () => {
       apiKey: 'k', fetcher, cacheStore: { get, set },
       imageBase64: 'AAAA', imageMediaType: 'image/png',
     });
-    const userMsg = captured.messages.at(-1);
-    const imgBlock = userMsg.content.find((c: any) => c.type === 'image');
+    const userMsg = captured!.messages.at(-1)!;
+    const imgBlock = userMsg.content.find((c) => c.type === 'image')!;
     expect(imgBlock.source).toEqual({ type: 'base64', media_type: 'image/png', data: 'AAAA' });
   });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
+import { buildDocModel, type SectionId } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -26,21 +26,23 @@ describe('buildDocModel', () => {
     const model = buildDocModel(spec, null, new Set<SectionId>(['definition']));
     const def = model.sections[0];
     expect(def.kind).toBe('prose');
-    expect((def as any).text).toMatch(/To be written/);
+    if (def.kind === 'prose') expect(def.text).toMatch(/To be written/);
   });
 
-  it('shapes tokens as a table block grouped by category', () => {
+  it('shapes tokens as a table block', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['tokens']));
     const tok = model.sections[0];
     expect(tok.kind).toBe('table');
-    expect((tok as any).rows.length).toBeGreaterThan(0);
+    if (tok.kind === 'table') expect(tok.rows.length).toBeGreaterThan(0);
   });
 
   it("renders dos and donts with check/cross markers", () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['dosDonts']));
-    const block = model.sections[0] as any;
+    const block = model.sections[0];
     expect(block.kind).toBe('bullets');
-    expect(block.items.some((i: any) => i.text.startsWith('✅'))).toBe(true);
-    expect(block.items.some((i: any) => i.text.startsWith('❌'))).toBe(true);
+    if (block.kind === 'bullets') {
+      expect(block.items.some((i) => i.text.startsWith('✅'))).toBe(true);
+      expect(block.items.some((i) => i.text.startsWith('❌'))).toBe(true);
+    }
   });
 });
