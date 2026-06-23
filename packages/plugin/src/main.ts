@@ -153,7 +153,8 @@ figma.clientStorage.getAsync('docsEndpoint').then((value: string | undefined) =>
 
 // Send stored Anthropic API key on startup
 figma.clientStorage.getAsync('anthropicKey').then((value: string | undefined) => {
-  figma.ui.postMessage({ type: 'anthropicKey', value: value ?? null } as MainToUi);
+  const msg: MainToUi = { type: 'anthropicKey', value: value ?? null };
+  figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
 // Send stored Figma file key override (and the effective file key computed
