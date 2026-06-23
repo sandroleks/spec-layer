@@ -151,6 +151,11 @@ figma.clientStorage.getAsync('docsEndpoint').then((value: string | undefined) =>
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Send stored Anthropic API key on startup
+figma.clientStorage.getAsync('anthropicKey').then((value: string | undefined) => {
+  figma.ui.postMessage({ type: 'anthropicKey', value: value ?? null } as MainToUi);
+}).catch(() => {/* ignore */});
+
 // Send stored Figma file key override (and the effective file key computed
 // from it) on startup; the UI uses it for the input and display only.
 fileKeyOverrideReady.then(() => { postFileKeyOverride(); });
@@ -170,6 +175,34 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'setDocsEndpoint':
       await figma.clientStorage.setAsync('docsEndpoint', msg.value);
       break;
+
+    case 'setAnthropicKey':
+      await figma.clientStorage.setAsync('anthropicKey', msg.value);
+      break;
+
+    case 'requestComponentImage': {
+      try {
+        const node = await figma.getNodeByIdAsync(msg.nodeId);
+        if (!node || !('exportAsync' in node)) {
+          figma.ui.postMessage({ type: 'componentImageError', message: 'Component not found' } as MainToUi);
+          break;
+        }
+        // Cap the long edge ~1568px to stay within vision limits. Pick a scale that
+        // keeps the larger dimension under the cap (never upscale beyond 2x).
+        const w = 'width' in node ? (node as SceneNode & { width: number }).width : 1;
+        const h = 'height' in node ? (node as SceneNode & { height: number }).height : 1;
+        const longEdge = Math.max(w, h, 1);
+        const scale = Math.min(2, 1568 / longEdge);
+        const bytes = await (node as SceneNode & { exportAsync: (s: ExportSettings) => Promise<Uint8Array> })
+          .exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } });
+        const base64 = figma.base64Encode(bytes);
+        figma.ui.postMessage({ type: 'componentImage', base64, mediaType: 'image/png' } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'componentImageError', message } as MainToUi);
+      }
+      break;
+    }
 
     case 'setFileKeyOverride':
       // Wait for the boot-time load so it cannot clobber a user-set value.
