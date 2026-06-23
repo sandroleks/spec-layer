@@ -43,6 +43,9 @@ export interface DraftOptions {
    * not just its structured summary. Absent → text-only request (unchanged).
    */
   imageUrl?: string | null;
+  /** Base64-encoded component image (plugin path). Mutually exclusive with imageUrl in practice. */
+  imageBase64?: string | null;
+  imageMediaType?: string; // e.g. 'image/png'
 }
 
 export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseDrafts | null> {
@@ -51,19 +54,19 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
   // Vision and text-only runs produce different output, so they must not share a
   // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
   // image URL, which is a signed URL that rotates hourly for an unchanged render.
-  const key = proseCacheKey(spec, { image: Boolean(opts.imageUrl) });
+  const key = proseCacheKey(spec, { image: Boolean(opts.imageUrl || opts.imageBase64) });
   if (!opts.bypassCache) {
     const hit = await opts.cacheStore.get(key);
     if (hit) return parseProseResponse(hit);
   }
 
   const prompt = buildProsePrompt(spec);
-  const content = opts.imageUrl
-    ? [
-        { type: 'image', source: { type: 'url', url: opts.imageUrl } },
-        { type: 'text', text: prompt },
-      ]
-    : prompt;
+  const imageBlock = opts.imageBase64
+    ? { type: 'image', source: { type: 'base64', media_type: opts.imageMediaType ?? 'image/png', data: opts.imageBase64 } }
+    : opts.imageUrl
+      ? { type: 'image', source: { type: 'url', url: opts.imageUrl } }
+      : null;
+  const content = imageBlock ? [imageBlock, { type: 'text', text: prompt }] : prompt;
 
   const res = await opts.fetcher('https://api.anthropic.com/v1/messages', {
     method: 'POST',
