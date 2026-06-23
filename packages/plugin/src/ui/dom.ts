@@ -16,6 +16,8 @@
  * `themeColors: true` to figma.showUI) so the plugin tracks Figma light/dark.
  */
 
+import { ALL_SECTIONS } from './docModel';
+
 // ---------------------------------------------------------------------------
 // Markup + styles
 // ---------------------------------------------------------------------------
@@ -117,12 +119,12 @@ const TEMPLATE = `
       display: block; font-size: 11px; font-weight: 500;
       color: var(--figma-color-text-secondary); margin-bottom: 4px;
     }
-    input[type="text"] {
+    input[type="text"], input[type="password"] {
       width: 100%; font-size: 12px; padding: 7px 8px;
       border: 1px solid var(--figma-color-border); border-radius: 6px;
       background: var(--figma-color-bg); color: var(--figma-color-text);
     }
-    input[type="text"]:focus {
+    input[type="text"]:focus, input[type="password"]:focus {
       outline: none; border-color: var(--figma-color-bg-brand);
     }
 
@@ -151,6 +153,27 @@ const TEMPLATE = `
     .check-row input { margin: 1px 0 0; }
     .check-row label { cursor: pointer; }
     .check-row span { display: block; margin-top: 2px; color: var(--figma-color-text-secondary); }
+    /* Inline (AI) badge on AI-generated section rows. */
+    .ai-badge {
+      display: inline-block; font-size: 9px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px;
+      color: var(--figma-color-text-secondary);
+      border: 1px solid var(--figma-color-border);
+      border-radius: 4px; padding: 0 4px; vertical-align: middle;
+    }
+    /* Section checklist container. */
+    #section-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* ---- "Also" de-emphasized block ---- */
+    details.also { margin-top: 14px; }
+    details.also > summary {
+      cursor: pointer; font-size: 11px; color: var(--figma-color-text-secondary);
+      list-style: none; padding: 4px 0; user-select: none;
+    }
+    details.also > summary::-webkit-details-marker { display: none; }
+    details.also > summary::before { content: "▸ "; }
+    details.also[open] > summary::before { content: "▾ "; }
+    details.also > summary:hover { color: var(--figma-color-text); }
 
     /* ---- Inline send-time file-key prompt ---- */
     .inline-filekey {
@@ -213,34 +236,53 @@ const TEMPLATE = `
           <div class="atom-notice" id="atom-notice">
             <strong>Atom component.</strong> It is normally used to build larger components, but you can still export it individually.
           </div>
-          <div class="row">
-            <button class="btn btn-primary" id="extract-btn">Extract spec</button>
+
+          <!-- Section checklist: which guideline sections to include in the
+               doc frame. Rows are generated in mount() from ALL_SECTIONS so the
+               markup stays DRY; #section-list is the injection target. -->
+          <div>
+            <label class="field-label">Sections to include</label>
+            <div id="section-list"></div>
           </div>
+
+          <div class="row">
+            <button class="btn btn-primary" id="create-frame-btn">Create doc frame</button>
+            <button class="btn btn-secondary" id="generate-btn">Generate with AI</button>
+          </div>
+
+          <!-- Implicit extraction (Task 9) replaces the visible Extract button,
+               but render.ts/ui.ts still reference refs.extractBtn — keep the id
+               present (hidden) until Tasks 9-10 clean up the usage. -->
+          <button class="btn btn-primary" id="extract-btn" style="display:none">Extract spec</button>
         </div>
 
         <div id="banner-info" class="banner info" style="margin-top:14px"></div>
         <div id="banner-error" class="banner error"></div>
 
-        <div id="review-area" style="display:none; margin-top:14px">
-          <p class="hint" style="margin-top:0">
-            Review the spec. Edits here only affect the Markdown inside the downloaded bundle.
-          </p>
-          <textarea id="spec-textarea" spellcheck="false"></textarea>
+        <!-- Download / send remain available but de-emphasized in an "Also" block. -->
+        <details class="also" id="also-details">
+          <summary>Also: download .md / send to docs</summary>
+          <div id="review-area" style="display:none; margin-top:10px">
+            <p class="hint" style="margin-top:0">
+              Review the spec. Edits here only affect the Markdown inside the downloaded bundle.
+            </p>
+            <textarea id="spec-textarea" spellcheck="false"></textarea>
 
-          <div class="row" style="margin-top:10px">
-            <button class="btn btn-primary" id="send-btn">Send to docs</button>
-            <button class="btn btn-secondary" id="download-btn">Download</button>
-          </div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn btn-primary" id="send-btn">Send to docs</button>
+              <button class="btn btn-secondary" id="download-btn">Download</button>
+            </div>
 
-          <!-- Send-time prompt: only revealed when the Figma file key can't be
-               auto-detected, so the user can fix it inline without leaving the
-               component. Mirrors the persistent override field in Settings. -->
-          <div id="inline-filekey" class="inline-filekey" style="display:none">
-            <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
-            <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
-            <p class="hint">Needed once so previews load after import. Saved for next time.</p>
+            <!-- Send-time prompt: only revealed when the Figma file key can't be
+                 auto-detected, so the user can fix it inline without leaving the
+                 component. Mirrors the persistent override field in Settings. -->
+            <div id="inline-filekey" class="inline-filekey" style="display:none">
+              <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
+              <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
+              <p class="hint">Needed once so previews load after import. Saved for next time.</p>
+            </div>
           </div>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -274,6 +316,17 @@ const TEMPLATE = `
     <section class="panel" id="tab-panel-settings" role="tabpanel"
              aria-labelledby="tab-settings">
       <div class="stack">
+        <div>
+          <h2>AI</h2>
+          <p class="hint" style="margin-top:4px">
+            Your Anthropic API key. Stored locally in this plugin only; used to write guideline prose.
+          </p>
+          <label class="field-label" for="anthropic-key-input" style="margin-top:8px">Anthropic API key</label>
+          <input type="password" id="anthropic-key-input" placeholder="sk-ant-…" />
+        </div>
+
+        <hr />
+
         <div>
           <h2>Docs platform</h2>
           <p class="hint" style="margin-top:4px">
@@ -326,6 +379,12 @@ export interface Refs {
   atomNotice: HTMLDivElement;
   phaseLabel: HTMLSpanElement;
   extractBtn: HTMLButtonElement;
+  // Section checklist + new actions
+  sectionList: HTMLDivElement;
+  sectionChecks: Record<string, HTMLInputElement>;
+  generateBtn: HTMLButtonElement;
+  createFrameBtn: HTMLButtonElement;
+  alsoDetails: HTMLDetailsElement;
   // Banners
   bannerInfo: HTMLDivElement;
   bannerError: HTMLDivElement;
@@ -337,6 +396,8 @@ export interface Refs {
   // Inline send-time file-key prompt (component panel)
   inlineFileKey: HTMLDivElement;
   inlineFileKeyInput: HTMLInputElement;
+  // AI settings (Settings tab)
+  anthropicKeyInput: HTMLInputElement;
   // Docs platform settings (Settings tab)
   endpointInput: HTMLInputElement;
   fileKeyStatus: HTMLDivElement;
@@ -366,6 +427,40 @@ function byId<T extends HTMLElement>(id: string): T {
 export function mount(): Refs {
   document.body.innerHTML = TEMPLATE;
 
+  // Build the section checklist from ALL_SECTIONS so the markup stays DRY.
+  // Each row gets a checkbox `sec-<id>`, checked by default except `related`,
+  // with an inline (AI) badge on AI-generated sections. Must run before we
+  // collect the per-checkbox refs below.
+  const sectionList = byId<HTMLDivElement>('section-list');
+  for (const section of ALL_SECTIONS) {
+    const row = document.createElement('div');
+    row.className = 'check-row';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = `sec-${section.id}`;
+    input.checked = section.id !== 'related';
+
+    const label = document.createElement('label');
+    label.htmlFor = input.id;
+    label.textContent = section.label;
+    if (section.ai) {
+      const badge = document.createElement('span');
+      badge.className = 'ai-badge';
+      badge.textContent = 'AI';
+      label.appendChild(badge);
+    }
+
+    row.appendChild(input);
+    row.appendChild(label);
+    sectionList.appendChild(row);
+  }
+
+  const sectionChecks: Record<string, HTMLInputElement> = {};
+  for (const section of ALL_SECTIONS) {
+    sectionChecks[section.id] = byId<HTMLInputElement>(`sec-${section.id}`);
+  }
+
   return {
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
     tabAll: byId<HTMLButtonElement>('tab-all'),
@@ -379,6 +474,11 @@ export function mount(): Refs {
     atomNotice: byId<HTMLDivElement>('atom-notice'),
     phaseLabel: byId<HTMLSpanElement>('phase-label'),
     extractBtn: byId<HTMLButtonElement>('extract-btn'),
+    sectionList,
+    sectionChecks,
+    generateBtn: byId<HTMLButtonElement>('generate-btn'),
+    createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
+    alsoDetails: byId<HTMLDetailsElement>('also-details'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
     bannerError: byId<HTMLDivElement>('banner-error'),
     reviewArea: byId<HTMLDivElement>('review-area'),
@@ -387,6 +487,7 @@ export function mount(): Refs {
     sendBtn: byId<HTMLButtonElement>('send-btn'),
     inlineFileKey: byId<HTMLDivElement>('inline-filekey'),
     inlineFileKeyInput: byId<HTMLInputElement>('inline-filekey-input'),
+    anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
     endpointInput: byId<HTMLInputElement>('endpoint-input'),
     fileKeyStatus: byId<HTMLDivElement>('filekey-status'),
     fileKeyStatusTitle: byId<HTMLElement>('filekey-status-title'),
