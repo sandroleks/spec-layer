@@ -148,6 +148,9 @@ window.onmessage = (event: MessageEvent) => {
       state.currentExtractedAt = '';
       state.phase = 'idle';
       state.renderedMd = '';
+      // Clear AI prose too: it belongs to the previous component. Without this,
+      // generating prose for A then selecting B would pair B's spec with A's prose.
+      state.generatedProse = null;
       renderSelection(refs, state);
       renderFigmaConnection(
         refs,
