@@ -147,7 +147,6 @@ function buildBullets(items: Bullet[]): SceneNode[] {
 /** Body for a `table` block: header row + data rows with bottom borders. */
 function buildTable(columns: string[], rows: string[][]): FrameNode {
   const table = vstack(0);
-  table.layoutSizingHorizontal = 'FILL';
 
   const colCount = Math.max(columns.length, 1);
 
