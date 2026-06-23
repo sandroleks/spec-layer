@@ -221,6 +221,10 @@ export function runCreateDocFrame(refs: Refs, state: UiState): void {
     if (refs.sectionChecks[id]?.checked) selected.add(id);
   }
 
+  // Guard against a double-click sending two renderDocFrame messages (and
+  // building two frames). Re-enabled by the docFrameDone/docFrameError handlers.
+  refs.createFrameBtn.disabled = true;
+
   const model = buildDocModel(state.currentSpec!, state.generatedProse, selected);
   send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
   showBanner(refs, 'info', 'Building frame…');
