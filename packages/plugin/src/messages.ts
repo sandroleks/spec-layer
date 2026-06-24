@@ -24,6 +24,7 @@ export type MainToUi =
   | { type: 'exportAllDone' }
   | { type: 'exportAllError'; message: string }
   | { type: 'anthropicKey'; value: string | null }
+  | { type: 'aiEnabled'; value: boolean }
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
   | { type: 'docFrameDone'; frameName: string }
@@ -37,5 +38,6 @@ export type UiToMain =
   | { type: 'openBrowser'; url: string }
   | { type: 'requestExportAll'; includeAtoms: boolean }
   | { type: 'setAnthropicKey'; value: string | null }
+  | { type: 'setAiEnabled'; value: boolean }
   | { type: 'requestComponentImage'; nodeId: string }
   | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string };

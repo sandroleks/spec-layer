@@ -26,9 +26,10 @@ import {
   handleExportAllDone,
   handleExportAllError,
   refreshRenderedSpecFileKey,
-  runGenerate,
   runCreateDocFrame,
+  runAutoExtract,
   setAnthropicKey,
+  setAiEnabled,
 } from './actions';
 import { resolveComponentImage } from './ai';
 import {
@@ -62,22 +63,78 @@ refs.tabSettings.addEventListener('click', () => switchTab(refs, 'settings'));
 refs.extractBtn.addEventListener('click', () => {
   runExtract(refs, state).catch(() => { /* handled inside */ });
 });
-refs.downloadBtn.addEventListener('click', () => runDownload(refs, state));
+refs.createFrameBtn.addEventListener('click', () => {
+  runCreateDocFrame(refs, state).catch(() => { /* handled inside */ });
+});
+
+// ---------------------------------------------------------------------------
+// Export dropdown (Send to docs / Download .md)
+// ---------------------------------------------------------------------------
+
+function setExportMenu(open: boolean): void {
+  refs.exportWrap.classList.toggle('open', open);
+  refs.exportBtn.setAttribute('aria-expanded', String(open));
+}
+
+refs.exportBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setExportMenu(!refs.exportWrap.classList.contains('open'));
+});
+
+// Close the menu on any outside click.
+document.addEventListener('click', (e) => {
+  if (!refs.exportWrap.contains(e.target as Node)) setExportMenu(false);
+});
+
 refs.sendBtn.addEventListener('click', () => {
+  setExportMenu(false);
   runSendToDocs(refs, state).catch(() => { /* handled inside */ });
 });
-
-refs.generateBtn.addEventListener('click', () => {
-  runGenerate(refs, state).catch(() => { /* handled inside */ });
+refs.downloadBtn.addEventListener('click', () => {
+  setExportMenu(false);
+  runDownload(refs, state);
 });
-refs.createFrameBtn.addEventListener('click', () => runCreateDocFrame(refs, state));
 refs.anthropicKeyInput.addEventListener('change', () => {
   setAnthropicKey(state, refs.anthropicKeyInput.value);
+  // A key may now exist (or have been cleared) — re-evaluate the AI toggle.
+  reflectAiToggle();
 });
 
-// Keep state.renderedMd in sync with user edits to the preview.
-refs.specTextarea.addEventListener('input', () => {
-  state.renderedMd = refs.specTextarea.value;
+// ---------------------------------------------------------------------------
+// Write-with-AI toggle + section select-all
+// ---------------------------------------------------------------------------
+
+/** Sync the AI switch, the "no key" note, and the dimmed-badge state to the
+ *  current key + preference. The switch can only read "on" when a key exists. */
+function reflectAiToggle(): void {
+  const hasKey = Boolean(state.anthropicKey);
+  const on = state.aiEnabled && hasKey;
+  refs.aiToggle.checked = on;
+  refs.aiNokey.style.display = state.aiEnabled && !hasKey ? 'block' : 'none';
+  refs.sectionList.classList.toggle('ai-dim', !on);
+}
+
+refs.aiToggle.addEventListener('change', () => {
+  // Turning on without a key is not allowed — revert and surface the note.
+  if (refs.aiToggle.checked && !state.anthropicKey) {
+    setAiEnabled(state, false);
+    reflectAiToggle();
+    return;
+  }
+  setAiEnabled(state, refs.aiToggle.checked);
+  reflectAiToggle();
+});
+
+refs.aiNokeyLink.addEventListener('click', () => {
+  switchTab(refs, 'settings');
+  refs.anthropicKeyInput.focus();
+});
+
+refs.selectAllBtn.addEventListener('click', () => {
+  const checks = Object.values(refs.sectionChecks);
+  const allOn = checks.every((c) => c.checked);
+  for (const c of checks) c.checked = !allOn;
+  refs.selectAllBtn.textContent = allOn ? 'Select all' : 'Clear all';
 });
 
 // ---------------------------------------------------------------------------
@@ -151,6 +208,7 @@ window.onmessage = (event: MessageEvent) => {
       // Clear AI prose too: it belongs to the previous component. Without this,
       // generating prose for A then selecting B would pair B's spec with A's prose.
       state.generatedProse = null;
+      setExportMenu(false);
       renderSelection(refs, state);
       renderFigmaConnection(
         refs,
@@ -158,6 +216,8 @@ window.onmessage = (event: MessageEvent) => {
         state.currentFileKey,
         state.fileKeyOverride,
       );
+      // Extract right away so Export/Download and the frame are always ready.
+      runAutoExtract(refs, state);
       break;
     }
 
@@ -213,6 +273,13 @@ window.onmessage = (event: MessageEvent) => {
     case 'anthropicKey': {
       state.anthropicKey = msg.value;
       refs.anthropicKeyInput.value = msg.value ?? '';
+      reflectAiToggle();
+      break;
+    }
+
+    case 'aiEnabled': {
+      state.aiEnabled = msg.value;
+      reflectAiToggle();
       break;
     }
 
@@ -228,7 +295,9 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docFrameDone': {
-      showBanner(refs, 'info', `Created ${msg.frameName}`);
+      const note = state.pendingAiNote ? ` — ${state.pendingAiNote}` : '';
+      showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
+      state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;
       break;
     }

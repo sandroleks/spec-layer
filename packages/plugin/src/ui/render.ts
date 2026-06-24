@@ -16,8 +16,8 @@ import { isAtomComponentName } from '../collectComponents';
 // ---------------------------------------------------------------------------
 
 export function showBanner(refs: Refs, type: 'info' | 'error' | null, text: string): void {
-  refs.bannerInfo.style.display = type === 'info' ? 'block' : 'none';
-  refs.bannerError.style.display = type === 'error' ? 'block' : 'none';
+  refs.bannerInfo.style.display = type === 'info' ? 'flex' : 'none';
+  refs.bannerError.style.display = type === 'error' ? 'flex' : 'none';
   if (type === 'info') refs.bannerInfo.textContent = text;
   if (type === 'error') refs.bannerError.textContent = text;
 }
@@ -31,16 +31,11 @@ export function clearBanners(refs: Refs): void {
 // ---------------------------------------------------------------------------
 
 export function renderPhase(refs: Refs, state: UiState): void {
-  refs.phaseLabel.textContent = state.phase === 'extracting' ? 'extracting…' : '';
+  // Extraction is now automatic on selection with its own "Reading…" chip
+  // (see runAutoExtract), so phase rendering only gates the (hidden) extract
+  // and send controls while a legacy 'extracting' phase is in flight.
   refs.extractBtn.disabled = state.phase === 'extracting';
-
-  const hasSpec = state.currentSpec !== null;
-  refs.reviewArea.style.display = hasSpec ? 'block' : 'none';
   refs.sendBtn.disabled = state.phase === 'extracting';
-
-  if (state.renderedMd) {
-    refs.specTextarea.value = state.renderedMd;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +51,6 @@ export function renderSelection(refs: Refs, state: UiState): void {
     refs.mainArea.style.display = 'block';
     refs.componentName.textContent = state.currentNode.name;
     refs.atomNotice.style.display = isAtomComponentName(state.currentNode.name) ? 'block' : 'none';
-    refs.reviewArea.style.display = 'none';
     clearBanners(refs);
     renderPhase(refs, state);
   } else {

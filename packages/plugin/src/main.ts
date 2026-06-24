@@ -158,6 +158,12 @@ figma.clientStorage.getAsync('anthropicKey').then((value: string | undefined) =>
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Send stored "Write with AI" preference on startup (default off)
+figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
+  const msg: MainToUi = { type: 'aiEnabled', value: value === true };
+  figma.ui.postMessage(msg);
+}).catch(() => {/* ignore */});
+
 // Send stored Figma file key override (and the effective file key computed
 // from it) on startup; the UI uses it for the input and display only.
 fileKeyOverrideReady.then(() => { postFileKeyOverride(); });
@@ -180,6 +186,10 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'setAnthropicKey':
       await figma.clientStorage.setAsync('anthropicKey', msg.value);
+      break;
+
+    case 'setAiEnabled':
+      await figma.clientStorage.setAsync('aiEnabled', msg.value);
       break;
 
     case 'requestComponentImage': {
@@ -297,25 +307,35 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'renderDocFrame': {
       try {
-        const frame = await buildDocFrame(msg.model);
-        // Replace an existing frame with the same name on the current page.
+        // Find any prior frame with this title BEFORE creating the new one.
+        // figma.createFrame() auto-appends to the current page, so searching
+        // after buildDocFrame would match (and then remove) our own new frame.
         const existing = figma.currentPage.findOne(
           n => n.type === 'FRAME' && n.name === msg.model.title,
         ) as FrameNode | null;
+
+        // Decide placement up front. Reuse the old frame's position if present;
+        // otherwise sit 80px to the right of the source component. The component
+        // lookup is best-effort: a stale/removed id must not abort frame creation.
         let x = 0, y = 0;
         if (existing) {
           x = existing.x; y = existing.y;
-          existing.remove();
         } else {
-          // Re-resolve the component by id (selection may have changed since extract).
-          const comp = await figma.getNodeByIdAsync(msg.nodeId);
-          if (comp && 'x' in comp && 'width' in comp) {
-            const c = comp as SceneNode & { x: number; y: number; width: number };
-            x = c.x + c.width + 80; y = c.y;
+          try {
+            const comp = await figma.getNodeByIdAsync(msg.nodeId);
+            if (comp && 'x' in comp && 'width' in comp) {
+              const c = comp as SceneNode & { x: number; y: number; width: number };
+              x = c.x + c.width + 80; y = c.y;
+            }
+          } catch {
+            /* node gone since extract — fall back to origin */
           }
         }
-        frame.x = x; frame.y = y;
+
+        const frame = await buildDocFrame(msg.model);
+        if (existing) existing.remove();
         figma.currentPage.appendChild(frame);
+        frame.x = x; frame.y = y;
         figma.currentPage.selection = [frame];
         figma.viewport.scrollAndZoomIntoView([frame]);
         figma.ui.postMessage({ type: 'docFrameDone', frameName: frame.name } as MainToUi);

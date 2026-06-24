@@ -47,10 +47,15 @@ export interface UiState {
   currentExtractedAt: string;
   renderedMd: string;
   docsEndpoint: string;
-  // Standalone AI flow: BYO Anthropic key (mirrored to clientStorage via main)
-  // and the most recent generated prose drafts used to fill AI sections.
+  // Standalone AI flow: BYO Anthropic key (mirrored to clientStorage via main),
+  // the global "Write with AI" preference, and the most recent generated prose
+  // drafts used to fill AI sections.
   anthropicKey: string | null;
+  aiEnabled: boolean;
   generatedProse: ProseDrafts | null;
+  // Set when an AI generation attempt fails so the next frame-build can note it
+  // ("built with placeholders") instead of aborting the whole frame.
+  pendingAiNote: string;
   // Export-all accumulator. Carries the structured `spec` (not just markdown)
   // so the zip can emit the `.spec-data` sidecars that power the docs variant
   // grid — matching what "Send to docs" persists.
@@ -74,7 +79,9 @@ export function createState(): UiState {
     renderedMd: '',
     docsEndpoint: 'http://localhost:3000',
     anthropicKey: null,
+    aiEnabled: false,
     generatedProse: null,
+    pendingAiNote: '',
     exportItems: [],
     exportFileKey: '',
     exportTotal: 0,
@@ -156,59 +163,65 @@ export function ensureExtracted(state: UiState): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Generate with AI — draft guideline prose for the AI-flagged sections that are
-// currently checked. Requires an Anthropic key; extracts implicitly first.
+// Auto-extract on selection — keeps the spec always-ready so Export/Download and
+// the frame never block on a missing spec. The (synchronous) extract is deferred
+// one frame so the panel paints identity + sections first; a "Reading…" chip
+// shows meanwhile and clears when the spec is ready.
 // ---------------------------------------------------------------------------
 
-export async function runGenerate(refs: Refs, state: UiState): Promise<void> {
-  clearBanners(refs);
+export function runAutoExtract(refs: Refs, state: UiState): void {
+  if (!state.currentNode || state.currentSpec) return;
+  refs.phaseLabel.className = 'chip';
+  refs.phaseLabel.textContent = 'Reading…';
+  requestAnimationFrame(() => {
+    try {
+      ensureExtracted(state);
+    } catch {
+      /* errors surface when an action actually runs */
+    }
+    refs.phaseLabel.className = 'phase-label';
+    refs.phaseLabel.textContent = '';
+  });
+}
 
-  // Only worth a round-trip if at least one AI-flagged section is selected.
-  const aiSelected = ALL_SECTIONS.filter(
-    (s) => s.ai && refs.sectionChecks[s.id]?.checked,
-  );
-  if (aiSelected.length === 0) {
-    showBanner(refs, 'info', 'Select an AI section (e.g. Definition) to generate prose.');
-    return;
-  }
+// ---------------------------------------------------------------------------
+// Write with AI — when the global toggle is on (and a key + AI section exist),
+// draft guideline prose once and cache it on state. A no-op when AI is off, no
+// key is set, or no AI-flagged section is checked. Reuses prior drafts so a
+// second action in the same selection doesn't re-bill the API.
+// ---------------------------------------------------------------------------
 
-  if (!state.anthropicKey) {
-    showBanner(refs, 'error', 'Add your Anthropic API key in Settings.');
-    return;
-  }
+async function ensureProse(refs: Refs, state: UiState): Promise<void> {
+  state.pendingAiNote = '';
+  if (!state.aiEnabled || !state.anthropicKey) return;
+  const aiSelected = ALL_SECTIONS.some((s) => s.ai && refs.sectionChecks[s.id]?.checked);
+  if (!aiSelected) return;
+  if (state.generatedProse) return;
 
-  if (!ensureExtracted(state)) {
-    showBanner(refs, 'error', 'Select a component first.');
-    return;
-  }
-
-  showBanner(refs, 'info', 'Generating with AI…');
-  refs.generateBtn.disabled = true;
-
+  showBanner(refs, 'info', 'Writing with AI…');
+  // Best-effort: AI is an enhancement, never a blocker. If generation fails
+  // (rate limit, network, unexpected response), fall back to placeholders and
+  // let the frame build anyway — the note surfaces on the success banner.
   try {
-    const prose = await generateProse(
+    state.generatedProse = await generateProse(
       state.currentSpec!,
       state.anthropicKey,
       state.currentNode!.id,
     );
-    state.generatedProse = prose;
-    showBanner(refs, 'info', 'Prose generated. Create the doc frame to place it.');
-    send({ type: 'notify', message: `Prose generated for ${state.currentSpec!.name}` });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Generate failed: ${msg}`);
-  } finally {
-    refs.generateBtn.disabled = false;
+    state.generatedProse = null;
+    const detail = err instanceof Error ? err.message : String(err);
+    state.pendingAiNote = `AI skipped (${detail}) — placeholders used`;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Create doc frame — assemble a DocFrameModel from the checked sections and ask
-// the main thread to build/place the Guidelines frame. Success/failure banners
-// arrive via the docFrameDone/docFrameError handlers (Task 10).
+// Create doc frame — optionally write AI prose, then assemble a DocFrameModel
+// from the checked sections and ask the main thread to build/place the frame.
+// Success/failure banners arrive via the docFrameDone/docFrameError handlers.
 // ---------------------------------------------------------------------------
 
-export function runCreateDocFrame(refs: Refs, state: UiState): void {
+export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<void> {
   clearBanners(refs);
 
   if (!ensureExtracted(state)) {
@@ -216,28 +229,42 @@ export function runCreateDocFrame(refs: Refs, state: UiState): void {
     return;
   }
 
-  const selected = new Set<SectionId>();
-  for (const { id } of ALL_SECTIONS) {
-    if (refs.sectionChecks[id]?.checked) selected.add(id);
-  }
-
   // Guard against a double-click sending two renderDocFrame messages (and
-  // building two frames). Re-enabled by the docFrameDone/docFrameError handlers.
+  // building two frames). Re-enabled by docFrameDone/docFrameError, or here on
+  // an early failure (e.g. AI generation throwing before we dispatch).
   refs.createFrameBtn.disabled = true;
 
-  const model = buildDocModel(state.currentSpec!, state.generatedProse, selected);
-  send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
-  showBanner(refs, 'info', 'Building frame…');
+  try {
+    await ensureProse(refs, state);
+
+    const selected = new Set<SectionId>();
+    for (const { id } of ALL_SECTIONS) {
+      if (refs.sectionChecks[id]?.checked) selected.add(id);
+    }
+
+    const model = buildDocModel(state.currentSpec!, state.generatedProse, selected);
+    send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
+    showBanner(refs, 'info', 'Building frame…');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Frame failed: ${msg}`);
+    refs.createFrameBtn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// API-key plumbing — update state + persist via the main thread. Task 10 wires
-// the input event to this; the state mutation lives here for testability.
+// AI plumbing — update state + persist via the main thread. The state mutations
+// live here for testability; ui.ts wires the input/toggle events to them.
 // ---------------------------------------------------------------------------
 
 export function setAnthropicKey(state: UiState, value: string): void {
   state.anthropicKey = value || null;
   send({ type: 'setAnthropicKey', value: state.anthropicKey });
+}
+
+export function setAiEnabled(state: UiState, value: boolean): void {
+  state.aiEnabled = value;
+  send({ type: 'setAiEnabled', value });
 }
 
 // ---------------------------------------------------------------------------
@@ -357,14 +384,14 @@ function downloadBytes(bytes: Uint8Array, filename: string, type: string): void 
 // ---------------------------------------------------------------------------
 
 export function runDownload(refs: Refs, state: UiState): void {
-  if (!state.currentSpec) {
-    showBanner(refs, 'error', 'Extract a spec first to download.');
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
     return;
   }
 
   const bundle = buildSingleExportBundle(
-    refs.specTextarea.value,
-    state.currentSpec,
+    state.renderedMd,
+    state.currentSpec!,
     state.currentNode?.name ?? 'component',
   );
   downloadBytes(bundle.bytes, bundle.filename, 'application/zip');
@@ -389,7 +416,10 @@ export function buildSingleExportBundle(
 // ---------------------------------------------------------------------------
 
 export async function runSendToDocs(refs: Refs, state: UiState): Promise<void> {
-  if (!state.currentSpec) return;
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
+    return;
+  }
 
   // Guard: figma.fileKey is the only automatic source for the file key.
   // When the file is unsaved/dev or detection failed, effectiveFileKey returns
@@ -413,7 +443,7 @@ export async function runSendToDocs(refs: Refs, state: UiState): Promise<void> {
     const res = await window.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spec: state.currentSpec, extractedAt: state.currentExtractedAt }),
+      body: JSON.stringify({ spec: state.currentSpec!, extractedAt: state.currentExtractedAt }),
     });
 
     if (!res.ok) {
@@ -429,7 +459,7 @@ export async function runSendToDocs(refs: Refs, state: UiState): Promise<void> {
     const slug = data.slug ?? '';
     const successMsg = slug ? `Sent → _inbox/${slug}` : 'Sent to docs.';
     showBanner(refs, 'info', successMsg + (data.warning ? `  ⚠ ${data.warning}` : ''));
-    send({ type: 'notify', message: `Spec sent: ${state.currentSpec.name}` });
+    send({ type: 'notify', message: `Spec sent: ${state.currentSpec!.name}` });
 
     const browserUrl = slug
       ? `${base}/components/_inbox/${slug}`

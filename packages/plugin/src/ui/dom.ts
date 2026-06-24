@@ -40,7 +40,11 @@ const TEMPLATE = `
       --figma-color-text-disabled: #b3b3b3;
       --figma-color-border: #e6e6e6;
       --figma-color-bg-success: #14ae5c;
+      --figma-color-bg-success-tertiary: #ebf7ee;
+      --figma-color-text-success: #097a3d;
       --figma-color-bg-danger: #f24822;
+      --figma-color-bg-danger-tertiary: #fdece9;
+      --figma-color-text-danger: #b3251b;
     }
     html, body { height: 100%; }
     body {
@@ -137,22 +141,37 @@ const TEMPLATE = `
     }
     textarea:focus { outline: none; border-color: var(--figma-color-bg-brand); }
 
-    /* ---- Banners ---- */
+    /* ---- Alerts / banners ---- */
     .banner {
-      padding: 8px 10px; border-radius: 6px; font-size: 11px;
-      display: none; margin-bottom: 10px;
+      display: none; gap: 8px; align-items: flex-start;
+      padding: 9px 11px; border-radius: 8px; font-size: 11px; line-height: 1.45;
+      margin-bottom: 10px; border: 1px solid transparent;
     }
-    .banner.info  { background: var(--figma-color-bg-secondary); color: var(--figma-color-text); }
-    .banner.error { background: var(--figma-color-bg-secondary); color: var(--figma-color-bg-danger); }
+    .banner::before {
+      flex: 0 0 auto; font-weight: 700; font-size: 12px; line-height: 1.3;
+    }
+    .banner.info {
+      background: var(--figma-color-bg-secondary); color: var(--figma-color-text);
+      border-color: var(--figma-color-border);
+    }
+    .banner.info::before { content: "i"; color: var(--figma-color-text-secondary);
+      width: 14px; height: 14px; border-radius: 50%; text-align: center;
+      border: 1px solid var(--figma-color-text-secondary); font-style: italic; font-size: 10px; }
+    .banner.error {
+      background: var(--figma-color-bg-danger-tertiary); color: var(--figma-color-text-danger);
+    }
+    .banner.error::before { content: "⚠"; color: var(--figma-color-text-danger); }
     .atom-notice {
       display: none; margin-top: 8px; padding: 8px 10px; border-radius: 6px;
       background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary);
       font-size: 11px;
     }
+    /* Generic checkbox row (export-all panel). */
     .check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; }
-    .check-row input { margin: 1px 0 0; }
+    .check-row input { margin: 1px 0 0; accent-color: var(--figma-color-bg-brand); }
     .check-row label { cursor: pointer; }
     .check-row span { display: block; margin-top: 2px; color: var(--figma-color-text-secondary); }
+
     /* Inline (AI) badge on AI-generated section rows. */
     .ai-badge {
       display: inline-block; font-size: 9px; font-weight: 600;
@@ -161,19 +180,87 @@ const TEMPLATE = `
       border: 1px solid var(--figma-color-border);
       border-radius: 4px; padding: 0 4px; vertical-align: middle;
     }
-    /* Section checklist container. */
-    #section-list { display: flex; flex-direction: column; gap: 8px; }
 
-    /* ---- "Also" de-emphasized block ---- */
-    details.also { margin-top: 14px; }
-    details.also > summary {
-      cursor: pointer; font-size: 11px; color: var(--figma-color-text-secondary);
-      list-style: none; padding: 4px 0; user-select: none;
+    /* ---- "Write with AI" switch + card ---- */
+    .ai-card {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 10px 12px; border-radius: 8px; margin-top: 12px;
+      background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
     }
-    details.also > summary::-webkit-details-marker { display: none; }
-    details.also > summary::before { content: "▸ "; }
-    details.also[open] > summary::before { content: "▾ "; }
-    details.also > summary:hover { color: var(--figma-color-text); }
+    .ai-card .ai-title { font-size: 12px; font-weight: 600; }
+    .ai-card .hint { margin-top: 2px; }
+    .ai-nokey { font-size: 11px; color: var(--figma-color-bg-danger); margin-top: 4px; }
+    .ai-nokey a { color: var(--figma-color-bg-brand); cursor: pointer; }
+    .switch { position: relative; width: 36px; height: 20px; flex: 0 0 auto; margin-top: 1px; }
+    .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+    .switch .track {
+      position: absolute; inset: 0; border-radius: 999px;
+      background: var(--figma-color-bg-tertiary); transition: background 0.12s;
+    }
+    .switch .track::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+      border-radius: 50%; background: #fff; transition: transform 0.12s;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .switch input:checked + .track { background: var(--figma-color-bg-brand); }
+    .switch input:checked + .track::after { transform: translateX(16px); }
+
+    /* ---- Section header + checklist ---- */
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
+    .link-btn {
+      appearance: none; background: none; border: none; cursor: pointer; padding: 0;
+      font-family: inherit; font-size: 11px; color: var(--figma-color-bg-brand);
+    }
+    .link-btn:hover { text-decoration: underline; }
+    .link-btn:disabled { color: var(--figma-color-text-disabled); cursor: default; text-decoration: none; }
+    #section-list { display: flex; flex-direction: column; gap: 1px; }
+    #section-list .sec-row {
+      display: flex; align-items: center; gap: 8px; font-size: 12px;
+      padding: 6px 8px; border-radius: 6px;
+    }
+    #section-list .sec-row:hover { background: var(--figma-color-bg-secondary); }
+    #section-list .sec-row input {
+      width: 14px; height: 14px; margin: 0; cursor: pointer;
+      accent-color: var(--figma-color-bg-brand);
+    }
+    #section-list .sec-row label { cursor: pointer; flex: 1; }
+    #section-list.ai-dim .ai-badge { opacity: 0.4; }
+
+    /* ---- Action buttons ---- */
+    .actions { display: flex; gap: 8px; margin-top: 16px; }
+    .actions > .btn, .actions > .menu-wrap { flex: 1; }
+
+    /* ---- Export dropdown menu ---- */
+    .menu-wrap { position: relative; }
+    .menu-wrap > .btn { width: 100%; }
+    .caret { display: inline-block; margin-left: 4px; transition: transform 0.12s; }
+    .menu-wrap.open .caret { transform: rotate(180deg); }
+    .menu {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 5;
+      background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
+      border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+      overflow: hidden; display: none;
+    }
+    .menu-wrap.open .menu { display: block; }
+    .menu-item {
+      appearance: none; display: block; width: 100%; text-align: left;
+      padding: 9px 12px; font-family: inherit; font-size: 12px; cursor: pointer;
+      background: none; border: none; color: var(--figma-color-text);
+    }
+    .menu-item + .menu-item { border-top: 1px solid var(--figma-color-border); }
+    .menu-item:hover:not(:disabled) { background: var(--figma-color-bg-secondary); }
+    .menu-item:disabled { color: var(--figma-color-text-disabled); cursor: default; }
+
+    /* ---- Reading chip (auto-extract loading indicator) ---- */
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--figma-color-text-secondary);
+      background: var(--figma-color-bg-secondary); border-radius: 999px; padding: 2px 8px;
+    }
+    .chip::before {
+      content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--figma-color-bg-brand);
+    }
 
     /* ---- Inline send-time file-key prompt ---- */
     .inline-filekey {
@@ -225,64 +312,67 @@ const TEMPLATE = `
 
       <!-- Main flow -->
       <div id="main-area" style="display:none">
-        <div class="stack">
-          <div class="comp-head">
-            <h2 id="component-name">Component</h2>
-            <span class="phase-label" id="phase-label"></span>
-          </div>
-          <p class="hint" style="margin-top:0">
-            Extract a Markdown spec from the selection. Download it locally — no account or server needed.
-          </p>
-          <div class="atom-notice" id="atom-notice">
-            <strong>Atom component.</strong> It is normally used to build larger components, but you can still export it individually.
-          </div>
-
-          <!-- Section checklist: which guideline sections to include in the
-               doc frame. Rows are generated in mount() from ALL_SECTIONS so the
-               markup stays DRY; #section-list is the injection target. -->
-          <div>
-            <label class="field-label">Sections to include</label>
-            <div id="section-list"></div>
-          </div>
-
-          <div class="row">
-            <button class="btn btn-primary" id="create-frame-btn">Create doc frame</button>
-            <button class="btn btn-secondary" id="generate-btn">Generate with AI</button>
-          </div>
-
-          <!-- Implicit extraction (Task 9) replaces the visible Extract button,
-               but render.ts/ui.ts still reference refs.extractBtn — keep the id
-               present (hidden) until Tasks 9-10 clean up the usage. -->
-          <button class="btn btn-primary" id="extract-btn" style="display:none">Extract spec</button>
+        <div class="comp-head">
+          <h2 id="component-name">Component</h2>
+          <span class="phase-label" id="phase-label"></span>
+        </div>
+        <div class="atom-notice" id="atom-notice">
+          <strong>Atom component.</strong> It is normally used to build larger components, but you can still export it individually.
         </div>
 
-        <div id="banner-info" class="banner info" style="margin-top:14px"></div>
-        <div id="banner-error" class="banner error"></div>
-
-        <!-- Download / send remain available but de-emphasized in an "Also" block. -->
-        <details class="also" id="also-details">
-          <summary>Also: download .md / send to docs</summary>
-          <div id="review-area" style="display:none; margin-top:10px">
-            <p class="hint" style="margin-top:0">
-              Review the spec. Edits here only affect the Markdown inside the downloaded bundle.
-            </p>
-            <textarea id="spec-textarea" spellcheck="false"></textarea>
-
-            <div class="row" style="margin-top:10px">
-              <button class="btn btn-primary" id="send-btn">Send to docs</button>
-              <button class="btn btn-secondary" id="download-btn">Download</button>
-            </div>
-
-            <!-- Send-time prompt: only revealed when the Figma file key can't be
-                 auto-detected, so the user can fix it inline without leaving the
-                 component. Mirrors the persistent override field in Settings. -->
-            <div id="inline-filekey" class="inline-filekey" style="display:none">
-              <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
-              <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
-              <p class="hint">Needed once so previews load after import. Saved for next time.</p>
+        <!-- Write with AI: one switch gates AI-written prose for the AI sections. -->
+        <div class="ai-card">
+          <div>
+            <div class="ai-title">Write with AI</div>
+            <p class="hint">Fills the <strong>AI</strong> sections below. Off = placeholders.</p>
+            <div class="ai-nokey" id="ai-nokey" style="display:none">
+              Add your Anthropic key in <a id="ai-nokey-link">Settings</a>.
             </div>
           </div>
-        </details>
+          <label class="switch">
+            <input type="checkbox" id="ai-toggle" />
+            <span class="track"></span>
+          </label>
+        </div>
+
+        <!-- Section checklist: which guideline sections to include. Rows are
+             generated in mount() from ALL_SECTIONS so the markup stays DRY;
+             #section-list is the injection target. -->
+        <div class="section-head">
+          <label class="field-label" style="margin:0">Sections to include</label>
+          <button class="link-btn" id="select-all-btn" type="button">Clear all</button>
+        </div>
+        <div id="section-list"></div>
+
+        <!-- Two outputs: Create frame (secondary) + Export (primary dropdown
+             grouping Send to docs / Download .md). -->
+        <div class="actions">
+          <button class="btn btn-secondary" id="create-frame-btn">Create frame</button>
+          <div class="menu-wrap" id="export-wrap">
+            <button class="btn btn-primary" id="export-btn" type="button"
+                    aria-haspopup="true" aria-expanded="false">Export<span class="caret">▾</span></button>
+            <div class="menu" id="export-menu" role="menu">
+              <button class="menu-item" id="send-btn" type="button" role="menuitem">Send to docs</button>
+              <button class="menu-item" id="download-btn" type="button" role="menuitem">Download .md</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Implicit extraction replaces the visible Extract button, but
+             render.ts/ui.ts still reference refs.extractBtn — keep it hidden. -->
+        <button class="btn" id="extract-btn" style="display:none">Extract spec</button>
+
+        <div id="banner-info" class="banner info" style="margin-top:12px"></div>
+        <div id="banner-error" class="banner error"></div>
+
+        <!-- Send-time prompt: only revealed when the Figma file key can't be
+             auto-detected, so the user can fix it inline without leaving the
+             component. Mirrors the persistent override field in Settings. -->
+        <div id="inline-filekey" class="inline-filekey" style="display:none">
+          <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
+          <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
+          <p class="hint">Needed once so previews load after import. Saved for next time.</p>
+        </div>
       </div>
     </section>
 
@@ -379,18 +469,23 @@ export interface Refs {
   atomNotice: HTMLDivElement;
   phaseLabel: HTMLSpanElement;
   extractBtn: HTMLButtonElement;
+  // Write-with-AI switch
+  aiToggle: HTMLInputElement;
+  aiNokey: HTMLDivElement;
+  aiNokeyLink: HTMLElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
-  generateBtn: HTMLButtonElement;
+  selectAllBtn: HTMLButtonElement;
   createFrameBtn: HTMLButtonElement;
-  alsoDetails: HTMLDetailsElement;
+  // Export dropdown
+  exportWrap: HTMLDivElement;
+  exportBtn: HTMLButtonElement;
+  exportMenu: HTMLDivElement;
   // Banners
   bannerInfo: HTMLDivElement;
   bannerError: HTMLDivElement;
-  // Review / output
-  reviewArea: HTMLDivElement;
-  specTextarea: HTMLTextAreaElement;
+  // Export actions (inside the dropdown)
   downloadBtn: HTMLButtonElement;
   sendBtn: HTMLButtonElement;
   // Inline send-time file-key prompt (component panel)
@@ -434,7 +529,7 @@ export function mount(): Refs {
   const sectionList = byId<HTMLDivElement>('section-list');
   for (const section of ALL_SECTIONS) {
     const row = document.createElement('div');
-    row.className = 'check-row';
+    row.className = 'sec-row';
 
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -474,15 +569,18 @@ export function mount(): Refs {
     atomNotice: byId<HTMLDivElement>('atom-notice'),
     phaseLabel: byId<HTMLSpanElement>('phase-label'),
     extractBtn: byId<HTMLButtonElement>('extract-btn'),
+    aiToggle: byId<HTMLInputElement>('ai-toggle'),
+    aiNokey: byId<HTMLDivElement>('ai-nokey'),
+    aiNokeyLink: byId<HTMLElement>('ai-nokey-link'),
     sectionList,
     sectionChecks,
-    generateBtn: byId<HTMLButtonElement>('generate-btn'),
+    selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
     createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
-    alsoDetails: byId<HTMLDetailsElement>('also-details'),
+    exportWrap: byId<HTMLDivElement>('export-wrap'),
+    exportBtn: byId<HTMLButtonElement>('export-btn'),
+    exportMenu: byId<HTMLDivElement>('export-menu'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
     bannerError: byId<HTMLDivElement>('banner-error'),
-    reviewArea: byId<HTMLDivElement>('review-area'),
-    specTextarea: byId<HTMLTextAreaElement>('spec-textarea'),
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
     sendBtn: byId<HTMLButtonElement>('send-btn'),
     inlineFileKey: byId<HTMLDivElement>('inline-filekey'),
