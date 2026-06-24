@@ -219,6 +219,41 @@ function normalizeProseText(value: string): string {
 }
 
 /**
+ * Coerce a field that should be prose text but which the model sometimes emits
+ * as a JSON array of lines (common for "bulleted list" fields like
+ * accessibility). Arrays are joined with `joiner`; a plain string passes
+ * through; anything else yields null (caller throws).
+ */
+function asProseText(value: unknown, joiner: (items: string[]) => string): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((x) => typeof x === 'string')) {
+    return joiner(value as string[]);
+  }
+  return null;
+}
+
+/** Join free-text paragraphs (definition). */
+function joinParagraphs(items: string[]): string {
+  return items.join('\n\n');
+}
+
+/** Join bullet lines, adding a "- " marker to any line that lacks one. */
+function joinBullets(items: string[]): string {
+  return items
+    .map((s) => (/^\s*(?:[-*]\s|#{1,6}\s)/.test(s) ? s : `- ${s}`))
+    .join('\n');
+}
+
+/** Accept a string[] or a lone string (wrapped); otherwise null. */
+function asStringArray(value: unknown): string[] | null {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value) && value.every((x) => typeof x === 'string')) {
+    return value as string[];
+  }
+  return null;
+}
+
+/**
  * Strip optional ```json … ``` fences, trim, parse, and validate the shape.
  */
 export function parseProseResponse(text: string): ProseDrafts {
@@ -239,25 +274,27 @@ export function parseProseResponse(text: string): ProseDrafts {
 
   const obj = parsed as Record<string, unknown>;
 
-  if (typeof obj.definition !== 'string') {
+  // Tolerate the model emitting prose fields as JSON arrays of lines (it often
+  // does for the "bulleted list" accessibility field). Only a truly missing /
+  // wrong-typed field is fatal.
+  const definition = asProseText(obj.definition, joinParagraphs);
+  if (definition === null) {
     throw new Error('Prose response missing or invalid field: definition');
   }
-  if (typeof obj.accessibility !== 'string') {
+  const accessibility = asProseText(obj.accessibility, joinBullets);
+  if (accessibility === null) {
     throw new Error('Prose response missing or invalid field: accessibility');
   }
-  if (!Array.isArray(obj.dos) || !obj.dos.every((x: unknown) => typeof x === 'string')) {
+  const dos = asStringArray(obj.dos);
+  if (dos === null) {
     throw new Error('Prose response field "dos" must be a string[]');
   }
-  if (!Array.isArray(obj.donts) || !obj.donts.every((x: unknown) => typeof x === 'string')) {
+  const donts = asStringArray(obj.donts);
+  if (donts === null) {
     throw new Error('Prose response field "donts" must be a string[]');
   }
 
-  const generatedStrings = [
-    obj.definition,
-    obj.accessibility,
-    ...obj.dos,
-    ...obj.donts,
-  ] as string[];
+  const generatedStrings = [definition, accessibility, ...dos, ...donts];
   // Level-1/2 headings are reserved for the canonical spec sections; the model
   // may use level-3 ("###") and below for sub-structure. Reject only `#`/`##`.
   if (generatedStrings.some((value) => /^#{1,2}(?:\s|$)/m.test(value))) {
@@ -265,9 +302,9 @@ export function parseProseResponse(text: string): ProseDrafts {
   }
 
   return {
-    definition: normalizeProseText(obj.definition),
-    accessibility: normalizeProseText(obj.accessibility),
-    dos: obj.dos.map(normalizeProseText),
-    donts: obj.donts.map(normalizeProseText),
+    definition: normalizeProseText(definition),
+    accessibility: normalizeProseText(accessibility),
+    dos: dos.map(normalizeProseText),
+    donts: donts.map(normalizeProseText),
   };
 }

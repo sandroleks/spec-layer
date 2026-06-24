@@ -43,6 +43,24 @@ describe('prose', () => {
     expect(() => parseProseResponse('not json')).toThrow();
   });
 
+  it('coerces an accessibility array of lines into bulleted text', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":["**Keyboard:** Tab moves focus.","Announces its label."],"dos":[],"donts":[]}',
+    );
+    expect(out.accessibility).toBe('- **Keyboard:** Tab moves focus.\n- Announces its label.');
+  });
+
+  it('coerces a definition array into paragraphs', () => {
+    const out = parseProseResponse('{"definition":["One.","Two."],"accessibility":"A","dos":[],"donts":[]}');
+    expect(out.definition).toBe('One.\n\nTwo.');
+  });
+
+  it('still throws when a required field is truly absent', () => {
+    expect(() =>
+      parseProseResponse('{"definition":"D","dos":[],"donts":[]}'),
+    ).toThrow(/accessibility/);
+  });
+
   it('normalizes em dashes (and spaced en dashes) out of every field', () => {
     const out = parseProseResponse(
       '{"definition":"Use Primary — it leads.","accessibility":"A","dos":["Do this — because reason."],"donts":["Avoid that – it confuses."]}',
