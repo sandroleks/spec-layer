@@ -460,7 +460,8 @@ const TEMPLATE = `
     #variant-list .variant-row:has(input:checked) { border-color: var(--figma-color-bg-brand); }
     #variant-list .variant-row input[type="checkbox"] { margin-top: 1px; }
     /* The label wraps the value chips; clicking anywhere on it toggles the row. */
-    .variant-label { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .variant-label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .variant-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     /* Value chip (enum axis value) vs flag chip (an active boolean modifier). */
     .variant-chip {
       font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 5px;
