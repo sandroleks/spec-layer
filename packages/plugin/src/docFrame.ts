@@ -19,9 +19,10 @@ let COLOR_HEADER_BG: RGB = hex(DEFAULT_HEADER_BG); // navy header band
 let COLOR_ACCENT: RGB = hex(DEFAULT_ACCENT); // teal eyebrow rule / number
 const COLOR_ON_HEADER: RGB = hex('#ffffff'); // title on navy
 const COLOR_ON_HEADER_MUTED: RGB = hex('#9fb3c6'); // subtitle on navy
-const COLOR_HEADING: RGB = hex('#0f172a'); // section headings
+const COLOR_HEADING: RGB = hex('#0f172a'); // section headings / emphasized values
 const COLOR_BODY: RGB = hex('#334155'); // paragraph / bullet ink
-const COLOR_MUTED: RGB = hex('#64748b'); // secondary / placeholder
+const COLOR_LABEL: RGB = hex('#475569'); // table row labels (between heading and muted)
+const COLOR_MUTED: RGB = hex('#64748b'); // secondary / placeholder / overlines
 const COLOR_BG: RGB = hex('#ffffff'); // card fill
 const COLOR_BORDER: RGB = hex('#e2e8f0'); // outer / table border
 const COLOR_DIVIDER: RGB = hex('#eef2f6'); // row dividers
@@ -80,6 +81,7 @@ function makeText(
   size: number,
   color: RGB = COLOR_BODY,
   lineHeightPct?: number,
+  trackingPct?: number,
 ): TextNode {
   const node = figma.createText();
   node.fontName = font(style);
@@ -88,6 +90,9 @@ function makeText(
   node.fills = solidFill(color);
   if (lineHeightPct !== undefined) {
     node.lineHeight = { value: lineHeightPct, unit: 'PERCENT' };
+  }
+  if (trackingPct !== undefined) {
+    node.letterSpacing = { value: trackingPct, unit: 'PERCENT' };
   }
   return node;
 }
@@ -256,13 +261,13 @@ function columnWidths(columns: string[]): ColWidth[] {
   return columns.map((_, i) => (i === n - 1 ? ('grow' as const) : Math.floor((CONTENT_WIDTH * 0.7) / Math.max(n - 1, 1))));
 }
 
-function makeCell(text: string, style: FontStyle, size: number, color: RGB): FrameNode {
+function makeCell(text: string, style: FontStyle, size: number, color: RGB, trackingPct?: number): FrameNode {
   const cell = vstack(0);
   cell.paddingTop = 12;
   cell.paddingBottom = 12;
   cell.paddingLeft = 16;
   cell.paddingRight = 16;
-  const node = makeText(text, style, size, color, 145);
+  const node = makeText(text, style, size, color, 145, trackingPct);
   cell.appendChild(node);
   node.layoutSizingHorizontal = 'FILL';
   node.textAutoResize = 'HEIGHT';
@@ -432,7 +437,7 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
   // Chip and text both hug their content (single-line pill). The Token column is
   // sized wide enough to hold the longest token (see fitFrameWidthToTokens), so
   // the pill never overflows and gets clipped.
-  const text = makeText(token, 'Regular', 12, COLOR_BODY, 140);
+  const text = makeText(token, 'Medium', 13, COLOR_HEADING, 140);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
 
@@ -477,7 +482,7 @@ async function buildTokenTable(
   head.layoutSizingHorizontal = 'FILL';
   head.counterAxisAlignItems = 'MIN';
   for (let i = 0; i < dataCount; i++) {
-    const cell = makeCell((dataColumns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED);
+    const cell = makeCell((dataColumns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED, 5);
     head.appendChild(cell);
     sizeCol(cell, i);
   }
@@ -511,7 +516,7 @@ async function buildTokenTable(
       groupHead.strokeBottomWeight = 0;
       groupHead.strokeLeftWeight = 0;
       groupHead.strokeRightWeight = 0;
-      const cell = makeCell(part.toUpperCase(), 'Bold', 11, COLOR_HEADING);
+      const cell = makeCell(part.toUpperCase(), 'Medium', 11, COLOR_HEADING, 6);
       cell.paddingTop = 7;
       cell.paddingBottom = 7;
       groupHead.appendChild(cell);
@@ -529,11 +534,11 @@ async function buildTokenTable(
     row.strokeRightWeight = 0;
     for (let i = 0; i < dataCount; i++) {
       const value = r[i + 1] ?? ''; // +1 skips the Part group key
-      const isKey = i === 0;
       const isToken = i === dataCount - 1;
+      // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
         ? await makeTokenCell(value)
-        : makeCell(value, isKey ? 'Medium' : 'Regular', 14, isKey ? COLOR_HEADING : COLOR_BODY);
+        : makeCell(value, 'Medium', 13, COLOR_LABEL);
       row.appendChild(cell);
       sizeCol(cell, i);
     }
