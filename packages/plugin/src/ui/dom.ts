@@ -209,6 +209,17 @@ const TEMPLATE = `
       box-shadow: 0 0 0 2px var(--figma-color-bg-secondary);
     }
 
+    /* ---- Color fields (frame brand colors) ----
+       A static swatch preview sits left of a hex text input. The swatch shows
+       the effective color (override or default); the input holds the override
+       (empty = default, surfaced via placeholder). */
+    .color-row { display: flex; align-items: center; gap: 8px; }
+    .color-row input[type="text"] { flex: 1; }
+    .color-swatch {
+      flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
+      border: 1px solid var(--figma-color-border); background: #0d2436;
+    }
+
     /* ---- Preview textarea ---- */
     textarea {
       width: 100%; height: 260px; font-family: "SF Mono", "Fira Mono", monospace;
@@ -616,6 +627,30 @@ const TEMPLATE = `
           <input type="password" id="anthropic-key-input" placeholder="sk-ant-…" />
           <p class="hint" style="margin-top:6px"><a id="get-key-link">Get an API key from Anthropic ↗</a></p>
         </div>
+
+        <hr />
+
+        <div>
+          <h2>Frame colors</h2>
+          <p class="hint" style="margin-top:4px">
+            Brand colors used in the generated Guidelines frame. Enter a 6-digit hex value, or leave blank to use the default.
+          </p>
+
+          <label class="field-label" for="header-color-input" style="margin-top:8px">Header background</label>
+          <div class="color-row">
+            <span class="color-swatch" id="header-color-swatch"></span>
+            <input type="text" id="header-color-input" placeholder="#0d2436" />
+          </div>
+
+          <label class="field-label" for="accent-color-input" style="margin-top:10px">Accent</label>
+          <div class="color-row">
+            <span class="color-swatch" id="accent-color-swatch"></span>
+            <input type="text" id="accent-color-input" placeholder="#12b3a6" />
+          </div>
+
+          <p class="hint" id="brand-color-hint"></p>
+          <p class="hint" style="margin-top:6px"><a id="reset-colors-link">Reset to defaults</a></p>
+        </div>
       </div>
     </section>
   </div>
@@ -687,6 +722,13 @@ export interface Refs {
   // AI settings (Settings tab)
   anthropicKeyInput: HTMLInputElement;
   getKeyLink: HTMLElement;
+  // Frame brand colors (Settings tab)
+  headerColorInput: HTMLInputElement;
+  headerColorSwatch: HTMLSpanElement;
+  accentColorInput: HTMLInputElement;
+  accentColorSwatch: HTMLSpanElement;
+  brandColorHint: HTMLParagraphElement;
+  resetColorsLink: HTMLElement;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -770,5 +812,11 @@ export function mount(): Refs {
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
     anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
     getKeyLink: byId<HTMLElement>('get-key-link'),
+    headerColorInput: byId<HTMLInputElement>('header-color-input'),
+    headerColorSwatch: byId<HTMLSpanElement>('header-color-swatch'),
+    accentColorInput: byId<HTMLInputElement>('accent-color-input'),
+    accentColorSwatch: byId<HTMLSpanElement>('accent-color-swatch'),
+    brandColorHint: byId<HTMLParagraphElement>('brand-color-hint'),
+    resetColorsLink: byId<HTMLElement>('reset-colors-link'),
   };
 }

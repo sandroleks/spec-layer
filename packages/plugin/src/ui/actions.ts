@@ -11,6 +11,7 @@ import type { SerializedNode, IntermediateSpec, ProseDrafts } from '@spec-layer/
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
+import { emptyBrandColors, type BrandColors } from '../brandColors';
 import { buildDocModel, ALL_SECTIONS, type SectionId } from './docModel';
 import type { Refs } from './dom';
 import {
@@ -45,6 +46,8 @@ export interface UiState {
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("built with placeholders") instead of aborting the whole frame.
   pendingAiNote: string;
+  // User-customized brand colors for the generated frame (null fields = default).
+  brandColors: BrandColors;
 }
 
 export function createState(): UiState {
@@ -59,6 +62,7 @@ export function createState(): UiState {
     aiEnabled: false,
     generatedProse: null,
     pendingAiNote: '',
+    brandColors: emptyBrandColors(),
   };
 }
 
@@ -275,6 +279,11 @@ export function setAnthropicKey(state: UiState, value: string): void {
 export function setAiEnabled(state: UiState, value: boolean): void {
   state.aiEnabled = value;
   send({ type: 'setAiEnabled', value });
+}
+
+export function setBrandColors(state: UiState, value: BrandColors): void {
+  state.brandColors = value;
+  send({ type: 'setBrandColors', value });
 }
 
 function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {

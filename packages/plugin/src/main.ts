@@ -4,6 +4,12 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain } from './messages';
 import { resolveFileKey } from './fileKey';
 import { buildDocFrame } from './docFrame';
+import { emptyBrandColors, resolveBrand, type BrandColors } from './brandColors';
+
+// User-customizable brand colors for the generated frame. Loaded from
+// clientStorage on boot, updated on 'setBrandColors', and resolved to concrete
+// values when building a frame.
+let brandColors: BrandColors = emptyBrandColors();
 
 // ---------------------------------------------------------------------------
 // NodeResolver — wraps async Figma APIs
@@ -116,6 +122,13 @@ figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Send stored frame brand colors on startup (default: no overrides)
+figma.clientStorage.getAsync('brandColors').then((value: BrandColors | undefined) => {
+  brandColors = value ?? emptyBrandColors();
+  const msg: MainToUi = { type: 'brandColors', value: brandColors };
+  figma.ui.postMessage(msg);
+}).catch(() => {/* ignore */});
+
 // React to selection changes.
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
 figma.on('selectionchange', () => { postSelection(); });
@@ -134,6 +147,11 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'setAiEnabled':
       await figma.clientStorage.setAsync('aiEnabled', msg.value);
+      break;
+
+    case 'setBrandColors':
+      brandColors = msg.value;
+      await figma.clientStorage.setAsync('brandColors', brandColors);
       break;
 
     case 'requestComponentImage': {
@@ -195,7 +213,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
-        const frame = await buildDocFrame(msg.model);
+        const frame = await buildDocFrame(msg.model, resolveBrand(brandColors));
         if (existing) existing.remove();
         figma.currentPage.appendChild(frame);
         frame.x = x; frame.y = y;

@@ -7,14 +7,18 @@ import type {
   SectionBlock,
   TextRun,
 } from './ui/docModel';
+import { DEFAULT_HEADER_BG, DEFAULT_ACCENT } from './brandColors';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
 // ---------------------------------------------------------------------------
-const COLOR_HEADER_BG: RGB = hex('#0d2436'); // navy header band
+// The two brand colors are mutable: buildDocFrame() sets them from the user's
+// Settings (falling back to these defaults) before laying out the frame. The
+// build runs one frame at a time, so module-level state is safe here.
+let COLOR_HEADER_BG: RGB = hex(DEFAULT_HEADER_BG); // navy header band
+let COLOR_ACCENT: RGB = hex(DEFAULT_ACCENT); // teal eyebrow rule / number
 const COLOR_ON_HEADER: RGB = hex('#ffffff'); // title on navy
 const COLOR_ON_HEADER_MUTED: RGB = hex('#9fb3c6'); // subtitle on navy
-const COLOR_ACCENT: RGB = hex('#12b3a6'); // teal eyebrow rule / number
 const COLOR_HEADING: RGB = hex('#0f172a'); // section headings
 const COLOR_BODY: RGB = hex('#334155'); // paragraph / bullet ink
 const COLOR_MUTED: RGB = hex('#64748b'); // secondary / placeholder
@@ -934,7 +938,17 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
  * Build an on-canvas "Guidelines" frame from a DocFrameModel.
  * Returns the frame; the caller positions it and appends it to the page.
  */
-export async function buildDocFrame(model: DocFrameModel): Promise<FrameNode> {
+export async function buildDocFrame(
+  model: DocFrameModel,
+  brand: { headerBg: string; accent: string } = {
+    headerBg: DEFAULT_HEADER_BG,
+    accent: DEFAULT_ACCENT,
+  },
+): Promise<FrameNode> {
+  // Apply the (already-resolved) brand colors before any layout reads them.
+  COLOR_HEADER_BG = hex(brand.headerBg);
+  COLOR_ACCENT = hex(brand.accent);
+
   // Load fonts FIRST — bold runs need the Bold face before setRangeFontName,
   // and fitFrameWidthToTokens measures text (which needs the face loaded).
   await Promise.all(

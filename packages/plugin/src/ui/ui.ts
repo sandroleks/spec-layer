@@ -20,12 +20,15 @@ import {
   runAutoExtract,
   setAnthropicKey,
   setAiEnabled,
+  setBrandColors,
 } from './actions';
 import { resolveComponentImage } from './ai';
+import { parseBrandHex, emptyBrandColors } from '../brandColors';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
 import {
   renderSelection,
   renderVariantPicker,
+  renderBrandColors,
   switchTab,
   clearBanners,
   showBanner,
@@ -175,6 +178,44 @@ refs.variantSelectAll.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Frame brand colors (Settings)
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply a typed hex value to one brand-color field. Empty input clears the
+ * override (back to default); an invalid hex shows a hint and is NOT persisted
+ * (the swatch keeps its last valid value). A valid hex is normalized + stored.
+ */
+function applyBrandColor(field: 'headerBg' | 'accent', raw: string): void {
+  const trimmed = raw.trim();
+  if (trimmed) {
+    const parsed = parseBrandHex(trimmed);
+    if (!parsed) {
+      refs.brandColorHint.textContent = 'Enter a 6-digit hex color, e.g. #0d2436.';
+      return;
+    }
+    refs.brandColorHint.textContent = '';
+    setBrandColors(state, { ...state.brandColors, [field]: parsed });
+  } else {
+    refs.brandColorHint.textContent = '';
+    setBrandColors(state, { ...state.brandColors, [field]: null });
+  }
+  renderBrandColors(refs, state);
+}
+
+refs.headerColorInput.addEventListener('change', () =>
+  applyBrandColor('headerBg', refs.headerColorInput.value),
+);
+refs.accentColorInput.addEventListener('change', () =>
+  applyBrandColor('accent', refs.accentColorInput.value),
+);
+refs.resetColorsLink.addEventListener('click', () => {
+  refs.brandColorHint.textContent = '';
+  setBrandColors(state, emptyBrandColors());
+  renderBrandColors(refs, state);
+});
+
+// ---------------------------------------------------------------------------
 // Message handling
 // ---------------------------------------------------------------------------
 
@@ -215,6 +256,12 @@ window.onmessage = (event: MessageEvent) => {
       break;
     }
 
+    case 'brandColors': {
+      state.brandColors = msg.value;
+      renderBrandColors(refs, state);
+      break;
+    }
+
 
     case 'componentImage': {
       resolveComponentImage({ base64: msg.base64, mediaType: msg.mediaType });
@@ -250,4 +297,7 @@ window.onmessage = (event: MessageEvent) => {
 // ---------------------------------------------------------------------------
 
 clearBanners(refs);
+// Paint the brand-color fields/swatches from defaults immediately; the boot-time
+// 'brandColors' message refines them with any stored overrides.
+renderBrandColors(refs, state);
 send({ type: 'requestSelection' });

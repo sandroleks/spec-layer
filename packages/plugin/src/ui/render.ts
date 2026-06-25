@@ -9,6 +9,7 @@
 import type { Refs } from './dom';
 import type { UiState } from './actions';
 import { isAtomComponentName } from '../collectComponents';
+import { resolveBrand } from '../brandColors';
 import { defaultVariantId, variantLabel } from './docModel';
 
 // ---------------------------------------------------------------------------
@@ -139,6 +140,23 @@ export function renderVariantPicker(refs: Refs, state: UiState): void {
     row.appendChild(label);
     refs.variantList.appendChild(row);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Frame brand colors (Settings)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reflect the stored brand colors into the Settings fields: each input shows
+ * the override (empty when unset, so the placeholder surfaces the default), and
+ * each swatch shows the *effective* color (override or default).
+ */
+export function renderBrandColors(refs: Refs, state: UiState): void {
+  const effective = resolveBrand(state.brandColors);
+  refs.headerColorInput.value = state.brandColors.headerBg ?? '';
+  refs.accentColorInput.value = state.brandColors.accent ?? '';
+  refs.headerColorSwatch.style.background = effective.headerBg;
+  refs.accentColorSwatch.style.background = effective.accent;
 }
 
 // ---------------------------------------------------------------------------
