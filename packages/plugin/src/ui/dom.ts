@@ -572,10 +572,10 @@ const TEMPLATE = `
                 </svg>
               </button>
             </div>
-            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component. Needs an Anthropic API key — off uses placeholders.</p>
+            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component. Requires an Anthropic API key. When off, those sections are filled with placeholder text.</p>
             <div class="ai-info" id="ai-info" hidden>
               <p>Drafts the <strong>Definition</strong>, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections from your component's structure and a snapshot of how it looks.</p>
-              <p>Bring your own <strong>Anthropic API key</strong> — it's stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your account. <a id="ai-info-settings">Add it in Settings</a>.</p>
+              <p>Bring your own <strong>Anthropic API key</strong>. It's stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your account. <a id="ai-info-settings">Add it in Settings</a>.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
               You'll need an Anthropic API key. <a id="ai-nokey-link">Add one in Settings</a>.
