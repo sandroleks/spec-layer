@@ -10,7 +10,7 @@ import type { Refs } from './dom';
 import type { UiState } from './actions';
 import { isAtomComponentName } from '../collectComponents';
 import { resolveBrand } from '../brandColors';
-import { defaultVariantId, variantLabel } from './docModel';
+import { defaultVariantId } from './docModel';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -127,7 +127,7 @@ export function renderVariantPicker(refs: Refs, state: UiState): void {
   const defId = defaultVariantId(spec);
   for (const inst of instances) {
     const row = document.createElement('div');
-    row.className = 'sec-row';
+    row.className = 'sec-row variant-row';
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.id = `var-${inst.nodeId.replace(/[^a-z0-9]/gi, '-')}`;
@@ -135,11 +135,56 @@ export function renderVariantPicker(refs: Refs, state: UiState): void {
     input.checked = inst.nodeId === defId;
     const label = document.createElement('label');
     label.htmlFor = input.id;
-    label.textContent = variantLabel(inst);
+    label.className = 'variant-label';
+    label.appendChild(buildVariantChips(inst.values));
     row.appendChild(input);
     row.appendChild(label);
     refs.variantList.appendChild(row);
   }
+  updateVariantCount(refs);
+}
+
+/**
+ * Build the chip row for one variant's axis values. Enum values render as filled
+ * value chips ("Small", "Hover"); a boolean axis set to true renders as an
+ * outlined flag chip named after the axis ("Disabled"); a false boolean is
+ * omitted as noise. A variant with no chips (the all-default base) shows a muted
+ * "Default" chip so the row is never empty.
+ */
+function buildVariantChips(values: Record<string, string>): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'variant-chips';
+  let shown = 0;
+  for (const [axis, value] of Object.entries(values)) {
+    const low = value.toLowerCase();
+    if (low === 'false') continue;
+    const chip = document.createElement('span');
+    if (low === 'true') {
+      chip.className = 'variant-chip flag';
+      chip.textContent = axis;
+    } else {
+      chip.className = 'variant-chip';
+      chip.textContent = value;
+    }
+    chip.title = `${axis}: ${value}`;
+    wrap.appendChild(chip);
+    shown++;
+  }
+  if (shown === 0) {
+    const chip = document.createElement('span');
+    chip.className = 'variant-chip muted';
+    chip.textContent = 'Default';
+    wrap.appendChild(chip);
+  }
+  return wrap;
+}
+
+/** Reflect "N of M selected" in the variant-picker header. */
+export function updateVariantCount(refs: Refs): void {
+  const inputs = Array.from(refs.variantList.querySelectorAll('input')) as HTMLInputElement[];
+  const total = inputs.length;
+  const selected = inputs.filter((i) => i.checked).length;
+  refs.variantCount.textContent = total ? `· ${selected} of ${total} selected` : '';
 }
 
 // ---------------------------------------------------------------------------

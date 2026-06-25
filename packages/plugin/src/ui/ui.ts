@@ -29,6 +29,7 @@ import {
   renderSelection,
   renderVariantPicker,
   renderBrandColors,
+  updateVariantCount,
   switchTab,
   clearBanners,
   showBanner,
@@ -174,7 +175,11 @@ refs.variantSelectAll.addEventListener('click', () => {
   const allOn = checks.length > 0 && checks.every((c) => c.checked);
   for (const c of checks) c.checked = !allOn;
   refs.variantSelectAll.textContent = allOn ? 'Select all' : 'Clear all';
+  updateVariantCount(refs);
 });
+
+// Per-row toggles (rows are built dynamically, so delegate) keep the count live.
+refs.variantList.addEventListener('change', () => updateVariantCount(refs));
 
 // ---------------------------------------------------------------------------
 // Frame brand colors (Settings)

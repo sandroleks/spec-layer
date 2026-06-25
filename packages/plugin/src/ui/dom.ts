@@ -438,21 +438,40 @@ const TEMPLATE = `
 
     /* ---- Variant picker (per-variant tokens) ---- */
     .variant-picker {
-      margin-top: 12px; padding: 11px 13px; border-radius: 10px;
+      margin-top: 12px; padding: 12px 13px; border-radius: 10px;
       background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
     }
     .variant-picker .vp-head {
-      display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+      display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px;
     }
-    .variant-picker .vp-title {
-      font-size: 11px; font-weight: 600; color: var(--figma-color-text-secondary);
-    }
+    .variant-picker .vp-title { font-size: 12px; font-weight: 600; color: var(--figma-color-text); }
+    .variant-picker .vp-count { font-weight: 400; color: var(--figma-color-text-secondary); }
     #variant-list {
-      display: flex; flex-direction: column; gap: 1px;
-      max-height: 148px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 3px;
+      max-height: 220px; overflow-y: auto;
     }
-    #variant-list .sec-row { background: var(--figma-color-bg); }
-    #variant-list .sec-row:hover { background: var(--figma-color-bg-tertiary); }
+    /* Each variant is a raised tile on the card; the active state is carried by
+       the checkbox, with a faint brand outline on the selected rows. */
+    #variant-list .variant-row {
+      align-items: flex-start; padding: 8px 9px; background: var(--figma-color-bg);
+      border: 1px solid var(--figma-color-border);
+    }
+    #variant-list .variant-row:hover { background: var(--figma-color-bg-tertiary); }
+    #variant-list .variant-row:has(input:checked) { border-color: var(--figma-color-bg-brand); }
+    #variant-list .variant-row input[type="checkbox"] { margin-top: 1px; }
+    /* The label wraps the value chips; clicking anywhere on it toggles the row. */
+    .variant-label { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    /* Value chip (enum axis value) vs flag chip (an active boolean modifier). */
+    .variant-chip {
+      font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 5px;
+      background: var(--figma-color-bg-tertiary); color: var(--figma-color-text);
+    }
+    #variant-list .variant-row:hover .variant-chip { background: var(--figma-color-bg-secondary); }
+    .variant-chip.flag {
+      background: transparent; border: 1px solid var(--figma-color-border);
+      color: var(--figma-color-text-secondary); padding: 0 6px;
+    }
+    .variant-chip.muted { background: transparent; color: var(--figma-color-text-secondary); font-style: italic; }
 
     /* ---- Action buttons ---- */
     .actions { display: flex; gap: 8px; margin-top: 16px; }
@@ -601,7 +620,7 @@ const TEMPLATE = `
              rows are populated in render.ts from the extracted spec. -->
         <div class="variant-picker" id="variant-picker" style="display:none">
           <div class="vp-head">
-            <span class="vp-title">VARIANTS TO DOCUMENT</span>
+            <span class="vp-title">Variants to document <span class="vp-count" id="variant-count"></span></span>
             <button class="link-btn" id="variant-select-all" type="button">Select all</button>
           </div>
           <div id="variant-list"></div>
@@ -708,6 +727,7 @@ export interface Refs {
   variantPicker: HTMLDivElement;
   variantList: HTMLDivElement;
   variantSelectAll: HTMLButtonElement;
+  variantCount: HTMLSpanElement;
   createFrameBtn: HTMLButtonElement;
   // Sticky footer
   actionFooter: HTMLDivElement;
@@ -801,6 +821,7 @@ export function mount(): Refs {
     variantPicker: byId<HTMLDivElement>('variant-picker'),
     variantList: byId<HTMLDivElement>('variant-list'),
     variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),
+    variantCount: byId<HTMLSpanElement>('variant-count'),
     createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
     actionFooter: byId<HTMLDivElement>('action-footer'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
