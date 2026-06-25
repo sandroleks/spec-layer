@@ -38,12 +38,10 @@ export interface ExportItem {
  *   - "<folder>/<slug>.md"               → the rendered markdown
  *   - ".spec-data/<folder>/<slug>.json"  → the IntermediateSpec (when present)
  *
- * The `.spec-data` layout mirrors exactly what "Send to docs" persists on the
- * server (`writeInboxSpec(name, md, { spec })`), so extracting the archive into
- * the docs content directory reproduces the same rendering — including the
- * per-variant grid that lives in `spec.variantInstances` and never appears in
- * the markdown. Without the sidecar the docs fall back to markdown-only and the
- * variant grid is empty, which is the bug this export path used to exhibit.
+ * The `.spec-data` sidecar carries the full `IntermediateSpec` alongside the
+ * markdown — including the per-variant grid in `spec.variantInstances`, which
+ * never appears in the markdown itself — so a downstream importer can reproduce
+ * the same rendering instead of falling back to markdown-only.
  *
  * - Names are kebab-cased via toKebab().
  * - If a name kebabs to empty, the fallback "component" is used.

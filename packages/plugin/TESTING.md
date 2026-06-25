@@ -5,45 +5,38 @@
 ```bash
 npm ci
 npm run build:plugin
-npm run dev -w md-ds
 ```
 
-Import `packages/plugin/manifest.json` through Figma desktop's development plugin menu. The manifest permits `http://localhost:3000` and `http://localhost:3001` (hostname only — Figma rejects raw IP literals like `127.0.0.1`).
+Import `packages/plugin/manifest.json` through Figma desktop's development plugin menu. The only network destination the manifest permits is `https://api.anthropic.com` (used by **Write with AI**); the plugin needs no local server or account.
 
-For **Send to docs**, make sure the web app is running. No token or account is needed — the plugin posts to the local docs app, whose URL lives in the plugin's **Settings** tab (default `http://localhost:3000`). Use the `localhost` hostname there, not `127.0.0.1`, or the fetch is blocked with `Failed to fetch`.
-
-## Selected Component
+## Selected component
 
 1. Select a component or component set and run the plugin.
-2. Confirm the component name and file source are shown.
-3. Extract and inspect the Markdown preview.
-4. Download the spec and confirm the ZIP contains a Markdown file starting with YAML frontmatter.
-5. Send it to the docs app and confirm the imported file appears in the inbox.
-6. Change the plugin token and confirm the request is rejected without writing a file.
+2. Confirm the component name is shown (and the atom notice appears for `.`-prefixed components).
+3. Toggle **Write with AI** — with no key it routes to Settings; with a key set it enables.
+4. Pick sections (and, for a component set, the variants to document) and **Create frame**. Confirm a `<Name>: Guidelines` frame is placed on the canvas next to the component, and re-running replaces the previous frame in place.
+5. **Download** and confirm the ZIP contains a Markdown file starting with YAML frontmatter plus a `.spec-data` sidecar JSON.
 
 Also verify a nested selection resolves to its enclosing component and a non-component selection shows an actionable empty state.
 
-## Bulk Export
+## Settings
 
-1. Open the **Export all** tab without requiring a selected component.
-2. Enter a folder name and start export.
-3. Confirm progress advances and the action is disabled while running.
-4. Confirm a ZIP downloads and contains one kebab-cased Markdown file per component.
-5. Confirm duplicate component names receive numeric suffixes.
+1. **Anthropic API key** — paste a key; confirm it persists across reopen and enables the AI toggle.
+2. **Frame colors** — set a header/accent hex (or leave blank for defaults), confirm the swatch updates, an invalid hex is rejected with a hint, and **Create frame** reflects the chosen colors. Reset returns to defaults.
 
-## Keyboard And Visual Checks
+## Keyboard and visual checks
 
-- Arrow Left/Right, Home, and End move between plugin tabs.
 - Tab and Shift+Tab reach every input and action in a logical order.
-- Focus remains visible in light and dark Figma themes.
+- Focus remains visible in light and dark Figma themes; the theme button follows Figma's theme until overridden.
 - Reduced-motion mode avoids nonessential transition animation.
 - Error messages remain visible and the failed action can be retried.
 
-## Automated Checks
+## Automated checks
 
 ```bash
 npm test -- packages/plugin/test
 npm run typecheck
+npm run lint
 npm run build:plugin
 ```
 

@@ -88,17 +88,6 @@ export function renderOne(
   return { name: spec.name, markdown, spec, extractedAt };
 }
 
-/** Keep extracted output aligned with the latest effective Figma file key. */
-export function refreshRenderedSpecFileKey(state: UiState, fileKey: string): void {
-  state.currentFileKey = fileKey;
-  if (!state.currentNode || !state.currentSpec) return;
-
-  const refreshed = renderOne(state.currentNode, fileKey);
-  state.currentSpec = refreshed.spec;
-  state.currentExtractedAt = refreshed.extractedAt;
-  state.renderedMd = refreshed.markdown;
-}
-
 // ---------------------------------------------------------------------------
 // Extract — pure extractor pipeline; preview rendered into the textarea.
 // ---------------------------------------------------------------------------

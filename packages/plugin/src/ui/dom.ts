@@ -320,43 +320,32 @@ const TEMPLATE = `
       background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary);
       font-size: 11px;
     }
-    /* ---- Custom checkbox (section checklist, variant picker, export options) ----
+    /* ---- Custom checkbox (section checklist, variant picker) ----
        Native checkboxes render inconsistently across platforms and ignore most
        theming; appearance:none lets us draw a Figma-style box + CSS checkmark
-       that tracks the theme tokens. Scoped to .sec-row/.check-row so the AI
-       switch (a visually-hidden checkbox) is untouched. */
-    .sec-row input[type="checkbox"],
-    .check-row input[type="checkbox"] {
+       that tracks the theme tokens. Scoped to .sec-row so the AI switch
+       (a visually-hidden checkbox) is untouched. */
+    .sec-row input[type="checkbox"] {
       appearance: none; -webkit-appearance: none; margin: 0;
       width: 15px; height: 15px; flex: 0 0 auto; position: relative; cursor: pointer;
       border: 1.5px solid var(--figma-color-border); border-radius: 4px;
       background: var(--figma-color-bg);
       transition: background 0.1s ease, border-color 0.1s ease;
     }
-    .sec-row input[type="checkbox"]:hover,
-    .check-row input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
-    .sec-row input[type="checkbox"]:checked,
-    .check-row input[type="checkbox"]:checked {
+    .sec-row input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
+    .sec-row input[type="checkbox"]:checked {
       background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand);
     }
     /* CSS checkmark: a rotated rectangle with two borders. */
-    .sec-row input[type="checkbox"]:checked::after,
-    .check-row input[type="checkbox"]:checked::after {
+    .sec-row input[type="checkbox"]:checked::after {
       content: ""; position: absolute; left: 4.5px; top: 1.5px;
       width: 4px; height: 8px; box-sizing: border-box;
       border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0;
       transform: rotate(45deg);
     }
-    .sec-row input[type="checkbox"]:focus-visible,
-    .check-row input[type="checkbox"]:focus-visible {
+    .sec-row input[type="checkbox"]:focus-visible {
       outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
     }
-
-    /* Generic checkbox row (export-all panel). */
-    .check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; }
-    .check-row input[type="checkbox"] { margin-top: 1px; }
-    .check-row label { cursor: pointer; }
-    .check-row span { display: block; margin-top: 2px; color: var(--figma-color-text-secondary); }
 
     /* Inline (AI) badge on AI-generated section rows. */
     .ai-badge {
@@ -478,7 +467,7 @@ const TEMPLATE = `
 
     /* ---- Action buttons ---- */
     .actions { display: flex; gap: 8px; margin-top: 16px; }
-    .actions > .btn, .actions > .menu-wrap { flex: 1; }
+    .actions > .btn { flex: 1; }
 
     /* ---- Sticky action footer (Selected-component tab) ---- */
     .footer {
@@ -487,29 +476,6 @@ const TEMPLATE = `
     }
     .footer .actions { margin-top: 0; }
     .footer .banner { margin-bottom: 8px; }
-    .footer .inline-filekey { margin-top: 0; margin-bottom: 8px; }
-
-    /* ---- Export dropdown menu ---- */
-    .menu-wrap { position: relative; }
-    .menu-wrap > .btn { width: 100%; }
-    .caret { display: inline-block; margin-left: 4px; transition: transform 0.12s; }
-    .menu-wrap.open .caret { transform: rotate(180deg); }
-    /* Opens upward — the dropdown lives in the bottom action footer. */
-    .menu {
-      position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 5;
-      background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
-      border-radius: 8px; box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.18);
-      overflow: hidden; display: none;
-    }
-    .menu-wrap.open .menu { display: block; }
-    .menu-item {
-      appearance: none; display: block; width: 100%; text-align: left;
-      padding: 9px 12px; font-family: inherit; font-size: 12px; cursor: pointer;
-      background: none; border: none; color: var(--figma-color-text);
-    }
-    .menu-item + .menu-item { border-top: 1px solid var(--figma-color-border); }
-    .menu-item:hover:not(:disabled) { background: var(--figma-color-bg-secondary); }
-    .menu-item:disabled { color: var(--figma-color-text-disabled); cursor: default; }
 
     /* ---- Reading chip (auto-extract loading indicator) ---- */
     .chip {
@@ -521,27 +487,6 @@ const TEMPLATE = `
       content: ""; width: 6px; height: 6px; border-radius: 50%;
       background: var(--figma-color-bg-brand);
     }
-
-    /* ---- Inline send-time file-key prompt ---- */
-    .inline-filekey {
-      margin-top: 10px; padding: 10px; border-radius: 6px;
-      background: var(--figma-color-bg-secondary);
-      border: 1px solid var(--figma-color-border);
-    }
-    .figma-source {
-      display: flex; gap: 8px; padding: 9px 10px; border-radius: 6px;
-      background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
-    }
-    .figma-source::before {
-      content: ""; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%;
-      flex: 0 0 auto; background: var(--figma-color-text-secondary);
-    }
-    .figma-source.figma::before, .figma-source.override::before {
-      background: var(--figma-color-bg-success);
-    }
-    .figma-source.missing::before { background: var(--figma-color-bg-danger); }
-    .figma-source strong { display: block; font-size: 11px; font-weight: 600; }
-    .figma-source span { display: block; margin-top: 2px; font-size: 10px; color: var(--figma-color-text-secondary); }
 
     /* ---- Empty / placeholder states ---- */
     .empty {
