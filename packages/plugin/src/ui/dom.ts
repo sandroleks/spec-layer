@@ -5,12 +5,11 @@
  * so the rest of the UI never reaches for `getElementById` directly. The markup
  * is laid out as a tabbed shell:
  *
- *   [ Selected component ]  [ Export all ]
+ *   [ Selected component ]  [ Settings ]
  *
- * The "Selected component" tab is the single-component flow (extract → preview →
- * download / optional send). The "Export all" tab (`#tab-all` / `#tab-panel-all`)
- * holds the bulk export: a folder-name input, an "Export all components" button,
- * and a progress/status area; it works whether or not anything is selected.
+ * The "Selected component" tab is the single-component flow (auto-extract →
+ * Write-with-AI → Create frame / Download). The "Settings" tab holds the
+ * Anthropic API key used by Write-with-AI.
  *
  * Figma's own chrome shows the plugin icon + name, so the UI starts straight at
  * the tab bar (no duplicate title). A light/dark theme button lives at the right
@@ -522,8 +521,6 @@ const TEMPLATE = `
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-selected" role="tab" aria-selected="true"
             aria-controls="tab-panel-selected">Selected component</button>
-    <button class="tab" id="tab-all" role="tab" aria-selected="false"
-            aria-controls="tab-panel-all">Export all</button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false"
             aria-controls="tab-panel-settings">Settings</button>
     <button class="theme-btn" id="theme-btn" type="button" title="Theme"
@@ -606,32 +603,6 @@ const TEMPLATE = `
       </div>
     </section>
 
-    <!-- ============ Export-all panel ============ -->
-    <section class="panel" id="tab-panel-all" role="tabpanel"
-             aria-labelledby="tab-all">
-      <div class="stack">
-        <p class="hint" style="margin-top:0">
-          Export documentation components as Markdown specs in a single
-          <code>.zip</code>. No component needs to be selected.
-        </p>
-        <div>
-          <label class="field-label" for="folder-input">Folder / ZIP name</label>
-          <input type="text" id="folder-input" placeholder="design-system" value="design-system" />
-        </div>
-        <div class="check-row">
-          <input type="checkbox" id="include-atoms-input" />
-          <label for="include-atoms-input">
-            Include atom components
-            <span>Components whose names start with <code>.</code> are excluded by default.</span>
-          </label>
-        </div>
-        <div class="row">
-          <button class="btn btn-primary" id="export-all-btn">Export all components</button>
-        </div>
-        <div id="export-status" class="hint" style="min-height:1.4em"></div>
-      </div>
-    </section>
-
     <!-- ============ Settings panel ============ -->
     <section class="panel" id="tab-panel-settings" role="tabpanel"
              aria-labelledby="tab-settings">
@@ -644,37 +615,6 @@ const TEMPLATE = `
           <label class="field-label" for="anthropic-key-input" style="margin-top:8px">Anthropic API key</label>
           <input type="password" id="anthropic-key-input" placeholder="sk-ant-…" />
           <p class="hint" style="margin-top:6px"><a id="get-key-link">Get an API key from Anthropic ↗</a></p>
-        </div>
-
-        <hr />
-
-        <div>
-          <h2>Docs platform</h2>
-          <p class="hint" style="margin-top:4px">
-            Where “Send to docs” publishes your specs. Point it at your running docs app — it’s local, so no account or token is needed.
-          </p>
-          <label class="field-label" for="endpoint-input" style="margin-top:8px">Docs URL</label>
-          <input type="text" id="endpoint-input" placeholder="http://localhost:3000" />
-        </div>
-
-        <hr />
-
-        <div>
-          <h2>Figma source</h2>
-          <p class="hint" style="margin-top:4px">
-            Each spec embeds a reference to this Figma file so component previews load after import. It’s detected automatically — set it manually below only if needed.
-          </p>
-          <div class="figma-source missing" id="filekey-status" style="margin-top:8px">
-            <div>
-              <strong id="filekey-status-title">Checking Figma source…</strong>
-              <span id="filekey-status-detail"></span>
-            </div>
-          </div>
-          <div id="filekey-field" style="margin-top:10px">
-            <label class="field-label" id="filekey-label" for="filekey-input">Figma file URL</label>
-            <input type="text" id="filekey-input" placeholder="paste Figma file URL or key" />
-            <p class="hint" id="filekey-hint"></p>
-          </div>
         </div>
       </div>
     </section>
@@ -692,21 +632,9 @@ const TEMPLATE = `
     </div>
     <div id="banner-info" class="banner info"></div>
     <div id="banner-error" class="banner error"></div>
-    <div id="inline-filekey" class="inline-filekey" style="display:none">
-      <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
-      <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
-      <p class="hint">Needed once so previews load after import. Saved for next time.</p>
-    </div>
     <div class="actions">
-      <button class="btn btn-secondary" id="create-frame-btn">Create frame</button>
-      <div class="menu-wrap" id="export-wrap">
-        <button class="btn btn-primary" id="export-btn" type="button"
-                aria-haspopup="true" aria-expanded="false">Export<span class="caret">▾</span></button>
-        <div class="menu" id="export-menu" role="menu">
-          <button class="menu-item" id="send-btn" type="button" role="menuitem">Send to docs</button>
-          <button class="menu-item" id="download-btn" type="button" role="menuitem">Download</button>
-        </div>
-      </div>
+      <button class="btn btn-secondary" id="download-btn" type="button">Download</button>
+      <button class="btn btn-primary" id="create-frame-btn">Create frame</button>
     </div>
   </div>
 `;
@@ -720,10 +648,8 @@ export interface Refs {
   themeBtn: HTMLButtonElement;
   // Tabs
   tabSelected: HTMLButtonElement;
-  tabAll: HTMLButtonElement;
   tabSettings: HTMLButtonElement;
   panelSelected: HTMLElement;
-  panelAll: HTMLElement;
   panelSettings: HTMLElement;
   // Selection / main
   noSelection: HTMLDivElement;
@@ -749,39 +675,18 @@ export interface Refs {
   variantList: HTMLDivElement;
   variantSelectAll: HTMLButtonElement;
   createFrameBtn: HTMLButtonElement;
-  // Sticky footer + export dropdown
+  // Sticky footer
   actionFooter: HTMLDivElement;
-  exportWrap: HTMLDivElement;
-  exportBtn: HTMLButtonElement;
-  exportMenu: HTMLDivElement;
   // Banners + generating loader
   bannerInfo: HTMLDivElement;
   bannerError: HTMLDivElement;
   loader: HTMLDivElement;
   loaderText: HTMLSpanElement;
-  // Export actions (inside the dropdown)
+  // Download action
   downloadBtn: HTMLButtonElement;
-  sendBtn: HTMLButtonElement;
-  // Inline send-time file-key prompt (component panel)
-  inlineFileKey: HTMLDivElement;
-  inlineFileKeyInput: HTMLInputElement;
   // AI settings (Settings tab)
   anthropicKeyInput: HTMLInputElement;
   getKeyLink: HTMLElement;
-  // Docs platform settings (Settings tab)
-  endpointInput: HTMLInputElement;
-  fileKeyStatus: HTMLDivElement;
-  fileKeyStatusTitle: HTMLElement;
-  fileKeyStatusDetail: HTMLElement;
-  fileKeyField: HTMLDivElement;
-  fileKeyLabel: HTMLLabelElement;
-  fileKeyInput: HTMLInputElement;
-  fileKeyHint: HTMLParagraphElement;
-  // Export-all panel
-  folderInput: HTMLInputElement;
-  includeAtomsInput: HTMLInputElement;
-  exportAllBtn: HTMLButtonElement;
-  exportStatus: HTMLDivElement;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -834,10 +739,8 @@ export function mount(): Refs {
   return {
     themeBtn: byId<HTMLButtonElement>('theme-btn'),
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
-    tabAll: byId<HTMLButtonElement>('tab-all'),
     tabSettings: byId<HTMLButtonElement>('tab-settings'),
     panelSelected: byId<HTMLElement>('tab-panel-selected'),
-    panelAll: byId<HTMLElement>('tab-panel-all'),
     panelSettings: byId<HTMLElement>('tab-panel-settings'),
     noSelection: byId<HTMLDivElement>('no-selection'),
     mainArea: byId<HTMLDivElement>('main-area'),
@@ -860,30 +763,12 @@ export function mount(): Refs {
     variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),
     createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
     actionFooter: byId<HTMLDivElement>('action-footer'),
-    exportWrap: byId<HTMLDivElement>('export-wrap'),
-    exportBtn: byId<HTMLButtonElement>('export-btn'),
-    exportMenu: byId<HTMLDivElement>('export-menu'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
     bannerError: byId<HTMLDivElement>('banner-error'),
     loader: byId<HTMLDivElement>('loader'),
     loaderText: byId<HTMLSpanElement>('loader-text'),
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
-    sendBtn: byId<HTMLButtonElement>('send-btn'),
-    inlineFileKey: byId<HTMLDivElement>('inline-filekey'),
-    inlineFileKeyInput: byId<HTMLInputElement>('inline-filekey-input'),
     anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
     getKeyLink: byId<HTMLElement>('get-key-link'),
-    endpointInput: byId<HTMLInputElement>('endpoint-input'),
-    fileKeyStatus: byId<HTMLDivElement>('filekey-status'),
-    fileKeyStatusTitle: byId<HTMLElement>('filekey-status-title'),
-    fileKeyStatusDetail: byId<HTMLElement>('filekey-status-detail'),
-    fileKeyField: byId<HTMLDivElement>('filekey-field'),
-    fileKeyLabel: byId<HTMLLabelElement>('filekey-label'),
-    fileKeyInput: byId<HTMLInputElement>('filekey-input'),
-    fileKeyHint: byId<HTMLParagraphElement>('filekey-hint'),
-    folderInput: byId<HTMLInputElement>('folder-input'),
-    includeAtomsInput: byId<HTMLInputElement>('include-atoms-input'),
-    exportAllBtn: byId<HTMLButtonElement>('export-all-btn'),
-    exportStatus: byId<HTMLDivElement>('export-status'),
   };
 }

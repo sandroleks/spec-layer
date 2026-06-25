@@ -1,6 +1,6 @@
 {
-  "name": "Spec Layer",
-  "id": "spec-layer-dev",
+  "name": "Auto Guidelines & Specs",
+  "id": "auto-guidelines-specs",
   "api": "1.0.0",
   "main": "dist/main.js",
   "ui": "dist/ui.html",
@@ -8,14 +8,10 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "http://localhost:3000",
-      "http://localhost:3001",
       "https://api.anthropic.com"
     ],
-    "reasoning": "Two destinations. (1) The plugin POSTs extracted component specs to a locally running docs web app (Send to docs). The Docs URL is user-configurable in the Settings tab, so the allowlist must cover the port the dev server actually runs on (3000, and 3001 when 3000 is taken). Figma's manifest validator rejects raw IP literals like 127.0.0.1, so only the 'localhost' hostname is listed — use 'localhost' (not 127.0.0.1) in the Settings Docs URL; both resolve to the same loopback. (2) The plugin calls https://api.anthropic.com directly to generate guideline prose (Definition, Accessibility, Do's & Don'ts) using the user's own Anthropic API key, entered in Settings and stored in clientStorage; this lets the plugin work standalone without the docs app. Widen this list explicitly if/when a production docs host exists.",
+    "reasoning": "The plugin calls https://api.anthropic.com directly to generate guideline prose (Definition, Accessibility, Do's & Don'ts) from the selected component, using the user's own Anthropic API key entered in Settings and stored in clientStorage. No other network access is required.",
     "devAllowedDomains": [
-      "http://localhost:3000",
-      "http://localhost:3001",
       "https://api.anthropic.com"
     ]
   }
