@@ -191,9 +191,24 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Find any prior frame with this title BEFORE creating the new one.
         // figma.createFrame() auto-appends to the current page, so searching
         // after buildDocFrame would match (and then remove) our own new frame.
-        const existing = figma.currentPage.findOne(
-          n => n.type === 'FRAME' && n.name === msg.model.title,
-        ) as FrameNode | null;
+        //
+        // Scan only the page's TOP-LEVEL children, not a deep findOne(): our doc
+        // frames are appended directly to the page, and a deep traversal would
+        // descend into every component on the page — on larger files that hits
+        // node types the plugin API can't resolve, and reading `.type` throws
+        // ("Unknown node type ... getPublicNodeType"), aborting the whole build.
+        // The per-node try/catch keeps one unreadable child from doing the same.
+        let existing: FrameNode | null = null;
+        for (const child of figma.currentPage.children) {
+          try {
+            if (child.type === 'FRAME' && child.name === msg.model.title) {
+              existing = child;
+              break;
+            }
+          } catch {
+            /* skip a child whose type can't be resolved by this API version */
+          }
+        }
 
         // Decide placement up front. Reuse the old frame's position if present;
         // otherwise sit 80px to the right of the source component. The component
