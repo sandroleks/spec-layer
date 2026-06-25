@@ -440,20 +440,22 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
   return cell;
 }
 
-/** Token table for a single variant: equal-width columns, swatch in the Token
- *  column. Sized to FILL its parent (the table sits beside the instance slot). */
+/** Token table for a single variant. Rows arrive as [part, property, token, …]
+ *  already ordered by part; we drop the repeated Part column and instead start
+ *  each part's rows with a bold group-header band, so the table reads as grouped
+ *  sub-sections. The Token column (last) holds long, slash-delimited names, so it
+ *  FILLs the remaining width while the short key columns stay fixed-narrow.
+ *  Sized to FILL its parent (the table sits beside the instance slot). */
 async function buildTokenTable(
   columns: string[],
   rows: string[][],
   bordered = true,
 ): Promise<FrameNode> {
-  const colCount = Math.max(columns.length, 1);
-  // The Token column (always last) holds long, slash-delimited names, so give it
-  // the remaining width while the short key columns (Part, Property, …) stay at a
-  // fixed narrow width. Equal-fill columns left the Token column too narrow and
-  // its names were cropped. Single-column tables just fill.
+  // Column 0 is the Part group key; the rest are the rendered data columns.
+  const dataColumns = columns.slice(1);
+  const dataCount = Math.max(dataColumns.length, 1);
   const sizeCol = (cell: FrameNode, i: number): void => {
-    if (i === colCount - 1) {
+    if (i === dataCount - 1) {
       cell.layoutSizingHorizontal = 'FILL';
     } else {
       cell.layoutSizingHorizontal = 'FIXED';
@@ -474,8 +476,8 @@ async function buildTokenTable(
   table.appendChild(head);
   head.layoutSizingHorizontal = 'FILL';
   head.counterAxisAlignItems = 'MIN';
-  for (let i = 0; i < colCount; i++) {
-    const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED);
+  for (let i = 0; i < dataCount; i++) {
+    const cell = makeCell((dataColumns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED);
     head.appendChild(cell);
     sizeCol(cell, i);
   }
@@ -489,9 +491,33 @@ async function buildTokenTable(
     const cell = makeCell('None.', 'Regular', 14, COLOR_MUTED);
     empty.appendChild(cell);
     cell.layoutSizingHorizontal = 'FILL';
+    return table;
   }
 
+  let currentPart: string | null = null;
   for (const r of rows) {
+    const part = r[0] ?? '';
+    // Start a new group with a full-width, bold part band whenever the part
+    // changes (rows are pre-sorted by part). A blank part gets no band.
+    if (part && part !== currentPart) {
+      currentPart = part;
+      const groupHead = hstack(0);
+      table.appendChild(groupHead);
+      groupHead.layoutSizingHorizontal = 'FILL';
+      groupHead.counterAxisAlignItems = 'MIN';
+      groupHead.fills = solidFill(COLOR_TABLE_HEAD_BG);
+      groupHead.strokes = solidFill(COLOR_BORDER);
+      groupHead.strokeTopWeight = 1;
+      groupHead.strokeBottomWeight = 0;
+      groupHead.strokeLeftWeight = 0;
+      groupHead.strokeRightWeight = 0;
+      const cell = makeCell(part.toUpperCase(), 'Bold', 11, COLOR_HEADING);
+      cell.paddingTop = 7;
+      cell.paddingBottom = 7;
+      groupHead.appendChild(cell);
+      cell.layoutSizingHorizontal = 'FILL';
+    }
+
     const row = hstack(0);
     table.appendChild(row);
     row.layoutSizingHorizontal = 'FILL';
@@ -501,12 +527,13 @@ async function buildTokenTable(
     row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
     row.strokeRightWeight = 0;
-    for (let i = 0; i < colCount; i++) {
+    for (let i = 0; i < dataCount; i++) {
+      const value = r[i + 1] ?? ''; // +1 skips the Part group key
       const isKey = i === 0;
-      const isToken = i === colCount - 1;
+      const isToken = i === dataCount - 1;
       const cell = isToken
-        ? await makeTokenCell(r[i] ?? '')
-        : makeCell(r[i] ?? '', isKey ? 'Medium' : 'Regular', 14, isKey ? COLOR_HEADING : COLOR_BODY);
+        ? await makeTokenCell(value)
+        : makeCell(value, isKey ? 'Medium' : 'Regular', 14, isKey ? COLOR_HEADING : COLOR_BODY);
       row.appendChild(cell);
       sizeCol(cell, i);
     }
@@ -907,7 +934,7 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
   CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
   let longest = '';
-  let keyCols = 0; // columns other than Token in that section
+  let keyCols = 0; // rendered columns other than Token (Part is dropped — see buildTokenTable)
   for (const s of model.sections) {
     if (s.kind !== 'variantTokens') continue;
     const tokenCol = s.columns.length - 1;
@@ -916,7 +943,9 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
         const tk = row[tokenCol] ?? '';
         if (tk.length > longest.length) {
           longest = tk;
-          keyCols = tokenCol;
+          // buildTokenTable drops the Part column, so the fixed-width key
+          // columns rendered are (all columns) minus Part minus Token.
+          keyCols = tokenCol - 1;
         }
       }
     }
