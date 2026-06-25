@@ -10,6 +10,7 @@ import type { Refs } from './dom';
 import type { UiState } from './actions';
 import type { FileKeySource } from '../fileKey';
 import { isAtomComponentName } from '../collectComponents';
+import { defaultVariantId, variantLabel } from './docModel';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -24,6 +25,40 @@ export function showBanner(refs: Refs, type: 'info' | 'error' | null, text: stri
 
 export function clearBanners(refs: Refs): void {
   showBanner(refs, null, '');
+}
+
+// ---------------------------------------------------------------------------
+// Generating loader — a pulsing sparkle + shimmering status text that cycles
+// through a few messages while the frame is built (and prose optionally drafted).
+// Replaces the old static "Building frame…" banner with something livelier.
+// ---------------------------------------------------------------------------
+
+// Single in-flight cycle. Module-scoped so stopLoader can always clear it, even
+// if startLoader is called twice (the second run cancels the first).
+let loaderTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Show the loader and cycle `messages` every ~2.6s. The shimmer + dots carry
+ *  the motion, so the title is swapped in place (no fade-to-blank — that left a
+ *  visibly empty pill mid-transition). Loops, so a long job keeps cycling rather
+ *  than parking on the last line. A single message just stays put. */
+export function startLoader(refs: Refs, messages: string[]): void {
+  stopLoader(refs);
+  const msgs = messages.length ? messages : ['Working…'];
+  refs.loader.classList.add('show');
+  refs.loaderText.textContent = msgs[0];
+  if (msgs.length === 1) return;
+
+  let i = 0;
+  loaderTimer = setInterval(() => {
+    i = (i + 1) % msgs.length;
+    refs.loaderText.textContent = msgs[i];
+  }, 2600);
+}
+
+/** Hide the loader and stop cycling. Safe to call when already stopped. */
+export function stopLoader(refs: Refs): void {
+  if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; }
+  refs.loader.classList.remove('show');
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +77,16 @@ export function renderPhase(refs: Refs, state: UiState): void {
 // Selection — apply an incoming selection to the DOM
 // ---------------------------------------------------------------------------
 
+/**
+ * Show the sticky action footer only on the Selected-component tab and only when
+ * a component is actually selected (otherwise there's nothing to act on).
+ */
+export function syncFooter(refs: Refs): void {
+  const onSelected = refs.panelSelected.classList.contains('active');
+  const hasComponent = refs.mainArea.style.display !== 'none';
+  refs.actionFooter.style.display = onSelected && hasComponent ? 'block' : 'none';
+}
+
 export function renderSelection(refs: Refs, state: UiState): void {
   // A fresh selection starts a new cycle — drop any inline send-time prompt
   // left over from a previous component's failed send.
@@ -51,12 +96,53 @@ export function renderSelection(refs: Refs, state: UiState): void {
     refs.mainArea.style.display = 'block';
     refs.componentName.textContent = state.currentNode.name;
     refs.atomNotice.style.display = isAtomComponentName(state.currentNode.name) ? 'block' : 'none';
+    // Hide the variant picker until the new spec is extracted (renderVariantPicker
+    // re-populates it once ready).
+    refs.variantPicker.style.display = 'none';
     clearBanners(refs);
     renderPhase(refs, state);
   } else {
     refs.noSelection.style.display = 'block';
     refs.mainArea.style.display = 'none';
     refs.atomNotice.style.display = 'none';
+  }
+  syncFooter(refs);
+}
+
+/**
+ * Populate + show the "Variants to document" picker. Visible only when the
+ * Tokens section is checked and the selection is a component set with variants.
+ * Rebuilds the list only when the component changes, so it never clobbers the
+ * user's current variant selection (e.g. on a Tokens toggle).
+ */
+export function renderVariantPicker(refs: Refs, state: UiState): void {
+  const spec = state.currentSpec;
+  const tokensChecked = refs.sectionChecks['tokens']?.checked ?? false;
+  const instances = spec?.variantInstances ?? [];
+  const show = Boolean(tokensChecked && instances.length > 0);
+  refs.variantPicker.style.display = show ? 'block' : 'none';
+  if (!show || !spec) return;
+
+  const nodeId = state.currentNode?.id ?? '';
+  if (refs.variantList.dataset.nodeId === nodeId && refs.variantList.childElementCount > 0) return;
+  refs.variantList.dataset.nodeId = nodeId;
+  refs.variantList.textContent = '';
+
+  const defId = defaultVariantId(spec);
+  for (const inst of instances) {
+    const row = document.createElement('div');
+    row.className = 'sec-row';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = `var-${inst.nodeId.replace(/[^a-z0-9]/gi, '-')}`;
+    input.dataset.nodeId = inst.nodeId;
+    input.checked = inst.nodeId === defId;
+    const label = document.createElement('label');
+    label.htmlFor = input.id;
+    label.textContent = variantLabel(inst);
+    row.appendChild(input);
+    row.appendChild(label);
+    refs.variantList.appendChild(row);
   }
 }
 
@@ -114,6 +200,7 @@ export function switchTab(refs: Refs, tab: TabId): void {
     btn.setAttribute('aria-selected', String(active));
     panel.classList.toggle('active', active);
   }
+  syncFooter(refs);
 }
 
 /**

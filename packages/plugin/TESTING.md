@@ -17,7 +17,7 @@ For **Send to docs**, make sure the web app is running. No token or account is n
 1. Select a component or component set and run the plugin.
 2. Confirm the component name and file source are shown.
 3. Extract and inspect the Markdown preview.
-4. Download the Markdown and confirm it starts with YAML frontmatter.
+4. Download the spec and confirm the ZIP contains a Markdown file starting with YAML frontmatter.
 5. Send it to the docs app and confirm the imported file appears in the inbox.
 6. Change the plugin token and confirm the request is rejected without writing a file.
 

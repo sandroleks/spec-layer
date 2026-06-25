@@ -1,7 +1,7 @@
 import type { SerializedNode } from './tree';
 
-export interface AnatomyPart { name: string; type: string; nested: boolean }
-export interface AnatomyResult { parts: AnatomyPart[]; related: string[] }
+export interface AnatomyPart { id: string; name: string; type: string; nested: boolean }
+export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; componentId: string }
 
 /** Default variant = first child of a COMPONENT_SET; a bare COMPONENT is its own default. */
 export function defaultVariant(root: SerializedNode): SerializedNode {
@@ -47,7 +47,7 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
     if (nested && child.mainComponent) related.add(child.mainComponent.name);
     if (seenNames.has(child.name)) continue;
     seenNames.add(child.name);
-    parts.push({ name: child.name, type: child.type, nested });
+    parts.push({ id: child.id, name: child.name, type: child.type, nested });
   }
-  return { parts, related: [...related] };
+  return { parts, related: [...related], componentId: defaultVariant(root).id };
 }

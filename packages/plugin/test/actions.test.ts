@@ -22,7 +22,7 @@ function specStub(name = 'Button'): IntermediateSpec {
     figmaKey: 'component-key',
     figmaFile: 'file-key',
     figmaNode: '12:34',
-    anatomy: [],
+    anatomy: [], anatomyComponentId: '',
     props: [],
     variants: [],
     variantInstances: [
@@ -46,7 +46,7 @@ describe('refreshRenderedSpecFileKey', () => {
       figmaKey: 'component-key',
       figmaFile: 'unknown',
       figmaNode: '12:34',
-      anatomy: [],
+      anatomy: [], anatomyComponentId: '',
       props: [],
       variants: [],
       variantInstances: [],

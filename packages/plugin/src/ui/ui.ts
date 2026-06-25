@@ -32,13 +32,16 @@ import {
   setAiEnabled,
 } from './actions';
 import { resolveComponentImage } from './ai';
+import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
 import {
   renderFigmaConnection,
   renderPhase,
   renderSelection,
+  renderVariantPicker,
   switchTab,
   clearBanners,
   showBanner,
+  stopLoader,
 } from './render';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +50,32 @@ import {
 
 const refs = mount();
 const state = createState();
+
+// ---------------------------------------------------------------------------
+// Theme switcher — light ↔ dark. Initial mode is detected from Figma's host
+// theme synchronously (so the first paint is correct, no flash), and the button
+// toggles it for the session. While the user hasn't overridden, a MutationObserver
+// keeps us in sync if they change Figma's theme with the plugin open.
+// ---------------------------------------------------------------------------
+
+let themeMode: ThemeMode = detectFigmaTheme();
+let themeOverridden = false;
+applyThemeMode(refs.themeBtn, themeMode);
+
+refs.themeBtn.addEventListener('click', () => {
+  themeMode = toggleThemeMode(themeMode);
+  themeOverridden = true;
+  applyThemeMode(refs.themeBtn, themeMode);
+});
+
+new MutationObserver(() => {
+  if (themeOverridden) return;
+  const next = detectFigmaTheme();
+  if (next !== themeMode) {
+    themeMode = next;
+    applyThemeMode(refs.themeBtn, themeMode);
+  }
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -110,9 +139,30 @@ function reflectAiToggle(): void {
   const hasKey = Boolean(state.anthropicKey);
   const on = state.aiEnabled && hasKey;
   refs.aiToggle.checked = on;
-  refs.aiNokey.style.display = state.aiEnabled && !hasKey ? 'block' : 'none';
+  // No key yet: the toggle can't do anything, so disable it and turn the whole
+  // card into a shortcut to Settings (see the card click handler below) rather
+  // than letting a click bounce off a dead switch. Also surface the prompt +
+  // dim the AI section badges.
+  refs.aiToggle.disabled = !hasKey;
+  refs.aiCard.classList.toggle('needs-key', !hasKey);
+  refs.aiNokey.style.display = hasKey ? 'none' : 'block';
   refs.sectionList.classList.toggle('ai-dim', !on);
 }
+
+/** Open Settings and focus the API-key field — shared by both "Settings" links. */
+function goToKeySettings(): void {
+  switchTab(refs, 'settings');
+  refs.anthropicKeyInput.focus();
+}
+
+// While no key is set, a click anywhere on the card (except the info button, the
+// info panel, or an explicit link, which handle themselves) routes to Settings.
+refs.aiCard.addEventListener('click', (e) => {
+  if (!refs.aiCard.classList.contains('needs-key')) return;
+  const target = e.target as HTMLElement;
+  if (target.closest('.info-btn, #ai-info, a')) return;
+  goToKeySettings();
+});
 
 refs.aiToggle.addEventListener('change', () => {
   // Turning on without a key is not allowed — revert and surface the note.
@@ -125,9 +175,19 @@ refs.aiToggle.addEventListener('change', () => {
   reflectAiToggle();
 });
 
-refs.aiNokeyLink.addEventListener('click', () => {
-  switchTab(refs, 'settings');
-  refs.anthropicKeyInput.focus();
+refs.aiNokeyLink.addEventListener('click', goToKeySettings);
+refs.aiInfoSettings.addEventListener('click', goToKeySettings);
+
+// Open the Anthropic console so users can create a key (figma.openExternal).
+refs.getKeyLink.addEventListener('click', () => {
+  send({ type: 'openBrowser', url: 'https://console.anthropic.com/settings/keys' });
+});
+
+// Info disclosure: toggle the details panel + the button's expanded state.
+refs.aiInfoBtn.addEventListener('click', () => {
+  const open = refs.aiInfo.hidden;
+  refs.aiInfo.hidden = !open;
+  refs.aiInfoBtn.setAttribute('aria-expanded', String(open));
 });
 
 refs.selectAllBtn.addEventListener('click', () => {
@@ -135,6 +195,16 @@ refs.selectAllBtn.addEventListener('click', () => {
   const allOn = checks.every((c) => c.checked);
   for (const c of checks) c.checked = !allOn;
   refs.selectAllBtn.textContent = allOn ? 'Select all' : 'Clear all';
+});
+
+// Toggling the Tokens section shows/hides the per-variant picker.
+refs.sectionChecks['tokens']?.addEventListener('change', () => renderVariantPicker(refs, state));
+
+refs.variantSelectAll.addEventListener('click', () => {
+  const checks = Array.from(refs.variantList.querySelectorAll('input')) as HTMLInputElement[];
+  const allOn = checks.length > 0 && checks.every((c) => c.checked);
+  for (const c of checks) c.checked = !allOn;
+  refs.variantSelectAll.textContent = allOn ? 'Select all' : 'Clear all';
 });
 
 // ---------------------------------------------------------------------------
@@ -209,6 +279,7 @@ window.onmessage = (event: MessageEvent) => {
       // generating prose for A then selecting B would pair B's spec with A's prose.
       state.generatedProse = null;
       setExportMenu(false);
+      stopLoader(refs);
       renderSelection(refs, state);
       renderFigmaConnection(
         refs,
@@ -216,8 +287,9 @@ window.onmessage = (event: MessageEvent) => {
         state.currentFileKey,
         state.fileKeyOverride,
       );
-      // Extract right away so Export/Download and the frame are always ready.
-      runAutoExtract(refs, state);
+      // Extract right away so Export/Download and the frame are always ready;
+      // once the spec is in, (re)populate the per-variant picker.
+      runAutoExtract(refs, state, () => renderVariantPicker(refs, state));
       break;
     }
 
@@ -283,6 +355,7 @@ window.onmessage = (event: MessageEvent) => {
       break;
     }
 
+
     case 'componentImage': {
       resolveComponentImage({ base64: msg.base64, mediaType: msg.mediaType });
       break;
@@ -295,6 +368,7 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docFrameDone': {
+      stopLoader(refs);
       const note = state.pendingAiNote ? ` — ${state.pendingAiNote}` : '';
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
       state.pendingAiNote = '';
@@ -303,6 +377,7 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docFrameError': {
+      stopLoader(refs);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
       break;

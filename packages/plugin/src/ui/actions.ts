@@ -24,6 +24,8 @@ import {
   renderExportProgress,
   renderExportDone,
   showInlineFileKeyPrompt,
+  startLoader,
+  stopLoader,
 } from './render';
 import {
   buildExportFiles,
@@ -169,8 +171,9 @@ export function ensureExtracted(state: UiState): boolean {
 // shows meanwhile and clears when the spec is ready.
 // ---------------------------------------------------------------------------
 
-export function runAutoExtract(refs: Refs, state: UiState): void {
-  if (!state.currentNode || state.currentSpec) return;
+export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void): void {
+  if (!state.currentNode) return;
+  if (state.currentSpec) { onReady?.(); return; }
   refs.phaseLabel.className = 'chip';
   refs.phaseLabel.textContent = 'Reading…';
   requestAnimationFrame(() => {
@@ -181,6 +184,7 @@ export function runAutoExtract(refs: Refs, state: UiState): void {
     }
     refs.phaseLabel.className = 'phase-label';
     refs.phaseLabel.textContent = '';
+    onReady?.();
   });
 }
 
@@ -191,21 +195,25 @@ export function runAutoExtract(refs: Refs, state: UiState): void {
 // second action in the same selection doesn't re-bill the API.
 // ---------------------------------------------------------------------------
 
+function willGenerateProse(refs: Refs, state: UiState): boolean {
+  if (!state.aiEnabled || !state.anthropicKey) return false;
+  if (state.generatedProse) return false;
+  return ALL_SECTIONS.some((s) => s.ai && refs.sectionChecks[s.id]?.checked);
+}
+
 async function ensureProse(refs: Refs, state: UiState): Promise<void> {
   state.pendingAiNote = '';
-  if (!state.aiEnabled || !state.anthropicKey) return;
-  const aiSelected = ALL_SECTIONS.some((s) => s.ai && refs.sectionChecks[s.id]?.checked);
-  if (!aiSelected) return;
-  if (state.generatedProse) return;
+  if (!willGenerateProse(refs, state)) return;
 
-  showBanner(refs, 'info', 'Writing with AI…');
-  // Best-effort: AI is an enhancement, never a blocker. If generation fails
+  // The generating loader (started by runCreateDocFrame) surfaces progress; this
+  // path is best-effort. AI is an enhancement, never a blocker. If generation fails
   // (rate limit, network, unexpected response), fall back to placeholders and
   // let the frame build anyway — the note surfaces on the success banner.
   try {
+    // willGenerateProse guarantees a non-null key, spec, and node.
     state.generatedProse = await generateProse(
       state.currentSpec!,
-      state.anthropicKey,
+      state.anthropicKey!,
       state.currentNode!.id,
     );
   } catch (err) {
@@ -234,6 +242,12 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
   // an early failure (e.g. AI generation throwing before we dispatch).
   refs.createFrameBtn.disabled = true;
 
+  // Livelier than a static banner: cycle status messages while we work. The AI
+  // path is slow (network) and deserves the richer narration; the no-AI path is
+  // fast, so it gets a shorter set. stopLoader runs on done/error (ui.ts) or in
+  // the catch below.
+  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
+
   try {
     await ensureProse(refs, state);
 
@@ -242,14 +256,40 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       if (refs.sectionChecks[id]?.checked) selected.add(id);
     }
 
-    const model = buildDocModel(state.currentSpec!, state.generatedProse, selected);
+    // Per-variant tokens: which variants the user ticked in the picker.
+    const variantIds = new Set<string>();
+    refs.variantList.querySelectorAll('input:checked').forEach((el) => {
+      const id = (el as HTMLInputElement).dataset.nodeId;
+      if (id) variantIds.add(id);
+    });
+
+    const model = buildDocModel(state.currentSpec!, state.generatedProse, selected, variantIds);
     send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
-    showBanner(refs, 'info', 'Building frame…');
+    // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {
+    stopLoader(refs);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Frame failed: ${msg}`);
     refs.createFrameBtn.disabled = false;
   }
+}
+
+/** Status lines for the generating loader. The AI path narrates the slow
+ *  network round-trip; the no-AI path is near-instant so it stays terse. */
+function generatingMessages(withAi: boolean): string[] {
+  return withAi
+    ? [
+        'Looking at the component',
+        'Writing the guidelines',
+        'Composing sections',
+        'Placing the frame on the canvas',
+      ]
+    : [
+        'Reading the component',
+        'Composing sections',
+        'Laying out the content',
+        'Placing the frame on the canvas',
+      ];
 }
 
 // ---------------------------------------------------------------------------

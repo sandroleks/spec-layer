@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractAnatomy } from '../src/anatomy';
+import { extractAnatomy, defaultVariant } from '../src/anatomy';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
 import type { SerializedNode } from '../src/tree';
@@ -18,6 +18,14 @@ describe('extractAnatomy', () => {
 
   it('excludes invisible layers', () => {
     expect(result.parts.find((p) => p.name === 'debug-overlay')).toBeUndefined();
+  });
+
+  it('carries each part node id and the default-variant component id', () => {
+    // The doc frame resolves geometry live from these ids to place its callout
+    // pins, so every part must carry a non-empty id and the result must point at
+    // the screenshotted default variant.
+    expect(result.parts.every((p) => typeof p.id === 'string' && p.id.length > 0)).toBe(true);
+    expect(result.componentId).toBe(defaultVariant(button as SerializedNode).id);
   });
 });
 

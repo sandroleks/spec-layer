@@ -47,7 +47,7 @@ describe('renderSpec', () => {
   it('slug sanitizes special chars in related-atoms links (bug 3)', () => {
     const spec: IntermediateSpec = {
       name: 'Chip', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
-      anatomy: [], props: [], variants: [], variantInstances: [], states: ['Default'],
+      anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
       tokens: [], related: ['Padding=Square, Scale=1x'], gaps: [], layout: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
@@ -58,7 +58,7 @@ describe('renderSpec', () => {
   it('slug strips leading/trailing hyphens from names starting or ending with = or , (I-2)', () => {
     const spec: IntermediateSpec = {
       name: 'Test', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
-      anatomy: [], props: [], variants: [], variantInstances: [], states: ['Default'],
+      anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
       tokens: [], related: ['=Edge,'], gaps: [], layout: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
@@ -68,7 +68,7 @@ describe('renderSpec', () => {
   it('renders _None._ under Tokens used when there are no token bindings', () => {
     const spec: IntermediateSpec = {
       name: 'Empty', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
-      anatomy: [], props: [], variants: [], variantInstances: [], states: ['Default'],
+      anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
       tokens: [], related: [], gaps: [], layout: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });

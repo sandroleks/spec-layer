@@ -12,8 +12,15 @@
  * holds the bulk export: a folder-name input, an "Export all components" button,
  * and a progress/status area; it works whether or not anything is selected.
  *
- * Styling uses Figma theme CSS variables (injected because main.ts passes
- * `themeColors: true` to figma.showUI) so the plugin tracks Figma light/dark.
+ * Figma's own chrome shows the plugin icon + name, so the UI starts straight at
+ * the tab bar (no duplicate title). A light/dark theme button lives at the right
+ * end of the tab row (wired in ui.ts / theme.ts).
+ *
+ * Theming: the active palette is always applied via `body[data-theme]` (the
+ * light/dark palettes below). The initial value is detected from Figma's host
+ * theme at boot and the button toggles it; see theme.ts. Figma's injected
+ * `--figma-color-*` vars (from `themeColors: true`) still provide the fallback
+ * values and keep the non-Figma/test render legible.
  */
 
 import { ALL_SECTIONS } from './docModel';
@@ -46,6 +53,52 @@ const TEMPLATE = `
       --figma-color-bg-danger-tertiary: #fdece9;
       --figma-color-text-danger: #b3251b;
     }
+
+    /* ---- Theme palettes ----
+       ui.ts always sets body[data-theme] (light or dark), and these blocks
+       redefine the tokens with Figma's published values. We scope to body (not
+       :root) deliberately: CSS custom properties resolve from the nearest
+       ancestor, so a body-level palette wins over Figma's injected :root vars no
+       matter how Figma injects them. Values mirror Figma's own light/dark palette
+       so the chrome stays on-brand. */
+    body[data-theme="light"] {
+      --figma-color-bg: #ffffff;
+      --figma-color-bg-secondary: #f5f5f5;
+      --figma-color-bg-tertiary: #e6e6e6;
+      --figma-color-bg-brand: #0d99ff;
+      --figma-color-bg-brand-hover: #0a85e0;
+      --figma-color-bg-disabled: #e6e6e6;
+      --figma-color-text: #1e1e1e;
+      --figma-color-text-secondary: #767676;
+      --figma-color-text-onbrand: #ffffff;
+      --figma-color-text-disabled: #b3b3b3;
+      --figma-color-border: #e6e6e6;
+      --figma-color-bg-success: #14ae5c;
+      --figma-color-bg-success-tertiary: #ebf7ee;
+      --figma-color-text-success: #097a3d;
+      --figma-color-bg-danger: #f24822;
+      --figma-color-bg-danger-tertiary: #fdece9;
+      --figma-color-text-danger: #b3251b;
+    }
+    body[data-theme="dark"] {
+      --figma-color-bg: #2c2c2c;
+      --figma-color-bg-secondary: #383838;
+      --figma-color-bg-tertiary: #4a4a4a;
+      --figma-color-bg-brand: #0d99ff;
+      --figma-color-bg-brand-hover: #2aa3ff;
+      --figma-color-bg-disabled: #3a3a3a;
+      --figma-color-text: #ffffff;
+      --figma-color-text-secondary: #b3b3b3;
+      --figma-color-text-onbrand: #ffffff;
+      --figma-color-text-disabled: #595959;
+      --figma-color-border: #444444;
+      --figma-color-bg-success: #14ae5c;
+      --figma-color-bg-success-tertiary: #1d3024;
+      --figma-color-text-success: #4ac26b;
+      --figma-color-bg-danger: #f24822;
+      --figma-color-bg-danger-tertiary: #3a211c;
+      --figma-color-text-danger: #f4796a;
+    }
     html, body { height: 100%; }
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -55,23 +108,43 @@ const TEMPLATE = `
       display: flex; flex-direction: column; height: 100vh;
     }
 
-    /* ---- Tab bar ---- */
+    /* ---- Tab bar ----
+       The topmost UI element (Figma's own chrome already shows the plugin icon +
+       name, so we don't repeat a title here). Figma-native segmented style: the
+       active tab is a filled rounded pill (elevated surface) rather than an
+       underline; inactive tabs are plain text with a faint pill on hover. The
+       cycling theme button lives at the right end of this row. */
     .tabs {
-      display: flex; gap: 2px; padding: 0 12px;
+      display: flex; align-items: center; gap: 2px; padding: 7px 10px;
       border-bottom: 1px solid var(--figma-color-border);
       flex: 0 0 auto;
     }
+    /* Cycling light/dark/auto button — pushed to the right edge of the tab row. */
+    .theme-btn {
+      appearance: none; flex: 0 0 auto; cursor: pointer; margin-left: auto;
+      width: 26px; height: 26px; border-radius: 7px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--figma-color-border);
+      background: var(--figma-color-bg); color: var(--figma-color-text);
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .theme-btn:hover { background: var(--figma-color-bg-secondary); border-color: var(--figma-color-text-secondary); }
+    .theme-btn:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+    .theme-btn svg { width: 15px; height: 15px; display: block; }
     .tab {
       appearance: none; background: none; border: none; cursor: pointer;
-      padding: 12px 4px; margin-right: 14px;
+      padding: 5px 10px; border-radius: 6px;
       font-size: 12px; font-weight: 500;
       color: var(--figma-color-text-secondary);
-      border-bottom: 2px solid transparent;
+      transition: background 0.12s ease, color 0.12s ease;
     }
-    .tab:hover:not(:disabled) { color: var(--figma-color-text); }
+    .tab:hover:not(:disabled):not([aria-selected="true"]) {
+      color: var(--figma-color-text);
+      background: var(--figma-color-bg-secondary);
+    }
     .tab[aria-selected="true"] {
       color: var(--figma-color-text);
-      border-bottom-color: var(--figma-color-text);
+      background: var(--figma-color-bg-secondary);
     }
     .tab:disabled { cursor: default; opacity: 0.5; }
     .tab .badge {
@@ -91,6 +164,8 @@ const TEMPLATE = `
     h2 { font-size: 13px; font-weight: 600; margin: 0; }
     .muted { color: var(--figma-color-text-secondary); }
     .hint { font-size: 11px; color: var(--figma-color-text-secondary); margin: 4px 0 0; }
+    .hint a { color: var(--figma-color-bg-brand); cursor: pointer; }
+    .hint a:hover { text-decoration: underline; }
     .row { display: flex; align-items: center; gap: 8px; }
     .stack { display: flex; flex-direction: column; gap: 10px; }
     hr { border: none; border-top: 1px solid var(--figma-color-border); margin: 14px 0; }
@@ -102,8 +177,9 @@ const TEMPLATE = `
     /* ---- Buttons ---- */
     button.btn {
       appearance: none; font-size: 12px; font-weight: 500;
-      padding: 7px 14px; border-radius: 6px; cursor: pointer;
+      padding: 8px 14px; border-radius: 8px; cursor: pointer;
       border: 1px solid transparent; line-height: 1;
+      transition: background 0.12s ease, border-color 0.12s ease;
     }
     button.btn:disabled { cursor: default; opacity: 0.5; }
     .btn-primary {
@@ -124,12 +200,14 @@ const TEMPLATE = `
       color: var(--figma-color-text-secondary); margin-bottom: 4px;
     }
     input[type="text"], input[type="password"] {
-      width: 100%; font-size: 12px; padding: 7px 8px;
-      border: 1px solid var(--figma-color-border); border-radius: 6px;
+      width: 100%; font-size: 12px; padding: 8px 9px;
+      border: 1px solid var(--figma-color-border); border-radius: 8px;
       background: var(--figma-color-bg); color: var(--figma-color-text);
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
     input[type="text"]:focus, input[type="password"]:focus {
       outline: none; border-color: var(--figma-color-bg-brand);
+      box-shadow: 0 0 0 2px var(--figma-color-bg-secondary);
     }
 
     /* ---- Preview textarea ---- */
@@ -161,14 +239,112 @@ const TEMPLATE = `
       background: var(--figma-color-bg-danger-tertiary); color: var(--figma-color-text-danger);
     }
     .banner.error::before { content: "⚠"; color: var(--figma-color-text-danger); }
+
+    /* ---- Generating loader (Create frame) ----
+       A small pulsing sparkle + shimmering, cycling status text — a livelier
+       stand-in for the old static "Building frame…" banner. Shown/hidden and
+       its messages cycled from render.ts (startLoader/stopLoader). */
+    .loader {
+      display: none; align-items: center; gap: 9px;
+      padding: 9px 11px; border-radius: 8px; margin-bottom: 10px;
+      background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
+    }
+    .loader.show { display: flex; }
+    .loader-icon {
+      width: 13px; height: 13px; flex: 0 0 auto;
+      background: var(--figma-color-bg-brand);
+      clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+      animation: loader-spark 1.4s ease-in-out infinite;
+    }
+    @keyframes loader-spark {
+      0%, 100% { transform: rotate(0deg) scale(0.8); opacity: 0.65; }
+      50%      { transform: rotate(90deg) scale(1.1); opacity: 1; }
+    }
+    .loader-body { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+    /* Base: always a solid, visible colour. The shimmer is layered on top only
+       where background-clip:text is supported, so the text can never render
+       fully transparent (which left an empty pill on some hosts). */
+    .loader-text {
+      font-size: 11px; font-weight: 500; line-height: 1.3;
+      color: var(--figma-color-text);
+    }
+    @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+      .loader-text {
+        background: linear-gradient(
+          90deg,
+          var(--figma-color-text-secondary) 0%,
+          var(--figma-color-text) 25%,
+          var(--figma-color-text-secondary) 50%
+        );
+        background-size: 220% 100%;
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: loader-shimmer 2.6s linear infinite;
+      }
+    }
+    @keyframes loader-shimmer { to { background-position: -220% 0; } }
+    /* Trailing typing dots, à la Claude. Each fades + lifts in sequence. */
+    .loader-dots { display: inline-flex; align-items: center; gap: 2px; margin-bottom: -1px; }
+    .loader-dots span {
+      width: 3px; height: 3px; border-radius: 50%;
+      background: var(--figma-color-text-secondary);
+      animation: loader-dot 1.4s ease-in-out infinite;
+    }
+    .loader-dots span:nth-child(2) { animation-delay: 0.18s; }
+    .loader-dots span:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes loader-dot {
+      0%, 70%, 100% { opacity: 0.25; transform: translateY(0); }
+      35%           { opacity: 1; transform: translateY(-1px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .loader-icon { animation: none; opacity: 1; }
+      .loader-text {
+        animation: none; -webkit-text-fill-color: var(--figma-color-text);
+        color: var(--figma-color-text); transition: none;
+      }
+      .loader-dots span { animation: none; opacity: 0.5; transform: none; }
+    }
+
     .atom-notice {
       display: none; margin-top: 8px; padding: 8px 10px; border-radius: 6px;
       background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary);
       font-size: 11px;
     }
+    /* ---- Custom checkbox (section checklist, variant picker, export options) ----
+       Native checkboxes render inconsistently across platforms and ignore most
+       theming; appearance:none lets us draw a Figma-style box + CSS checkmark
+       that tracks the theme tokens. Scoped to .sec-row/.check-row so the AI
+       switch (a visually-hidden checkbox) is untouched. */
+    .sec-row input[type="checkbox"],
+    .check-row input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none; margin: 0;
+      width: 15px; height: 15px; flex: 0 0 auto; position: relative; cursor: pointer;
+      border: 1.5px solid var(--figma-color-border); border-radius: 4px;
+      background: var(--figma-color-bg);
+      transition: background 0.1s ease, border-color 0.1s ease;
+    }
+    .sec-row input[type="checkbox"]:hover,
+    .check-row input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
+    .sec-row input[type="checkbox"]:checked,
+    .check-row input[type="checkbox"]:checked {
+      background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand);
+    }
+    /* CSS checkmark: a rotated rectangle with two borders. */
+    .sec-row input[type="checkbox"]:checked::after,
+    .check-row input[type="checkbox"]:checked::after {
+      content: ""; position: absolute; left: 4.5px; top: 1.5px;
+      width: 4px; height: 8px; box-sizing: border-box;
+      border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .sec-row input[type="checkbox"]:focus-visible,
+    .check-row input[type="checkbox"]:focus-visible {
+      outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
+    }
+
     /* Generic checkbox row (export-all panel). */
     .check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; }
-    .check-row input { margin: 1px 0 0; accent-color: var(--figma-color-bg-brand); }
+    .check-row input[type="checkbox"] { margin-top: 1px; }
     .check-row label { cursor: pointer; }
     .check-row span { display: block; margin-top: 2px; color: var(--figma-color-text-secondary); }
 
@@ -184,13 +360,34 @@ const TEMPLATE = `
     /* ---- "Write with AI" switch + card ---- */
     .ai-card {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-      padding: 10px 12px; border-radius: 8px; margin-top: 12px;
+      padding: 11px 13px; border-radius: 10px; margin-top: 12px;
       background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
     }
+    .ai-head { display: flex; align-items: center; gap: 5px; }
     .ai-card .ai-title { font-size: 12px; font-weight: 600; }
     .ai-card .hint { margin-top: 2px; }
-    .ai-nokey { font-size: 11px; color: var(--figma-color-bg-danger); margin-top: 4px; }
-    .ai-nokey a { color: var(--figma-color-bg-brand); cursor: pointer; }
+    /* Info disclosure: ⓘ button toggles the .ai-info panel (wired in ui.ts). */
+    .info-btn {
+      appearance: none; border: none; background: none; cursor: pointer; padding: 0;
+      width: 16px; height: 16px; flex: 0 0 auto;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--figma-color-text-secondary); transition: color 0.12s ease;
+    }
+    .info-btn:hover { color: var(--figma-color-text); }
+    .info-btn[aria-expanded="true"] { color: var(--figma-color-bg-brand); }
+    .info-btn svg { width: 14px; height: 14px; display: block; }
+    .info-btn:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; border-radius: 50%; }
+    .ai-info {
+      margin-top: 8px; padding: 9px 11px; border-radius: 8px;
+      background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
+      font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.5;
+    }
+    .ai-info[hidden] { display: none; }
+    .ai-info p { margin: 0; }
+    .ai-info p + p { margin-top: 6px; }
+    .ai-info a, .ai-nokey a { color: var(--figma-color-bg-brand); cursor: pointer; }
+    /* Shown whenever no key is set (incl. first run) — informational, not an error. */
+    .ai-nokey { font-size: 11px; color: var(--figma-color-text-secondary); margin-top: 6px; }
     .switch { position: relative; width: 36px; height: 20px; flex: 0 0 auto; margin-top: 1px; }
     .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
     .switch .track {
@@ -204,6 +401,13 @@ const TEMPLATE = `
     }
     .switch input:checked + .track { background: var(--figma-color-bg-brand); }
     .switch input:checked + .track::after { transform: translateX(16px); }
+    /* No-key state: the toggle can't be turned on yet, so it's shown disabled and
+       the whole card becomes a shortcut to Settings (wired in ui.ts). The disabled
+       input gets pointer-events:none so clicks fall through to the card handler. */
+    .ai-card.needs-key { cursor: pointer; }
+    .ai-card.needs-key:hover { border-color: var(--figma-color-text-secondary); }
+    .ai-card.needs-key .switch { opacity: 0.45; }
+    .switch input:disabled { pointer-events: none; }
 
     /* ---- Section header + checklist ---- */
     .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
@@ -213,32 +417,56 @@ const TEMPLATE = `
     }
     .link-btn:hover { text-decoration: underline; }
     .link-btn:disabled { color: var(--figma-color-text-disabled); cursor: default; text-decoration: none; }
-    #section-list { display: flex; flex-direction: column; gap: 1px; }
-    #section-list .sec-row {
+    #section-list { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; }
+    .sec-row {
       display: flex; align-items: center; gap: 8px; font-size: 12px;
       padding: 6px 8px; border-radius: 6px;
     }
-    #section-list .sec-row:hover { background: var(--figma-color-bg-secondary); }
-    #section-list .sec-row input {
-      width: 14px; height: 14px; margin: 0; cursor: pointer;
-      accent-color: var(--figma-color-bg-brand);
-    }
-    #section-list .sec-row label { cursor: pointer; flex: 1; }
+    .sec-row:hover { background: var(--figma-color-bg-secondary); }
+    .sec-row label { cursor: pointer; flex: 1; }
     #section-list.ai-dim .ai-badge { opacity: 0.4; }
+
+    /* ---- Variant picker (per-variant tokens) ---- */
+    .variant-picker {
+      margin-top: 12px; padding: 11px 13px; border-radius: 10px;
+      background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
+    }
+    .variant-picker .vp-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+    }
+    .variant-picker .vp-title {
+      font-size: 11px; font-weight: 600; color: var(--figma-color-text-secondary);
+    }
+    #variant-list {
+      display: flex; flex-direction: column; gap: 1px;
+      max-height: 148px; overflow-y: auto;
+    }
+    #variant-list .sec-row { background: var(--figma-color-bg); }
+    #variant-list .sec-row:hover { background: var(--figma-color-bg-tertiary); }
 
     /* ---- Action buttons ---- */
     .actions { display: flex; gap: 8px; margin-top: 16px; }
     .actions > .btn, .actions > .menu-wrap { flex: 1; }
+
+    /* ---- Sticky action footer (Selected-component tab) ---- */
+    .footer {
+      flex: 0 0 auto; padding: 12px; background: var(--figma-color-bg);
+      border-top: 1px solid var(--figma-color-border);
+    }
+    .footer .actions { margin-top: 0; }
+    .footer .banner { margin-bottom: 8px; }
+    .footer .inline-filekey { margin-top: 0; margin-bottom: 8px; }
 
     /* ---- Export dropdown menu ---- */
     .menu-wrap { position: relative; }
     .menu-wrap > .btn { width: 100%; }
     .caret { display: inline-block; margin-left: 4px; transition: transform 0.12s; }
     .menu-wrap.open .caret { transform: rotate(180deg); }
+    /* Opens upward — the dropdown lives in the bottom action footer. */
     .menu {
-      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 5;
+      position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 5;
       background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
-      border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+      border-radius: 8px; box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.18);
       overflow: hidden; display: none;
     }
     .menu-wrap.open .menu { display: block; }
@@ -298,6 +526,8 @@ const TEMPLATE = `
             aria-controls="tab-panel-all">Export all</button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false"
             aria-controls="tab-panel-settings">Settings</button>
+    <button class="theme-btn" id="theme-btn" type="button" title="Theme"
+            aria-label="Toggle light/dark theme"></button>
   </div>
 
   <div class="content">
@@ -320,13 +550,27 @@ const TEMPLATE = `
           <strong>Atom component.</strong> It is normally used to build larger components, but you can still export it individually.
         </div>
 
-        <!-- Write with AI: one switch gates AI-written prose for the AI sections. -->
-        <div class="ai-card">
-          <div>
-            <div class="ai-title">Write with AI</div>
-            <p class="hint">Fills the <strong>AI</strong> sections below. Off = placeholders.</p>
+        <!-- Write with AI: one switch gates AI-written prose for the AI sections.
+             The ⓘ button toggles #ai-info; #ai-nokey shows whenever no key is set. -->
+        <div class="ai-card" id="ai-card">
+          <div class="ai-main">
+            <div class="ai-head">
+              <span class="ai-title">Write with AI</span>
+              <button class="info-btn" id="ai-info-btn" type="button"
+                      aria-label="About Write with AI" aria-expanded="false" aria-controls="ai-info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>
+                </svg>
+              </button>
+            </div>
+            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component. Needs an Anthropic API key — off uses placeholders.</p>
+            <div class="ai-info" id="ai-info" hidden>
+              <p>Drafts the <strong>Definition</strong>, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections from your component's structure and a snapshot of how it looks.</p>
+              <p>Bring your own <strong>Anthropic API key</strong> — it's stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your account. <a id="ai-info-settings">Add it in Settings</a>.</p>
+            </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
-              Add your Anthropic key in <a id="ai-nokey-link">Settings</a>.
+              You'll need an Anthropic API key. <a id="ai-nokey-link">Add one in Settings</a>.
             </div>
           </div>
           <label class="switch">
@@ -344,35 +588,21 @@ const TEMPLATE = `
         </div>
         <div id="section-list"></div>
 
-        <!-- Two outputs: Create frame (secondary) + Export (primary dropdown
-             grouping Send to docs / Download .md). -->
-        <div class="actions">
-          <button class="btn btn-secondary" id="create-frame-btn">Create frame</button>
-          <div class="menu-wrap" id="export-wrap">
-            <button class="btn btn-primary" id="export-btn" type="button"
-                    aria-haspopup="true" aria-expanded="false">Export<span class="caret">▾</span></button>
-            <div class="menu" id="export-menu" role="menu">
-              <button class="menu-item" id="send-btn" type="button" role="menuitem">Send to docs</button>
-              <button class="menu-item" id="download-btn" type="button" role="menuitem">Download .md</button>
-            </div>
+        <!-- Variants to document (per-variant tokens). Shown only when the
+             Tokens section is checked and the selection is a component set;
+             rows are populated in render.ts from the extracted spec. -->
+        <div class="variant-picker" id="variant-picker" style="display:none">
+          <div class="vp-head">
+            <span class="vp-title">VARIANTS TO DOCUMENT</span>
+            <button class="link-btn" id="variant-select-all" type="button">Select all</button>
           </div>
+          <div id="variant-list"></div>
         </div>
 
-        <!-- Implicit extraction replaces the visible Extract button, but
-             render.ts/ui.ts still reference refs.extractBtn — keep it hidden. -->
+        <!-- Actions, banners, and the inline file-key prompt live in the sticky
+             footer below so they're always reachable. extract-btn stays a hidden
+             bridge still referenced by render.ts/ui.ts. -->
         <button class="btn" id="extract-btn" style="display:none">Extract spec</button>
-
-        <div id="banner-info" class="banner info" style="margin-top:12px"></div>
-        <div id="banner-error" class="banner error"></div>
-
-        <!-- Send-time prompt: only revealed when the Figma file key can't be
-             auto-detected, so the user can fix it inline without leaving the
-             component. Mirrors the persistent override field in Settings. -->
-        <div id="inline-filekey" class="inline-filekey" style="display:none">
-          <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
-          <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
-          <p class="hint">Needed once so previews load after import. Saved for next time.</p>
-        </div>
       </div>
     </section>
 
@@ -407,12 +637,13 @@ const TEMPLATE = `
              aria-labelledby="tab-settings">
       <div class="stack">
         <div>
-          <h2>AI</h2>
+          <h2>Write with AI</h2>
           <p class="hint" style="margin-top:4px">
-            Your Anthropic API key. Stored locally in this plugin only; used to write guideline prose.
+            Add an Anthropic API key to let Claude draft the AI guideline sections. The key is stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your own account.
           </p>
           <label class="field-label" for="anthropic-key-input" style="margin-top:8px">Anthropic API key</label>
           <input type="password" id="anthropic-key-input" placeholder="sk-ant-…" />
+          <p class="hint" style="margin-top:6px"><a id="get-key-link">Get an API key from Anthropic ↗</a></p>
         </div>
 
         <hr />
@@ -420,7 +651,7 @@ const TEMPLATE = `
         <div>
           <h2>Docs platform</h2>
           <p class="hint" style="margin-top:4px">
-            Where “Send to docs” publishes specs. Runs locally — no account or token.
+            Where “Send to docs” publishes your specs. Point it at your running docs app — it’s local, so no account or token is needed.
           </p>
           <label class="field-label" for="endpoint-input" style="margin-top:8px">Docs URL</label>
           <input type="text" id="endpoint-input" placeholder="http://localhost:3000" />
@@ -431,7 +662,7 @@ const TEMPLATE = `
         <div>
           <h2>Figma source</h2>
           <p class="hint" style="margin-top:4px">
-            The file reference embedded in each spec so previews load after import.
+            Each spec embeds a reference to this Figma file so component previews load after import. It’s detected automatically — set it manually below only if needed.
           </p>
           <div class="figma-source missing" id="filekey-status" style="margin-top:8px">
             <div>
@@ -448,6 +679,36 @@ const TEMPLATE = `
       </div>
     </section>
   </div>
+
+  <!-- Sticky action footer — only shown on the Selected-component tab with a
+       component selected (toggled in render.ts/syncFooter). -->
+  <div class="footer" id="action-footer" style="display:none">
+    <div id="loader" class="loader" role="status" aria-live="polite">
+      <span class="loader-icon" aria-hidden="true"></span>
+      <span class="loader-body">
+        <span class="loader-text" id="loader-text"></span>
+        <span class="loader-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+      </span>
+    </div>
+    <div id="banner-info" class="banner info"></div>
+    <div id="banner-error" class="banner error"></div>
+    <div id="inline-filekey" class="inline-filekey" style="display:none">
+      <label class="field-label" for="inline-filekey-input">Paste this file's Figma URL</label>
+      <input type="text" id="inline-filekey-input" placeholder="https://figma.com/design/… or file key" />
+      <p class="hint">Needed once so previews load after import. Saved for next time.</p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-secondary" id="create-frame-btn">Create frame</button>
+      <div class="menu-wrap" id="export-wrap">
+        <button class="btn btn-primary" id="export-btn" type="button"
+                aria-haspopup="true" aria-expanded="false">Export<span class="caret">▾</span></button>
+        <div class="menu" id="export-menu" role="menu">
+          <button class="menu-item" id="send-btn" type="button" role="menuitem">Send to docs</button>
+          <button class="menu-item" id="download-btn" type="button" role="menuitem">Download</button>
+        </div>
+      </div>
+    </div>
+  </div>
 `;
 
 // ---------------------------------------------------------------------------
@@ -455,6 +716,8 @@ const TEMPLATE = `
 // ---------------------------------------------------------------------------
 
 export interface Refs {
+  // Header
+  themeBtn: HTMLButtonElement;
   // Tabs
   tabSelected: HTMLButtonElement;
   tabAll: HTMLButtonElement;
@@ -470,21 +733,32 @@ export interface Refs {
   phaseLabel: HTMLSpanElement;
   extractBtn: HTMLButtonElement;
   // Write-with-AI switch
+  aiCard: HTMLDivElement;
   aiToggle: HTMLInputElement;
+  aiInfoBtn: HTMLButtonElement;
+  aiInfo: HTMLDivElement;
+  aiInfoSettings: HTMLElement;
   aiNokey: HTMLDivElement;
   aiNokeyLink: HTMLElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
   selectAllBtn: HTMLButtonElement;
+  // Variant picker (per-variant tokens)
+  variantPicker: HTMLDivElement;
+  variantList: HTMLDivElement;
+  variantSelectAll: HTMLButtonElement;
   createFrameBtn: HTMLButtonElement;
-  // Export dropdown
+  // Sticky footer + export dropdown
+  actionFooter: HTMLDivElement;
   exportWrap: HTMLDivElement;
   exportBtn: HTMLButtonElement;
   exportMenu: HTMLDivElement;
-  // Banners
+  // Banners + generating loader
   bannerInfo: HTMLDivElement;
   bannerError: HTMLDivElement;
+  loader: HTMLDivElement;
+  loaderText: HTMLSpanElement;
   // Export actions (inside the dropdown)
   downloadBtn: HTMLButtonElement;
   sendBtn: HTMLButtonElement;
@@ -493,6 +767,7 @@ export interface Refs {
   inlineFileKeyInput: HTMLInputElement;
   // AI settings (Settings tab)
   anthropicKeyInput: HTMLInputElement;
+  getKeyLink: HTMLElement;
   // Docs platform settings (Settings tab)
   endpointInput: HTMLInputElement;
   fileKeyStatus: HTMLDivElement;
@@ -557,6 +832,7 @@ export function mount(): Refs {
   }
 
   return {
+    themeBtn: byId<HTMLButtonElement>('theme-btn'),
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
     tabAll: byId<HTMLButtonElement>('tab-all'),
     tabSettings: byId<HTMLButtonElement>('tab-settings'),
@@ -569,23 +845,34 @@ export function mount(): Refs {
     atomNotice: byId<HTMLDivElement>('atom-notice'),
     phaseLabel: byId<HTMLSpanElement>('phase-label'),
     extractBtn: byId<HTMLButtonElement>('extract-btn'),
+    aiCard: byId<HTMLDivElement>('ai-card'),
     aiToggle: byId<HTMLInputElement>('ai-toggle'),
+    aiInfoBtn: byId<HTMLButtonElement>('ai-info-btn'),
+    aiInfo: byId<HTMLDivElement>('ai-info'),
+    aiInfoSettings: byId<HTMLElement>('ai-info-settings'),
     aiNokey: byId<HTMLDivElement>('ai-nokey'),
     aiNokeyLink: byId<HTMLElement>('ai-nokey-link'),
     sectionList,
     sectionChecks,
     selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
+    variantPicker: byId<HTMLDivElement>('variant-picker'),
+    variantList: byId<HTMLDivElement>('variant-list'),
+    variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),
     createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
+    actionFooter: byId<HTMLDivElement>('action-footer'),
     exportWrap: byId<HTMLDivElement>('export-wrap'),
     exportBtn: byId<HTMLButtonElement>('export-btn'),
     exportMenu: byId<HTMLDivElement>('export-menu'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
     bannerError: byId<HTMLDivElement>('banner-error'),
+    loader: byId<HTMLDivElement>('loader'),
+    loaderText: byId<HTMLSpanElement>('loader-text'),
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
     sendBtn: byId<HTMLButtonElement>('send-btn'),
     inlineFileKey: byId<HTMLDivElement>('inline-filekey'),
     inlineFileKeyInput: byId<HTMLInputElement>('inline-filekey-input'),
     anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
+    getKeyLink: byId<HTMLElement>('get-key-link'),
     endpointInput: byId<HTMLInputElement>('endpoint-input'),
     fileKeyStatus: byId<HTMLDivElement>('filekey-status'),
     fileKeyStatusTitle: byId<HTMLElement>('filekey-status-title'),

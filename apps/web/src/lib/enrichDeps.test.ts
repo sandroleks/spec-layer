@@ -8,7 +8,7 @@ function spec(figmaFile: string, figmaNode: string): IntermediateSpec {
     figmaKey: "key",
     figmaFile,
     figmaNode,
-    anatomy: [],
+    anatomy: [], anatomyComponentId: "",
     props: [],
     variants: [],
     states: [],

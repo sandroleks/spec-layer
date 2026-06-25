@@ -1,5 +1,5 @@
-import type { IntermediateSpec, ProseDrafts } from '@spec-layer/extractor';
-import { formatConditions } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseDrafts, VariantInstance } from '@spec-layer/extractor';
+import { formatConditions, resolveTokensForVariant } from '@spec-layer/extractor';
 
 export type SectionId =
   | 'definition' | 'anatomy' | 'configuration' | 'variants'
@@ -21,12 +21,51 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean }[] = [
 export interface TextRun { text: string; bold?: boolean }
 export interface Bullet { runs: TextRun[]; text: string } // text = plain fallback
 
+/** One documented variant: a label, the axis=value prop pairs (for the
+ *  PROPERTIES list), the source node (for a live instance), and its resolved
+ *  [part, property, token] rows. */
+export interface VariantTokenBlock {
+  name: string;
+  props: { name: string; value: string }[];
+  nodeId: string;
+  rows: string[][];
+}
+
+/** One anatomy part placed on the diagram: its 1-based number, label, whether
+ *  it is a nested component, and the Figma node id used to resolve its position
+ *  (and screenshot) live in the frame builder. */
+export interface AnatomyPartBlock { n: number; name: string; nested: boolean; id: string }
+
 export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'prose'; text: string }
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[] }
-  | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] };
+  | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
+  | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
+  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[] };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
+
+/** Human label for a variant instance as axis=value pairs, e.g.
+ *  "Type=Primary, State=Hover" — keeps each value tied to its prop so booleans
+ *  ("Danger=false") read clearly. Falls back to the raw Figma name. */
+export function variantLabel(inst: VariantInstance): string {
+  const pairs = Object.entries(inst.values).map(([axis, value]) => `${axis}=${value}`);
+  return pairs.length ? pairs.join(', ') : inst.name;
+}
+
+/** The default variant: the instance whose axis values match every variant
+ *  prop's default. Falls back to the first instance. Null when there are none. */
+export function defaultVariantId(spec: IntermediateSpec): string | null {
+  if (!spec.variantInstances.length) return null;
+  const defaults: Record<string, string> = {};
+  for (const p of spec.props) {
+    if (p.kind === 'variant' && typeof p.default === 'string') defaults[p.name] = p.default;
+  }
+  const match = spec.variantInstances.find((inst) =>
+    Object.entries(defaults).every(([axis, value]) => inst.values[axis] === value),
+  );
+  return (match ?? spec.variantInstances[0]).nodeId;
+}
 
 const AI_PLACEHOLDER = '_To be written._';
 
@@ -84,6 +123,7 @@ function buildSection(
   label: string,
   spec: IntermediateSpec,
   prose: ProseDrafts | null,
+  selectedVariantIds?: Set<string>,
 ): SectionBlock {
   switch (id) {
     case 'definition': {
@@ -114,10 +154,21 @@ function buildSection(
     }
 
     case 'anatomy': {
-      const items = spec.anatomy.length
-        ? spec.anatomy.map((a) => makeBullet(`${a.name}${a.nested ? ' (component)' : ''}`))
-        : [makeBullet('_None._')];
-      return { id, heading: label, kind: 'bullets', items };
+      // Structured anatomy block: the frame builder turns this into a numbered
+      // callout diagram (screenshot + pins). It carries each part's node id and
+      // the component's node id so geometry can be resolved live on canvas.
+      // Falls back to a plain "None." bullet when there are no parts or no
+      // component to screenshot.
+      if (spec.anatomy.length && spec.anatomyComponentId) {
+        const parts = spec.anatomy.map((a, i) => ({
+          n: i + 1,
+          name: a.name,
+          nested: a.nested,
+          id: a.id,
+        }));
+        return { id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts };
+      }
+      return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
     }
 
     case 'configuration': {
@@ -184,6 +235,32 @@ function buildSection(
     }
 
     case 'tokens': {
+      // Per-variant view: one block per selected variant, each showing only the
+      // tokens that resolve for that variant. Falls back to a flat conditioned
+      // table for plain components or when no variant is selected.
+      const instances = spec.variantInstances;
+      if (instances.length && selectedVariantIds && selectedVariantIds.size) {
+        const variants: VariantTokenBlock[] = instances
+          .filter((inst) => selectedVariantIds.has(inst.nodeId))
+          .map((inst) => ({
+            name: variantLabel(inst),
+            props: Object.entries(inst.values).map(([name, value]) => ({ name, value })),
+            nodeId: inst.nodeId,
+            rows: resolveTokensForVariant(spec.tokens, inst.values).map((t) => [
+              t.part,
+              t.property,
+              t.token,
+            ]),
+          }));
+        if (variants.length) {
+          return {
+            id, heading: label, kind: 'variantTokens',
+            columns: ['Part', 'Property', 'Token'],
+            variants,
+          };
+        }
+      }
+
       const rows = spec.tokens.map((t) => [
         t.part,
         t.property,
@@ -210,11 +287,12 @@ export function buildDocModel(
   spec: IntermediateSpec,
   prose: ProseDrafts | null,
   selected: Set<SectionId>,
+  selectedVariantIds?: Set<string>,
 ): DocFrameModel {
   const out: SectionBlock[] = [];
   for (const { id, label } of ALL_SECTIONS) {
     if (!selected.has(id)) continue;
-    out.push(buildSection(id, label, spec, prose));
+    out.push(buildSection(id, label, spec, prose, selectedVariantIds));
   }
   return { title: `${spec.name}: Guidelines`, sections: out };
 }
