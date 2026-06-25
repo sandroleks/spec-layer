@@ -572,13 +572,13 @@ const TEMPLATE = `
                 </svg>
               </button>
             </div>
-            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component. Requires an Anthropic API key. When off, those sections are filled with placeholder text.</p>
+            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component.</p>
             <div class="ai-info" id="ai-info" hidden>
-              <p>Drafts the <strong>Definition</strong>, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections from your component's structure and a snapshot of how it looks.</p>
-              <p>Bring your own <strong>Anthropic API key</strong>. It's stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your account. <a id="ai-info-settings">Add it in Settings</a>.</p>
+              <p>Drafts the <strong>Definition</strong>, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text.</p>
+              <p>Uses your own <strong>Anthropic API key</strong>, stored locally and billed to your account.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
-              You'll need an Anthropic API key. <a id="ai-nokey-link">Add one in Settings</a>.
+              Add your Anthropic API key to turn this on. <a id="ai-nokey-link">Open Settings</a>.
             </div>
           </div>
           <label class="switch">
@@ -698,7 +698,6 @@ export interface Refs {
   aiToggle: HTMLInputElement;
   aiInfoBtn: HTMLButtonElement;
   aiInfo: HTMLDivElement;
-  aiInfoSettings: HTMLElement;
   aiNokey: HTMLDivElement;
   aiNokeyLink: HTMLElement;
   // Section checklist + new actions
@@ -794,7 +793,6 @@ export function mount(): Refs {
     aiToggle: byId<HTMLInputElement>('ai-toggle'),
     aiInfoBtn: byId<HTMLButtonElement>('ai-info-btn'),
     aiInfo: byId<HTMLDivElement>('ai-info'),
-    aiInfoSettings: byId<HTMLElement>('ai-info-settings'),
     aiNokey: byId<HTMLDivElement>('ai-nokey'),
     aiNokeyLink: byId<HTMLElement>('ai-nokey-link'),
     sectionList,

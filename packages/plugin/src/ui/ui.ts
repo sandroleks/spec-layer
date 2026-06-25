@@ -146,7 +146,6 @@ refs.aiToggle.addEventListener('change', () => {
 });
 
 refs.aiNokeyLink.addEventListener('click', goToKeySettings);
-refs.aiInfoSettings.addEventListener('click', goToKeySettings);
 
 // Open the Anthropic console so users can create a key (figma.openExternal).
 refs.getKeyLink.addEventListener('click', () => {
