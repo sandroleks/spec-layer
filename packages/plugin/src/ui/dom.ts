@@ -466,6 +466,8 @@ const TEMPLATE = `
       font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 5px;
       background: var(--figma-color-bg-tertiary); color: var(--figma-color-text);
     }
+    /* Muted axis-name prefix inside a value chip, e.g. "Size" before "Small". */
+    .variant-chip .vc-axis { color: var(--figma-color-text-secondary); margin-right: 5px; }
     #variant-list .variant-row:hover .variant-chip { background: var(--figma-color-bg-secondary); }
     .variant-chip.flag {
       background: transparent; border: 1px solid var(--figma-color-border);

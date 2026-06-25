@@ -145,11 +145,12 @@ export function renderVariantPicker(refs: Refs, state: UiState): void {
 }
 
 /**
- * Build the chip row for one variant's axis values. Enum values render as filled
- * value chips ("Small", "Hover"); a boolean axis set to true renders as an
- * outlined flag chip named after the axis ("Disabled"); a false boolean is
- * omitted as noise. A variant with no chips (the all-default base) shows a muted
- * "Default" chip so the row is never empty.
+ * Build the chip row for one variant's axis values. Enum values render as a
+ * filled chip with a muted axis-name prefix then the value ("Size" + "Small"),
+ * so values like "Default" stay attributed to their property. A boolean axis set
+ * to true renders as an outlined flag chip named after the axis ("Disabled"),
+ * since the value is implied; a false boolean is omitted as noise. A variant
+ * with no chips at all shows a muted "Default" chip so the row is never empty.
  */
 function buildVariantChips(values: Record<string, string>): HTMLDivElement {
   const wrap = document.createElement('div');
@@ -159,14 +160,18 @@ function buildVariantChips(values: Record<string, string>): HTMLDivElement {
     const low = value.toLowerCase();
     if (low === 'false') continue;
     const chip = document.createElement('span');
+    chip.title = `${axis}: ${value}`;
     if (low === 'true') {
       chip.className = 'variant-chip flag';
       chip.textContent = axis;
     } else {
       chip.className = 'variant-chip';
-      chip.textContent = value;
+      const ax = document.createElement('span');
+      ax.className = 'vc-axis';
+      ax.textContent = axis;
+      chip.appendChild(ax);
+      chip.appendChild(document.createTextNode(value));
     }
-    chip.title = `${axis}: ${value}`;
     wrap.appendChild(chip);
     shown++;
   }
