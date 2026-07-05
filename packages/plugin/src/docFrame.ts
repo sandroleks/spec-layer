@@ -8,31 +8,17 @@ import type {
   TextRun,
 } from './ui/docModel';
 import { DEFAULT_HEADER_BG, DEFAULT_ACCENT } from './brandColors';
+import {
+  palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
+  type FontStyle,
+} from './frameKit';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
 // ---------------------------------------------------------------------------
-// The two brand colors are mutable: buildDocFrame() sets them from the user's
-// Settings (falling back to these defaults) before laying out the frame. The
-// build runs one frame at a time, so module-level state is safe here.
-let COLOR_HEADER_BG: RGB = hex(DEFAULT_HEADER_BG); // navy header band
-let COLOR_ACCENT: RGB = hex(DEFAULT_ACCENT); // teal eyebrow rule / number
-const COLOR_ON_HEADER: RGB = hex('#ffffff'); // title on navy
-const COLOR_ON_HEADER_MUTED: RGB = hex('#9fb3c6'); // subtitle on navy
-const COLOR_HEADING: RGB = hex('#0f172a'); // section headings / emphasized values
-const COLOR_BODY: RGB = hex('#334155'); // paragraph / bullet ink
-const COLOR_LABEL: RGB = hex('#475569'); // table row labels (between heading and muted)
-const COLOR_MUTED: RGB = hex('#64748b'); // secondary / placeholder / overlines
-const COLOR_BG: RGB = hex('#ffffff'); // card fill
-const COLOR_BORDER: RGB = hex('#e2e8f0'); // outer / table border
-const COLOR_DIVIDER: RGB = hex('#eef2f6'); // row dividers
-const COLOR_TABLE_HEAD_BG: RGB = hex('#f8fafc'); // table header tint
-const COLOR_CHIP_BG: RGB = hex('#eef1f5'); // token chip background
-const COLOR_PANE_BG: RGB = hex('#fbfcfd'); // variant card left-pane tint
 
 // Layout constants
 const PAD_X = 56; // horizontal padding for header + content
-const SLOT_MAX_H = 160; // cap instance height inside a slot
 const VAR_LEFT_W = 240; // per-variant card: left pane (preview + properties)
 const VAR_PANE_PAD = 20; // per-variant card: pane padding
 const TOKEN_KEY_COL_W = 120; // token tables: fixed width of the non-Token columns
@@ -46,56 +32,9 @@ const CARD_WIDTH_MAX = 1440; // safety cap so a pathological token can't run awa
 let CARD_WIDTH = CARD_WIDTH_MIN;
 let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
-const FONT_FAMILY = 'Inter';
-type FontStyle = 'Regular' | 'Medium' | 'Bold';
-
-function font(style: FontStyle): FontName {
-  return { family: FONT_FAMILY, style };
-}
-
-/** Parse a #rrggbb string into a normalized RGB object. */
-function hex(value: string): RGB {
-  const h = value.replace('#', '');
-  return {
-    r: parseInt(h.slice(0, 2), 16) / 255,
-    g: parseInt(h.slice(2, 4), 16) / 255,
-    b: parseInt(h.slice(4, 6), 16) / 255,
-  };
-}
-
-function solidFill(color: RGB): Paint[] {
-  return [{ type: 'SOLID', color }];
-}
-
 // ---------------------------------------------------------------------------
 // Text construction
 // ---------------------------------------------------------------------------
-
-/**
- * Create a TextNode using one of the pre-loaded Inter faces.
- * Fonts MUST already be loaded (see buildDocFrame) before this is called.
- */
-function makeText(
-  chars: string,
-  style: FontStyle,
-  size: number,
-  color: RGB = COLOR_BODY,
-  lineHeightPct?: number,
-  trackingPct?: number,
-): TextNode {
-  const node = figma.createText();
-  node.fontName = font(style);
-  node.fontSize = size;
-  node.characters = chars;
-  node.fills = solidFill(color);
-  if (lineHeightPct !== undefined) {
-    node.lineHeight = { value: lineHeightPct, unit: 'PERCENT' };
-  }
-  if (trackingPct !== undefined) {
-    node.letterSpacing = { value: trackingPct, unit: 'PERCENT' };
-  }
-  return node;
-}
 
 /**
  * Apply the Inter Bold face over the character ranges that correspond to bold
@@ -139,34 +78,12 @@ function splitLead(md: string): { lead: string; rest: string } {
 // Layout helpers
 // ---------------------------------------------------------------------------
 
-/** A vertical auto-layout frame that hugs its contents. */
-function vstack(spacing: number): FrameNode {
-  const frame = figma.createFrame();
-  frame.layoutMode = 'VERTICAL';
-  frame.primaryAxisSizingMode = 'AUTO';
-  frame.counterAxisSizingMode = 'AUTO';
-  frame.itemSpacing = spacing;
-  frame.fills = [];
-  return frame;
-}
-
-/** A horizontal auto-layout frame that hugs its height. */
-function hstack(spacing: number): FrameNode {
-  const frame = figma.createFrame();
-  frame.layoutMode = 'HORIZONTAL';
-  frame.primaryAxisSizingMode = 'AUTO';
-  frame.counterAxisSizingMode = 'AUTO';
-  frame.itemSpacing = spacing;
-  frame.fills = [];
-  return frame;
-}
-
 /** A small teal accent bar used as a section eyebrow rule. */
 function accentRule(): FrameNode {
   const rule = figma.createFrame();
   rule.resize(28, 3);
   rule.cornerRadius = 2;
-  rule.fills = solidFill(COLOR_ACCENT);
+  rule.fills = solidFill(palette.accent);
   return rule;
 }
 
@@ -190,7 +107,7 @@ function makeBulletRow(bullet: Bullet): FrameNode {
 
   if (placeholder) {
     // Muted, marker-less placeholder line ("None.", "To be written.")
-    const node = makeText(placeholder, 'Regular', 15, COLOR_MUTED, 155);
+    const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
     row.appendChild(node);
     node.layoutSizingHorizontal = 'FILL';
     node.textAutoResize = 'HEIGHT';
@@ -198,7 +115,7 @@ function makeBulletRow(bullet: Bullet): FrameNode {
   }
 
   const { marker, rest } = splitMarker(bullet.text);
-  const markerColor = marker === '✅' ? COLOR_ACCENT : marker === '❌' ? COLOR_MUTED : COLOR_ACCENT;
+  const markerColor = marker === '✅' ? palette.accent : marker === '❌' ? palette.muted : palette.accent;
   const markerNode = makeText(marker, 'Medium', 15, markerColor, 155);
   row.appendChild(markerNode);
   markerNode.textAutoResize = 'WIDTH_AND_HEIGHT';
@@ -206,7 +123,7 @@ function makeBulletRow(bullet: Bullet): FrameNode {
   // Re-parse the rest so bold lead-ins survive the marker split.
   const runs = parseRuns(rest);
   const plain = runs.map((r) => r.text).join('');
-  const content = makeText(plain, 'Regular', 15, COLOR_BODY, 155);
+  const content = makeText(plain, 'Regular', 15, palette.body, 155);
   row.appendChild(content);
   content.layoutSizingHorizontal = 'FILL';
   content.textAutoResize = 'HEIGHT';
@@ -226,7 +143,7 @@ function buildProse(text: string): SceneNode[] {
 
     const placeholder = emphasisOnly(line);
     if (placeholder) {
-      out.push(makeText(placeholder, 'Regular', 15, COLOR_MUTED, 155));
+      out.push(makeText(placeholder, 'Regular', 15, palette.muted, 155));
       continue;
     }
 
@@ -238,12 +155,12 @@ function buildProse(text: string): SceneNode[] {
     } else {
       const runs = parseRuns(line);
       const plain = runs.map((r) => r.text).join('');
-      const node = makeText(plain, 'Regular', 15, COLOR_BODY, 155);
+      const node = makeText(plain, 'Regular', 15, palette.body, 155);
       applyBoldRuns(node, runs, 0);
       out.push(node);
     }
   }
-  if (out.length === 0) out.push(makeText('', 'Regular', 15, COLOR_BODY, 155));
+  if (out.length === 0) out.push(makeText('', 'Regular', 15, palette.body, 155));
   return out;
 }
 
@@ -288,19 +205,19 @@ function buildTable(columns: string[], rows: string[][]): FrameNode {
   const table = vstack(0);
   table.cornerRadius = 8;
   table.clipsContent = true;
-  table.strokes = solidFill(COLOR_BORDER);
+  table.strokes = solidFill(palette.border);
   table.strokeWeight = 1;
 
   const colCount = Math.max(columns.length, 1);
 
   // Header row
   const head = hstack(0);
-  head.fills = solidFill(COLOR_TABLE_HEAD_BG);
+  head.fills = solidFill(palette.tableHeadBg);
   table.appendChild(head);
   head.layoutSizingHorizontal = 'FILL';
   head.counterAxisAlignItems = 'MIN';
   for (let i = 0; i < colCount; i++) {
-    const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED);
+    const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, palette.muted);
     head.appendChild(cell);
     applyColWidth(cell, widths[i]);
   }
@@ -310,9 +227,9 @@ function buildTable(columns: string[], rows: string[][]): FrameNode {
     const empty = hstack(0);
     table.appendChild(empty);
     empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(COLOR_DIVIDER);
+    empty.strokes = solidFill(palette.divider);
     empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, COLOR_MUTED);
+    const cell = makeCell('None.', 'Regular', 14, palette.muted);
     empty.appendChild(cell);
     applyColWidth(cell, 'grow');
   }
@@ -322,7 +239,7 @@ function buildTable(columns: string[], rows: string[][]): FrameNode {
     table.appendChild(row);
     row.layoutSizingHorizontal = 'FILL';
     row.counterAxisAlignItems = 'MIN';
-    row.strokes = solidFill(COLOR_DIVIDER);
+    row.strokes = solidFill(palette.divider);
     row.strokeTopWeight = 1;
     row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
@@ -334,7 +251,7 @@ function buildTable(columns: string[], rows: string[][]): FrameNode {
         r[i] ?? '',
         isKey ? 'Medium' : 'Regular',
         14,
-        isKey ? COLOR_HEADING : COLOR_BODY,
+        isKey ? palette.heading : palette.body,
       );
       row.appendChild(cell);
       applyColWidth(cell, widths[i]);
@@ -403,7 +320,7 @@ function colorChip(color: RGB): FrameNode {
   chip.resize(12, 12);
   chip.cornerRadius = 3;
   chip.fills = solidFill(color);
-  chip.strokes = solidFill(COLOR_BORDER);
+  chip.strokes = solidFill(palette.border);
   chip.strokeWeight = 1;
   return chip;
 }
@@ -429,7 +346,7 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
   chip.paddingLeft = 8;
   chip.paddingRight = 8;
   chip.cornerRadius = 6;
-  chip.fills = solidFill(COLOR_CHIP_BG);
+  chip.fills = solidFill(palette.chipBg);
 
   const color = await resolveTokenColor(token);
   if (color) chip.appendChild(colorChip(color));
@@ -437,7 +354,7 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
   // Chip and text both hug their content (single-line pill). The Token column is
   // sized wide enough to hold the longest token (see fitFrameWidthToTokens), so
   // the pill never overflows and gets clipped.
-  const text = makeText(token, 'Medium', 13, COLOR_HEADING, 140);
+  const text = makeText(token, 'Medium', 13, palette.heading, 140);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
 
@@ -472,17 +389,17 @@ async function buildTokenTable(
   if (bordered) {
     table.cornerRadius = 8;
     table.clipsContent = true;
-    table.strokes = solidFill(COLOR_BORDER);
+    table.strokes = solidFill(palette.border);
     table.strokeWeight = 1;
   }
 
   const head = hstack(0);
-  head.fills = solidFill(COLOR_TABLE_HEAD_BG);
+  head.fills = solidFill(palette.tableHeadBg);
   table.appendChild(head);
   head.layoutSizingHorizontal = 'FILL';
   head.counterAxisAlignItems = 'MIN';
   for (let i = 0; i < dataCount; i++) {
-    const cell = makeCell((dataColumns[i] ?? '').toUpperCase(), 'Medium', 11, COLOR_MUTED, 5);
+    const cell = makeCell((dataColumns[i] ?? '').toUpperCase(), 'Medium', 11, palette.muted, 5);
     head.appendChild(cell);
     sizeCol(cell, i);
   }
@@ -491,9 +408,9 @@ async function buildTokenTable(
     const empty = hstack(0);
     table.appendChild(empty);
     empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(COLOR_DIVIDER);
+    empty.strokes = solidFill(palette.divider);
     empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, COLOR_MUTED);
+    const cell = makeCell('None.', 'Regular', 14, palette.muted);
     empty.appendChild(cell);
     cell.layoutSizingHorizontal = 'FILL';
     return table;
@@ -510,13 +427,13 @@ async function buildTokenTable(
       table.appendChild(groupHead);
       groupHead.layoutSizingHorizontal = 'FILL';
       groupHead.counterAxisAlignItems = 'MIN';
-      groupHead.fills = solidFill(COLOR_TABLE_HEAD_BG);
-      groupHead.strokes = solidFill(COLOR_BORDER);
+      groupHead.fills = solidFill(palette.tableHeadBg);
+      groupHead.strokes = solidFill(palette.border);
       groupHead.strokeTopWeight = 1;
       groupHead.strokeBottomWeight = 0;
       groupHead.strokeLeftWeight = 0;
       groupHead.strokeRightWeight = 0;
-      const cell = makeCell(part.toUpperCase(), 'Medium', 11, COLOR_HEADING, 6);
+      const cell = makeCell(part.toUpperCase(), 'Medium', 11, palette.heading, 6);
       cell.paddingTop = 7;
       cell.paddingBottom = 7;
       groupHead.appendChild(cell);
@@ -527,7 +444,7 @@ async function buildTokenTable(
     table.appendChild(row);
     row.layoutSizingHorizontal = 'FILL';
     row.counterAxisAlignItems = 'MIN';
-    row.strokes = solidFill(COLOR_DIVIDER);
+    row.strokes = solidFill(palette.divider);
     row.strokeTopWeight = 1;
     row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
@@ -538,7 +455,7 @@ async function buildTokenTable(
       // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
         ? await makeTokenCell(value)
-        : makeCell(value, 'Medium', 13, COLOR_LABEL);
+        : makeCell(value, 'Medium', 13, palette.label);
       row.appendChild(cell);
       sizeCol(cell, i);
     }
@@ -547,48 +464,10 @@ async function buildTokenTable(
   return table;
 }
 
-/** A slot holding a live instance of the variant (or a placeholder). `width` is
- *  the slot's box width; the instance is rescaled to fit inside its padding. */
-async function buildSlot(nodeId: string, width: number): Promise<FrameNode> {
-  const slot = figma.createFrame();
-  slot.name = 'Instance slot';
-  slot.layoutMode = 'VERTICAL';
-  slot.counterAxisSizingMode = 'FIXED'; // fixed width
-  slot.primaryAxisSizingMode = 'AUTO'; // hug height
-  slot.primaryAxisAlignItems = 'CENTER';
-  slot.counterAxisAlignItems = 'CENTER';
-  slot.paddingTop = slot.paddingBottom = slot.paddingLeft = slot.paddingRight = 12;
-  slot.fills = solidFill(COLOR_BG);
-  slot.cornerRadius = 8;
-  slot.clipsContent = true;
-  slot.strokes = solidFill(COLOR_DIVIDER);
-  slot.strokeWeight = 1;
-  slot.resize(width, width);
-
-  let placed = false;
-  try {
-    const node = await figma.getNodeByIdAsync(nodeId);
-    if (node && node.type === 'COMPONENT') {
-      const inst = (node as ComponentNode).createInstance();
-      slot.appendChild(inst);
-      const maxW = width - 24;
-      const scale = Math.min(1, maxW / inst.width, SLOT_MAX_H / inst.height);
-      if (scale < 1) inst.rescale(scale);
-      placed = true;
-    }
-  } catch {
-    /* fall through to placeholder */
-  }
-  if (!placed) {
-    slot.appendChild(makeText('Drop instance', 'Regular', 11, COLOR_MUTED));
-  }
-  return slot;
-}
-
 /** The left-pane PROPERTIES list: a small heading + axis/value rows. */
 function buildPropertyList(props: { name: string; value: string }[]): FrameNode {
   const wrap = vstack(8);
-  const heading = makeText('PROPERTIES', 'Medium', 10, COLOR_MUTED);
+  const heading = makeText('PROPERTIES', 'Medium', 10, palette.muted);
   wrap.appendChild(heading);
   heading.layoutSizingHorizontal = 'FILL';
 
@@ -602,12 +481,12 @@ function buildPropertyList(props: { name: string; value: string }[]): FrameNode 
     list.appendChild(row);
     row.layoutSizingHorizontal = 'FILL';
 
-    const key = makeText(p.name, 'Regular', 12, COLOR_MUTED, 140);
+    const key = makeText(p.name, 'Regular', 12, palette.muted, 140);
     row.appendChild(key);
     key.layoutSizingHorizontal = 'FILL';
     key.textAutoResize = 'HEIGHT';
 
-    const value = makeText(p.value, 'Medium', 12, COLOR_HEADING, 140);
+    const value = makeText(p.value, 'Medium', 12, palette.heading, 140);
     row.appendChild(value);
     value.textAutoResize = 'WIDTH_AND_HEIGHT';
   }
@@ -637,8 +516,8 @@ function numberBadge(n: number, size: number): FrameNode {
   badge.counterAxisAlignItems = 'CENTER';
   badge.resize(size, size);
   badge.cornerRadius = size / 2;
-  badge.fills = solidFill(COLOR_ACCENT);
-  const label = makeText(String(n), 'Bold', size <= 18 ? 10 : 11, COLOR_ON_HEADER);
+  badge.fills = solidFill(palette.accent);
+  const label = makeText(String(n), 'Bold', size <= 18 ? 10 : 11, palette.onHeader);
   badge.appendChild(label);
   return badge;
 }
@@ -647,7 +526,7 @@ function numberBadge(n: number, size: number): FrameNode {
  *  top of the screenshot. */
 function anatomyPin(n: number): FrameNode {
   const pin = numberBadge(n, PIN_SIZE);
-  pin.strokes = solidFill(COLOR_BG);
+  pin.strokes = solidFill(palette.bg);
   pin.strokeWeight = 2;
   pin.effects = [
     {
@@ -672,7 +551,7 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
     `${part.name}${part.nested ? '  ·  component' : ''}`,
     'Regular',
     15,
-    COLOR_BODY,
+    palette.body,
     145,
   );
   row.appendChild(text);
@@ -723,9 +602,9 @@ async function buildAnatomyDiagram(
   const card = vstack(20);
   card.paddingTop = card.paddingBottom = ANATOMY_PAD;
   card.paddingLeft = card.paddingRight = ANATOMY_PAD;
-  card.fills = solidFill(COLOR_PANE_BG);
+  card.fills = solidFill(palette.paneBg);
   card.cornerRadius = 8;
-  card.strokes = solidFill(COLOR_BORDER);
+  card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
 
@@ -785,7 +664,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
   head.layoutSizingHorizontal = 'FILL';
   head.appendChild(accentRule());
 
-  const heading = makeText(section.heading, 'Bold', 24, COLOR_HEADING, 130);
+  const heading = makeText(section.heading, 'Bold', 24, palette.heading, 130);
   head.appendChild(heading);
   heading.layoutSizingHorizontal = 'FILL';
 
@@ -826,16 +705,16 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       const card = hstack(0);
       card.cornerRadius = 12;
       card.clipsContent = true;
-      card.strokes = solidFill(COLOR_BORDER);
+      card.strokes = solidFill(palette.border);
       card.strokeWeight = 1;
       body.appendChild(card);
       card.layoutSizingHorizontal = 'FILL';
 
       // Left pane
       const left = vstack(16);
-      left.fills = solidFill(COLOR_PANE_BG);
+      left.fills = solidFill(palette.paneBg);
       left.paddingTop = left.paddingBottom = left.paddingLeft = left.paddingRight = VAR_PANE_PAD;
-      left.strokes = solidFill(COLOR_BORDER);
+      left.strokes = solidFill(palette.border);
       left.strokeRightWeight = 1;
       left.strokeTopWeight = 0;
       left.strokeBottomWeight = 0;
@@ -879,7 +758,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
 
 function buildHeader(componentName: string, subtitleMd: string | null): FrameNode {
   const band = vstack(14);
-  band.fills = solidFill(COLOR_HEADER_BG);
+  band.fills = solidFill(palette.headerBg);
   band.paddingTop = 48;
   band.paddingBottom = subtitleMd ? 44 : 48;
   band.paddingLeft = PAD_X;
@@ -888,11 +767,11 @@ function buildHeader(componentName: string, subtitleMd: string | null): FrameNod
   // We append children, set FILL, then fill text — order matters for FILL.
   const tmp: TextNode[] = [];
 
-  const eyebrow = makeText('GUIDELINES', 'Medium', 12, COLOR_ON_HEADER_MUTED);
+  const eyebrow = makeText('GUIDELINES', 'Medium', 12, palette.onHeaderMuted);
   band.appendChild(eyebrow);
   tmp.push(eyebrow);
 
-  const title = makeText(componentName, 'Bold', 38, COLOR_ON_HEADER, 115);
+  const title = makeText(componentName, 'Bold', 38, palette.onHeader, 115);
   band.appendChild(title);
   tmp.push(title);
 
@@ -901,7 +780,7 @@ function buildHeader(componentName: string, subtitleMd: string | null): FrameNod
     // raw markdown shows in the subtitle.
     const runs = parseRuns(subtitleMd.replace(/^[-*]\s+/, ''));
     const plain = runs.map((r) => r.text).join('');
-    const sub = makeText(plain, 'Regular', 16, COLOR_ON_HEADER_MUTED, 155);
+    const sub = makeText(plain, 'Regular', 16, palette.onHeaderMuted, 155);
     band.appendChild(sub);
     applyBoldRuns(sub, runs, 0);
     tmp.push(sub);
@@ -980,8 +859,8 @@ export async function buildDocFrame(
   },
 ): Promise<FrameNode> {
   // Apply the (already-resolved) brand colors before any layout reads them.
-  COLOR_HEADER_BG = hex(brand.headerBg);
-  COLOR_ACCENT = hex(brand.accent);
+  palette.headerBg = hex(brand.headerBg);
+  palette.accent = hex(brand.accent);
 
   // Load fonts FIRST — bold runs need the Bold face before setRangeFontName,
   // and fitFrameWidthToTokens measures text (which needs the face loaded).
@@ -1026,10 +905,10 @@ export async function buildDocFrame(
   frame.primaryAxisSizingMode = 'AUTO';
   frame.counterAxisSizingMode = 'FIXED';
   frame.itemSpacing = 0;
-  frame.fills = solidFill(COLOR_BG);
+  frame.fills = solidFill(palette.bg);
   frame.cornerRadius = 16;
   frame.clipsContent = true;
-  frame.strokes = solidFill(COLOR_BORDER);
+  frame.strokes = solidFill(palette.border);
   frame.strokeWeight = 1;
   frame.resize(CARD_WIDTH, frame.height);
   frame.effects = [
