@@ -316,6 +316,85 @@ async function resolveTokenColor(token: string): Promise<RGB | null> {
   return v ? resolveVariableColor(v) : null;
 }
 
+// Local FLOAT variables, loaded once, keyed by full name — mirrors the color
+// cache. Used to append a resolved-number suffix (e.g. "· 12") to bound tokens
+// that carry no color swatch. Best-effort: any failure yields no suffix.
+let floatVarCache: Map<string, Variable> | null = null;
+
+async function loadFloatVars(): Promise<Map<string, Variable>> {
+  if (floatVarCache) return floatVarCache;
+  const map = new Map<string, Variable>();
+  try {
+    const vars = await figma.variables.getLocalVariablesAsync('FLOAT');
+    for (const v of vars) map.set(v.name, v);
+  } catch {
+    /* variables API unavailable — no suffixes */
+  }
+  floatVarCache = map;
+  return map;
+}
+
+/** Resolve a FLOAT variable to its default-mode number, chasing aliases up to
+ *  4 levels — mirrors resolveVariableColor exactly. */
+async function resolveVariableNumber(v: Variable, depth = 0): Promise<number | null> {
+  if (depth > 4) return null;
+  try {
+    const collection = await figma.variables.getVariableCollectionByIdAsync(v.variableCollectionId);
+    const modeId = collection?.defaultModeId;
+    if (!modeId) return null;
+    const value = v.valuesByMode[modeId];
+    if (value && typeof value === 'object' && 'type' in value && (value as VariableAlias).type === 'VARIABLE_ALIAS') {
+      const aliased = await figma.variables.getVariableByIdAsync((value as VariableAlias).id);
+      return aliased ? resolveVariableNumber(aliased, depth + 1) : null;
+    }
+    if (typeof value === 'number') return value;
+  } catch {
+    /* unresolved → no suffix */
+  }
+  return null;
+}
+
+/** Resolve a token name to its default-mode number, or null if it isn't a
+ *  known FLOAT token. */
+async function resolveTokenNumber(token: string): Promise<number | null> {
+  const map = await loadFloatVars();
+  const v = map.get(token);
+  return v ? resolveVariableNumber(v) : null;
+}
+
+// Local text styles, loaded once, keyed by name — used to append a typography
+// suffix (family / style / size) to a token matching a text style.
+let textStyleCache: Map<string, TextStyle> | null = null;
+
+async function loadTextStyles(): Promise<Map<string, TextStyle>> {
+  if (textStyleCache) return textStyleCache;
+  const map = new Map<string, TextStyle>();
+  try {
+    const styles = await figma.getLocalTextStylesAsync();
+    for (const s of styles) map.set(s.name, s);
+  } catch {
+    /* text styles API unavailable — no suffixes */
+  }
+  textStyleCache = map;
+  return map;
+}
+
+/** Resolve a token name to a "family style size" summary for a matching text
+ *  style, or null. Best-effort: mixed fontName/fontSize or any throw → null. */
+async function resolveTokenTypography(token: string): Promise<string | null> {
+  try {
+    const map = await loadTextStyles();
+    const style = map.get(token);
+    if (!style) return null;
+    const fontName = style.fontName;
+    if (typeof fontName !== 'object' || !('family' in fontName)) return null;
+    if (typeof style.fontSize !== 'number') return null;
+    return `${fontName.family} ${fontName.style} ${style.fontSize}`;
+  } catch {
+    return null;
+  }
+}
+
 /** A 12×12 rounded color chip. */
 function colorChip(color: RGB): FrameNode {
   const chip = figma.createFrame();
@@ -328,8 +407,9 @@ function colorChip(color: RGB): FrameNode {
 }
 
 /** The Token cell: a rounded chip (like the web) holding an optional color
- *  swatch plus the token name. */
-async function makeTokenCell(token: string): Promise<FrameNode> {
+ *  swatch plus the token name. When `unbound`, the value is a raw hardcoded
+ *  value (not a token): no color lookup, a dashed muted outline, and muted ink. */
+async function makeTokenCell(token: string, unbound = false): Promise<FrameNode> {
   const cell = vstack(0);
   cell.paddingTop = 10;
   cell.paddingBottom = 10;
@@ -348,17 +428,43 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
   chip.paddingLeft = 8;
   chip.paddingRight = 8;
   chip.cornerRadius = 6;
-  chip.fills = solidFill(palette.chipBg);
 
-  const color = await resolveTokenColor(token);
-  if (color) chip.appendChild(colorChip(color));
+  if (unbound) {
+    // Raw value: no swatch, no fill, dashed muted outline.
+    chip.fills = [];
+    chip.strokes = solidFill(palette.muted);
+    chip.strokeWeight = 1;
+    chip.dashPattern = [3, 2];
+  } else {
+    chip.fills = solidFill(palette.chipBg);
+    const color = await resolveTokenColor(token);
+    if (color) chip.appendChild(colorChip(color));
+  }
 
   // Chip and text both hug their content (single-line pill). The Token column is
   // sized wide enough to hold the longest token (see fitFrameWidthToTokens), so
   // the pill never overflows and gets clipped.
-  const text = makeText(token, 'Medium', 13, palette.heading, 140);
+  const text = makeText(token, 'Medium', 13, unbound ? palette.muted : palette.heading, 140);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
+
+  // Bound tokens with no color swatch: append a best-effort resolved-value
+  // suffix (a FLOAT number, or a text-style summary) as a separate muted node so
+  // the chip stays single-line. Any failure → no suffix, never a crash.
+  if (!unbound && chip.children.length === 1) {
+    let suffix: string | null = null;
+    const n = await resolveTokenNumber(token);
+    if (n !== null) suffix = `· ${n}`;
+    else {
+      const typo = await resolveTokenTypography(token);
+      if (typo) suffix = `· ${typo}`;
+    }
+    if (suffix) {
+      const sfx = makeText(suffix, 'Regular', 11, palette.muted, 140);
+      sfx.textAutoResize = 'WIDTH_AND_HEIGHT';
+      chip.appendChild(sfx);
+    }
+  }
 
   cell.appendChild(chip);
   return cell;
@@ -452,13 +558,16 @@ async function buildTokenTable(
     row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
     row.strokeRightWeight = 0;
+    // Diff rows (a token that changed from the default variant) get a faint
+    // accent tint and a stronger Property ink so they read as the delta.
+    if (r.diff) row.fills = [{ type: 'SOLID', color: palette.accent, opacity: 0.06 }];
     for (let i = 0; i < dataCount; i++) {
       const value = cells[i] ?? '';
       const isToken = i === dataCount - 1;
       // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
-        ? await makeTokenCell(value)
-        : makeCell(value, 'Medium', 13, palette.label);
+        ? await makeTokenCell(value, r.unbound)
+        : makeCell(value, 'Medium', 13, r.diff ? palette.heading : palette.label);
       row.appendChild(cell);
       sizeCol(cell, i);
     }
@@ -745,6 +854,23 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       const table = await buildTokenTable(section.columns, variant.rows, false);
       right.appendChild(table);
       table.layoutSizingHorizontal = 'FILL';
+
+      // Non-default cards suppress rows identical to the default; a summary line
+      // accounts for them so the card doesn't read as if those tokens are absent.
+      if (!variant.isDefault && variant.sameAsDefault > 0) {
+        const note = hstack(0);
+        note.paddingTop = 10;
+        note.paddingBottom = 12;
+        note.paddingLeft = 16;
+        note.paddingRight = 16;
+        const label = variant.rows.length === 0
+          ? `Identical to default (${variant.sameAsDefault} tokens)`
+          : `Same as default · ${variant.sameAsDefault} more token${variant.sameAsDefault === 1 ? '' : 's'}`;
+        const t = makeText(label, 'Regular', 12, palette.muted, 140);
+        note.appendChild(t);
+        right.appendChild(note);
+        note.layoutSizingHorizontal = 'FILL';
+      }
     }
   } else if (section.kind === 'measure') {
     const diagram = await buildMeasureSection(section);

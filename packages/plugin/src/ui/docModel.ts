@@ -98,6 +98,28 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
 const AI_PLACEHOLDER = '_To be written._';
 
 /**
+ * Merge raw (unbound) rows into the resolved token rows so each raw row sits
+ * inside its matching part group. Each raw row is inserted after the last
+ * existing row of the same part; raw rows whose part has no token rows are
+ * appended at the end in first-seen order. Stable — token-row order is
+ * preserved. Prevents buildTokenTable's `part !== currentPart` grouping from
+ * emitting a duplicate group-header band for a part seen earlier.
+ */
+function mergeRawIntoParts<T extends { part: string }>(resolved: T[], raw: T[]): T[] {
+  const out = [...resolved];
+  for (const r of raw) {
+    // Find the index just past the last existing row with the same part.
+    let insertAt = -1;
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].part === r.part) insertAt = i + 1;
+    }
+    if (insertAt === -1) out.push(r);
+    else out.splice(insertAt, 0, r);
+  }
+  return out;
+}
+
+/**
  * Parse a Markdown string with **bold** markers into an array of TextRun objects.
  * Runs between ** markers are bold; everything else is plain.
  */
@@ -303,11 +325,18 @@ function buildSection(
           .map((inst) => {
             const isDefault = inst.nodeId === defInst.nodeId;
             const resolved = resolveRows(inst.values);
-            // Raw values are observed on the default variant only.
+            // Raw values are observed on the default variant only. Merge each raw
+            // row into its matching part group (stable): insert after the last
+            // existing row of the same part so buildTokenTable's part-change
+            // grouping doesn't emit a duplicate group-header band. Raw rows whose
+            // part has no token rows append at the end in first-seen order.
             const withRaw = isDefault
-              ? [...resolved, ...spec.rawValues.map((r) => ({
-                  part: r.part, property: r.property, token: r.value, unbound: true,
-                }))]
+              ? mergeRawIntoParts(
+                  resolved,
+                  spec.rawValues.map((r) => ({
+                    part: r.part, property: r.property, token: r.value, unbound: true,
+                  })),
+                )
               : resolved;
 
             let sameAsDefault = 0;

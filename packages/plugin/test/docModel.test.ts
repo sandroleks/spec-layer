@@ -178,6 +178,24 @@ describe('variant token cards: diff vs default', () => {
     expect(def.sameAsDefault).toBe(0);
   });
 
+  it('merges a raw row into its matching part group instead of appending flat', () => {
+    const specM = {
+      ...spec,
+      rawValues: [{ part: 'Container', property: 'gap', value: '4' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(specM, null, new Set(['tokens']), new Set(['1:2', '1:3']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantTokens') throw new Error('expected variantTokens');
+    const def = block.variants.find((v) => v.isDefault)!;
+    // The raw Container/gap row sits after the last existing Container row, not
+    // appended after a part boundary — so all Container rows stay contiguous.
+    expect(def.rows).toEqual([
+      { part: 'Container', property: 'padding', token: 'spacing/md', unbound: false, diff: false },
+      { part: 'Container', property: 'fill', token: 'color/rest', unbound: false, diff: false },
+      { part: 'Container', property: 'gap', token: '4', unbound: true, diff: false },
+    ]);
+  });
+
   it('non-default card keeps only differing rows and counts the rest', () => {
     const model = buildDocModel(spec, null, new Set(['tokens']), new Set(['1:2', '1:3']));
     const block = model.sections[0];
