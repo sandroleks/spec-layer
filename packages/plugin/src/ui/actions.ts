@@ -48,6 +48,8 @@ export interface UiState {
   pendingAiNote: string;
   // User-customized brand colors for the generated frame (null fields = default).
   brandColors: BrandColors;
+  // How the anatomy section renders: numbered diagram, tabular list, or both.
+  anatomyView: 'diagram' | 'table' | 'both';
 }
 
 export function createState(): UiState {
@@ -63,6 +65,7 @@ export function createState(): UiState {
     generatedProse: null,
     pendingAiNote: '',
     brandColors: emptyBrandColors(),
+    anatomyView: 'diagram',
   };
 }
 
@@ -226,7 +229,13 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       if (id) variantIds.add(id);
     });
 
-    const model = buildDocModel(state.currentSpec!, state.generatedProse, selected, variantIds);
+    const model = buildDocModel(
+      state.currentSpec!,
+      state.generatedProse,
+      selected,
+      variantIds,
+      { anatomyView: state.anatomyView },
+    );
     send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
     // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {

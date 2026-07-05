@@ -51,15 +51,31 @@ export interface VariantTokenBlock {
 
 /** One anatomy part placed on the diagram: its 1-based number, label, whether
  *  it is a nested component, and the Figma node id used to resolve its position
- *  (and screenshot) live in the frame builder. */
-export interface AnatomyPartBlock { n: number; name: string; nested: boolean; id: string }
+ *  (and screenshot) live in the frame builder. `depth` is the nesting level
+ *  (0 = direct part); `component` names the main component when nested;
+ *  `tokens` lists the unique token names bound to this part; `type` is the raw
+ *  Figma node type (e.g. "FRAME"), shown lowercased in the table view. */
+export interface AnatomyPartBlock {
+  n: number;
+  name: string;
+  nested: boolean;
+  id: string;
+  depth: number;
+  component?: string;
+  tokens: string[];
+  type: string;
+}
+
+/** Options threaded through `buildDocModel` that affect how sections render
+ *  without changing the underlying spec — currently just the anatomy view mode. */
+export interface DocModelOptions { anatomyView?: 'diagram' | 'table' | 'both' }
 
 export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'prose'; text: string }
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
-  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[] }
+  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both' }
   | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string> };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
@@ -174,6 +190,7 @@ function buildSection(
   spec: IntermediateSpec,
   prose: ProseDrafts | null,
   selectedVariantIds?: Set<string>,
+  options?: DocModelOptions,
 ): SectionBlock {
   switch (id) {
     case 'definition': {
@@ -215,8 +232,13 @@ function buildSection(
           name: a.name,
           nested: a.nested,
           id: a.id,
+          depth: a.depth,
+          component: a.component,
+          tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.token))],
+          type: a.type,
         }));
-        return { id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts };
+        const view = options?.anatomyView ?? 'diagram';
+        return { id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts, view };
       }
       return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
     }
@@ -396,11 +418,12 @@ export function buildDocModel(
   prose: ProseDrafts | null,
   selected: Set<SectionId>,
   selectedVariantIds?: Set<string>,
+  options?: DocModelOptions,
 ): DocFrameModel {
   const out: SectionBlock[] = [];
   for (const { id, label } of ALL_SECTIONS) {
     if (!selected.has(id)) continue;
-    out.push(buildSection(id, label, spec, prose, selectedVariantIds));
+    out.push(buildSection(id, label, spec, prose, selectedVariantIds, options));
   }
   return { title: `${spec.name}: Guidelines`, sections: out };
 }

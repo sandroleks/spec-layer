@@ -170,6 +170,20 @@ refs.selectAllBtn.addEventListener('click', () => {
 // Toggling the Tokens section shows/hides the per-variant picker.
 refs.sectionChecks['tokens']?.addEventListener('change', () => renderVariantPicker(refs, state));
 
+// Toggling the Anatomy section shows/hides the diagram/table/both view toggle.
+// Initialize visibility to match the checkbox's default-checked state.
+refs.anatomyView.style.display = refs.sectionChecks['anatomy']?.checked ? 'flex' : 'none';
+refs.sectionChecks['anatomy']?.addEventListener('change', () => {
+  refs.anatomyView.style.display = refs.sectionChecks['anatomy']?.checked ? 'flex' : 'none';
+});
+
+// Anatomy view radios: reflect the selected mode onto state.
+refs.anatomyView.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target.name !== 'anatomy-view') return;
+  state.anatomyView = target.value as 'diagram' | 'table' | 'both';
+});
+
 refs.variantSelectAll.addEventListener('click', () => {
   const checks = Array.from(refs.variantList.querySelectorAll('input')) as HTMLInputElement[];
   const allOn = checks.length > 0 && checks.every((c) => c.checked);

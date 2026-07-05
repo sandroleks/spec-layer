@@ -654,13 +654,15 @@ function anatomyPin(n: number): FrameNode {
   return pin;
 }
 
-/** Legend row: number badge + part name (with a "· component" note for nested). */
+/** Legend row: number badge + part name (with a "· component" note for nested),
+ *  indented per its nesting depth so sub-parts read as children of their parent. */
 function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   const row = hstack(10);
   row.counterAxisAlignItems = 'CENTER';
+  row.paddingLeft = part.depth * 18;
   row.appendChild(numberBadge(part.n, LEGEND_BADGE));
   const text = makeText(
-    `${part.name}${part.nested ? '  ·  component' : ''}`,
+    `${part.name}${part.nested ? `  ·  ${part.component ?? 'component'}` : ''}`,
     'Regular',
     15,
     palette.body,
@@ -732,8 +734,12 @@ async function buildAnatomyDiagram(
   inst.x = 0;
   inst.y = 0;
 
-  // Place a pin at each part's center, mapped from component coords into the box.
+  // Place a pin at each depth-0 part's center, mapped from component coords into
+  // the box. Deeper parts are numbered in the legend/table but stay unpinned —
+  // pinning every nested sub-part on top of its parent's pin clutters the image.
+  const placed: FrameNode[] = [];
   for (const part of parts) {
+    if (part.depth !== 0) continue;
     let p: BaseNode | null;
     try {
       p = await figma.getNodeByIdAsync(part.id);
@@ -749,6 +755,23 @@ async function buildAnatomyDiagram(
     box.appendChild(pin);
     pin.x = Math.round(nx * renderedW - PIN_SIZE / 2);
     pin.y = Math.round(ny * renderedH - PIN_SIZE / 2);
+    placed.push(pin);
+  }
+
+  // Collision-declutter pass: sort by y then x so overlaps resolve in reading
+  // order, then nudge any pin whose center sits within PIN_SIZE of an
+  // already-placed pin to the right, clamped so it stays inside the box.
+  placed.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  const settled: FrameNode[] = [];
+  for (const pin of placed) {
+    for (const other of settled) {
+      const dx = pin.x - other.x;
+      const dy = pin.y - other.y;
+      if (Math.sqrt(dx * dx + dy * dy) < PIN_SIZE) {
+        pin.x = Math.min(pin.x + PIN_SIZE + 2, renderedW - PIN_SIZE);
+      }
+    }
+    settled.push(pin);
   }
 
   // Numbered legend below the screenshot.
@@ -798,17 +821,35 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       row.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'anatomy') {
-    const diagram = await buildAnatomyDiagram(section.componentId, section.parts);
-    if (diagram) {
-      body.appendChild(diagram);
-      diagram.layoutSizingHorizontal = 'FILL';
-    } else {
-      // Fallback: the numbered legend on its own when the screenshot can't render.
-      for (const part of section.parts) {
-        const row = anatomyLegendRow(part);
-        body.appendChild(row);
-        row.layoutSizingHorizontal = 'FILL';
+    // 'table' skips the diagram build entirely — no point spending an instance +
+    // screenshot render when only the tabular list will be shown.
+    if (section.view !== 'table') {
+      const diagram = await buildAnatomyDiagram(section.componentId, section.parts);
+      if (diagram) {
+        body.appendChild(diagram);
+        diagram.layoutSizingHorizontal = 'FILL';
+      } else {
+        // Fallback: the numbered legend on its own when the screenshot can't render.
+        for (const part of section.parts) {
+          const row = anatomyLegendRow(part);
+          body.appendChild(row);
+          row.layoutSizingHorizontal = 'FILL';
+        }
       }
+    }
+    if (section.view === 'table' || section.view === 'both') {
+      const rows = section.parts.map((p) => [
+        String(p.n),
+        `${'    '.repeat(p.depth)}${p.name}`,
+        p.type.toLowerCase(),
+        p.component ?? '—',
+        p.tokens.length <= 3
+          ? p.tokens.join(' · ')
+          : `${p.tokens.slice(0, 3).join(' · ')} +${p.tokens.length - 3}`,
+      ]);
+      const table = buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows);
+      body.appendChild(table);
+      table.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'variantTokens') {
     for (const variant of section.variants) {

@@ -67,8 +67,8 @@ describe('buildDocModel', () => {
       ...spec,
       anatomyComponentId: 'c:1',
       anatomy: [
-        { id: 'p:1', name: 'Container', type: 'FRAME', nested: false },
-        { id: 'p:2', name: 'Icon', type: 'INSTANCE', nested: true },
+        { id: 'p:1', name: 'Container', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'p:2', name: 'Icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' },
       ],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']));
@@ -76,11 +76,27 @@ describe('buildDocModel', () => {
     expect(block.kind).toBe('anatomy');
     if (block.kind === 'anatomy') {
       expect(block.componentId).toBe('c:1');
+      expect(block.view).toBe('diagram');
       expect(block.parts).toEqual([
-        { n: 1, name: 'Container', nested: false, id: 'p:1' },
-        { n: 2, name: 'Icon', nested: true, id: 'p:2' },
+        { n: 1, name: 'Container', nested: false, id: 'p:1', depth: 0, component: undefined, tokens: ['color/bg'], type: 'FRAME' },
+        { n: 2, name: 'Icon', nested: true, id: 'p:2', depth: 1, component: 'Icon', tokens: [], type: 'INSTANCE' },
       ]);
     }
+  });
+
+  it('anatomy block carries depth, per-part tokens, and the view option', () => {
+    const specA = {
+      ...spec,
+      anatomyComponentId: 'c:1',
+      anatomy: [{ id: '2', name: 'label', type: 'TEXT', nested: false, depth: 0 }],
+      tokens: [{ part: 'label', property: 'fill', token: 'color/label', conditions: {} }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'both' });
+    const block = model.sections[0];
+    if (block.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(block.view).toBe('both');
+    expect(block.parts[0].depth).toBe(0);
+    expect(block.parts[0].tokens).toContain('color/label');
   });
 
   it('falls back to a bullet list when anatomy has no component to screenshot', () => {

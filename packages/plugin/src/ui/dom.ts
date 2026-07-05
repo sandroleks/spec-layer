@@ -425,6 +425,29 @@ const TEMPLATE = `
     .sec-row label { cursor: pointer; flex: 1; }
     #section-list.ai-dim .ai-badge { opacity: 0.4; }
 
+    /* ---- Anatomy view toggle (segmented radio row) ---- */
+    .anatomy-view {
+      display: flex; align-items: center; gap: 10px; margin: 2px 0 10px;
+      font-size: 11px; color: var(--figma-color-text-secondary);
+    }
+    .anatomy-view-label { flex: 0 0 auto; }
+    .anatomy-view label {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+    }
+    .anatomy-view input[type="radio"] {
+      appearance: none; -webkit-appearance: none; margin: 0;
+      width: 12px; height: 12px; flex: 0 0 auto; position: relative; cursor: pointer;
+      border: 1.5px solid var(--figma-color-border); border-radius: 50%;
+      background: var(--figma-color-bg);
+    }
+    .anatomy-view input[type="radio"]:checked {
+      border-color: var(--figma-color-bg-brand);
+    }
+    .anatomy-view input[type="radio"]:checked::after {
+      content: ""; position: absolute; inset: 2px; border-radius: 50%;
+      background: var(--figma-color-bg-brand);
+    }
+
     /* ---- Variant picker (per-variant tokens) ---- */
     .variant-picker {
       margin-top: 12px; padding: 12px 13px; border-radius: 10px;
@@ -563,6 +586,16 @@ const TEMPLATE = `
         </div>
         <div id="section-list"></div>
 
+        <!-- Anatomy view toggle: how the Anatomy section renders. Only relevant
+             (and shown) while the Anatomy section is checked; visibility is
+             wired in ui.ts alongside the sec-anatomy checkbox. -->
+        <div class="anatomy-view" id="anatomy-view" style="display:none">
+          <span class="anatomy-view-label">Anatomy as</span>
+          <label><input type="radio" name="anatomy-view" value="diagram" checked> Diagram</label>
+          <label><input type="radio" name="anatomy-view" value="table"> Table</label>
+          <label><input type="radio" name="anatomy-view" value="both"> Both</label>
+        </div>
+
         <!-- Variants to document (per-variant tokens). Shown only when the
              Tokens section is checked and the selection is a component set;
              rows are populated in render.ts from the extracted spec. -->
@@ -671,6 +704,7 @@ export interface Refs {
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
   selectAllBtn: HTMLButtonElement;
+  anatomyView: HTMLElement;
   // Variant picker (per-variant tokens)
   variantPicker: HTMLDivElement;
   variantList: HTMLDivElement;
@@ -766,6 +800,7 @@ export function mount(): Refs {
     sectionList,
     sectionChecks,
     selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
+    anatomyView: byId<HTMLElement>('anatomy-view'),
     variantPicker: byId<HTMLDivElement>('variant-picker'),
     variantList: byId<HTMLDivElement>('variant-list'),
     variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),
