@@ -69,9 +69,17 @@ export interface AnatomyPartBlock {
   type: string;
 }
 
+/** Which measurement lens a measure mini-diagram renders. Each selected view
+ *  becomes its own focused diagram in the frame (size / padding / spacing). */
+export type MeasureView = 'size' | 'padding' | 'spacing';
+
 /** Options threaded through `buildDocModel` that affect how sections render
- *  without changing the underlying spec — currently just the anatomy view mode. */
-export interface DocModelOptions { anatomyView?: 'diagram' | 'table' | 'both' }
+ *  without changing the underlying spec — the anatomy view mode and which
+ *  measurement lenses to render. */
+export interface DocModelOptions {
+  anatomyView?: 'diagram' | 'table' | 'both';
+  measureViews?: MeasureView[];
+}
 
 export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'prose'; text: string }
@@ -79,7 +87,7 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
   | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both' }
-  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string> }
+  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[] }
   | {
       id: SectionId; heading: string; kind: 'statesMatrix';
       axisName: string;
@@ -264,9 +272,18 @@ function buildSection(
         tokens[measureKey(t.part, t.property)] = t.token;
       }
       const rootPart = spec.variants.length > 0 ? 'Container' : cleanPartName(spec.name);
+      // Each selected lens renders as its own focused mini-diagram. Preserve the
+      // canonical size→padding→spacing order and fall back to all three when the
+      // caller passes nothing (or an empty selection — the UI's "unchecked all"
+      // guard resolves to the default here).
+      const ALL_MEASURE_VIEWS: MeasureView[] = ['size', 'padding', 'spacing'];
+      const requested = options?.measureViews;
+      const views = requested && requested.length
+        ? ALL_MEASURE_VIEWS.filter((v) => requested.includes(v))
+        : ALL_MEASURE_VIEWS;
       return {
         id, heading: label, kind: 'measure',
-        componentId: spec.anatomyComponentId, rootPart, tokens,
+        componentId: spec.anatomyComponentId, rootPart, tokens, views,
       };
     }
 

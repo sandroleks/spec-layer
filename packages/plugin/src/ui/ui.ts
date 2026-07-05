@@ -10,6 +10,7 @@
  */
 
 import type { MainToUi } from '../messages';
+import type { MeasureView } from './docModel';
 import { mount } from './dom';
 import {
   createState,
@@ -183,6 +184,25 @@ refs.anatomyView.addEventListener('change', (e) => {
   const target = e.target as HTMLInputElement;
   if (target.name !== 'anatomy-view') return;
   state.anatomyView = target.value as 'diagram' | 'table' | 'both';
+});
+
+// Toggling the Measurements section shows/hides the measure-setup lens row.
+// Initialize visibility to match the checkbox's default-checked state.
+refs.measureSetup.style.display = refs.sectionChecks['measurements']?.checked ? 'flex' : 'none';
+refs.sectionChecks['measurements']?.addEventListener('change', () => {
+  refs.measureSetup.style.display = refs.sectionChecks['measurements']?.checked ? 'flex' : 'none';
+});
+
+// Measure lens checkboxes: rebuild state.measureViews from the checked boxes,
+// preserving the canonical size→padding→spacing order regardless of click order.
+refs.measureSetup.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target.name !== 'measure-view') return;
+  const checked = new Set(
+    Array.from(refs.measureSetup.querySelectorAll<HTMLInputElement>('input[name="measure-view"]:checked'))
+      .map((el) => el.value),
+  );
+  state.measureViews = (['size', 'padding', 'spacing'] as MeasureView[]).filter((v) => checked.has(v));
 });
 
 refs.variantSelectAll.addEventListener('click', () => {

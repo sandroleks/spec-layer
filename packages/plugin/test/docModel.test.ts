@@ -148,6 +148,33 @@ describe('measurements section', () => {
     expect(block.tokens[measureKey('Container', 'fill')]).toBeUndefined();
   });
 
+  it('defaults measure views to all three when none are passed', () => {
+    const model = buildDocModel(spec, null, new Set(['measurements']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.views).toEqual(['size', 'padding', 'spacing']);
+  });
+
+  it('threads a passed measure-views subset through in canonical order', () => {
+    const model = buildDocModel(
+      spec, null, new Set(['measurements']), new Set(['1:2']),
+      { measureViews: ['spacing', 'size'] },
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.views).toEqual(['size', 'spacing']);
+  });
+
+  it('falls back to all three views when an empty selection is passed', () => {
+    const model = buildDocModel(
+      spec, null, new Set(['measurements']), new Set(['1:2']),
+      { measureViews: [] },
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.views).toEqual(['size', 'padding', 'spacing']);
+  });
+
   it('uses the cleaned component name as rootPart for a plain component', () => {
     const plain: IntermediateSpec = {
       ...spec, variants: [], props: [],

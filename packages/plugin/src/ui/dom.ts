@@ -471,6 +471,40 @@ const TEMPLATE = `
       background: var(--figma-color-bg-brand);
     }
 
+    /* ---- Measure setup (lens checkboxes) ----
+       Same quiet inline row as the anatomy-view toggle, but with checkboxes:
+       each lens (size/padding/spacing) renders as its own focused mini-diagram.
+       Reuses the .anatomy-view layout; the boxes borrow the .sec-row checkbox
+       look, sized down to match the compact row. */
+    .measure-setup {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+      margin: 2px 0 10px; font-size: 11px; color: var(--figma-color-text-secondary);
+    }
+    .measure-setup-label { flex: 0 0 auto; }
+    .measure-setup label {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+    }
+    .measure-setup input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none; margin: 0;
+      width: 13px; height: 13px; flex: 0 0 auto; position: relative; cursor: pointer;
+      border: 1.5px solid var(--figma-color-border); border-radius: 4px;
+      background: var(--figma-color-bg);
+      transition: background 0.1s ease, border-color 0.1s ease;
+    }
+    .measure-setup input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
+    .measure-setup input[type="checkbox"]:checked {
+      background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand);
+    }
+    .measure-setup input[type="checkbox"]:checked::after {
+      content: ""; position: absolute; left: 3.5px; top: 1px;
+      width: 4px; height: 8px; box-sizing: border-box;
+      border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .measure-setup input[type="checkbox"]:focus-visible {
+      outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
+    }
+
     /* ---- Variant picker (per-variant tokens) ---- */
     .variant-picker {
       margin-top: 12px; padding: 12px 13px; border-radius: 10px;
@@ -619,6 +653,17 @@ const TEMPLATE = `
           <label><input type="radio" name="anatomy-view" value="both"> Both</label>
         </div>
 
+        <!-- Measure setup: which measurement lenses to render. Each checked lens
+             becomes its own focused mini-diagram in a wrapping row. Only relevant
+             (and shown) while the Measurements section is checked; visibility is
+             wired in ui.ts alongside the sec-measurements checkbox. -->
+        <div class="measure-setup" id="measure-setup" style="display:none">
+          <span class="measure-setup-label">Measure</span>
+          <label><input type="checkbox" name="measure-view" value="size" checked> Height &amp; width</label>
+          <label><input type="checkbox" name="measure-view" value="padding" checked> Inner padding</label>
+          <label><input type="checkbox" name="measure-view" value="spacing" checked> Children &amp; spacing</label>
+        </div>
+
         <!-- Variants to document (per-variant tokens). Shown only when the
              Tokens section is checked and the selection is a component set;
              rows are populated in render.ts from the extracted spec. -->
@@ -761,6 +806,7 @@ export interface Refs {
   sectionChecks: Record<string, HTMLInputElement>;
   selectAllBtn: HTMLButtonElement;
   anatomyView: HTMLElement;
+  measureSetup: HTMLElement;
   // Variant picker (per-variant tokens)
   variantPicker: HTMLDivElement;
   variantList: HTMLDivElement;
@@ -880,6 +926,7 @@ export function mount(): Refs {
     sectionChecks,
     selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
     anatomyView: byId<HTMLElement>('anatomy-view'),
+    measureSetup: byId<HTMLElement>('measure-setup'),
     variantPicker: byId<HTMLDivElement>('variant-picker'),
     variantList: byId<HTMLDivElement>('variant-list'),
     variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),

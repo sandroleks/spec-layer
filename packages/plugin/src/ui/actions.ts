@@ -12,7 +12,7 @@ import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, ALL_SECTIONS, type SectionId } from './docModel';
+import { buildDocModel, ALL_SECTIONS, type SectionId, type MeasureView } from './docModel';
 import type { Refs } from './dom';
 import {
   showBanner,
@@ -52,6 +52,9 @@ export interface UiState {
   logoBase64: string | null;
   // How the anatomy section renders: numbered diagram, tabular list, or both.
   anatomyView: 'diagram' | 'table' | 'both';
+  // Which measurement lenses the Measure section renders (each as its own
+  // focused mini-diagram). Empty falls back to all three in the model.
+  measureViews: MeasureView[];
 }
 
 export function createState(): UiState {
@@ -69,6 +72,7 @@ export function createState(): UiState {
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
     anatomyView: 'diagram',
+    measureViews: ['size', 'padding', 'spacing'],
   };
 }
 
@@ -237,7 +241,7 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       state.generatedProse,
       selected,
       variantIds,
-      { anatomyView: state.anatomyView },
+      { anatomyView: state.anatomyView, measureViews: state.measureViews },
     );
     send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
     // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
