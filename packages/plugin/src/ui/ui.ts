@@ -20,16 +20,16 @@ import {
   runAutoExtract,
   setAnthropicKey,
   setAiEnabled,
-  setBrandColors,
+  setBrandTheme,
 } from './actions';
 import { resolveComponentImage } from './ai';
-import { parseBrandHex, emptyBrandColors } from '../brandColors';
+import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
 import {
   renderSelection,
   renderVariantPicker,
   renderStatesHint,
-  renderBrandColors,
+  renderBrandTheme,
   updateVariantCount,
   switchTab,
   clearBanners,
@@ -197,15 +197,18 @@ refs.variantSelectAll.addEventListener('click', () => {
 refs.variantList.addEventListener('change', () => updateVariantCount(refs));
 
 // ---------------------------------------------------------------------------
-// Frame brand colors (Settings)
+// Frame brand theme (Settings)
 // ---------------------------------------------------------------------------
 
 /**
- * Apply a typed hex value to one brand-color field. Empty input clears the
+ * Apply a typed hex value to one theme color field. Empty input clears the
  * override (back to default); an invalid hex shows a hint and is NOT persisted
  * (the swatch keeps its last valid value). A valid hex is normalized + stored.
  */
-function applyBrandColor(field: 'headerBg' | 'accent', raw: string): void {
+function applyBrandColor(
+  field: 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg',
+  raw: string,
+): void {
   const trimmed = raw.trim();
   if (trimmed) {
     const parsed = parseBrandHex(trimmed);
@@ -214,12 +217,12 @@ function applyBrandColor(field: 'headerBg' | 'accent', raw: string): void {
       return;
     }
     refs.brandColorHint.textContent = '';
-    setBrandColors(state, { ...state.brandColors, [field]: parsed });
+    setBrandTheme(state, { ...state.brandTheme, [field]: parsed });
   } else {
     refs.brandColorHint.textContent = '';
-    setBrandColors(state, { ...state.brandColors, [field]: null });
+    setBrandTheme(state, { ...state.brandTheme, [field]: null });
   }
-  renderBrandColors(refs, state);
+  renderBrandTheme(refs, state);
 }
 
 refs.headerColorInput.addEventListener('change', () =>
@@ -228,11 +231,48 @@ refs.headerColorInput.addEventListener('change', () =>
 refs.accentColorInput.addEventListener('change', () =>
   applyBrandColor('accent', refs.accentColorInput.value),
 );
+refs.bodyColorInput.addEventListener('change', () =>
+  applyBrandColor('bodyText', refs.bodyColorInput.value),
+);
+refs.tableheadColorInput.addEventListener('change', () =>
+  applyBrandColor('tableHeadBg', refs.tableheadColorInput.value),
+);
 refs.resetColorsLink.addEventListener('click', () => {
   refs.brandColorHint.textContent = '';
-  setBrandColors(state, emptyBrandColors());
-  renderBrandColors(refs, state);
+  setBrandTheme(state, emptyBrandTheme());
+  renderBrandTheme(refs, state);
 });
+
+/** Apply a typed font family to a theme font field (empty → default). */
+function applyBrandFont(field: 'headingFont' | 'bodyFont', raw: string): void {
+  const trimmed = raw.trim();
+  setBrandTheme(state, { ...state.brandTheme, [field]: trimmed || null });
+  renderBrandTheme(refs, state);
+}
+
+refs.headingFontInput.addEventListener('change', () =>
+  applyBrandFont('headingFont', refs.headingFontInput.value),
+);
+refs.bodyFontInput.addEventListener('change', () =>
+  applyBrandFont('bodyFont', refs.bodyFontInput.value),
+);
+
+// Preset chips (injected in mount() from THEME_PRESETS): clicking one applies a
+// CLONE of the preset's theme, so later per-field edits never mutate the preset.
+refs.presetRow.addEventListener('click', (e) => {
+  const chip = (e.target as HTMLElement).closest('.preset-chip') as HTMLElement | null;
+  if (!chip) return;
+  const preset = THEME_PRESETS.find((p) => p.name === chip.dataset.preset);
+  if (!preset) return;
+  refs.brandColorHint.textContent = '';
+  setBrandTheme(state, { ...preset.theme });
+  renderBrandTheme(refs, state);
+});
+
+// Logo capture/clear — the main thread exports the current canvas selection
+// and answers with logoCaptured / logoCleared / logoError.
+refs.captureLogoBtn.addEventListener('click', () => send({ type: 'captureLogo' }));
+refs.clearLogoBtn.addEventListener('click', () => send({ type: 'clearLogo' }));
 
 // ---------------------------------------------------------------------------
 // Message handling
@@ -278,9 +318,36 @@ window.onmessage = (event: MessageEvent) => {
       break;
     }
 
-    case 'brandColors': {
-      state.brandColors = msg.value;
-      renderBrandColors(refs, state);
+    case 'brandTheme': {
+      state.brandTheme = msg.value;
+      renderBrandTheme(refs, state);
+      break;
+    }
+
+    case 'fontList': {
+      refs.fontDatalist.textContent = '';
+      for (const family of msg.families) {
+        const option = document.createElement('option');
+        option.value = family;
+        refs.fontDatalist.appendChild(option);
+      }
+      break;
+    }
+
+    case 'logoCaptured': {
+      state.logoBase64 = msg.base64;
+      renderBrandTheme(refs, state);
+      break;
+    }
+
+    case 'logoCleared': {
+      state.logoBase64 = null;
+      renderBrandTheme(refs, state);
+      break;
+    }
+
+    case 'logoError': {
+      showBanner(refs, 'error', msg.message);
       break;
     }
 
@@ -319,7 +386,10 @@ window.onmessage = (event: MessageEvent) => {
 // ---------------------------------------------------------------------------
 
 clearBanners(refs);
-// Paint the brand-color fields/swatches from defaults immediately; the boot-time
-// 'brandColors' message refines them with any stored overrides.
-renderBrandColors(refs, state);
+// Paint the theme fields/swatches from defaults immediately; the boot-time
+// 'brandTheme' message refines them with any stored overrides.
+renderBrandTheme(refs, state);
 send({ type: 'requestSelection' });
+// Populate the font-family datalist for the theme's font pickers. If the main
+// thread can't list fonts, the inputs simply stay free-text.
+send({ type: 'requestFonts' });

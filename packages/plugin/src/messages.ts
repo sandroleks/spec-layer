@@ -1,13 +1,17 @@
 import type { SerializedNode } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
-import type { BrandColors } from './brandColors';
+import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
 
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource }
   | { type: 'anthropicKey'; value: string | null }
   | { type: 'aiEnabled'; value: boolean }
-  | { type: 'brandColors'; value: BrandColors }
+  | { type: 'brandTheme'; value: BrandTheme }
+  | { type: 'fontList'; families: string[] }
+  | { type: 'logoCaptured'; base64: string }
+  | { type: 'logoCleared' }
+  | { type: 'logoError'; message: string }
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
   | { type: 'docFrameDone'; frameName: string }
@@ -19,6 +23,9 @@ export type UiToMain =
   | { type: 'openBrowser'; url: string }
   | { type: 'setAnthropicKey'; value: string | null }
   | { type: 'setAiEnabled'; value: boolean }
-  | { type: 'setBrandColors'; value: BrandColors }
+  | { type: 'setBrandTheme'; value: BrandTheme }
+  | { type: 'requestFonts' }
+  | { type: 'captureLogo' }
+  | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
   | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string };

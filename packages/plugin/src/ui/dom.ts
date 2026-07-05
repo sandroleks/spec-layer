@@ -23,6 +23,7 @@
  */
 
 import { ALL_SECTIONS } from './docModel';
+import { THEME_PRESETS } from '../brandColors';
 
 // ---------------------------------------------------------------------------
 // Markup + styles
@@ -218,6 +219,28 @@ const TEMPLATE = `
     .color-swatch {
       flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
       border: 1px solid var(--figma-color-border); background: #0d2436;
+    }
+
+    /* ---- Theme presets (frame theme) ----
+       A row of small chips, one per built-in preset; clicking applies the
+       preset's palette to the theme fields below. */
+    .preset-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .preset-chip {
+      font-family: inherit; font-size: 11px; padding: 4px 10px;
+      border: 1px solid var(--figma-color-border); border-radius: 999px;
+      background: var(--figma-color-bg); color: var(--figma-color-text);
+      cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .preset-chip:hover { border-color: var(--figma-color-bg-brand); }
+    .preset-chip:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+
+    /* ---- Font + logo rows (frame theme) ---- */
+    .font-row { display: flex; align-items: center; gap: 8px; }
+    .font-row input[type="text"] { flex: 1; }
+    .logo-row { display: flex; align-items: center; gap: 8px; }
+    .logo-row img {
+      border: 1px solid var(--figma-color-border); border-radius: 4px;
+      background: var(--figma-color-bg-secondary);
     }
 
     /* ---- Preview textarea ---- */
@@ -630,11 +653,13 @@ const TEMPLATE = `
 
         <hr />
 
-        <div>
-          <h2>Frame colors</h2>
+        <div class="settings-group" id="theme-group">
+          <h2>Frame theme</h2>
           <p class="hint" style="margin-top:4px">
-            Brand colors used in the generated Guidelines frame. Enter a 6-digit hex value, or leave blank to use the default.
+            Brand theme used in the generated Guidelines frame. Enter 6-digit hex values, or leave blank to use the default.
           </p>
+
+          <div class="preset-row" id="preset-row"></div>
 
           <label class="field-label" for="header-color-input" style="margin-top:8px">Header background</label>
           <div class="color-row">
@@ -648,8 +673,38 @@ const TEMPLATE = `
             <input type="text" id="accent-color-input" placeholder="#12b3a6" />
           </div>
 
+          <label class="field-label" for="body-color-input" style="margin-top:10px">Body text</label>
+          <div class="color-row">
+            <span class="color-swatch" id="body-color-swatch"></span>
+            <input type="text" id="body-color-input" placeholder="#334155" />
+          </div>
+
+          <label class="field-label" for="tablehead-color-input" style="margin-top:10px">Table header</label>
+          <div class="color-row">
+            <span class="color-swatch" id="tablehead-color-swatch"></span>
+            <input type="text" id="tablehead-color-input" placeholder="#f8fafc" />
+          </div>
+
           <p class="hint" id="brand-color-hint"></p>
           <p class="hint" style="margin-top:6px"><a id="reset-colors-link">Reset to defaults</a></p>
+
+          <label class="field-label" for="heading-font-input" style="margin-top:10px">Heading font</label>
+          <div class="font-row">
+            <input type="text" id="heading-font-input" list="font-families" placeholder="Inter" />
+          </div>
+
+          <label class="field-label" for="body-font-input" style="margin-top:10px">Body font</label>
+          <div class="font-row">
+            <input type="text" id="body-font-input" list="font-families" placeholder="Inter" />
+          </div>
+          <datalist id="font-families"></datalist>
+
+          <div class="logo-row" style="margin-top:10px">
+            <button class="btn btn-secondary" id="capture-logo-btn" type="button">Use selected node as logo</button>
+            <img id="logo-preview" alt="" style="display:none; height:24px;" />
+            <button class="link-btn" id="clear-logo-btn" type="button" style="display:none;">Remove</button>
+          </div>
+          <p class="hint" style="margin-top:6px">Fonts must include Regular, Medium and Bold styles — otherwise the frame falls back to Inter.</p>
         </div>
       </div>
     </section>
@@ -723,13 +778,24 @@ export interface Refs {
   // AI settings (Settings tab)
   anthropicKeyInput: HTMLInputElement;
   getKeyLink: HTMLElement;
-  // Frame brand colors (Settings tab)
+  // Frame brand theme (Settings tab)
+  presetRow: HTMLDivElement;
   headerColorInput: HTMLInputElement;
   headerColorSwatch: HTMLSpanElement;
   accentColorInput: HTMLInputElement;
   accentColorSwatch: HTMLSpanElement;
+  bodyColorInput: HTMLInputElement;
+  bodyColorSwatch: HTMLSpanElement;
+  tableheadColorInput: HTMLInputElement;
+  tableheadColorSwatch: HTMLSpanElement;
+  headingFontInput: HTMLInputElement;
+  bodyFontInput: HTMLInputElement;
+  fontDatalist: HTMLDataListElement;
   brandColorHint: HTMLParagraphElement;
   resetColorsLink: HTMLElement;
+  captureLogoBtn: HTMLButtonElement;
+  logoPreview: HTMLImageElement;
+  clearLogoBtn: HTMLButtonElement;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -779,6 +845,17 @@ export function mount(): Refs {
     sectionChecks[section.id] = byId<HTMLInputElement>(`sec-${section.id}`);
   }
 
+  // Inject one preset chip per built-in theme (wired to setBrandTheme in ui.ts).
+  const presetRow = byId<HTMLDivElement>('preset-row');
+  for (const preset of THEME_PRESETS) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'preset-chip';
+    chip.textContent = preset.name;
+    chip.dataset.preset = preset.name;
+    presetRow.appendChild(chip);
+  }
+
   return {
     themeBtn: byId<HTMLButtonElement>('theme-btn'),
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
@@ -814,11 +891,22 @@ export function mount(): Refs {
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
     anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
     getKeyLink: byId<HTMLElement>('get-key-link'),
+    presetRow,
     headerColorInput: byId<HTMLInputElement>('header-color-input'),
     headerColorSwatch: byId<HTMLSpanElement>('header-color-swatch'),
     accentColorInput: byId<HTMLInputElement>('accent-color-input'),
     accentColorSwatch: byId<HTMLSpanElement>('accent-color-swatch'),
+    bodyColorInput: byId<HTMLInputElement>('body-color-input'),
+    bodyColorSwatch: byId<HTMLSpanElement>('body-color-swatch'),
+    tableheadColorInput: byId<HTMLInputElement>('tablehead-color-input'),
+    tableheadColorSwatch: byId<HTMLSpanElement>('tablehead-color-swatch'),
+    headingFontInput: byId<HTMLInputElement>('heading-font-input'),
+    bodyFontInput: byId<HTMLInputElement>('body-font-input'),
+    fontDatalist: byId<HTMLDataListElement>('font-families'),
     brandColorHint: byId<HTMLParagraphElement>('brand-color-hint'),
     resetColorsLink: byId<HTMLElement>('reset-colors-link'),
+    captureLogoBtn: byId<HTMLButtonElement>('capture-logo-btn'),
+    logoPreview: byId<HTMLImageElement>('logo-preview'),
+    clearLogoBtn: byId<HTMLButtonElement>('clear-logo-btn'),
   };
 }

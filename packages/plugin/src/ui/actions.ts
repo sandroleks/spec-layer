@@ -11,7 +11,7 @@ import type { SerializedNode, IntermediateSpec, ProseDrafts } from '@spec-layer/
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
-import { emptyBrandColors, type BrandColors } from '../brandColors';
+import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { buildDocModel, ALL_SECTIONS, type SectionId } from './docModel';
 import type { Refs } from './dom';
 import {
@@ -46,8 +46,10 @@ export interface UiState {
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("built with placeholders") instead of aborting the whole frame.
   pendingAiNote: string;
-  // User-customized brand colors for the generated frame (null fields = default).
-  brandColors: BrandColors;
+  // User-customized brand theme for the generated frame (null fields = default).
+  brandTheme: BrandTheme;
+  // Captured logo (base64 PNG), or null if none set.
+  logoBase64: string | null;
   // How the anatomy section renders: numbered diagram, tabular list, or both.
   anatomyView: 'diagram' | 'table' | 'both';
 }
@@ -64,7 +66,8 @@ export function createState(): UiState {
     aiEnabled: false,
     generatedProse: null,
     pendingAiNote: '',
-    brandColors: emptyBrandColors(),
+    brandTheme: emptyBrandTheme(),
+    logoBase64: null,
     anatomyView: 'diagram',
   };
 }
@@ -279,9 +282,9 @@ export function setAiEnabled(state: UiState, value: boolean): void {
   send({ type: 'setAiEnabled', value });
 }
 
-export function setBrandColors(state: UiState, value: BrandColors): void {
-  state.brandColors = value;
-  send({ type: 'setBrandColors', value });
+export function setBrandTheme(state: UiState, value: BrandTheme): void {
+  state.brandTheme = value;
+  send({ type: 'setBrandTheme', value });
 }
 
 function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {

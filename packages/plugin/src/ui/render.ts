@@ -9,7 +9,7 @@
 import type { Refs } from './dom';
 import type { UiState } from './actions';
 import { isAtomComponentName } from '../collectComponents';
-import { resolveBrand } from '../brandColors';
+import { resolveTheme } from '../brandColors';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
 
@@ -209,20 +209,30 @@ export function updateVariantCount(refs: Refs): void {
 }
 
 // ---------------------------------------------------------------------------
-// Frame brand colors (Settings)
+// Frame brand theme (Settings)
 // ---------------------------------------------------------------------------
 
 /**
- * Reflect the stored brand colors into the Settings fields: each input shows
- * the override (empty when unset, so the placeholder surfaces the default), and
- * each swatch shows the *effective* color (override or default).
+ * Reflect the stored brand theme into the Settings fields: each input shows
+ * the override (empty when unset, so the placeholder surfaces the default), each
+ * swatch shows the *effective* color (override or default), and the logo preview
+ * reflects whether a logo has been captured.
  */
-export function renderBrandColors(refs: Refs, state: UiState): void {
-  const effective = resolveBrand(state.brandColors);
-  refs.headerColorInput.value = state.brandColors.headerBg ?? '';
-  refs.accentColorInput.value = state.brandColors.accent ?? '';
+export function renderBrandTheme(refs: Refs, state: UiState): void {
+  const effective = resolveTheme(state.brandTheme);
+  refs.headerColorInput.value = state.brandTheme.headerBg ?? '';
+  refs.accentColorInput.value = state.brandTheme.accent ?? '';
+  refs.bodyColorInput.value = state.brandTheme.bodyText ?? '';
+  refs.tableheadColorInput.value = state.brandTheme.tableHeadBg ?? '';
+  refs.headingFontInput.value = state.brandTheme.headingFont ?? '';
+  refs.bodyFontInput.value = state.brandTheme.bodyFont ?? '';
   refs.headerColorSwatch.style.background = effective.headerBg;
   refs.accentColorSwatch.style.background = effective.accent;
+  refs.bodyColorSwatch.style.background = effective.bodyText;
+  refs.tableheadColorSwatch.style.background = effective.tableHeadBg;
+  refs.logoPreview.style.display = state.logoBase64 ? 'inline-block' : 'none';
+  refs.clearLogoBtn.style.display = state.logoBase64 ? 'inline-block' : 'none';
+  if (state.logoBase64) refs.logoPreview.src = `data:image/png;base64,${state.logoBase64}`;
 }
 
 // ---------------------------------------------------------------------------

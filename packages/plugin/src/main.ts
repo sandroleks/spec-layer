@@ -4,12 +4,15 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain } from './messages';
 import { resolveFileKey } from './fileKey';
 import { buildDocFrame } from './docFrame';
-import { emptyBrandColors, resolveBrand, type BrandColors } from './brandColors';
+import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 
-// User-customizable brand colors for the generated frame. Loaded from
-// clientStorage on boot, updated on 'setBrandColors', and resolved to concrete
-// values when building a frame.
-let brandColors: BrandColors = emptyBrandColors();
+// User-customizable brand theme for the generated frame. Loaded from
+// clientStorage on boot (migrating the legacy two-color 'brandColors' storage
+// once), updated on 'setBrandTheme', and resolved to concrete values when
+// building a frame.
+let brandTheme: BrandTheme = emptyBrandTheme();
+// User-captured logo (base64 PNG), used by Task 14 to stamp the frame.
+let brandLogo: string | null = null;
 
 // ---------------------------------------------------------------------------
 // NodeResolver — wraps async Figma APIs
@@ -122,11 +125,28 @@ figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
-// Send stored frame brand colors on startup (default: no overrides)
-figma.clientStorage.getAsync('brandColors').then((value: BrandColors | undefined) => {
-  brandColors = value ?? emptyBrandColors();
-  const msg: MainToUi = { type: 'brandColors', value: brandColors };
+// Send stored frame brand theme on startup (default: no overrides). Prefers
+// the new 'brandTheme' key; falls back to a one-time migration from the 1.x
+// two-color 'brandColors' storage. The old key is left in place (harmless,
+// keeps rollback safe).
+figma.clientStorage.getAsync('brandTheme').then(async (value: BrandTheme | undefined) => {
+  if (value) {
+    brandTheme = migrateBrandColors(value);
+  } else {
+    const legacy = await figma.clientStorage.getAsync('brandColors') as BrandColors | undefined;
+    brandTheme = migrateBrandColors(legacy);
+  }
+  const msg: MainToUi = { type: 'brandTheme', value: brandTheme };
   figma.ui.postMessage(msg);
+}).catch(() => {/* ignore */});
+
+// Send a previously captured logo, if any.
+figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
+  brandLogo = value ?? null;
+  if (brandLogo) {
+    const msg: MainToUi = { type: 'logoCaptured', base64: brandLogo };
+    figma.ui.postMessage(msg);
+  }
 }).catch(() => {/* ignore */});
 
 // React to selection changes.
@@ -149,9 +169,48 @@ figma.ui.onmessage = async (raw: unknown) => {
       await figma.clientStorage.setAsync('aiEnabled', msg.value);
       break;
 
-    case 'setBrandColors':
-      brandColors = msg.value;
-      await figma.clientStorage.setAsync('brandColors', brandColors);
+    case 'setBrandTheme':
+      brandTheme = msg.value;
+      await figma.clientStorage.setAsync('brandTheme', brandTheme);
+      break;
+
+    case 'requestFonts': {
+      try {
+        const fonts = await figma.listAvailableFontsAsync();
+        const families = [...new Set(fonts.map((f) => f.fontName.family))].sort();
+        figma.ui.postMessage({ type: 'fontList', families } as MainToUi);
+      } catch {
+        /* picker falls back to a free-text input */
+      }
+      break;
+    }
+
+    case 'captureLogo': {
+      try {
+        const sel = figma.currentPage.selection[0];
+        if (!sel || !('exportAsync' in sel)) {
+          figma.ui.postMessage({ type: 'logoError', message: 'Select a frame or component to use as logo' } as MainToUi);
+          break;
+        }
+        // Export at logo scale (target height ~64px @2x = 128px) to keep
+        // clientStorage small.
+        const scale = Math.min(2, 128 / Math.max(sel.height, 1));
+        const bytes = await (sel as SceneNode & { exportAsync: (s: ExportSettings) => Promise<Uint8Array> })
+          .exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } });
+        brandLogo = figma.base64Encode(bytes);
+        await figma.clientStorage.setAsync('brandLogo', brandLogo);
+        figma.ui.postMessage({ type: 'logoCaptured', base64: brandLogo } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'logoError', message } as MainToUi);
+      }
+      break;
+    }
+
+    case 'clearLogo':
+      brandLogo = null;
+      await figma.clientStorage.deleteAsync('brandLogo');
+      figma.ui.postMessage({ type: 'logoCleared' } as MainToUi);
       break;
 
     case 'requestComponentImage': {
@@ -228,7 +287,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
-        const frame = await buildDocFrame(msg.model, resolveBrand(brandColors));
+        // Task 14 threads the full theme + logo into buildDocFrame; for now it
+        // only accepts the two legacy colors, so pass those through.
+        const t = resolveTheme(brandTheme);
+        const frame = await buildDocFrame(msg.model, { headerBg: t.headerBg, accent: t.accent });
         if (existing) existing.remove();
         figma.currentPage.appendChild(frame);
         frame.x = x; frame.y = y;
