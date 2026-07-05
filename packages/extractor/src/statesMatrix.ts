@@ -6,6 +6,7 @@ import { resolveTokensForVariant, type ResolvedToken } from './resolve';
 export interface StateMatrixInfo {
   axis: string;
   states: string[];
+  /** The first non-state, non-modifier axis, used as the matrix's row axis. */
   rowAxis: string | null;
 }
 

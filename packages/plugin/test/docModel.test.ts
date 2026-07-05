@@ -161,6 +161,102 @@ describe('measurements section', () => {
   });
 });
 
+describe('states matrix section', () => {
+  // axes Type[Primary,Secondary] + State[Default,Hover]; instances for all 4
+  // combos (1:2..1:5); fill token differs on State=Hover.
+  const spec: IntermediateSpec = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
+    anatomy: [], anatomyComponentId: '1:2',
+    props: [
+      { name: 'Type', kind: 'variant', options: ['Primary', 'Secondary'], default: 'Primary' },
+      { name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' },
+    ],
+    variants: [
+      { prop: 'Type', values: ['Primary', 'Secondary'] },
+      { prop: 'State', values: ['Default', 'Hover'] },
+    ],
+    variantInstances: [
+      { nodeId: '1:2', name: 'Primary/Default', values: { Type: 'Primary', State: 'Default' } },
+      { nodeId: '1:3', name: 'Primary/Hover', values: { Type: 'Primary', State: 'Hover' } },
+      { nodeId: '1:4', name: 'Secondary/Default', values: { Type: 'Secondary', State: 'Default' } },
+      { nodeId: '1:5', name: 'Secondary/Hover', values: { Type: 'Secondary', State: 'Hover' } },
+    ],
+    states: ['Default', 'Hover'],
+    tokens: [
+      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, token: 'color/rest' },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+    ],
+    rawValues: [], related: [], gaps: [], layout: [],
+  } as unknown as IntermediateSpec;
+
+  it('builds a grid of nodeIds keyed by rowAxis x state', () => {
+    const model = buildDocModel(spec, null, new Set(['states']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.states).toEqual(['Default', 'Hover']);
+    expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Secondary']);
+    expect(block.rows[0].cells).toEqual(['1:2', '1:3']); // Primary Default/Hover ids
+    expect(block.deltas[0].state).toBe('Hover');
+    expect(block.deltas[0].lines).toContain('color/hover');
+  });
+
+  it('drops the section entirely when no state axis exists', () => {
+    const noStates = {
+      ...spec,
+      props: [{ name: 'Size', kind: 'variant', options: ['S', 'M'], default: 'M' }],
+      variants: [{ prop: 'Size', values: ['S', 'M'] }],
+      variantInstances: [
+        { nodeId: '1:2', name: 'S', values: { Size: 'S' } },
+        { nodeId: '1:3', name: 'M', values: { Size: 'M' } },
+      ],
+      tokens: [{ part: 'Container', property: 'fill', conditions: {}, token: 'color/bg' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(noStates, null, new Set(['states']), undefined);
+    expect(model.sections.find((s) => s.id === 'states')).toBeUndefined();
+  });
+
+  it('caps rows at 4 and flags it', () => {
+    const many = {
+      ...spec,
+      props: [
+        { name: 'Type', kind: 'variant', options: ['A', 'B', 'C', 'D', 'E'], default: 'A' },
+        { name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' },
+      ],
+      variants: [
+        { prop: 'Type', values: ['A', 'B', 'C', 'D', 'E'] },
+        { prop: 'State', values: ['Default', 'Hover'] },
+      ],
+      variantInstances: [],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(many, null, new Set(['states']), undefined);
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.rows.length).toBe(4);
+    expect(block.capped).toBe(true);
+  });
+
+  it('resolves deltas at the row axis default when a non-state axis exists', () => {
+    // Multi-axis: token differs by BOTH Type and State. Deltas are computed with
+    // the row axis (Type) pinned to its default (Primary), so the Hover delta
+    // must resolve Primary's hover token, not Secondary's.
+    const multi = {
+      ...spec,
+      tokens: [
+        { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Default'] }, token: 'primary/rest' },
+        { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'primary/hover' },
+        { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], State: ['Hover'] }, token: 'secondary/hover' },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(multi, null, new Set(['states']), undefined);
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    const hover = block.deltas.find((d) => d.state === 'Hover');
+    expect(hover).toBeDefined();
+    expect(hover!.lines).toContain('primary/hover');
+    expect(hover!.lines).not.toContain('secondary/hover');
+  });
+});
+
 describe('variant token cards: diff vs default', () => {
   const spec: IntermediateSpec = {
     name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',

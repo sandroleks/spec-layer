@@ -1,5 +1,8 @@
 import type { IntermediateSpec, ProseDrafts, VariantInstance } from '@spec-layer/extractor';
-import { cleanPartName, formatConditions, resolveTokensForVariant } from '@spec-layer/extractor';
+import {
+  cleanPartName, formatConditions, resolveTokensForVariant,
+  detectStateMatrix, stateTokenDeltas,
+} from '@spec-layer/extractor';
 
 export type SectionId =
   | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
@@ -76,7 +79,15 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
   | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both' }
-  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string> };
+  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string> }
+  | {
+      id: SectionId; heading: string; kind: 'statesMatrix';
+      axisName: string;
+      states: string[];                       // column headers, lifecycle-ordered
+      rows: { label: string; cells: (string | null)[] }[]; // cell = variant nodeId or null
+      capped: boolean;                        // true when >4 row values existed
+      deltas: { state: string; lines: string }[]; // pre-formatted markdown per state
+    };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
 
@@ -191,7 +202,7 @@ function buildSection(
   prose: ProseDrafts | null,
   selectedVariantIds?: Set<string>,
   options?: DocModelOptions,
-): SectionBlock {
+): SectionBlock | null {
   switch (id) {
     case 'definition': {
       return {
@@ -316,10 +327,45 @@ function buildSection(
     }
 
     case 'states': {
-      const items = spec.states.length
-        ? spec.states.map((s) => makeBullet(s))
-        : [makeBullet('_None._')];
-      return { id, heading: label, kind: 'bullets', items };
+      const info = detectStateMatrix(spec.variants);
+      if (!info) return null; // auto-hide: no state axis → no section
+      const defaults = defaultAxisValues(spec);
+
+      // Row values: the non-state axis's values, capped at 4 (default-first).
+      const rowAxisValues = info.rowAxis
+        ? spec.variants.find((v) => v.prop === info.rowAxis)!.values
+        : [null];
+      const capped = rowAxisValues.length > 4;
+      const rowValues = rowAxisValues.slice(0, 4);
+
+      // Cell = the instance matching (rowValue, state) with every other axis at
+      // its default; fall back to the first instance matching just those two.
+      const findCell = (rowValue: string | null, state: string): string | null => {
+        const want: Record<string, string> = { ...defaults, [info.axis]: state };
+        if (info.rowAxis && rowValue !== null) want[info.rowAxis] = rowValue;
+        const exact = spec.variantInstances.find((i) =>
+          Object.entries(want).every(([a, v]) => i.values[a] === v));
+        if (exact) return exact.nodeId;
+        const loose = spec.variantInstances.find((i) =>
+          i.values[info.axis] === state &&
+          (!info.rowAxis || rowValue === null || i.values[info.rowAxis] === rowValue));
+        return loose?.nodeId ?? null;
+      };
+
+      const rows = rowValues.map((rv) => ({
+        label: rv ?? spec.name,
+        cells: info.states.map((s) => findCell(rv, s)),
+      }));
+
+      const deltas = stateTokenDeltas(spec.tokens, defaults, info).map((d) => ({
+        state: d.state,
+        lines: d.changes.map((c) => `${c.part} ${c.property}: ${c.token}`).join(' · '),
+      }));
+
+      return {
+        id, heading: label, kind: 'statesMatrix',
+        axisName: info.axis, states: info.states, rows, capped, deltas,
+      };
     }
 
     case 'tokens': {
@@ -423,7 +469,8 @@ export function buildDocModel(
   const out: SectionBlock[] = [];
   for (const { id, label } of ALL_SECTIONS) {
     if (!selected.has(id)) continue;
-    out.push(buildSection(id, label, spec, prose, selectedVariantIds, options));
+    const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
+    if (block) out.push(block);
   }
   return { title: `${spec.name}: Guidelines`, sections: out };
 }

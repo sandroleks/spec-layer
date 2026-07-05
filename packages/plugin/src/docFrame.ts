@@ -14,6 +14,7 @@ import {
   type FontStyle,
 } from './frameKit';
 import { buildMeasureSection } from './measureSection';
+import { buildStatesSection } from './statesSection';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
@@ -934,6 +935,10 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       body.appendChild(table);
       table.layoutSizingHorizontal = 'FILL';
     }
+  } else if (section.kind === 'statesMatrix') {
+    const grid = await buildStatesSection(section, CONTENT_WIDTH);
+    body.appendChild(grid);
+    grid.layoutSizingHorizontal = 'FILL';
   } else {
     const table = buildTable(section.columns, section.rows);
     body.appendChild(table);

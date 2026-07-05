@@ -28,6 +28,7 @@ import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } fro
 import {
   renderSelection,
   renderVariantPicker,
+  renderStatesHint,
   renderBrandColors,
   updateVariantCount,
   switchTab,
@@ -257,7 +258,10 @@ window.onmessage = (event: MessageEvent) => {
       renderSelection(refs, state);
       // Extract right away so Download and the frame are always ready;
       // once the spec is in, (re)populate the per-variant picker.
-      runAutoExtract(refs, state, () => renderVariantPicker(refs, state));
+      runAutoExtract(refs, state, () => {
+        renderVariantPicker(refs, state);
+        renderStatesHint(refs, state);
+      });
       break;
     }
 

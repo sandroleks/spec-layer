@@ -11,6 +11,7 @@ import type { UiState } from './actions';
 import { isAtomComponentName } from '../collectComponents';
 import { resolveBrand } from '../brandColors';
 import { defaultVariantId } from './docModel';
+import { detectStateMatrix } from '@spec-layer/extractor';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -182,6 +183,21 @@ function buildVariantChips(values: Record<string, string>): HTMLDivElement {
     wrap.appendChild(chip);
   }
   return wrap;
+}
+
+/**
+ * Mute the States row + swap its label when the component has no state-like axis.
+ * Restores full opacity and the plain 'States' label when states exist — so a
+ * selection change in either direction reflects correctly.
+ */
+export function renderStatesHint(refs: Refs, state: UiState): void {
+  const check = refs.sectionChecks['states'];
+  if (!check) return;
+  const row = check.closest('.sec-row') as HTMLElement | null;
+  const hasStates = Boolean(state.currentSpec && detectStateMatrix(state.currentSpec.variants));
+  if (row) row.style.opacity = hasStates ? '' : '0.55';
+  const label = row?.querySelector('label');
+  if (label) label.textContent = hasStates ? 'States' : 'States — no state variants detected';
 }
 
 /** Reflect "N of M selected" in the variant-picker header. */
