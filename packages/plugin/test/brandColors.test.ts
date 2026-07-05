@@ -5,6 +5,10 @@ import {
   emptyBrandColors,
   DEFAULT_HEADER_BG,
   DEFAULT_ACCENT,
+  emptyBrandTheme,
+  resolveTheme,
+  migrateBrandColors,
+  THEME_PRESETS,
 } from '../src/brandColors';
 
 describe('parseBrandHex', () => {
@@ -55,5 +59,32 @@ describe('resolveBrand', () => {
       headerBg: DEFAULT_HEADER_BG,
       accent: '#ffffff',
     });
+  });
+});
+
+describe('brand theme', () => {
+  it('resolves null fields to defaults', () => {
+    expect(resolveTheme(emptyBrandTheme())).toEqual({
+      headerBg: '#0d2436', accent: '#12b3a6',
+      bodyText: '#334155', tableHeadBg: '#f8fafc',
+      headingFont: 'Inter', bodyFont: 'Inter',
+    });
+  });
+
+  it('migrates legacy two-color objects', () => {
+    expect(migrateBrandColors({ headerBg: '#111111', accent: null })).toEqual({
+      headerBg: '#111111', accent: null,
+      bodyText: null, tableHeadBg: null, headingFont: null, bodyFont: null,
+    });
+  });
+
+  it('passes a full theme through migration unchanged', () => {
+    const t = { headerBg: '#111111', accent: '#222222', bodyText: '#333333', tableHeadBg: '#444444', headingFont: 'Lora', bodyFont: 'Inter' };
+    expect(migrateBrandColors(t)).toEqual(t);
+  });
+
+  it('ships presets, with Default first matching the built-in palette', () => {
+    expect(THEME_PRESETS[0].name).toBe('Default');
+    expect(resolveTheme(THEME_PRESETS[0].theme).headerBg).toBe('#0d2436');
   });
 });

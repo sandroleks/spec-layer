@@ -45,8 +45,81 @@ export function resolveBrand(stored: BrandColors | null | undefined): {
   headerBg: string;
   accent: string;
 } {
+  const resolved = resolveTheme(stored as BrandTheme | null | undefined);
+  return { headerBg: resolved.headerBg, accent: resolved.accent };
+}
+
+/**
+ * BrandTheme extends the two-color brand into a full theme: palette (header,
+ * accent, body text, table head background) plus heading/body font families.
+ * Each field is either a concrete value or `null` (meaning "use the
+ * default"), same convention as `BrandColors`.
+ */
+export const DEFAULT_BODY_TEXT = '#334155';
+export const DEFAULT_TABLE_HEAD_BG = '#f8fafc';
+export const DEFAULT_FONT = 'Inter';
+
+export interface BrandTheme {
+  headerBg: string | null;
+  accent: string | null;
+  bodyText: string | null;
+  tableHeadBg: string | null;
+  /** Font family name for headings, or null to use DEFAULT_FONT. */
+  headingFont: string | null;
+  /** Font family name for body copy, or null to use DEFAULT_FONT. */
+  bodyFont: string | null;
+}
+
+/** Empty overrides — every field falls back to its default. */
+export function emptyBrandTheme(): BrandTheme {
+  return {
+    headerBg: null,
+    accent: null,
+    bodyText: null,
+    tableHeadBg: null,
+    headingFont: null,
+    bodyFont: null,
+  };
+}
+
+/**
+ * Resolve a stored theme to concrete values, substituting defaults for any
+ * null/missing field.
+ */
+export function resolveTheme(stored: BrandTheme | null | undefined): {
+  headerBg: string;
+  accent: string;
+  bodyText: string;
+  tableHeadBg: string;
+  headingFont: string;
+  bodyFont: string;
+} {
   return {
     headerBg: stored?.headerBg ?? DEFAULT_HEADER_BG,
     accent: stored?.accent ?? DEFAULT_ACCENT,
+    bodyText: stored?.bodyText ?? DEFAULT_BODY_TEXT,
+    tableHeadBg: stored?.tableHeadBg ?? DEFAULT_TABLE_HEAD_BG,
+    headingFont: stored?.headingFont ?? DEFAULT_FONT,
+    bodyFont: stored?.bodyFont ?? DEFAULT_FONT,
   };
 }
+
+/**
+ * Migrate a stored value to the current `BrandTheme` shape. Legacy
+ * `{ headerBg, accent }` objects (from before theming) load with the new
+ * fields defaulted to null; full themes pass through unchanged.
+ */
+export function migrateBrandColors(
+  legacy: BrandColors | BrandTheme | null | undefined
+): BrandTheme {
+  if (!legacy) return emptyBrandTheme();
+  return { ...emptyBrandTheme(), ...legacy };
+}
+
+/** Built-in theme presets offered in the UI. "Default" matches the frame's built-in palette. */
+export const THEME_PRESETS: { name: string; theme: BrandTheme }[] = [
+  { name: 'Default', theme: emptyBrandTheme() },
+  { name: 'Slate', theme: { ...emptyBrandTheme(), headerBg: '#1e293b', accent: '#818cf8' } },
+  { name: 'Forest', theme: { ...emptyBrandTheme(), headerBg: '#14261d', accent: '#34d399' } },
+  { name: 'Plum', theme: { ...emptyBrandTheme(), headerBg: '#2b1b3d', accent: '#e879a6' } },
+];
