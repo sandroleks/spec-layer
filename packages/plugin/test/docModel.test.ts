@@ -235,6 +235,32 @@ describe('states matrix section', () => {
     expect(block.capped).toBe(true);
   });
 
+  it('puts the default row-axis value first even when the cap would otherwise drop it', () => {
+    // 5 row-axis values with the default ('E') sitting at raw index 4 (the 5th
+    // value) — naive slice(0, 4) would silently drop it. Default-first ordering
+    // must promote it to row 0 before the cap is applied.
+    const many = {
+      ...spec,
+      props: [
+        { name: 'Type', kind: 'variant', options: ['A', 'B', 'C', 'D', 'E'], default: 'E' },
+        { name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' },
+      ],
+      variants: [
+        { prop: 'Type', values: ['A', 'B', 'C', 'D', 'E'] },
+        { prop: 'State', values: ['Default', 'Hover'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Type=E, State=Default', values: { Type: 'E', State: 'Default' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(many, null, new Set(['states']), undefined);
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.rows.length).toBe(4);
+    expect(block.capped).toBe(true);
+    expect(block.rows[0].label).toBe('E');
+  });
+
   it('resolves deltas at the row axis default when a non-state axis exists', () => {
     // Multi-axis: token differs by BOTH Type and State. Deltas are computed with
     // the row axis (Type) pinned to its default (Primary), so the Hover delta

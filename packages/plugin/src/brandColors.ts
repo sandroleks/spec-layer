@@ -20,7 +20,13 @@ export interface BrandColors {
   accent: string | null;
 }
 
-/** Empty overrides — both colors fall back to their defaults. */
+/**
+ * Empty overrides — both colors fall back to their defaults.
+ *
+ * No production callers post-migration to BrandTheme; kept as the 1.x public
+ * shape for stored-settings compatibility and test coverage of the migration
+ * source format.
+ */
 export function emptyBrandColors(): BrandColors {
   return { headerBg: null, accent: null };
 }
@@ -40,6 +46,10 @@ export function parseBrandHex(input: string): string | null {
  * Resolve stored overrides to concrete `#rrggbb` values, substituting defaults
  * for any null/missing field. The single source of truth for what the frame
  * actually paints.
+ *
+ * No production callers post-migration to BrandTheme/resolveTheme; kept as
+ * the 1.x public shape for stored-settings compatibility and test coverage of
+ * the migration source format.
  */
 export function resolveBrand(stored: BrandColors | null | undefined): {
   headerBg: string;

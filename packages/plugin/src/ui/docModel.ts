@@ -331,10 +331,17 @@ function buildSection(
       if (!info) return null; // auto-hide: no state axis → no section
       const defaults = defaultAxisValues(spec);
 
-      // Row values: the non-state axis's values, capped at 4 (default-first).
-      const rowAxisValues = info.rowAxis
+      // Row values: the non-state axis's values, default-first, then capped at 4.
+      // Default-first ordering guarantees the default row survives the cap even
+      // when it doesn't sit within the first 4 raw axis values.
+      const rawRowAxisValues: (string | null)[] = info.rowAxis
         ? spec.variants.find((v) => v.prop === info.rowAxis)!.values
         : [null];
+      const defaultRowValue = info.rowAxis ? defaults[info.rowAxis] : null;
+      const rowAxisValues =
+        defaultRowValue !== null && defaultRowValue !== undefined && rawRowAxisValues.includes(defaultRowValue)
+          ? [defaultRowValue, ...rawRowAxisValues.filter((v) => v !== defaultRowValue)]
+          : rawRowAxisValues;
       const capped = rowAxisValues.length > 4;
       const rowValues = rowAxisValues.slice(0, 4);
 
