@@ -2,24 +2,30 @@
 import { palette, solidFill, vstack, hstack, makeText, hex } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
-// Spectral "DesignDoc" measure language, now split into user-selectable lenses:
-// each measurement type (size / padding / spacing) renders as its OWN focused
-// mini-diagram, arranged in a wrapping row so they sit side by side. A live
-// instance sits inside each diagram with the artwork left untouched; measured
-// values are solid colored badges arranged in tidy rails OUTSIDE the artwork.
-// Translucent full-span bands with dashed inner edges mark padding and gap
-// regions over the artwork; dashed outlines mark children. Three fixed semantic
-// colors carry meaning:
-const SIZE_RED: RGB = hex('#f24822'); // container + child sizes
-const PAD_PINK: RGB = hex('#ec4899'); // padding
-const GAP_BLUE: RGB = hex('#2979ff'); // gaps
+// Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
+// single live component instance. Four rails surround the artwork (top/left =
+// total sizes, bottom = padding+gap flow, right = padding+cross-size), and
+// translucent bands mark padding/gap regions over the artwork itself. The
+// user's lens toggles (block.views) simply hide whichever categories they
+// turn off on this ONE diagram — there is no per-lens diagram anymore, and
+// overlap between categories is acceptable by design (the toggles are the
+// decluttering mechanism, not layout collision avoidance). Three fixed
+// semantic colors carry meaning:
+const SIZE_RED: RGB = hex('#f24822'); // sizes: total height, child widths, child cross-height
+const PAD_BLUE: RGB = hex('#2979ff'); // padding
+const GAP_PINK: RGB = hex('#ec4899'); // gaps
 const WHITE: RGB = hex('#ffffff'); // badge text
 
-// Per-instance image cap: full height when a single lens renders, capped when
-// two or more sit side by side so the wrapping row stays readable.
-const IMG_MAX_H_SINGLE = 480;
-const IMG_MAX_H_MULTI = 220;
+const IMG_MAX_H = 480;
 const CARD_PAD = 24;
+
+// Diagram-box margins around the scaled image. Top/left are fixed; right/bottom
+// are computed after rail placement (they depend on badge extents), so these
+// two are only the inner slack added past the measured content.
+const M_TOP = 44;
+const M_LEFT = 64;
+const R_SLACK = 8; // extra room right of the widest right-rail badge
+const B_SLACK = 8; // extra room below the bottom-rail badges
 
 // Rail geometry.
 const RAIL_TOP_OFF = 18; // total-width hairline offset above the image
@@ -29,8 +35,6 @@ const RAIL_BOTTOM_OFF = 16; // bottom-rail badge top edge, below the image
 const TICK = 6; // end-tick length on the total-dimension hairlines
 const LINE_GAP = 4; // gap between a rail badge and its hairline
 const NUDGE = 4; // minimum gap enforced between adjacent rail badges
-const R_SLACK = 8; // extra room right of the widest right-rail badge
-const B_SLACK = 8; // extra room below the bottom-rail badges
 
 // Band styling.
 const BAND_OPACITY = 0.14;
@@ -46,7 +50,9 @@ interface MeasureBlockData {
 }
 
 /** A measured value with its optional bound token. `value` is the raw px string
- *  shown in badges; `token` (when present) drives the token-first bindings line. */
+ *  shown in badges; `token` (when present) drives both the badge's inline short
+ *  form (padding/gap) and the quiet bindings line (radius, and any full path a
+ *  badge abbreviated). */
 type MeasureLabel = { value: string; token: string | null };
 
 const round = (n: number): number => Math.round(n * 10) / 10;
@@ -66,12 +72,29 @@ function measureLabel(
   return { value: String(round(px)), token: null };
 }
 
+/** Last "/"-segment of a token name, e.g. "spacing/size-12" -> "size-12". */
+function shortToken(token: string): string {
+  const at = token.lastIndexOf('/');
+  return at === -1 ? token : token.slice(at + 1);
+}
+
+/** Badge text for a padding/gap label: `${shortToken} · ${value}` when bound,
+ *  else just the value. */
+function badgeText(label: MeasureLabel): string {
+  return label.token ? `${shortToken(label.token)} · ${label.value}` : label.value;
+}
+
+/** `radius rounded-8 · 8` / `spacing/size-12 · 8` — full token path, for the
+ *  bindings line only. */
+function bindingText(label: MeasureLabel): string {
+  return label.token ? `${label.token} · ${label.value}` : label.value;
+}
+
 // ---------------------------------------------------------------------------
 // Primitive builders
 // ---------------------------------------------------------------------------
 
-/** A solid rounded value badge: fill = color, white 11 Bold text, hug-sized.
- *  Values only (e.g. `24`) — token names live on the bindings line, not here. */
+/** A solid rounded value badge: fill = color, white 11 Bold text, hug-sized. */
 function badge(text: string, color: RGB): FrameNode {
   const chip = hstack(0);
   chip.paddingTop = chip.paddingBottom = 3;
@@ -131,7 +154,7 @@ function outline(x: number, y: number, w: number, h: number): FrameNode {
 }
 
 // ---------------------------------------------------------------------------
-// Legend (first-level parts) — rendered once beneath the wrap row.
+// Legend (first-level parts) — unchanged.
 // ---------------------------------------------------------------------------
 
 interface LegendEntry {
@@ -184,11 +207,6 @@ function partEntries(
   return out;
 }
 
-/** `spacing/md · 24` when bound, `24` when raw. */
-function bindingText(label: MeasureLabel): string {
-  return label.token ? `${label.token} · ${label.value}` : label.value;
-}
-
 /** One legend row: part name + caption/value pairs. Values are plain heading
  *  ink (no purple, no pills), captions muted. */
 function legendRow(partName: string, entries: LegendEntry[]): FrameNode {
@@ -208,8 +226,31 @@ function legendRow(partName: string, entries: LegendEntry[]): FrameNode {
   return row;
 }
 
+/** Build the first-level auto-layout parts legend (rendered once). Returns null
+ *  when no part has measurable auto-layout entries. */
+function buildLegend(component: ComponentNode, tokens: Record<string, string>): FrameNode | null {
+  const legend = vstack(10);
+  for (const child of component.children) {
+    if (!child.visible) continue;
+    if (child.type !== 'FRAME' && child.type !== 'INSTANCE' && child.type !== 'COMPONENT') continue;
+    const layoutChild = child;
+    if (layoutChild.layoutMode !== 'HORIZONTAL' && layoutChild.layoutMode !== 'VERTICAL') continue;
+    const childPart = child.name.replace(/#+\s*$/, '').trim();
+    const entries = partEntries(tokens, childPart, layoutChild);
+    if (!entries.length) continue;
+    const legRow = legendRow(childPart, entries);
+    legend.appendChild(legRow);
+    legRow.layoutSizingHorizontal = 'FILL';
+  }
+  if (legend.children.length === 0) {
+    legend.remove();
+    return null;
+  }
+  return legend;
+}
+
 // ---------------------------------------------------------------------------
-// Per-view diagram geometry
+// Diagram geometry
 // ---------------------------------------------------------------------------
 
 /** A visible child's scaled box-local bounds (main-axis start, cross start, w, h). */
@@ -220,15 +261,14 @@ interface Child {
   h: number;
 }
 
-/** Everything a rail placement needs: rail items with their desired centers. */
+/** Everything the rail placement needs: rail items with their desired centers. */
 interface RailItem {
   node: FrameNode;
-  center: number; // desired center along the axis (y for right, x for bottom)
+  center: number; // desired center along the axis (y for right/left, x for top/bottom)
 }
 
-/** Geometry shared by all views for one instance: scaled image edges, padding,
- *  layout mode, children, and gap spans. Computed once per view (each view has
- *  its own instance, so its own scale). */
+/** Geometry for the single shared instance: scaled image edges, padding,
+ *  layout mode, children, and gap spans. */
 interface ViewGeom {
   imgLeft: number; imgTop: number; imgRight: number; imgBottom: number;
   imgW: number; imgH: number;
@@ -300,37 +340,6 @@ function computeGeom(
   };
 }
 
-/** Resize a diagram box to its content extents (accounting for negative-extent
- *  rail badges), then shift every child so the left/top content edge lands at 0.
- *  `extraLeft`/`extraTop`/`extraRight`/`extraBottom` are the outermost graphic
- *  edges the caller computed while placing rails. */
-function fitBox(
-  box: FrameNode,
-  g: ViewGeom,
-  extraLeft: number,
-  extraTop: number,
-  extraRight: number,
-  extraBottom: number,
-): void {
-  const contentLeftEdge = Math.min(g.imgLeft, extraLeft);
-  const contentTopEdge = Math.min(g.imgTop, extraTop);
-  const contentRightEdge = Math.max(g.imgRight, extraRight) + R_SLACK;
-  const contentBottomEdge = Math.max(g.imgBottom, extraBottom) + B_SLACK;
-
-  const dx = -Math.min(0, Math.round(contentLeftEdge));
-  const dy = -Math.min(0, Math.round(contentTopEdge));
-  if (dx !== 0 || dy !== 0) {
-    for (const child of box.children) {
-      child.x += dx;
-      child.y += dy;
-    }
-  }
-  box.resize(
-    Math.max(Math.round(contentRightEdge) + dx, 1),
-    Math.max(Math.round(contentBottomEdge) + dy, 1),
-  );
-}
-
 /** Place a top-to-bottom rail: badges left-aligned at `railX`, vertically
  *  centered on their band, pushed down so each clears the previous. Returns the
  *  rail's max right + max bottom for extent math. */
@@ -369,18 +378,36 @@ function placeBottomRail(items: RailItem[], railY: number, imgRight: number): { 
 }
 
 // ---------------------------------------------------------------------------
-// The three lenses. Each builds ONE diagram box for a freshly created instance.
-// Returns null when the view is not applicable (e.g. spacing on a component with
-// no auto-layout / no children). The caller owns instance cleanup on failure.
+// The single unified diagram.
 // ---------------------------------------------------------------------------
 
-/** SIZE: instance + top width hairline/ticks + red width badge + left height
- *  hairline/ticks + red height badge. Nothing else. */
-function buildSizeView(component: ComponentNode, inst: InstanceNode, tokens: Record<string, string>, part: string, scale: number): FrameNode {
-  // Margins: top 44, left 64; right/bottom slack applied via fitBox (R/B_SLACK).
-  const M_TOP = 44, M_LEFT = 64;
+/**
+ * Build the ONE Spectral 4-rail measure diagram. `views` filters which
+ * categories draw:
+ *  - 'size'    -> top+left total-dimension rails, red child-size badges (top
+ *                 rail for horizontal main axis / left rail for vertical main
+ *                 axis), and the red child cross-size badge on the opposite
+ *                 cross rail.
+ *  - 'padding' -> blue translucent padding bands + blue pad badges on the
+ *                 main-axis flow rail (bottom/right) and the cross rail.
+ *  - 'spacing' -> pink translucent gap bands + dashed red child outlines
+ *                 (>1 child) + pink gap badges on the main-axis flow rail.
+ * With no auto-layout root, only total width/height (size) ever draw.
+ */
+function buildDiagram(
+  component: ComponentNode,
+  inst: InstanceNode,
+  tokens: Record<string, string>,
+  part: string,
+  scale: number,
+  views: Set<MeasureView>,
+): FrameNode {
+  const showSize = views.has('size');
+  const showPadding = views.has('padding');
+  const showSpacing = views.has('spacing');
+
   const box = figma.createFrame();
-  box.name = 'Measure — size';
+  box.name = 'Measure diagram';
   box.resize(2000, 2000);
   box.fills = [];
   box.clipsContent = false;
@@ -389,210 +416,276 @@ function buildSizeView(component: ComponentNode, inst: InstanceNode, tokens: Rec
   inst.y = M_TOP;
   const g = computeGeom(component, scale, M_LEFT, M_TOP);
 
-  // Top rail — total width hairline + centered width badge.
-  const topLineY = g.imgTop - RAIL_TOP_OFF;
-  box.appendChild(line(g.imgLeft, topLineY, g.imgW, 1, SIZE_RED));
-  box.appendChild(line(g.imgLeft, topLineY - TICK / 2, 1, TICK, SIZE_RED));
-  box.appendChild(line(g.imgRight - 1, topLineY - TICK / 2, 1, TICK, SIZE_RED));
-  const widthBadge = badge(measureLabel(tokens, part, ['width'], component.width).value, SIZE_RED);
-  box.appendChild(widthBadge);
-  widthBadge.x = Math.round((g.imgLeft + g.imgRight) / 2 - widthBadge.width / 2);
-  widthBadge.y = Math.round(topLineY - LINE_GAP - widthBadge.height);
+  // Extent tracking, seeded with the image edges; every rail/band pushes these.
+  let minContentLeft = g.imgLeft;
+  let minContentTop = g.imgTop;
+  let maxRight = g.imgRight;
+  let maxBottom = g.imgBottom;
 
-  // Left rail — total height hairline + centered height badge.
-  const leftLineX = g.imgLeft - RAIL_LEFT_OFF;
-  box.appendChild(line(leftLineX, g.imgTop, 1, g.imgH, SIZE_RED));
-  box.appendChild(line(leftLineX - TICK / 2, g.imgTop, TICK, 1, SIZE_RED));
-  box.appendChild(line(leftLineX - TICK / 2, g.imgBottom - 1, TICK, 1, SIZE_RED));
-  const heightBadge = badge(measureLabel(tokens, part, ['height'], component.height).value, SIZE_RED);
-  box.appendChild(heightBadge);
-  heightBadge.x = Math.round(leftLineX - LINE_GAP - heightBadge.width);
-  heightBadge.y = Math.round((g.imgTop + g.imgBottom) / 2 - heightBadge.height / 2);
-
-  fitBox(
-    box, g,
-    Math.min(leftLineX - TICK / 2, heightBadge.x),
-    Math.min(topLineY - TICK / 2, widthBadge.y),
-    g.imgRight,
-    g.imgBottom,
-  );
-  return box;
-}
-
-/** PADDING: instance + pink padding bands with dashed inner-edge lines + pink
- *  badges on the right rail (padT/padB) and bottom rail (padL/padR). No
- *  width/height lines, no child outlines, no gaps. */
-function buildPaddingView(component: ComponentNode, inst: InstanceNode, tokens: Record<string, string>, part: string, scale: number): FrameNode | null {
-  const M_TOP = 8, M_LEFT = 8;
-  const box = figma.createFrame();
-  box.name = 'Measure — padding';
-  box.resize(2000, 2000);
-  box.fills = [];
-  box.clipsContent = false;
-  box.appendChild(inst);
-  inst.x = M_LEFT;
-  inst.y = M_TOP;
-  const g = computeGeom(component, scale, M_LEFT, M_TOP);
-
-  // No padding at all → nothing to show for this lens; skip it.
-  if (!g.hasAutoLayout || (g.pads.top <= 0 && g.pads.right <= 0 && g.pads.bottom <= 0 && g.pads.left <= 0)) {
-    return null;
-  }
-
-  // Pink padding bands with dashed inner edges.
-  if (g.padTs > 0) {
-    box.appendChild(band(g.imgLeft, g.imgTop, g.imgW, g.padTs, PAD_PINK));
-    box.appendChild(dashedLine(g.imgLeft, g.imgTop + g.padTs, g.imgW, 1, PAD_PINK, EDGE_OPACITY));
-  }
-  if (g.padBs > 0) {
-    box.appendChild(band(g.imgLeft, g.imgBottom - g.padBs, g.imgW, g.padBs, PAD_PINK));
-    box.appendChild(dashedLine(g.imgLeft, g.imgBottom - g.padBs, g.imgW, 1, PAD_PINK, EDGE_OPACITY));
-  }
-  if (g.padLs > 0) {
-    box.appendChild(band(g.imgLeft, g.imgTop, g.padLs, g.imgH, PAD_PINK));
-    box.appendChild(dashedLine(g.imgLeft + g.padLs, g.imgTop, 1, g.imgH, PAD_PINK, EDGE_OPACITY));
-  }
-  if (g.padRs > 0) {
-    box.appendChild(band(g.imgRight - g.padRs, g.imgTop, g.padRs, g.imgH, PAD_PINK));
-    box.appendChild(dashedLine(g.imgRight - g.padRs, g.imgTop, 1, g.imgH, PAD_PINK, EDGE_OPACITY));
-  }
-
-  // Right rail — padT / padB badges (vertical padding).
-  const railRightX = g.imgRight + RAIL_RIGHT_OFF;
-  const rightRail: RailItem[] = [];
-  if (g.pads.top > 0) {
-    const b = badge(measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], g.pads.top).value, PAD_PINK);
-    box.appendChild(b);
-    rightRail.push({ node: b, center: g.imgTop + g.padTs / 2 });
-  }
-  if (g.pads.bottom > 0) {
-    const b = badge(measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], g.pads.bottom).value, PAD_PINK);
-    box.appendChild(b);
-    rightRail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
-  }
-  const rr = placeRightRail(rightRail, railRightX, g.imgBottom);
-
-  // Bottom rail — padL / padR badges (horizontal padding).
-  const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
-  const bottomRail: RailItem[] = [];
-  if (g.pads.left > 0) {
-    const b = badge(measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], g.pads.left).value, PAD_PINK);
-    box.appendChild(b);
-    bottomRail.push({ node: b, center: g.imgLeft + g.padLs / 2 });
-  }
-  if (g.pads.right > 0) {
-    const b = badge(measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], g.pads.right).value, PAD_PINK);
-    box.appendChild(b);
-    bottomRail.push({ node: b, center: g.imgRight - g.padRs / 2 });
-  }
-  const br = placeBottomRail(bottomRail, railBottomY, g.imgRight);
-
-  fitBox(
-    box, g,
-    g.imgLeft,
-    g.imgTop,
-    Math.max(rr.maxRight, br.maxRight),
-    Math.max(rr.maxBottom, br.maxBottom),
-  );
-  return box;
-}
-
-/** SPACING: instance + blue gap bands + dashed red child outlines (>1 child) +
- *  the layout-axis rhythm rail WITHOUT padding entries. Horizontal → bottom rail
- *  [childW][gap][childW]…; vertical → right rail [childH][gap]…. Only meaningful
- *  when the root has auto-layout and ≥1 visible child; otherwise null. */
-function buildSpacingView(component: ComponentNode, inst: InstanceNode, scale: number): FrameNode | null {
-  const M_TOP = 8, M_LEFT = 8;
-  const box = figma.createFrame();
-  box.name = 'Measure — spacing';
-  box.resize(2000, 2000);
-  box.fills = [];
-  box.clipsContent = false;
-  box.appendChild(inst);
-  inst.x = M_LEFT;
-  inst.y = M_TOP;
-  const g = computeGeom(component, scale, M_LEFT, M_TOP);
-
-  if (!g.hasAutoLayout || g.kids.length < 1) return null;
-
-  // Gap bands between consecutive children, full cross span, dashed edges.
-  for (const gp of g.gaps) {
-    if (g.horizontal) {
-      box.appendChild(band(gp.start, g.imgTop, gp.end - gp.start, g.imgH, GAP_BLUE));
-      box.appendChild(dashedLine(gp.start, g.imgTop, 1, g.imgH, GAP_BLUE, EDGE_OPACITY));
-      box.appendChild(dashedLine(gp.end, g.imgTop, 1, g.imgH, GAP_BLUE, EDGE_OPACITY));
-    } else {
-      box.appendChild(band(g.imgLeft, gp.start, g.imgW, gp.end - gp.start, GAP_BLUE));
-      box.appendChild(dashedLine(g.imgLeft, gp.start, g.imgW, 1, GAP_BLUE, EDGE_OPACITY));
-      box.appendChild(dashedLine(g.imgLeft, gp.end, g.imgW, 1, GAP_BLUE, EDGE_OPACITY));
+  // -------------------------------------------------------------------
+  // Over-artwork bands (padding + gaps), drawn above the instance.
+  // -------------------------------------------------------------------
+  if (showPadding && g.hasAutoLayout) {
+    if (g.padTs > 0) {
+      box.appendChild(band(g.imgLeft, g.imgTop, g.imgW, g.padTs, PAD_BLUE));
+      box.appendChild(dashedLine(g.imgLeft, g.imgTop + g.padTs, g.imgW, 1, PAD_BLUE, EDGE_OPACITY));
+    }
+    if (g.padBs > 0) {
+      box.appendChild(band(g.imgLeft, g.imgBottom - g.padBs, g.imgW, g.padBs, PAD_BLUE));
+      box.appendChild(dashedLine(g.imgLeft, g.imgBottom - g.padBs, g.imgW, 1, PAD_BLUE, EDGE_OPACITY));
+    }
+    if (g.padLs > 0) {
+      box.appendChild(band(g.imgLeft, g.imgTop, g.padLs, g.imgH, PAD_BLUE));
+      box.appendChild(dashedLine(g.imgLeft + g.padLs, g.imgTop, 1, g.imgH, PAD_BLUE, EDGE_OPACITY));
+    }
+    if (g.padRs > 0) {
+      box.appendChild(band(g.imgRight - g.padRs, g.imgTop, g.padRs, g.imgH, PAD_BLUE));
+      box.appendChild(dashedLine(g.imgRight - g.padRs, g.imgTop, 1, g.imgH, PAD_BLUE, EDGE_OPACITY));
     }
   }
 
-  // Dashed child outlines when there is more than one visible child.
-  if (g.kids.length > 1) {
-    for (const k of g.kids) box.appendChild(outline(k.x1, k.y1, k.w, k.h));
+  if (showSpacing && g.hasAutoLayout) {
+    for (const gp of g.gaps) {
+      if (g.horizontal) {
+        box.appendChild(band(gp.start, g.imgTop, gp.end - gp.start, g.imgH, GAP_PINK));
+        box.appendChild(dashedLine(gp.start, g.imgTop, 1, g.imgH, GAP_PINK, EDGE_OPACITY));
+        box.appendChild(dashedLine(gp.end, g.imgTop, 1, g.imgH, GAP_PINK, EDGE_OPACITY));
+      } else {
+        box.appendChild(band(g.imgLeft, gp.start, g.imgW, gp.end - gp.start, GAP_PINK));
+        box.appendChild(dashedLine(g.imgLeft, gp.start, g.imgW, 1, GAP_PINK, EDGE_OPACITY));
+        box.appendChild(dashedLine(g.imgLeft, gp.end, g.imgW, 1, GAP_PINK, EDGE_OPACITY));
+      }
+    }
+    // Dashed child outlines (SPACING owns gaps + outlines).
+    if (g.kids.length > 1) {
+      for (const k of g.kids) box.appendChild(outline(k.x1, k.y1, k.w, k.h));
+    }
   }
 
-  // Rhythm rail: alternating child-size / gap badges along the layout axis.
-  let rr = { maxRight: g.imgRight, maxBottom: g.imgBottom };
-  let br = { maxRight: g.imgRight, maxBottom: g.imgBottom };
-  if (g.horizontal) {
+  // -------------------------------------------------------------------
+  // TOP / LEFT rails — total dimensions (SIZE), plus main-axis child sizes on
+  // whichever of top/left carries the main axis.
+  // -------------------------------------------------------------------
+  if (showSize) {
+    // Top rail: total-width hairline + centered badge (or per-child badges
+    // when the main axis is horizontal).
+    const topLineY = g.imgTop - RAIL_TOP_OFF;
+    box.appendChild(line(g.imgLeft, topLineY, g.imgW, 1, SIZE_RED));
+    box.appendChild(line(g.imgLeft, topLineY - TICK / 2, 1, TICK, SIZE_RED));
+    box.appendChild(line(g.imgRight - 1, topLineY - TICK / 2, 1, TICK, SIZE_RED));
+
+    if (g.hasAutoLayout && g.horizontal && g.kids.length > 0) {
+      // Main axis horizontal: one red width badge per visible child.
+      const rail: RailItem[] = [];
+      for (const k of g.kids) {
+        const b = badge(String(round(k.w / scale)), SIZE_RED);
+        box.appendChild(b);
+        rail.push({ node: b, center: k.x1 + k.w / 2 });
+      }
+      // Badges sit above the hairline; place using the bottom-rail helper
+      // then mirror the y so they read top-aligned-descending toward the line.
+      let prevRight = -Infinity;
+      let topMinY = topLineY;
+      for (const item of rail) {
+        let x = Math.round(item.center - item.node.width / 2);
+        if (x < prevRight + NUDGE) x = Math.round(prevRight + NUDGE);
+        item.node.x = x;
+        item.node.y = Math.round(topLineY - LINE_GAP - item.node.height);
+        prevRight = x + item.node.width;
+        topMinY = Math.min(topMinY, item.node.y);
+        maxRight = Math.max(maxRight, prevRight);
+      }
+      minContentTop = Math.min(minContentTop, topMinY, topLineY - TICK / 2);
+    } else {
+      // Main axis vertical (or no auto-layout): single centered total-width badge.
+      const widthBadge = badge(measureLabel(tokens, part, ['width'], component.width).value, SIZE_RED);
+      box.appendChild(widthBadge);
+      widthBadge.x = Math.round((g.imgLeft + g.imgRight) / 2 - widthBadge.width / 2);
+      widthBadge.y = Math.round(topLineY - LINE_GAP - widthBadge.height);
+      minContentTop = Math.min(minContentTop, widthBadge.y, topLineY - TICK / 2);
+    }
+
+    // Left rail: total-height hairline + centered badge (or per-child badges
+    // when the main axis is vertical).
+    const leftLineX = g.imgLeft - RAIL_LEFT_OFF;
+    box.appendChild(line(leftLineX, g.imgTop, 1, g.imgH, SIZE_RED));
+    box.appendChild(line(leftLineX - TICK / 2, g.imgTop, TICK, 1, SIZE_RED));
+    box.appendChild(line(leftLineX - TICK / 2, g.imgBottom - 1, TICK, 1, SIZE_RED));
+
+    if (g.hasAutoLayout && !g.horizontal && g.kids.length > 0) {
+      // Main axis vertical: one red height badge per visible child.
+      const rail: RailItem[] = [];
+      for (const k of g.kids) {
+        const b = badge(String(round(k.h / scale)), SIZE_RED);
+        box.appendChild(b);
+        rail.push({ node: b, center: k.y1 + k.h / 2 });
+      }
+      let prevBottom = -Infinity;
+      let leftMinX = leftLineX;
+      for (const item of rail) {
+        let y = Math.round(item.center - item.node.height / 2);
+        if (y < prevBottom + NUDGE) y = Math.round(prevBottom + NUDGE);
+        item.node.y = y;
+        item.node.x = Math.round(leftLineX - LINE_GAP - item.node.width);
+        prevBottom = y + item.node.height;
+        leftMinX = Math.min(leftMinX, item.node.x);
+        maxBottom = Math.max(maxBottom, prevBottom);
+      }
+      minContentLeft = Math.min(minContentLeft, leftMinX, leftLineX - TICK / 2);
+    } else {
+      // Main axis horizontal (or no auto-layout): single centered total-height badge.
+      const heightBadge = badge(measureLabel(tokens, part, ['height'], component.height).value, SIZE_RED);
+      box.appendChild(heightBadge);
+      heightBadge.x = Math.round(leftLineX - LINE_GAP - heightBadge.width);
+      heightBadge.y = Math.round((g.imgTop + g.imgBottom) / 2 - heightBadge.height / 2);
+      minContentLeft = Math.min(minContentLeft, heightBadge.x, leftLineX - TICK / 2);
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // BOTTOM rail — horizontal main axis: pad-left, gaps, pad-right (flow).
+  // Vertical main axis: pad-left, content width, pad-right (cross flow).
+  // -------------------------------------------------------------------
+  if (g.hasAutoLayout && g.horizontal && (showPadding || showSpacing)) {
     const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
-    for (let i = 0; i < g.kids.length; i++) {
-      const k = g.kids[i];
-      const b = badge(String(round(k.w / scale)), SIZE_RED);
+    if (showPadding && g.pads.left > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], g.pads.left)), PAD_BLUE);
       box.appendChild(b);
-      rail.push({ node: b, center: k.x1 + k.w / 2 });
-      if (i < g.gaps.length) {
-        const gp = g.gaps[i];
-        const gb = badge(String(round(g.gap)), GAP_BLUE);
-        box.appendChild(gb);
-        rail.push({ node: gb, center: (gp.start + gp.end) / 2 });
+      rail.push({ node: b, center: g.imgLeft + g.padLs / 2 });
+    }
+    if (showSpacing) {
+      for (const gp of g.gaps) {
+        const b = badge(badgeText(measureLabel(tokens, part, ['gap'], g.gap)), GAP_PINK);
+        box.appendChild(b);
+        rail.push({ node: b, center: (gp.start + gp.end) / 2 });
       }
     }
-    br = placeBottomRail(rail, railBottomY, g.imgRight);
-  } else {
-    const railRightX = g.imgRight + RAIL_RIGHT_OFF;
+    if (showPadding && g.pads.right > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], g.pads.right)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgRight - g.padRs / 2 });
+    }
+    const br = placeBottomRail(rail, railBottomY, g.imgRight);
+    maxRight = Math.max(maxRight, br.maxRight);
+    maxBottom = Math.max(maxBottom, br.maxBottom);
+  } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSize)) {
+    // Vertical main axis: bottom rail shows pad-left, content width (red,
+    // SIZE), pad-right. Gaps live on the right rail alongside the vertical
+    // flow, not here.
+    const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
-    for (let i = 0; i < g.kids.length; i++) {
-      const k = g.kids[i];
-      const b = badge(String(round(k.h / scale)), SIZE_RED);
+    if (showPadding && g.pads.left > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], g.pads.left)), PAD_BLUE);
       box.appendChild(b);
-      rail.push({ node: b, center: k.y1 + k.h / 2 });
-      if (i < g.gaps.length) {
-        const gp = g.gaps[i];
-        const gb = badge(String(round(g.gap)), GAP_BLUE);
-        box.appendChild(gb);
-        rail.push({ node: gb, center: (gp.start + gp.end) / 2 });
-      }
+      rail.push({ node: b, center: g.imgLeft + g.padLs / 2 });
     }
-    rr = placeRightRail(rail, railRightX, g.imgBottom);
+    if (showSize) {
+      const contentLeft = g.imgLeft + g.padLs;
+      const contentRight = g.imgRight - g.padRs;
+      const contentW = round(component.width - g.pads.left - g.pads.right);
+      const b = badge(String(contentW), SIZE_RED);
+      box.appendChild(b);
+      rail.push({ node: b, center: (contentLeft + contentRight) / 2 });
+    }
+    if (showPadding && g.pads.right > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], g.pads.right)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgRight - g.padRs / 2 });
+    }
+    const br = placeBottomRail(rail, railBottomY, g.imgRight);
+    maxRight = Math.max(maxRight, br.maxRight);
+    maxBottom = Math.max(maxBottom, br.maxBottom);
   }
 
-  fitBox(
-    box, g,
-    g.imgLeft,
-    g.imgTop,
-    Math.max(rr.maxRight, br.maxRight),
-    Math.max(rr.maxBottom, br.maxBottom),
+  // -------------------------------------------------------------------
+  // RIGHT rail — padding + cross-size when horizontal main axis; padding +
+  // vertical flow (pad-top, gaps, pad-bottom) when vertical main axis.
+  // -------------------------------------------------------------------
+  if (g.hasAutoLayout && g.horizontal && (showPadding || showSize)) {
+    const railRightX = g.imgRight + RAIL_RIGHT_OFF;
+    const rail: RailItem[] = [];
+    if (showPadding && g.pads.top > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], g.pads.top)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgTop + g.padTs / 2 });
+    }
+    if (showSize && g.kids.length > 0) {
+      // Cross-axis child height: collapse to one representative badge centered
+      // on the content band (children share the cross size in practice).
+      const contentTop = g.imgTop + g.padTs;
+      const contentBottom = g.imgBottom - g.padBs;
+      const crossH = round((component.height - g.pads.top - g.pads.bottom));
+      const b = badge(String(crossH), SIZE_RED);
+      box.appendChild(b);
+      rail.push({ node: b, center: (contentTop + contentBottom) / 2 });
+    }
+    if (showPadding && g.pads.bottom > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], g.pads.bottom)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
+    }
+    const rr = placeRightRail(rail, railRightX, g.imgBottom);
+    maxRight = Math.max(maxRight, rr.maxRight);
+    maxBottom = Math.max(maxBottom, rr.maxBottom);
+  } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSpacing)) {
+    const railRightX = g.imgRight + RAIL_RIGHT_OFF;
+    const rail: RailItem[] = [];
+    if (showPadding && g.pads.top > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], g.pads.top)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgTop + g.padTs / 2 });
+    }
+    if (showSpacing) {
+      for (const gp of g.gaps) {
+        const b = badge(badgeText(measureLabel(tokens, part, ['gap'], g.gap)), GAP_PINK);
+        box.appendChild(b);
+        rail.push({ node: b, center: (gp.start + gp.end) / 2 });
+      }
+    }
+    if (showPadding && g.pads.bottom > 0) {
+      const b = badge(badgeText(measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], g.pads.bottom)), PAD_BLUE);
+      box.appendChild(b);
+      rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
+    }
+    const rr = placeRightRail(rail, railRightX, g.imgBottom);
+    maxRight = Math.max(maxRight, rr.maxRight);
+    maxBottom = Math.max(maxBottom, rr.maxBottom);
+  }
+  // No auto-layout root: right rail carries nothing extra — total width/height
+  // on the top/left rails are the only SIZE measurements available.
+
+  // -------------------------------------------------------------------
+  // Resize the box to content extents (margins computed AFTER placement).
+  // -------------------------------------------------------------------
+  const contentLeftEdge = Math.min(g.imgLeft, minContentLeft);
+  const contentTopEdge = Math.min(g.imgTop, minContentTop);
+  const contentRightEdge = Math.max(g.imgRight, maxRight) + R_SLACK;
+  const contentBottomEdge = Math.max(g.imgBottom, maxBottom) + B_SLACK;
+
+  const dx = -Math.min(0, Math.round(contentLeftEdge));
+  const dy = -Math.min(0, Math.round(contentTopEdge));
+  if (dx !== 0 || dy !== 0) {
+    for (const child of box.children) {
+      child.x += dx;
+      child.y += dy;
+    }
+  }
+  box.resize(
+    Math.max(Math.round(contentRightEdge) + dx, 1),
+    Math.max(Math.round(contentBottomEdge) + dy, 1),
   );
+
   return box;
 }
 
 // ---------------------------------------------------------------------------
-// Bindings line + composition
+// Bindings line
 // ---------------------------------------------------------------------------
 
-/** Overline caption sitting above each mini-diagram (e.g. "SIZE"). */
-function viewCaption(text: string): TextNode {
-  const t = makeText(text, 'Medium', 10, palette.muted, 130, 6);
-  t.textAutoResize = 'WIDTH_AND_HEIGHT';
-  return t;
-}
-
-/** Build the quiet token-bindings line beneath the wrap row (unchanged from the
- *  all-in-one design): caption + value-or-token for each measured property. */
+/** Build the quiet bindings line beneath the diagram: radius (always, when
+ *  present) plus any full padding/gap token path — kept minimal since the
+ *  abbreviated short form already appears inline on the badges. */
 function buildBindingsRow(component: ComponentNode, tokens: Record<string, string>, part: string): FrameNode | null {
   const pads = {
     top: component.paddingTop ?? 0,
@@ -604,35 +697,10 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
   const gap = hasAutoLayout ? component.itemSpacing : 0;
 
   const bindings: LegendEntry[] = [];
-  const pushBinding = (caption: string, label: MeasureLabel, onlyBound: boolean): void => {
-    if (onlyBound && !label.token) return;
-    bindings.push({ caption, label });
-  };
-  if (hasAutoLayout) {
-    const uniform =
-      pads.top > 0 && pads.top === pads.right && pads.top === pads.bottom && pads.top === pads.left;
-    if (uniform) {
-      pushBinding('padding', measureLabel(tokens, part, ['padding'], pads.top), false);
-    } else {
-      if (pads.left > 0 && pads.left === pads.right) {
-        pushBinding('padding-x', measureLabel(tokens, part, ['padding-x', 'padding'], pads.left), false);
-      } else {
-        if (pads.left > 0) pushBinding('padding-left', measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], pads.left), false);
-        if (pads.right > 0) pushBinding('padding-right', measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], pads.right), false);
-      }
-      if (pads.top > 0 && pads.top === pads.bottom) {
-        pushBinding('padding-y', measureLabel(tokens, part, ['padding-y', 'padding'], pads.top), false);
-      } else {
-        if (pads.top > 0) pushBinding('padding-top', measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], pads.top), false);
-        if (pads.bottom > 0) pushBinding('padding-bottom', measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], pads.bottom), false);
-      }
-    }
-    if (gap > 0) pushBinding('gap', measureLabel(tokens, part, ['gap'], gap), false);
-  }
-  pushBinding('width', measureLabel(tokens, part, ['width'], component.width), true);
-  pushBinding('height', measureLabel(tokens, part, ['height'], component.height), true);
   const radius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
-  if (radius > 0) pushBinding('radius', measureLabel(tokens, part, ['border-radius'], radius), false);
+  if (radius > 0) {
+    bindings.push({ caption: 'radius', label: measureLabel(tokens, part, ['border-radius'], radius) });
+  }
 
   if (!bindings.length) return null;
   const row = hstack(16);
@@ -652,54 +720,28 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
   return row;
 }
 
-/** Build the first-level auto-layout parts legend (rendered once). Returns null
- *  when no part has measurable auto-layout entries. */
-function buildLegend(component: ComponentNode, tokens: Record<string, string>): FrameNode | null {
-  const legend = vstack(10);
-  for (const child of component.children) {
-    if (!child.visible) continue;
-    if (child.type !== 'FRAME' && child.type !== 'INSTANCE' && child.type !== 'COMPONENT') continue;
-    const layoutChild = child;
-    if (layoutChild.layoutMode !== 'HORIZONTAL' && layoutChild.layoutMode !== 'VERTICAL') continue;
-    const childPart = child.name.replace(/#+\s*$/, '').trim();
-    const entries = partEntries(tokens, childPart, layoutChild);
-    if (!entries.length) continue;
-    const legRow = legendRow(childPart, entries);
-    legend.appendChild(legRow);
-    legRow.layoutSizingHorizontal = 'FILL';
-  }
-  if (legend.children.length === 0) {
-    legend.remove();
-    return null;
-  }
-  return legend;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-const VIEW_CAPTIONS: Record<MeasureView, string> = {
-  size: 'SIZE',
-  padding: 'PADDING',
-  spacing: 'SPACING',
-};
-
 /**
- * Build the token-aware measure section as user-selectable lenses. Each selected
- * view (size / padding / spacing) renders as its OWN focused mini-diagram — a
- * small overline caption above a diagram box — and they sit side by side in a
- * wrapping row. Beneath the row, a quiet token-bindings line carries the
- * token-first data (incl. radius), and a per-part legend for first-level
- * auto-layout parts sits below that. Both render once, unchanged.
+ * Build the token-aware measure section as ONE unified Spectral 4-rail
+ * diagram: a screenshot-scale live instance with the artwork left untouched,
+ * translucent bands (blue padding, pink gap) with dashed inner edges layered
+ * over it, dashed red child outlines, and solid colored value badges (red =
+ * size, blue = padding, pink = gap) arranged in rails OUTSIDE the artwork —
+ * top = child sizes / total width, left = total height / child sizes,
+ * bottom = padding+gap flow, right = padding + cross-size. `block.views`
+ * (the lens toggles) filters which categories draw on this single diagram;
+ * overlap between categories is expected and acceptable — the toggles are
+ * the decluttering mechanism. Beneath the diagram, a quiet bindings line
+ * carries radius; a per-part legend for first-level auto-layout parts sits
+ * below that.
  *
- * Each view creates its OWN independent instance (rescaled per the multi-view
- * cap) and is built in its own try/catch: a failed view is skipped (its instance
- * removed) while the others still render. If ALL selected views fail (or none
- * apply), returns null so the caller falls back to the plain table.
- *
- * Module-level never-crash contract: any Figma-API throw returns null and never
- * leaves an orphaned instance on the canvas.
+ * Returns null when the diagram can't be built (component missing, not a
+ * COMPONENT, or any layout error) so the caller falls back to a plain table.
+ * Any created instance is removed before returning null so the canvas is
+ * never left with an orphaned node.
  */
 export async function buildMeasureSection(block: MeasureBlockData): Promise<FrameNode | null> {
   let node: BaseNode | null;
@@ -711,45 +753,34 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
   if (!node || node.type !== 'COMPONENT') return null;
   const component = node;
 
-  const views = block.views && block.views.length ? block.views : (['size', 'padding', 'spacing'] as MeasureView[]);
+  const views = new Set<MeasureView>(
+    block.views && block.views.length ? block.views : (['size', 'padding', 'spacing'] as MeasureView[]),
+  );
   const part = block.rootPart;
 
-  // Image cap: full height when a single lens renders, capped when 2+ do.
-  const imgMaxH = views.length >= 2 ? IMG_MAX_H_MULTI : IMG_MAX_H_SINGLE;
-  const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (64 + 160);
-
-  // Build one diagram box per applicable view; each owns its instance and is
-  // isolated so one view's failure never aborts the others.
-  const diagrams: { view: MeasureView; box: FrameNode }[] = [];
+  let inst: InstanceNode;
   try {
-    for (const view of views) {
-      let inst: InstanceNode | null = null;
+    inst = component.createInstance();
+  } catch {
+    return null;
+  }
+
+  // Everything after the instance exists is wrapped so any Figma-API throw
+  // (resize/rescale/layout) cleans up the instance and falls back to the table.
+  try {
+    const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (M_LEFT + 160);
+    const scale = Math.min(innerMax / inst.width, IMG_MAX_H / inst.height, 1);
+    if (scale !== 1) inst.rescale(scale);
+
+    let box: FrameNode;
+    try {
+      box = buildDiagram(component, inst, block.tokens, part, scale, views);
+    } catch {
+      // Diagram build failed: clean up the instance (still attached to no
+      // parent frame yet, or attached to a partial box we also discard).
       try {
-        inst = component.createInstance();
-        const scale = Math.min(innerMax / inst.width, imgMaxH / inst.height, 1);
-        if (scale !== 1) inst.rescale(scale);
-
-        let box: FrameNode | null = null;
-        if (view === 'size') box = buildSizeView(component, inst, block.tokens, part, scale);
-        else if (view === 'padding') box = buildPaddingView(component, inst, block.tokens, part, scale);
-        else box = buildSpacingView(component, inst, scale);
-
-        if (box) {
-          diagrams.push({ view, box });
-        } else {
-          // Not applicable → drop the instance and the empty box (if any).
-          inst.remove();
-        }
-      } catch {
-        // This view failed: remove its instance (and any partial box) and move on.
-        try {
-          if (inst) inst.remove();
-        } catch { /* already gone */ }
-      }
-    }
-
-    if (!diagrams.length) {
-      // All selected views failed or were inapplicable → table fallback.
+        inst.remove();
+      } catch { /* already gone */ }
       return null;
     }
 
@@ -761,24 +792,8 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     card.strokes = solidFill(palette.border);
     card.strokeWeight = 1;
     card.counterAxisAlignItems = 'CENTER';
+    card.appendChild(box);
 
-    // Wrapping row of mini-diagrams: each is a caption + box vstack.
-    const wrap = hstack(24);
-    wrap.layoutWrap = 'WRAP';
-    wrap.counterAxisSpacing = 24;
-    wrap.counterAxisAlignItems = 'MIN';
-    card.appendChild(wrap);
-    wrap.layoutSizingHorizontal = 'FILL';
-
-    for (const { view, box } of diagrams) {
-      const mini = vstack(8);
-      mini.counterAxisAlignItems = 'CENTER';
-      mini.appendChild(viewCaption(VIEW_CAPTIONS[view]));
-      mini.appendChild(box);
-      wrap.appendChild(mini);
-    }
-
-    // Bindings line + legend, once, beneath the row.
     const bindings = buildBindingsRow(component, block.tokens, part);
     if (bindings) card.appendChild(bindings);
     const legend = buildLegend(component, block.tokens);
@@ -789,13 +804,11 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
 
     return card;
   } catch {
-    // Unexpected throw during composition: tear down every built diagram's
-    // instance so the canvas is never littered.
-    for (const { box } of diagrams) {
-      try {
-        box.remove();
-      } catch { /* already gone */ }
-    }
+    // Unexpected throw during composition: tear down the instance so the
+    // canvas is never littered.
+    try {
+      inst.remove();
+    } catch { /* already gone */ }
     return null;
   }
 }
