@@ -8,5 +8,6 @@ export * from './extract';
 export * from './hash';
 export * from './render';
 export * from './resolve';
+export * from './statesMatrix';
 export * from './prose/prompt';
 export * from './prose/client';
