@@ -743,6 +743,8 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       right.appendChild(table);
       table.layoutSizingHorizontal = 'FILL';
     }
+  } else if (section.kind === 'measure') {
+    // Placeholder until Task 3: render nothing (section heading only).
   } else {
     const table = buildTable(section.columns, section.rows);
     body.appendChild(table);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, type SectionId } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -96,5 +96,50 @@ describe('buildDocModel', () => {
       expect(block.items.some((i) => i.text.startsWith('✅'))).toBe(true);
       expect(block.items.some((i) => i.text.startsWith('❌'))).toBe(true);
     }
+  });
+});
+
+describe('measurements section', () => {
+  const spec: IntermediateSpec = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
+    anatomy: [], anatomyComponentId: '1:2',
+    props: [{ name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' }],
+    variants: [{ prop: 'State', values: ['Default', 'Hover'] }],
+    variantInstances: [
+      { nodeId: '1:2', name: 'State=Default', values: { State: 'Default' } },
+      { nodeId: '1:3', name: 'State=Hover', values: { State: 'Hover' } },
+    ],
+    states: ['Default', 'Hover'],
+    tokens: [
+      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
+      { part: 'Container', property: 'gap', conditions: {}, token: 'spacing/sm' },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+    ],
+    related: [], gaps: [], layout: [],
+  } as unknown as IntermediateSpec;
+
+  it('builds a measure block keyed by part+property for the default variant', () => {
+    const model = buildDocModel(spec, null, new Set(['measurements']), new Set(['1:2']));
+    const block = model.sections[0];
+    expect(block.kind).toBe('measure');
+    if (block.kind !== 'measure') return;
+    expect(block.componentId).toBe('1:2');
+    expect(block.rootPart).toBe('Container');
+    expect(block.tokens[measureKey('Container', 'padding')]).toBe('spacing/md');
+    expect(block.tokens[measureKey('Container', 'gap')]).toBe('spacing/sm');
+    // Hover-only rule must NOT leak into the default-variant lookup.
+    expect(block.tokens[measureKey('Container', 'fill')]).toBeUndefined();
+  });
+
+  it('uses the cleaned component name as rootPart for a plain component', () => {
+    const plain: IntermediateSpec = {
+      ...spec, variants: [], props: [],
+      variantInstances: [{ nodeId: '1:2', name: 'Button', values: {} }],
+      tokens: [{ part: 'Button', property: 'padding', conditions: {}, token: 'spacing/md' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(plain, null, new Set(['measurements']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.rootPart).toBe('Button');
   });
 });

@@ -1,13 +1,14 @@
 import type { IntermediateSpec, ProseDrafts, VariantInstance } from '@spec-layer/extractor';
-import { formatConditions, resolveTokensForVariant } from '@spec-layer/extractor';
+import { cleanPartName, formatConditions, resolveTokensForVariant } from '@spec-layer/extractor';
 
 export type SectionId =
-  | 'definition' | 'anatomy' | 'configuration' | 'variants'
+  | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
   | 'states' | 'tokens' | 'accessibility' | 'dosDonts' | 'related';
 
 export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean }[] = [
   { id: 'definition',    label: 'Definition',    ai: true  },
   { id: 'anatomy',       label: 'Anatomy',       ai: false },
+  { id: 'measurements',  label: 'Measurements',  ai: false },
   { id: 'configuration', label: 'Configuration', ai: false },
   { id: 'variants',      label: 'Variants',      ai: false },
   { id: 'states',        label: 'States',        ai: false },
@@ -41,7 +42,8 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
-  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[] };
+  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[] }
+  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string> };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
 
@@ -65,6 +67,15 @@ export function defaultVariantId(spec: IntermediateSpec): string | null {
     Object.entries(defaults).every(([axis, value]) => inst.values[axis] === value),
   );
   return (match ?? spec.variantInstances[0]).nodeId;
+}
+
+export const measureKey = (part: string, property: string): string => `${part} ${property}`;
+
+/** Axis -> default value map for resolving the default variant's tokens. */
+function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
+  const defId = defaultVariantId(spec);
+  const inst = spec.variantInstances.find((i) => i.nodeId === defId);
+  return inst?.values ?? {};
 }
 
 const AI_PLACEHOLDER = '_To be written._';
@@ -169,6 +180,22 @@ function buildSection(
         return { id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts };
       }
       return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
+    }
+
+    case 'measurements': {
+      // Token lookup for the DEFAULT variant only: the measure diagram renders the
+      // default variant's geometry, so its labels must resolve exactly the tokens
+      // that variant carries. Raw (unbound) values fall out naturally: the builder
+      // reads live px values and shows them un-decorated when no key matches.
+      const tokens: Record<string, string> = {};
+      for (const t of resolveTokensForVariant(spec.tokens, defaultAxisValues(spec))) {
+        tokens[measureKey(t.part, t.property)] = t.token;
+      }
+      const rootPart = spec.variants.length > 0 ? 'Container' : cleanPartName(spec.name);
+      return {
+        id, heading: label, kind: 'measure',
+        componentId: spec.anatomyComponentId, rootPart, tokens,
+      };
     }
 
     case 'configuration': {
