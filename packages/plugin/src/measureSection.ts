@@ -1,14 +1,18 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex } from './frameKit';
 import { measureKey } from './ui/docModel';
 
-// Monochrome, Dev-Mode / engineering-drawing style. No overlays on the artwork:
-// every value is physically connected to the geometry it measures by extension
-// lines + a dimension hairline, with a single neutral pill carrying the value.
+// Professional dimension-drawing style. No overlays on the artwork: every value
+// is physically connected to the geometry it measures by extension lines + a
+// dimension hairline, and carried by a plain purple text label (no pills). All
+// measurement graphics — extension lines, hairlines, ticks, leaders, and the
+// label text itself — share one ink (Figma's auto-layout purple).
+const MEASURE_INK = hex('#7b61ff');
 const IMG_MAX_H = 480;
 const CARD_PAD = 24;
 
-// Diagram box margins around the scaled image (room for dimension rows).
+// Diagram box margins around the scaled image (room for dimension rows). The
+// bottom/right margins are lower bounds; the box is grown after rows resolve.
 const M_LEFT = 24;
 const M_TOP = 44;
 const M_RIGHT = 96;
@@ -18,8 +22,22 @@ const M_BOTTOM = 104;
 const TICK = 6; // end-tick length on dimension hairlines
 const EXT_OVER = 4; // extension-line overshoot past the image edge / dim line
 const ROW_A_OFF = 18; // first dimension row/column offset from the image edge
-const ROW_STEP = 36; // spacing between dimension rows (Row A → Row B, Col A → Col B)
-const PILL_DROP = 16; // Row-A collision fallback drop below the line
+const ROW_STEP = 24; // minimum spacing between dimension rows/columns
+const LABEL_OFF = 3; // gap between a horizontal-span label and its hairline
+const STAGGER_STEP = 14; // vertical push increment in the collision pass
+const GUTTER = 6; // required horizontal gap between staggered labels
+const LABEL_W = 120; // makeText width cap for measurement labels
+
+/** A placed label's bounding box in box-local coords (for collision passes). */
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const overlapsX = (a: Rect, b: Rect, gutter: number): boolean =>
+  a.x < b.x + b.w + gutter && b.x < a.x + a.w + gutter;
 
 interface MeasureBlockData {
   componentId: string;
@@ -49,7 +67,8 @@ interface LegendEntry {
 
 const round = (n: number): number => Math.round(n * 10) / 10;
 
-/** `spacing/md · 12` when bound; `12` when raw. `bound` drives pill text ink. */
+/** `spacing/md · 12` when bound; `12` when raw. The token name's presence is
+ *  the bound/raw distinction now — both render in the same purple ink. */
 function measureLabel(
   tokens: Record<string, string>,
   part: string,
@@ -63,31 +82,21 @@ function measureLabel(
   return { text: String(round(px)), bound: false };
 }
 
-/** A single unified pill: white bg, 1px border, radius 6, 3/8 padding, 11 Medium.
- *  Text ink is the only bound/unbound distinction — no dots, no dashes. */
-function pill(label: MeasureLabel): FrameNode {
-  const p = hstack(0);
-  p.name = 'Measure pill';
-  p.counterAxisAlignItems = 'CENTER';
-  p.paddingTop = p.paddingBottom = 3;
-  p.paddingLeft = p.paddingRight = 8;
-  p.cornerRadius = 6;
-  p.fills = solidFill(palette.bg);
-  p.strokes = solidFill(palette.border);
-  p.strokeWeight = 1;
-  const text = makeText(label.text, 'Medium', 11, label.bound ? palette.heading : palette.muted, 130);
+/** A plain purple text label — no background, no stroke. */
+function makeLabel(label: MeasureLabel): TextNode {
+  const text = makeText(label.text, 'Medium', 11, MEASURE_INK, 120);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
-  p.appendChild(text);
-  return p;
+  return text;
 }
 
-/** A 1px hairline / tick / extension line as a filled rect, free-positioned. */
-function line(x: number, y: number, w: number, h: number, color: RGB): FrameNode {
+/** A 1px hairline / tick / extension line as a filled rect, free-positioned.
+ *  `opacity` fades the purple ink for the lighter extension lines. */
+function line(x: number, y: number, w: number, h: number, opacity = 1): FrameNode {
   const f = figma.createFrame();
   f.resize(Math.max(w, 1), Math.max(h, 1));
   f.x = Math.round(x);
   f.y = Math.round(y);
-  f.fills = solidFill(color);
+  f.fills = [{ type: 'SOLID', color: MEASURE_INK, opacity }];
   return f;
 }
 
@@ -124,7 +133,8 @@ function partEntries(
   return out;
 }
 
-/** One legend row: the part name followed by caption + pill pairs. */
+/** One legend row: the part name followed by caption + value text pairs.
+ *  Caption in muted ink, value in purple — plain text, no pills. */
 function legendRow(partName: string, entries: LegendEntry[]): FrameNode {
   const row = hstack(10);
   row.counterAxisAlignItems = 'CENTER';
@@ -135,19 +145,23 @@ function legendRow(partName: string, entries: LegendEntry[]): FrameNode {
     const cap = makeText(e.caption, 'Regular', 11, palette.muted, 130);
     cap.textAutoResize = 'WIDTH_AND_HEIGHT';
     row.appendChild(cap);
-    row.appendChild(pill(e.label));
+    const value = makeText(e.label.text, 'Medium', 11, MEASURE_INK, 130);
+    value.textAutoResize = 'WIDTH_AND_HEIGHT';
+    row.appendChild(value);
   }
   return row;
 }
 
 /**
- * Build the token-aware measure diagram in a monochrome engineering-drawing
+ * Build the token-aware measure diagram in a professional dimension-drawing
  * style: a screenshot-scale live instance with the artwork left untouched, and
  * every measured value connected to its geometry by extension lines + a
  * dimension hairline outside the image (horizontal spans below, vertical spans
- * to the right). One neutral pill style carries each value; bound values render
- * in heading ink, raw/unbound values in muted ink. A per-part legend for
- * first-level auto-layout parts sits below.
+ * to the right). All measurement graphics share one purple ink; labels are plain
+ * text placed above/below (or beside) their hairline, never on it, and a
+ * left-to-right stagger pass guarantees no two labels — and no label and
+ * extension line — overlap. A per-part legend for first-level auto-layout parts
+ * sits below.
  *
  * Returns null when the diagram can't be built (component missing, not a
  * COMPONENT, or any layout error) so the caller can fall back to a plain table.
@@ -239,28 +253,50 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
       }
     }
 
+    // Track the deepest / rightmost content so the box is grown after rows
+    // resolve (dynamic offsets can exceed the fixed M_BOTTOM / M_RIGHT).
+    let maxContentBottom = imgBottom;
+    let maxContentRight = imgRight;
+    // Extension-line x positions are treated as 1px occupied rects by the
+    // horizontal stagger pass so purple labels never sit over a purple line.
+    const extColumns: number[] = [];
+
     // ------------------------------------------------------------------
     // Bottom side — horizontal dimension spans.
     // ------------------------------------------------------------------
     const rowA_y = imgBottom + ROW_A_OFF;
 
-    /** A horizontal span on the bottom: two vertical extension lines, a
-     *  dimension hairline with end ticks, and a value pill centered on it.
-     *  Returns the placed pill so the collision pass can inspect it. */
-    const horizontalSpan = (x1: number, x2: number, label: MeasureLabel, y: number): FrameNode => {
-      // Extension lines from just below the image down to just past the line.
-      box.appendChild(line(x1, imgBottom + EXT_OVER, 1, y - (imgBottom + EXT_OVER) + EXT_OVER, palette.border));
-      box.appendChild(line(x2, imgBottom + EXT_OVER, 1, y - (imgBottom + EXT_OVER) + EXT_OVER, palette.border));
-      // Dimension hairline + end ticks.
-      box.appendChild(line(x1, y, x2 - x1, 1, palette.muted));
-      box.appendChild(line(x1, y - TICK / 2, 1, TICK, palette.muted));
-      box.appendChild(line(x2 - 1, y - TICK / 2, 1, TICK, palette.muted));
-      // Pill centered on the span, vertically centered ON the line (z-above).
-      const p = pill(label);
-      box.appendChild(p);
-      p.x = Math.round((x1 + x2) / 2 - p.width / 2);
-      p.y = Math.round(y - p.height / 2);
-      return p;
+    /** Draw a horizontal span's extension lines, hairline + end ticks, and place
+     *  its label above (wide span) or below (narrow span) the hairline. Returns
+     *  the placed label node and its initial rect for the stagger pass. */
+    const horizontalSpan = (
+      x1: number,
+      x2: number,
+      label: MeasureLabel,
+      y: number,
+    ): { node: TextNode; rect: Rect; above: boolean } => {
+      // Extension lines (55% ink) from just below the image down past the line.
+      box.appendChild(line(x1, imgBottom + EXT_OVER, 1, y - (imgBottom + EXT_OVER) + EXT_OVER, 0.55));
+      box.appendChild(line(x2, imgBottom + EXT_OVER, 1, y - (imgBottom + EXT_OVER) + EXT_OVER, 0.55));
+      extColumns.push(x1, x2);
+      // Dimension hairline + end ticks at 100%.
+      box.appendChild(line(x1, y, x2 - x1, 1));
+      box.appendChild(line(x1, y - TICK / 2, 1, TICK));
+      box.appendChild(line(x2 - 1, y - TICK / 2, 1, TICK));
+      // Label: measure width, then place centered on the span — above the line
+      // when it fits within the span, below when the span is too narrow.
+      const node = makeLabel(label);
+      box.appendChild(node);
+      const spanW = x2 - x1;
+      const above = node.width + 8 <= spanW;
+      const cx = (x1 + x2) / 2;
+      const x = Math.round(cx - node.width / 2);
+      const y2 = above
+        ? Math.round(y - LABEL_OFF - node.height) // above the hairline
+        : Math.round(y + LABEL_OFF); // below the hairline
+      node.x = x;
+      node.y = y2;
+      return { node, rect: { x, y: y2, w: node.width, h: node.height }, above };
     };
 
     // Row A spans: collect sources in left-to-right order, then place.
@@ -300,19 +336,48 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     }
     rowASpans.sort((a, b) => a.x1 - b.x1);
 
-    // Place Row A spans; simple one-tier collision fallback (drop below line).
-    let prevRight = -Infinity;
-    for (const s of rowASpans) {
-      const p = horizontalSpan(s.x1, s.x2, s.label, rowA_y);
-      if (p.x < prevRight) {
-        p.y = Math.round(rowA_y + PILL_DROP);
+    // Place Row A labels, then a left-to-right stagger pass: each label is
+    // pushed down in STAGGER_STEP increments until it clears every previously
+    // placed label AND every extension-line column (with a GUTTER gutter).
+    // Extension lines occupy the vertical band from the image bottom to the
+    // hairline only — below the hairline there is no line, so a below-line label
+    // is free to sit there without ever colliding with an extension column.
+    // Above-line labels live above the hairline and ignore these columns (being
+    // pushed down would move them onto the line, defeating the purpose).
+    const columnRects: Rect[] = extColumns.map((x) => ({
+      x,
+      y: imgBottom,
+      w: 1,
+      h: rowA_y - imgBottom,
+    }));
+    const placedLabels: Rect[] = [];
+    const rowANodes = rowASpans.map((s) => horizontalSpan(s.x1, s.x2, s.label, rowA_y));
+    const yOverlap = (a: Rect, b: Rect): boolean => a.y < b.y + b.h && b.y < a.y + a.h;
+    let rowABottom = rowA_y; // deepest label bottom (or the hairline y)
+    for (const item of rowANodes) {
+      const r = item.rect;
+      const obstacles = item.above ? placedLabels : [...placedLabels, ...columnRects];
+      while (obstacles.some((q) => overlapsX(r, q, GUTTER) && yOverlap(r, q))) {
+        r.y += STAGGER_STEP;
       }
-      prevRight = Math.max(prevRight, p.x + p.width);
+      item.node.y = r.y;
+      placedLabels.push(r);
+      rowABottom = Math.max(rowABottom, r.y + r.h);
     }
+    maxContentBottom = Math.max(maxContentBottom, rowABottom);
 
-    // Row B: total width. Drops to Row A's y when Row A is empty.
-    const rowB_y = rowASpans.length ? rowA_y + ROW_STEP : imgBottom + ROW_A_OFF;
-    horizontalSpan(imgLeft, imgRight, measureLabel(block.tokens, part, ['width'], component.width), rowB_y);
+    // Row B: total width — hairline computed AFTER Row A resolves so overlap is
+    // structurally impossible. Width spans are wide, so the label goes below.
+    const rowB_y = Math.max(rowA_y + ROW_STEP, rowABottom + 12);
+    const widthLabel = horizontalSpan(
+      imgLeft,
+      imgRight,
+      measureLabel(block.tokens, part, ['width'], component.width),
+      rowB_y,
+    );
+    // Force below-line placement for the width label regardless of span width.
+    widthLabel.node.y = Math.round(rowB_y + LABEL_OFF);
+    maxContentBottom = Math.max(maxContentBottom, widthLabel.node.y + widthLabel.node.height);
 
     // ------------------------------------------------------------------
     // Right side — vertical dimension spans.
@@ -320,18 +385,21 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     const colA_x = imgRight + ROW_A_OFF;
 
     /** A vertical span on the right: two horizontal extension lines, a vertical
-     *  dimension hairline with end ticks, and a value pill to the RIGHT of it
-     *  (horizontal text, never rotated), vertically centered on the span. */
-    const verticalSpan = (y1: number, y2: number, label: MeasureLabel, x: number): void => {
-      box.appendChild(line(imgRight + EXT_OVER, y1, x - (imgRight + EXT_OVER) + EXT_OVER, 1, palette.border));
-      box.appendChild(line(imgRight + EXT_OVER, y2, x - (imgRight + EXT_OVER) + EXT_OVER, 1, palette.border));
-      box.appendChild(line(x, y1, 1, y2 - y1, palette.muted));
-      box.appendChild(line(x - TICK / 2, y1, TICK, 1, palette.muted));
-      box.appendChild(line(x - TICK / 2, y2 - 1, TICK, 1, palette.muted));
-      const p = pill(label);
-      box.appendChild(p);
-      p.x = Math.round(x + 8);
-      p.y = Math.round((y1 + y2) / 2 - p.height / 2);
+     *  hairline with end ticks, and a horizontal label to the RIGHT of the line
+     *  (6px away), vertically centered on the span. Returns the label's right
+     *  edge so Column B can clear Column A. */
+    const verticalSpan = (y1: number, y2: number, label: MeasureLabel, x: number): number => {
+      box.appendChild(line(imgRight + EXT_OVER, y1, x - (imgRight + EXT_OVER) + EXT_OVER, 1, 0.55));
+      box.appendChild(line(imgRight + EXT_OVER, y2, x - (imgRight + EXT_OVER) + EXT_OVER, 1, 0.55));
+      box.appendChild(line(x, y1, 1, y2 - y1));
+      box.appendChild(line(x - TICK / 2, y1, TICK, 1));
+      box.appendChild(line(x - TICK / 2, y2 - 1, TICK, 1));
+      const node = makeLabel(label);
+      box.appendChild(node);
+      node.x = Math.round(x + GUTTER);
+      node.y = Math.round((y1 + y2) / 2 - node.height / 2);
+      maxContentBottom = Math.max(maxContentBottom, node.y + node.height);
+      return node.x + node.width;
     };
 
     // Column A spans: padding-top (and padding-bottom if different), gap when
@@ -369,25 +437,40 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
         label: measureLabel(block.tokens, part, ['gap'], component.itemSpacing),
       });
     }
-    for (const s of colASpans) verticalSpan(s.y1, s.y2, s.label, colA_x);
+    let colARight = colA_x;
+    for (const s of colASpans) {
+      colARight = Math.max(colARight, verticalSpan(s.y1, s.y2, s.label, colA_x));
+    }
 
-    // Column B: total height. Drops to Column A's x when Column A is empty.
-    const colB_x = colASpans.length ? colA_x + ROW_STEP : imgRight + ROW_A_OFF;
-    verticalSpan(imgTop, imgBottom, measureLabel(block.tokens, part, ['height'], component.height), colB_x);
+    // Column B: total height — hairline computed AFTER Column A resolves.
+    const colB_x = colASpans.length ? Math.max(colA_x + ROW_STEP, colARight + 12) : imgRight + ROW_A_OFF;
+    const heightRight = verticalSpan(
+      imgTop,
+      imgBottom,
+      measureLabel(block.tokens, part, ['height'], component.height),
+      colB_x,
+    );
+    maxContentRight = Math.max(maxContentRight, colARight, heightRight);
 
     // ------------------------------------------------------------------
-    // Radius — pill at top-left above the image, short vertical leader down.
+    // Radius — plain label at top-left above the image, leader down to corner.
     // ------------------------------------------------------------------
     const radius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
     if (radius > 0) {
-      const p = pill(measureLabel(block.tokens, part, ['border-radius'], radius));
-      box.appendChild(p);
-      p.x = imgLeft;
-      p.y = Math.round(imgTop - 6 - p.height);
-      // Leader hairline from the pill's bottom center down to the image top.
-      const leaderX = imgLeft + 10;
-      box.appendChild(line(leaderX, p.y + p.height, 1, imgTop - (p.y + p.height), palette.border));
+      const node = makeLabel(measureLabel(block.tokens, part, ['border-radius'], radius));
+      box.appendChild(node);
+      node.x = imgLeft;
+      node.y = Math.round(imgTop - 8 - node.height);
+      // Leader (100% ink) from the label's bottom-left down to the corner.
+      box.appendChild(line(imgLeft, node.y + node.height, 1, imgTop - (node.y + node.height)));
+      box.appendChild(line(imgLeft, imgTop - 1, 10, 1));
     }
+
+    // Grow the box to fit dynamic rows (never shrink below the fixed margins).
+    box.resize(
+      Math.max(box.width, Math.round(maxContentRight + M_LEFT)),
+      Math.max(box.height, Math.round(maxContentBottom - imgTop + M_TOP + 12)),
+    );
 
     // ------------------------------------------------------------------
     // Legend — first-level auto-layout parts only (root row deleted).
