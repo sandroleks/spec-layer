@@ -12,6 +12,7 @@ import {
   palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
   type FontStyle,
 } from './frameKit';
+import { buildMeasureSection } from './measureSection';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
@@ -744,7 +745,26 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       table.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'measure') {
-    // Placeholder until Task 3: render nothing (section heading only).
+    const diagram = await buildMeasureSection(section);
+    if (diagram) {
+      body.appendChild(diagram);
+      diagram.layoutSizingHorizontal = 'FILL';
+    } else {
+      // Fallback: measurement rules as a plain table (same data, no diagram).
+      // Keys are `${part} ${property}`; the property never contains a space, so
+      // split on the last space to recover the part even when it has spaces.
+      const rows = Object.entries(section.tokens)
+        .map(([key, token]) => {
+          const at = key.lastIndexOf(' ');
+          const part = at === -1 ? key : key.slice(0, at);
+          const property = at === -1 ? '' : key.slice(at + 1);
+          return [part, property, token] as string[];
+        })
+        .filter((r) => !['fill', 'border', 'typography'].includes(r[1]));
+      const table = buildTable(['Part', 'Property', 'Token'], rows);
+      body.appendChild(table);
+      table.layoutSizingHorizontal = 'FILL';
+    }
   } else {
     const table = buildTable(section.columns, section.rows);
     body.appendChild(table);
