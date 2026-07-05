@@ -8,9 +8,10 @@ import type {
   TextRun,
   VariantRow,
 } from './ui/docModel';
-import { DEFAULT_HEADER_BG, DEFAULT_ACCENT } from './brandColors';
+import type { resolveTheme } from './brandColors';
 import {
   palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
+  headingFont, setFontFamilies,
   type FontStyle,
 } from './frameKit';
 import { buildMeasureSection } from './measureSection';
@@ -801,6 +802,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
   head.appendChild(accentRule());
 
   const heading = makeText(section.heading, 'Bold', 24, palette.heading, 130);
+  heading.fontName = headingFont('Bold'); // heading family (guaranteed loaded)
   head.appendChild(heading);
   heading.layoutSizingHorizontal = 'FILL';
 
@@ -952,7 +954,11 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
 // Header band
 // ---------------------------------------------------------------------------
 
-function buildHeader(componentName: string, subtitleMd: string | null): FrameNode {
+async function buildHeader(
+  componentName: string,
+  subtitleMd: string | null,
+  logoBase64?: string | null,
+): Promise<FrameNode> {
   const band = vstack(14);
   band.fills = solidFill(palette.headerBg);
   band.paddingTop = 48;
@@ -961,13 +967,37 @@ function buildHeader(componentName: string, subtitleMd: string | null): FrameNod
   band.paddingRight = PAD_X;
 
   // We append children, set FILL, then fill text — order matters for FILL.
-  const tmp: TextNode[] = [];
+  // Nodes in `tmp` get FILL after all appends. When the eyebrow sits inside a
+  // logo row, the ROW is what FILLs (the eyebrow FILLs within it, set inline).
+  const tmp: (TextNode | FrameNode)[] = [];
 
   const eyebrow = makeText('GUIDELINES', 'Medium', 12, palette.onHeaderMuted);
-  band.appendChild(eyebrow);
-  tmp.push(eyebrow);
+  if (logoBase64) {
+    // Eyebrow + logo on one row, logo pushed to the right edge.
+    const row = hstack(12);
+    band.appendChild(row);
+    row.counterAxisAlignItems = 'CENTER';
+    row.appendChild(eyebrow);
+    eyebrow.layoutSizingHorizontal = 'FILL';
+    try {
+      const image = figma.createImage(figma.base64Decode(logoBase64));
+      const { width, height } = await image.getSizeAsync();
+      const logoH = 28;
+      const logo = figma.createRectangle();
+      logo.resize(Math.round((width / Math.max(height, 1)) * logoH), logoH);
+      logo.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FIT' }];
+      row.appendChild(logo);
+    } catch {
+      /* corrupt logo → header renders without it */
+    }
+    tmp.push(row); // the row FILLs; the eyebrow already FILLs within it
+  } else {
+    band.appendChild(eyebrow);
+    tmp.push(eyebrow);
+  }
 
   const title = makeText(componentName, 'Bold', 38, palette.onHeader, 115);
+  title.fontName = headingFont('Bold'); // heading family (guaranteed loaded)
   band.appendChild(title);
   tmp.push(title);
 
@@ -1049,24 +1079,47 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
  */
 export async function buildDocFrame(
   model: DocFrameModel,
-  brand: { headerBg: string; accent: string } = {
-    headerBg: DEFAULT_HEADER_BG,
-    accent: DEFAULT_ACCENT,
-  },
+  theme: ReturnType<typeof resolveTheme>,
+  logoBase64?: string | null,
 ): Promise<FrameNode> {
-  // Apply the (already-resolved) brand colors before any layout reads them.
-  palette.headerBg = hex(brand.headerBg);
-  palette.accent = hex(brand.accent);
+  // Apply the (already-resolved) theme palette before any layout reads it.
+  // EVERY mutable field is set per build so a Default build after a themed one
+  // fully resets (palette is module state).
+  palette.headerBg = hex(theme.headerBg);
+  palette.accent = hex(theme.accent);
+  palette.body = hex(theme.bodyText);
+  palette.tableHeadBg = hex(theme.tableHeadBg);
 
-  // Load fonts FIRST — bold runs need the Bold face before setRangeFontName,
-  // and fitFrameWidthToTokens measures text (which needs the face loaded).
+  // Fonts: try the requested families; ANY failure reverts that family to Inter
+  // (families missing Medium/Bold are common — robustness beats partial styling).
+  const tryFamily = async (family: string): Promise<string> => {
+    if (family === 'Inter') return 'Inter';
+    try {
+      await Promise.all((['Regular', 'Medium', 'Bold'] as const).map((style) =>
+        figma.loadFontAsync({ family, style })));
+      return family;
+    } catch {
+      return 'Inter';
+    }
+  };
+  const [headingFam, bodyFam] = await Promise.all([
+    tryFamily(theme.headingFont),
+    tryFamily(theme.bodyFont),
+  ]);
+  // Set families every build (with the Inter fallbacks above) so a themed build
+  // never leaves stale families for the next Default build.
+  setFontFamilies(headingFam, bodyFam);
+
+  // Always load Inter faces too — fallback family + text measuring below need
+  // them, and bold runs need the Bold face before setRangeFontName.
   await Promise.all(
     (['Regular', 'Medium', 'Bold'] as FontStyle[]).map((style) =>
-      figma.loadFontAsync(font(style)),
+      figma.loadFontAsync({ family: 'Inter', style }),
     ),
   );
 
   // Size the frame to fit the longest token chip before laying anything out.
+  // Measures via font('Regular') (the body family) — must run after fonts load.
   fitFrameWidthToTokens(model);
 
   // Lift the Definition's lead sentence into the header subtitle; any remaining
@@ -1123,7 +1176,7 @@ export async function buildDocFrame(
   // litters the canvas with orphaned nodes.
   try {
     // Header band
-    const header = buildHeader(componentName, subtitle);
+    const header = await buildHeader(componentName, subtitle, logoBase64);
     frame.appendChild(header);
     header.layoutSizingHorizontal = 'FILL';
 

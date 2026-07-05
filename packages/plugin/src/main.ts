@@ -297,10 +297,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
-        // Task 14 threads the full theme + logo into buildDocFrame; for now it
-        // only accepts the two legacy colors, so pass those through.
-        const t = resolveTheme(brandTheme);
-        const frame = await buildDocFrame(msg.model, { headerBg: t.headerBg, accent: t.accent });
+        const frame = await buildDocFrame(msg.model, resolveTheme(brandTheme), brandLogo);
         if (existing) existing.remove();
         figma.currentPage.appendChild(frame);
         frame.x = x; frame.y = y;
