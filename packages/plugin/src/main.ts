@@ -135,6 +135,9 @@ figma.clientStorage.getAsync('brandTheme').then(async (value: BrandTheme | undef
   } else {
     const legacy = await figma.clientStorage.getAsync('brandColors') as BrandColors | undefined;
     brandTheme = migrateBrandColors(legacy);
+    // Persist the migrated theme so this branch runs only once; the legacy
+    // key stays untouched for rollback.
+    await figma.clientStorage.setAsync('brandTheme', brandTheme);
   }
   const msg: MainToUi = { type: 'brandTheme', value: brandTheme };
   figma.ui.postMessage(msg);
@@ -197,7 +200,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         const scale = Math.min(2, 128 / Math.max(sel.height, 1));
         const bytes = await (sel as SceneNode & { exportAsync: (s: ExportSettings) => Promise<Uint8Array> })
           .exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } });
-        brandLogo = figma.base64Encode(bytes);
+        const encoded = figma.base64Encode(bytes);
+        // Guard clientStorage (and the postMessage payload) against very wide
+        // nodes that stay huge even at logo height: ~700K base64 chars ≈ 500KB.
+        if (encoded.length > 700_000) {
+          figma.ui.postMessage({ type: 'logoError', message: 'Logo image is too large — pick a smaller node' } as MainToUi);
+          break;
+        }
+        brandLogo = encoded;
         await figma.clientStorage.setAsync('brandLogo', brandLogo);
         figma.ui.postMessage({ type: 'logoCaptured', base64: brandLogo } as MainToUi);
       } catch (err) {

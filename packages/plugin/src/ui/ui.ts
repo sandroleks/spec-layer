@@ -270,9 +270,17 @@ refs.presetRow.addEventListener('click', (e) => {
 });
 
 // Logo capture/clear — the main thread exports the current canvas selection
-// and answers with logoCaptured / logoCleared / logoError.
-refs.captureLogoBtn.addEventListener('click', () => send({ type: 'captureLogo' }));
-refs.clearLogoBtn.addEventListener('click', () => send({ type: 'clearLogo' }));
+// and answers with logoCaptured / logoCleared / logoError. Errors surface in the
+// Settings-local hint (the footer banner is hidden on the Settings tab), which
+// clears when a new attempt starts or a capture/clear succeeds.
+refs.captureLogoBtn.addEventListener('click', () => {
+  refs.logoErrorHint.textContent = '';
+  send({ type: 'captureLogo' });
+});
+refs.clearLogoBtn.addEventListener('click', () => {
+  refs.logoErrorHint.textContent = '';
+  send({ type: 'clearLogo' });
+});
 
 // ---------------------------------------------------------------------------
 // Message handling
@@ -336,18 +344,22 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'logoCaptured': {
       state.logoBase64 = msg.base64;
+      refs.logoErrorHint.textContent = '';
       renderBrandTheme(refs, state);
       break;
     }
 
     case 'logoCleared': {
       state.logoBase64 = null;
+      refs.logoErrorHint.textContent = '';
       renderBrandTheme(refs, state);
       break;
     }
 
     case 'logoError': {
-      showBanner(refs, 'error', msg.message);
+      // Settings-local surface: the footer error banner is hidden while the
+      // Settings tab is active (syncFooter), which is where capture happens.
+      refs.logoErrorHint.textContent = msg.message;
       break;
     }
 

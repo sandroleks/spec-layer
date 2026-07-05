@@ -704,6 +704,7 @@ const TEMPLATE = `
             <img id="logo-preview" alt="" style="display:none; height:24px;" />
             <button class="link-btn" id="clear-logo-btn" type="button" style="display:none;">Remove</button>
           </div>
+          <p class="hint" id="logo-error-hint" style="color: var(--figma-color-text-danger)"></p>
           <p class="hint" style="margin-top:6px">Fonts must include Regular, Medium and Bold styles — otherwise the frame falls back to Inter.</p>
         </div>
       </div>
@@ -796,6 +797,7 @@ export interface Refs {
   captureLogoBtn: HTMLButtonElement;
   logoPreview: HTMLImageElement;
   clearLogoBtn: HTMLButtonElement;
+  logoErrorHint: HTMLParagraphElement;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -908,5 +910,6 @@ export function mount(): Refs {
     captureLogoBtn: byId<HTMLButtonElement>('capture-logo-btn'),
     logoPreview: byId<HTMLImageElement>('logo-preview'),
     clearLogoBtn: byId<HTMLButtonElement>('clear-logo-btn'),
+    logoErrorHint: byId<HTMLParagraphElement>('logo-error-hint'),
   };
 }
