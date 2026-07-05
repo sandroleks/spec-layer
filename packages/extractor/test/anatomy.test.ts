@@ -48,6 +48,51 @@ describe('extractAnatomy — single-wrapper descent (bug 2)', () => {
   });
 });
 
+describe('extractAnatomy — bounded depth-first walk (Task 7)', () => {
+  it('walks up to 3 levels, depth-first, recording depth', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      children: [
+        {
+          id: '2', name: 'header', type: 'FRAME', visible: true,
+          children: [
+            { id: '3', name: 'title', type: 'TEXT', visible: true },
+            {
+              id: '4', name: 'meta', type: 'FRAME', visible: true,
+              children: [
+                { id: '5', name: 'timestamp', type: 'TEXT', visible: true,
+                  children: [{ id: '6', name: 'too-deep', type: 'TEXT', visible: true }] },
+              ],
+            },
+          ],
+        },
+        { id: '7', name: 'body', type: 'TEXT', visible: true },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.depth])).toEqual([
+      ['header', 0], ['title', 1], ['meta', 1], ['timestamp', 2], ['body', 0],
+    ]);
+  });
+
+  it('stops at nested component boundaries and records the component name', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Field', type: 'COMPONENT', visible: true,
+      children: [
+        {
+          id: '2', name: 'icon', type: 'INSTANCE', visible: true,
+          mainComponent: { name: 'Icon/Search', key: 'k' },
+          children: [{ id: '3', name: 'vector', type: 'VECTOR', visible: true }],
+        },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts).toEqual([
+      { id: '2', name: 'icon', type: 'INSTANCE', nested: true, depth: 0, component: 'Icon/Search' },
+    ]);
+  });
+});
+
 describe('extractAnatomy — empty-wrapper guard (I-1)', () => {
   // A COMPONENT_SET whose default variant's sole child is an empty FRAME.
   // Expected: anatomy lists the wrapper itself rather than returning an empty array.

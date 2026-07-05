@@ -126,8 +126,18 @@ export function renderSpec(
 ): string {
   // rawValues is presentation-layer data (unbound-value hygiene); excluding it
   // keeps content_hash stable across the 2.0 schema addition so committed specs
-  // don't all read as drifted.
-  const { rawValues: _rawValues, ...hashable } = spec;
+  // don't all read as drifted. Similarly, anatomy's depth/component fields
+  // (Task 7's bounded deep walk) are canvas-only additions — the hash is
+  // computed over the legacy depth-0-only, {id,name,type,nested} shape so
+  // adding deeper anatomy parts or recording nested component names doesn't
+  // flip content_hash for every existing committed spec.
+  const { rawValues: _rawValues, ...rest } = spec;
+  const hashable = {
+    ...rest,
+    anatomy: spec.anatomy
+      .filter((p) => p.depth === 0)
+      .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
+  };
   const fm: SpecFrontmatter = {
     spec_version: '0.1',
     // Status is optional: omitted unless the caller explicitly supplies one.
@@ -141,7 +151,10 @@ export function renderSpec(
   const lines: string[] = [
     '## Definition', '', p?.definition ?? '_To be written._', '',
     '## Anatomy', '',
-    ...spec.anatomy.map((a, i) => `${i + 1}. ${a.name}${a.nested ? ' (component)' : ''}`), '',
+    // Markdown lists depth-0 parts only: deeper structure (Task 7's bounded
+    // walk) is for the canvas anatomy frame, not the prose list, and keeping
+    // this filtered is also what keeps content_hash stable (see above).
+    ...spec.anatomy.filter((a) => a.depth === 0).map((a, i) => `${i + 1}. ${a.name}${a.nested ? ' (component)' : ''}`), '',
     '## Configuration', '',
     ...renderConfiguration(spec), '',
     '## Variants', '',
