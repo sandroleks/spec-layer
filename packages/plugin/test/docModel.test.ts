@@ -9,6 +9,7 @@ const spec = {
   variants: [{ prop: 'Style', values: ['Filled','Text'] }],
   states: ['Enabled','Hovered'],
   tokens: [{ part: 'Container', property: 'fill', token: 'color/bg', conditions: {} }],
+  rawValues: [],
   related: ['Icon'], gaps: [],
   layout: [], variantInstances: [],
 } as unknown as IntermediateSpec;
@@ -55,7 +56,7 @@ describe('buildDocModel', () => {
     if (tok.kind === 'variantTokens') {
       expect(tok.variants).toHaveLength(1);
       expect(tok.variants[0].name).toBe('Style=Filled');
-      const tokenNames = tok.variants[0].rows.map((r) => r[2]);
+      const tokenNames = tok.variants[0].rows.map((r) => r.token);
       expect(tokenNames).toContain('color/bg/brand'); // conditioned, matches Filled
       expect(tokenNames).toContain('color/text'); // unconditioned, applies to all
     }
@@ -141,5 +142,50 @@ describe('measurements section', () => {
     const block = model.sections[0];
     if (block.kind !== 'measure') throw new Error('expected measure block');
     expect(block.rootPart).toBe('Button');
+  });
+});
+
+describe('variant token cards: diff vs default', () => {
+  const spec: IntermediateSpec = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
+    anatomy: [], anatomyComponentId: '1:2',
+    props: [{ name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' }],
+    variants: [{ prop: 'State', values: ['Default', 'Hover'] }],
+    variantInstances: [
+      { nodeId: '1:2', name: 'State=Default', values: { State: 'Default' } },
+      { nodeId: '1:3', name: 'State=Hover', values: { State: 'Hover' } },
+    ],
+    states: ['Default', 'Hover'],
+    tokens: [
+      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
+      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, token: 'color/rest' },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+    ],
+    rawValues: [{ part: 'label', property: 'gap', value: '4' }],
+    related: [], gaps: [], layout: [],
+  } as unknown as IntermediateSpec;
+
+  it('default card carries all rows plus raw rows, nothing collapsed', () => {
+    const model = buildDocModel(spec, null, new Set(['tokens']), new Set(['1:2', '1:3']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantTokens') throw new Error('expected variantTokens');
+    const def = block.variants.find((v) => v.isDefault)!;
+    expect(def.rows).toEqual([
+      { part: 'Container', property: 'padding', token: 'spacing/md', unbound: false, diff: false },
+      { part: 'Container', property: 'fill', token: 'color/rest', unbound: false, diff: false },
+      { part: 'label', property: 'gap', token: '4', unbound: true, diff: false },
+    ]);
+    expect(def.sameAsDefault).toBe(0);
+  });
+
+  it('non-default card keeps only differing rows and counts the rest', () => {
+    const model = buildDocModel(spec, null, new Set(['tokens']), new Set(['1:2', '1:3']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantTokens') throw new Error('expected variantTokens');
+    const hover = block.variants.find((v) => !v.isDefault)!;
+    expect(hover.rows).toEqual([
+      { part: 'Container', property: 'fill', token: 'color/hover', unbound: false, diff: true },
+    ]);
+    expect(hover.sameAsDefault).toBe(1); // padding row identical to default
   });
 });

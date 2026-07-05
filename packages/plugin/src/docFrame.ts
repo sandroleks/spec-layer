@@ -6,6 +6,7 @@ import type {
   DocFrameModel,
   SectionBlock,
   TextRun,
+  VariantRow,
 } from './ui/docModel';
 import { DEFAULT_HEADER_BG, DEFAULT_ACCENT } from './brandColors';
 import {
@@ -371,7 +372,7 @@ async function makeTokenCell(token: string): Promise<FrameNode> {
  *  Sized to FILL its parent (the table sits beside the instance slot). */
 async function buildTokenTable(
   columns: string[],
-  rows: string[][],
+  rows: VariantRow[],
   bordered = true,
 ): Promise<FrameNode> {
   // Column 0 is the Part group key; the rest are the rendered data columns.
@@ -419,7 +420,8 @@ async function buildTokenTable(
 
   let currentPart: string | null = null;
   for (const r of rows) {
-    const part = r[0] ?? '';
+    const part = r.part ?? '';
+    const cells = [r.property, r.token];
     // Start a new group with a full-width, bold part band whenever the part
     // changes (rows are pre-sorted by part). A blank part gets no band.
     if (part && part !== currentPart) {
@@ -451,7 +453,7 @@ async function buildTokenTable(
     row.strokeLeftWeight = 0;
     row.strokeRightWeight = 0;
     for (let i = 0; i < dataCount; i++) {
-      const value = r[i + 1] ?? ''; // +1 skips the Part group key
+      const value = cells[i] ?? '';
       const isToken = i === dataCount - 1;
       // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
@@ -846,7 +848,7 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
     const tokenCol = s.columns.length - 1;
     for (const v of s.variants) {
       for (const row of v.rows) {
-        const tk = row[tokenCol] ?? '';
+        const tk = row.token ?? '';
         if (tk.length > longest.length) {
           longest = tk;
           // buildTokenTable drops the Part column, so the fixed-width key

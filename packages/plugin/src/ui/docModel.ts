@@ -22,14 +22,31 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean }[] = [
 export interface TextRun { text: string; bold?: boolean }
 export interface Bullet { runs: TextRun[]; text: string } // text = plain fallback
 
+/** One row in a variant's token table: a resolved token binding, or a raw
+ *  hardcoded value (`unbound: true`, `token` holds the raw value string) —
+ *  raw rows only ever appear on the default variant's card. `diff` marks a
+ *  row whose token differs from the default variant's token for the same
+ *  part+property slot (non-default cards only; always false on the default). */
+export interface VariantRow {
+  part: string;
+  property: string;
+  token: string;
+  unbound: boolean;
+  diff: boolean;
+}
+
 /** One documented variant: a label, the axis=value prop pairs (for the
- *  PROPERTIES list), the source node (for a live instance), and its resolved
- *  [part, property, token] rows. */
+ *  PROPERTIES list), the source node (for a live instance), whether this is
+ *  the default variant, its rows (all rows for the default; only rows that
+ *  differ from the default for non-default variants), and the count of rows
+ *  suppressed because they matched the default (non-default cards only). */
 export interface VariantTokenBlock {
   name: string;
   props: { name: string; value: string }[];
   nodeId: string;
-  rows: string[][];
+  isDefault: boolean;
+  rows: VariantRow[];
+  sameAsDefault: number;
 }
 
 /** One anatomy part placed on the diagram: its 1-based number, label, whether
@@ -267,18 +284,53 @@ function buildSection(
       // table for plain components or when no variant is selected.
       const instances = spec.variantInstances;
       if (instances.length && selectedVariantIds && selectedVariantIds.size) {
+        const defId = defaultVariantId(spec);
+
+        const resolveRows = (values: Record<string, string>): Omit<VariantRow, 'diff'>[] =>
+          resolveTokensForVariant(spec.tokens, values).map((t) => ({
+            part: t.part, property: t.property, token: t.token, unbound: false,
+          }));
+
+        // Baseline keyed by part+property+token — a row is "same" only when the
+        // exact token matches; a changed token on the same slot is a diff row.
+        const defInst = instances.find((i) => i.nodeId === defId) ?? instances[0];
+        const baseline = new Set(
+          resolveRows(defInst.values).map((r) => `${r.part} ${r.property} ${r.token}`),
+        );
+
         const variants: VariantTokenBlock[] = instances
           .filter((inst) => selectedVariantIds.has(inst.nodeId))
-          .map((inst) => ({
-            name: variantLabel(inst),
-            props: Object.entries(inst.values).map(([name, value]) => ({ name, value })),
-            nodeId: inst.nodeId,
-            rows: resolveTokensForVariant(spec.tokens, inst.values).map((t) => [
-              t.part,
-              t.property,
-              t.token,
-            ]),
-          }));
+          .map((inst) => {
+            const isDefault = inst.nodeId === defInst.nodeId;
+            const resolved = resolveRows(inst.values);
+            // Raw values are observed on the default variant only.
+            const withRaw = isDefault
+              ? [...resolved, ...spec.rawValues.map((r) => ({
+                  part: r.part, property: r.property, token: r.value, unbound: true,
+                }))]
+              : resolved;
+
+            let sameAsDefault = 0;
+            const rows: VariantRow[] = [];
+            for (const r of withRaw) {
+              const same = baseline.has(`${r.part} ${r.property} ${r.token}`);
+              if (isDefault) {
+                rows.push({ ...r, diff: false });
+              } else if (same) {
+                sameAsDefault++;
+              } else {
+                rows.push({ ...r, diff: true });
+              }
+            }
+            return {
+              name: variantLabel(inst),
+              props: Object.entries(inst.values).map(([name, value]) => ({ name, value })),
+              nodeId: inst.nodeId,
+              isDefault,
+              rows,
+              sameAsDefault,
+            };
+          });
         if (variants.length) {
           return {
             id, heading: label, kind: 'variantTokens',
