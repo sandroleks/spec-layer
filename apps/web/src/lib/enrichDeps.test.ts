@@ -17,6 +17,7 @@ function spec(figmaFile: string, figmaNode: string): IntermediateSpec {
     variantInstances: [],
     related: [],
     gaps: [],
+    rawValues: [],
   };
 }
 

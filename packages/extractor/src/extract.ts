@@ -3,6 +3,7 @@ import { extractAnatomy, type AnatomyPart } from './anatomy';
 import { extractProps, extractVariants, extractStates, type ComponentProp, type VariantAxis } from './props';
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
+import { extractRawValues, type RawValue } from './rawValues';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -35,6 +36,7 @@ export interface IntermediateSpec {
   related: string[];
   gaps: Gap[];
   layout: LayoutSummary[];
+  rawValues: RawValue[];
 }
 
 function extractVariantInstances(root: SerializedNode): VariantInstance[] {
@@ -59,5 +61,6 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
     related,
     gaps: extractGaps(root),
     layout: extractLayout(root),
+    rawValues: extractRawValues(root),
   };
 }

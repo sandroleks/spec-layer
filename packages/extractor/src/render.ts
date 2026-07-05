@@ -124,12 +124,16 @@ export function renderSpec(
   spec: IntermediateSpec,
   opts: { prose: ProseDrafts | null; extractedAt: string; status?: SpecFrontmatter['status'] },
 ): string {
+  // rawValues is presentation-layer data (unbound-value hygiene); excluding it
+  // keeps content_hash stable across the 2.0 schema addition so committed specs
+  // don't all read as drifted.
+  const { rawValues: _rawValues, ...hashable } = spec;
   const fm: SpecFrontmatter = {
     spec_version: '0.1',
     // Status is optional: omitted unless the caller explicitly supplies one.
     ...(opts.status ? { status: opts.status } : {}),
     component: { name: spec.name, figma_key: spec.figmaKey, figma_file: spec.figmaFile, figma_node: spec.figmaNode },
-    content_hash: contentHash(spec),
+    content_hash: contentHash(hashable),
     extracted_at: opts.extractedAt,
   };
   const p = opts.prose;

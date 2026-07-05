@@ -30,7 +30,7 @@ interface RawNode {
   type: string;
   visible?: boolean;
   key?: string;
-  fills?: Array<{ type: string }>;
+  fills?: Array<{ type: string; color?: { r: number; g: number; b: number } }>;
   fillStyleId?: string;
   strokeStyleId?: string;
   textStyleId?: string | symbol;
@@ -91,6 +91,14 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const fillsBound = 'fills' in bv;
   const hasStyleId = Boolean(node.fillStyleId);
   const hasUnboundPaint = hasSolid && !fillsBound && !hasStyleId ? true : undefined;
+  let unboundFill: string | undefined;
+  if (hasUnboundPaint) {
+    const solid = (node.fills ?? []).find((f) => f.type === 'SOLID' && f.color);
+    if (solid?.color) {
+      const to2 = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
+      unboundFill = `#${to2(solid.color.r)}${to2(solid.color.g)}${to2(solid.color.b)}`;
+    }
+  }
 
   // --- componentPropertyDefinitions ---
   let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
@@ -145,6 +153,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(propertyDefinitions ? { propertyDefinitions } : {}),
     ...(bindings.length > 0 ? { bindings } : {}),
     ...(hasUnboundPaint ? { hasUnboundPaint } : {}),
+    ...(unboundFill ? { unboundFill } : {}),
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),
     ...(children ? { children } : {}),

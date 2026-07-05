@@ -20,6 +20,7 @@ function specStub(name = 'Button'): IntermediateSpec {
     related: [],
     gaps: [],
     layout: [],
+    rawValues: [],
   };
 }
 

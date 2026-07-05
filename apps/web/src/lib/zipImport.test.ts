@@ -71,6 +71,7 @@ function validSpec(name = "Button"): IntermediateSpec {
     related: [],
     gaps: [],
     layout: [],
+    rawValues: [],
   };
 }
 

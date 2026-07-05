@@ -28,6 +28,16 @@ describe('serializeNode', () => {
     expect(out.hasUnboundPaint).toBe(true);
   });
 
+  it('captures the hex of an unbound solid fill', async () => {
+    const unbound = {
+      ...mockRect,
+      boundVariables: {},
+      fills: [{ type: 'SOLID', color: { r: 0.4, g: 0.31, b: 0.64 } }],
+    };
+    const out = await serializeNode(unbound as never, resolver);
+    expect(out.unboundFill).toBe('#664fa3');
+  });
+
   it('recurses into children', async () => {
     const parent = { id: '1:1', name: 'frame', type: 'FRAME', visible: true, children: [mockRect] };
     const out = await serializeNode(parent as never, resolver);

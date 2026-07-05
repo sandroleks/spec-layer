@@ -11,6 +11,8 @@ export interface SerializedNode {
   bindings?: TokenRef[];
   /** True when a paint is hardcoded (no variable/style) — feeds the gaps report. */
   hasUnboundPaint?: boolean;
+  /** `#rrggbb` of the first hardcoded SOLID fill (set only when hasUnboundPaint). */
+  unboundFill?: string;
   /** For INSTANCE nodes: the main component's name and key. */
   mainComponent?: { name: string; key: string };
   /** Stable component key (COMPONENT/COMPONENT_SET only). */
