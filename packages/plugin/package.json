@@ -9,7 +9,7 @@
     "fflate": "^0.8.2"
   },
   "devDependencies": {
-    "@figma/plugin-typings": "^1.100.0",
+    "@figma/plugin-typings": "^1.130.0",
     "esbuild": "^0.28.1"
   }
 }
