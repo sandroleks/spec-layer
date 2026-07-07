@@ -150,93 +150,6 @@ interface LegendEntry {
   label: MeasureLabel;
 }
 
-/** The subset of node geometry the legend reads. Both ComponentNode and
- *  FrameNode satisfy this structurally, so one helper serves root + parts. */
-interface MeasurableNode {
-  paddingTop: number;
-  paddingRight: number;
-  paddingBottom: number;
-  paddingLeft: number;
-  itemSpacing: number;
-  cornerRadius: number | typeof figma.mixed;
-  layoutMode: string;
-}
-
-/** Measured entries for one legend part: uniform-collapse padding, gap, radius. */
-function partEntries(
-  tokens: Record<string, string>,
-  partName: string,
-  n: MeasurableNode,
-): LegendEntry[] {
-  const out: LegendEntry[] = [];
-  const auto = n.layoutMode === 'HORIZONTAL' || n.layoutMode === 'VERTICAL';
-  if (
-    auto &&
-    n.paddingTop === n.paddingBottom &&
-    n.paddingLeft === n.paddingRight &&
-    n.paddingTop === n.paddingLeft &&
-    n.paddingTop > 0
-  ) {
-    out.push({ caption: 'padding', label: measureLabel(tokens, partName, ['padding'], n.paddingTop) });
-  } else if (auto && (n.paddingTop > 0 || n.paddingLeft > 0)) {
-    if (n.paddingLeft > 0 && n.paddingLeft === n.paddingRight) {
-      out.push({ caption: 'padding-x', label: measureLabel(tokens, partName, ['padding-x', 'padding'], n.paddingLeft) });
-    }
-    if (n.paddingTop > 0 && n.paddingTop === n.paddingBottom) {
-      out.push({ caption: 'padding-y', label: measureLabel(tokens, partName, ['padding-y', 'padding'], n.paddingTop) });
-    }
-  }
-  if (auto && n.itemSpacing > 0) {
-    out.push({ caption: 'gap', label: measureLabel(tokens, partName, ['gap'], n.itemSpacing) });
-  }
-  if (typeof n.cornerRadius === 'number' && n.cornerRadius > 0) {
-    out.push({ caption: 'radius', label: measureLabel(tokens, partName, ['border-radius'], n.cornerRadius) });
-  }
-  return out;
-}
-
-/** One legend row: part name + caption/value pairs. Values are plain heading
- *  ink (no purple, no pills), captions muted. */
-function legendRow(partName: string, entries: LegendEntry[]): FrameNode {
-  const row = hstack(10);
-  row.counterAxisAlignItems = 'CENTER';
-  const name = makeText(partName, 'Medium', 13, palette.heading, 140);
-  name.textAutoResize = 'WIDTH_AND_HEIGHT';
-  row.appendChild(name);
-  for (const e of entries) {
-    const cap = makeText(e.caption, 'Regular', 11, palette.muted, 130);
-    cap.textAutoResize = 'WIDTH_AND_HEIGHT';
-    row.appendChild(cap);
-    const value = makeText(bindingText(e.label), 'Medium', 11, palette.heading, 130);
-    value.textAutoResize = 'WIDTH_AND_HEIGHT';
-    row.appendChild(value);
-  }
-  return row;
-}
-
-/** Build the first-level auto-layout parts legend (rendered once). Returns null
- *  when no part has measurable auto-layout entries. */
-function buildLegend(component: ComponentNode, tokens: Record<string, string>): FrameNode | null {
-  const legend = vstack(10);
-  for (const child of component.children) {
-    if (!child.visible) continue;
-    if (child.type !== 'FRAME' && child.type !== 'INSTANCE' && child.type !== 'COMPONENT') continue;
-    const layoutChild = child;
-    if (layoutChild.layoutMode !== 'HORIZONTAL' && layoutChild.layoutMode !== 'VERTICAL') continue;
-    const childPart = child.name.replace(/#+\s*$/, '').trim();
-    const entries = partEntries(tokens, childPart, layoutChild);
-    if (!entries.length) continue;
-    const legRow = legendRow(childPart, entries);
-    legend.appendChild(legRow);
-    legRow.layoutSizingHorizontal = 'FILL';
-  }
-  if (legend.children.length === 0) {
-    legend.remove();
-    return null;
-  }
-  return legend;
-}
-
 // ---------------------------------------------------------------------------
 // Diagram geometry
 // ---------------------------------------------------------------------------
@@ -725,8 +638,7 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
  * (the lens toggles) filters which categories draw on this single diagram;
  * overlap between categories is expected and acceptable — the toggles are
  * the decluttering mechanism. Beneath the diagram, a quiet bindings line
- * carries radius; a per-part legend for first-level auto-layout parts sits
- * below that.
+ * carries the token names (padding / gap / radius).
  *
  * Returns null when the diagram can't be built (component missing, not a
  * COMPONENT, or any layout error) so the caller falls back to a plain table.
@@ -791,11 +703,6 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
 
     const bindings = buildBindingsRow(component, block.tokens, part);
     if (bindings) card.appendChild(bindings);
-    const legend = buildLegend(component, block.tokens);
-    if (legend) {
-      card.appendChild(legend);
-      legend.layoutSizingHorizontal = 'FILL';
-    }
 
     return card;
   } catch {
