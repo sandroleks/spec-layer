@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, hex } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex, loadNodeFonts } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
 // Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
@@ -747,6 +747,13 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     block.views && block.views.length ? block.views : (['size', 'padding', 'spacing'] as MeasureView[]),
   );
   const part = block.rootPart;
+
+  // Load the component's own fonts first, so the instance hugs to its true
+  // size (see loadNodeFonts) rather than shrinking under a fallback metric —
+  // otherwise the annotations, positioned from the real geometry, overhang it.
+  try {
+    await loadNodeFonts(component);
+  } catch { /* best-effort — fall through to instantiation */ }
 
   let inst: InstanceNode;
   try {

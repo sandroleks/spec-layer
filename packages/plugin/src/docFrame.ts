@@ -11,7 +11,7 @@ import type {
 import type { resolveTheme } from './brandColors';
 import {
   palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, setFontFamilies,
+  headingFont, setFontFamilies, loadNodeFonts,
   type FontStyle,
 } from './frameKit';
 import { buildMeasureSection } from './measureSection';
@@ -574,6 +574,12 @@ async function buildAnatomyDiagram(
   const component = node;
   const cb = component.absoluteBoundingBox;
   if (!cb || cb.width <= 0 || cb.height <= 0) return null;
+
+  // Load the component's fonts first so the instance hugs to its true size
+  // (an unloaded font shrinks auto-layout hug frames, misaligning the pins).
+  try {
+    await loadNodeFonts(component);
+  } catch { /* best-effort */ }
 
   // A live instance keeps the preview crisp at any size (vector, not a bitmap).
   let inst: InstanceNode;
