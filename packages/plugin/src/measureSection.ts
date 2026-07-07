@@ -71,20 +71,9 @@ function measureLabel(
   return { value: String(round(px)), token: null };
 }
 
-/** Last "/"-segment of a token name, e.g. "spacing/size-12" -> "size-12". */
-function shortToken(token: string): string {
-  const at = token.lastIndexOf('/');
-  return at === -1 ? token : token.slice(at + 1);
-}
-
-/** Badge text for a padding/gap label: `${shortToken} · ${value}` when bound,
- *  else just the value. */
-function badgeText(label: MeasureLabel): string {
-  return label.token ? `${shortToken(label.token)} · ${label.value}` : label.value;
-}
-
 /** `radius rounded-8 · 8` / `spacing/size-12 · 8` — full token path, for the
- *  bindings line only. */
+ *  bindings line only. All rail badges show plain numbers; token names live on
+ *  this bindings line, so badges stay narrow and glued to the spans they mark. */
 function bindingText(label: MeasureLabel): string {
   return label.token ? `${label.token} · ${label.value}` : label.value;
 }
@@ -339,23 +328,16 @@ function computeGeom(
   };
 }
 
-/** Place a top-to-bottom rail: badges left-aligned at `railX`, vertically
- *  centered on their band, pushed down so each clears the previous. Returns the
- *  rail's max right + max bottom for extent math. */
-function placeRightRail(items: RailItem[], railX: number, imgBottom: number): { maxRight: number; maxBottom: number } {
-  let prevBottom = -Infinity;
-  let maxRight = railX;
-  let maxBottom = imgBottom;
+/** Place a top-to-bottom rail: badges left-aligned at `railX`, each centered on
+ *  its region. No vertical spreading — on short components the padding/size
+ *  badges overlap each other rather than drift away from what they mark (and,
+ *  critically, they don't spill down into the bottom rail). Overlap between
+ *  badges is acceptable; the lens toggles are the decluttering mechanism. */
+function placeRightRail(items: RailItem[], railX: number): void {
   for (const item of items) {
     item.node.x = Math.round(railX);
-    let y = Math.round(item.center - item.node.height / 2);
-    if (y < prevBottom + NUDGE) y = Math.round(prevBottom + NUDGE);
-    item.node.y = y;
-    prevBottom = y + item.node.height;
-    maxRight = Math.max(maxRight, item.node.x + item.node.width);
-    maxBottom = Math.max(maxBottom, prevBottom);
+    item.node.y = Math.round(item.center - item.node.height / 2);
   }
-  return { maxRight, maxBottom };
 }
 
 /** Place a left-to-right rail: badges top-aligned at `railY`, horizontally
@@ -539,7 +521,7 @@ function buildDiagram(
     }
     if (showSpacing) {
       for (const gp of g.gaps) {
-        const b = badge(badgeText(measureLabel(tokens, part, ['gap'], g.gap)), GAP_PINK);
+        const b = badge(String(round(g.gap)), GAP_PINK);
         box.appendChild(b);
         rail.push({ node: b, center: (gp.start + gp.end) / 2 });
       }
@@ -604,7 +586,7 @@ function buildDiagram(
       box.appendChild(b);
       rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
     }
-    placeRightRail(rail, railRightX, g.imgBottom);
+    placeRightRail(rail, railRightX);
   } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSpacing)) {
     const railRightX = g.imgRight + RAIL_RIGHT_OFF;
     const rail: RailItem[] = [];
@@ -615,7 +597,7 @@ function buildDiagram(
     }
     if (showSpacing) {
       for (const gp of g.gaps) {
-        const b = badge(badgeText(measureLabel(tokens, part, ['gap'], g.gap)), GAP_PINK);
+        const b = badge(String(round(g.gap)), GAP_PINK);
         box.appendChild(b);
         rail.push({ node: b, center: (gp.start + gp.end) / 2 });
       }
@@ -625,7 +607,7 @@ function buildDiagram(
       box.appendChild(b);
       rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
     }
-    placeRightRail(rail, railRightX, g.imgBottom);
+    placeRightRail(rail, railRightX);
   }
   // No auto-layout root: right rail carries nothing extra — total width/height
   // on the top/left rails are the only SIZE measurements available.
