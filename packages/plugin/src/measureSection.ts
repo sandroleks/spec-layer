@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, hex, loadNodeFonts } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
 // Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
@@ -748,13 +748,6 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
   );
   const part = block.rootPart;
 
-  // Load the component's own fonts first, so the instance hugs to its true
-  // size (see loadNodeFonts) rather than shrinking under a fallback metric —
-  // otherwise the annotations, positioned from the real geometry, overhang it.
-  try {
-    await loadNodeFonts(component);
-  } catch { /* best-effort — fall through to instantiation */ }
-
   let inst: InstanceNode;
   try {
     inst = component.createInstance();
@@ -765,6 +758,11 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
   // Everything after the instance exists is wrapped so any Figma-API throw
   // (resize/rescale/layout) cleans up the instance and falls back to the table.
   try {
+    // Match the component's variable modes so the instance resolves the SAME
+    // padding/gap/size tokens (else a differing density mode renders it
+    // narrower and the annotations, computed from the component, overhang it).
+    await matchVariableModes(inst, component);
+
     const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (M_LEFT + 160);
     const scale = Math.min(innerMax / inst.width, IMG_MAX_H / inst.height, 1);
     if (scale !== 1) inst.rescale(scale);
