@@ -19,13 +19,12 @@ const WHITE: RGB = hex('#ffffff'); // badge text
 const IMG_MAX_H = 480;
 const CARD_PAD = 24;
 
-// Diagram-box margins around the scaled image. Top/left are fixed; right/bottom
-// are computed after rail placement (they depend on badge extents), so these
-// two are only the inner slack added past the measured content.
+// Initial placement offsets for the scaled image inside the (oversized) box.
+// After all rails/bands are drawn, the box is re-normalized to the TRUE
+// bounding box of its contents (see buildDiagram), so these are only starting
+// room for the top/left rails — the final margins come from that pass.
 const M_TOP = 44;
 const M_LEFT = 64;
-const R_SLACK = 8; // extra room right of the widest right-rail badge
-const B_SLACK = 8; // extra room below the bottom-rail badges
 
 // Rail geometry.
 const RAIL_TOP_OFF = 18; // total-width hairline offset above the image
@@ -416,12 +415,6 @@ function buildDiagram(
   inst.y = M_TOP;
   const g = computeGeom(component, scale, M_LEFT, M_TOP);
 
-  // Extent tracking, seeded with the image edges; every rail/band pushes these.
-  let minContentLeft = g.imgLeft;
-  let minContentTop = g.imgTop;
-  let maxRight = g.imgRight;
-  let maxBottom = g.imgBottom;
-
   // -------------------------------------------------------------------
   // Over-artwork bands (padding + gaps), drawn above the instance.
   // -------------------------------------------------------------------
@@ -482,27 +475,22 @@ function buildDiagram(
         box.appendChild(b);
         rail.push({ node: b, center: k.x1 + k.w / 2 });
       }
-      // Badges sit above the hairline; place using the bottom-rail helper
-      // then mirror the y so they read top-aligned-descending toward the line.
+      // Badges sit above the hairline, centered on each child, nudged right to
+      // clear the previous one.
       let prevRight = -Infinity;
-      let topMinY = topLineY;
       for (const item of rail) {
         let x = Math.round(item.center - item.node.width / 2);
         if (x < prevRight + NUDGE) x = Math.round(prevRight + NUDGE);
         item.node.x = x;
         item.node.y = Math.round(topLineY - LINE_GAP - item.node.height);
         prevRight = x + item.node.width;
-        topMinY = Math.min(topMinY, item.node.y);
-        maxRight = Math.max(maxRight, prevRight);
       }
-      minContentTop = Math.min(minContentTop, topMinY, topLineY - TICK / 2);
     } else {
       // Main axis vertical (or no auto-layout): single centered total-width badge.
       const widthBadge = badge(measureLabel(tokens, part, ['width'], component.width).value, SIZE_RED);
       box.appendChild(widthBadge);
       widthBadge.x = Math.round((g.imgLeft + g.imgRight) / 2 - widthBadge.width / 2);
       widthBadge.y = Math.round(topLineY - LINE_GAP - widthBadge.height);
-      minContentTop = Math.min(minContentTop, widthBadge.y, topLineY - TICK / 2);
     }
 
     // Left rail: total-height hairline + centered badge (or per-child badges
@@ -521,24 +509,19 @@ function buildDiagram(
         rail.push({ node: b, center: k.y1 + k.h / 2 });
       }
       let prevBottom = -Infinity;
-      let leftMinX = leftLineX;
       for (const item of rail) {
         let y = Math.round(item.center - item.node.height / 2);
         if (y < prevBottom + NUDGE) y = Math.round(prevBottom + NUDGE);
         item.node.y = y;
         item.node.x = Math.round(leftLineX - LINE_GAP - item.node.width);
         prevBottom = y + item.node.height;
-        leftMinX = Math.min(leftMinX, item.node.x);
-        maxBottom = Math.max(maxBottom, prevBottom);
       }
-      minContentLeft = Math.min(minContentLeft, leftMinX, leftLineX - TICK / 2);
     } else {
       // Main axis horizontal (or no auto-layout): single centered total-height badge.
       const heightBadge = badge(measureLabel(tokens, part, ['height'], component.height).value, SIZE_RED);
       box.appendChild(heightBadge);
       heightBadge.x = Math.round(leftLineX - LINE_GAP - heightBadge.width);
       heightBadge.y = Math.round((g.imgTop + g.imgBottom) / 2 - heightBadge.height / 2);
-      minContentLeft = Math.min(minContentLeft, heightBadge.x, leftLineX - TICK / 2);
     }
   }
 
@@ -550,7 +533,7 @@ function buildDiagram(
     const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
     if (showPadding && g.pads.left > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], g.pads.left)), PAD_BLUE);
+      const b = badge(String(round(g.pads.left)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgLeft + g.padLs / 2 });
     }
@@ -562,13 +545,11 @@ function buildDiagram(
       }
     }
     if (showPadding && g.pads.right > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], g.pads.right)), PAD_BLUE);
+      const b = badge(String(round(g.pads.right)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgRight - g.padRs / 2 });
     }
-    const br = placeBottomRail(rail, railBottomY, g.imgRight);
-    maxRight = Math.max(maxRight, br.maxRight);
-    maxBottom = Math.max(maxBottom, br.maxBottom);
+    placeBottomRail(rail, railBottomY, g.imgRight);
   } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSize)) {
     // Vertical main axis: bottom rail shows pad-left, content width (red,
     // SIZE), pad-right. Gaps live on the right rail alongside the vertical
@@ -576,7 +557,7 @@ function buildDiagram(
     const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
     if (showPadding && g.pads.left > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-left', 'padding-x', 'padding'], g.pads.left)), PAD_BLUE);
+      const b = badge(String(round(g.pads.left)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgLeft + g.padLs / 2 });
     }
@@ -589,13 +570,11 @@ function buildDiagram(
       rail.push({ node: b, center: (contentLeft + contentRight) / 2 });
     }
     if (showPadding && g.pads.right > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-right', 'padding-x', 'padding'], g.pads.right)), PAD_BLUE);
+      const b = badge(String(round(g.pads.right)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgRight - g.padRs / 2 });
     }
-    const br = placeBottomRail(rail, railBottomY, g.imgRight);
-    maxRight = Math.max(maxRight, br.maxRight);
-    maxBottom = Math.max(maxBottom, br.maxBottom);
+    placeBottomRail(rail, railBottomY, g.imgRight);
   }
 
   // -------------------------------------------------------------------
@@ -606,7 +585,7 @@ function buildDiagram(
     const railRightX = g.imgRight + RAIL_RIGHT_OFF;
     const rail: RailItem[] = [];
     if (showPadding && g.pads.top > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], g.pads.top)), PAD_BLUE);
+      const b = badge(String(round(g.pads.top)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgTop + g.padTs / 2 });
     }
@@ -621,18 +600,16 @@ function buildDiagram(
       rail.push({ node: b, center: (contentTop + contentBottom) / 2 });
     }
     if (showPadding && g.pads.bottom > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], g.pads.bottom)), PAD_BLUE);
+      const b = badge(String(round(g.pads.bottom)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
     }
-    const rr = placeRightRail(rail, railRightX, g.imgBottom);
-    maxRight = Math.max(maxRight, rr.maxRight);
-    maxBottom = Math.max(maxBottom, rr.maxBottom);
+    placeRightRail(rail, railRightX, g.imgBottom);
   } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSpacing)) {
     const railRightX = g.imgRight + RAIL_RIGHT_OFF;
     const rail: RailItem[] = [];
     if (showPadding && g.pads.top > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-top', 'padding-y', 'padding'], g.pads.top)), PAD_BLUE);
+      const b = badge(String(round(g.pads.top)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgTop + g.padTs / 2 });
     }
@@ -644,36 +621,44 @@ function buildDiagram(
       }
     }
     if (showPadding && g.pads.bottom > 0) {
-      const b = badge(badgeText(measureLabel(tokens, part, ['padding-bottom', 'padding-y', 'padding'], g.pads.bottom)), PAD_BLUE);
+      const b = badge(String(round(g.pads.bottom)), PAD_BLUE);
       box.appendChild(b);
       rail.push({ node: b, center: g.imgBottom - g.padBs / 2 });
     }
-    const rr = placeRightRail(rail, railRightX, g.imgBottom);
-    maxRight = Math.max(maxRight, rr.maxRight);
-    maxBottom = Math.max(maxBottom, rr.maxBottom);
+    placeRightRail(rail, railRightX, g.imgBottom);
   }
   // No auto-layout root: right rail carries nothing extra — total width/height
   // on the top/left rails are the only SIZE measurements available.
 
   // -------------------------------------------------------------------
-  // Resize the box to content extents (margins computed AFTER placement).
-  // -------------------------------------------------------------------
-  const contentLeftEdge = Math.min(g.imgLeft, minContentLeft);
-  const contentTopEdge = Math.min(g.imgTop, minContentTop);
-  const contentRightEdge = Math.max(g.imgRight, maxRight) + R_SLACK;
-  const contentBottomEdge = Math.max(g.imgBottom, maxBottom) + B_SLACK;
-
-  const dx = -Math.min(0, Math.round(contentLeftEdge));
-  const dy = -Math.min(0, Math.round(contentTopEdge));
-  if (dx !== 0 || dy !== 0) {
-    for (const child of box.children) {
-      child.x += dx;
-      child.y += dy;
-    }
+  // Normalize to the TRUE bounding box of everything placed, with uniform
+  // slack. A rail badge centered on a narrow span (left-padding, a gap) can
+  // extend left of / above the image; the earlier min/max tracking only ever
+  // grew rightward/downward, so that overflow spilled outside the box and made
+  // the centered card look offset. This pass wraps whatever actually got drawn.
+  const S = 8; // uniform slack around the content bounding box
+  let bbL = Infinity;
+  let bbT = Infinity;
+  let bbR = -Infinity;
+  let bbB = -Infinity;
+  for (const child of box.children) {
+    bbL = Math.min(bbL, child.x);
+    bbT = Math.min(bbT, child.y);
+    bbR = Math.max(bbR, child.x + child.width);
+    bbB = Math.max(bbB, child.y + child.height);
+  }
+  if (!isFinite(bbL)) {
+    bbL = 0; bbT = 0; bbR = 1; bbB = 1;
+  }
+  const dx = Math.round(S - bbL);
+  const dy = Math.round(S - bbT);
+  for (const child of box.children) {
+    child.x += dx;
+    child.y += dy;
   }
   box.resize(
-    Math.max(Math.round(contentRightEdge) + dx, 1),
-    Math.max(Math.round(contentBottomEdge) + dy, 1),
+    Math.max(Math.round(bbR - bbL) + 2 * S, 1),
+    Math.max(Math.round(bbB - bbT) + 2 * S, 1),
   );
 
   return box;
@@ -697,6 +682,29 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
   const gap = hasAutoLayout ? component.itemSpacing : 0;
 
   const bindings: LegendEntry[] = [];
+  // Padding tokens live here now: the rail badges show only the number (matching
+  // the reference), so their token names surface on this quiet line. Uniform
+  // padding collapses to one `padding`, else symmetric x/y pairs.
+  if (hasAutoLayout) {
+    if (
+      pads.top === pads.bottom &&
+      pads.left === pads.right &&
+      pads.top === pads.left &&
+      pads.top > 0
+    ) {
+      bindings.push({ caption: 'padding', label: measureLabel(tokens, part, ['padding'], pads.top) });
+    } else {
+      if (pads.left > 0 && pads.left === pads.right) {
+        bindings.push({ caption: 'padding-x', label: measureLabel(tokens, part, ['padding-x', 'padding'], pads.left) });
+      }
+      if (pads.top > 0 && pads.top === pads.bottom) {
+        bindings.push({ caption: 'padding-y', label: measureLabel(tokens, part, ['padding-y', 'padding'], pads.top) });
+      }
+    }
+    if (gap > 0) {
+      bindings.push({ caption: 'gap', label: measureLabel(tokens, part, ['gap'], gap) });
+    }
+  }
   const radius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
   if (radius > 0) {
     bindings.push({ caption: 'radius', label: measureLabel(tokens, part, ['border-radius'], radius) });
