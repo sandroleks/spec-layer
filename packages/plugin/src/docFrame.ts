@@ -604,22 +604,23 @@ async function buildAnatomyDiagram(
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
 
-  // Image box: a plain (non-auto-layout) frame holding the instance + pins, which
-  // free-position by x/y. The instance goes in first so pins layer on top.
+  // Image box: a plain (non-auto-layout) frame holding the instance plus a
+  // callout zone ABOVE it. Pins sit in that zone (above each part), connected
+  // by a short leader down to the artwork, so they never cover the content.
+  const CALLOUT_ZONE = 36;
   const box = figma.createFrame();
   box.name = 'Anatomy diagram';
-  box.resize(renderedW, renderedH);
+  box.resize(renderedW, renderedH + CALLOUT_ZONE);
   box.fills = [];
-  box.clipsContent = false; // edge pins may overhang slightly
+  box.clipsContent = false; // edge pins/leaders may overhang slightly
   card.appendChild(box);
   box.appendChild(inst);
   inst.x = 0;
-  inst.y = 0;
+  inst.y = CALLOUT_ZONE;
 
-  // Place a pin at each depth-0 part's center, mapped from component coords into
-  // the box. Deeper parts are numbered in the legend/table but stay unpinned —
-  // pinning every nested sub-part on top of its parent's pin clutters the image.
-  const placed: FrameNode[] = [];
+  // A pin per depth-0 part, placed above the part's horizontal center with a
+  // leader down to the instance's top edge. Deeper parts stay unpinned
+  // (numbered in the legend/table only) so nested sub-parts don't clutter it.
   for (const part of parts) {
     if (part.depth !== 0) continue;
     let p: BaseNode | null;
@@ -632,28 +633,20 @@ async function buildAnatomyDiagram(
     const pb = (p as SceneNode).absoluteBoundingBox;
     if (!pb) continue;
     const nx = clamp01((pb.x + pb.width / 2 - cb.x) / cb.width);
-    const ny = clamp01((pb.y + pb.height / 2 - cb.y) / cb.height);
+    const cx = Math.round(nx * renderedW);
+
+    // Leader: thin line from the pin's bottom down to the instance's top edge.
+    const leader = figma.createFrame();
+    leader.resize(1, Math.max(CALLOUT_ZONE - PIN_SIZE, 1));
+    leader.x = cx;
+    leader.y = PIN_SIZE;
+    leader.fills = solidFill(palette.border);
+    box.appendChild(leader);
+
     const pin = anatomyPin(part.n);
     box.appendChild(pin);
-    pin.x = Math.round(nx * renderedW - PIN_SIZE / 2);
-    pin.y = Math.round(ny * renderedH - PIN_SIZE / 2);
-    placed.push(pin);
-  }
-
-  // Collision-declutter pass: sort by y then x so overlaps resolve in reading
-  // order, then nudge any pin whose center sits within PIN_SIZE of an
-  // already-placed pin to the right, clamped so it stays inside the box.
-  placed.sort((a, b) => (a.y - b.y) || (a.x - b.x));
-  const settled: FrameNode[] = [];
-  for (const pin of placed) {
-    for (const other of settled) {
-      const dx = pin.x - other.x;
-      const dy = pin.y - other.y;
-      if (Math.sqrt(dx * dx + dy * dy) < PIN_SIZE) {
-        pin.x = Math.min(pin.x + PIN_SIZE + 2, renderedW - PIN_SIZE);
-      }
-    }
-    settled.push(pin);
+    pin.x = Math.round(cx - PIN_SIZE / 2);
+    pin.y = 0;
   }
 
   // Numbered legend below the screenshot.
