@@ -604,23 +604,10 @@ async function buildAnatomyDiagram(
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
 
-  // Image box: a plain (non-auto-layout) frame holding the instance plus a
-  // callout zone ABOVE it. Pins sit in that zone (above each part), connected
-  // by a short leader down to the artwork, so they never cover the content.
-  const CALLOUT_ZONE = 36;
-  const box = figma.createFrame();
-  box.name = 'Anatomy diagram';
-  box.resize(renderedW, renderedH + CALLOUT_ZONE);
-  box.fills = [];
-  box.clipsContent = false; // edge pins/leaders may overhang slightly
-  card.appendChild(box);
-  box.appendChild(inst);
-  inst.x = 0;
-  inst.y = CALLOUT_ZONE;
-
-  // A pin per depth-0 part, placed above the part's horizontal center with a
-  // leader down to the instance's top edge. Deeper parts stay unpinned
-  // (numbered in the legend/table only) so nested sub-parts don't clutter it.
+  // Resolve each depth-0 part to its normalized center in the component box.
+  // Deeper parts stay unpinned (numbered in the legend/table only) so nested
+  // sub-parts don't clutter the image.
+  const pins: { n: number; nx: number; ny: number }[] = [];
   for (const part of parts) {
     if (part.depth !== 0) continue;
     let p: BaseNode | null;
@@ -632,21 +619,65 @@ async function buildAnatomyDiagram(
     if (!p || !('absoluteBoundingBox' in p)) continue;
     const pb = (p as SceneNode).absoluteBoundingBox;
     if (!pb) continue;
-    const nx = clamp01((pb.x + pb.width / 2 - cb.x) / cb.width);
-    const cx = Math.round(nx * renderedW);
+    pins.push({
+      n: part.n,
+      nx: clamp01((pb.x + pb.width / 2 - cb.x) / cb.width),
+      ny: clamp01((pb.y + pb.height / 2 - cb.y) / cb.height),
+    });
+  }
 
-    // Leader: thin line from the pin's bottom down to the instance's top edge.
+  // Pin orientation: place callouts on the side the parts are LEAST spread
+  // along, so they line up without piling. A horizontal row of parts shares a
+  // vertical range near zero -> pins go ABOVE (spread by x); a vertical stack
+  // shares an x range near zero -> pins go to the RIGHT (spread by y).
+  const xs = pins.map((p) => p.nx);
+  const ys = pins.map((p) => p.ny);
+  const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
+  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+  const sideCallouts = yRange > xRange; // vertical stack -> right-side pins
+  const CALLOUT_ZONE = pins.length ? 36 : 0;
+
+  // Image box: a plain (non-auto-layout) frame holding the instance plus the
+  // callout zone. Pins sit in the zone (beside each part) with a short leader
+  // back to the artwork, so they never cover the content.
+  const box = figma.createFrame();
+  box.name = 'Anatomy diagram';
+  box.resize(
+    renderedW + (sideCallouts ? CALLOUT_ZONE : 0),
+    renderedH + (sideCallouts ? 0 : CALLOUT_ZONE),
+  );
+  box.fills = [];
+  box.clipsContent = false; // edge pins/leaders may overhang slightly
+  card.appendChild(box);
+  box.appendChild(inst);
+  inst.x = 0;
+  inst.y = sideCallouts ? 0 : CALLOUT_ZONE;
+
+  for (const pin of pins) {
+    const node = anatomyPin(pin.n);
     const leader = figma.createFrame();
-    leader.resize(1, Math.max(CALLOUT_ZONE - PIN_SIZE, 1));
-    leader.x = cx;
-    leader.y = PIN_SIZE;
     leader.fills = solidFill(palette.border);
-    box.appendChild(leader);
-
-    const pin = anatomyPin(part.n);
-    box.appendChild(pin);
-    pin.x = Math.round(cx - PIN_SIZE / 2);
-    pin.y = 0;
+    if (sideCallouts) {
+      // Right of the part's vertical center; horizontal leader from the edge.
+      const cy = Math.round(pin.ny * renderedH);
+      leader.resize(Math.max(CALLOUT_ZONE - PIN_SIZE, 1), 1);
+      leader.x = renderedW;
+      leader.y = cy;
+      box.appendChild(leader);
+      box.appendChild(node);
+      node.x = renderedW + CALLOUT_ZONE - PIN_SIZE;
+      node.y = Math.round(cy - PIN_SIZE / 2);
+    } else {
+      // Above the part's horizontal center; vertical leader down to the edge.
+      const cx = Math.round(pin.nx * renderedW);
+      leader.resize(1, Math.max(CALLOUT_ZONE - PIN_SIZE, 1));
+      leader.x = cx;
+      leader.y = PIN_SIZE;
+      box.appendChild(leader);
+      box.appendChild(node);
+      node.x = Math.round(cx - PIN_SIZE / 2);
+      node.y = 0;
+    }
   }
 
   // Numbered legend below the screenshot.
