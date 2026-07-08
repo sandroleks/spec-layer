@@ -182,6 +182,71 @@ describe('prose', () => {
     ).toThrow(/definition/);
   });
 
+  it('populates anatomySummary when present in the payload', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label inside a container."}',
+    );
+    expect(out.anatomySummary).toBe('A label inside a container.');
+  });
+
+  it('leaves anatomySummary undefined when absent, without throwing', () => {
+    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
+    expect(out.anatomySummary).toBeUndefined();
+  });
+
+  it('normalizes em dashes out of anatomySummary when present', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label — inside a container."}',
+    );
+    expect(out.anatomySummary).toBe('A label, inside a container.');
+  });
+
+  it('parses anatomyParts as {name, description} pairs', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"Label","description":"Names the action."}]}',
+    );
+    expect(out.anatomyParts).toEqual([
+      { name: 'Container', description: 'Holds the label.' },
+      { name: 'Label', description: 'Names the action.' },
+    ]);
+  });
+
+  it('drops malformed anatomyParts entries but keeps the usable ones', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"","description":"no name"},{"name":"Label"},"nope",{"description":"no name key"}]}',
+    );
+    expect(out.anatomyParts).toEqual([{ name: 'Container', description: 'Holds the label.' }]);
+  });
+
+  it('leaves anatomyParts undefined when absent, non-array, or empty after filtering', () => {
+    expect(parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}').anatomyParts).toBeUndefined();
+    expect(
+      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":"Container"}').anatomyParts,
+    ).toBeUndefined();
+    expect(
+      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"","description":""}]}').anatomyParts,
+    ).toBeUndefined();
+  });
+
+  it('normalizes em dashes out of anatomyParts descriptions', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Label","description":"Names the action — clearly."}]}',
+    );
+    expect(out.anatomyParts?.[0].description).toBe('Names the action, clearly.');
+  });
+
+  it('few-shot exemplar carries an anatomy summary and per-part descriptions', () => {
+    const drafts = parseProseResponse(proseFewShot()[1].content);
+    expect(drafts.anatomySummary).toBeTruthy();
+    expect(drafts.anatomyParts?.map((p) => p.name)).toEqual(['Container', 'Label', 'Leading icon']);
+  });
+
+  it('prompt asks for anatomyParts matching the listed part names', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toContain('anatomyParts');
+    expect(prompt).toMatch(/EXACTLY matches one of the Anatomy part names/);
+  });
+
   it('throws when dos contains a non-string element', () => {
     expect(() =>
       parseProseResponse('{"definition":"d","accessibility":"a","dos":[1],"donts":[]}'),

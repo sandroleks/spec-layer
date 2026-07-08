@@ -1,12 +1,18 @@
 import type { IntermediateSpec } from '../extract';
 import { formatConditions } from '../tokens';
 
+/** One anatomy part's AI-supplied role description, keyed by the part name the
+ *  model was shown (matched back to the extracted part by name, case-insensitive). */
+export interface AnatomyPartProse { name: string; description: string }
+
 export interface ProseDrafts {
   definition: string;
   accessibility: string;
   dos: string[];
   donts: string[];
   variantsSummary?: string;
+  anatomySummary?: string;
+  anatomyParts?: AnatomyPartProse[];
 }
 
 /**
@@ -48,6 +54,12 @@ export const PROSE_SYSTEM_PROMPT = [
   '- Variants summary (optional, 1-2 sentences): a quick orientation to what varies across this',
   "  component's variant options, not a decision guide. Do not repeat Definition's \"when to use",
   '  which" guidance.',
+  "- Anatomy summary (optional, 1-2 sentences): orient the reader to the component's structure,",
+  '  naming its key parts and what each contributes. Describe what the parts are, not how to',
+  '  configure them.',
+  '- Anatomy parts (optional): for each part listed in the prompt, one concise sentence naming its',
+  '  role and why it exists. Match each part name exactly. Describe purpose, not styling. Skip a',
+  '  part when you cannot describe it without guessing.',
   "- Do's & Don'ts: one rule per bullet. Start each with a short bold lead-in stating the rule, then",
   '  a sentence giving the reason: "**Use one primary action per view.** Its weight tells people',
   '  where to go next." Do not add check or cross marks yourself; they are added on render.',
@@ -78,6 +90,10 @@ const FEW_SHOT_PROMPT = [
     'use which" guide with bold variant names when the component has several variants), ' +
     'variantsSummary (1-2 sentences orienting the reader to what varies across the variant ' +
     'options, without repeating Definition\'s "when to use which" guidance), ' +
+    'anatomySummary (1-2 sentences orienting the reader to the component structure and the role ' +
+    'of its key parts), anatomyParts (array of { name, description } where each name EXACTLY ' +
+    'matches one of the Anatomy part names above and description is one concise sentence naming ' +
+    "that part's role), " +
     'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; ' +
     'include one bullet flagging what cannot be known from the design file), dos (string[], 3 to 5 ' +
     'items, each starting with a bold rule summary then the reason), donts (string[], 3 to 5 items, ' +
@@ -97,6 +113,13 @@ const FEW_SHOT_RESPONSE: ProseDrafts = {
   ].join('\n'),
   variantsSummary: 'Style controls visual weight, from the solid Filled button to the bordered ' +
     'Outlined button to the borderless Text button. All three share the same anatomy and states.',
+  anatomySummary: 'A Button pairs a text label with an optional leading icon inside a single ' +
+    'container. The container sets the tap target and carries the visual weight.',
+  anatomyParts: [
+    { name: 'Container', description: 'Holds the label and icon and defines the clickable area and visual weight.' },
+    { name: 'Label', description: 'Names the action in one to three words so people know what the button does.' },
+    { name: 'Leading icon', description: 'Optional glyph that reinforces the label; never the only signal of meaning.' },
+  ],
   accessibility: [
     '- **Semantics:** render as a native `<button>` so keyboard and screen-reader behaviour work without extra code. Use role="button" only when a non-button element must act as one.',
     '- **Accessible name:** the label names the button. For an icon-only button, supply `aria-label`, since an icon alone announces nothing.',
@@ -202,6 +225,8 @@ export function buildProsePrompt(spec: IntermediateSpec): string {
     'Return ONLY a JSON object with keys: ' +
       "definition (a short paragraph specific to this component's actual props and variants, with no generic filler; when it has several meaningful variants, follow the paragraph with a bulleted \"when to use which\" guide with bold variant names), " +
       "variantsSummary (1-2 sentences orienting the reader to what varies across the variant options, the gist of the axes and their values; do NOT repeat Definition's \"when to use which\" guidance), " +
+      'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above), ' +
+      'anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part\'s role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above), ' +
       'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file), ' +
       'dos (string[], 3 to 5 items, each starting with a bold rule summary then the reason), ' +
       'donts (string[], 3 to 5 items, same shape). ' +
@@ -251,6 +276,26 @@ function joinBullets(items: string[]): string {
   return items
     .map((s) => (/^\s*(?:[-*]\s|#{1,6}\s)/.test(s) ? s : `- ${s}`))
     .join('\n');
+}
+
+/**
+ * Validate the optional `anatomyParts` field: an array of { name, description }
+ * where both are non-empty strings. Malformed entries are dropped (not fatal);
+ * a non-array, or an array with no usable entries, yields undefined. Descriptions
+ * are punctuation-normalised like every other prose field.
+ */
+function parseAnatomyParts(value: unknown): AnatomyPartProse[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: AnatomyPartProse[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const name = typeof rec.name === 'string' ? rec.name.trim() : '';
+    const description = typeof rec.description === 'string' ? rec.description.trim() : '';
+    if (!name || !description) continue;
+    out.push({ name, description: normalizeProseText(description) });
+  }
+  return out.length ? out : undefined;
 }
 
 /** Accept a string[] or a lone string (wrapped); otherwise null. */
@@ -303,13 +348,19 @@ export function parseProseResponse(text: string): ProseDrafts {
     throw new Error('Prose response field "donts" must be a string[]');
   }
 
-  // variantsSummary is optional and non-critical: missing or wrong-typed simply
-  // yields undefined rather than a thrown error, unlike the required fields.
+  // variantsSummary / anatomySummary / anatomyParts are optional and non-critical:
+  // missing or wrong-typed simply yields undefined rather than a thrown error,
+  // unlike the required fields.
   const rawVariantsSummary = asProseText(obj.variantsSummary, joinParagraphs);
   const variantsSummary = rawVariantsSummary === null ? undefined : rawVariantsSummary;
+  const rawAnatomySummary = asProseText(obj.anatomySummary, joinParagraphs);
+  const anatomySummary = rawAnatomySummary === null ? undefined : rawAnatomySummary;
+  const anatomyParts = parseAnatomyParts(obj.anatomyParts);
 
   const generatedStrings = [definition, accessibility, ...dos, ...donts];
   if (variantsSummary !== undefined) generatedStrings.push(variantsSummary);
+  if (anatomySummary !== undefined) generatedStrings.push(anatomySummary);
+  if (anatomyParts) generatedStrings.push(...anatomyParts.map((p) => p.description));
   // Level-1/2 headings are reserved for the canonical spec sections; the model
   // may use level-3 ("###") and below for sub-structure. Reject only `#`/`##`.
   if (generatedStrings.some((value) => /^#{1,2}(?:\s|$)/m.test(value))) {
@@ -322,5 +373,7 @@ export function parseProseResponse(text: string): ProseDrafts {
     dos: dos.map(normalizeProseText),
     donts: donts.map(normalizeProseText),
     ...(variantsSummary !== undefined ? { variantsSummary: normalizeProseText(variantsSummary) } : {}),
+    ...(anatomySummary !== undefined ? { anatomySummary: normalizeProseText(anatomySummary) } : {}),
+    ...(anatomyParts ? { anatomyParts } : {}),
   };
 }

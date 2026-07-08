@@ -533,24 +533,49 @@ function anatomyPin(n: number): FrameNode {
   return pin;
 }
 
-/** Legend row: number badge + part name (with a "· component" note for nested),
- *  indented per its nesting depth so sub-parts read as children of their parent. */
+/** Legend row: number badge + bold part name, then either the AI role
+ *  description ("name: description") or, when undescribed, the nested-component
+ *  note ("name  ·  component"). Indented per nesting depth so sub-parts read as
+ *  children of their parent; the badge top-aligns so multi-line descriptions
+ *  hang cleanly beside it. */
 function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
-  const row = hstack(10);
-  row.counterAxisAlignItems = 'CENTER';
+  const row = hstack(12);
+  row.counterAxisAlignItems = 'MIN';
+  row.paddingTop = row.paddingBottom = 12;
   row.paddingLeft = part.depth * 18;
   row.appendChild(numberBadge(part.n, LEGEND_BADGE));
-  const text = makeText(
-    `${part.name}${part.nested ? `  ·  ${part.component ?? 'component'}` : ''}`,
-    'Regular',
-    15,
-    palette.body,
-    145,
-  );
+
+  const desc = part.description?.trim();
+  const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
+  const chars = desc ? `${part.name}: ${desc}` : `${part.name}${nestedNote}`;
+  const text = makeText(chars, 'Regular', 15, palette.body, 150);
   row.appendChild(text);
   text.layoutSizingHorizontal = 'FILL';
   text.textAutoResize = 'HEIGHT';
+  // Bold the part name only (the leading run before the colon / nested note).
+  text.setRangeFontName(0, part.name.length, font('Bold'));
   return row;
+}
+
+/** The numbered part list: legend rows separated by hairline dividers, so each
+ *  part reads as its own spec entry. Shared by the diagram card and the
+ *  no-screenshot fallback. */
+function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
+  const legend = vstack(0);
+  legend.counterAxisAlignItems = 'MIN';
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const divider = figma.createFrame();
+      divider.resize(100, 1);
+      divider.fills = solidFill(palette.divider);
+      legend.appendChild(divider);
+      divider.layoutSizingHorizontal = 'FILL';
+    }
+    const row = anatomyLegendRow(part);
+    legend.appendChild(row);
+    row.layoutSizingHorizontal = 'FILL';
+  });
+  return legend;
 }
 
 /**
@@ -701,15 +726,9 @@ async function buildAnatomyDiagram(
   }
 
   // Numbered legend below the screenshot.
-  const legend = vstack(10);
-  legend.counterAxisAlignItems = 'MIN';
+  const legend = buildAnatomyLegend(parts);
   card.appendChild(legend);
   legend.layoutSizingHorizontal = 'FILL';
-  for (const part of parts) {
-    const row = anatomyLegendRow(part);
-    legend.appendChild(row);
-    row.layoutSizingHorizontal = 'FILL';
-  }
 
   return card;
 }
@@ -748,6 +767,13 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       row.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'anatomy') {
+    // AI orientation to the component's structure, above the diagram.
+    if (section.summary) {
+      const summary = makeText(section.summary, 'Regular', 15, palette.body, 155);
+      body.appendChild(summary);
+      summary.layoutSizingHorizontal = 'FILL';
+      summary.textAutoResize = 'HEIGHT';
+    }
     // 'table' skips the diagram build entirely — no point spending an instance +
     // screenshot render when only the tabular list will be shown.
     if (section.view !== 'table') {
@@ -757,11 +783,9 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
         diagram.layoutSizingHorizontal = 'FILL';
       } else {
         // Fallback: the numbered legend on its own when the screenshot can't render.
-        for (const part of section.parts) {
-          const row = anatomyLegendRow(part);
-          body.appendChild(row);
-          row.layoutSizingHorizontal = 'FILL';
-        }
+        const legend = buildAnatomyLegend(section.parts);
+        body.appendChild(legend);
+        legend.layoutSizingHorizontal = 'FILL';
       }
     }
     if (section.view === 'table' || section.view === 'both') {

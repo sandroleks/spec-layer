@@ -76,6 +76,7 @@ export interface AnatomyPartBlock {
   component?: string;
   tokens: string[];
   type: string;
+  description?: string; // AI-supplied role text, matched by part name (optional)
 }
 
 /** Which measurement lens a measure mini-diagram renders. Each selected view
@@ -95,7 +96,7 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
-  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both' }
+  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both'; summary: string | null }
   | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[] }
   | {
       id: SectionId; heading: string; kind: 'statesMatrix';
@@ -258,6 +259,13 @@ function buildSection(
       // Falls back to a plain "None." bullet when there are no parts or no
       // component to screenshot.
       if (spec.anatomy.length && spec.anatomyComponentId) {
+        // AI role text is matched back to each extracted part by name
+        // (case-insensitive, trimmed); first match for a name wins.
+        const descByName = new Map<string, string>();
+        for (const p of prose?.anatomyParts ?? []) {
+          const key = p.name.trim().toLowerCase();
+          if (!descByName.has(key)) descByName.set(key, p.description);
+        }
         const parts = spec.anatomy.map((a, i) => ({
           n: i + 1,
           name: a.name,
@@ -267,9 +275,14 @@ function buildSection(
           component: a.component,
           tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.token))],
           type: a.type,
+          description: descByName.get(a.name.trim().toLowerCase()),
         }));
         const view = options?.anatomyView ?? 'diagram';
-        return { id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts, view };
+        return {
+          id, heading: label, kind: 'anatomy',
+          componentId: spec.anatomyComponentId, parts, view,
+          summary: prose?.anatomySummary ?? null,
+        };
       }
       return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
     }
