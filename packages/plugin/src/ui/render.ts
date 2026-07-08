@@ -107,18 +107,36 @@ export function renderSelection(refs: Refs, state: UiState): void {
 }
 
 /**
- * Populate + show the "Variants to document" picker. Visible only when the
- * Tokens section is checked and the selection is a component set with variants.
- * Rebuilds the list only when the component changes, so it never clobbers the
- * user's current variant selection (e.g. on a Tokens toggle).
+ * Populate + show the "Variants to document" card. Visible whenever the
+ * extracted spec has variant instances — no longer gated on the Tokens
+ * checkbox for visibility, since the card is forward-compatible with other
+ * variant-driven sections. Tokens gating instead mutes the card + collapses
+ * its body + swaps the hint for an actionable link, so toggling Tokens off
+ * never hides a card the user just opened.
+ *
+ * List rows rebuild only when the component changes, so a Tokens toggle (or
+ * any other re-render) never clobbers the user's current variant selection.
  */
 export function renderVariantPicker(refs: Refs, state: UiState): void {
   const spec = state.currentSpec;
-  const tokensChecked = refs.sectionChecks['tokens']?.checked ?? false;
   const instances = spec?.variantInstances ?? [];
-  const show = Boolean(tokensChecked && instances.length > 0);
+  const show = instances.length > 0;
   refs.variantPicker.style.display = show ? 'block' : 'none';
   if (!show || !spec) return;
+
+  const tokensChecked = refs.sectionChecks['tokens']?.checked ?? false;
+  refs.variantPicker.classList.toggle('disabled', !tokensChecked);
+  if (tokensChecked) {
+    refs.variantHint.textContent = 'Applies to the Tokens section';
+  } else {
+    refs.variantBody.hidden = true;
+    refs.variantToggle.setAttribute('aria-expanded', 'false');
+    const link = document.createElement('a');
+    link.className = 'vp-hint-link';
+    link.textContent = 'Tokens used';
+    refs.variantHint.textContent = '';
+    refs.variantHint.append('Turn on ', link, ' to apply');
+  }
 
   const nodeId = state.currentNode?.id ?? '';
   if (refs.variantList.dataset.nodeId === nodeId && refs.variantList.childElementCount > 0) return;
@@ -186,18 +204,28 @@ function buildVariantChips(values: Record<string, string>): HTMLDivElement {
 }
 
 /**
- * Mute the States row + swap its label when the component has no state-like axis.
- * Restores full opacity and the plain 'States' label when states exist — so a
- * selection change in either direction reflects correctly.
+ * Disable + uncheck the States row when the component has no state-like axis,
+ * so the UI never silently accepts a checked box it can't act on. The label
+ * text stays "States" — detection status renders as a muted suffix span
+ * instead of replacing the label outright. Restores checked + enabled (and
+ * removes the suffix) once a selection with states arrives.
  */
 export function renderStatesHint(refs: Refs, state: UiState): void {
   const check = refs.sectionChecks['states'];
   if (!check) return;
   const row = check.closest('.sec-row') as HTMLElement | null;
-  const hasStates = Boolean(state.currentSpec && detectStateMatrix(state.currentSpec.variants));
-  if (row) row.style.opacity = hasStates ? '' : '0.55';
   const label = row?.querySelector('label');
-  if (label) label.textContent = hasStates ? 'States' : 'States — no state variants detected';
+  const hasStates = Boolean(state.currentSpec && detectStateMatrix(state.currentSpec.variants));
+
+  label?.querySelector('.sec-note')?.remove();
+  if (!hasStates && label) {
+    const note = document.createElement('span');
+    note.className = 'sec-note';
+    note.textContent = '· none detected';
+    label.appendChild(note);
+  }
+  check.disabled = !hasStates;
+  check.checked = hasStates;
 }
 
 /** Reflect "N of M selected" in the variant-picker header. */

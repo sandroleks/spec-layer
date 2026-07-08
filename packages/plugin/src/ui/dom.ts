@@ -387,7 +387,6 @@ const TEMPLATE = `
     }
     .ai-head { display: flex; align-items: center; gap: 5px; }
     .ai-card .ai-title { font-size: 12px; font-weight: 600; }
-    .ai-card .hint { margin-top: 2px; }
     /* Info disclosure: ⓘ button toggles the .ai-info panel (wired in ui.ts). */
     .info-btn {
       appearance: none; border: none; background: none; cursor: pointer; padding: 0;
@@ -439,7 +438,10 @@ const TEMPLATE = `
     }
     .link-btn:hover { text-decoration: underline; }
     .link-btn:disabled { color: var(--figma-color-text-disabled); cursor: default; text-decoration: none; }
-    #section-list { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; }
+    /* Single column: each row can now carry an inline disclosure area beneath
+       it (anatomy/measure options, states note), which a 2-column grid can't
+       accommodate without the options spanning oddly across the gutter. */
+    #section-list { display: flex; flex-direction: column; gap: 1px; }
     .sec-row {
       display: flex; align-items: center; gap: 8px; font-size: 12px;
       padding: 6px 8px; border-radius: 6px;
@@ -447,10 +449,21 @@ const TEMPLATE = `
     .sec-row:hover { background: var(--figma-color-bg-secondary); }
     .sec-row label { cursor: pointer; flex: 1; }
     #section-list.ai-dim .ai-badge { opacity: 0.4; }
+    /* Muted note appended to a section label (e.g. "· none detected"). */
+    .sec-note { color: var(--figma-color-text-secondary); font-weight: 400; margin-left: 4px; }
+    /* Disabled section checkboxes (e.g. States with nothing to detect) read as
+       muted rather than a normal interactive row. */
+    .sec-row input:disabled { opacity: 0.4; cursor: default; }
+    .sec-row input:disabled + label { opacity: 0.55; cursor: default; }
 
-    /* ---- Anatomy view toggle (segmented radio row) ---- */
+    /* ---- Anatomy view toggle (segmented radio row) ----
+       Nests inside its .sec-group beneath the Anatomy checkbox row: indent
+       past the checkbox + a hairline left rule keeps the disclosure quiet, so
+       visual weight stays on the section names, not a boxed sub-panel. */
     .anatomy-view {
-      display: flex; align-items: center; gap: 10px; margin: 2px 0 10px;
+      display: flex; align-items: center; gap: 10px;
+      margin: 2px 0 6px 27px; padding-left: 10px;
+      border-left: 1px solid var(--figma-color-border);
       font-size: 11px; color: var(--figma-color-text-secondary);
     }
     .anatomy-view-label { flex: 0 0 auto; }
@@ -478,7 +491,9 @@ const TEMPLATE = `
        look, sized down to match the compact row. */
     .measure-setup {
       display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
-      margin: 2px 0 10px; font-size: 11px; color: var(--figma-color-text-secondary);
+      margin: 2px 0 6px 27px; padding-left: 10px;
+      border-left: 1px solid var(--figma-color-border);
+      font-size: 11px; color: var(--figma-color-text-secondary);
     }
     .measure-setup-label { flex: 0 0 auto; }
     .measure-setup label {
@@ -505,19 +520,40 @@ const TEMPLATE = `
       outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
     }
 
-    /* ---- Variant picker (per-variant tokens) ---- */
+    /* ---- Variant picker (per-variant tokens) ----
+       Collapsed-by-default summary card: .vp-head is a full-width button that
+       toggles #variant-body (the "Select all" action + scrollable list). Gated
+       on the Tokens checkbox (see renderVariantPicker): unchecked mutes the
+       whole card and swaps the hint for an actionable link. */
     .variant-picker {
       margin-top: 12px; padding: 12px 13px; border-radius: 10px;
       background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
+      transition: opacity 0.12s ease;
     }
-    .variant-picker .vp-head {
-      display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px;
+    .variant-picker.disabled { opacity: 0.5; }
+    .vp-head {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; appearance: none; border: none; background: none; cursor: pointer;
+      padding: 0; font-family: inherit; color: inherit; text-align: left;
     }
-    .variant-picker .vp-title { font-size: 12px; font-weight: 600; color: var(--figma-color-text); }
-    .variant-picker .vp-count { font-weight: 400; color: var(--figma-color-text-secondary); }
+    .vp-title { font-size: 12px; font-weight: 600; color: var(--figma-color-text); }
+    .vp-count { font-weight: 400; color: var(--figma-color-text-secondary); }
+    .vp-head svg {
+      width: 14px; height: 14px; flex: 0 0 auto; color: var(--figma-color-text-secondary);
+      transition: transform 0.12s ease;
+    }
+    .vp-head[aria-expanded="true"] svg { transform: rotate(180deg); }
+    .vp-hint {
+      font-size: 11px; color: var(--figma-color-text-secondary); margin: 4px 0 0;
+    }
+    .vp-hint-link { color: var(--figma-color-bg-brand); cursor: pointer; }
+    .vp-hint-link:hover { text-decoration: underline; }
+    .vp-body { margin-top: 8px; }
+    .vp-body[hidden] { display: none; }
+    .vp-body #variant-select-all { display: block; margin-bottom: 6px; }
     #variant-list {
       display: flex; flex-direction: column; gap: 3px;
-      max-height: 220px; overflow-y: auto;
+      max-height: 300px; overflow-y: auto;
     }
     /* Each variant is a raised tile on the card; the active state is carried by
        the checkbox, with a faint brand outline on the selected rows. */
@@ -619,7 +655,6 @@ const TEMPLATE = `
                 </svg>
               </button>
             </div>
-            <p class="hint">Let Claude draft the <strong>AI</strong> sections from your component.</p>
             <div class="ai-info" id="ai-info" hidden>
               <p>Drafts the <strong>Definition</strong>, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text.</p>
               <p>Uses your own <strong>Anthropic API key</strong>, stored locally and billed to your account.</p>
@@ -664,15 +699,26 @@ const TEMPLATE = `
           <label><input type="checkbox" name="measure-view" value="spacing" checked> Children &amp; spacing</label>
         </div>
 
-        <!-- Variants to document (per-variant tokens). Shown only when the
-             Tokens section is checked and the selection is a component set;
-             rows are populated in render.ts from the extracted spec. -->
+        <!-- Variants to document (per-variant tokens). Shown whenever the spec
+             has variant instances (see renderVariantPicker); gated on the
+             Tokens checkbox via the .disabled class + hint link rather than
+             visibility, so the card stays a stable landmark. Collapsed by
+             default — the header button toggles #variant-body. Rows are
+             populated in render.ts from the extracted spec. -->
         <div class="variant-picker" id="variant-picker" style="display:none">
-          <div class="vp-head">
+          <button class="vp-head" id="variant-toggle" type="button"
+                  aria-expanded="false" aria-controls="variant-body">
             <span class="vp-title">Variants to document <span class="vp-count" id="variant-count"></span></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+          <div class="vp-hint" id="variant-hint">Applies to the Tokens section</div>
+          <div class="vp-body" id="variant-body" hidden>
             <button class="link-btn" id="variant-select-all" type="button">Select all</button>
+            <div id="variant-list"></div>
           </div>
-          <div id="variant-list"></div>
         </div>
 
         <!-- Actions, banners, and the inline file-key prompt live in the sticky
@@ -809,6 +855,9 @@ export interface Refs {
   measureSetup: HTMLElement;
   // Variant picker (per-variant tokens)
   variantPicker: HTMLDivElement;
+  variantToggle: HTMLButtonElement;
+  variantBody: HTMLDivElement;
+  variantHint: HTMLDivElement;
   variantList: HTMLDivElement;
   variantSelectAll: HTMLButtonElement;
   variantCount: HTMLSpanElement;
@@ -861,10 +910,16 @@ export function mount(): Refs {
 
   // Build the section checklist from ALL_SECTIONS so the markup stays DRY.
   // Each row gets a checkbox `sec-<id>`, checked by default except `related`,
-  // with an inline (AI) badge on AI-generated sections. Must run before we
-  // collect the per-checkbox refs below.
+  // with an inline (AI) badge on AI-generated sections. Each row is wrapped in
+  // a `.sec-group` so option-bearing sections (anatomy, measurements) can nest
+  // their disclosure directly beneath the checkbox that controls them, instead
+  // of floating disconnected below the whole grid. Must run before we collect
+  // the per-checkbox refs below.
   const sectionList = byId<HTMLDivElement>('section-list');
   for (const section of ALL_SECTIONS) {
+    const group = document.createElement('div');
+    group.className = 'sec-group';
+
     const row = document.createElement('div');
     row.className = 'sec-row';
 
@@ -885,12 +940,32 @@ export function mount(): Refs {
 
     row.appendChild(input);
     row.appendChild(label);
-    sectionList.appendChild(row);
+    group.appendChild(row);
+    sectionList.appendChild(group);
   }
 
   const sectionChecks: Record<string, HTMLInputElement> = {};
   for (const section of ALL_SECTIONS) {
     sectionChecks[section.id] = byId<HTMLInputElement>(`sec-${section.id}`);
+  }
+
+  // Relocate the pre-existing anatomy/measure option panels (still defined in
+  // TEMPLATE, outside #section-list) into their section's group, directly
+  // beneath the row — appendChild moves the existing node rather than cloning
+  // it, so ids/listeners attached later still resolve to the same elements.
+  // Also wire up the disclosure a11y pairing (checkbox <-> options panel) here,
+  // once, rather than duplicating it at every toggle site in ui.ts.
+  const anatomyView = byId<HTMLElement>('anatomy-view');
+  const measureSetup = byId<HTMLElement>('measure-setup');
+  sectionChecks['anatomy']?.closest('.sec-group')?.appendChild(anatomyView);
+  sectionChecks['measurements']?.closest('.sec-group')?.appendChild(measureSetup);
+  if (sectionChecks['anatomy']) {
+    sectionChecks['anatomy'].setAttribute('aria-controls', 'anatomy-view');
+    sectionChecks['anatomy'].setAttribute('aria-expanded', String(sectionChecks['anatomy'].checked));
+  }
+  if (sectionChecks['measurements']) {
+    sectionChecks['measurements'].setAttribute('aria-controls', 'measure-setup');
+    sectionChecks['measurements'].setAttribute('aria-expanded', String(sectionChecks['measurements'].checked));
   }
 
   // Inject one preset chip per built-in theme (wired to setBrandTheme in ui.ts).
@@ -928,6 +1003,9 @@ export function mount(): Refs {
     anatomyView: byId<HTMLElement>('anatomy-view'),
     measureSetup: byId<HTMLElement>('measure-setup'),
     variantPicker: byId<HTMLDivElement>('variant-picker'),
+    variantToggle: byId<HTMLButtonElement>('variant-toggle'),
+    variantBody: byId<HTMLDivElement>('variant-body'),
+    variantHint: byId<HTMLDivElement>('variant-hint'),
     variantList: byId<HTMLDivElement>('variant-list'),
     variantSelectAll: byId<HTMLButtonElement>('variant-select-all'),
     variantCount: byId<HTMLSpanElement>('variant-count'),

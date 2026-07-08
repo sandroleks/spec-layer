@@ -169,14 +169,35 @@ refs.selectAllBtn.addEventListener('click', () => {
   refs.selectAllBtn.textContent = allOn ? 'Select all' : 'Clear all';
 });
 
-// Toggling the Tokens section shows/hides the per-variant picker.
+// Toggling the Tokens section re-renders the variant card's gated state
+// (mutes it + collapses the body when Tokens is off; see renderVariantPicker).
 refs.sectionChecks['tokens']?.addEventListener('change', () => renderVariantPicker(refs, state));
+
+// Variant card header: toggles the body open/closed, mirrored to aria-expanded.
+refs.variantToggle.addEventListener('click', () => {
+  const open = refs.variantBody.hidden;
+  refs.variantBody.hidden = !open;
+  refs.variantToggle.setAttribute('aria-expanded', String(open));
+});
+
+// Hint link only appears while Tokens is off (renderVariantPicker); clicking it
+// turns Tokens on and re-renders the card, which un-gates + restores the hint.
+refs.variantHint.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.vp-hint-link')) return;
+  const tokensCheck = refs.sectionChecks['tokens'];
+  if (!tokensCheck) return;
+  tokensCheck.checked = true;
+  renderVariantPicker(refs, state);
+});
 
 // Toggling the Anatomy section shows/hides the diagram/table/both view toggle.
 // Initialize visibility to match the checkbox's default-checked state.
 refs.anatomyView.style.display = refs.sectionChecks['anatomy']?.checked ? 'flex' : 'none';
 refs.sectionChecks['anatomy']?.addEventListener('change', () => {
-  refs.anatomyView.style.display = refs.sectionChecks['anatomy']?.checked ? 'flex' : 'none';
+  const checked = refs.sectionChecks['anatomy']?.checked ?? false;
+  refs.anatomyView.style.display = checked ? 'flex' : 'none';
+  refs.sectionChecks['anatomy']?.setAttribute('aria-expanded', String(checked));
 });
 
 // Anatomy view radios: reflect the selected mode onto state.
@@ -190,7 +211,9 @@ refs.anatomyView.addEventListener('change', (e) => {
 // Initialize visibility to match the checkbox's default-checked state.
 refs.measureSetup.style.display = refs.sectionChecks['measurements']?.checked ? 'flex' : 'none';
 refs.sectionChecks['measurements']?.addEventListener('change', () => {
-  refs.measureSetup.style.display = refs.sectionChecks['measurements']?.checked ? 'flex' : 'none';
+  const checked = refs.sectionChecks['measurements']?.checked ?? false;
+  refs.measureSetup.style.display = checked ? 'flex' : 'none';
+  refs.sectionChecks['measurements']?.setAttribute('aria-expanded', String(checked));
 });
 
 // Measure lens checkboxes: rebuild state.measureViews from the checked boxes,
