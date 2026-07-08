@@ -270,7 +270,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         let existing: FrameNode | null = null;
         for (const child of figma.currentPage.children) {
           try {
-            if (child.type === 'FRAME' && child.name === msg.model.title) {
+            if (child.type === 'FRAME' && child.name === msg.model.componentName) {
               existing = child;
               break;
             }

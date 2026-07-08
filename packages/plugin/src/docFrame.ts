@@ -1082,7 +1082,7 @@ export async function buildDocFrame(
 
   // Lift the Definition's lead sentence into the header subtitle; any remaining
   // definition content renders as the first body section.
-  const componentName = model.title.replace(/:\s*Guidelines$/i, '');
+  const componentName = model.componentName;
   const definition = model.sections.find(
     (s) => s.id === 'definition' && s.kind === 'prose',
   ) as Extract<SectionBlock, { kind: 'prose' }> | undefined;
@@ -1107,7 +1107,7 @@ export async function buildDocFrame(
 
   // Root card
   const frame = figma.createFrame();
-  frame.name = model.title;
+  frame.name = componentName;
   frame.layoutMode = 'VERTICAL';
   frame.primaryAxisSizingMode = 'AUTO';
   frame.counterAxisSizingMode = 'FIXED';

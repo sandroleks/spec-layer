@@ -20,7 +20,7 @@ describe('buildDocModel', () => {
   it('emits only selected sections, in canonical order', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['definition','variants']));
     expect(model.sections.map(s => s.id)).toEqual(['definition','variants']);
-    expect(model.title).toBe('Button: Guidelines');
+    expect(model.componentName).toBe('Button');
   });
 
   it('uses placeholder text for AI sections when prose is null', () => {

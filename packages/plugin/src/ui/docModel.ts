@@ -113,7 +113,7 @@ export type SectionBlock =
       note: string | null;                     // held-axis note, or null
     };
 
-export interface DocFrameModel { title: string; sections: SectionBlock[] }
+export interface DocFrameModel { componentName: string; sections: SectionBlock[] }
 
 export interface DocGroup { id: GroupId; label: string; sections: SectionBlock[] }
 
@@ -531,5 +531,5 @@ export function buildDocModel(
     const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
     if (block) out.push(block);
   }
-  return { title: `${spec.name}: Guidelines`, sections: out };
+  return { componentName: spec.name, sections: out };
 }
