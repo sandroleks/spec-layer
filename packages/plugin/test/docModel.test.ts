@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -542,5 +542,35 @@ describe('variant token cards: diff vs default', () => {
       { part: 'Container', property: 'fill', token: 'color/hover', unbound: false, diff: true },
     ]);
     expect(hover.sameAsDefault).toBe(1); // padding row identical to default
+  });
+});
+
+describe('groupSections', () => {
+  const mk = (id: SectionBlock['id']): SectionBlock =>
+    ({ id, heading: id, kind: 'prose', text: 'x' });
+
+  it('every section id has a group', () => {
+    for (const s of ALL_SECTIONS) {
+      expect(['usage', 'specs', 'a11y']).toContain(s.group);
+    }
+  });
+
+  it('partitions into the three groups in canonical order', () => {
+    const groups = groupSections([
+      mk('accessibility'), mk('states'), mk('definition'), mk('variants'),
+    ]);
+    expect(groups.map((g) => g.id)).toEqual(['usage', 'specs', 'a11y']);
+    expect(groups[0].sections.map((s) => s.id)).toEqual(['definition', 'variants']);
+    expect(groups[1].sections.map((s) => s.id)).toEqual(['states']);
+    expect(groups[2].sections.map((s) => s.id)).toEqual(['accessibility']);
+  });
+
+  it('omits groups with no sections', () => {
+    const groups = groupSections([mk('definition')]);
+    expect(groups.map((g) => g.id)).toEqual(['usage']);
+  });
+
+  it('GROUPS is Usage → Specifications → Accessibility', () => {
+    expect(GROUPS.map((g) => g.label)).toEqual(['Usage', 'Specifications', 'Accessibility']);
   });
 });

@@ -8,17 +8,26 @@ export type SectionId =
   | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
   | 'states' | 'tokens' | 'accessibility' | 'dosDonts' | 'related';
 
-export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean }[] = [
-  { id: 'definition',    label: 'Definition',    ai: true  },
-  { id: 'anatomy',       label: 'Anatomy',       ai: false },
-  { id: 'measurements',  label: 'Measurements',  ai: false },
-  { id: 'configuration', label: 'Configuration', ai: false },
-  { id: 'variants',      label: 'Variants',      ai: true  },
-  { id: 'states',        label: 'States',        ai: false },
-  { id: 'tokens',        label: 'Tokens used',   ai: false },
-  { id: 'accessibility', label: 'Accessibility', ai: true  },
-  { id: 'dosDonts',      label: "Do's & Don'ts", ai: true  },
-  { id: 'related',       label: 'Related atoms', ai: false },
+export type GroupId = 'usage' | 'specs' | 'a11y';
+
+export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: GroupId }[] = [
+  { id: 'definition',    label: 'Definition',    ai: true,  group: 'usage' },
+  { id: 'anatomy',       label: 'Anatomy',       ai: true,  group: 'specs' },
+  { id: 'measurements',  label: 'Measurements',  ai: false, group: 'specs' },
+  { id: 'configuration', label: 'Configuration', ai: false, group: 'specs' },
+  { id: 'variants',      label: 'Variants',      ai: true,  group: 'usage' },
+  { id: 'states',        label: 'States',        ai: false, group: 'specs' },
+  { id: 'tokens',        label: 'Tokens used',   ai: false, group: 'specs' },
+  { id: 'accessibility', label: 'Accessibility', ai: true,  group: 'a11y'  },
+  { id: 'dosDonts',      label: "Do's & Don'ts", ai: true,  group: 'usage' },
+  { id: 'related',       label: 'Related atoms', ai: false, group: 'usage' },
+];
+
+/** The three output groups, in canonical display/build order. */
+export const GROUPS: { id: GroupId; label: string }[] = [
+  { id: 'usage', label: 'Usage' },
+  { id: 'specs', label: 'Specifications' },
+  { id: 'a11y',  label: 'Accessibility' },
 ];
 
 /** An inline run of text; `bold` marks bold lead-ins parsed from **markers**. */
@@ -105,6 +114,21 @@ export type SectionBlock =
     };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
+
+export interface DocGroup { id: GroupId; label: string; sections: SectionBlock[] }
+
+/** Partition doc sections into their groups. Groups are emitted in GROUPS order;
+ *  within a group, the input section order is preserved. Empty groups are omitted
+ *  (this is what drives empty-frame skipping in the frame builder). */
+export function groupSections(sections: SectionBlock[]): DocGroup[] {
+  const groupOf = new Map<SectionId, GroupId>(ALL_SECTIONS.map((s) => [s.id, s.group]));
+  return GROUPS
+    .map(({ id, label }) => ({
+      id, label,
+      sections: sections.filter((s) => groupOf.get(s.id) === id),
+    }))
+    .filter((g) => g.sections.length > 0);
+}
 
 /** Human label for a variant instance as axis=value pairs, e.g.
  *  "Type=Primary, State=Hover" — keeps each value tied to its prop so booleans
