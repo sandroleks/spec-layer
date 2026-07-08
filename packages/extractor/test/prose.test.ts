@@ -143,6 +143,45 @@ describe('prose', () => {
     expect(store.set).toHaveBeenCalledOnce();
   });
 
+  it('populates variantsSummary when present in the payload', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style varies from solid to outlined to text."}',
+    );
+    expect(out.variantsSummary).toBe('Style varies from solid to outlined to text.');
+  });
+
+  it('leaves variantsSummary undefined when absent, without throwing', () => {
+    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
+    expect(out.variantsSummary).toBeUndefined();
+  });
+
+  it('falls back to undefined when variantsSummary is the wrong type', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":42}',
+    );
+    expect(out.variantsSummary).toBeUndefined();
+  });
+
+  it('coerces an array-of-lines variantsSummary via joinParagraphs', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":["One.","Two."]}',
+    );
+    expect(out.variantsSummary).toBe('One.\n\nTwo.');
+  });
+
+  it('normalizes em dashes out of variantsSummary when present', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style — controls weight."}',
+    );
+    expect(out.variantsSummary).toBe('Style, controls weight.');
+  });
+
+  it('the 4 required fields are still required when variantsSummary is present', () => {
+    expect(() =>
+      parseProseResponse('{"accessibility":"A","dos":[],"donts":[],"variantsSummary":"x"}'),
+    ).toThrow(/definition/);
+  });
+
   it('throws when dos contains a non-string element', () => {
     expect(() =>
       parseProseResponse('{"definition":"d","accessibility":"a","dos":[1],"donts":[]}'),

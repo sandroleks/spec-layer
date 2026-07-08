@@ -6,6 +6,7 @@ export interface ProseDrafts {
   accessibility: string;
   dos: string[];
   donts: string[];
+  variantsSummary?: string;
 }
 
 /**
@@ -44,6 +45,9 @@ export const PROSE_SYSTEM_PROMPT = [
   '  design file cannot encode (focus order, live-region behaviour, immediate vs deferred effect).',
   '  If the list runs long (about six or more points), group the bullets under level-3 ("###")',
   '  subheadings.',
+  '- Variants summary (optional, 1-2 sentences): a quick orientation to what varies across this',
+  "  component's variant options, not a decision guide. Do not repeat Definition's \"when to use",
+  '  which" guidance.',
   "- Do's & Don'ts: one rule per bullet. Start each with a short bold lead-in stating the rule, then",
   '  a sentence giving the reason: "**Use one primary action per view.** Its weight tells people',
   '  where to go next." Do not add check or cross marks yourself; they are added on render.',
@@ -72,6 +76,8 @@ const FEW_SHOT_PROMPT = [
   '',
   'Return ONLY a JSON object with keys: definition (a short paragraph, then a bulleted "when to ' +
     'use which" guide with bold variant names when the component has several variants), ' +
+    'variantsSummary (1-2 sentences orienting the reader to what varies across the variant ' +
+    'options, without repeating Definition\'s "when to use which" guidance), ' +
     'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; ' +
     'include one bullet flagging what cannot be known from the design file), dos (string[], 3 to 5 ' +
     'items, each starting with a bold rule summary then the reason), donts (string[], 3 to 5 items, ' +
@@ -89,6 +95,8 @@ const FEW_SHOT_RESPONSE: ProseDrafts = {
     '- **Outlined**: secondary actions that still need a visible boundary.',
     '- **Text**: low-emphasis actions in dense layouts.',
   ].join('\n'),
+  variantsSummary: 'Style controls visual weight, from the solid Filled button to the bordered ' +
+    'Outlined button to the borderless Text button. All three share the same anatomy and states.',
   accessibility: [
     '- **Semantics:** render as a native `<button>` so keyboard and screen-reader behaviour work without extra code. Use role="button" only when a non-button element must act as one.',
     '- **Accessible name:** the label names the button. For an icon-only button, supply `aria-label`, since an icon alone announces nothing.',
@@ -193,6 +201,7 @@ export function buildProsePrompt(spec: IntermediateSpec): string {
   lines.push(
     'Return ONLY a JSON object with keys: ' +
       "definition (a short paragraph specific to this component's actual props and variants, with no generic filler; when it has several meaningful variants, follow the paragraph with a bulleted \"when to use which\" guide with bold variant names), " +
+      "variantsSummary (1-2 sentences orienting the reader to what varies across the variant options, the gist of the axes and their values; do NOT repeat Definition's \"when to use which\" guidance), " +
       'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file), ' +
       'dos (string[], 3 to 5 items, each starting with a bold rule summary then the reason), ' +
       'donts (string[], 3 to 5 items, same shape). ' +
@@ -294,7 +303,13 @@ export function parseProseResponse(text: string): ProseDrafts {
     throw new Error('Prose response field "donts" must be a string[]');
   }
 
+  // variantsSummary is optional and non-critical: missing or wrong-typed simply
+  // yields undefined rather than a thrown error, unlike the required fields.
+  const rawVariantsSummary = asProseText(obj.variantsSummary, joinParagraphs);
+  const variantsSummary = rawVariantsSummary === null ? undefined : rawVariantsSummary;
+
   const generatedStrings = [definition, accessibility, ...dos, ...donts];
+  if (variantsSummary !== undefined) generatedStrings.push(variantsSummary);
   // Level-1/2 headings are reserved for the canonical spec sections; the model
   // may use level-3 ("###") and below for sub-structure. Reject only `#`/`##`.
   if (generatedStrings.some((value) => /^#{1,2}(?:\s|$)/m.test(value))) {
@@ -306,5 +321,6 @@ export function parseProseResponse(text: string): ProseDrafts {
     accessibility: normalizeProseText(accessibility),
     dos: dos.map(normalizeProseText),
     donts: donts.map(normalizeProseText),
+    ...(variantsSummary !== undefined ? { variantsSummary: normalizeProseText(variantsSummary) } : {}),
   };
 }

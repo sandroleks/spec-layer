@@ -1,7 +1,7 @@
 import type { IntermediateSpec, ProseDrafts, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix,
+  detectStateMatrix, stateAxisProps,
 } from '@spec-layer/extractor';
 
 export type SectionId =
@@ -13,7 +13,7 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean }[] = [
   { id: 'anatomy',       label: 'Anatomy',       ai: false },
   { id: 'measurements',  label: 'Measurements',  ai: false },
   { id: 'configuration', label: 'Configuration', ai: false },
-  { id: 'variants',      label: 'Variants',      ai: false },
+  { id: 'variants',      label: 'Variants',      ai: true  },
   { id: 'states',        label: 'States',        ai: false },
   { id: 'tokens',        label: 'Tokens used',   ai: false },
   { id: 'accessibility', label: 'Accessibility', ai: true  },
@@ -94,6 +94,14 @@ export type SectionBlock =
       states: string[];                       // column headers, lifecycle-ordered
       rows: { label: string; cells: (string | null)[] }[]; // cell = variant nodeId or null
       capped: boolean;                        // true when >4 row values existed
+    }
+  | {
+      id: SectionId; heading: string; kind: 'variantsMatrix';
+      summary: string | null;                 // AI orientation, or null
+      columns: string[];                       // second-axis values, or [''] for 1-axis
+      rows: { label: string; cells: (string | null)[] }[];
+      capped: boolean;
+      note: string | null;                     // held-axis note, or null
     };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
@@ -181,25 +189,6 @@ function makeBullet(raw: string): Bullet {
   const plain = stripListMarker(raw).replace(/\*\*/g, '');
   const runs = parseRuns(stripListMarker(raw));
   return { text: plain, runs };
-}
-
-/**
- * Determine if a variant axis is a modifier (boolean true/false) axis.
- * Mirrors the logic in packages/extractor/src/pivot.ts.
- */
-function isModifierAxis(axis: { prop: string; values: string[] }): boolean {
-  if (axis.values.length !== 2) return false;
-  const lower = axis.values.map((v) => v.toLowerCase());
-  return lower.includes('true') && lower.includes('false');
-}
-
-/**
- * Determine if a variant axis name refers to "state".
- * Mirrors the logic in packages/extractor/src/pivot.ts.
- */
-function isStateAxisName(prop: string): boolean {
-  const n = prop.trim().toLowerCase();
-  return n === 'state' || n === 'states';
 }
 
 function buildSection(
@@ -310,36 +299,64 @@ function buildSection(
     }
 
     case 'variants': {
-      // Build a default map from variant props
-      const variantDefault: Record<string, string> = {};
-      for (const p of spec.props) {
-        if (p.kind === 'variant' && typeof p.default === 'string') {
-          variantDefault[p.name] = p.default;
-        }
+      const stateProps = stateAxisProps(spec.variants);
+      const axes = spec.variants.filter((v) => !stateProps.has(v.prop));
+      const defaults = defaultAxisValues(spec);
+      const summary = prose?.variantsSummary ?? null;
+
+      // Cell = the instance matching { ...defaults, ...overrides } exactly;
+      // fall back to the first instance matching just the requested overrides
+      // (so held/extra axes don't block a match when no exact combo exists).
+      const findCell = (overrides: Record<string, string>): string | null => {
+        const want: Record<string, string> = { ...defaults, ...overrides };
+        const exact = spec.variantInstances.find((i) =>
+          Object.entries(want).every(([a, v]) => i.values[a] === v));
+        if (exact) return exact.nodeId;
+        const loose = spec.variantInstances.find((i) =>
+          Object.entries(overrides).every(([a, v]) => i.values[a] === v));
+        return loose?.nodeId ?? null;
+      };
+
+      if (axes.length === 0) {
+        return { id, heading: label, kind: 'bullets', items: [makeBullet('No variants.')] };
       }
 
-      const items: Bullet[] = [];
-      for (const v of spec.variants) {
-        if (isStateAxisName(v.prop) || isModifierAxis(v)) continue;
-        const def = variantDefault[v.prop];
-        const valStr = v.values
-          .map((val) => (val === def ? `${val} (default)` : val))
-          .join(' · ');
-        items.push(makeBullet(`**${v.prop}**: ${valStr}`));
+      if (axes.length === 1) {
+        const [A] = axes;
+        return {
+          id, heading: label, kind: 'variantsMatrix',
+          summary,
+          columns: A.values,
+          rows: [{ label: spec.name, cells: A.values.map((v) => findCell({ [A.prop]: v })) }],
+          capped: false,
+          note: null,
+        };
       }
 
-      const modifiers = spec.variants.filter(
-        (v) => !isStateAxisName(v.prop) && isModifierAxis(v),
-      );
-      if (modifiers.length) {
-        items.push(makeBullet(`**Modifiers**: ${modifiers.map((m) => m.prop).join(' · ')}`));
-      }
+      // 2+ axes: grid on the first two (declaration order); any further axes are
+      // held at their defaults via findCell's `defaults` spread.
+      const [A, B, ...held] = axes;
 
-      if (!items.length) {
-        items.push(makeBullet('_None._'));
-      }
+      // Row values: axis A's values, default-first, then capped at 4.
+      const defaultA = defaults[A.prop];
+      const rowAxisValues =
+        defaultA !== undefined && A.values.includes(defaultA)
+          ? [defaultA, ...A.values.filter((v) => v !== defaultA)]
+          : A.values;
+      const capped = rowAxisValues.length > 4;
+      const rowValues = rowAxisValues.slice(0, 4);
 
-      return { id, heading: label, kind: 'bullets', items };
+      const columns = B.values;
+      const rows = rowValues.map((av) => ({
+        label: av,
+        cells: columns.map((bv) => findCell({ [A.prop]: av, [B.prop]: bv })),
+      }));
+
+      const note = held.length
+        ? `Others held at default: ${held.map((h) => `${h.prop}=${defaults[h.prop] ?? h.values[0]}`).join(', ')}`
+        : null;
+
+      return { id, heading: label, kind: 'variantsMatrix', summary, columns, rows, capped, note };
     }
 
     case 'states': {

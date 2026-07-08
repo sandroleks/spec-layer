@@ -15,7 +15,7 @@ import {
   type FontStyle,
 } from './frameKit';
 import { buildMeasureSection } from './measureSection';
-import { buildStatesSection } from './statesSection';
+import { buildMatrixSection } from './statesSection';
 import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
 
 // ---------------------------------------------------------------------------
@@ -862,7 +862,31 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       table.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'statesMatrix') {
-    const grid = await buildStatesSection(section, CONTENT_WIDTH);
+    const grid = await buildMatrixSection(
+      {
+        axisName: section.axisName,
+        columns: section.states,
+        rows: section.rows,
+        capped: section.capped,
+        note: section.capped
+          ? 'Showing the first 4 values — other rows share the same state behavior.'
+          : null,
+      },
+      CONTENT_WIDTH,
+    );
+    body.appendChild(grid);
+    grid.layoutSizingHorizontal = 'FILL';
+  } else if (section.kind === 'variantsMatrix') {
+    const grid = await buildMatrixSection(
+      {
+        summary: section.summary,
+        columns: section.columns,
+        rows: section.rows,
+        capped: section.capped,
+        note: section.note,
+      },
+      CONTENT_WIDTH,
+    );
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
   } else {

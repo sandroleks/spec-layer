@@ -340,6 +340,148 @@ describe('states matrix section: flags encoding', () => {
   });
 });
 
+describe('variants matrix section', () => {
+  // axes type[Primary,Outline] × size[Large,Small]; instances for all 4 combos.
+  const spec: IntermediateSpec = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
+    anatomy: [], anatomyComponentId: '1:2',
+    props: [
+      { name: 'type', kind: 'variant', options: ['Primary', 'Outline'], default: 'Primary' },
+      { name: 'size', kind: 'variant', options: ['Large', 'Small'], default: 'Large' },
+    ],
+    variants: [
+      { prop: 'type', values: ['Primary', 'Outline'] },
+      { prop: 'size', values: ['Large', 'Small'] },
+    ],
+    variantInstances: [
+      { nodeId: '1:2', name: 'Primary/Large', values: { type: 'Primary', size: 'Large' } },
+      { nodeId: '1:3', name: 'Primary/Small', values: { type: 'Primary', size: 'Small' } },
+      { nodeId: '1:4', name: 'Outline/Large', values: { type: 'Outline', size: 'Large' } },
+      { nodeId: '1:5', name: 'Outline/Small', values: { type: 'Outline', size: 'Small' } },
+    ],
+    states: [],
+    tokens: [],
+    rawValues: [], related: [], gaps: [], layout: [],
+  } as unknown as IntermediateSpec;
+
+  it('builds a 2-axis matrix with columns=size, one row per type, a nodeId per cell', () => {
+    const model = buildDocModel(spec, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.columns).toEqual(['Large', 'Small']);
+    expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Outline']);
+    expect(block.rows[0].cells).toEqual(['1:2', '1:3']);
+    expect(block.rows[1].cells).toEqual(['1:4', '1:5']);
+    expect(block.capped).toBe(false);
+    expect(block.note).toBeNull();
+  });
+
+  it('builds a 1-axis matrix as a single row labeled with the component name', () => {
+    const oneAxis = {
+      ...spec,
+      props: [{ name: 'type', kind: 'variant', options: ['Primary', 'Outline'], default: 'Primary' }],
+      variants: [{ prop: 'type', values: ['Primary', 'Outline'] }],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Primary', values: { type: 'Primary' } },
+        { nodeId: '1:4', name: 'Outline', values: { type: 'Outline' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(oneAxis, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.columns).toEqual(['Primary', 'Outline']);
+    expect(block.rows).toEqual([{ label: 'Button', cells: ['1:2', '1:4'] }]);
+  });
+
+  it('excludes a state-flag axis (Hover) from the variants matrix, keeping only size', () => {
+    const withFlag = {
+      ...spec,
+      props: [
+        { name: 'Hover', kind: 'variant', options: ['True', 'False'], default: 'False' },
+        { name: 'size', kind: 'variant', options: ['Large', 'Small'], default: 'Large' },
+      ],
+      variants: [
+        { prop: 'Hover', values: ['True', 'False'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Large/Default', values: { Hover: 'False', size: 'Large' } },
+        { nodeId: '1:3', name: 'Large/Hover', values: { Hover: 'True', size: 'Large' } },
+        { nodeId: '1:4', name: 'Small/Default', values: { Hover: 'False', size: 'Small' } },
+        { nodeId: '1:5', name: 'Small/Hover', values: { Hover: 'True', size: 'Small' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(withFlag, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    // 1 axis (size) survives; Hover is excluded → single row labeled with the component name.
+    expect(block.columns).toEqual(['Large', 'Small']);
+    expect(block.rows).toEqual([{ label: 'Button', cells: ['1:2', '1:4'] }]);
+  });
+
+  it('sets summary from prose.variantsSummary when present', () => {
+    const model = buildDocModel(
+      spec,
+      { definition: 'd', accessibility: 'a', dos: [], donts: [], variantsSummary: 'Type and size vary independently.' },
+      new Set<SectionId>(['variants']),
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.summary).toBe('Type and size vary independently.');
+  });
+
+  it('sets summary to null when prose is null', () => {
+    const model = buildDocModel(spec, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.summary).toBeNull();
+  });
+
+  it('adds a held-axis note for 3+ axes, grid on the first two', () => {
+    const threeAxes = {
+      ...spec,
+      props: [
+        { name: 'type', kind: 'variant', options: ['Primary', 'Outline'], default: 'Primary' },
+        { name: 'size', kind: 'variant', options: ['Large', 'Small'], default: 'Large' },
+        { name: 'shape', kind: 'variant', options: ['Rounded', 'Square'], default: 'Rounded' },
+      ],
+      variants: [
+        { prop: 'type', values: ['Primary', 'Outline'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+        { prop: 'shape', values: ['Rounded', 'Square'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: '', values: { type: 'Primary', size: 'Large', shape: 'Rounded' } },
+        { nodeId: '1:3', name: '', values: { type: 'Primary', size: 'Small', shape: 'Rounded' } },
+        { nodeId: '1:4', name: '', values: { type: 'Outline', size: 'Large', shape: 'Rounded' } },
+        { nodeId: '1:5', name: '', values: { type: 'Outline', size: 'Small', shape: 'Rounded' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(threeAxes, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.columns).toEqual(['Large', 'Small']);
+    expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Outline']);
+    expect(block.note).toBe('Others held at default: shape=Rounded');
+  });
+
+  it('emits a bullets block "No variants." when there are 0 non-state axes', () => {
+    const noVariants = {
+      ...spec,
+      props: [],
+      variants: [],
+      variantInstances: [{ nodeId: '1:2', name: 'Button', values: {} }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(noVariants, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    expect(block.kind).toBe('bullets');
+    if (block.kind === 'bullets') {
+      expect(block.items).toHaveLength(1);
+      expect(block.items[0].text).toBe('No variants.');
+    }
+  });
+});
+
 describe('variant token cards: diff vs default', () => {
   const spec: IntermediateSpec = {
     name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',

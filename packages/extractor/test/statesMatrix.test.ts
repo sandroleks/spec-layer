@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectStateMatrix } from '../src/statesMatrix';
+import { detectStateMatrix, stateAxisProps } from '../src/statesMatrix';
 
 describe('detectStateMatrix', () => {
   it('detects an axis named State', () => {
@@ -69,6 +69,30 @@ describe('detectStateMatrix', () => {
     ]);
     expect(info?.encoding).toBe('enum');
     expect(info?.columns.some((c) => c.label === 'Disabled')).toBe(false);
+  });
+});
+
+describe('stateAxisProps', () => {
+  it('returns the enum state axis prop', () => {
+    const props = stateAxisProps([
+      { prop: 'Type', values: ['Primary', 'Secondary'] },
+      { prop: 'State', values: ['Default', 'Hover'] },
+    ]);
+    expect(props).toEqual(new Set(['State']));
+  });
+
+  it('returns the boolean state-flag axis props', () => {
+    const props = stateAxisProps([
+      { prop: 'Hover', values: ['True', 'False'] },
+      { prop: 'Disabled', values: ['True', 'False'] },
+      { prop: 'Size', values: ['S', 'L'] },
+    ]);
+    expect(props).toEqual(new Set(['Hover', 'Disabled']));
+  });
+
+  it('returns an empty set when there is no state axis', () => {
+    const props = stateAxisProps([{ prop: 'Size', values: ['S', 'M', 'L'] }]);
+    expect(props).toEqual(new Set());
   });
 });
 

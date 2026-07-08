@@ -5,42 +5,51 @@ const LABEL_W = 120;
 const CELL_MAX_W = 180;
 const GRID_GAP = 12;
 
-interface StatesBlockData {
-  axisName: string;
-  states: string[];
+export interface MatrixBlockData {
+  summary?: string | null;
+  axisName?: string;
+  columns: string[];
   rows: { label: string; cells: (string | null)[] }[];
   capped: boolean;
+  note?: string | null;
 }
 
 /**
- * The States matrix: a grid of live instances keyed by rowAxis × state. Per-cell
- * failures fall back to buildSlot's own placeholder; the section auto-hides at
- * the model level when there is no state axis, so the block is assumed well-formed.
+ * The shared preview matrix grid: a grid of live instances keyed by row label ×
+ * column. Used by both the States and Variants sections. Per-cell failures fall
+ * back to buildSlot's own placeholder; callers auto-hide the section at the
+ * model level when there is nothing to show, so the block is assumed well-formed.
  */
-export async function buildStatesSection(block: StatesBlockData, contentWidth: number): Promise<FrameNode> {
+export async function buildMatrixSection(block: MatrixBlockData, contentWidth: number): Promise<FrameNode> {
   const wrap = vstack(20);
+
+  if (block.summary) {
+    const summary = makeText(block.summary, 'Regular', 15, palette.body, 155);
+    wrap.appendChild(summary);
+    summary.layoutSizingHorizontal = 'FILL';
+  }
 
   const cellW = Math.min(
     CELL_MAX_W,
-    Math.floor((contentWidth - LABEL_W - GRID_GAP * block.states.length) / Math.max(block.states.length, 1)),
+    Math.floor((contentWidth - LABEL_W - GRID_GAP * block.columns.length) / Math.max(block.columns.length, 1)),
   );
 
-  // Header row: corner spacer + state names.
+  // Header row: corner spacer + column names.
   const head = hstack(GRID_GAP);
   wrap.appendChild(head);
-  const corner = makeText(block.rows.length > 1 ? '' : block.axisName.toUpperCase(), 'Medium', 10, palette.muted);
+  const corner = makeText(block.rows.length > 1 ? '' : (block.axisName ?? '').toUpperCase(), 'Medium', 10, palette.muted);
   corner.textAutoResize = 'NONE';
   corner.resize(LABEL_W, 16);
   head.appendChild(corner);
-  for (const state of block.states) {
-    const h = makeText(state.toUpperCase(), 'Medium', 10, palette.muted, 130, 6);
+  for (const column of block.columns) {
+    const h = makeText(column.toUpperCase(), 'Medium', 10, palette.muted, 130, 6);
     h.textAutoResize = 'NONE';
     h.resize(cellW, 16);
     h.textAlignHorizontal = 'CENTER';
     head.appendChild(h);
   }
 
-  // Grid rows: label + one slot per state.
+  // Grid rows: label + one slot per column.
   for (const row of block.rows) {
     const r = hstack(GRID_GAP);
     r.counterAxisAlignItems = 'CENTER';
@@ -67,8 +76,8 @@ export async function buildStatesSection(block: StatesBlockData, contentWidth: n
     }
   }
 
-  if (block.capped) {
-    const note = makeText('Showing the first 4 values — other rows share the same state behavior.', 'Regular', 12, palette.muted, 145);
+  if (block.note) {
+    const note = makeText(block.note, 'Regular', 12, palette.muted, 145);
     wrap.appendChild(note);
     note.layoutSizingHorizontal = 'FILL';
   }

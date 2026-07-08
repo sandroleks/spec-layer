@@ -90,3 +90,14 @@ export function detectStateMatrix(variants: VariantAxis[]): StateMatrixInfo | nu
   const rowAxis = variants.find((v) => !isModifierAxis(v) && !isStateLike(v)) ?? null;
   return { encoding: 'flags', columns, rowAxis: rowAxis?.prop ?? null, axis: null };
 }
+
+/** The variant props that the States matrix consumes: the enum state axis, or
+ *  the boolean state-flag axes. Variants excludes exactly these. */
+export function stateAxisProps(variants: VariantAxis[]): Set<string> {
+  const info = detectStateMatrix(variants);
+  if (!info) return new Set();
+  if (info.encoding === 'enum') return new Set(info.axis ? [info.axis] : []);
+  const props = new Set<string>();
+  for (const col of info.columns) for (const k of Object.keys(col.override)) props.add(k);
+  return props;
+}
