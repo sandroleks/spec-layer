@@ -75,25 +75,34 @@ In `packages/plugin/src/ui/docModel.ts`:
 Both the config window and the output builder derive their structure from these
 two constants. Changing the map updates both surfaces.
 
-### 2. Doc model becomes grouped
+### 2. Doc model stays flat; grouping is a shared helper
 
-`buildDocModel()` currently returns `{ title, sections: SectionBlock[] }`. New
-shape:
+`buildDocModel()` keeps returning a **flat** section list — only the wrapper
+field is renamed from `title` to `componentName`:
 
 ```ts
-interface DocGroupModel { id: GroupId; label: string; sections: SectionBlock[] }
 interface DocFrameModel {
-  componentName: string;          // e.g. "Button"
-  groups: DocGroupModel[];        // only groups with ≥1 selected section
+  componentName: string;          // e.g. "Button" (was `title: "Button: Guidelines"`)
+  sections: SectionBlock[];       // selected sections, canonical order (unchanged)
 }
 ```
 
-- `buildDocModel` partitions the selected `SectionBlock[]` by each section's
-  `group`, preserving group order and within-group order.
-- A group with zero selected sections is **omitted** from `groups` (drives
-  empty-frame skipping downstream — see §4).
-- The `definition`-lead-as-subtitle logic moves into the Usage frame's header
-  (see §3); the model itself no longer special-cases title/subtitle.
+Partitioning lives in a pure helper, keyed off the grouping map, usable on both
+sides of the postMessage boundary (the frame builder consumes it):
+
+```ts
+interface DocGroup { id: GroupId; label: string; sections: SectionBlock[] }
+
+/** Partition sections into groups (GROUPS order; within-group order preserved).
+ *  Groups with no sections are omitted. */
+function groupSections(sections: SectionBlock[]): DocGroup[]
+```
+
+Keeping the model flat means the existing `buildDocModel` tests (which assert
+`model.sections`) stay intact; only the `title` → `componentName` rename touches
+them. Empty-group omission (which drives empty-frame skipping, §4) is `groupSections`'
+responsibility. The `definition`-lead-as-subtitle logic stays in the frame
+builder (see §3).
 
 ### 3. Output: three frames in a Section
 
@@ -115,17 +124,19 @@ Refactor `docFrame.ts`:
 - **Frame naming:** each frame's node name is its **group label** — `Usage`,
   `Specifications`, `Accessibility` — since the component context is carried by
   the enclosing Section name.
-- **Frame headers:**
-  - Every frame header shows `${componentName}` + the group label
-    (e.g. "Button — Specifications") so a stray frame is self-explanatory even
-    when detached from its Section.
-  - The **Usage** frame additionally carries the definition-lead subtitle and the
-    component **preview** instance. Specs and A11y headers are **text-only** (no
-    preview) — avoids extra instancing cost (the one "don't repeat expensive
-    work" rule from the sizing discussion).
-- **Empty-group skipping:** `model.groups` already excludes empty groups (§2), so
-  the builder simply iterates what it's given. If exactly one group is present,
-  it is still wrapped in a Section (consistent re-find + "one thing" grouping).
+- **Frame headers:** reuse the existing header band. Its eyebrow (today the
+  hard-coded "GUIDELINES") becomes the **group label** (`USAGE` /
+  `SPECIFICATIONS` / `ACCESSIBILITY`) and the title stays `${componentName}`, so
+  a detached frame reads e.g. eyebrow "SPECIFICATIONS" over "Button". Only the
+  **Usage** frame carries the definition-lead **subtitle**; the other two pass
+  `subtitle = null`. No component preview is added (none exists today), so no new
+  instancing.
+- **Empty-group skipping:** `groupSections` omits empty groups, so the builder
+  iterates only non-empty ones. Degenerate case — if the only selected content
+  was a definition fully lifted into the subtitle (leaving zero renderable
+  sections), fall back to keeping the definition as a body section so the Usage
+  frame still renders. If exactly one group is non-empty it is still wrapped in a
+  Section (consistent re-find + "one thing" grouping).
 
 ### 4. main.ts placement + re-find
 
