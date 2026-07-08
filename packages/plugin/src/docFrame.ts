@@ -867,7 +867,6 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
         axisName: section.axisName,
         columns: section.states,
         rows: section.rows,
-        capped: section.capped,
         note: section.capped
           ? 'Showing the first 4 values — other rows share the same state behavior.'
           : null,
@@ -877,13 +876,19 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
   } else if (section.kind === 'variantsMatrix') {
+    // Combine the row-cap disclosure (when the first axis had >4 values) with any
+    // held-axis note, so a capped Variants matrix explains its truncation the same
+    // way the States matrix does.
+    const capNote = section.capped
+      ? 'Showing the first 4 values — other variants share the same structure.'
+      : null;
+    const note = [capNote, section.note].filter(Boolean).join(' ') || null;
     const grid = await buildMatrixSection(
       {
         summary: section.summary,
         columns: section.columns,
         rows: section.rows,
-        capped: section.capped,
-        note: section.note,
+        note,
       },
       CONTENT_WIDTH,
     );

@@ -10,7 +10,6 @@ export interface MatrixBlockData {
   axisName?: string;
   columns: string[];
   rows: { label: string; cells: (string | null)[] }[];
-  capped: boolean;
   note?: string | null;
 }
 
