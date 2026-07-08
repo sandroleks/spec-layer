@@ -22,7 +22,7 @@
  * values and keep the non-Figma/test render legible.
  */
 
-import { ALL_SECTIONS } from './docModel';
+import { ALL_SECTIONS, GROUPS } from './docModel';
 import { THEME_PRESETS } from '../brandColors';
 
 // ---------------------------------------------------------------------------
@@ -456,6 +456,24 @@ const TEMPLATE = `
     .sec-row input:disabled { opacity: 0.4; cursor: default; }
     .sec-row input:disabled + label { opacity: 0.55; cursor: default; }
 
+    /* ---- Section groups (Usage / Specifications / Accessibility) ---- */
+    .sec-groupbox { border: 1px solid var(--figma-color-border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+    .sec-grouphead { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; user-select: none; background: var(--figma-color-bg-secondary); }
+    .sec-grouphead:hover { background: var(--figma-color-bg-tertiary); }
+    .sec-grouphead .chev { flex: 0 0 auto; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: var(--figma-color-text-secondary); transition: transform .16s ease; }
+    .sec-groupbox.collapsed .chev { transform: rotate(-90deg); }
+    .group-name { flex: 1; font-weight: 600; font-size: 12px; }
+    .group-count { font-size: 10.5px; color: var(--figma-color-text-secondary); background: var(--figma-color-bg); border: 1px solid var(--figma-color-border); border-radius: 999px; padding: 1px 7px; }
+    .sec-groupbody { padding: 4px 6px 6px; }
+    .sec-groupbox.collapsed .sec-groupbody { display: none; }
+    /* indeterminate master checkbox: a horizontal bar */
+    .sec-grouphead input.group-check { appearance: none; -webkit-appearance: none; margin: 0; width: 15px; height: 15px; flex: 0 0 auto; position: relative; cursor: pointer; border: 1.5px solid var(--figma-color-border); border-radius: 4px; background: var(--figma-color-bg); }
+    .sec-grouphead input.group-check:hover { border-color: var(--figma-color-bg-brand); }
+    .sec-grouphead input.group-check:checked, .sec-grouphead input.group-check:indeterminate { background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand); }
+    .sec-grouphead input.group-check:checked::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; box-sizing: border-box; border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .sec-grouphead input.group-check:indeterminate::after { content: ""; position: absolute; left: 3px; top: 6px; width: 7px; border-top: 2px solid var(--figma-color-text-onbrand); }
+    .sec-grouphead input.group-check:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+
     /* ---- Anatomy view toggle (segmented radio row) ----
        Nests inside its .sec-group beneath the Anatomy checkbox row: indent
        past the checkbox + a hairline left rule keeps the disclosure quiet, so
@@ -850,6 +868,9 @@ export interface Refs {
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
+  groupChecks: Record<string, HTMLInputElement>;
+  groupCounts: Record<string, HTMLElement>;
+  groupContainers: Record<string, HTMLElement>;
   selectAllBtn: HTMLButtonElement;
   anatomyView: HTMLElement;
   measureSetup: HTMLElement;
@@ -916,32 +937,80 @@ export function mount(): Refs {
   // of floating disconnected below the whole grid. Must run before we collect
   // the per-checkbox refs below.
   const sectionList = byId<HTMLDivElement>('section-list');
-  for (const section of ALL_SECTIONS) {
-    const group = document.createElement('div');
-    group.className = 'sec-group';
+  const groupChecks: Record<string, HTMLInputElement> = {};
+  const groupCounts: Record<string, HTMLElement> = {};
+  const groupContainers: Record<string, HTMLElement> = {};
 
-    const row = document.createElement('div');
-    row.className = 'sec-row';
+  for (const grp of GROUPS) {
+    const container = document.createElement('div');
+    container.className = 'sec-groupbox';
+    container.dataset.group = grp.id;
 
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.id = `sec-${section.id}`;
-    input.checked = section.id !== 'related';
+    const head = document.createElement('div');
+    head.className = 'sec-grouphead';
 
-    const label = document.createElement('label');
-    label.htmlFor = input.id;
-    label.textContent = section.label;
-    if (section.ai) {
-      const badge = document.createElement('span');
-      badge.className = 'ai-badge';
-      badge.textContent = 'AI';
-      label.appendChild(badge);
+    const master = document.createElement('input');
+    master.type = 'checkbox';
+    master.className = 'group-check';
+    master.id = `group-${grp.id}`;
+    master.setAttribute('aria-label', `Toggle all ${grp.label} sections`);
+
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.setAttribute('aria-hidden', 'true');
+    chev.innerHTML =
+      '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    const name = document.createElement('span');
+    name.className = 'group-name';
+    name.textContent = grp.label;
+
+    const count = document.createElement('span');
+    count.className = 'group-count';
+
+    head.appendChild(master);
+    head.appendChild(chev);
+    head.appendChild(name);
+    head.appendChild(count);
+
+    const body = document.createElement('div');
+    body.className = 'sec-groupbody';
+
+    for (const section of ALL_SECTIONS.filter((s) => s.group === grp.id)) {
+      const group = document.createElement('div');
+      group.className = 'sec-group';
+
+      const row = document.createElement('div');
+      row.className = 'sec-row';
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.id = `sec-${section.id}`;
+      input.checked = section.id !== 'related';
+
+      const label = document.createElement('label');
+      label.htmlFor = input.id;
+      label.textContent = section.label;
+      if (section.ai) {
+        const badge = document.createElement('span');
+        badge.className = 'ai-badge';
+        badge.textContent = 'AI';
+        label.appendChild(badge);
+      }
+
+      row.appendChild(input);
+      row.appendChild(label);
+      group.appendChild(row);
+      body.appendChild(group);
     }
 
-    row.appendChild(input);
-    row.appendChild(label);
-    group.appendChild(row);
-    sectionList.appendChild(group);
+    container.appendChild(head);
+    container.appendChild(body);
+    sectionList.appendChild(container);
+
+    groupChecks[grp.id] = master;
+    groupCounts[grp.id] = count;
+    groupContainers[grp.id] = container;
   }
 
   const sectionChecks: Record<string, HTMLInputElement> = {};
@@ -999,6 +1068,9 @@ export function mount(): Refs {
     aiNokeyLink: byId<HTMLElement>('ai-nokey-link'),
     sectionList,
     sectionChecks,
+    groupChecks,
+    groupCounts,
+    groupContainers,
     selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
     anatomyView: byId<HTMLElement>('anatomy-view'),
     measureSetup: byId<HTMLElement>('measure-setup'),

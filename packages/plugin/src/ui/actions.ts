@@ -229,6 +229,13 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       if (refs.sectionChecks[id]?.checked) selected.add(id);
     }
 
+    if (selected.size === 0) {
+      showBanner(refs, 'error', 'Select at least one section.');
+      refs.createFrameBtn.disabled = false;
+      stopLoader(refs);
+      return;
+    }
+
     // Per-variant tokens: which variants the user ticked in the picker.
     const variantIds = new Set<string>();
     refs.variantList.querySelectorAll('input:checked').forEach((el) => {

@@ -11,6 +11,7 @@
 
 import type { MainToUi } from '../messages';
 import type { MeasureView } from './docModel';
+import { ALL_SECTIONS, GROUPS } from './docModel';
 import { mount } from './dom';
 import {
   createState,
@@ -165,9 +166,67 @@ refs.aiInfoBtn.addEventListener('click', () => {
 refs.selectAllBtn.addEventListener('click', () => {
   const checks = Object.values(refs.sectionChecks);
   const allOn = checks.every((c) => c.checked);
-  for (const c of checks) c.checked = !allOn;
+  for (const c of checks) {
+    if (c.checked === allOn) {
+      c.checked = !allOn;
+      c.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
   refs.selectAllBtn.textContent = allOn ? 'Select all' : 'Clear all';
+  syncAllGroups();
 });
+
+// ---- Group masters (tri-state) + collapse ----
+function sectionsInGroup(groupId: string): HTMLInputElement[] {
+  return ALL_SECTIONS
+    .filter((s) => s.group === groupId)
+    .map((s) => refs.sectionChecks[s.id])
+    .filter(Boolean) as HTMLInputElement[];
+}
+
+function syncGroup(groupId: string): void {
+  const kids = sectionsInGroup(groupId);
+  const on = kids.filter((c) => c.checked).length;
+  const master = refs.groupChecks[groupId];
+  if (master) {
+    master.checked = on === kids.length && on > 0;
+    master.indeterminate = on > 0 && on < kids.length;
+  }
+  const count = refs.groupCounts[groupId];
+  if (count) count.textContent = `${on}/${kids.length}`;
+}
+
+function syncAllGroups(): void {
+  for (const g of GROUPS) syncGroup(g.id);
+}
+
+for (const g of GROUPS) {
+  const master = refs.groupChecks[g.id];
+  master?.addEventListener('change', () => {
+    for (const c of sectionsInGroup(g.id)) {
+      if (c.checked !== master.checked) {
+        c.checked = master.checked;
+        c.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    syncGroup(g.id);
+  });
+
+  // Collapse on header click, except when the click lands on the master checkbox.
+  const head = refs.groupContainers[g.id]?.querySelector('.sec-grouphead');
+  head?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.group-check')) return;
+    refs.groupContainers[g.id]?.classList.toggle('collapsed');
+  });
+}
+
+// Any section checkbox change re-syncs its group's master + count.
+refs.sectionList.addEventListener('change', (e) => {
+  const t = e.target as HTMLElement;
+  if (t instanceof HTMLInputElement && t.id.startsWith('sec-')) syncAllGroups();
+});
+
+syncAllGroups(); // initial state
 
 // Toggling the Tokens section re-renders the variant card's gated state
 // (mutes it + collapses the body when Tokens is off; see renderVariantPicker).
