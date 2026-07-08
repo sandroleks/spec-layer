@@ -310,6 +310,72 @@ describe('states matrix section', () => {
   });
 });
 
+describe('states matrix section: flags encoding', () => {
+  // axes Hover[True,False] + Disabled[True,False] + Size[S,L]; no enum State
+  // axis, so the matrix is synthesized from Default + each-flag-on. Fill token
+  // differs on Hover=True; opacity token differs on Disabled=True.
+  const spec: IntermediateSpec = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
+    anatomy: [], anatomyComponentId: '1:2',
+    props: [
+      { name: 'Hover', kind: 'variant', options: ['True', 'False'], default: 'False' },
+      { name: 'Disabled', kind: 'variant', options: ['True', 'False'], default: 'False' },
+      { name: 'Size', kind: 'variant', options: ['S', 'L'], default: 'S' },
+    ],
+    variants: [
+      { prop: 'Hover', values: ['True', 'False'] },
+      { prop: 'Disabled', values: ['True', 'False'] },
+      { prop: 'Size', values: ['S', 'L'] },
+    ],
+    variantInstances: [
+      { nodeId: '1:2', name: 'S/Default', values: { Hover: 'False', Disabled: 'False', Size: 'S' } },
+      { nodeId: '1:3', name: 'S/Hover', values: { Hover: 'True', Disabled: 'False', Size: 'S' } },
+      { nodeId: '1:4', name: 'S/Disabled', values: { Hover: 'False', Disabled: 'True', Size: 'S' } },
+      { nodeId: '1:5', name: 'L/Default', values: { Hover: 'False', Disabled: 'False', Size: 'L' } },
+      { nodeId: '1:6', name: 'L/Hover', values: { Hover: 'True', Disabled: 'False', Size: 'L' } },
+      { nodeId: '1:7', name: 'L/Disabled', values: { Hover: 'False', Disabled: 'True', Size: 'L' } },
+    ],
+    states: [],
+    tokens: [
+      { part: 'Container', property: 'fill', conditions: { Hover: ['True'] }, token: 'color/hover' },
+      { part: 'Container', property: 'opacity', conditions: { Disabled: ['True'] }, token: 'opacity/disabled' },
+    ],
+    rawValues: [], related: [], gaps: [], layout: [],
+  } as unknown as IntermediateSpec;
+
+  it('builds a flags matrix with Default + each-flag-on columns', () => {
+    const model = buildDocModel(spec, null, new Set(['states']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.axisName).toBe('');
+    expect(block.states).toEqual(['Default', 'Hover', 'Disabled']);
+    expect(block.rows.map((r) => r.label)).toEqual(['S', 'L']);
+  });
+
+  it('resolves a nodeId per cell for a flag-on column', () => {
+    const model = buildDocModel(spec, null, new Set(['states']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    const sRow = block.rows.find((r) => r.label === 'S')!;
+    expect(sRow.cells).toEqual(['1:2', '1:3', '1:4']); // Default, Hover, Disabled
+    const lRow = block.rows.find((r) => r.label === 'L')!;
+    expect(lRow.cells).toEqual(['1:5', '1:6', '1:7']);
+  });
+
+  it('produces delta lines per flag, skipping the Default column', () => {
+    const model = buildDocModel(spec, null, new Set(['states']), undefined);
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.deltas.find((d) => d.state === 'Default')).toBeUndefined();
+    const hover = block.deltas.find((d) => d.state === 'Hover');
+    expect(hover).toBeDefined();
+    expect(hover!.lines).toContain('color/hover');
+    const disabled = block.deltas.find((d) => d.state === 'Disabled');
+    expect(disabled).toBeDefined();
+    expect(disabled!.lines).toContain('opacity/disabled');
+  });
+});
+
 describe('variant token cards: diff vs default', () => {
   const spec: IntermediateSpec = {
     name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',

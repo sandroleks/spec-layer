@@ -1,4 +1,4 @@
-import type { IntermediateSpec, ProseDrafts, VariantInstance } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseDrafts, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
   detectStateMatrix, stateTokenDeltas,
@@ -362,33 +362,33 @@ function buildSection(
       const capped = rowAxisValues.length > 4;
       const rowValues = rowAxisValues.slice(0, 4);
 
-      // Cell = the instance matching (rowValue, state) with every other axis at
-      // its default; fall back to the first instance matching just those two.
-      const findCell = (rowValue: string | null, state: string): string | null => {
-        const want: Record<string, string> = { ...defaults, [info.axis]: state };
+      // Cell = the instance matching (rowValue, column) with every other axis
+      // at its default; fall back to the first instance matching just those two.
+      const findCell = (rowValue: string | null, column: StateColumn): string | null => {
+        const want: Record<string, string> = { ...defaults, ...column.override };
         if (info.rowAxis && rowValue !== null) want[info.rowAxis] = rowValue;
         const exact = spec.variantInstances.find((i) =>
           Object.entries(want).every(([a, v]) => i.values[a] === v));
         if (exact) return exact.nodeId;
         const loose = spec.variantInstances.find((i) =>
-          i.values[info.axis] === state &&
+          Object.entries(column.override).every(([a, v]) => i.values[a] === v) &&
           (!info.rowAxis || rowValue === null || i.values[info.rowAxis] === rowValue));
         return loose?.nodeId ?? null;
       };
 
       const rows = rowValues.map((rv) => ({
         label: rv ?? spec.name,
-        cells: info.states.map((s) => findCell(rv, s)),
+        cells: info.columns.map((c) => findCell(rv, c)),
       }));
 
       const deltas = stateTokenDeltas(spec.tokens, defaults, info).map((d) => ({
-        state: d.state,
+        state: d.label,
         lines: d.changes.map((c) => `${c.part} ${c.property}: ${c.token}`).join(' · '),
       }));
 
       return {
         id, heading: label, kind: 'statesMatrix',
-        axisName: info.axis, states: info.states, rows, capped, deltas,
+        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped, deltas,
       };
     }
 
