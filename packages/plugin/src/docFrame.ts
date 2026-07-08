@@ -604,10 +604,10 @@ async function buildAnatomyDiagram(
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
 
-  // Resolve each depth-0 part to its normalized center in the component box.
-  // Deeper parts stay unpinned (numbered in the legend/table only) so nested
-  // sub-parts don't clutter the image.
-  const pins: { n: number; nx: number; ny: number }[] = [];
+  // Resolve each depth-0 part to its normalized center + edges in the component
+  // box. Deeper parts stay unpinned (numbered in the legend/table only) so
+  // nested sub-parts don't clutter the image.
+  const pins: { n: number; nx: number; ny: number; rx: number; ty: number }[] = [];
   for (const part of parts) {
     if (part.depth !== 0) continue;
     let p: BaseNode | null;
@@ -623,6 +623,8 @@ async function buildAnatomyDiagram(
       n: part.n,
       nx: clamp01((pb.x + pb.width / 2 - cb.x) / cb.width),
       ny: clamp01((pb.y + pb.height / 2 - cb.y) / cb.height),
+      rx: clamp01((pb.x + pb.width - cb.x) / cb.width), // part's right edge
+      ty: clamp01((pb.y - cb.y) / cb.height), // part's top edge
     });
   }
 
@@ -635,11 +637,11 @@ async function buildAnatomyDiagram(
   const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
   const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
   const sideCallouts = yRange > xRange; // vertical stack -> right-side pins
-  const CALLOUT_ZONE = pins.length ? 36 : 0;
+  const CALLOUT_ZONE = pins.length ? 48 : 0;
 
   // Image box: a plain (non-auto-layout) frame holding the instance plus the
-  // callout zone. Pins sit in the zone (beside each part) with a short leader
-  // back to the artwork, so they never cover the content.
+  // callout zone. Pins sit in the zone (beside each part); a leader anchored at
+  // the part's own edge (a small dot marks the connection) runs to the pin.
   const box = figma.createFrame();
   box.name = 'Anatomy diagram';
   box.resize(
@@ -653,27 +655,45 @@ async function buildAnatomyDiagram(
   inst.x = 0;
   inst.y = sideCallouts ? 0 : CALLOUT_ZONE;
 
+  // Leaders share the pin hue (at low opacity) so they read as connections; a
+  // solid accent dot marks where each leader meets its part.
+  const leaderPaint = [{ type: 'SOLID', color: palette.accent, opacity: 0.45 }] as Paint[];
+  const connectDot = (x: number, y: number): void => {
+    const dot = figma.createFrame();
+    dot.resize(6, 6);
+    dot.cornerRadius = 3;
+    dot.fills = solidFill(palette.accent);
+    dot.x = Math.round(x - 3);
+    dot.y = Math.round(y - 3);
+    box.appendChild(dot);
+  };
+
   for (const pin of pins) {
     const node = anatomyPin(pin.n);
-    const leader = figma.createFrame();
-    leader.fills = solidFill(palette.border);
     if (sideCallouts) {
-      // Right of the part's vertical center; horizontal leader from the edge.
       const cy = Math.round(pin.ny * renderedH);
-      leader.resize(Math.max(CALLOUT_ZONE - PIN_SIZE, 1), 1);
-      leader.x = renderedW;
+      const anchorX = Math.round(pin.rx * renderedW); // the part's right edge
+      const pinX = renderedW + CALLOUT_ZONE - PIN_SIZE;
+      const leader = figma.createFrame();
+      leader.resize(Math.max(pinX - anchorX, 1), 1);
+      leader.x = anchorX;
       leader.y = cy;
+      leader.fills = leaderPaint;
       box.appendChild(leader);
+      connectDot(anchorX, cy);
       box.appendChild(node);
-      node.x = renderedW + CALLOUT_ZONE - PIN_SIZE;
+      node.x = pinX;
       node.y = Math.round(cy - PIN_SIZE / 2);
     } else {
-      // Above the part's horizontal center; vertical leader down to the edge.
       const cx = Math.round(pin.nx * renderedW);
-      leader.resize(1, Math.max(CALLOUT_ZONE - PIN_SIZE, 1));
+      const anchorY = Math.round(CALLOUT_ZONE + pin.ty * renderedH); // part's top edge
+      const leader = figma.createFrame();
+      leader.resize(1, Math.max(anchorY - PIN_SIZE, 1));
       leader.x = cx;
       leader.y = PIN_SIZE;
+      leader.fills = leaderPaint;
       box.appendChild(leader);
+      connectDot(cx, anchorY);
       box.appendChild(node);
       node.x = Math.round(cx - PIN_SIZE / 2);
       node.y = 0;
