@@ -3,7 +3,7 @@ import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain } from './messages';
 import { resolveFileKey } from './fileKey';
-import { buildDocFrame } from './docFrame';
+import { buildDocFrames } from './docFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 
 // User-customizable brand theme for the generated frame. Loaded from
@@ -257,20 +257,15 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'renderDocFrame': {
       try {
-        // Find any prior frame with this title BEFORE creating the new one.
-        // figma.createFrame() auto-appends to the current page, so searching
-        // after buildDocFrame would match (and then remove) our own new frame.
-        //
-        // Scan only the page's TOP-LEVEL children, not a deep findOne(): our doc
-        // frames are appended directly to the page, and a deep traversal would
-        // descend into every component on the page — on larger files that hits
-        // node types the plugin API can't resolve, and reading `.type` throws
-        // ("Unknown node type ... getPublicNodeType"), aborting the whole build.
-        // The per-node try/catch keeps one unreadable child from doing the same.
-        let existing: FrameNode | null = null;
+        const sectionName = `${msg.model.componentName}: Documentation`;
+
+        // Find any prior doc Section with this name BEFORE creating the new one.
+        // Scan only top-level children (a deep find can hit node types the
+        // API can't resolve); the per-node try/catch keeps one bad child from aborting.
+        let existing: SectionNode | null = null;
         for (const child of figma.currentPage.children) {
           try {
-            if (child.type === 'FRAME' && child.name === msg.model.componentName) {
+            if (child.type === 'SECTION' && child.name === sectionName) {
               existing = child;
               break;
             }
@@ -279,9 +274,6 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
-        // Decide placement up front. Reuse the old frame's position if present;
-        // otherwise sit 80px to the right of the source component. The component
-        // lookup is best-effort: a stale/removed id must not abort frame creation.
         let x = 0, y = 0;
         if (existing) {
           x = existing.x; y = existing.y;
@@ -297,13 +289,13 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
-        const frame = await buildDocFrame(msg.model, resolveTheme(brandTheme), brandLogo);
+        const section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo);
         if (existing) existing.remove();
-        figma.currentPage.appendChild(frame);
-        frame.x = x; frame.y = y;
-        figma.currentPage.selection = [frame];
-        figma.viewport.scrollAndZoomIntoView([frame]);
-        figma.ui.postMessage({ type: 'docFrameDone', frameName: frame.name } as MainToUi);
+        figma.currentPage.appendChild(section);
+        section.x = x; section.y = y;
+        figma.currentPage.selection = [section];
+        figma.viewport.scrollAndZoomIntoView([section]);
+        figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);

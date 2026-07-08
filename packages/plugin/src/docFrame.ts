@@ -1,9 +1,10 @@
 /// <reference types="@figma/plugin-typings" />
-import { parseRuns } from './ui/docModel';
+import { parseRuns, groupSections } from './ui/docModel';
 import type {
   AnatomyPartBlock,
   Bullet,
   DocFrameModel,
+  DocGroup,
   SectionBlock,
   TextRun,
   VariantRow,
@@ -934,6 +935,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
 async function buildHeader(
   componentName: string,
   subtitleMd: string | null,
+  eyebrow: string,
   logoBase64?: string | null,
 ): Promise<FrameNode> {
   const band = vstack(14);
@@ -948,14 +950,14 @@ async function buildHeader(
   // logo row, the ROW is what FILLs (the eyebrow FILLs within it, set inline).
   const tmp: (TextNode | FrameNode)[] = [];
 
-  const eyebrow = makeText('GUIDELINES', 'Medium', 12, palette.onHeaderMuted);
+  const eyebrowNode = makeText(eyebrow.toUpperCase(), 'Medium', 12, palette.onHeaderMuted);
   if (logoBase64) {
     // Eyebrow + logo on one row, logo pushed to the right edge.
     const row = hstack(12);
     band.appendChild(row);
     row.counterAxisAlignItems = 'CENTER';
-    row.appendChild(eyebrow);
-    eyebrow.layoutSizingHorizontal = 'FILL';
+    row.appendChild(eyebrowNode);
+    eyebrowNode.layoutSizingHorizontal = 'FILL';
     try {
       const image = figma.createImage(figma.base64Decode(logoBase64));
       const { width, height } = await image.getSizeAsync();
@@ -969,8 +971,8 @@ async function buildHeader(
     }
     tmp.push(row); // the row FILLs; the eyebrow already FILLs within it
   } else {
-    band.appendChild(eyebrow);
-    tmp.push(eyebrow);
+    band.appendChild(eyebrowNode);
+    tmp.push(eyebrowNode);
   }
 
   const title = makeText(componentName, 'Bold', 38, palette.onHeader, 115);
@@ -1050,15 +1052,93 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
   CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 }
 
+/** Build one group's frame: root card + header band + content column. */
+async function buildGroupFrame(
+  group: DocGroup,
+  componentName: string,
+  subtitle: string | null,
+  logoBase64?: string | null,
+): Promise<FrameNode> {
+  const frame = figma.createFrame();
+  frame.name = group.label; // "Usage" | "Specifications" | "Accessibility"
+  frame.layoutMode = 'VERTICAL';
+  frame.primaryAxisSizingMode = 'AUTO';
+  frame.counterAxisSizingMode = 'FIXED';
+  frame.itemSpacing = 0;
+  frame.fills = solidFill(palette.bg);
+  frame.cornerRadius = 16;
+  frame.clipsContent = true;
+  frame.strokes = solidFill(palette.border);
+  frame.strokeWeight = 1;
+  frame.resize(CARD_WIDTH, frame.height);
+  frame.effects = [
+    {
+      type: 'DROP_SHADOW',
+      color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
+      offset: { x: 0, y: 12 },
+      radius: 32,
+      spread: 0,
+      visible: true,
+      blendMode: 'NORMAL',
+    },
+  ];
+
+  try {
+    const header = await buildHeader(componentName, subtitle, group.label, logoBase64);
+    frame.appendChild(header);
+    header.layoutSizingHorizontal = 'FILL';
+
+    const content = vstack(40);
+    content.paddingTop = 48;
+    content.paddingBottom = 56;
+    content.paddingLeft = PAD_X;
+    content.paddingRight = PAD_X;
+    frame.appendChild(content);
+    content.layoutSizingHorizontal = 'FILL';
+
+    for (const section of group.sections) {
+      const built = await buildSection(section);
+      content.appendChild(built);
+      built.layoutSizingHorizontal = 'FILL';
+    }
+  } catch (err) {
+    frame.remove();
+    throw err;
+  }
+
+  return frame;
+}
+
+/** Lift the definition's lead sentence into a header subtitle. Returns the
+ *  subtitle plus the section list with the definition block rewritten to its
+ *  remainder (or dropped if fully lifted). Mirrors the pre-split behavior. */
+function liftDefinitionLead(
+  sections: SectionBlock[],
+): { subtitle: string | null; sections: SectionBlock[] } {
+  const def = sections.find(
+    (s) => s.id === 'definition' && s.kind === 'prose',
+  ) as Extract<SectionBlock, { kind: 'prose' }> | undefined;
+  if (!def) return { subtitle: null, sections };
+  if (emphasisOnly(def.text) !== null) return { subtitle: null, sections }; // placeholder
+  const { lead, rest } = splitLead(def.text);
+  const rebuilt = sections.flatMap((s) =>
+    s === def
+      ? (rest ? [{ ...def, kind: 'prose' as const, text: rest }] : [])
+      : [s],
+  );
+  return { subtitle: lead || null, sections: rebuilt };
+}
+
 /**
- * Build an on-canvas "Guidelines" frame from a DocFrameModel.
- * Returns the frame; the caller positions it and appends it to the page.
+ * Build the on-canvas doc Section (Usage / Specifications / Accessibility
+ * frames side by side) from a DocFrameModel. Returns the Section; the caller
+ * positions it and appends it to the page.
  */
-export async function buildDocFrame(
+export async function buildDocFrames(
   model: DocFrameModel,
   theme: ReturnType<typeof resolveTheme>,
   logoBase64?: string | null,
-): Promise<FrameNode> {
+): Promise<SectionNode> {
   // Resolved-value caches (color/float variables, text styles) are module
   // state in tokenResolve — reset them per build so a rebuild after the user
   // edits variables/styles picks up fresh values instead of stale ones.
@@ -1100,86 +1180,42 @@ export async function buildDocFrame(
     ),
   );
 
-  // Size the frame to fit the longest token chip before laying anything out.
-  // Measures via font('Regular') (the body family) — must run after fonts load.
+  // Shared width across all frames — measured over the full (flat) model.
   fitFrameWidthToTokens(model);
 
-  // Lift the Definition's lead sentence into the header subtitle; any remaining
-  // definition content renders as the first body section.
   const componentName = model.componentName;
-  const definition = model.sections.find(
-    (s) => s.id === 'definition' && s.kind === 'prose',
-  ) as Extract<SectionBlock, { kind: 'prose' }> | undefined;
 
-  let subtitle: string | null = null;
-  const definitionBody: SectionBlock[] = [];
-  if (definition) {
-    if (emphasisOnly(definition.text) !== null) {
-      // Placeholder ("To be written.") → keep as a body section, no subtitle.
-      definitionBody.push(definition);
-    } else {
-      const { lead, rest } = splitLead(definition.text);
-      subtitle = lead || null;
-      if (rest) definitionBody.push({ ...definition, kind: 'prose', text: rest });
-    }
+  // Definition lead → Usage subtitle. Fall back to keeping the definition as a
+  // body section if lifting would leave nothing to render.
+  let { subtitle, sections } = liftDefinitionLead(model.sections);
+  let groups = groupSections(sections);
+  if (groups.length === 0 && model.sections.length > 0) {
+    subtitle = null;
+    groups = groupSections(model.sections);
   }
+  if (groups.length === 0) throw new Error('No sections selected.');
 
-  const bodySections: SectionBlock[] = [
-    ...definitionBody,
-    ...model.sections.filter((s) => s.id !== 'definition'),
-  ];
-
-  // Root card
-  const frame = figma.createFrame();
-  frame.name = componentName;
-  frame.layoutMode = 'VERTICAL';
-  frame.primaryAxisSizingMode = 'AUTO';
-  frame.counterAxisSizingMode = 'FIXED';
-  frame.itemSpacing = 0;
-  frame.fills = solidFill(palette.bg);
-  frame.cornerRadius = 16;
-  frame.clipsContent = true;
-  frame.strokes = solidFill(palette.border);
-  frame.strokeWeight = 1;
-  frame.resize(CARD_WIDTH, frame.height);
-  frame.effects = [
-    {
-      type: 'DROP_SHADOW',
-      color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
-      offset: { x: 0, y: 12 },
-      radius: 32,
-      spread: 0,
-      visible: true,
-      blendMode: 'NORMAL',
-    },
-  ];
-
-  // If anything below throws, remove the partial frame so a failed build never
-  // litters the canvas with orphaned nodes.
+  // Build frames (auto-appended to the page by createFrame), then wrap + lay out.
+  const GAP = 80;
+  const frames: FrameNode[] = [];
   try {
-    // Header band
-    const header = await buildHeader(componentName, subtitle, logoBase64);
-    frame.appendChild(header);
-    header.layoutSizingHorizontal = 'FILL';
-
-    // Content column
-    const content = vstack(40);
-    content.paddingTop = 48;
-    content.paddingBottom = 56;
-    content.paddingLeft = PAD_X;
-    content.paddingRight = PAD_X;
-    frame.appendChild(content);
-    content.layoutSizingHorizontal = 'FILL';
-
-    for (const section of bodySections) {
-      const group = await buildSection(section);
-      content.appendChild(group);
-      group.layoutSizingHorizontal = 'FILL';
+    for (const group of groups) {
+      const sub = group.sections.some((s) => s.id === 'definition') ? subtitle : null;
+      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64));
     }
+
+    const section = figma.createSection();
+    section.name = `${componentName}: Documentation`;
+    let cursorX = 0;
+    for (const frame of frames) {
+      section.appendChild(frame);
+      frame.x = cursorX;
+      frame.y = 0;
+      cursorX += frame.width + GAP;
+    }
+    return section;
   } catch (err) {
-    frame.remove();
+    for (const f of frames) f.remove(); // never litter the canvas on failure
     throw err;
   }
-
-  return frame;
 }
