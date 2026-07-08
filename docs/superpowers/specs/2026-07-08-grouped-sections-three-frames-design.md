@@ -108,12 +108,17 @@ Refactor `docFrame.ts`:
      font loading, and `fitFrameWidthToTokens` computed **across all groups'
      sections** so all three frames share one `CARD_WIDTH` (visual alignment).
   2. Build one `FrameNode` per group via `buildGroupFrame`.
-  3. Create a `figma.createSection()`, name it after the component, append the
-     frames, and lay them out **side by side** with a consistent gap.
+  3. Create a `figma.createSection()`, name it `${componentName}: Documentation`
+     (e.g. "Button: Documentation"), append the frames, and lay them out **side
+     by side** (left→right in group order) with a consistent gap.
   4. Return the `SectionNode`.
+- **Frame naming:** each frame's node name is its **group label** — `Usage`,
+  `Specifications`, `Accessibility` — since the component context is carried by
+  the enclosing Section name.
 - **Frame headers:**
   - Every frame header shows `${componentName}` + the group label
-    (e.g. "Button — Specifications") so a stray frame is self-explanatory.
+    (e.g. "Button — Specifications") so a stray frame is self-explanatory even
+    when detached from its Section.
   - The **Usage** frame additionally carries the definition-lead subtitle and the
     component **preview** instance. Specs and A11y headers are **text-only** (no
     preview) — avoids extra instancing cost (the one "don't repeat expensive
@@ -129,8 +134,9 @@ Refactor `docFrame.ts`:
 of the source component.
 
 Changes:
-- Search top-level children for a **`SECTION`** whose name matches the component
-  (same defensive per-child `try/catch` for unresolvable node types).
+- Search top-level children for a **`SECTION`** whose name matches
+  `${componentName}: Documentation` (same defensive per-child `try/catch` for
+  unresolvable node types).
 - Reuse the section's position if found; else place right of the source component
   (existing `x + width + 80` logic).
 - `buildDocFrames` returns a `SectionNode`; append it, position it, select + zoom.
@@ -182,10 +188,11 @@ positioning and the Section wrapper, which manual Figma verification must cover.
   of one group → that frame absent), single-group case, preview appears only in
   Usage, themed + default builds, variable-mode fidelity across frames.
 
-## Open questions
+## Resolved decisions
 
-- Frame layout orientation: **side-by-side** (assumed) vs stacked. Side-by-side
-  matches the "tabs" mental model; confirm during implementation against canvas
-  ergonomics.
-- Section name: `${componentName}` alone vs `${componentName} — Guidelines`.
-  Leaning to the bare component name for the Section, group label in each frame.
+- **Frame layout:** side-by-side, left→right in group order.
+- **Section name:** `${componentName}: Documentation`.
+- **Frame node names:** the group label (`Usage` / `Specifications` /
+  `Accessibility`); component context comes from the Section name, and each
+  frame's in-frame header still shows `${componentName} — {group}` for detached
+  screenshots.
