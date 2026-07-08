@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectStateMatrix, stateTokenDeltas } from '../src/statesMatrix';
-import type { TokenRule } from '../src/tokens';
+import { detectStateMatrix } from '../src/statesMatrix';
 
 describe('detectStateMatrix', () => {
   it('detects an axis named State', () => {
@@ -73,63 +72,3 @@ describe('detectStateMatrix', () => {
   });
 });
 
-describe('stateTokenDeltas', () => {
-  it('names the tokens that change per state vs default (enum)', () => {
-    const tokens: TokenRule[] = [
-      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, token: 'color/rest' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
-      { part: 'Container', property: 'border', conditions: { State: ['Hover'] }, token: 'color/border-hover' },
-    ];
-    const deltas = stateTokenDeltas(
-      tokens,
-      { State: 'Default' },
-      {
-        encoding: 'enum',
-        axis: 'State',
-        rowAxis: null,
-        columns: [
-          { label: 'Default', override: { State: 'Default' } },
-          { label: 'Hover', override: { State: 'Hover' } },
-        ],
-      },
-    );
-    expect(deltas).toEqual([
-      {
-        label: 'Hover',
-        changes: [
-          { part: 'Container', property: 'fill', token: 'color/hover' },
-          { part: 'Container', property: 'border', token: 'color/border-hover' },
-        ],
-      },
-    ]);
-  });
-
-  it('names the tokens that change per flag vs default (flags)', () => {
-    const tokens: TokenRule[] = [
-      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
-      { part: 'Container', property: 'fill', conditions: {}, token: 'color/rest' },
-      { part: 'Container', property: 'opacity', conditions: { Disabled: ['True'] }, token: 'opacity/disabled' },
-    ];
-    const deltas = stateTokenDeltas(
-      tokens,
-      { Disabled: 'False', Hover: 'False' },
-      {
-        encoding: 'flags',
-        axis: null,
-        rowAxis: null,
-        columns: [
-          { label: 'Default', override: {} },
-          { label: 'Hover', override: { Hover: 'True' } },
-          { label: 'Disabled', override: { Disabled: 'True' } },
-        ],
-      },
-    );
-    expect(deltas).toEqual([
-      {
-        label: 'Disabled',
-        changes: [{ part: 'Container', property: 'opacity', token: 'opacity/disabled' }],
-      },
-    ]);
-  });
-});

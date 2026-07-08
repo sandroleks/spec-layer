@@ -1,7 +1,7 @@
 import type { IntermediateSpec, ProseDrafts, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix, stateTokenDeltas,
+  detectStateMatrix,
 } from '@spec-layer/extractor';
 
 export type SectionId =
@@ -94,7 +94,6 @@ export type SectionBlock =
       states: string[];                       // column headers, lifecycle-ordered
       rows: { label: string; cells: (string | null)[] }[]; // cell = variant nodeId or null
       capped: boolean;                        // true when >4 row values existed
-      deltas: { state: string; lines: string }[]; // pre-formatted markdown per state
     };
 
 export interface DocFrameModel { title: string; sections: SectionBlock[] }
@@ -381,14 +380,9 @@ function buildSection(
         cells: info.columns.map((c) => findCell(rv, c)),
       }));
 
-      const deltas = stateTokenDeltas(spec.tokens, defaults, info).map((d) => ({
-        state: d.label,
-        lines: d.changes.map((c) => `${c.part} ${c.property}: ${c.token}`).join(' · '),
-      }));
-
       return {
         id, heading: label, kind: 'statesMatrix',
-        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped, deltas,
+        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped,
       };
     }
 

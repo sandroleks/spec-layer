@@ -10,12 +10,10 @@ interface StatesBlockData {
   states: string[];
   rows: { label: string; cells: (string | null)[] }[];
   capped: boolean;
-  deltas: { state: string; lines: string }[];
 }
 
 /**
- * The States matrix: a grid of live instances keyed by rowAxis × state, plus a
- * list of token deltas describing what defines each non-default state. Per-cell
+ * The States matrix: a grid of live instances keyed by rowAxis × state. Per-cell
  * failures fall back to buildSlot's own placeholder; the section auto-hides at
  * the model level when there is no state axis, so the block is assumed well-formed.
  */
@@ -73,26 +71,6 @@ export async function buildStatesSection(block: StatesBlockData, contentWidth: n
     const note = makeText('Showing the first 4 values — other rows share the same state behavior.', 'Regular', 12, palette.muted, 145);
     wrap.appendChild(note);
     note.layoutSizingHorizontal = 'FILL';
-  }
-
-  // Token-delta lines: the differentiator — what defines each state.
-  if (block.deltas.length) {
-    const list = vstack(8);
-    wrap.appendChild(list);
-    list.layoutSizingHorizontal = 'FILL';
-    for (const d of block.deltas) {
-      const line = hstack(8);
-      line.counterAxisAlignItems = 'MIN';
-      list.appendChild(line);
-      line.layoutSizingHorizontal = 'FILL';
-      const name = makeText(d.state, 'Bold', 13, palette.heading, 145);
-      name.textAutoResize = 'WIDTH_AND_HEIGHT';
-      line.appendChild(name);
-      const changes = makeText(d.lines, 'Regular', 13, palette.body, 145);
-      line.appendChild(changes);
-      changes.layoutSizingHorizontal = 'FILL';
-      changes.textAutoResize = 'HEIGHT';
-    }
   }
 
   return wrap;

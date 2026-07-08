@@ -223,8 +223,6 @@ describe('states matrix section', () => {
     expect(block.states).toEqual(['Default', 'Hover']);
     expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Secondary']);
     expect(block.rows[0].cells).toEqual(['1:2', '1:3']); // Primary Default/Hover ids
-    expect(block.deltas[0].state).toBe('Hover');
-    expect(block.deltas[0].lines).toContain('color/hover');
   });
 
   it('drops the section entirely when no state axis exists', () => {
@@ -287,27 +285,6 @@ describe('states matrix section', () => {
     expect(block.capped).toBe(true);
     expect(block.rows[0].label).toBe('E');
   });
-
-  it('resolves deltas at the row axis default when a non-state axis exists', () => {
-    // Multi-axis: token differs by BOTH Type and State. Deltas are computed with
-    // the row axis (Type) pinned to its default (Primary), so the Hover delta
-    // must resolve Primary's hover token, not Secondary's.
-    const multi = {
-      ...spec,
-      tokens: [
-        { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Default'] }, token: 'primary/rest' },
-        { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'primary/hover' },
-        { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], State: ['Hover'] }, token: 'secondary/hover' },
-      ],
-    } as unknown as IntermediateSpec;
-    const model = buildDocModel(multi, null, new Set(['states']), undefined);
-    const block = model.sections[0];
-    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
-    const hover = block.deltas.find((d) => d.state === 'Hover');
-    expect(hover).toBeDefined();
-    expect(hover!.lines).toContain('primary/hover');
-    expect(hover!.lines).not.toContain('secondary/hover');
-  });
 });
 
 describe('states matrix section: flags encoding', () => {
@@ -360,19 +337,6 @@ describe('states matrix section: flags encoding', () => {
     expect(sRow.cells).toEqual(['1:2', '1:3', '1:4']); // Default, Hover, Disabled
     const lRow = block.rows.find((r) => r.label === 'L')!;
     expect(lRow.cells).toEqual(['1:5', '1:6', '1:7']);
-  });
-
-  it('produces delta lines per flag, skipping the Default column', () => {
-    const model = buildDocModel(spec, null, new Set(['states']), undefined);
-    const block = model.sections[0];
-    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
-    expect(block.deltas.find((d) => d.state === 'Default')).toBeUndefined();
-    const hover = block.deltas.find((d) => d.state === 'Hover');
-    expect(hover).toBeDefined();
-    expect(hover!.lines).toContain('color/hover');
-    const disabled = block.deltas.find((d) => d.state === 'Disabled');
-    expect(disabled).toBeDefined();
-    expect(disabled!.lines).toContain('opacity/disabled');
   });
 });
 

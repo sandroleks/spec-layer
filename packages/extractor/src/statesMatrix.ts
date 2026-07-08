@@ -1,7 +1,5 @@
 import type { VariantAxis } from './props';
-import type { TokenRule } from './tokens';
 import { isModifierAxis, isStateAxisName } from './pivot';
-import { resolveTokensForVariant, type ResolvedToken } from './resolve';
 
 /** A single column in the states matrix: a header label plus the axis→value
  *  overrides applied on top of the default variant to reach this column.
@@ -91,35 +89,4 @@ export function detectStateMatrix(variants: VariantAxis[]): StateMatrixInfo | nu
   ];
   const rowAxis = variants.find((v) => !isModifierAxis(v) && !isStateLike(v)) ?? null;
   return { encoding: 'flags', columns, rowAxis: rowAxis?.prop ?? null, axis: null };
-}
-
-export interface StateDelta { label: string; changes: ResolvedToken[] }
-
-/**
- * For each non-default column, the tokens that differ from the default
- * variant's resolution — the deterministic answer to "what defines Hover".
- */
-export function stateTokenDeltas(
-  tokens: TokenRule[],
-  defaults: Record<string, string>,
-  info: StateMatrixInfo,
-): StateDelta[] {
-  const key = (t: ResolvedToken): string => `${t.part}\0${t.property}\0${t.token}`;
-  const base = new Set(resolveTokensForVariant(tokens, defaults).map(key));
-
-  const isDefaultConfig = (config: Record<string, string>): boolean => {
-    const keys = new Set([...Object.keys(defaults), ...Object.keys(config)]);
-    for (const k of keys) if (defaults[k] !== config[k]) return false;
-    return true;
-  };
-
-  const out: StateDelta[] = [];
-  for (const column of info.columns) {
-    const config = { ...defaults, ...column.override };
-    if (isDefaultConfig(config)) continue;
-    const resolved = resolveTokensForVariant(tokens, config);
-    const changes = resolved.filter((t) => !base.has(key(t)));
-    if (changes.length) out.push({ label: column.label, changes });
-  }
-  return out;
 }
