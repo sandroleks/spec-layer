@@ -247,6 +247,25 @@ describe('prose', () => {
     expect(prompt).toMatch(/EXACTLY matches one of the Anatomy part names/);
   });
 
+  it('few-shot definition is a plain paragraph with no per-type guide', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    expect(drafts.definition).not.toMatch(/^-\s/m);            // no bullet lines
+    expect(drafts.definition.toLowerCase()).not.toContain('when to use');
+  });
+
+  it('few-shot variantsSummary carries a bulleted when-to-use-which-type guide', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    expect(drafts.variantsSummary).toMatch(/-\s\*\*/);         // bold-name bullets
+    expect(drafts.variantsSummary?.toLowerCase()).toContain('when to use');
+  });
+
+  it('prompt asks for the type guide under variants, not definition', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toMatch(/when to use which type/i);
+  });
+
   it('throws when dos contains a non-string element', () => {
     expect(() =>
       parseProseResponse('{"definition":"d","accessibility":"a","dos":[1],"donts":[]}'),
@@ -272,9 +291,9 @@ describe('prose', () => {
     expect(out.accessibility).toContain('### Keyboard');
   });
 
-  it('few-shot exemplar uses a Definition variant list and bold lead-ins', () => {
+  it('few-shot exemplar uses a Variants type list and bold lead-ins', () => {
     const drafts = parseProseResponse(proseFewShot()[1].content);
-    expect(drafts.definition).toMatch(/\n- \*\*/); // bulleted variant guide with bold names
+    expect(drafts.variantsSummary).toMatch(/\n- \*\*/); // bulleted type guide with bold names
     expect(drafts.accessibility).toMatch(/^- \*\*/m); // bold lead-in on each bullet
     expect(drafts.dos[0].startsWith('**')).toBe(true); // bold rule summary
   });

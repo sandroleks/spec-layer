@@ -42,18 +42,18 @@ export const PROSE_SYSTEM_PROMPT = [
   '- Keep sentences short. One idea per sentence. Split a long sentence into two.',
   '',
   'Sections (this is Markdown and renders as-is, so structure each one to scan at a glance):',
-  '- Definition: open with a short paragraph (what it is, when to use it, the key constraint).',
-  '  When the component has several meaningful variants or types, follow the paragraph with a',
-  '  bulleted "when to use which" guide, one per line, with the variant name in bold:',
-  '  "- **Filled**: the single most important action.".',
+  '- Definition: a short paragraph. The FIRST sentence defines what the component is, standalone.',
+  '  Then 1-2 sentences on its core purpose and key constraint. Do NOT enumerate the variants or',
+  '  types and do NOT say which type to use; that belongs to the Variants guide below.',
   '- Accessibility: a bulleted list. Give each bullet a short bold lead-in naming the topic, then',
   '  the guidance, for example "- **Keyboard:** ...". Always include a bullet flagging what the',
   '  design file cannot encode (focus order, live-region behaviour, immediate vs deferred effect).',
   '  If the list runs long (about six or more points), group the bullets under level-3 ("###")',
   '  subheadings.',
-  '- Variants summary (optional, 1-2 sentences): a quick orientation to what varies across this',
-  "  component's variant options, not a decision guide. Do not repeat Definition's \"when to use",
-  '  which" guidance.',
+  '- Variants guide (optional): 1-2 sentences orienting the reader to what varies across the',
+  "  component's options (the axes and their values). Then, when it has several meaningful types,",
+  '  a bulleted "when to use which type" guide, one per line, type name in bold:',
+  '  "- **Filled**: the single most important action.". Do not restate the plain definition.',
   "- Anatomy summary (optional, 1-2 sentences): orient the reader to the component's structure,",
   '  naming its key parts and what each contributes. Describe what the parts are, not how to',
   '  configure them.',
@@ -86,10 +86,10 @@ const FEW_SHOT_PROMPT = [
   '',
   'States: Enabled, Hovered, Focused, Pressed, Disabled',
   '',
-  'Return ONLY a JSON object with keys: definition (a short paragraph, then a bulleted "when to ' +
-    'use which" guide with bold variant names when the component has several variants), ' +
-    'variantsSummary (1-2 sentences orienting the reader to what varies across the variant ' +
-    'options, without repeating Definition\'s "when to use which" guidance), ' +
+  'Return ONLY a JSON object with keys: definition (a short paragraph whose first sentence ' +
+    'defines what it is, then 1-2 sentences on purpose and the key constraint; no per-type guide), ' +
+    'variantsSummary (1-2 sentences on what varies across the options, then a bulleted "when to ' +
+    'use which type" guide with bold type names when it has several types), ' +
     'anatomySummary (1-2 sentences orienting the reader to the component structure and the role ' +
     'of its key parts), anatomyParts (array of { name, description } where each name EXACTLY ' +
     'matches one of the Anatomy part names above and description is one concise sentence naming ' +
@@ -102,17 +102,18 @@ const FEW_SHOT_PROMPT = [
 ].join('\n');
 
 const FEW_SHOT_RESPONSE: ProseDrafts = {
-  definition: [
-    'A Button triggers an action when activated. Keep one Filled button per view so the main ' +
-      'action stays unambiguous.',
+  definition:
+    'A Button triggers an action when activated. Use it for actions, not navigation, and keep ' +
+    'one Filled button per view so the main action stays unambiguous.',
+  variantsSummary: [
+    'Style sets the visual weight and states cover the interactive feedback; all styles share ' +
+      'the same anatomy.',
     '',
     '**When to use each type:**',
     '- **Filled**: the single most important action in a view.',
     '- **Outlined**: secondary actions that still need a visible boundary.',
     '- **Text**: low-emphasis actions in dense layouts.',
   ].join('\n'),
-  variantsSummary: 'Style controls visual weight, from the solid Filled button to the bordered ' +
-    'Outlined button to the borderless Text button. All three share the same anatomy and states.',
   anatomySummary: 'A Button pairs a text label with an optional leading icon inside a single ' +
     'container. The container sets the tap target and carries the visual weight.',
   anatomyParts: [
@@ -223,8 +224,8 @@ export function buildProsePrompt(spec: IntermediateSpec): string {
   lines.push('');
   lines.push(
     'Return ONLY a JSON object with keys: ' +
-      "definition (a short paragraph specific to this component's actual props and variants, with no generic filler; when it has several meaningful variants, follow the paragraph with a bulleted \"when to use which\" guide with bold variant names), " +
-      "variantsSummary (1-2 sentences orienting the reader to what varies across the variant options, the gist of the axes and their values; do NOT repeat Definition's \"when to use which\" guidance), " +
+      "definition (a short paragraph specific to this component's actual props, with no generic filler; the first sentence defines what it is, then 1-2 sentences on purpose and the key constraint; do NOT enumerate the types or say which type to use), " +
+      "variantsSummary (1-2 sentences on what varies across the options, the axes and their values, then a bulleted \"when to use which type\" guide with bold type names when it has several meaningful types), " +
       'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above), ' +
       'anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part\'s role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above), ' +
       'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file), ' +

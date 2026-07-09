@@ -14,9 +14,10 @@ import {
  * a prompt change. v1 = original single-shot prompt; v2 = house-style system
  * prompt + few-shot; v3 = no em dashes, bulleted Accessibility, shorter sentences;
  * v4 = richer Markdown structure (bold lead-ins, variant guide, level-3 grouping);
- * v5 = anatomy summary + per-part role descriptions.
+ * v5 = anatomy summary + per-part role descriptions;
+ * v6 = definition/variants rebalance (type guide moved from Definition to Variants).
  */
-export const PROSE_PROMPT_VERSION = 'v5';
+export const PROSE_PROMPT_VERSION = 'v6';
 
 /**
  * The cache key for a prose draft. Centralised so the writer (`draftProse`) and
