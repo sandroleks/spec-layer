@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { parseRuns, groupSections } from './ui/docModel';
+import { parseRuns, groupSections, firstSentence } from './ui/docModel';
 import type {
   AnatomyPartBlock,
   Bullet,
@@ -75,9 +75,13 @@ function splitLead(md: string): { lead: string; rest: string } {
   const lines = md.split('\n');
   let i = 0;
   while (i < lines.length && lines[i].trim() === '') i++;
-  const lead = i < lines.length ? lines[i].trim() : '';
-  const rest = lines.slice(i + 1).join('\n').trim();
-  return { lead, rest };
+  const firstLine = i < lines.length ? lines[i].trim() : '';
+  const following = lines.slice(i + 1).join('\n').trim();
+  // The header takes only the first sentence; the rest of the paragraph plus any
+  // following lines drop into the Definition body, so the header stays a one-liner.
+  const { sentence, remainder } = firstSentence(firstLine);
+  const rest = [remainder, following].filter(Boolean).join('\n\n').trim();
+  return { lead: sentence, rest };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -15,6 +15,29 @@ const spec = {
 } as unknown as IntermediateSpec;
 
 const prose = { definition: 'A button.', accessibility: '- **Keyboard:** focusable', dos: ['Do A'], donts: ["Don't B"] };
+
+describe('firstSentence', () => {
+  it('splits off the first sentence and keeps the remainder', () => {
+    const { sentence, remainder } = firstSentence(
+      'A Button triggers an action. Use it for actions, not navigation.',
+    );
+    expect(sentence).toBe('A Button triggers an action.');
+    expect(remainder).toBe('Use it for actions, not navigation.');
+  });
+
+  it('does not cut on abbreviations or decimals', () => {
+    expect(firstSentence('Pick 3.5 items on average. Then stop.').sentence)
+      .toBe('Pick 3.5 items on average.');
+    expect(firstSentence('Use e.g. a Toggle instead. Next.').sentence)
+      .toBe('Use e.g. a Toggle instead.');
+  });
+
+  it('returns the whole text with empty remainder when there is one sentence', () => {
+    const { sentence, remainder } = firstSentence('Just one sentence here.');
+    expect(sentence).toBe('Just one sentence here.');
+    expect(remainder).toBe('');
+  });
+});
 
 describe('buildDocModel', () => {
   it('emits only selected sections, in canonical order', () => {

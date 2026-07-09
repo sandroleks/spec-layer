@@ -186,6 +186,18 @@ function mergeRawIntoParts<T extends { part: string }>(resolved: T[], raw: T[]):
   return out;
 }
 
+/** Split a paragraph into its first sentence and the remainder. A sentence ends
+ *  at the first `.`/`!`/`?` that is followed by whitespace and an uppercase
+ *  letter or `(` — so "e.g. a Toggle" and "3.5 items" do not end it. Returns the
+ *  whole text as the sentence (empty remainder) when no boundary is found. */
+export function firstSentence(text: string): { sentence: string; remainder: string } {
+  const t = text.trim();
+  const m = /[.!?](?=\s+[A-Z(])/.exec(t);
+  if (!m) return { sentence: t, remainder: '' };
+  const end = m.index + 1; // include the punctuation
+  return { sentence: t.slice(0, end).trim(), remainder: t.slice(end).trim() };
+}
+
 /**
  * Parse a Markdown string with **bold** markers into an array of TextRun objects.
  * Runs between ** markers are bold; everything else is plain.
