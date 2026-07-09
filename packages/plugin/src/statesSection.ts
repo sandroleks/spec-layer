@@ -6,7 +6,6 @@ const CELL_MAX_W = 180;
 const GRID_GAP = 12;
 
 export interface MatrixBlockData {
-  summary?: string | null;
   axisName?: string;
   columns: string[];
   rows: { label: string; cells: (string | null)[] }[];
@@ -21,12 +20,6 @@ export interface MatrixBlockData {
  */
 export async function buildMatrixSection(block: MatrixBlockData, contentWidth: number): Promise<FrameNode> {
   const wrap = vstack(20);
-
-  if (block.summary) {
-    const summary = makeText(block.summary, 'Regular', 15, palette.body, 155);
-    wrap.appendChild(summary);
-    summary.layoutSizingHorizontal = 'FILL';
-  }
 
   const cellW = Math.min(
     CELL_MAX_W,

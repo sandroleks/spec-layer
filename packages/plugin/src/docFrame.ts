@@ -905,6 +905,15 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
   } else if (section.kind === 'variantsMatrix') {
+    // The variants guide (orientation + bulleted "when to use which type") renders
+    // as prose above the matrix so bold type names and bullet lines format
+    // correctly, rather than as a single flat line of raw markdown.
+    if (section.summary) {
+      for (const node of buildProse(section.summary)) {
+        body.appendChild(node);
+        (node as TextNode).layoutSizingHorizontal = 'FILL';
+      }
+    }
     // Combine the row-cap disclosure (when the first axis had >4 values) with any
     // held-axis note, so a capped Variants matrix explains its truncation the same
     // way the States matrix does.
@@ -914,7 +923,6 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     const note = [capNote, section.note].filter(Boolean).join(' ') || null;
     const grid = await buildMatrixSection(
       {
-        summary: section.summary,
         columns: section.columns,
         rows: section.rows,
         note,
