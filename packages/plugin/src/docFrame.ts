@@ -1196,7 +1196,8 @@ export async function buildDocFrames(
   if (groups.length === 0) throw new Error('No sections selected.');
 
   // Build frames (auto-appended to the page by createFrame), then wrap + lay out.
-  const GAP = 80;
+  const GAP = 80; // gap between frames
+  const PAD = 64; // breathing room between the frames and the Section edge
   const frames: FrameNode[] = [];
   try {
     for (const group of groups) {
@@ -1204,15 +1205,32 @@ export async function buildDocFrames(
       frames.push(await buildGroupFrame(group, componentName, sub, logoBase64));
     }
 
+    // A freshly created Section keeps its default (small) size — it does NOT
+    // auto-grow to contain appended children. Pin its origin to (0,0), lay the
+    // frames out inside at PAD offsets, then resize the Section to the frames'
+    // bounding box (+ padding) so it actually holds all three. Section children
+    // use section-relative coordinates, so a later section.x/y move carries them.
     const section = figma.createSection();
     section.name = `${componentName}: Documentation`;
-    let cursorX = 0;
+    section.x = 0;
+    section.y = 0;
+
+    let cursorX = PAD;
+    let maxH = 0;
     for (const frame of frames) {
       section.appendChild(frame);
       frame.x = cursorX;
-      frame.y = 0;
+      frame.y = PAD;
       cursorX += frame.width + GAP;
+      if (frame.height > maxH) maxH = frame.height;
     }
+
+    // cursorX overshot by one trailing GAP after the last frame; drop it.
+    const contentWidth = cursorX - GAP;
+    section.resizeWithoutConstraints(
+      Math.max(contentWidth + PAD, 1),
+      Math.max(maxH + PAD * 2, 1),
+    );
     return section;
   } catch (err) {
     for (const f of frames) f.remove(); // never litter the canvas on failure
