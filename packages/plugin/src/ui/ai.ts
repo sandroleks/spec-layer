@@ -1,5 +1,5 @@
 import { draftProse } from '@spec-layer/extractor';
-import type { IntermediateSpec, ProseDrafts } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseDrafts, ProseKey } from '@spec-layer/extractor';
 import { send } from './actions';
 
 // One in-flight image request at a time; resolved by ui.ts on 'componentImage'.
@@ -31,12 +31,13 @@ const cacheStore = {
 };
 
 export async function generateProse(
-  spec: IntermediateSpec, apiKey: string, nodeId: string,
+  spec: IntermediateSpec, apiKey: string, nodeId: string, requested?: Set<ProseKey>,
 ): Promise<ProseDrafts | null> {
   const img = await requestImage(nodeId);
   return draftProse(spec, {
     apiKey, fetcher: window.fetch.bind(window), cacheStore,
     imageBase64: img?.base64 ?? null,
     imageMediaType: img?.mediaType,
+    requested,
   });
 }

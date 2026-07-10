@@ -22,7 +22,13 @@
  * values and keep the non-Figma/test render legible.
  */
 
-import { ALL_SECTIONS, GROUPS } from './docModel';
+import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
+
+/** Sections that start unchecked: Related (rarely wanted) and the three verbose,
+ *  token-costly a11y additions, which are opt-in. */
+const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
+  'related', 'interactions', 'designConsiderations', 'contentConsiderations',
+]);
 import { THEME_PRESETS } from '../brandColors';
 
 // ---------------------------------------------------------------------------
@@ -986,7 +992,9 @@ export function mount(): Refs {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.id = `sec-${section.id}`;
-      input.checked = section.id !== 'related';
+      // Opt-in by default for the paid, verbose a11y additions (and Related):
+      // they cost extra tokens and most components won't need all three.
+      input.checked = !DEFAULT_OFF_SECTIONS.has(section.id);
 
       const label = document.createElement('label');
       label.htmlFor = input.id;

@@ -7,12 +7,12 @@
  */
 
 import { extract, renderSpec } from '@spec-layer/extractor';
-import type { SerializedNode, IntermediateSpec, ProseDrafts } from '@spec-layer/extractor';
+import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, ALL_SECTIONS, type SectionId, type MeasureView } from './docModel';
+import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView } from './docModel';
 import type { Refs } from './dom';
 import {
   showBanner,
@@ -43,6 +43,10 @@ export interface UiState {
   anthropicKey: string | null;
   aiEnabled: boolean;
   generatedProse: ProseDrafts | null;
+  // The prose-key set the current draft was generated for. A checkbox change
+  // that requests a key not in this set triggers exactly one regeneration;
+  // unchecking never does. Null whenever generatedProse is null.
+  generatedProseKeys: Set<ProseKey> | null;
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("built with placeholders") instead of aborting the whole frame.
   pendingAiNote: string;
@@ -68,6 +72,7 @@ export function createState(): UiState {
     anthropicKey: null,
     aiEnabled: false,
     generatedProse: null,
+    generatedProseKeys: null,
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -168,15 +173,32 @@ export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void)
 // second action in the same selection doesn't re-bill the API.
 // ---------------------------------------------------------------------------
 
+/** The prose keys the currently-checked sections need. */
+function requestedProseKeys(refs: Refs): Set<ProseKey> {
+  const checked = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) if (refs.sectionChecks[id]?.checked) checked.add(id);
+  return proseKeysForSections(checked);
+}
+
+/** True when a fresh draft is needed: no draft yet, or the cached draft was
+ *  generated for a key set that does not cover everything now requested. */
+export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boolean {
+  if (!state.generatedProse || !state.generatedProseKeys) return true;
+  for (const k of requested) if (!state.generatedProseKeys.has(k)) return true;
+  return false;
+}
+
 function willGenerateProse(refs: Refs, state: UiState): boolean {
   if (!state.aiEnabled || !state.anthropicKey) return false;
-  if (state.generatedProse) return false;
-  return ALL_SECTIONS.some((s) => s.ai && refs.sectionChecks[s.id]?.checked);
+  const requested = requestedProseKeys(refs);
+  if (requested.size === 0) return false;
+  return proseNeedsRegen(state, requested);
 }
 
 async function ensureProse(refs: Refs, state: UiState): Promise<void> {
   state.pendingAiNote = '';
   if (!willGenerateProse(refs, state)) return;
+  const requested = requestedProseKeys(refs);
 
   // The generating loader (started by runCreateDocFrame) surfaces progress; this
   // path is best-effort. AI is an enhancement, never a blocker. If generation fails
@@ -188,9 +210,14 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
       state.currentSpec!,
       state.anthropicKey!,
       state.currentNode!.id,
+      requested,
     );
+    // Record the covered key set only when a draft actually came back, so a
+    // null result (degraded mode) leaves the reuse guard forcing a retry.
+    state.generatedProseKeys = state.generatedProse ? requested : null;
   } catch (err) {
     state.generatedProse = null;
+    state.generatedProseKeys = null;
     const detail = err instanceof Error ? err.message : String(err);
     state.pendingAiNote = `AI skipped (${detail}) — placeholders used`;
   }

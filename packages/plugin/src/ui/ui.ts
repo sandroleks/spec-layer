@@ -404,6 +404,7 @@ window.onmessage = (event: MessageEvent) => {
       // Clear AI prose too: it belongs to the previous component. Without this,
       // generating prose for A then selecting B would pair B's spec with A's prose.
       state.generatedProse = null;
+      state.generatedProseKeys = null;
       stopLoader(refs);
       renderSelection(refs, state);
       // Extract right away so Download and the frame are always ready;

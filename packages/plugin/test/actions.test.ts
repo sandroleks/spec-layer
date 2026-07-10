@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { buildSingleExportBundle } from '../src/ui/actions';
-import type { IntermediateSpec } from '@spec-layer/extractor';
+import { buildSingleExportBundle, proseNeedsRegen, type UiState } from '../src/ui/actions';
+import type { IntermediateSpec, ProseKey } from '@spec-layer/extractor';
+
+describe('proseNeedsRegen', () => {
+  const withDraft = (keys: ProseKey[]): UiState => ({
+    generatedProse: { definition: 'd', accessibility: '', dos: [], donts: [] },
+    generatedProseKeys: new Set(keys),
+  } as unknown as UiState);
+
+  it('regenerates when the cached draft misses a requested key', () => {
+    expect(proseNeedsRegen(withDraft(['definition']), new Set(['definition', 'interactions']))).toBe(true);
+  });
+  it('reuses when the cached draft covers the request', () => {
+    expect(proseNeedsRegen(withDraft(['definition', 'interactions']), new Set(['interactions']))).toBe(false);
+  });
+  it('regenerates when there is no draft yet', () => {
+    expect(proseNeedsRegen({ generatedProse: null, generatedProseKeys: null } as unknown as UiState, new Set(['definition']))).toBe(true);
+  });
+});
 
 function specStub(name = 'Button'): IntermediateSpec {
   return {
