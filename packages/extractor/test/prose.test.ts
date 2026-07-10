@@ -414,4 +414,94 @@ describe('prose', () => {
     await draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: store, imageUrl: 'https://x/y.png' });
     expect(keys[0]).not.toBe(keys[1]);
   });
+
+  // --- Task 1: selection-aware buildProsePrompt --------------------------------
+
+  it('buildProsePrompt with a requested subset asks only for those keys', () => {
+    const prompt = buildProsePrompt(spec, new Set(['definition', 'interactions']));
+    expect(prompt).toContain('interactions (');
+    expect(prompt).toContain('definition (');
+    expect(prompt).not.toContain('dos (');
+    expect(prompt).not.toContain('designConsiderations (');
+  });
+
+  it('buildProsePrompt default (no requested set) still asks for the legacy keys', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toContain('anatomyParts');
+    expect(prompt).toMatch(/when to use which type/i);
+  });
+
+  it('interactions instruction names the Mouse/Keyboard/Other subheadings', () => {
+    const prompt = buildProsePrompt(spec, new Set(['interactions']));
+    expect(prompt).toMatch(/### Mouse/);
+    expect(prompt).toMatch(/### Keyboard/);
+    expect(prompt).toMatch(/### Other/);
+  });
+
+  it('appends the interactions/accessibility overlap note only when both are requested', () => {
+    expect(buildProsePrompt(spec, new Set(['accessibility', 'interactions'])))
+      .toMatch(/keyboard and mouse mechanics belong to Interactions/i);
+    expect(buildProsePrompt(spec, new Set(['accessibility'])))
+      .not.toMatch(/belong to Interactions/i);
+  });
+
+  // --- Task 2: selection-aware parseProseResponse ------------------------------
+
+  it('parses the three new fields when present', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      interactions: '### Mouse\n- Click activates.',
+      designConsiderations: '- Meet 4.5:1 contrast.',
+      contentConsiderations: '- Keep labels short.',
+    }));
+    expect(out.interactions).toContain('### Mouse');
+    expect(out.designConsiderations).toContain('4.5:1');
+    expect(out.contentConsiderations).toContain('labels');
+  });
+
+  it('coerces a new-field array of lines into bulleted text', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      designConsiderations: ['Meet contrast.', 'Show focus.'],
+    }));
+    expect(out.designConsiderations).toBe('- Meet contrast.\n- Show focus.');
+  });
+
+  it('normalizes em dashes out of the new fields', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      interactions: 'Click — activates.',
+    }));
+    expect(out.interactions).toBe('Click, activates.');
+  });
+
+  it('when requested, requires only the requested keys', () => {
+    const out = parseProseResponse(
+      JSON.stringify({ definition: 'D', interactions: '- x' }),
+      new Set(['definition', 'interactions']),
+    );
+    expect(out.definition).toBe('D');
+    expect(out.interactions).toBe('- x');
+  });
+
+  it('when requested, a missing requested key still throws', () => {
+    expect(() =>
+      parseProseResponse(JSON.stringify({ definition: 'D' }), new Set(['definition', 'interactions'])),
+    ).toThrow(/interactions/);
+  });
+
+  it('no requested set preserves the legacy required contract', () => {
+    expect(() => parseProseResponse('{"definition":"D","dos":[],"donts":[]}')).toThrow(/accessibility/);
+  });
+
+  // --- Task 3: few-shot carries the new sections -------------------------------
+
+  it('few-shot exemplar carries Interactions and both Considerations sections', () => {
+    const drafts = parseProseResponse(proseFewShot()[1].content);
+    expect(drafts.interactions).toMatch(/### Mouse/);
+    expect(drafts.interactions).toMatch(/### Keyboard/);
+    expect(drafts.designConsiderations).toMatch(/^- /m);
+    expect(drafts.contentConsiderations).toMatch(/^- /m);
+    expect(proseFewShot()[1].content).not.toMatch(/—/);
+  });
 });

@@ -13,7 +13,48 @@ export interface ProseDrafts {
   variantsSummary?: string;
   anatomySummary?: string;
   anatomyParts?: AnatomyPartProse[];
+  interactions?: string;
+  designConsiderations?: string;
+  contentConsiderations?: string;
 }
+
+/** A single JSON key the prose pass can be asked to produce. Callers pass a
+ *  subset (see `buildProsePrompt`/`parseProseResponse`) so unchecked doc
+ *  sections cost zero output tokens. */
+export type ProseKey =
+  | 'definition' | 'variantsSummary' | 'anatomySummary' | 'anatomyParts'
+  | 'accessibility' | 'interactions' | 'designConsiderations'
+  | 'contentConsiderations' | 'dos' | 'donts';
+
+/** Canonical emission order for prose keys (prompt + cache-key signature). */
+export const PROSE_KEY_ORDER: ProseKey[] = [
+  'definition', 'variantsSummary', 'anatomySummary', 'anatomyParts',
+  'accessibility', 'interactions', 'designConsiderations',
+  'contentConsiderations', 'dos', 'donts',
+];
+
+/** Per-key output-contract fragment. `buildProsePrompt` emits only the fragments
+ *  for the requested keys, so the model returns exactly the sections in play. */
+const KEY_INSTRUCTIONS: Record<ProseKey, string> = {
+  definition:
+    'definition (specific to this component, with no generic filler; one sentence defining what it is, then a short benefit-led overview: where it is used, the value it gives people, its role, and a guiding principle; do NOT name specific variants/styles or give a when-to-use guide)',
+  variantsSummary:
+    'variantsSummary (1-2 sentences on what varies across the options, the axes and their values, then a bulleted "when to use which type" guide with bold type names when it has several meaningful types)',
+  anatomySummary:
+    'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above)',
+  anatomyParts:
+    "anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part's role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above)",
+  accessibility:
+    'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file)',
+  interactions:
+    'interactions (Markdown grouped under "### Mouse", "### Keyboard", and "### Other" subheadings, 2-3 bullets each; anchor to the States listed above: Hover/Pressed states drive Mouse, a Focused state drives Keyboard (Tab reachability, Enter/Space or arrow activation as fits the component); Other covers screen readers, voice control, and touch-target size; if there is no state axis, write 1-2 bullets total and never invent states)',
+  designConsiderations:
+    'designConsiderations (3-4 bullets, designer-facing; anchor to the real color tokens and variant axes above: contrast obligations on the actual color tokens, visual distinguishability across the actual variants, and an explicit bullet when an expected state such as Focused is absent from the design)',
+  contentConsiderations:
+    'contentConsiderations (3-4 bullets; anchor to the text parts in Anatomy: label writing rules for the actual text parts, truncation/overflow behavior, and one internationalization bullet covering text expansion of roughly 30-40% and RTL)',
+  dos: 'dos (string[], 3 to 5 items, each starting with a bold rule summary then the reason)',
+  donts: 'donts (string[], 3 to 5 items, same shape)',
+};
 
 /**
  * House-style system prompt for the prose pass — the distilled voice from
@@ -97,7 +138,13 @@ const FEW_SHOT_PROMPT = [
     'matches one of the Anatomy part names above and description is one concise sentence naming ' +
     "that part's role), " +
     'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; ' +
-    'include one bullet flagging what cannot be known from the design file), dos (string[], 3 to 5 ' +
+    'include one bullet flagging what cannot be known from the design file), ' +
+    'interactions (Markdown under "### Mouse", "### Keyboard", "### Other" subheadings, 2-3 bullets ' +
+    'each, anchored to the States above), ' +
+    'designConsiderations (3-4 designer-facing bullets on contrast, state distinguishability, and ' +
+    'missing-state flags), ' +
+    'contentConsiderations (3-4 bullets on label writing, truncation, and internationalization), ' +
+    'dos (string[], 3 to 5 ' +
     'items, each starting with a bold rule summary then the reason), donts (string[], 3 to 5 items, ' +
     'same shape). Use Markdown (bold lead-ins, lists, at most "###" subheadings); never "#" or "##" ' +
     'headings. Do not use em dashes. Do not include any prose outside the JSON.',
@@ -132,6 +179,27 @@ const FEW_SHOT_RESPONSE: ProseDrafts = {
     '- **Disabled vs aria-disabled:** `disabled` removes the button from the tab order, while `aria-disabled="true"` keeps it focusable to explain why it is unavailable. The design file cannot tell you which to use.',
     '- **Not in the design file:** focus order and live-region behaviour are not encoded in the design. Confirm the focus ring meets WCAG 2.1 contrast (at least 3:1) in implementation.',
   ].join('\n'),
+  interactions: [
+    '### Mouse',
+    '- Clicking anywhere on the container activates the action; the whole button is the target, not just the label.',
+    '- On hover the surface changes to signal it is interactive, and the cursor becomes a pointer.',
+    '### Keyboard',
+    '- Tab moves focus to the button in reading order, and a visible focus ring shows where focus landed.',
+    '- Enter or Space activates the focused button.',
+    '### Other',
+    '- Screen readers announce the label and the button role; an icon-only button needs an explicit name.',
+    '- Keep the touch target at least 44 by 44 px so it is comfortable to tap.',
+  ].join('\n'),
+  designConsiderations: [
+    '- Keep label-to-background contrast at 4.5:1 or better in every style so the action stays legible.',
+    '- Make the interactive states visually distinct from each other, so hover, focus, and pressed never look identical.',
+    '- Confirm a visible focus state exists in build; focus styling is not always encoded in the design file.',
+  ].join('\n'),
+  contentConsiderations: [
+    '- Write labels as a verb-first action in one to three words ("Save", "Add item"), not a vague "OK".',
+    '- Plan for labels that wrap or truncate; do not rely on a fixed width holding every translation.',
+    '- Allow for text expansion of roughly 30-40% and mirrored layout in right-to-left languages.',
+  ].join('\n'),
   dos: [
     '**Use the Filled variant for the single most important action in a view.** Its weight tells people where to go next.',
     '**Keep labels to one to three words, verb first** ("Save", "Add item"). People can then scan the action without reading a sentence.',
@@ -156,7 +224,7 @@ export function proseFewShot(): Array<{ role: 'user' | 'assistant'; content: str
  * Build a compact human-readable summary of the spec for the LLM prompt.
  * Never embeds raw serialized-node JSON — only parsed, derived fields.
  */
-export function buildProsePrompt(spec: IntermediateSpec): string {
+export function buildProsePrompt(spec: IntermediateSpec, requested?: Set<ProseKey>): string {
   const lines: string[] = [];
 
   lines.push(`Component: ${spec.name}`);
@@ -225,20 +293,26 @@ export function buildProsePrompt(spec: IntermediateSpec): string {
     lines.push(`Related: ${spec.related.join(', ')}`);
   }
 
-  // Instruction
+  // Instruction — emit only the requested keys (default: all keys, in canonical
+  // order) so unchecked sections cost no output tokens.
+  const keys = requested
+    ? PROSE_KEY_ORDER.filter((k) => requested.has(k))
+    : PROSE_KEY_ORDER;
   lines.push('');
   lines.push(
-    'Return ONLY a JSON object with keys: ' +
-      "definition (specific to this component, with no generic filler; one sentence defining what it is, then a short benefit-led overview: where it is used, the value it gives people, its role, and a guiding principle; do NOT name specific variants/styles or give a when-to-use guide), " +
-      "variantsSummary (1-2 sentences on what varies across the options, the axes and their values, then a bulleted \"when to use which type\" guide with bold type names when it has several meaningful types), " +
-      'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above), ' +
-      'anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part\'s role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above), ' +
-      'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file), ' +
-      'dos (string[], 3 to 5 items, each starting with a bold rule summary then the reason), ' +
-      'donts (string[], 3 to 5 items, same shape). ' +
+    'Return ONLY a JSON object with these keys: ' +
+      keys.map((k) => KEY_INSTRUCTIONS[k]).join('; ') + '. ' +
       'Use Markdown for structure (bold lead-ins, lists, at most "###" subheadings); never use "#" or "##" headings. ' +
       'Do not include any prose outside the JSON. Do not use em dashes; keep sentences short.',
   );
+  // When both Accessibility and Interactions are in play, keep them from
+  // duplicating each other: mechanics go to Interactions, semantics stay in
+  // Accessibility.
+  if (keys.includes('accessibility') && keys.includes('interactions')) {
+    lines.push(
+      'Note: keyboard and mouse mechanics belong to Interactions; keep accessibility to semantics, ARIA naming, and the "not in the design file" flag.',
+    );
+  }
 
   return lines.join('\n');
 }
@@ -313,10 +387,22 @@ function asStringArray(value: unknown): string[] | null {
   return null;
 }
 
+/** Keys that must be present AND well-typed when requested. The three summary
+ *  keys are never hard-required (a missing/wrong-typed value yields undefined). */
+const REQUIREDABLE_KEYS: ProseKey[] = [
+  'definition', 'accessibility', 'interactions',
+  'designConsiderations', 'contentConsiderations', 'dos', 'donts',
+];
+
 /**
  * Strip optional ```json … ``` fences, trim, parse, and validate the shape.
+ *
+ * `requested` makes parsing selection-aware: only requested keys are required,
+ * and any key the model emits beyond the request is still parsed if valid.
+ * When `requested` is omitted, the historical contract holds (definition,
+ * accessibility, dos, donts required) so existing callers are unaffected.
  */
-export function parseProseResponse(text: string): ProseDrafts {
+export function parseProseResponse(text: string, requested?: Set<ProseKey>): ProseDrafts {
   // Strip code fences — also handles preamble prose before the fence block
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const cleaned = fenced ? fenced[1].trim() : text.trim();
@@ -334,52 +420,75 @@ export function parseProseResponse(text: string): ProseDrafts {
 
   const obj = parsed as Record<string, unknown>;
 
+  const required = new Set<ProseKey>(
+    requested
+      ? REQUIREDABLE_KEYS.filter((k) => requested.has(k))
+      : ['definition', 'accessibility', 'dos', 'donts'],
+  );
+
   // Tolerate the model emitting prose fields as JSON arrays of lines (it often
-  // does for the "bulleted list" accessibility field). Only a truly missing /
-  // wrong-typed field is fatal.
-  const definition = asProseText(obj.definition, joinParagraphs);
-  if (definition === null) {
-    throw new Error('Prose response missing or invalid field: definition');
-  }
-  const accessibility = asProseText(obj.accessibility, joinBullets);
-  if (accessibility === null) {
-    throw new Error('Prose response missing or invalid field: accessibility');
-  }
-  const dos = asStringArray(obj.dos);
-  if (dos === null) {
-    throw new Error('Prose response field "dos" must be a string[]');
-  }
-  const donts = asStringArray(obj.donts);
-  if (donts === null) {
-    throw new Error('Prose response field "donts" must be a string[]');
-  }
+  // does for "bulleted list" fields). A field is fatal only when it is required
+  // and missing/wrong-typed; otherwise it degrades to undefined.
+  const wantString = (key: ProseKey, joiner: (items: string[]) => string): string | undefined => {
+    const v = asProseText(obj[key], joiner);
+    if (v === null) {
+      if (required.has(key)) throw new Error(`Prose response missing or invalid field: ${key}`);
+      return undefined;
+    }
+    return v;
+  };
+  const wantArray = (key: ProseKey): string[] | undefined => {
+    const v = asStringArray(obj[key]);
+    if (v === null) {
+      if (required.has(key)) throw new Error(`Prose response field "${key}" must be a string[]`);
+      return undefined;
+    }
+    return v;
+  };
+
+  const definition = wantString('definition', joinParagraphs);
+  const accessibility = wantString('accessibility', joinBullets);
+  const interactions = wantString('interactions', joinBullets);
+  const designConsiderations = wantString('designConsiderations', joinBullets);
+  const contentConsiderations = wantString('contentConsiderations', joinBullets);
+  const dos = wantArray('dos');
+  const donts = wantArray('donts');
 
   // variantsSummary / anatomySummary / anatomyParts are optional and non-critical:
-  // missing or wrong-typed simply yields undefined rather than a thrown error,
-  // unlike the required fields.
+  // missing or wrong-typed simply yields undefined rather than a thrown error.
   const rawVariantsSummary = asProseText(obj.variantsSummary, joinParagraphs);
   const variantsSummary = rawVariantsSummary === null ? undefined : rawVariantsSummary;
   const rawAnatomySummary = asProseText(obj.anatomySummary, joinParagraphs);
   const anatomySummary = rawAnatomySummary === null ? undefined : rawAnatomySummary;
   const anatomyParts = parseAnatomyParts(obj.anatomyParts);
 
-  const generatedStrings = [definition, accessibility, ...dos, ...donts];
-  if (variantsSummary !== undefined) generatedStrings.push(variantsSummary);
-  if (anatomySummary !== undefined) generatedStrings.push(anatomySummary);
-  if (anatomyParts) generatedStrings.push(...anatomyParts.map((p) => p.description));
+  const generatedStrings = [
+    definition, accessibility, interactions, designConsiderations, contentConsiderations,
+    variantsSummary, anatomySummary,
+    ...(dos ?? []), ...(donts ?? []),
+    ...(anatomyParts?.map((p) => p.description) ?? []),
+  ].filter((s): s is string => typeof s === 'string');
   // Level-1/2 headings are reserved for the canonical spec sections; the model
   // may use level-3 ("###") and below for sub-structure. Reject only `#`/`##`.
   if (generatedStrings.some((value) => /^#{1,2}(?:\s|$)/m.test(value))) {
     throw new Error('Prose response must not contain level-one or level-two markdown headings (use level-three at most)');
   }
 
+  const norm = (s: string | undefined): string | undefined =>
+    s === undefined ? undefined : normalizeProseText(s);
+
   return {
-    definition: normalizeProseText(definition),
-    accessibility: normalizeProseText(accessibility),
-    dos: dos.map(normalizeProseText),
-    donts: donts.map(normalizeProseText),
+    // The historical four stay non-optional on the shape (default to empty) so
+    // existing consumers keep working; they are only non-fatal when unrequested.
+    definition: normalizeProseText(definition ?? ''),
+    accessibility: normalizeProseText(accessibility ?? ''),
+    dos: (dos ?? []).map(normalizeProseText),
+    donts: (donts ?? []).map(normalizeProseText),
     ...(variantsSummary !== undefined ? { variantsSummary: normalizeProseText(variantsSummary) } : {}),
     ...(anatomySummary !== undefined ? { anatomySummary: normalizeProseText(anatomySummary) } : {}),
     ...(anatomyParts ? { anatomyParts } : {}),
+    ...(norm(interactions) !== undefined ? { interactions: norm(interactions)! } : {}),
+    ...(norm(designConsiderations) !== undefined ? { designConsiderations: norm(designConsiderations)! } : {}),
+    ...(norm(contentConsiderations) !== undefined ? { contentConsiderations: norm(contentConsiderations)! } : {}),
   };
 }
