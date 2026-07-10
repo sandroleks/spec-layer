@@ -1,4 +1,4 @@
-import type { IntermediateSpec, ProseDrafts, VariantInstance, StateColumn } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseDrafts, ProseKey, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
   detectStateMatrix, stateAxisProps,
@@ -6,7 +6,8 @@ import {
 
 export type SectionId =
   | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
-  | 'states' | 'tokens' | 'accessibility' | 'dosDonts' | 'related';
+  | 'states' | 'tokens' | 'interactions' | 'designConsiderations'
+  | 'contentConsiderations' | 'accessibility' | 'dosDonts' | 'related';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
 
@@ -18,6 +19,9 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'variants',      label: 'Variants',      ai: true,  group: 'usage' },
   { id: 'states',        label: 'States',        ai: false, group: 'specs' },
   { id: 'tokens',        label: 'Tokens used',   ai: false, group: 'specs' },
+  { id: 'interactions',          label: 'Interactions',           ai: true,  group: 'a11y'  },
+  { id: 'designConsiderations',  label: 'Design Considerations',  ai: true,  group: 'a11y'  },
+  { id: 'contentConsiderations', label: 'Content Considerations', ai: true,  group: 'a11y'  },
   { id: 'accessibility', label: 'Accessibility', ai: true,  group: 'a11y'  },
   { id: 'dosDonts',      label: "Do's & Don'ts", ai: true,  group: 'usage' },
   { id: 'related',       label: 'Related atoms', ai: false, group: 'usage' },
@@ -29,6 +33,27 @@ export const GROUPS: { id: GroupId; label: string }[] = [
   { id: 'specs', label: 'Specifications' },
   { id: 'a11y',  label: 'Accessibility' },
 ];
+
+/** Which prose keys each AI section needs from the prose pass. Non-AI sections
+ *  are absent (→ no keys). Drives the selection-aware prose request so unchecked
+ *  sections cost zero output tokens. */
+const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseKey[]>> = {
+  definition: ['definition'],
+  variants: ['variantsSummary'],
+  anatomy: ['anatomySummary', 'anatomyParts'],
+  accessibility: ['accessibility'],
+  interactions: ['interactions'],
+  designConsiderations: ['designConsiderations'],
+  contentConsiderations: ['contentConsiderations'],
+  dosDonts: ['dos', 'donts'],
+};
+
+/** Union of the prose keys needed by the given (checked) sections. */
+export function proseKeysForSections(ids: Iterable<SectionId>): Set<ProseKey> {
+  const out = new Set<ProseKey>();
+  for (const id of ids) for (const k of PROSE_KEYS_BY_SECTION[id] ?? []) out.add(k);
+  return out;
+}
 
 /** An inline run of text; `bold` marks bold lead-ins parsed from **markers**. */
 export interface TextRun { text: string; bold?: boolean }
@@ -251,6 +276,18 @@ function buildSection(
       };
     }
 
+    case 'interactions': {
+      return { id, heading: label, kind: 'prose', text: prose?.interactions ?? AI_PLACEHOLDER };
+    }
+
+    case 'designConsiderations': {
+      return { id, heading: label, kind: 'prose', text: prose?.designConsiderations ?? AI_PLACEHOLDER };
+    }
+
+    case 'contentConsiderations': {
+      return { id, heading: label, kind: 'prose', text: prose?.contentConsiderations ?? AI_PLACEHOLDER };
+    }
+
     case 'dosDonts': {
       let items: Bullet[];
       if (prose) {
@@ -353,6 +390,15 @@ function buildSection(
       const defaults = defaultAxisValues(spec);
       const summary = prose?.variantsSummary ?? null;
 
+      // A boolean axis (True/False) has no self-describing values, so a bare
+      // "FALSE"/"TRUE" header reads as meaningless. Qualify those with the axis
+      // name; enum axes (Small/Large, Primary/…) are left as-is. Display only —
+      // findCell still keys off the raw axis values.
+      const isBooleanAxis = (a: { values: string[] }) =>
+        a.values.length === 2 && a.values.every((v) => v.toLowerCase() === 'true' || v.toLowerCase() === 'false');
+      const axisLabel = (a: { prop: string; values: string[] }, value: string) =>
+        isBooleanAxis(a) ? `${a.prop}: ${value}` : value;
+
       // Cell = the instance matching { ...defaults, ...overrides } exactly;
       // fall back to the first instance matching just the requested overrides
       // (so held/extra axes don't block a match when no exact combo exists).
@@ -375,7 +421,7 @@ function buildSection(
         return {
           id, heading: label, kind: 'variantsMatrix',
           summary,
-          columns: A.values,
+          columns: A.values.map((v) => axisLabel(A, v)),
           rows: [{ label: spec.name, cells: A.values.map((v) => findCell({ [A.prop]: v })) }],
           capped: false,
           note: null,
@@ -395,10 +441,10 @@ function buildSection(
       const capped = rowAxisValues.length > 4;
       const rowValues = rowAxisValues.slice(0, 4);
 
-      const columns = B.values;
+      const columns = B.values.map((v) => axisLabel(B, v));
       const rows = rowValues.map((av) => ({
-        label: av,
-        cells: columns.map((bv) => findCell({ [A.prop]: av, [B.prop]: bv })),
+        label: axisLabel(A, av),
+        cells: B.values.map((bv) => findCell({ [A.prop]: av, [B.prop]: bv })),
       }));
 
       const note = held.length

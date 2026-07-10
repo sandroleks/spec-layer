@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence, proseKeysForSections } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -49,6 +49,32 @@ describe('buildDocModel', () => {
   it('labels the definition section "Overview"', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
     expect(model.sections[0].heading).toBe('Overview');
+  });
+
+  it('renders the three new a11y sections as prose with placeholder fallback', () => {
+    const ids = new Set<SectionId>(['interactions', 'designConsiderations', 'contentConsiderations']);
+    const noProse = buildDocModel(spec, null, ids);
+    for (const id of ids) {
+      const block = noProse.sections.find((s) => s.id === id);
+      expect(block?.kind).toBe('prose');
+      if (block?.kind === 'prose') expect(block.text).toBe('_To be written._');
+    }
+    const withProse = buildDocModel(spec, {
+      ...prose, interactions: '### Mouse\n- x', designConsiderations: '- y', contentConsiderations: '- z',
+    }, ids);
+    const inter = withProse.sections.find((s) => s.id === 'interactions');
+    if (inter?.kind === 'prose') expect(inter.text).toContain('### Mouse');
+  });
+
+  it('orders the a11y group Interactions -> Design -> Content -> Accessibility', () => {
+    const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
+    expect(a11y).toEqual(['interactions', 'designConsiderations', 'contentConsiderations', 'accessibility']);
+  });
+
+  it('maps checked sections to prose keys', () => {
+    expect([...proseKeysForSections(['anatomy'])].sort()).toEqual(['anatomyParts', 'anatomySummary']);
+    expect([...proseKeysForSections(['interactions', 'related'])]).toEqual(['interactions']);
+    expect([...proseKeysForSections(['dosDonts'])].sort()).toEqual(['donts', 'dos']);
   });
 
   it('uses placeholder text for AI sections when prose is null', () => {
@@ -491,6 +517,33 @@ describe('variants matrix section', () => {
     expect(block.columns).toEqual(['Large', 'Small']);
     expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Outline']);
     expect(block.note).toBe('Others held at default: shape=Rounded');
+  });
+
+  it('qualifies boolean axis values with the axis name so cells are not bare True/False', () => {
+    const boolAxes = {
+      ...spec,
+      props: [
+        { name: 'withIcon', kind: 'variant', options: ['False', 'True'], default: 'False' },
+        { name: 'fullWidth', kind: 'variant', options: ['False', 'True'], default: 'False' },
+      ],
+      variants: [
+        { prop: 'withIcon', values: ['False', 'True'] },
+        { prop: 'fullWidth', values: ['False', 'True'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: '', values: { withIcon: 'False', fullWidth: 'False' } },
+        { nodeId: '1:3', name: '', values: { withIcon: 'False', fullWidth: 'True' } },
+        { nodeId: '1:4', name: '', values: { withIcon: 'True', fullWidth: 'False' } },
+        { nodeId: '1:5', name: '', values: { withIcon: 'True', fullWidth: 'True' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(boolAxes, null, new Set<SectionId>(['variants']));
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.columns).toEqual(['fullWidth: False', 'fullWidth: True']);
+    expect(block.rows.map((r) => r.label)).toEqual(['withIcon: False', 'withIcon: True']);
+    // Cells still resolve by the raw axis values, not the display labels.
+    expect(block.rows[0].cells).toEqual(['1:2', '1:3']);
   });
 
   it('emits a bullets block "No variants." when there are 0 non-state axes', () => {
