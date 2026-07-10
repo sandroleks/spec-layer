@@ -46,6 +46,11 @@ describe('buildDocModel', () => {
     expect(model.componentName).toBe('Button');
   });
 
+  it('labels the definition section "Overview"', () => {
+    const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
+    expect(model.sections[0].heading).toBe('Overview');
+  });
+
   it('uses placeholder text for AI sections when prose is null', () => {
     const model = buildDocModel(spec, null, new Set<SectionId>(['definition']));
     const def = model.sections[0];

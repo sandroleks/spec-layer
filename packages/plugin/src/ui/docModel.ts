@@ -11,7 +11,7 @@ export type SectionId =
 export type GroupId = 'usage' | 'specs' | 'a11y';
 
 export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: GroupId }[] = [
-  { id: 'definition',    label: 'Definition',    ai: true,  group: 'usage' },
+  { id: 'definition',    label: 'Overview',      ai: true,  group: 'usage' },
   { id: 'anatomy',       label: 'Anatomy',       ai: true,  group: 'specs' },
   { id: 'measurements',  label: 'Measurements',  ai: false, group: 'specs' },
   { id: 'configuration', label: 'Configuration', ai: false, group: 'specs' },

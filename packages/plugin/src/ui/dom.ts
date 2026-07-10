@@ -674,7 +674,7 @@ const TEMPLATE = `
               </button>
             </div>
             <div class="ai-info" id="ai-info" hidden>
-              <p>Drafts the <strong>Definition</strong>, <strong>Variants</strong> summary, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text (the Variants matrix still renders).</p>
+              <p>Drafts the <strong>Overview</strong>, <strong>Variants</strong> summary, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text (the Variants matrix still renders).</p>
               <p>Uses your own <strong>Anthropic API key</strong>, stored locally and billed to your account.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
