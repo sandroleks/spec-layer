@@ -47,4 +47,16 @@ describe('draftProse base64 image', () => {
     // base64 must produce the vision-marked key, not the text-only one:
     expect(proseCacheKey(spec, { image: true })).toContain(':img');
   });
+
+  it('folds the requested key set into the cache key', () => {
+    const a = proseCacheKey(spec, { keys: ['definition', 'interactions'] });
+    const b = proseCacheKey(spec, { keys: ['definition'] });
+    expect(a).not.toEqual(b);
+    expect(a).toContain('v8');
+  });
+
+  it('key is order-independent for the same requested set', () => {
+    expect(proseCacheKey(spec, { keys: ['interactions', 'definition'] }))
+      .toEqual(proseCacheKey(spec, { keys: ['definition', 'interactions'] }));
+  });
 });

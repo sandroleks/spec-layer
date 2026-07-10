@@ -504,4 +504,24 @@ describe('prose', () => {
     expect(drafts.contentConsiderations).toMatch(/^- /m);
     expect(proseFewShot()[1].content).not.toMatch(/—/);
   });
+
+  // --- Task 4: client threads the requested set --------------------------------
+
+  it('passes the requested set to the prompt, requires it on parse, and lifts max_tokens', async () => {
+    let body: AnthropicRequestBody | undefined;
+    const fetcher = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as AnthropicRequestBody;
+      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","interactions":"- x"}' }] }) };
+    }) as unknown as typeof fetch;
+    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
+    const out = await draftProse(spec, {
+      apiKey: 'k', fetcher, cacheStore: store,
+      requested: new Set(['definition', 'interactions']),
+    });
+    expect(out?.interactions).toBe('- x');
+    expect((body as unknown as { max_tokens: number }).max_tokens).toBe(3000);
+    const content = String(lastMessage(body!).content);
+    expect(content).toContain('interactions (');
+    expect(content).not.toContain('accessibility (');
+  });
 });
