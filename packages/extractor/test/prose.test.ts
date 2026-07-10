@@ -247,6 +247,15 @@ describe('prose', () => {
     expect(prompt).toMatch(/EXACTLY matches one of the Anatomy part names/);
   });
 
+  it('few-shot definition is a value-led overview with no style names', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    // Multi-sentence narrative, not a bare one-liner.
+    expect(drafts.definition.split(/[.!?]\s/).length).toBeGreaterThan(2);
+    // No specific variant/style names leak into the Overview.
+    expect(drafts.definition).not.toMatch(/\b(filled|outlined|ghost|brand|neutral|destructive)\b/i);
+  });
+
   it('few-shot definition is a plain paragraph with no per-type guide', () => {
     const [, assistant] = proseFewShot();
     const drafts = parseProseResponse(assistant.content);

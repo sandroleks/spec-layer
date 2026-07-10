@@ -42,9 +42,10 @@ export const PROSE_SYSTEM_PROMPT = [
   '- Keep sentences short. One idea per sentence. Split a long sentence into two.',
   '',
   'Sections (this is Markdown and renders as-is, so structure each one to scan at a glance):',
-  '- Definition: a short paragraph. The FIRST sentence defines what the component is, standalone.',
-  '  Then 1-2 sentences on its core purpose and key constraint. Do NOT enumerate the variants or',
-  '  types and do NOT say which type to use; that belongs to the Variants guide below.',
+  '- Overview: open with ONE sentence defining what the component is (this becomes the header).',
+  '  Then a short, benefit-led overview: where and how it is used, the value it gives people, its',
+  '  role in the product, and a brief guiding principle. Do NOT name specific variants or styles',
+  '  and do NOT give a "when to use which" guide; those belong to the Variants guide below.',
   '- Accessibility: a bulleted list. Give each bullet a short bold lead-in naming the topic, then',
   '  the guidance, for example "- **Keyboard:** ...". Always include a bullet flagging what the',
   '  design file cannot encode (focus order, live-region behaviour, immediate vs deferred effect).',
@@ -86,8 +87,9 @@ const FEW_SHOT_PROMPT = [
   '',
   'States: Enabled, Hovered, Focused, Pressed, Disabled',
   '',
-  'Return ONLY a JSON object with keys: definition (a short paragraph whose first sentence ' +
-    'defines what it is, then 1-2 sentences on purpose and the key constraint; no per-type guide), ' +
+  'Return ONLY a JSON object with keys: definition (one sentence defining what it is, then a ' +
+    'short benefit-led overview: where it is used, the value it gives people, its role, and a ' +
+    'guiding principle; no style names and no when-to-use guide), ' +
     'variantsSummary (1-2 sentences on what varies across the options, then a bulleted "when to ' +
     'use which type" guide with bold type names when it has several types), ' +
     'anatomySummary (1-2 sentences orienting the reader to the component structure and the role ' +
@@ -103,8 +105,11 @@ const FEW_SHOT_PROMPT = [
 
 const FEW_SHOT_RESPONSE: ProseDrafts = {
   definition:
-    'A Button triggers an action when activated. Use it for actions, not navigation, and keep ' +
-    'one Filled button per view so the main action stays unambiguous.',
+    'A Button triggers an action when activated. Used across products to perform common actions, ' +
+    'it gives people a familiar, accessible way to engage with the interface and keeps frequent ' +
+    'tasks fast and predictable. It is essential for guiding people through workflows and ' +
+    'performing the key actions on a screen. Create buttons that are clear, easy to identify, and ' +
+    'accessible.',
   variantsSummary: [
     'Style sets the visual weight and states cover the interactive feedback; all styles share ' +
       'the same anatomy.',
@@ -224,7 +229,7 @@ export function buildProsePrompt(spec: IntermediateSpec): string {
   lines.push('');
   lines.push(
     'Return ONLY a JSON object with keys: ' +
-      "definition (a short paragraph specific to this component's actual props, with no generic filler; the first sentence defines what it is, then 1-2 sentences on purpose and the key constraint; do NOT enumerate the types or say which type to use), " +
+      "definition (specific to this component, with no generic filler; one sentence defining what it is, then a short benefit-led overview: where it is used, the value it gives people, its role, and a guiding principle; do NOT name specific variants/styles or give a when-to-use guide), " +
       "variantsSummary (1-2 sentences on what varies across the options, the axes and their values, then a bulleted \"when to use which type\" guide with bold type names when it has several meaningful types), " +
       'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above), ' +
       'anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part\'s role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above), ' +
