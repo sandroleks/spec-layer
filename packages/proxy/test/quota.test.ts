@@ -83,6 +83,15 @@ describe('QuotaEngine idempotency', () => {
     e.reserve('free', 'crashed', T0);
     expect(e.reserve('free', 'crashed', T0 + RESERVATION_TTL_MS + 1).kind).toBe('proceed');
   });
+
+  it('prunes expired responses from serialized state (bounded growth)', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'old', T0);
+    e.commit('old', '{"big":"body"}', T0);
+    // A later unrelated request past the TTL sweeps the old entry out.
+    e.reserve('pro', 'new', T0 + RESPONSE_TTL_MS + 1);
+    expect(e.toJSON()).not.toContain('big');
+  });
 });
 
 describe('QuotaEngine rate limit + pro', () => {

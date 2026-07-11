@@ -39,7 +39,12 @@ export async function checkLicense(key: string, deps: LicenseDeps): Promise<Lice
       body: JSON.stringify({ license_key: key }),
     });
     const data = (await res.json()) as { valid?: boolean; license_key?: { status?: string } };
-    status = data.valid && data.license_key?.status === 'active' ? 'active' : (data.license_key?.status ?? 'invalid');
+    // An LS response with valid !== true never maps to 'active', even if
+    // its status field claims 'active' (defense-in-depth on the pro grant).
+    const reported = data.license_key?.status ?? 'invalid';
+    status = data.valid === true && reported === 'active'
+      ? 'active'
+      : reported === 'active' ? 'invalid' : reported;
   } catch {
     // Outage: honor a previously validated status within the grace window.
     if (cached && now - cached.validatedAt < LICENSE_GRACE_MS) return toResult(cached.status);

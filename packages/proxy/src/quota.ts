@@ -76,7 +76,18 @@ export class QuotaEngine {
     };
   }
 
+  /** Drop expired responses and stale reservations so serialized state stays bounded. */
+  private prune(now: number): void {
+    for (const [k, v] of Object.entries(this.s.responses)) {
+      if (now - v.at >= RESPONSE_TTL_MS) delete this.s.responses[k];
+    }
+    for (const [k, at] of Object.entries(this.s.reservations)) {
+      if (now - at >= RESERVATION_TTL_MS) delete this.s.reservations[k];
+    }
+  }
+
   reserve(tier: Tier, cacheKey: string, now: number): ReserveResult {
+    this.prune(now);
     if (this.s.firstSeen === null) this.s.firstSeen = now;
     // Idempotent retry: a committed generation within 24h is served from cache.
     const hit = this.s.responses[cacheKey];
@@ -105,6 +116,7 @@ export class QuotaEngine {
   }
 
   commit(cacheKey: string, body: string, now: number): void {
+    this.prune(now);
     delete this.s.reservations[cacheKey];
     this.s.responses[cacheKey] = { body, at: now };
     if (this.inBoost(now)) this.s.boostUsed += 1;

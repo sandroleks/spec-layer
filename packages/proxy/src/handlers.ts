@@ -85,6 +85,10 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
       return json(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
     case 'proceed':
       break;
+    default:
+      // Fail closed: a ReserveResult variant this switch doesn't know must
+      // never reach the upstream call.
+      return json(500, { error: 'internal' });
   }
   if (reserved.kind === 'proceed' && reserved.flagged) {
     deps.log('fair_use_flag', { identityId, tier }); // counters only — never content

@@ -49,6 +49,11 @@ describe('checkLicense', () => {
     expect(await checkLicense('K', { fetcher: down as unknown as typeof fetch, cache, now: () => now })).toEqual({ tier: 'free', reason: 'unreachable' });
   });
 
+  it('never grants pro when valid is false, even if status claims active', async () => {
+    const deps = { fetcher: lsOk('active', false) as unknown as typeof fetch, cache: new MemKV(), now: () => T0 };
+    expect(await checkLicense('weird', deps)).toEqual({ tier: 'free', reason: 'invalid' });
+  });
+
   it('a later failed validation revokes the cached pro status', async () => {
     const cache = new MemKV();
     let now = T0;

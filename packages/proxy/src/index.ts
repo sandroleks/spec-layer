@@ -27,7 +27,7 @@ export class QuotaDO implements DurableObject {
     else if (op === 'commit') engine.commit(cacheKey as string, body as string, now);
     else if (op === 'release') engine.release(cacheKey as string);
     else out = engine.snapshot(tier, now);
-    await this.state.storage.put('engine', engine.toJSON());
+    if (op !== 'snapshot') await this.state.storage.put('engine', engine.toJSON());
     return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
   }
 }
