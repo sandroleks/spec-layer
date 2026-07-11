@@ -78,7 +78,13 @@ export class QuotaEngine {
 
   reserve(tier: Tier, cacheKey: string, now: number): ReserveResult {
     if (this.s.firstSeen === null) this.s.firstSeen = now;
-    // Tasks 3-4 add: rate limiting, response cache, pending reservations.
+    // Idempotent retry: a committed generation within 24h is served from cache.
+    const hit = this.s.responses[cacheKey];
+    if (hit && now - hit.at < RESPONSE_TTL_MS) return { kind: 'cached', body: hit.body };
+    if (hit) delete this.s.responses[cacheKey];
+    // Concurrent window on the same component: live reservation wins.
+    const heldAt = this.s.reservations[cacheKey];
+    if (heldAt !== undefined && now - heldAt < RESERVATION_TTL_MS) return { kind: 'pending' };
     if (tier === 'free') {
       const { used, limit, resetsAt } = this.freeUsage(now);
       if (used >= limit) return { kind: 'exhausted', resetsAt };

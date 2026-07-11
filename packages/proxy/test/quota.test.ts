@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT } from '../src/quota';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -52,5 +52,35 @@ describe('QuotaEngine free tier', () => {
     burn(e, 3, T0);
     const e2 = new QuotaEngine(e.toJSON());
     expect(e2.snapshot('free', T0 + 4 * 60_000).used).toBe(3);
+  });
+});
+
+describe('QuotaEngine idempotency', () => {
+  it('returns the cached response for a committed cacheKey (no double bill)', () => {
+    const e = new QuotaEngine();
+    e.reserve('free', 'dup', T0);
+    e.commit('dup', '{"id":"msg_1"}', T0);
+    const r = e.reserve('free', 'dup', T0 + 60_000);
+    expect(r).toEqual({ kind: 'cached', body: '{"id":"msg_1"}' });
+    expect(e.snapshot('free', T0 + 60_000).used).toBe(1); // still 1
+  });
+
+  it('expires the response cache after 24h', () => {
+    const e = new QuotaEngine();
+    e.reserve('free', 'dup', T0);
+    e.commit('dup', '{}', T0);
+    expect(e.reserve('free', 'dup', T0 + RESPONSE_TTL_MS + 1).kind).toBe('proceed');
+  });
+
+  it('reports pending while another window holds a live reservation', () => {
+    const e = new QuotaEngine();
+    e.reserve('free', 'race', T0);
+    expect(e.reserve('free', 'race', T0 + 1000).kind).toBe('pending');
+  });
+
+  it('lets a retry proceed once the reservation is stale', () => {
+    const e = new QuotaEngine();
+    e.reserve('free', 'crashed', T0);
+    expect(e.reserve('free', 'crashed', T0 + RESERVATION_TTL_MS + 1).kind).toBe('proceed');
   });
 });
