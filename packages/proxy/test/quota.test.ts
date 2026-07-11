@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS } from '../src/quota';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -82,5 +82,38 @@ describe('QuotaEngine idempotency', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'crashed', T0);
     expect(e.reserve('free', 'crashed', T0 + RESERVATION_TTL_MS + 1).kind).toBe('proceed');
+  });
+});
+
+describe('QuotaEngine rate limit + pro', () => {
+  it('rate-limits the 11th request inside a minute', () => {
+    const e = new QuotaEngine();
+    for (let i = 0; i < RATE_LIMIT_PER_MIN; i++) {
+      expect(e.reserve('pro', `r${i}`, T0 + i).kind).toBe('proceed');
+    }
+    const r = e.reserve('pro', 'r-over', T0 + RATE_LIMIT_PER_MIN);
+    expect(r.kind).toBe('rate_limited');
+    if (r.kind === 'rate_limited') expect(r.retryAfterMs).toBeGreaterThan(0);
+    // window slides: a minute later it's fine again
+    expect(e.reserve('pro', 'later', T0 + 61_000).kind).toBe('proceed');
+  });
+
+  it('cached hits are not rate-limited (free redraws)', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'c', T0);
+    e.commit('c', '{}', T0);
+    for (let i = 0; i < 30; i++) {
+      expect(e.reserve('pro', 'c', T0 + 1000 + i).kind).toBe('cached');
+    }
+  });
+
+  it('pro is never exhausted but flags at the soft threshold', () => {
+    const e = new QuotaEngine(JSON.stringify({
+      firstSeen: 0, boostUsed: 0,
+      months: { [new Date(T0).toISOString().slice(0, 7)]: PRO_SOFT_THRESHOLD },
+      reservations: {}, responses: {}, recent: [],
+    }));
+    const r = e.reserve('pro', 'p1', T0);
+    expect(r).toEqual({ kind: 'proceed', flagged: true });
   });
 });

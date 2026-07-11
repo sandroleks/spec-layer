@@ -82,6 +82,13 @@ export class QuotaEngine {
     const hit = this.s.responses[cacheKey];
     if (hit && now - hit.at < RESPONSE_TTL_MS) return { kind: 'cached', body: hit.body };
     if (hit) delete this.s.responses[cacheKey];
+    // Sliding-window rate limit (attempts, not commits).
+    this.s.recent = this.s.recent.filter((t) => now - t < 60_000);
+    if (this.s.recent.length >= RATE_LIMIT_PER_MIN) {
+      const retryAfterMs = 60_000 - (now - this.s.recent[0]);
+      return { kind: 'rate_limited', retryAfterMs };
+    }
+    this.s.recent.push(now);
     // Concurrent window on the same component: live reservation wins.
     const heldAt = this.s.reservations[cacheKey];
     if (heldAt !== undefined && now - heldAt < RESERVATION_TTL_MS) return { kind: 'pending' };
