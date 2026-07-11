@@ -1,0 +1,15 @@
+name = "spec-layer-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+kv_namespaces = [
+  { binding = "LICENSE_CACHE", id = "REPLACE_AFTER_wrangler_kv_namespace_create" }
+]
+
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "QuotaDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaDO"]
