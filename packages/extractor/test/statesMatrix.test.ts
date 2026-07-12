@@ -70,6 +70,34 @@ describe('detectStateMatrix', () => {
     expect(info?.encoding).toBe('enum');
     expect(info?.columns.some((c) => c.label === 'Disabled')).toBe(false);
   });
+
+  it('treats warning, success, and filled boolean axes as state flags', () => {
+    const info = detectStateMatrix([
+      { prop: 'warning', values: ['True', 'False'] },
+      { prop: 'success', values: ['True', 'False'] },
+      { prop: 'filled', values: ['True', 'False'] },
+      { prop: 'size', values: ['Small', 'Large'] },
+    ]);
+    expect(info?.encoding).toBe('flags');
+    const labels = info?.columns.map((c) => c.label);
+    expect(labels).toContain('warning');
+    expect(labels).toContain('success');
+    expect(labels).toContain('filled');
+    expect(info?.rowAxis).toBe('size');
+  });
+
+  it('treats parenthetical-qualified active axes as state flags', () => {
+    const info = detectStateMatrix([
+      { prop: 'active (Filled)', values: ['True', 'False'] },
+      { prop: 'active (Empty)', values: ['True', 'False'] },
+      { prop: 'size', values: ['Small', 'Large'] },
+    ]);
+    expect(info?.encoding).toBe('flags');
+    const labels = info?.columns.map((c) => c.label);
+    expect(labels).toContain('active (Filled)');
+    expect(labels).toContain('active (Empty)');
+    expect(info?.rowAxis).toBe('size');
+  });
 });
 
 describe('stateAxisProps', () => {
@@ -93,6 +121,26 @@ describe('stateAxisProps', () => {
   it('returns an empty set when there is no state axis', () => {
     const props = stateAxisProps([{ prop: 'Size', values: ['S', 'M', 'L'] }]);
     expect(props).toEqual(new Set());
+  });
+
+  it('consumes every state flag on an inputField-style set, leaving only size', () => {
+    const props = stateAxisProps([
+      { prop: 'hover', values: ['False', 'True'] },
+      { prop: 'active (Filled)', values: ['False', 'True'] },
+      { prop: 'active (Empty)', values: ['False', 'True'] },
+      { prop: 'filled', values: ['False', 'True'] },
+      { prop: 'disabled', values: ['False', 'True'] },
+      { prop: 'error', values: ['False', 'True'] },
+      { prop: 'warning', values: ['False', 'True'] },
+      { prop: 'success', values: ['False', 'True'] },
+      { prop: 'size', values: ['Small', 'Large'] },
+    ]);
+    expect(props).toEqual(
+      new Set([
+        'hover', 'active (Filled)', 'active (Empty)', 'filled',
+        'disabled', 'error', 'warning', 'success',
+      ]),
+    );
   });
 });
 

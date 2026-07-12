@@ -24,7 +24,10 @@ import {
   setAiEnabled,
   setBrandTheme,
 } from './actions';
-import { activateLicense, fetchQuota, CHECKOUT_URL, MANAGE_SUB_URL } from './proxy';
+import {
+  activateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
+  CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL,
+} from './proxy';
 import { resolveComponentImage } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
@@ -34,6 +37,7 @@ import {
   renderStatesHint,
   renderBrandTheme,
   renderQuota,
+  renderLicense,
   updateVariantCount,
   switchTab,
   clearBanners,
@@ -55,7 +59,21 @@ const state = createState();
 // ---------------------------------------------------------------------------
 
 async function refreshQuota(): Promise<void> {
-  state.quota = await fetchQuota({ licenseKey: state.licenseKey, figmaUserId: state.figmaUserId });
+  state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive));
+  // Learn the key's real standing from the probe. A definite free-tier response
+  // while a key is stored (and we haven't already ruled it inactive) means the
+  // key isn't granting Pro — drop to the free identity and re-read the meter so
+  // it shows the user's real free quota, not the license identity's empty one.
+  // A null quota (offline) teaches us nothing and leaves the key untouched.
+  if (state.licenseKey && state.licenseActive !== false && state.quota) {
+    if (state.quota.tier === 'pro') {
+      state.licenseActive = true;
+    } else {
+      state.licenseActive = false;
+      state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.figmaUserId, false));
+    }
+  }
+  renderLicense(refs, state);
   renderQuota(refs, state);
 }
 
@@ -153,6 +171,7 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
   const key = refs.licenseKeyInput.value.trim();
   if (!key) return;
   refs.licenseStatus.textContent = 'Checking…';
+  refs.licenseRenewRow.hidden = true;
   try {
     let out = await activateLicense(key, state.licenseInstanceId);
     // A stored instance id can go stale (the device was deactivated in the
@@ -162,18 +181,20 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
       out = await activateLicense(key, null);
     }
     if (out.valid && out.status === 'active') {
+      state.licenseActive = true;
       setLicenseKey(state, key, out.instanceId ?? state.licenseInstanceId);
-      refs.licenseStatus.textContent = 'Pro plan active ✓';
-      state.quota = await fetchQuota({ licenseKey: key, figmaUserId: state.figmaUserId });
       // The main thread only persists the key (no licenseKey echo back), so
       // refresh the toggle affordance here or a stale "no identity" hint lingers.
       reflectAiToggle();
+      await refreshQuota(); // sets the status line to "Pro plan active ✓"
     } else if (out.status === 'active') {
       // Valid, active key that couldn't be activated here: almost always the
       // per-key device limit is full, not a bad key.
       refs.licenseStatus.textContent = "This key is active but couldn't be activated on this device. It may have reached its device limit. Free up a device in Manage subscription, or reach out to support.";
     } else {
-      refs.licenseStatus.textContent = `That key isn't active (${out.status}). Check your purchase email, or reach out to support if it looks right.`;
+      // Differentiated by the raw LS status: expired → renew, disabled →
+      // support, anything else → wrong key. No raw code leaks to the user.
+      refs.licenseStatus.textContent = activationErrorCopy(out.status);
     }
   } catch {
     refs.licenseStatus.textContent = "Couldn't reach the license server. Give it another go in a minute.";
@@ -209,6 +230,12 @@ refs.aiToggle.addEventListener('change', () => {
 document.getElementById('manage-sub-link')?.addEventListener('click', (e) => {
   e.preventDefault();
   send({ type: 'openBrowser', url: MANAGE_SUB_URL });
+});
+
+// Renew link (shown only in the lapsed state) opens the store to repurchase.
+document.getElementById('renew-link')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  send({ type: 'openBrowser', url: STOREFRONT_URL });
 });
 
 // Info disclosure: toggle the details panel + the button's expanded state.
@@ -474,8 +501,11 @@ window.onmessage = (event: MessageEvent) => {
     case 'licenseKey': {
       state.licenseKey = msg.value;
       state.licenseInstanceId = msg.instanceId;
+      // Re-probe the key this session — a renewal (or lapse) since last open is
+      // discovered by refreshQuota rather than trusting a persisted verdict.
+      state.licenseActive = null;
       refs.licenseKeyInput.value = msg.value ?? '';
-      if (msg.value) refs.licenseStatus.textContent = 'Your Pro key is saved';
+      renderLicense(refs, state); // immediate paint (unknown → "Your Pro key is saved.")
       reflectAiToggle();
       void refreshQuota();
       break;

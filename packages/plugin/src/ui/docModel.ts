@@ -6,7 +6,7 @@ import {
 
 export type SectionId =
   | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
-  | 'states' | 'tokens' | 'interactions' | 'designConsiderations'
+  | 'states' | 'tokens' | 'interactions'
   | 'contentConsiderations' | 'accessibility' | 'dosDonts' | 'related';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
@@ -20,14 +20,16 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'states',        label: 'States',        ai: false, group: 'specs' },
   { id: 'tokens',        label: 'Tokens used',   ai: false, group: 'specs' },
   { id: 'interactions',          label: 'Interactions',           ai: true,  group: 'a11y'  },
-  { id: 'designConsiderations',  label: 'Design Considerations',  ai: true,  group: 'a11y'  },
   { id: 'contentConsiderations', label: 'Content Considerations', ai: true,  group: 'a11y'  },
-  { id: 'accessibility', label: 'Accessibility', ai: true,  group: 'a11y'  },
+  { id: 'accessibility', label: 'Semantics & Focus', ai: true, group: 'a11y' },
   { id: 'dosDonts',      label: "Do's & Don'ts", ai: true,  group: 'usage' },
-  { id: 'related',       label: 'Related atoms', ai: false, group: 'usage' },
+  { id: 'related',       label: 'Related components', ai: false, group: 'usage' },
 ];
 
-/** The three output groups, in canonical display/build order. */
+/** The three output groups, in canonical display/build order. The a11y group
+ *  keeps the "Accessibility" label (its sections are aspects of accessibility);
+ *  the semantics section inside it is named "Semantics & Focus" so the frame
+ *  never repeats its own heading. */
 export const GROUPS: { id: GroupId; label: string }[] = [
   { id: 'usage', label: 'Usage' },
   { id: 'specs', label: 'Specifications' },
@@ -43,7 +45,6 @@ const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseKey[]>> = {
   anatomy: ['anatomySummary', 'anatomyParts'],
   accessibility: ['accessibility'],
   interactions: ['interactions'],
-  designConsiderations: ['designConsiderations'],
   contentConsiderations: ['contentConsiderations'],
   dosDonts: ['dos', 'donts'],
 };
@@ -223,6 +224,15 @@ export function firstSentence(text: string): { sentence: string; remainder: stri
   return { sentence: t.slice(0, end).trim(), remainder: t.slice(end).trim() };
 }
 
+/** Extract the text of a Markdown subheading line ("### Mouse" → "Mouse"), or
+ *  null for non-heading lines. The prose prompt only permits level-3 headings,
+ *  but any depth is accepted so a stray "#"/"##" from the model still renders
+ *  as a subheading instead of leaking raw markers onto the canvas. */
+export function headingLine(line: string): string | null {
+  const m = /^#{1,6}\s+(.+)$/.exec(line.trim());
+  return m ? m[1].trim() : null;
+}
+
 /**
  * Parse a Markdown string with **bold** markers into an array of TextRun objects.
  * Runs between ** markers are bold; everything else is plain.
@@ -278,10 +288,6 @@ function buildSection(
 
     case 'interactions': {
       return { id, heading: label, kind: 'prose', text: prose?.interactions ?? AI_PLACEHOLDER };
-    }
-
-    case 'designConsiderations': {
-      return { id, heading: label, kind: 'prose', text: prose?.designConsiderations ?? AI_PLACEHOLDER };
     }
 
     case 'contentConsiderations': {

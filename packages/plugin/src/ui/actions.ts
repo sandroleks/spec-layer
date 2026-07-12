@@ -11,6 +11,7 @@ import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuot
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
+import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView } from './docModel';
 import type { Refs } from './dom';
@@ -43,6 +44,10 @@ export interface UiState {
   // fill AI sections.
   licenseKey: string | null;
   licenseInstanceId: string | null;
+  // Session-only view of whether the stored key is granting Pro: null = not yet
+  // probed (re-probe each session), true = active, false = known inactive (drop
+  // to the free identity). Never persisted, so a renewal reactivates on reload.
+  licenseActive: boolean | null;
   figmaUserId: string | null;
   // Latest quota snapshot from the proxy (null until a request completes), and
   // whether the free-tier monthly quota is currently exhausted.
@@ -78,6 +83,7 @@ export function createState(): UiState {
     renderedMd: '',
     licenseKey: null,
     licenseInstanceId: null,
+    licenseActive: null,
     figmaUserId: null,
     quota: null,
     quotaExhausted: false,
@@ -221,30 +227,37 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
   // (rate limit, network, unexpected response), fall back to placeholders and
   // let the frame build anyway — the note surfaces on the success banner.
   try {
-    // willGenerateProse guarantees a non-null identity, spec, and node.
-    try {
-      state.generatedProse = await generateProse(
-        state.currentSpec!,
-        { licenseKey: state.licenseKey, figmaUserId: state.figmaUserId },
-        state.currentNode!.id,
-        requested,
-        (q) => { state.quota = q; },
-      );
-    } catch (e) {
-      if (e instanceof ProseProxyError && e.code === 'quota_exhausted') {
-        state.quotaExhausted = true;
-        state.generatedProse = null;
-        state.generatedProseKeys = null;
-        return; // callers proceed without AI; the UI renders the upgrade fork
-      }
-      throw e;
-    }
+    // willGenerateProse guarantees a non-null identity, spec, and node. A key
+    // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
+    state.generatedProse = await generateProse(
+      state.currentSpec!,
+      effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+      state.currentNode!.id,
+      requested,
+      (q) => { state.quota = q; },
+    );
     // Record the covered key set only when a draft actually came back, so a
     // null result (degraded mode) leaves the reuse guard forcing a retry.
     state.generatedProseKeys = state.generatedProse ? requested : null;
   } catch (err) {
     state.generatedProse = null;
     state.generatedProseKeys = null;
+    if (err instanceof ProseProxyError) {
+      if (err.code === 'quota_exhausted') {
+        state.quotaExhausted = true;
+        return; // callers proceed without AI; the UI renders the upgrade fork
+      }
+      if (err.code === 'license_not_active') {
+        // Key lapsed mid-session: drop to the free identity for the next run and
+        // explain it. This frame builds with placeholders; the next generation
+        // authenticates as free. Settings reflects the lapse on its next refresh.
+        state.licenseActive = false;
+        state.pendingAiNote = "Your Pro subscription isn't active, so AI didn't run this time. You're back on the free tier, and the renew option is in Settings.";
+        return;
+      }
+      state.pendingAiNote = generationErrorCopy(err.code);
+      return;
+    }
     const detail = err instanceof Error ? err.message : String(err);
     state.pendingAiNote = `AI didn't run (${detail}), so placeholders were used`;
   }

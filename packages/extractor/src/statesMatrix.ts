@@ -22,16 +22,24 @@ export interface StateMatrixInfo {
 /** Conventional lifecycle order; unrecognized states trail in axis order. */
 const STATE_ORDER = [
   'default', 'enabled', 'rest', 'hover', 'focus', 'focused', 'active',
-  'pressed', 'selected', 'disabled', 'error', 'danger', 'loading', 'empty',
+  'pressed', 'selected', 'filled', 'disabled', 'error', 'danger',
+  'warning', 'success', 'loading', 'empty', 'checked', 'invalid',
   'readonly', 'visited',
 ];
 
 const STATE_VOCAB = new Set(STATE_ORDER);
 
+/** The state concept a prop/value names, with any trailing parenthetical
+ *  qualifier stripped: `active (Filled)` → `active`. Lets qualified variant
+ *  axes still match the state vocabulary. */
+function stateBaseName(v: string): string {
+  return v.trim().toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
 /** Rank a state-like name by conventional lifecycle order; unrecognized names
  *  sort last (stable relative to their original order via the caller). */
 function stateRank(v: string): number {
-  const i = STATE_ORDER.indexOf(v.trim().toLowerCase());
+  const i = STATE_ORDER.indexOf(stateBaseName(v));
   return i === -1 ? STATE_ORDER.length : i;
 }
 
@@ -54,7 +62,7 @@ function isStateLike(axis: VariantAxis): boolean {
  *  boolean modifiers (HasIcon, …). */
 export function isStateVocabName(prop: string): boolean {
   const n = prop.trim().toLowerCase();
-  return isStateAxisName(prop) || n === 'status' || STATE_VOCAB.has(n);
+  return isStateAxisName(prop) || n === 'status' || STATE_VOCAB.has(stateBaseName(prop));
 }
 
 /** The axis value that represents "flag on": prefer a case-insensitive

@@ -12,7 +12,7 @@ import { isAtomComponentName } from '../collectComponents';
 import { resolveTheme } from '../brandColors';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
-import { quotaMeterText, upsellText } from './proxy';
+import { quotaMeterText, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -32,6 +32,18 @@ export function clearBanners(refs: Refs): void {
 // ---------------------------------------------------------------------------
 // Quota meter + upsell fork
 // ---------------------------------------------------------------------------
+
+/**
+ * License status line + renew link, derived from the live quota (single source
+ * of truth). The renew link shows only when the stored key is definitely
+ * inactive — never on an offline/unknown read, so a blip can't cry "cancelled".
+ * Transient states (Checking…, activation errors) are set directly by ui.ts.
+ */
+export function renderLicense(refs: Refs, state: UiState): void {
+  const view = resolveLicenseView(Boolean(state.licenseKey), state.quota);
+  refs.licenseStatus.textContent = licenseStatusCopy(view);
+  refs.licenseRenewRow.hidden = view !== 'inactive';
+}
 
 /** Quota meter + upsell visibility. AI off → both hidden (spec §5 state 1). */
 export function renderQuota(refs: Refs, state: UiState): void {

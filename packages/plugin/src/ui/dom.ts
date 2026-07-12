@@ -771,6 +771,7 @@ const TEMPLATE = `
             <button class="btn btn-primary" id="license-activate-btn" type="button">Activate</button>
           </div>
           <p class="hint" id="license-status" style="margin-top:6px" aria-live="polite"></p>
+          <p class="hint" id="license-renew-row" hidden style="margin-top:6px"><a id="renew-link" href="#" target="_blank">Renew Pro</a></p>
           <p class="hint" style="margin-top:6px"><a id="manage-sub-link" href="#" target="_blank">Manage subscription</a></p>
         </div>
 
@@ -922,6 +923,7 @@ export interface Refs {
   licenseKeyInput: HTMLInputElement;
   licenseActivateBtn: HTMLButtonElement;
   licenseStatus: HTMLElement;
+  licenseRenewRow: HTMLElement;
   // Frame brand theme (Settings tab)
   presetRow: HTMLDivElement;
   headerColorInput: HTMLInputElement;
@@ -1124,6 +1126,7 @@ export function mount(): Refs {
     licenseKeyInput: byId<HTMLInputElement>('license-key-input'),
     licenseActivateBtn: byId<HTMLButtonElement>('license-activate-btn'),
     licenseStatus: byId<HTMLElement>('license-status'),
+    licenseRenewRow: byId<HTMLElement>('license-renew-row'),
     presetRow,
     headerColorInput: byId<HTMLInputElement>('header-color-input'),
     headerColorSwatch: byId<HTMLSpanElement>('header-color-swatch'),

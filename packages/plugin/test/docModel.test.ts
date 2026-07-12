@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence, proseKeysForSections } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -51,8 +51,8 @@ describe('buildDocModel', () => {
     expect(model.sections[0].heading).toBe('Overview');
   });
 
-  it('renders the three new a11y sections as prose with placeholder fallback', () => {
-    const ids = new Set<SectionId>(['interactions', 'designConsiderations', 'contentConsiderations']);
+  it('renders the guidelines prose sections with placeholder fallback', () => {
+    const ids = new Set<SectionId>(['interactions', 'contentConsiderations']);
     const noProse = buildDocModel(spec, null, ids);
     for (const id of ids) {
       const block = noProse.sections.find((s) => s.id === id);
@@ -60,15 +60,15 @@ describe('buildDocModel', () => {
       if (block?.kind === 'prose') expect(block.text).toBe('_To be written._');
     }
     const withProse = buildDocModel(spec, {
-      ...prose, interactions: '### Mouse\n- x', designConsiderations: '- y', contentConsiderations: '- z',
+      ...prose, interactions: '### Mouse\n- x', contentConsiderations: '- z',
     }, ids);
     const inter = withProse.sections.find((s) => s.id === 'interactions');
     if (inter?.kind === 'prose') expect(inter.text).toContain('### Mouse');
   });
 
-  it('orders the a11y group Interactions -> Design -> Content -> Accessibility', () => {
+  it('orders the a11y group Interactions -> Content -> Accessibility (no Design Considerations)', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
-    expect(a11y).toEqual(['interactions', 'designConsiderations', 'contentConsiderations', 'accessibility']);
+    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
   });
 
   it('maps checked sections to prose keys', () => {
@@ -653,5 +653,32 @@ describe('groupSections', () => {
 
   it('GROUPS is Usage → Specifications → Accessibility', () => {
     expect(GROUPS.map((g) => g.label)).toEqual(['Usage', 'Specifications', 'Accessibility']);
+  });
+
+  it('labels the accessibility section "Semantics & Focus" so it does not duplicate the group heading', () => {
+    const section = ALL_SECTIONS.find((s) => s.id === 'accessibility');
+    expect(section?.label).toBe('Semantics & Focus');
+  });
+});
+
+describe('headingLine', () => {
+  it('extracts the text of a level-3 subheading', () => {
+    expect(headingLine('### Mouse')).toBe('Mouse');
+  });
+
+  it('accepts stray shallower/deeper heading depths without leaking markers', () => {
+    expect(headingLine('## Keyboard')).toBe('Keyboard');
+    expect(headingLine('#### Other')).toBe('Other');
+  });
+
+  it('tolerates surrounding whitespace', () => {
+    expect(headingLine('  ### Mouse  ')).toBe('Mouse');
+  });
+
+  it('returns null for non-heading lines', () => {
+    expect(headingLine('Plain paragraph text.')).toBeNull();
+    expect(headingLine('- bullet line')).toBeNull();
+    expect(headingLine('#hashtag-not-a-heading')).toBeNull();
+    expect(headingLine('')).toBeNull();
   });
 });

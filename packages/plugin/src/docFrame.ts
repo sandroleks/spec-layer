@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { parseRuns, groupSections, firstSentence } from './ui/docModel';
+import { parseRuns, groupSections, firstSentence, headingLine } from './ui/docModel';
 import type {
   AnatomyPartBlock,
   Bullet,
@@ -154,6 +154,21 @@ function buildProse(text: string): SceneNode[] {
     const placeholder = emphasisOnly(line);
     if (placeholder) {
       out.push(makeText(placeholder, 'Regular', 15, palette.muted, 155));
+      continue;
+    }
+
+    const subheading = headingLine(line);
+    if (subheading !== null) {
+      // "### Mouse" → a small subheading. Wrapped in a padded frame so it gets
+      // extra separation from the bullet group above (body spacing is a flat 10).
+      const wrap = vstack(0);
+      wrap.paddingTop = 8;
+      const node = makeText(subheading, 'Bold', 17, palette.heading, 130);
+      node.fontName = headingFont('Bold');
+      wrap.appendChild(node);
+      node.layoutSizingHorizontal = 'FILL';
+      node.textAutoResize = 'HEIGHT';
+      out.push(wrap);
       continue;
     }
 
@@ -931,6 +946,9 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     );
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
+    // Extra breathing room between the guide/bullets and the preview matrix; the
+    // body's default 10px spacing reads as cramped against the prose above.
+    if (section.summary) grid.paddingTop = 24;
   } else {
     const table = buildTable(section.columns, section.rows);
     body.appendChild(table);
