@@ -679,11 +679,11 @@ const TEMPLATE = `
             </div>
             <span id="quota-meter" class="hint"></span>
             <div class="ai-info" id="ai-info" hidden>
-              <p>AI turns a raw component into documentation a teammate can actually use. It reads what Spec Layer extracts — the variants, states, tokens, and layout — and infers the intent behind them: what the component is for, when each option applies, and the accessibility and content details that are easy to miss.</p>
-              <p>Everything measurable is always pulled straight from Figma, so the specs stay accurate whether AI is on or off — AI only adds the written layer that explains them. With it off, those written sections wait as editable placeholders.</p>
+              <p>AI turns a bare component into docs a teammate can actually use. It reads what Spec Layer pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
+              <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
-              AI works on the free plan — no key needed.
+              AI works on the free plan. No key needed.
             </div>
           </div>
           <label class="switch">
@@ -758,8 +758,9 @@ const TEMPLATE = `
         <div>
           <h2>Spec Layer Pro</h2>
           <p class="hint" style="margin-top:4px">
-            The free plan includes monthly AI generations — no setup needed.
-            Pro removes the limit. Paste the license key from your purchase email.
+            The free plan includes monthly AI generations, no setup needed.
+            Pro lifts that limit for heavier use. Paste the license key from
+            your purchase email to switch it on.
           </p>
           <div class="license-row">
             <input type="password" id="license-key-input" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" />
@@ -823,7 +824,7 @@ const TEMPLATE = `
             <button class="link-btn" id="clear-logo-btn" type="button" style="display:none;">Remove</button>
           </div>
           <p class="hint" id="logo-error-hint" style="color: var(--figma-color-text-danger)"></p>
-          <p class="hint" style="margin-top:6px">Fonts must include Regular, Medium and Bold styles — otherwise the frame falls back to Inter.</p>
+          <p class="hint" style="margin-top:6px">Fonts need Regular, Medium, and Bold styles. Without them, the frame falls back to Inter.</p>
         </div>
       </div>
     </section>
@@ -844,7 +845,7 @@ const TEMPLATE = `
     <div id="upsell" hidden>
       <p id="upsell-text" class="hint"></p>
       <div class="actions">
-        <button class="btn btn-primary" id="upsell-upgrade-btn" type="button">Upgrade – $8/mo</button>
+        <button class="btn btn-primary" id="upsell-upgrade-btn" type="button">Upgrade for $8/mo</button>
         <button class="btn btn-secondary" id="upsell-continue-btn" type="button">Continue without AI</button>
       </div>
     </div>

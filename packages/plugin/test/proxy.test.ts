@@ -56,7 +56,7 @@ describe('copy strings', () => {
   });
   it('pro meter text', () => {
     expect(quotaMeterText({ tier: 'pro', used: 5, limit: null, remaining: null, resetsAt: '' }))
-      .toBe('Pro — AI enabled');
+      .toBe('Pro plan active');
   });
   it('empty when quota unknown', () => {
     expect(quotaMeterText(null)).toBe('');

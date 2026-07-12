@@ -157,16 +157,16 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
     const out = await activateLicense(key);
     if (out.valid && out.status === 'active') {
       setLicenseKey(state, key);
-      refs.licenseStatus.textContent = 'Pro active ✓';
+      refs.licenseStatus.textContent = 'Pro plan active ✓';
       state.quota = await fetchQuota({ licenseKey: key, figmaUserId: state.figmaUserId });
       // The main thread only persists the key (no licenseKey echo back), so
       // refresh the toggle affordance here or a stale "no identity" hint lingers.
       reflectAiToggle();
     } else {
-      refs.licenseStatus.textContent = `Key not active (${out.status}). Check your purchase email or contact support.`;
+      refs.licenseStatus.textContent = `That key isn't active (${out.status}). Check your purchase email, or reach out to support if it looks right.`;
     }
   } catch {
-    refs.licenseStatus.textContent = "Couldn't reach the license server — try again in a minute.";
+    refs.licenseStatus.textContent = "Couldn't reach the license server. Give it another go in a minute.";
   }
   renderQuota(refs, state);
 });
@@ -464,7 +464,7 @@ window.onmessage = (event: MessageEvent) => {
     case 'licenseKey': {
       state.licenseKey = msg.value;
       refs.licenseKeyInput.value = msg.value ?? '';
-      if (msg.value) refs.licenseStatus.textContent = 'Pro key saved';
+      if (msg.value) refs.licenseStatus.textContent = 'Your Pro key is saved';
       reflectAiToggle();
       void refreshQuota();
       break;
@@ -534,7 +534,7 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'docFrameDone': {
       stopLoader(refs);
-      const note = state.pendingAiNote ? ` — ${state.pendingAiNote}` : '';
+      const note = state.pendingAiNote ? `. ${state.pendingAiNote}` : '';
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
       state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;

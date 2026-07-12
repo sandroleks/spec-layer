@@ -53,8 +53,8 @@ const ICONS: Record<ThemeMode, string> = {
 };
 
 const LABELS: Record<ThemeMode, string> = {
-  light: 'Light theme — click for dark',
-  dark: 'Dark theme — click for light',
+  light: 'Switch to dark theme',
+  dark: 'Switch to light theme',
 };
 
 /** Apply a theme mode: set body[data-theme] and refresh the button affordance. */

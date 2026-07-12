@@ -244,7 +244,7 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
     state.generatedProse = null;
     state.generatedProseKeys = null;
     const detail = err instanceof Error ? err.message : String(err);
-    state.pendingAiNote = `AI skipped (${detail}) — placeholders used`;
+    state.pendingAiNote = `AI didn't run (${detail}), so placeholders were used`;
   }
 }
 
