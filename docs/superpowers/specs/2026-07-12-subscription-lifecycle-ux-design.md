@@ -109,8 +109,12 @@ Plugin voice rules apply: plain, honest, peer tone; **no em dashes**
 | `inactive` | `Your Pro subscription isn't active right now, so you're on the free plan. Renew to switch Pro back on.` |
 | `unknown` | `Your Pro key is saved.` |
 
-In the `inactive` state the existing **Manage subscription** link
-(`MANAGE_SUB_URL`) is the renew path — no new link element needed.
+In the `inactive` state a **Renew Pro** link points to the store landing page
+(`STOREFRONT_URL`, a new constant), where the user repurchases. The always-present
+**Manage subscription** link (`MANAGE_SUB_URL`, the LS customer portal) stays for
+active subscribers managing billing. We route renewals to the storefront rather
+than the portal because a cancelled LemonSqueezy subscription is resolved by
+buying again, not resumed from the portal.
 
 ---
 
@@ -144,7 +148,7 @@ Drop the `(${out.status})` interpolation entirely.
 
 | `out.status` | Copy |
 |---|---|
-| `expired` | `That subscription has expired. Renew it in Manage subscription to switch Pro back on.` |
+| `expired` | `That subscription has expired. Grab Pro again from the store to switch it back on.` (links to `STOREFRONT_URL`) |
 | `disabled` | `That key has been turned off. Reach out to support if that's unexpected.` |
 | `invalid` / other | `We couldn't find that key. Double-check it against your purchase email.` |
 | active-but-not-activated-here (device limit) | *unchanged — already good* |
@@ -174,7 +178,9 @@ tested and unchanged.
 
 ## 9. Files touched
 
-- `packages/plugin/src/ui/proxy.ts` — `authHeaders(auth, licenseActive)`,
+- `packages/plugin/src/ui/proxy.ts` — new `STOREFRONT_URL` constant
+  (`https://speclayertest.lemonsqueezy.com` for the current test store; swap for
+  the production store URL at launch); `authHeaders(auth, licenseActive)`,
   `resolveLicenseView`, `activationErrorCopy`, `generationErrorCopy`.
 - `packages/plugin/src/ui/ui.ts` — derive and render `licenseView` on refresh;
   differentiated activation-error copy; track `licenseActive`.
