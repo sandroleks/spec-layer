@@ -1,13 +1,13 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver } from './serialize';
-import type { MainToUi, UiToMain } from './messages';
+import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { buildDocFrames } from './docFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
-  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc,
+  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
   textContentHash, type DocLinkData,
 } from './docLink';
 
@@ -407,6 +407,76 @@ figma.ui.onmessage = async (raw: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       }
+      break;
+    }
+
+    case 'requestLibrary': {
+      const reg = readRegistry();
+      const entries: LibraryEntry[] = [];
+      const alive = new Set<string>();
+      for (const docId of reg.docIds) {
+        let node: BaseNode | null = null;
+        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
+        if (!node || node.type !== 'SECTION') continue; // pruned below
+        const section = node as SectionNode;
+        const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+        if (!data) continue; // detached/foreign section still in the index → prune
+        alive.add(docId);
+
+        let sourceExists = false;
+        try { sourceExists = (await figma.getNodeByIdAsync(data.sourceNodeId)) != null; } catch { sourceExists = false; }
+        const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
+        const page = pageOf(section);
+
+        entries.push({
+          docId,
+          componentName: section.name.replace(/: Documentation$/, ''),
+          pageName: page?.name ?? '',
+          sourceNodeId: data.sourceNodeId,
+          sourceExists,
+          selfEdited,
+          storedContentHash: data.contentHash,
+        });
+      }
+      // Self-heal: keep only ids that resolved to a real, still-linked doc.
+      const pruned = pruneRegistry(reg, alive);
+      if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
+      figma.ui.postMessage({ type: 'library', entries } as MainToUi);
+      break;
+    }
+
+    case 'focusNode': {
+      try {
+        const node = await figma.getNodeByIdAsync(msg.nodeId);
+        if (!node) { figma.notify('That item no longer exists'); break; }
+        const page = pageOf(node);
+        if (page && page.id !== figma.currentPage.id) await figma.setCurrentPageAsync(page);
+        if ('x' in node) {
+          const sn = node as SceneNode;
+          figma.currentPage.selection = [sn];
+          figma.viewport.scrollAndZoomIntoView([sn]);
+        }
+      } catch { figma.notify("Couldn't open that item"); }
+      break;
+    }
+
+    case 'detachDoc': {
+      try {
+        const node = await figma.getNodeByIdAsync(msg.docId);
+        if (node && node.type === 'SECTION') (node as SectionNode).setPluginData(DOC_LINK_KEY, '');
+      } catch { /* gone already */ }
+      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      figma.ui.postMessage({ type: 'docDetached', docId: msg.docId } as MainToUi);
+      break;
+    }
+
+    case 'removeDoc': {
+      try {
+        const node = await figma.getNodeByIdAsync(msg.docId);
+        if (node) node.remove();
+      } catch { /* gone already */ }
+      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId } as MainToUi);
       break;
     }
   }

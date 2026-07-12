@@ -4,6 +4,16 @@ import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig } from './docLink';
 
+export interface LibraryEntry {
+  docId: string;
+  componentName: string;
+  pageName: string;
+  sourceNodeId: string;
+  sourceExists: boolean;
+  selfEdited: boolean;
+  storedContentHash: string;
+}
+
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource }
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
@@ -17,7 +27,10 @@ export type MainToUi =
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
   | { type: 'docFrameDone'; frameName: string }
-  | { type: 'docFrameError'; message: string };
+  | { type: 'docFrameError'; message: string }
+  | { type: 'library'; entries: LibraryEntry[] }
+  | { type: 'docDetached'; docId: string }
+  | { type: 'docRemoved'; docId: string };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -30,4 +43,8 @@ export type UiToMain =
   | { type: 'captureLogo' }
   | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; config: DocConfig };
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; config: DocConfig }
+  | { type: 'requestLibrary' }
+  | { type: 'focusNode'; nodeId: string }
+  | { type: 'detachDoc'; docId: string }
+  | { type: 'removeDoc'; docId: string };
