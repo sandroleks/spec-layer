@@ -24,7 +24,7 @@ import {
   setAiEnabled,
   setBrandTheme,
 } from './actions';
-import { activateLicense, fetchQuota, MANAGE_SUB_URL } from './proxy';
+import { activateLicense, fetchQuota, CHECKOUT_URL, MANAGE_SUB_URL } from './proxy';
 import { resolveComponentImage } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
@@ -33,6 +33,7 @@ import {
   renderVariantPicker,
   renderStatesHint,
   renderBrandTheme,
+  renderQuota,
   updateVariantCount,
   switchTab,
   clearBanners,
@@ -46,6 +47,17 @@ import {
 
 const refs = mount();
 const state = createState();
+
+// ---------------------------------------------------------------------------
+// Quota — fetched whenever identity changes (license key or Figma user id
+// arriving via the 'licenseKey'/'userInfo' messages) and re-rendered after
+// each generation attempt so the meter/upsell always reflect the latest quota.
+// ---------------------------------------------------------------------------
+
+async function refreshQuota(): Promise<void> {
+  state.quota = await fetchQuota({ licenseKey: state.licenseKey, figmaUserId: state.figmaUserId });
+  renderQuota(refs, state);
+}
 
 // ---------------------------------------------------------------------------
 // Theme switcher — light ↔ dark. Initial mode is detected from Figma's host
@@ -88,7 +100,34 @@ refs.extractBtn.addEventListener('click', () => {
   runExtract(refs, state).catch(() => { /* handled inside */ });
 });
 refs.createFrameBtn.addEventListener('click', () => {
-  runCreateDocFrame(refs, state).catch(() => { /* handled inside */ });
+  runCreateDocFrame(refs, state)
+    .catch(() => { /* handled inside */ })
+    .finally(() => renderQuota(refs, state));
+});
+
+/** Re-run the create-frame flow with AI off, without touching the persisted
+ *  "Write with AI" preference — used by the upsell's "Continue without AI".
+ *  aiEnabled is flipped off only for the duration of this call (never sent to
+ *  main via setAiEnabled) so canGenerate/willGenerateProse skip generation and
+ *  ensureProse is a no-op, falling straight through to placeholder sections. */
+async function runCreateWithoutAi(): Promise<void> {
+  const wasEnabled = state.aiEnabled;
+  state.aiEnabled = false;
+  try {
+    await runCreateDocFrame(refs, state);
+  } finally {
+    state.aiEnabled = wasEnabled;
+    renderQuota(refs, state);
+  }
+}
+
+refs.upsellUpgradeBtn.addEventListener('click', () => {
+  send({ type: 'openBrowser', url: CHECKOUT_URL });
+});
+refs.upsellContinueBtn.addEventListener('click', () => {
+  state.quotaExhausted = false;
+  renderQuota(refs, state);
+  void runCreateWithoutAi();
 });
 
 // ---------------------------------------------------------------------------
@@ -117,7 +156,7 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
   } catch {
     refs.licenseStatus.textContent = "Couldn't reach the license server — try again in a minute.";
   }
-  // renderQuota(refs, state); // wired in the quota-meter change
+  renderQuota(refs, state);
 });
 refs.licenseKeyInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') refs.licenseActivateBtn.click();
@@ -136,6 +175,7 @@ function reflectAiToggle(): void {
   const noIdentity = !state.licenseKey && !state.figmaUserId;
   refs.aiNokey.style.display = state.aiEnabled && noIdentity ? '' : 'none';
   refs.sectionList.classList.toggle('ai-dim', !state.aiEnabled);
+  renderQuota(refs, state);
 }
 
 refs.aiToggle.addEventListener('change', () => {
@@ -414,12 +454,14 @@ window.onmessage = (event: MessageEvent) => {
       refs.licenseKeyInput.value = msg.value ?? '';
       if (msg.value) refs.licenseStatus.textContent = 'Pro key saved';
       reflectAiToggle();
+      void refreshQuota();
       break;
     }
 
     case 'userInfo': {
       state.figmaUserId = msg.userId;
       reflectAiToggle();
+      void refreshQuota();
       break;
     }
 

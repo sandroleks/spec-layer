@@ -12,6 +12,7 @@ import { isAtomComponentName } from '../collectComponents';
 import { resolveTheme } from '../brandColors';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
+import { quotaMeterText, upsellText } from './proxy';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -26,6 +27,18 @@ export function showBanner(refs: Refs, type: 'info' | 'error' | null, text: stri
 
 export function clearBanners(refs: Refs): void {
   showBanner(refs, null, '');
+}
+
+// ---------------------------------------------------------------------------
+// Quota meter + upsell fork
+// ---------------------------------------------------------------------------
+
+/** Quota meter + upsell visibility. AI off → both hidden (spec §5 state 1). */
+export function renderQuota(refs: Refs, state: UiState): void {
+  refs.quotaMeter.textContent = state.aiEnabled ? quotaMeterText(state.quota) : '';
+  const showUpsell = state.aiEnabled && state.quotaExhausted;
+  refs.upsell.hidden = !showUpsell;
+  if (showUpsell) refs.upsellText.textContent = upsellText(state.quota?.resetsAt);
 }
 
 // ---------------------------------------------------------------------------

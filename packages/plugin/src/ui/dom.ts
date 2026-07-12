@@ -613,6 +613,7 @@ const TEMPLATE = `
     }
     .footer .actions { margin-top: 0; }
     .footer .banner { margin-bottom: 8px; }
+    #upsell { padding: 8px 0; }
 
     /* ---- Reading chip (auto-extract loading indicator) ---- */
     .chip {
@@ -676,6 +677,7 @@ const TEMPLATE = `
                 </svg>
               </button>
             </div>
+            <span id="quota-meter" class="hint"></span>
             <div class="ai-info" id="ai-info" hidden>
               <p>Drafts the <strong>Overview</strong>, <strong>Variants</strong> summary, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text (the Variants matrix still renders).</p>
               <p>Free on the monthly plan; upgrade to <strong>Pro</strong> in Settings for unlimited generations.</p>
@@ -839,6 +841,13 @@ const TEMPLATE = `
     </div>
     <div id="banner-info" class="banner info"></div>
     <div id="banner-error" class="banner error"></div>
+    <div id="upsell" hidden>
+      <p id="upsell-text" class="hint"></p>
+      <div class="actions">
+        <button class="btn btn-primary" id="upsell-upgrade-btn" type="button">Upgrade – $8/mo</button>
+        <button class="btn btn-secondary" id="upsell-continue-btn" type="button">Continue without AI</button>
+      </div>
+    </div>
     <div class="actions">
       <button class="btn btn-secondary" id="download-btn" type="button">Download</button>
       <button class="btn btn-primary" id="create-frame-btn">Create frame</button>
@@ -871,6 +880,7 @@ export interface Refs {
   aiInfoBtn: HTMLButtonElement;
   aiInfo: HTMLDivElement;
   aiNokey: HTMLDivElement;
+  quotaMeter: HTMLElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
@@ -896,6 +906,11 @@ export interface Refs {
   bannerError: HTMLDivElement;
   loader: HTMLDivElement;
   loaderText: HTMLSpanElement;
+  // Quota-exhausted upsell fork
+  upsell: HTMLElement;
+  upsellText: HTMLElement;
+  upsellUpgradeBtn: HTMLButtonElement;
+  upsellContinueBtn: HTMLButtonElement;
   // Download action
   downloadBtn: HTMLButtonElement;
   // AI settings (Settings tab)
@@ -1074,6 +1089,7 @@ export function mount(): Refs {
     aiInfoBtn: byId<HTMLButtonElement>('ai-info-btn'),
     aiInfo: byId<HTMLDivElement>('ai-info'),
     aiNokey: byId<HTMLDivElement>('ai-nokey'),
+    quotaMeter: byId<HTMLElement>('quota-meter'),
     sectionList,
     sectionChecks,
     groupChecks,
@@ -1095,6 +1111,10 @@ export function mount(): Refs {
     bannerError: byId<HTMLDivElement>('banner-error'),
     loader: byId<HTMLDivElement>('loader'),
     loaderText: byId<HTMLSpanElement>('loader-text'),
+    upsell: byId<HTMLElement>('upsell'),
+    upsellText: byId<HTMLElement>('upsell-text'),
+    upsellUpgradeBtn: byId<HTMLButtonElement>('upsell-upgrade-btn'),
+    upsellContinueBtn: byId<HTMLButtonElement>('upsell-continue-btn'),
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
     licenseKeyInput: byId<HTMLInputElement>('license-key-input'),
     licenseActivateBtn: byId<HTMLButtonElement>('license-activate-btn'),
