@@ -1,5 +1,5 @@
 import type { IntermediateSpec } from './extract';
-import { contentHash } from './hash';
+import { specContentHash } from './hash';
 import type { TokenRule } from './tokens';
 import { serializeFrontmatter, type SpecFrontmatter } from '@spec-layer/format';
 import type { ProseDrafts } from './prose/prompt';
@@ -124,26 +124,17 @@ export function renderSpec(
   spec: IntermediateSpec,
   opts: { prose: ProseDrafts | null; extractedAt: string; status?: SpecFrontmatter['status'] },
 ): string {
-  // rawValues is presentation-layer data (unbound-value hygiene); excluding it
-  // keeps content_hash stable across the 2.0 schema addition so committed specs
-  // don't all read as drifted. Similarly, anatomy's depth/component fields
-  // (Task 7's bounded deep walk) are canvas-only additions — the hash is
-  // computed over the legacy depth-0-only, {id,name,type,nested} shape so
-  // adding deeper anatomy parts or recording nested component names doesn't
-  // flip content_hash for every existing committed spec.
-  const { rawValues: _rawValues, ...rest } = spec;
-  const hashable = {
-    ...rest,
-    anatomy: spec.anatomy
-      .filter((p) => p.depth === 0)
-      .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
-  };
+  // content_hash is computed by specContentHash (see hash.ts) so the drift
+  // baseline and this frontmatter can never diverge: it excludes rawValues
+  // (presentation-only) and reduces anatomy to the legacy depth-0-only,
+  // {id,name,type,nested} shape so canvas-only additions (rawValues, deeper
+  // anatomy) never flip content_hash for existing committed specs.
   const fm: SpecFrontmatter = {
     spec_version: '0.1',
     // Status is optional: omitted unless the caller explicitly supplies one.
     ...(opts.status ? { status: opts.status } : {}),
     component: { name: spec.name, figma_key: spec.figmaKey, figma_file: spec.figmaFile, figma_node: spec.figmaNode },
-    content_hash: contentHash(hashable),
+    content_hash: specContentHash(spec),
     extracted_at: opts.extractedAt,
   };
   const p = opts.prose;

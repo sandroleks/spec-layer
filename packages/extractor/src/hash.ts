@@ -1,4 +1,5 @@
 import { sha256 } from 'js-sha256';
+import type { IntermediateSpec } from './extract';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
@@ -16,3 +17,21 @@ function canonical(value: unknown): string {
 }
 
 export const contentHash = (value: unknown): string => sha256(canonical(value));
+
+/**
+ * The drift baseline hash. Computed over a projection that excludes rawValues
+ * (presentation-only) and reduces anatomy to the legacy depth-0 {id,name,type,
+ * nested} shape, so canvas-only 2.0 additions never flip the hash for existing
+ * committed specs. This is the single source of truth for content_hash; both
+ * the Markdown frontmatter and on-canvas drift detection call it.
+ */
+export function specContentHash(spec: IntermediateSpec): string {
+  const { rawValues: _rawValues, ...rest } = spec;
+  const hashable = {
+    ...rest,
+    anatomy: spec.anatomy
+      .filter((p) => p.depth === 0)
+      .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
+  };
+  return contentHash(hashable);
+}
