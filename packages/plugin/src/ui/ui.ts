@@ -20,10 +20,11 @@ import {
   runDownload,
   runCreateDocFrame,
   runAutoExtract,
-  setAnthropicKey,
+  setLicenseKey,
   setAiEnabled,
   setBrandTheme,
 } from './actions';
+import { activateLicense, fetchQuota, MANAGE_SUB_URL } from './proxy';
 import { resolveComponentImage } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
@@ -97,63 +98,52 @@ refs.createFrameBtn.addEventListener('click', () => {
 refs.downloadBtn.addEventListener('click', () => {
   runDownload(refs, state);
 });
-refs.anthropicKeyInput.addEventListener('change', () => {
-  setAnthropicKey(state, refs.anthropicKeyInput.value);
-  // A key may now exist (or have been cleared) — re-evaluate the AI toggle.
-  reflectAiToggle();
+refs.licenseActivateBtn.addEventListener('click', async () => {
+  const key = refs.licenseKeyInput.value.trim();
+  if (!key) return;
+  refs.licenseStatus.textContent = 'Checking…';
+  try {
+    const out = await activateLicense(key);
+    if (out.valid && out.status === 'active') {
+      setLicenseKey(state, key);
+      refs.licenseStatus.textContent = 'Pro active ✓';
+      state.quota = await fetchQuota({ licenseKey: key, figmaUserId: state.figmaUserId });
+    } else {
+      refs.licenseStatus.textContent = `Key not active (${out.status}). Check your purchase email or contact support.`;
+    }
+  } catch {
+    refs.licenseStatus.textContent = "Couldn't reach the license server — try again in a minute.";
+  }
+  // renderQuota(refs, state); // wired in the quota-meter change
+});
+refs.licenseKeyInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') refs.licenseActivateBtn.click();
 });
 
 // ---------------------------------------------------------------------------
 // Write-with-AI toggle + section select-all
 // ---------------------------------------------------------------------------
 
-/** Sync the AI switch, the "no key" note, and the dimmed-badge state to the
- *  current key + preference. The switch can only read "on" when a key exists. */
+/** Sync the AI switch and the dimmed-badge state to the current preference.
+ *  Free tier needs no key, so the switch is never gated on one. */
 function reflectAiToggle(): void {
-  const hasKey = Boolean(state.anthropicKey);
-  const on = state.aiEnabled && hasKey;
-  refs.aiToggle.checked = on;
-  // No key yet: the toggle can't do anything, so disable it and turn the whole
-  // card into a shortcut to Settings (see the card click handler below) rather
-  // than letting a click bounce off a dead switch. Also surface the prompt +
-  // dim the AI section badges.
-  refs.aiToggle.disabled = !hasKey;
-  refs.aiCard.classList.toggle('needs-key', !hasKey);
-  refs.aiNokey.style.display = hasKey ? 'none' : 'block';
-  refs.sectionList.classList.toggle('ai-dim', !on);
+  refs.aiToggle.checked = state.aiEnabled;
+  // Free tier needs no key: the old "no key" blocker is gone. The hint
+  // element stays for the edge case of a missing Figma user id.
+  const noIdentity = !state.licenseKey && !state.figmaUserId;
+  refs.aiNokey.style.display = state.aiEnabled && noIdentity ? '' : 'none';
+  refs.sectionList.classList.toggle('ai-dim', !state.aiEnabled);
 }
-
-/** Open Settings and focus the API-key field — shared by both "Settings" links. */
-function goToKeySettings(): void {
-  switchTab(refs, 'settings');
-  refs.anthropicKeyInput.focus();
-}
-
-// While no key is set, a click anywhere on the card (except the info button, the
-// info panel, or an explicit link, which handle themselves) routes to Settings.
-refs.aiCard.addEventListener('click', (e) => {
-  if (!refs.aiCard.classList.contains('needs-key')) return;
-  const target = e.target as HTMLElement;
-  if (target.closest('.info-btn, #ai-info, a')) return;
-  goToKeySettings();
-});
 
 refs.aiToggle.addEventListener('change', () => {
-  // Turning on without a key is not allowed — revert and surface the note.
-  if (refs.aiToggle.checked && !state.anthropicKey) {
-    setAiEnabled(state, false);
-    reflectAiToggle();
-    return;
-  }
   setAiEnabled(state, refs.aiToggle.checked);
   reflectAiToggle();
 });
 
-refs.aiNokeyLink.addEventListener('click', goToKeySettings);
-
-// Open the Anthropic console so users can create a key (figma.openExternal).
-refs.getKeyLink.addEventListener('click', () => {
-  send({ type: 'openBrowser', url: 'https://console.anthropic.com/settings/keys' });
+// Manage-subscription link opens the billing portal via figma.openExternal.
+document.getElementById('manage-sub-link')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  send({ type: 'openBrowser', url: MANAGE_SUB_URL });
 });
 
 // Info disclosure: toggle the details panel + the button's expanded state.
@@ -416,9 +406,16 @@ window.onmessage = (event: MessageEvent) => {
       break;
     }
 
-    case 'anthropicKey': {
-      state.anthropicKey = msg.value;
-      refs.anthropicKeyInput.value = msg.value ?? '';
+    case 'licenseKey': {
+      state.licenseKey = msg.value;
+      refs.licenseKeyInput.value = msg.value ?? '';
+      if (msg.value) refs.licenseStatus.textContent = 'Pro key saved';
+      reflectAiToggle();
+      break;
+    }
+
+    case 'userInfo': {
+      state.figmaUserId = msg.userId;
       reflectAiToggle();
       break;
     }

@@ -9,7 +9,7 @@
  *
  * The "Selected component" tab is the single-component flow (auto-extract →
  * Write-with-AI → Create frame / Download). The "Settings" tab holds the
- * Anthropic API key used by Write-with-AI.
+ * Spec Layer Pro license activation used to lift the free-tier AI quota.
  *
  * Figma's own chrome shows the plugin icon + name, so the UI starts straight at
  * the tab bar (no duplicate title). A light/dark theme button lives at the right
@@ -24,10 +24,10 @@
 
 import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
 
-/** Sections that start unchecked: Related (rarely wanted) and the three verbose,
- *  token-costly a11y additions, which are opt-in. */
+/** Sections that start unchecked: Related (rarely wanted) and the verbose,
+ *  token-costly guidelines additions, which are opt-in. */
 const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
-  'related', 'interactions', 'designConsiderations', 'contentConsiderations',
+  'related', 'interactions', 'contentConsiderations',
 ]);
 import { THEME_PRESETS } from '../brandColors';
 
@@ -222,6 +222,10 @@ const TEMPLATE = `
        (empty = default, surfaced via placeholder). */
     .color-row { display: flex; align-items: center; gap: 8px; }
     .color-row input[type="text"] { flex: 1; }
+
+    /* ---- License activation row (Settings tab) ---- */
+    .license-row { display: flex; gap: 8px; }
+    .license-row input { flex: 1; }
     .color-swatch {
       flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
       border: 1px solid var(--figma-color-border); background: #0d2436;
@@ -428,13 +432,6 @@ const TEMPLATE = `
     }
     .switch input:checked + .track { background: var(--figma-color-bg-brand); }
     .switch input:checked + .track::after { transform: translateX(16px); }
-    /* No-key state: the toggle can't be turned on yet, so it's shown disabled and
-       the whole card becomes a shortcut to Settings (wired in ui.ts). The disabled
-       input gets pointer-events:none so clicks fall through to the card handler. */
-    .ai-card.needs-key { cursor: pointer; }
-    .ai-card.needs-key:hover { border-color: var(--figma-color-text-secondary); }
-    .ai-card.needs-key .switch { opacity: 0.45; }
-    .switch input:disabled { pointer-events: none; }
 
     /* ---- Section header + checklist ---- */
     .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
@@ -681,10 +678,10 @@ const TEMPLATE = `
             </div>
             <div class="ai-info" id="ai-info" hidden>
               <p>Drafts the <strong>Overview</strong>, <strong>Variants</strong> summary, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text (the Variants matrix still renders).</p>
-              <p>Uses your own <strong>Anthropic API key</strong>, stored locally and billed to your account.</p>
+              <p>Free on the monthly plan; upgrade to <strong>Pro</strong> in Settings for unlimited generations.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
-              Add your Anthropic API key to turn this on. <a id="ai-nokey-link">Open Settings</a>.
+              AI works on the free plan — no key needed.
             </div>
           </div>
           <label class="switch">
@@ -757,13 +754,17 @@ const TEMPLATE = `
              aria-labelledby="tab-settings">
       <div class="stack">
         <div>
-          <h2>Write with AI</h2>
+          <h2>Spec Layer Pro</h2>
           <p class="hint" style="margin-top:4px">
-            Add an Anthropic API key to let Claude draft the AI guideline sections. The key is stored locally in this plugin and used only to call Anthropic directly, so usage is billed to your own account.
+            The free plan includes monthly AI generations — no setup needed.
+            Pro removes the limit. Paste the license key from your purchase email.
           </p>
-          <label class="field-label" for="anthropic-key-input" style="margin-top:8px">Anthropic API key</label>
-          <input type="password" id="anthropic-key-input" placeholder="sk-ant-…" />
-          <p class="hint" style="margin-top:6px"><a id="get-key-link">Get an API key from Anthropic ↗</a></p>
+          <div class="license-row">
+            <input type="password" id="license-key-input" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" />
+            <button class="btn btn-primary" id="license-activate-btn" type="button">Activate</button>
+          </div>
+          <p class="hint" id="license-status" style="margin-top:6px" aria-live="polite"></p>
+          <p class="hint" style="margin-top:6px"><a id="manage-sub-link" href="#" target="_blank">Manage subscription</a></p>
         </div>
 
         <hr />
@@ -870,7 +871,6 @@ export interface Refs {
   aiInfoBtn: HTMLButtonElement;
   aiInfo: HTMLDivElement;
   aiNokey: HTMLDivElement;
-  aiNokeyLink: HTMLElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
@@ -899,8 +899,9 @@ export interface Refs {
   // Download action
   downloadBtn: HTMLButtonElement;
   // AI settings (Settings tab)
-  anthropicKeyInput: HTMLInputElement;
-  getKeyLink: HTMLElement;
+  licenseKeyInput: HTMLInputElement;
+  licenseActivateBtn: HTMLButtonElement;
+  licenseStatus: HTMLElement;
   // Frame brand theme (Settings tab)
   presetRow: HTMLDivElement;
   headerColorInput: HTMLInputElement;
@@ -1073,7 +1074,6 @@ export function mount(): Refs {
     aiInfoBtn: byId<HTMLButtonElement>('ai-info-btn'),
     aiInfo: byId<HTMLDivElement>('ai-info'),
     aiNokey: byId<HTMLDivElement>('ai-nokey'),
-    aiNokeyLink: byId<HTMLElement>('ai-nokey-link'),
     sectionList,
     sectionChecks,
     groupChecks,
@@ -1096,8 +1096,9 @@ export function mount(): Refs {
     loader: byId<HTMLDivElement>('loader'),
     loaderText: byId<HTMLSpanElement>('loader-text'),
     downloadBtn: byId<HTMLButtonElement>('download-btn'),
-    anthropicKeyInput: byId<HTMLInputElement>('anthropic-key-input'),
-    getKeyLink: byId<HTMLElement>('get-key-link'),
+    licenseKeyInput: byId<HTMLInputElement>('license-key-input'),
+    licenseActivateBtn: byId<HTMLButtonElement>('license-activate-btn'),
+    licenseStatus: byId<HTMLElement>('license-status'),
     presetRow,
     headerColorInput: byId<HTMLInputElement>('header-color-input'),
     headerColorSwatch: byId<HTMLSpanElement>('header-color-swatch'),
