@@ -166,6 +166,24 @@ const TEMPLATE = `
     .panel { display: none; }
     .panel.active { display: block; }
 
+    .lib-summary { color: var(--figma-color-text-secondary); font-size: 11px; margin: 4px 2px 10px; }
+    .lib-empty { color: var(--figma-color-text-secondary); font-size: 12px; padding: 24px 8px; text-align: center; }
+    .lib-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; cursor: pointer; }
+    .lib-row:hover { background: var(--figma-color-bg-hover); }
+    .lib-row-main { flex: 1 1 auto; min-width: 0; }
+    .lib-row-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lib-row-sub { font-size: 11px; color: var(--figma-color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lib-badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+    .lib-badge.insync { background: var(--figma-color-bg-success-tertiary, #e6f4ea); color: var(--figma-color-text-success, #1e7a3c); }
+    .lib-badge.update { background: var(--figma-color-bg-brand-tertiary, #e8f0fe); color: var(--figma-color-text-brand, #1a56db); }
+    .lib-badge.edited { background: var(--figma-color-bg-warning-tertiary, #fef7e0); color: var(--figma-color-text-warning, #9a6700); }
+    .lib-badge.orphaned { background: var(--figma-color-bg-danger-tertiary, #fce8e6); color: var(--figma-color-text-danger, #b3261e); }
+    .lib-badge.checking { background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary); }
+    .lib-menu-btn { flex: 0 0 auto; border: none; background: transparent; cursor: pointer; padding: 4px 6px; border-radius: 4px; color: var(--figma-color-text-secondary); }
+    .lib-menu-btn:hover { background: var(--figma-color-bg-secondary); }
+    .lib-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 8px 8px 8px; }
+    .lib-actions button { font-size: 11px; padding: 3px 8px; }
+
     /* ---- Typography / layout ---- */
     h2 { font-size: 13px; font-weight: 600; margin: 0; }
     .muted { color: var(--figma-color-text-secondary); }
@@ -641,6 +659,8 @@ const TEMPLATE = `
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-selected" role="tab" aria-selected="true"
             aria-controls="tab-panel-selected">Selected component</button>
+    <button class="tab" id="tab-library" role="tab" aria-selected="false"
+            aria-controls="tab-panel-library">My Library</button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false"
             aria-controls="tab-panel-settings">Settings</button>
     <button class="theme-btn" id="theme-btn" type="button" title="Theme"
@@ -753,6 +773,16 @@ const TEMPLATE = `
              bridge still referenced by render.ts/ui.ts. -->
         <button class="btn" id="extract-btn" style="display:none">Extract spec</button>
       </div>
+    </section>
+
+    <!-- ============ My Library panel ============ -->
+    <section class="panel" id="tab-panel-library" role="tabpanel"
+             aria-labelledby="tab-library">
+      <p class="lib-summary" id="lib-summary"></p>
+      <div class="lib-empty" id="lib-empty" style="display:none">
+        No connected docs yet. Generate one from the Selected component tab.
+      </div>
+      <div class="lib-list" id="lib-list"></div>
     </section>
 
     <!-- ============ Settings panel ============ -->
@@ -871,8 +901,13 @@ export interface Refs {
   // Tabs
   tabSelected: HTMLButtonElement;
   tabSettings: HTMLButtonElement;
+  tabLibrary: HTMLButtonElement;
   panelSelected: HTMLElement;
   panelSettings: HTMLElement;
+  panelLibrary: HTMLElement;
+  libraryList: HTMLElement;
+  libraryEmpty: HTMLElement;
+  librarySummary: HTMLElement;
   // Selection / main
   noSelection: HTMLDivElement;
   mainArea: HTMLDivElement;
@@ -1083,8 +1118,13 @@ export function mount(): Refs {
     themeBtn: byId<HTMLButtonElement>('theme-btn'),
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
     tabSettings: byId<HTMLButtonElement>('tab-settings'),
+    tabLibrary: byId<HTMLButtonElement>('tab-library'),
     panelSelected: byId<HTMLElement>('tab-panel-selected'),
     panelSettings: byId<HTMLElement>('tab-panel-settings'),
+    panelLibrary: byId<HTMLElement>('tab-panel-library'),
+    libraryList: byId<HTMLElement>('lib-list'),
+    libraryEmpty: byId<HTMLElement>('lib-empty'),
+    librarySummary: byId<HTMLElement>('lib-summary'),
     noSelection: byId<HTMLDivElement>('no-selection'),
     mainArea: byId<HTMLDivElement>('main-area'),
     componentName: byId<HTMLHeadingElement>('component-name'),

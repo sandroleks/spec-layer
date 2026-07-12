@@ -292,11 +292,12 @@ export function renderBrandTheme(refs: Refs, state: UiState): void {
 // Tabs
 // ---------------------------------------------------------------------------
 
-export type TabId = 'selected' | 'settings';
+export type TabId = 'selected' | 'library' | 'settings';
 
 export function switchTab(refs: Refs, tab: TabId): void {
   const tabs: Array<[TabId, HTMLButtonElement, HTMLElement]> = [
     ['selected', refs.tabSelected, refs.panelSelected],
+    ['library', refs.tabLibrary, refs.panelLibrary],
     ['settings', refs.tabSettings, refs.panelSettings],
   ];
   for (const [id, btn, panel] of tabs) {
