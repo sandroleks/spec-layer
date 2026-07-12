@@ -224,8 +224,12 @@ const TEMPLATE = `
     .color-row input[type="text"] { flex: 1; }
 
     /* ---- License activation row (Settings tab) ---- */
-    .license-row { display: flex; gap: 8px; }
+    .license-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
     .license-row input { flex: 1; }
+    /* Box-sizing is border-box globally, so a shared height keeps the input and
+       the filled Activate button the same size instead of the button sitting
+       proud of the field. */
+    .license-row input, .license-row .btn { height: 34px; }
     .color-swatch {
       flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
       border: 1px solid var(--figma-color-border); background: #0d2436;

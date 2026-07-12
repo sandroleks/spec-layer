@@ -162,6 +162,10 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
       // The main thread only persists the key (no licenseKey echo back), so
       // refresh the toggle affordance here or a stale "no identity" hint lingers.
       reflectAiToggle();
+    } else if (out.status === 'active') {
+      // Valid, active key that couldn't be activated here: almost always the
+      // per-key device limit is full, not a bad key.
+      refs.licenseStatus.textContent = "This key is active but couldn't be activated on this device. It may have reached its device limit. Free up a device in Manage subscription, or reach out to support.";
     } else {
       refs.licenseStatus.textContent = `That key isn't active (${out.status}). Check your purchase email, or reach out to support if it looks right.`;
     }
