@@ -1051,8 +1051,8 @@ export type DriftState = 'pending' | 'inSync' | 'drifted';
 const BADGE: Record<DocStatus, { cls: string; label: string }> = {
   inSync: { cls: 'insync', label: 'In sync' },
   updateAvailable: { cls: 'update', label: 'Update available' },
-  edited: { cls: 'edited', label: 'Edited' },
-  orphaned: { cls: 'orphaned', label: 'Source deleted' },
+  edited: { cls: 'edited', label: 'Manually edited' },
+  orphaned: { cls: 'orphaned', label: 'Source missing' },
 };
 
 /** The status to show. Orphaned needs no drift; otherwise a pending drift keeps
