@@ -108,6 +108,9 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
       setLicenseKey(state, key);
       refs.licenseStatus.textContent = 'Pro active ✓';
       state.quota = await fetchQuota({ licenseKey: key, figmaUserId: state.figmaUserId });
+      // The main thread only persists the key (no licenseKey echo back), so
+      // refresh the toggle affordance here or a stale "no identity" hint lingers.
+      reflectAiToggle();
     } else {
       refs.licenseStatus.textContent = `Key not active (${out.status}). Check your purchase email or contact support.`;
     }
