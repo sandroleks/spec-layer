@@ -45,6 +45,45 @@ export interface CacheStore {
   set(key: string, value: string): Promise<void>;
 }
 
+export interface ProxyQuota {
+  tier: 'free' | 'pro';
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  resetsAt: string;
+}
+
+export type ProseProxyErrorCode =
+  | 'quota_exhausted' | 'rate_limited' | 'generation_pending'
+  | 'license_not_active' | 'bad_request' | 'upstream';
+
+/** Typed proxy failure — the plugin branches on `code` (402 → upsell, etc.). */
+export class ProseProxyError extends Error {
+  constructor(public code: ProseProxyErrorCode, public resetsAt?: string) {
+    super(code);
+    this.name = 'ProseProxyError';
+  }
+}
+
+const PROXY_ERROR_BY_STATUS: Record<number, ProseProxyErrorCode> = {
+  400: 'bad_request', 401: 'license_not_active', 402: 'quota_exhausted',
+  409: 'generation_pending', 429: 'rate_limited',
+};
+
+function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
+  const tier = headers.get('X-Tier');
+  if (tier !== 'free' && tier !== 'pro') return null;
+  const num = (v: string | null): number | null =>
+    v === null || v === 'unlimited' ? null : Number(v);
+  return {
+    tier,
+    used: Number(headers.get('X-Quota-Used') ?? 0),
+    limit: num(headers.get('X-Quota-Limit')),
+    remaining: num(headers.get('X-Quota-Remaining')),
+    resetsAt: headers.get('X-Quota-Resets-At') ?? '',
+  };
+}
+
 export interface DraftOptions {
   apiKey: string | null;
   fetcher: typeof fetch;
@@ -66,10 +105,22 @@ export interface DraftOptions {
    * the cache key so different selections never collide.
    */
   requested?: Set<ProseKey>;
+  /**
+   * When set, the request goes through the Spec Layer proxy instead of the
+   * Anthropic API directly; `apiKey` is ignored. licenseKey (pro) wins over
+   * figmaUserId (free). onQuota fires with the server's quota headers on
+   * every successful response.
+   */
+  proxy?: {
+    url: string;
+    licenseKey?: string | null;
+    figmaUserId?: string | null;
+    onQuota?: (q: ProxyQuota) => void;
+  };
 }
 
 export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseDrafts | null> {
-  if (!opts.apiKey) return null;
+  if (!opts.apiKey && !opts.proxy) return null;
 
   // Vision and text-only runs produce different output, so they must not share a
   // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
@@ -91,24 +142,46 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
       : null;
   const content = imageBlock ? [imageBlock, { type: 'text', text: prompt }] : prompt;
 
-  const res = await opts.fetcher('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': opts.apiKey,
-      'anthropic-version': '2023-06-01',
-      // Required: the request originates from the Figma plugin UI iframe (browser context).
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5',
-      max_tokens: 3000,
-      system: PROSE_SYSTEM_PROMPT,
-      messages: [...proseFewShot(), { role: 'user', content }],
-    }),
-  });
+  const requestBody = {
+    model: 'claude-haiku-4-5',
+    max_tokens: 3000,
+    system: PROSE_SYSTEM_PROMPT,
+    messages: [...proseFewShot(), { role: 'user', content }],
+  };
 
-  if (!res.ok) throw new Error(`Claude API error ${res.status}`);
+  let res: Response;
+  if (opts.proxy) {
+    const auth: Record<string, string> = opts.proxy.licenseKey
+      ? { Authorization: `Bearer ${opts.proxy.licenseKey}` }
+      : { 'X-Figma-User': opts.proxy.figmaUserId ?? '' };
+    res = await opts.fetcher(`${opts.proxy.url}/v1/prose`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...auth },
+      body: JSON.stringify({ cacheKey: key, request: requestBody }),
+    });
+    if (!res.ok) {
+      const code = PROXY_ERROR_BY_STATUS[res.status] ?? 'upstream';
+      let resetsAt: string | undefined;
+      try { resetsAt = ((await res.json()) as { resetsAt?: string }).resetsAt; } catch { /* body optional */ }
+      throw new ProseProxyError(code, resetsAt);
+    }
+    const quota = parseQuotaHeaders(res.headers);
+    if (quota && opts.proxy.onQuota) opts.proxy.onQuota(quota);
+  } else {
+    res = await opts.fetcher('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': opts.apiKey as string,
+        'anthropic-version': '2023-06-01',
+        // Required: the request originates from the Figma plugin UI iframe (browser context).
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    if (!res.ok) throw new Error(`Claude API error ${res.status}`);
+  }
+
   const data = await res.json();
   const raw = data?.content?.[0]?.text;
   if (typeof raw !== 'string') {
