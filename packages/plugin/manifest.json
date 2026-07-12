@@ -8,11 +8,11 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "https://api.anthropic.com"
+      "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ],
-    "reasoning": "The plugin calls https://api.anthropic.com directly to generate guideline prose (Definition, Accessibility, Do's & Don'ts) from the selected component, using the user's own Anthropic API key entered in Settings and stored in clientStorage. No other network access is required.",
+    "reasoning": "AI guideline text is generated through the Spec Layer proxy service, which enforces free-tier quotas and Pro licenses. No user API keys are required or stored; requests carry only the component's structured summary.",
     "devAllowedDomains": [
-      "https://api.anthropic.com"
+      "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ]
   }
 }
