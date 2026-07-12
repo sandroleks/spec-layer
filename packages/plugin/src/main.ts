@@ -118,7 +118,15 @@ figma.clientStorage.getAsync('licenseKey').then((value: string | undefined) => {
   const msg: MainToUi = { type: 'licenseKey', value: value ?? null };
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
-figma.ui.postMessage({ type: 'userInfo', userId: figma.currentUser?.id ?? null } satisfies MainToUi);
+// `figma.currentUser` is a getter that THROWS if the "currentuser" manifest
+// permission is absent — optional chaining does not catch that, so guard it.
+let figmaUserId: string | null = null;
+try {
+  figmaUserId = figma.currentUser?.id ?? null;
+} catch {
+  figmaUserId = null; // no identity → the UI simply hides the quota meter
+}
+figma.ui.postMessage({ type: 'userInfo', userId: figmaUserId } satisfies MainToUi);
 
 // Send stored "Write with AI" preference on startup (default off)
 figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {

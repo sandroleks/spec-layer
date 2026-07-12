@@ -6,6 +6,7 @@
   "ui": "dist/ui.html",
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
+  "permissions": ["currentuser"],
   "networkAccess": {
     "allowedDomains": [
       "https://spec-layer-proxy.spec-layer-test.workers.dev"
