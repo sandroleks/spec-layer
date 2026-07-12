@@ -43,7 +43,7 @@ describe('activateLicense', () => {
     ));
     const out = await activateLicense('LK-1', fetcher as unknown as typeof fetch);
     expect(out).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
-    const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${PROXY_URL}/v1/license/activate`);
     expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceName: 'Figma plugin' });
   });
