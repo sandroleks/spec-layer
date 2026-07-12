@@ -113,11 +113,12 @@ async function postSelection(): Promise<void> {
 // ---------------------------------------------------------------------------
 figma.showUI(__html__, { width: 480, height: 640, themeColors: true });
 
-// Send stored Anthropic API key on startup
-figma.clientStorage.getAsync('anthropicKey').then((value: string | undefined) => {
-  const msg: MainToUi = { type: 'anthropicKey', value: value ?? null };
+// Send stored license key + the Figma user id on startup
+figma.clientStorage.getAsync('licenseKey').then((value: string | undefined) => {
+  const msg: MainToUi = { type: 'licenseKey', value: value ?? null };
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
+figma.ui.postMessage({ type: 'userInfo', userId: figma.currentUser?.id ?? null } satisfies MainToUi);
 
 // Send stored "Write with AI" preference on startup (default off)
 figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
@@ -164,8 +165,8 @@ figma.ui.onmessage = async (raw: unknown) => {
       await postSelection();
       break;
 
-    case 'setAnthropicKey':
-      await figma.clientStorage.setAsync('anthropicKey', msg.value);
+    case 'setLicenseKey':
+      await figma.clientStorage.setAsync('licenseKey', msg.value);
       break;
 
     case 'setAiEnabled':

@@ -5,7 +5,8 @@ import type { DocFrameModel } from './ui/docModel';
 
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource }
-  | { type: 'anthropicKey'; value: string | null }
+  | { type: 'licenseKey'; value: string | null }
+  | { type: 'userInfo'; userId: string | null }
   | { type: 'aiEnabled'; value: boolean }
   | { type: 'brandTheme'; value: BrandTheme }
   | { type: 'fontList'; families: string[] }
@@ -21,7 +22,7 @@ export type UiToMain =
   | { type: 'requestSelection' }
   | { type: 'notify'; message: string }
   | { type: 'openBrowser'; url: string }
-  | { type: 'setAnthropicKey'; value: string | null }
+  | { type: 'setLicenseKey'; value: string }
   | { type: 'setAiEnabled'; value: boolean }
   | { type: 'setBrandTheme'; value: BrandTheme }
   | { type: 'requestFonts' }

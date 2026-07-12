@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { buildSingleExportBundle, proseNeedsRegen, type UiState } from '../src/ui/actions';
+import { buildSingleExportBundle, proseNeedsRegen, canGenerate, createState, type UiState } from '../src/ui/actions';
 import type { IntermediateSpec, ProseKey } from '@spec-layer/extractor';
 
 describe('proseNeedsRegen', () => {
@@ -40,6 +40,29 @@ function specStub(name = 'Button'): IntermediateSpec {
     rawValues: [],
   };
 }
+
+describe('canGenerate', () => {
+  it('false when AI is off', () => {
+    const s = createState();
+    s.aiEnabled = false; s.figmaUserId = 'u1';
+    expect(canGenerate(s)).toBe(false);
+  });
+  it('true for a free user with only a figma id (no key of any kind)', () => {
+    const s = createState();
+    s.aiEnabled = true; s.figmaUserId = 'u1'; s.licenseKey = null;
+    expect(canGenerate(s)).toBe(true);
+  });
+  it('true with a license key and no figma id', () => {
+    const s = createState();
+    s.aiEnabled = true; s.licenseKey = 'LK'; s.figmaUserId = null;
+    expect(canGenerate(s)).toBe(true);
+  });
+  it('false with AI on but no identity at all', () => {
+    const s = createState();
+    s.aiEnabled = true; s.licenseKey = null; s.figmaUserId = null;
+    expect(canGenerate(s)).toBe(false);
+  });
+});
 
 describe('buildSingleExportBundle', () => {
   it('builds a single-component zip bundle containing markdown and sidecar', () => {

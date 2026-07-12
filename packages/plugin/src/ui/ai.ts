@@ -1,6 +1,7 @@
 import { draftProse } from '@spec-layer/extractor';
-import type { IntermediateSpec, ProseDrafts, ProseKey } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
 import { send } from './actions';
+import { PROXY_URL, type ProxyAuth } from './proxy';
 
 // One in-flight image request at a time; resolved by ui.ts on 'componentImage'.
 // The timer is cleared on resolve so a stale timeout can never null-resolve a
@@ -31,11 +32,18 @@ const cacheStore = {
 };
 
 export async function generateProse(
-  spec: IntermediateSpec, apiKey: string, nodeId: string, requested?: Set<ProseKey>,
+  spec: IntermediateSpec,
+  auth: ProxyAuth,
+  nodeId: string,
+  requested?: Set<ProseKey>,
+  onQuota?: (q: ProxyQuota) => void,
 ): Promise<ProseDrafts | null> {
   const img = await requestImage(nodeId);
   return draftProse(spec, {
-    apiKey, fetcher: window.fetch.bind(window), cacheStore,
+    apiKey: null,
+    fetcher: window.fetch.bind(window),
+    cacheStore,
+    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, figmaUserId: auth.figmaUserId, onQuota },
     imageBase64: img?.base64 ?? null,
     imageMediaType: img?.mediaType,
     requested,

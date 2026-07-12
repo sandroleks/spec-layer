@@ -6,8 +6,8 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, renderSpec } from '@spec-layer/extractor';
-import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey } from '@spec-layer/extractor';
+import { extract, renderSpec, ProseProxyError } from '@spec-layer/extractor';
+import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
@@ -37,10 +37,16 @@ export interface UiState {
   currentSpec: IntermediateSpec | null;
   currentExtractedAt: string;
   renderedMd: string;
-  // Standalone AI flow: BYO Anthropic key (mirrored to clientStorage via main),
-  // the global "Write with AI" preference, and the most recent generated prose
-  // drafts used to fill AI sections.
-  anthropicKey: string | null;
+  // Proxy-routed AI flow: a pro license key (mirrored to clientStorage via
+  // main) and/or the Figma user id (free-tier identity), the global "Write
+  // with AI" preference, and the most recent generated prose drafts used to
+  // fill AI sections.
+  licenseKey: string | null;
+  figmaUserId: string | null;
+  // Latest quota snapshot from the proxy (null until a request completes), and
+  // whether the free-tier monthly quota is currently exhausted.
+  quota: ProxyQuota | null;
+  quotaExhausted: boolean;
   aiEnabled: boolean;
   generatedProse: ProseDrafts | null;
   // The prose-key set the current draft was generated for. A checkbox change
@@ -69,7 +75,10 @@ export function createState(): UiState {
     currentSpec: null,
     currentExtractedAt: '',
     renderedMd: '',
-    anthropicKey: null,
+    licenseKey: null,
+    figmaUserId: null,
+    quota: null,
+    quotaExhausted: false,
     aiEnabled: false,
     generatedProse: null,
     generatedProseKeys: null,
@@ -188,8 +197,13 @@ export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boole
   return false;
 }
 
+/** AI runs when the toggle is on and any identity exists — free tier needs no key. */
+export function canGenerate(state: UiState): boolean {
+  return state.aiEnabled && Boolean(state.licenseKey || state.figmaUserId);
+}
+
 function willGenerateProse(refs: Refs, state: UiState): boolean {
-  if (!state.aiEnabled || !state.anthropicKey) return false;
+  if (!canGenerate(state)) return false;
   const requested = requestedProseKeys(refs);
   if (requested.size === 0) return false;
   return proseNeedsRegen(state, requested);
@@ -205,13 +219,23 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
   // (rate limit, network, unexpected response), fall back to placeholders and
   // let the frame build anyway — the note surfaces on the success banner.
   try {
-    // willGenerateProse guarantees a non-null key, spec, and node.
-    state.generatedProse = await generateProse(
-      state.currentSpec!,
-      state.anthropicKey!,
-      state.currentNode!.id,
-      requested,
-    );
+    // willGenerateProse guarantees a non-null identity, spec, and node.
+    try {
+      state.generatedProse = await generateProse(
+        state.currentSpec!,
+        { licenseKey: state.licenseKey, figmaUserId: state.figmaUserId },
+        state.currentNode!.id,
+        requested,
+        (q) => { state.quota = q; },
+      );
+    } catch (e) {
+      if (e instanceof ProseProxyError && e.code === 'quota_exhausted') {
+        state.quotaExhausted = true;
+        state.generatedProse = null;
+        return; // callers proceed without AI; the UI renders the upgrade fork
+      }
+      throw e;
+    }
     // Record the covered key set only when a draft actually came back, so a
     // null result (degraded mode) leaves the reuse guard forcing a retry.
     state.generatedProseKeys = state.generatedProse ? requested : null;
@@ -310,9 +334,9 @@ function generatingMessages(withAi: boolean): string[] {
 // live here for testability; ui.ts wires the input/toggle events to them.
 // ---------------------------------------------------------------------------
 
-export function setAnthropicKey(state: UiState, value: string): void {
-  state.anthropicKey = value || null;
-  send({ type: 'setAnthropicKey', value: state.anthropicKey });
+export function setLicenseKey(state: UiState, value: string): void {
+  state.licenseKey = value || null;
+  send({ type: 'setLicenseKey', value });
 }
 
 export function setAiEnabled(state: UiState, value: boolean): void {
