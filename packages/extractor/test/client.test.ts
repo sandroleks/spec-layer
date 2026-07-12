@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { draftProse, proseCacheKey, ProseProxyError } from '../src/prose/client';
+import { draftProse, proseCacheKey } from '../src/prose/client';
 import type { IntermediateSpec } from '../src/extract';
 
 const spec = {

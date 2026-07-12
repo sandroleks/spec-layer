@@ -57,7 +57,7 @@ describe('handleProse', () => {
     expect(res.headers.get('X-Tier')).toBe('free');
     expect(res.headers.get('X-Quota-Used')).toBe('1');
     expect(res.headers.get('X-Quota-Limit')).toBe('20'); // boost window
-    const call = (d as any)._anthropic.mock.calls[0];
+    const call = d._anthropic.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
     expect(call[1].headers['x-api-key']).toBe('sk-ant-test');
   });
@@ -67,7 +67,7 @@ describe('handleProse', () => {
     await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
     const res2 = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
     expect(res2.status).toBe(200);
-    expect((d as any)._anthropic).toHaveBeenCalledTimes(1);
+    expect(d._anthropic).toHaveBeenCalledTimes(1);
     expect(res2.headers.get('X-Quota-Used')).toBe('1');
   });
 
