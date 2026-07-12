@@ -479,5 +479,52 @@ figma.ui.onmessage = async (raw: unknown) => {
       figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId } as MainToUi);
       break;
     }
+
+    case 'requestDrift': {
+      try {
+        const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
+        if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
+          figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+          break;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const node = await serializeNode(src as any, resolver);
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey } as MainToUi);
+      } catch {
+        figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+      }
+      break;
+    }
+
+    case 'requestDocSource': {
+      try {
+        const docNode = await figma.getNodeByIdAsync(msg.docId);
+        if (!docNode || docNode.type !== 'SECTION') {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc no longer exists.' } as MainToUi);
+          break;
+        }
+        const section = docNode as SectionNode;
+        const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+        if (!data) {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
+          break;
+        }
+        const src = await figma.getNodeByIdAsync(data.sourceNodeId);
+        if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'The source component is gone, so this doc cannot be updated.' } as MainToUi);
+          break;
+        }
+        const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const node = await serializeNode(src as any, resolver);
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, config: data.config, selfEdited } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
+      }
+      break;
+    }
   }
 };

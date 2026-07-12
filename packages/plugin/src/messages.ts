@@ -30,7 +30,11 @@ export type MainToUi =
   | { type: 'docFrameError'; message: string }
   | { type: 'library'; entries: LibraryEntry[] }
   | { type: 'docDetached'; docId: string }
-  | { type: 'docRemoved'; docId: string };
+  | { type: 'docRemoved'; docId: string }
+  | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string }
+  | { type: 'driftError'; docId: string }
+  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean }
+  | { type: 'docSourceError'; docId: string; message: string };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -47,4 +51,6 @@ export type UiToMain =
   | { type: 'requestLibrary' }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }
-  | { type: 'removeDoc'; docId: string };
+  | { type: 'removeDoc'; docId: string }
+  | { type: 'requestDrift'; docId: string; sourceNodeId: string }
+  | { type: 'requestDocSource'; docId: string };
