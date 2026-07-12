@@ -334,6 +334,8 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'renderDocFrame': {
+      let section: SectionNode | null = null;
+      let committed = false; // true once the old doc has been replaced by the new one
       try {
         const sectionName = `${msg.model.componentName}: Documentation`;
         const existing = await findExistingDoc(msg.nodeId, sectionName);
@@ -359,7 +361,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           await figma.setCurrentPageAsync(targetPage);
         }
 
-        const section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo);
+        section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo);
 
         // Stamp the durable link BEFORE removing the old one, so a failure
         // mid-way never leaves an unstamped orphan replacing a good doc.
@@ -374,9 +376,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         };
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
 
+        // Point of no return: replace the old doc with the new one. After this,
+        // `section` IS the doc and must survive any later (cosmetic) failure.
         if (existing) existing.remove();
+        // buildDocFrames auto-appends the new section to the (now target) page;
+        // re-appending moves it to the end so it sits above siblings predictably.
         targetPage.appendChild(section);
         section.x = x; section.y = y;
+        committed = true;
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
@@ -384,10 +391,19 @@ figma.ui.onmessage = async (raw: unknown) => {
         reg = addDoc(reg, section.id);
         writeRegistry(reg);
 
-        figma.currentPage.selection = [section];
-        figma.viewport.scrollAndZoomIntoView([section]);
+        // Cosmetic tail: a focus/zoom hiccup must never fail a placed doc.
+        try {
+          figma.currentPage.selection = [section];
+          figma.viewport.scrollAndZoomIntoView([section]);
+        } catch { /* selection/zoom is non-essential */ }
+
         figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name } as MainToUi);
       } catch (err) {
+        // Clean up an orphan only if we failed BEFORE committing the replacement;
+        // after commit the section is the live doc and must not be removed.
+        if (section && !committed) {
+          try { section.remove(); } catch { /* already gone */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       }
