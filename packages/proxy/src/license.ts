@@ -54,6 +54,24 @@ export async function checkLicense(key: string, deps: LicenseDeps): Promise<Lice
   return toResult(status);
 }
 
+/**
+ * Confirm a license (optionally a specific already-activated instance) without
+ * consuming a device slot. Used for repeat Activate clicks so the plugin does
+ * not burn the key's activation limit re-registering the same device.
+ */
+export async function validateLicense(
+  key: string, instanceId: string | null, deps: LicenseDeps,
+): Promise<{ valid: boolean; status: string }> {
+  const res = await deps.fetcher(`${LS_BASE}/validate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(instanceId ? { license_key: key, instance_id: instanceId } : { license_key: key }),
+  });
+  const data = (await res.json()) as { valid?: boolean; license_key?: { status?: string } };
+  const status = data.license_key?.status ?? 'invalid';
+  return { valid: Boolean(data.valid) && status === 'active', status };
+}
+
 export async function activateLicense(
   key: string, instanceName: string, deps: LicenseDeps,
 ): Promise<{ valid: boolean; status: string; instanceId?: string }> {

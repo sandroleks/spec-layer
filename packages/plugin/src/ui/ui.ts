@@ -154,9 +154,9 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
   if (!key) return;
   refs.licenseStatus.textContent = 'Checking…';
   try {
-    const out = await activateLicense(key);
+    const out = await activateLicense(key, state.licenseInstanceId);
     if (out.valid && out.status === 'active') {
-      setLicenseKey(state, key);
+      setLicenseKey(state, key, out.instanceId ?? state.licenseInstanceId);
       refs.licenseStatus.textContent = 'Pro plan active ✓';
       state.quota = await fetchQuota({ licenseKey: key, figmaUserId: state.figmaUserId });
       // The main thread only persists the key (no licenseKey echo back), so
@@ -467,6 +467,7 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'licenseKey': {
       state.licenseKey = msg.value;
+      state.licenseInstanceId = msg.instanceId;
       refs.licenseKeyInput.value = msg.value ?? '';
       if (msg.value) refs.licenseStatus.textContent = 'Your Pro key is saved';
       reflectAiToggle();

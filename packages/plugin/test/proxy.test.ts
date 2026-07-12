@@ -37,15 +37,24 @@ describe('fetchQuota', () => {
 });
 
 describe('activateLicense', () => {
-  it('POSTs the key and returns the result', async () => {
+  it('activates with an instance name when no instance id is stored yet', async () => {
     const fetcher = vi.fn(async () => new Response(
       JSON.stringify({ valid: true, status: 'active', instanceId: 'i1' }), { status: 200 },
     ));
-    const out = await activateLicense('LK-1', fetcher as unknown as typeof fetch);
+    const out = await activateLicense('LK-1', null, fetcher as unknown as typeof fetch);
     expect(out).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${PROXY_URL}/v1/license/activate`);
     expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceName: 'Figma plugin' });
+  });
+
+  it('sends the stored instance id so the proxy revalidates instead of re-activating', async () => {
+    const fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ valid: true, status: 'active', instanceId: 'i1' }), { status: 200 },
+    ));
+    await activateLicense('LK-1', 'i1', fetcher as unknown as typeof fetch);
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceId: 'i1' });
   });
 });
 

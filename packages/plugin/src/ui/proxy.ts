@@ -29,12 +29,17 @@ export async function fetchQuota(
 }
 
 export async function activateLicense(
-  key: string, fetcher: typeof fetch = window.fetch.bind(window),
+  key: string,
+  instanceId: string | null,
+  fetcher: typeof fetch = window.fetch.bind(window),
 ): Promise<{ valid: boolean; status: string; instanceId?: string }> {
+  // With a known instance id the proxy re-validates instead of registering a
+  // new device, so repeat clicks never burn the key's activation limit.
+  const body = instanceId ? { key, instanceId } : { key, instanceName: 'Figma plugin' };
   const res = await fetcher(`${PROXY_URL}/v1/license/activate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ key, instanceName: 'Figma plugin' }),
+    body: JSON.stringify(body),
   });
   return (await res.json()) as { valid: boolean; status: string; instanceId?: string };
 }

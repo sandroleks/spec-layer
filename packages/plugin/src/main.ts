@@ -113,9 +113,12 @@ async function postSelection(): Promise<void> {
 // ---------------------------------------------------------------------------
 figma.showUI(__html__, { width: 480, height: 640, themeColors: true });
 
-// Send stored license key + the Figma user id on startup
-figma.clientStorage.getAsync('licenseKey').then((value: string | undefined) => {
-  const msg: MainToUi = { type: 'licenseKey', value: value ?? null };
+// Send stored license key (+ its activated instance id) and the Figma user id on startup
+Promise.all([
+  figma.clientStorage.getAsync('licenseKey') as Promise<string | undefined>,
+  figma.clientStorage.getAsync('licenseInstanceId') as Promise<string | undefined>,
+]).then(([value, instanceId]: [string | undefined, string | undefined]) => {
+  const msg: MainToUi = { type: 'licenseKey', value: value ?? null, instanceId: instanceId ?? null };
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 // `figma.currentUser` is a getter that THROWS if the "currentuser" manifest
@@ -175,6 +178,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'setLicenseKey':
       await figma.clientStorage.setAsync('licenseKey', msg.value);
+      await figma.clientStorage.setAsync('licenseInstanceId', msg.instanceId);
       break;
 
     case 'setAiEnabled':

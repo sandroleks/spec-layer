@@ -1,5 +1,5 @@
 import { identityFromHeaders } from './identity';
-import { activateLicense, checkLicense, type KVLike } from './license';
+import { activateLicense, checkLicense, validateLicense, type KVLike } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 
 export interface QuotaClient {
@@ -139,12 +139,17 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
 }
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {
-  let body: { key?: unknown; instanceName?: unknown };
+  let body: { key?: unknown; instanceName?: unknown; instanceId?: unknown };
   try { body = (await req.json()) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
   if (typeof body.key !== 'string' || !body.key) return json(400, { error: 'missing key' });
-  const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', {
-    fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now,
-  });
+  const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
+  // Repeat activation on a known device: validate the existing instance rather
+  // than calling activate again (which would consume another device slot).
+  if (typeof body.instanceId === 'string' && body.instanceId) {
+    const v = await validateLicense(body.key, body.instanceId, licenseDeps);
+    return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
+  }
+  const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', licenseDeps);
   return json(200, out);
 }
 

@@ -60,6 +60,22 @@ describe('route', () => {
     expect(await res.json()).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
   });
 
+  it('POST /v1/license/activate with an instanceId validates instead of re-activating', async () => {
+    const d = baseDeps();
+    const activateCalls: string[] = [];
+    d.fetcher = vi.fn(async (url: string) => {
+      activateCalls.push(url);
+      return new Response(JSON.stringify({ valid: true, license_key: { status: 'active' } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const res = await route(new Request('https://p.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'K', instanceId: 'inst-1' }),
+    }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ valid: true, status: 'active', instanceId: 'inst-1' });
+    expect(activateCalls).toEqual(['https://api.lemonsqueezy.com/v1/licenses/validate']);
+  });
+
   it('404s unknown paths', async () => {
     const res = await route(new Request('https://p.test/nope'), baseDeps());
     expect(res.status).toBe(404);

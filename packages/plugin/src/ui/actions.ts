@@ -42,6 +42,7 @@ export interface UiState {
   // with AI" preference, and the most recent generated prose drafts used to
   // fill AI sections.
   licenseKey: string | null;
+  licenseInstanceId: string | null;
   figmaUserId: string | null;
   // Latest quota snapshot from the proxy (null until a request completes), and
   // whether the free-tier monthly quota is currently exhausted.
@@ -76,6 +77,7 @@ export function createState(): UiState {
     currentExtractedAt: '',
     renderedMd: '',
     licenseKey: null,
+    licenseInstanceId: null,
     figmaUserId: null,
     quota: null,
     quotaExhausted: false,
@@ -335,9 +337,10 @@ function generatingMessages(withAi: boolean): string[] {
 // live here for testability; ui.ts wires the input/toggle events to them.
 // ---------------------------------------------------------------------------
 
-export function setLicenseKey(state: UiState, value: string): void {
+export function setLicenseKey(state: UiState, value: string, instanceId: string | null): void {
   state.licenseKey = value || null;
-  send({ type: 'setLicenseKey', value });
+  state.licenseInstanceId = instanceId;
+  send({ type: 'setLicenseKey', value, instanceId });
 }
 
 export function setAiEnabled(state: UiState, value: boolean): void {

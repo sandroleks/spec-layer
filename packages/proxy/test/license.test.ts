@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { checkLicense, activateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS } from '../src/license';
+import { checkLicense, activateLicense, validateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS } from '../src/license';
 
 class MemKV {
   map = new Map<string, string>();
@@ -76,5 +76,52 @@ describe('activateLicense', () => {
       fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
     });
     expect(out).toEqual({ valid: true, status: 'active', instanceId: 'inst-1' });
+  });
+});
+
+describe('validateLicense', () => {
+  it('sends the instance id when given one, and maps active → valid', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      valid: true, license_key: { status: 'active' },
+    }), { status: 200 }));
+    const out = await validateLicense('K', 'inst-1', {
+      fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
+    });
+    expect(out).toEqual({ valid: true, status: 'active' });
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/validate');
+    expect(JSON.parse(String(init.body))).toEqual({ license_key: 'K', instance_id: 'inst-1' });
+  });
+
+  it('omits instance_id from the body when none is given', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      valid: true, license_key: { status: 'active' },
+    }), { status: 200 }));
+    const out = await validateLicense('K', null, {
+      fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
+    });
+    expect(out).toEqual({ valid: true, status: 'active' });
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ license_key: 'K' });
+  });
+
+  it('maps a non-active status to invalid', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      valid: true, license_key: { status: 'expired' },
+    }), { status: 200 }));
+    const out = await validateLicense('K', 'inst-1', {
+      fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
+    });
+    expect(out).toEqual({ valid: false, status: 'expired' });
+  });
+
+  it('maps valid:false to invalid even when status claims active (defense-in-depth)', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      valid: false, license_key: { status: 'active' },
+    }), { status: 200 }));
+    const out = await validateLicense('K', 'inst-1', {
+      fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
+    });
+    expect(out).toEqual({ valid: false, status: 'active' });
   });
 });
