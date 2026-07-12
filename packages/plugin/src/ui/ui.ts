@@ -154,7 +154,13 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
   if (!key) return;
   refs.licenseStatus.textContent = 'Checking…';
   try {
-    const out = await activateLicense(key, state.licenseInstanceId);
+    let out = await activateLicense(key, state.licenseInstanceId);
+    // A stored instance id can go stale (the device was deactivated in the
+    // dashboard, or it came from an older build). If revalidating it fails,
+    // register a fresh instance instead of showing a false "not active" error.
+    if (!out.valid && state.licenseInstanceId) {
+      out = await activateLicense(key, null);
+    }
     if (out.valid && out.status === 'active') {
       setLicenseKey(state, key, out.instanceId ?? state.licenseInstanceId);
       refs.licenseStatus.textContent = 'Pro plan active ✓';
