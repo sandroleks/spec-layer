@@ -65,3 +65,25 @@ describe('route', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('CORS', () => {
+  it('answers OPTIONS preflight with 204 and CORS headers', async () => {
+    const res = await route(new Request('https://p.test/v1/prose', { method: 'OPTIONS' }), baseDeps());
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Allow-Headers')).toContain('X-Figma-User');
+    expect(res.headers.get('Access-Control-Allow-Headers')).toContain('Authorization');
+  });
+
+  it('adds CORS + exposed quota headers to normal responses', async () => {
+    const res = await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), baseDeps());
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Quota-Remaining');
+  });
+
+  it('adds CORS headers to error responses too', async () => {
+    const res = await route(new Request('https://p.test/nope'), baseDeps());
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+});

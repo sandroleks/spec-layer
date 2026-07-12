@@ -148,10 +148,33 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
   return json(200, out);
 }
 
-export async function route(req: Request, deps: HandlerDeps): Promise<Response> {
+const CORS_HEADERS: Record<string, string> = {
+  // Figma plugin iframes run with Origin: null — '*' (with header-based auth,
+  // no cookies) is the correct and safe setting here.
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User',
+  // Without this, the plugin iframe cannot read the quota headers at all.
+  'Access-Control-Expose-Headers':
+    'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At',
+  'Access-Control-Max-Age': '86400',
+};
+
+function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
+async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
   const { pathname } = new URL(req.url);
   if (req.method === 'POST' && pathname === '/v1/prose') return handleProse(req, deps);
   if (req.method === 'GET' && pathname === '/v1/quota') return handleQuota(req, deps);
   if (req.method === 'POST' && pathname === '/v1/license/activate') return handleActivate(req, deps);
   return json(404, { error: 'not_found' });
+}
+
+export async function route(req: Request, deps: HandlerDeps): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  return withCors(await routeInner(req, deps));
 }
