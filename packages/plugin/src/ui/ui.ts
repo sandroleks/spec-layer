@@ -127,7 +127,6 @@ let libEntries: LibraryEntry[] = [];
 const libDrift = new Map<string, DriftState>();
 // docId → storedContentHash, so a driftSource reply can compare without a lookup.
 const libBaseline = new Map<string, string>();
-let libUpdateInFlight = false;
 // docIds whose overflow-menu action bar is currently open, so a re-render
 // (triggered by a drift reply arriving mid-burst) doesn't snap it shut.
 const libOpen = new Set<string>();
@@ -177,9 +176,12 @@ refs.libraryList.addEventListener('click', (ev) => {
     case 'focus': send({ type: 'focusNode', nodeId: docId }); break;
     case 'source': if (entry) send({ type: 'focusNode', nodeId: entry.sourceNodeId }); break;
     case 'update': {
-      if (libUpdateInFlight) return;
+      // One renderDocFrame build may be in flight at a time (main's remove->append
+      // is non-atomic). Reuse the create-frame lock so this also blocks
+      // Update-while-Create and Create-while-Update across tabs.
+      if (refs.createFrameBtn.disabled) return;
       if (entry?.selfEdited && !confirm('This doc has manual text edits. Updating it will overwrite them with freshly generated content. Continue?')) return;
-      libUpdateInFlight = true;
+      refs.createFrameBtn.disabled = true;
       send({ type: 'requestDocSource', docId });
       break;
     }
@@ -663,7 +665,6 @@ window.onmessage = (event: MessageEvent) => {
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
       state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;
-      libUpdateInFlight = false;
       if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
       break;
     }
@@ -672,7 +673,6 @@ window.onmessage = (event: MessageEvent) => {
       stopLoader(refs);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
-      libUpdateInFlight = false;
       break;
     }
 
@@ -704,13 +704,13 @@ window.onmessage = (event: MessageEvent) => {
         docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
       };
       void runUpdateFromSource(refs, state, src)
-        .then((dispatched) => { if (!dispatched) libUpdateInFlight = false; })
+        .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })
         .finally(() => renderQuota(refs, state));
       break;
     }
 
     case 'docSourceError': {
-      libUpdateInFlight = false;
+      refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;
     }
