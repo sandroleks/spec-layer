@@ -6,9 +6,10 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, renderSpec, ProseProxyError } from '@spec-layer/extractor';
+import { extract, renderSpec, ProseProxyError, specContentHash } from '@spec-layer/extractor';
 import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
+import type { DocConfig } from '../docLink';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
@@ -317,7 +318,20 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       variantIds,
       { anatomyView: state.anatomyView, measureViews: state.measureViews },
     );
-    send({ type: 'renderDocFrame', model, nodeId: state.currentNode!.id });
+    const config: DocConfig = {
+      sections: [...selected],
+      variantIds: [...variantIds],
+      aiEnabled: state.aiEnabled,
+      anatomyView: state.anatomyView,
+      measureViews: state.measureViews,
+    };
+    send({
+      type: 'renderDocFrame',
+      model,
+      nodeId: state.currentNode!.id,
+      contentHash: specContentHash(state.currentSpec!),
+      config,
+    });
     // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {
     stopLoader(refs);

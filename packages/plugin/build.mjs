@@ -4,13 +4,16 @@
 //   - dist/ui.html   (HTML doc embedding the UI iframe bundle, or placeholder)
 
 import * as esbuild from 'esbuild';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(__dirname, 'dist');
 mkdirSync(dist, { recursive: true });
+
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+const define = { __PLUGIN_VERSION__: JSON.stringify(pkg.version) };
 
 // ---------------------------------------------------------------------------
 // Build 1: main thread → dist/main.js (IIFE, bundled)
@@ -22,6 +25,7 @@ await esbuild.build({
   format: 'iife',
   platform: 'browser',
   target: 'es2017',
+  define,
 });
 console.log('Built dist/main.js');
 
@@ -40,6 +44,7 @@ if (existsSync(uiEntry)) {
     platform: 'browser',
     target: 'es2017',
     write: false, // capture output in memory
+    define,
   });
   const js = result.outputFiles[0].text;
   const html = `<!DOCTYPE html>

@@ -2,6 +2,7 @@ import type { SerializedNode } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
+import type { DocConfig } from './docLink';
 
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource }
@@ -29,4 +30,4 @@ export type UiToMain =
   | { type: 'captureLogo' }
   | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string };
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; config: DocConfig };

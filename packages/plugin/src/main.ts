@@ -5,6 +5,13 @@ import type { MainToUi, UiToMain } from './messages';
 import { resolveFileKey } from './fileKey';
 import { buildDocFrames } from './docFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
+import {
+  DOC_LINK_KEY, DOC_REGISTRY_KEY,
+  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc,
+  textContentHash, type DocLinkData,
+} from './docLink';
+
+declare const __PLUGIN_VERSION__: string;
 
 // User-customizable brand theme for the generated frame. Loaded from
 // clientStorage on boot (migrating the legacy two-color 'brandColors' storage
@@ -168,6 +175,64 @@ figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
 figma.on('selectionchange', () => { postSelection(); });
 
+// Collect a node subtree's TEXT characters in document order (DFS). Used to
+// compute the self-hash that detects hand-edits to a generated Section.
+function collectText(node: BaseNode): string[] {
+  const out: string[] = [];
+  const visit = (n: BaseNode): void => {
+    if (n.type === 'TEXT') out.push((n as TextNode).characters);
+    if ('children' in n) {
+      for (const c of (n as BaseNode & ChildrenMixin).children) visit(c);
+    }
+  };
+  visit(node);
+  return out;
+}
+
+// The PageNode a node lives on, or null. Walks parents until a PAGE.
+function pageOf(node: BaseNode): PageNode | null {
+  let cur: BaseNode | null = node;
+  while (cur) {
+    if (cur.type === 'PAGE') return cur as PageNode;
+    cur = (cur as SceneNode).parent ?? null;
+  }
+  return null;
+}
+
+// Read the registry off figma.root.
+function readRegistry() {
+  return parseRegistry(figma.root.getPluginData(DOC_REGISTRY_KEY));
+}
+function writeRegistry(r: { v: 1; docIds: string[] }): void {
+  figma.root.setPluginData(DOC_REGISTRY_KEY, serializeRegistry(r));
+}
+
+// Resolve the existing doc Section for a source, preferring the registry
+// (by sourceNodeId, any page); falling back to a legacy name match on the
+// current page so pre-2.1 docs are adopted on their next regenerate.
+async function findExistingDoc(
+  sourceNodeId: string,
+  sectionName: string,
+): Promise<SectionNode | null> {
+  const reg = readRegistry();
+  for (const docId of reg.docIds) {
+    try {
+      const node = await figma.getNodeByIdAsync(docId);
+      if (node && node.type === 'SECTION') {
+        const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+        if (data && data.sourceNodeId === sourceNodeId) return node as SectionNode;
+      }
+    } catch { /* dangling id; enumerate task prunes these */ }
+  }
+  // Legacy adoption fallback: name match on the current page.
+  for (const child of figma.currentPage.children) {
+    try {
+      if (child.type === 'SECTION' && child.name === sectionName) return child;
+    } catch { /* skip unresolved child */ }
+  }
+  return null;
+}
+
 // React to UI messages
 figma.ui.onmessage = async (raw: unknown) => {
   const msg = raw as UiToMain;
@@ -271,25 +336,15 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'renderDocFrame': {
       try {
         const sectionName = `${msg.model.componentName}: Documentation`;
+        const existing = await findExistingDoc(msg.nodeId, sectionName);
 
-        // Find any prior doc Section with this name BEFORE creating the new one.
-        // Scan only top-level children (a deep find can hit node types the
-        // API can't resolve); the per-node try/catch keeps one bad child from aborting.
-        let existing: SectionNode | null = null;
-        for (const child of figma.currentPage.children) {
-          try {
-            if (child.type === 'SECTION' && child.name === sectionName) {
-              existing = child;
-              break;
-            }
-          } catch {
-            /* skip a child whose type can't be resolved by this API version */
-          }
-        }
-
+        // Regenerate in place: reuse the old doc's position AND its page.
+        let targetPage: PageNode = figma.currentPage;
         let x = 0, y = 0;
         if (existing) {
           x = existing.x; y = existing.y;
+          const p = pageOf(existing);
+          if (p) targetPage = p;
         } else {
           try {
             const comp = await figma.getNodeByIdAsync(msg.nodeId);
@@ -297,15 +352,38 @@ figma.ui.onmessage = async (raw: unknown) => {
               const c = comp as SceneNode & { x: number; y: number; width: number };
               x = c.x + c.width + 80; y = c.y;
             }
-          } catch {
-            /* node gone since extract — fall back to origin */
-          }
+          } catch { /* source gone since extract — fall back to origin */ }
+        }
+
+        if (targetPage.id !== figma.currentPage.id) {
+          await figma.setCurrentPageAsync(targetPage);
         }
 
         const section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo);
+
+        // Stamp the durable link BEFORE removing the old one, so a failure
+        // mid-way never leaves an unstamped orphan replacing a good doc.
+        const data: DocLinkData = {
+          v: 1,
+          sourceNodeId: msg.nodeId,
+          contentHash: msg.contentHash,
+          selfHash: textContentHash(collectText(section)),
+          config: msg.config,
+          generatedAt: Date.now(),
+          pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
+        };
+        section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+
         if (existing) existing.remove();
-        figma.currentPage.appendChild(section);
+        targetPage.appendChild(section);
         section.x = x; section.y = y;
+
+        // Register (idempotent), dropping the replaced doc's id if it changed.
+        let reg = readRegistry();
+        if (existing && existing.id !== section.id) reg = { v: 1, docIds: reg.docIds.filter((id) => id !== existing.id) };
+        reg = addDoc(reg, section.id);
+        writeRegistry(reg);
+
         figma.currentPage.selection = [section];
         figma.viewport.scrollAndZoomIntoView([section]);
         figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name } as MainToUi);
