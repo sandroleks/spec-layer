@@ -113,10 +113,19 @@ refs.createFrameBtn.addEventListener('click', () => {
 async function runCreateWithoutAi(): Promise<void> {
   const wasEnabled = state.aiEnabled;
   state.aiEnabled = false;
+  // Guard against dispatching a second frame build while one is in flight —
+  // main.ts's remove-then-append of the doc section isn't atomic across two
+  // concurrent renderDocFrame messages (duplicate sections on canvas).
+  refs.upsellContinueBtn.disabled = true;
+  refs.upsellUpgradeBtn.disabled = true;
   try {
     await runCreateDocFrame(refs, state);
+  } catch {
+    /* handled inside — mirrors the createFrameBtn listener */
   } finally {
     state.aiEnabled = wasEnabled;
+    refs.upsellContinueBtn.disabled = false;
+    refs.upsellUpgradeBtn.disabled = false;
     renderQuota(refs, state);
   }
 }
@@ -125,6 +134,9 @@ refs.upsellUpgradeBtn.addEventListener('click', () => {
   send({ type: 'openBrowser', url: CHECKOUT_URL });
 });
 refs.upsellContinueBtn.addEventListener('click', () => {
+  // The create button's disabled flag is the in-flight signal (cleared by
+  // docFrameDone/docFrameError) — never race a build that is still placing.
+  if (refs.createFrameBtn.disabled) return;
   state.quotaExhausted = false;
   renderQuota(refs, state);
   void runCreateWithoutAi();
