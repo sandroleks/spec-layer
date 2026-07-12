@@ -24,10 +24,10 @@
 
 import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
 
-/** Sections that start unchecked: Related (rarely wanted) and the verbose,
- *  token-costly guidelines additions, which are opt-in. */
+/** Sections that start unchecked: Related (rarely wanted) and the three verbose,
+ *  token-costly a11y additions, which are opt-in. */
 const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
-  'related', 'interactions', 'contentConsiderations',
+  'related', 'interactions', 'designConsiderations', 'contentConsiderations',
 ]);
 import { THEME_PRESETS } from '../brandColors';
 
