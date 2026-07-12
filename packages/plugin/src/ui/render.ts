@@ -8,8 +8,10 @@
 
 import type { Refs } from './dom';
 import type { UiState } from './actions';
+import type { LibraryEntry } from '../messages';
 import { isAtomComponentName } from '../collectComponents';
 import { resolveTheme } from '../brandColors';
+import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
 import { quotaMeterText, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
@@ -306,4 +308,77 @@ export function switchTab(refs: Refs, tab: TabId): void {
     panel.classList.toggle('active', active);
   }
   syncFooter(refs);
+}
+
+// ---------------------------------------------------------------------------
+// My Library
+// ---------------------------------------------------------------------------
+
+/** Per-doc drift, computed progressively after enumerate. `pending` shows a
+ *  "checking" chip; once known it feeds resolveStatus. */
+export type DriftState = 'pending' | 'inSync' | 'drifted';
+
+const BADGE: Record<DocStatus, { cls: string; label: string }> = {
+  inSync: { cls: 'insync', label: 'In sync' },
+  updateAvailable: { cls: 'update', label: 'Update available' },
+  edited: { cls: 'edited', label: 'Manually edited' },
+  orphaned: { cls: 'orphaned', label: 'Source missing' },
+};
+
+/** The status to show. Orphaned needs no drift; otherwise a pending drift keeps
+ *  the row in a neutral "checking" state so we never flash a wrong badge. */
+function rowStatus(e: LibraryEntry, drift: DriftState | undefined): DocStatus | 'checking' {
+  if (!e.sourceExists) return 'orphaned';
+  if (drift === undefined || drift === 'pending') return 'checking';
+  return resolveStatus({ sourceExists: true, sourceDrifted: drift === 'drifted', selfEdited: e.selfEdited });
+}
+
+export function renderLibrary(
+  refs: Refs,
+  entries: LibraryEntry[],
+  drift: Map<string, DriftState>,
+): void {
+  refs.libraryList.textContent = '';
+  refs.libraryEmpty.style.display = entries.length ? 'none' : 'block';
+
+  const updatable = entries.filter((e) => e.sourceExists && drift.get(e.docId) === 'drifted').length;
+  refs.librarySummary.textContent = entries.length
+    ? `${entries.length} connected ${entries.length === 1 ? 'doc' : 'docs'}${updatable ? ` · ${updatable} to update` : ''}`
+    : '';
+
+  for (const e of entries) {
+    const st = rowStatus(e, drift.get(e.docId));
+    const badge = st === 'checking'
+      ? { cls: 'checking', label: 'Checking…' }
+      : BADGE[st];
+
+    const row = document.createElement('div');
+    row.className = 'lib-row';
+    row.dataset.docId = e.docId;
+    row.dataset.sourceId = e.sourceNodeId;
+    row.innerHTML = `
+      <div class="lib-row-main">
+        <div class="lib-row-title"></div>
+        <div class="lib-row-sub"><span class="lib-page"></span> <span class="lib-badge ${badge.cls}"></span></div>
+      </div>
+      <button class="lib-menu-btn" data-act="menu" aria-label="Actions">⋯</button>`;
+    (row.querySelector('.lib-row-title') as HTMLElement).textContent = e.componentName;
+    (row.querySelector('.lib-page') as HTMLElement).textContent = e.pageName ? `${e.pageName}` : '';
+    (row.querySelector('.lib-badge') as HTMLElement).textContent = badge.label;
+    refs.libraryList.appendChild(row);
+
+    // Collapsed action bar (revealed by the overflow menu; wired in ui.ts).
+    const actions = document.createElement('div');
+    actions.className = 'lib-actions';
+    actions.dataset.docId = e.docId;
+    actions.style.display = 'none';
+    const canUpdate = e.sourceExists;
+    actions.innerHTML = `
+      <button data-act="focus" data-doc-id="${e.docId}">Go to doc</button>
+      ${e.sourceExists ? `<button data-act="source" data-doc-id="${e.docId}">Go to source</button>` : ''}
+      ${canUpdate ? `<button data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
+      <button data-act="detach" data-doc-id="${e.docId}">Detach</button>
+      <button data-act="remove" data-doc-id="${e.docId}">Remove</button>`;
+    refs.libraryList.appendChild(actions);
+  }
 }
