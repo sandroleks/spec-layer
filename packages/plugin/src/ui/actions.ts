@@ -232,6 +232,7 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
       if (e instanceof ProseProxyError && e.code === 'quota_exhausted') {
         state.quotaExhausted = true;
         state.generatedProse = null;
+        state.generatedProseKeys = null;
         return; // callers proceed without AI; the UI renders the upgrade fork
       }
       throw e;
