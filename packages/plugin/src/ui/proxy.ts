@@ -41,7 +41,7 @@ export async function activateLicense(
 
 export function quotaMeterText(q: ProxyQuota | null): string {
   if (!q) return '';
-  if (q.tier === 'pro') return 'Pro — unlimited AI';
+  if (q.tier === 'pro') return 'Pro — AI enabled';
   return `${q.remaining ?? 0}/${q.limit ?? 0} AI generations left this month`;
 }
 

@@ -24,10 +24,10 @@
 
 import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
 
-/** Sections that start unchecked: Related (rarely wanted) and the three verbose,
- *  token-costly a11y additions, which are opt-in. */
+/** Sections that start unchecked: Related (rarely wanted) and the verbose,
+ *  token-costly guidelines additions, which are opt-in. */
 const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
-  'related', 'interactions', 'designConsiderations', 'contentConsiderations',
+  'related', 'interactions', 'contentConsiderations',
 ]);
 import { THEME_PRESETS } from '../brandColors';
 
@@ -679,8 +679,8 @@ const TEMPLATE = `
             </div>
             <span id="quota-meter" class="hint"></span>
             <div class="ai-info" id="ai-info" hidden>
-              <p>Drafts the <strong>Overview</strong>, <strong>Variants</strong> summary, <strong>Accessibility</strong>, and <strong>Do's &amp; Don'ts</strong> sections. When off, they use placeholder text (the Variants matrix still renders).</p>
-              <p>Free on the monthly plan; upgrade to <strong>Pro</strong> in Settings for unlimited generations.</p>
+              <p>AI turns a raw component into documentation a teammate can actually use. It reads what Spec Layer extracts — the variants, states, tokens, and layout — and infers the intent behind them: what the component is for, when each option applies, and the accessibility and content details that are easy to miss.</p>
+              <p>Everything measurable is always pulled straight from Figma, so the specs stay accurate whether AI is on or off — AI only adds the written layer that explains them. With it off, those written sections wait as editable placeholders.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
               AI works on the free plan — no key needed.
