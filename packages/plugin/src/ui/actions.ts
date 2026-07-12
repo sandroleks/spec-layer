@@ -427,3 +427,57 @@ export function buildSingleExportBundle(
     bytes: zipFiles(files),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Update from source (My Library) — regenerate a doc in place using its stored
+// config, WITHOUT touching the Selected-component tab's live state. Extraction
+// is deterministic; prose runs only when the stored config had AI on. Dispatches
+// renderDocFrame, which replaces the existing doc (matched by sourceNodeId).
+// ---------------------------------------------------------------------------
+export async function runUpdateFromSource(
+  refs: Refs,
+  state: UiState,
+  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+): Promise<void> {
+  clearBanners(refs);
+  startLoader(refs, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const selected = new Set<SectionId>(src.config.sections);
+
+    let prose = null as Awaited<ReturnType<typeof generateProse>>;
+    const requested = proseKeysForSections(selected);
+    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
+      try {
+        prose = await generateProse(
+          spec,
+          effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+          src.node.id,
+          requested,
+          (q) => { state.quota = q; },
+        );
+      } catch {
+        // AI is best-effort garnish: fall through to placeholders on any failure.
+        prose = null;
+      }
+    }
+
+    const variantIds = new Set<string>(src.config.variantIds);
+    const model = buildDocModel(spec, prose, selected, variantIds, {
+      anatomyView: src.config.anatomyView,
+      measureViews: src.config.measureViews,
+    });
+    send({
+      type: 'renderDocFrame',
+      model,
+      nodeId: src.node.id,
+      contentHash: specContentHash(spec),
+      config: src.config,
+    });
+    // Loader stops on docFrameDone/docFrameError (ui.ts).
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Update failed: ${msg}`);
+  }
+}

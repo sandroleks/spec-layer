@@ -9,7 +9,9 @@
  * in render.ts.
  */
 
-import type { MainToUi } from '../messages';
+import { extract, specContentHash } from '@spec-layer/extractor';
+import type { MainToUi, LibraryEntry } from '../messages';
+import type { DocConfig } from '../docLink';
 import type { MeasureView } from './docModel';
 import { ALL_SECTIONS, GROUPS } from './docModel';
 import { mount } from './dom';
@@ -20,6 +22,7 @@ import {
   runDownload,
   runCreateDocFrame,
   runAutoExtract,
+  runUpdateFromSource,
   setLicenseKey,
   setAiEnabled,
   setBrandTheme,
@@ -43,6 +46,8 @@ import {
   clearBanners,
   showBanner,
   stopLoader,
+  renderLibrary,
+  type DriftState,
 } from './render';
 
 // ---------------------------------------------------------------------------
@@ -109,6 +114,76 @@ new MutationObserver(() => {
 
 refs.tabSelected.addEventListener('click', () => switchTab(refs, 'selected'));
 refs.tabSettings.addEventListener('click', () => switchTab(refs, 'settings'));
+refs.tabLibrary.addEventListener('click', () => {
+  switchTab(refs, 'library');
+  refreshLibrary();
+});
+
+// ---------------------------------------------------------------------------
+// My Library
+// ---------------------------------------------------------------------------
+
+let libEntries: LibraryEntry[] = [];
+const libDrift = new Map<string, DriftState>();
+// docId → storedContentHash, so a driftSource reply can compare without a lookup.
+const libBaseline = new Map<string, string>();
+
+function refreshLibrary(): void {
+  send({ type: 'requestLibrary' });
+}
+
+/** Kick off a drift check for every doc whose source still exists. */
+function startDriftChecks(): void {
+  libDrift.clear();
+  libBaseline.clear();
+  for (const e of libEntries) {
+    if (!e.sourceExists) continue;
+    libDrift.set(e.docId, 'pending');
+    libBaseline.set(e.docId, e.storedContentHash);
+    send({ type: 'requestDrift', docId: e.docId, sourceNodeId: e.sourceNodeId });
+  }
+}
+
+// Overflow menu toggles the row's action bar; action buttons dispatch.
+refs.libraryList.addEventListener('click', (ev) => {
+  const t = ev.target as HTMLElement;
+  const btn = t.closest('button') as HTMLButtonElement | null;
+  if (!btn) {
+    // Row body click (not a button) → go to the doc.
+    const row = t.closest('.lib-row') as HTMLElement | null;
+    if (row?.dataset.docId) send({ type: 'focusNode', nodeId: row.dataset.docId });
+    return;
+  }
+  const act = btn.dataset.act;
+  if (act === 'menu') {
+    const row = btn.closest('.lib-row') as HTMLElement | null;
+    const bar = row?.nextElementSibling as HTMLElement | null;
+    if (bar && bar.classList.contains('lib-actions')) {
+      bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+    }
+    return;
+  }
+  const docId = btn.dataset.docId;
+  if (!docId) return;
+  const entry = libEntries.find((e) => e.docId === docId);
+  switch (act) {
+    case 'focus': send({ type: 'focusNode', nodeId: docId }); break;
+    case 'source': if (entry) send({ type: 'focusNode', nodeId: entry.sourceNodeId }); break;
+    case 'update': {
+      if (entry?.selfEdited && !confirm('This doc has manual text edits. Updating it will overwrite them with freshly generated content. Continue?')) return;
+      send({ type: 'requestDocSource', docId });
+      break;
+    }
+    case 'detach': {
+      if (confirm('Detach this doc? It stays on the canvas as a plain frame and stops tracking its component.')) send({ type: 'detachDoc', docId });
+      break;
+    }
+    case 'remove': {
+      if (confirm('Remove this doc? This deletes the frame from the canvas.')) send({ type: 'removeDoc', docId });
+      break;
+    }
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Action buttons
@@ -579,6 +654,7 @@ window.onmessage = (event: MessageEvent) => {
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
       state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;
+      if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
       break;
     }
 
@@ -586,6 +662,51 @@ window.onmessage = (event: MessageEvent) => {
       stopLoader(refs);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
+      break;
+    }
+
+    case 'library': {
+      libEntries = msg.entries;
+      renderLibrary(refs, libEntries, libDrift);
+      startDriftChecks();
+      break;
+    }
+
+    case 'driftSource': {
+      const baseline = libBaseline.get(msg.docId);
+      const spec = extract(msg.node, { figmaFile: msg.fileKey });
+      const drifted = specContentHash(spec) !== baseline;
+      libDrift.set(msg.docId, drifted ? 'drifted' : 'inSync');
+      renderLibrary(refs, libEntries, libDrift);
+      break;
+    }
+
+    case 'driftError': {
+      // Treat an un-checkable source as "in sync" (no false update prompts).
+      libDrift.set(msg.docId, 'inSync');
+      renderLibrary(refs, libEntries, libDrift);
+      break;
+    }
+
+    case 'docSource': {
+      const src: { docId: string; node: typeof msg.node; fileKey: string; config: DocConfig } = {
+        docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
+      };
+      void runUpdateFromSource(refs, state, src).finally(() => renderQuota(refs, state));
+      break;
+    }
+
+    case 'docSourceError': {
+      showBanner(refs, 'error', msg.message);
+      break;
+    }
+
+    case 'docDetached':
+    case 'docRemoved': {
+      libEntries = libEntries.filter((e) => e.docId !== msg.docId);
+      libDrift.delete(msg.docId);
+      libBaseline.delete(msg.docId);
+      renderLibrary(refs, libEntries, libDrift);
       break;
     }
   }
