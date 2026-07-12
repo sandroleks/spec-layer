@@ -127,6 +127,10 @@ let libEntries: LibraryEntry[] = [];
 const libDrift = new Map<string, DriftState>();
 // docId → storedContentHash, so a driftSource reply can compare without a lookup.
 const libBaseline = new Map<string, string>();
+let libUpdateInFlight = false;
+// docIds whose overflow-menu action bar is currently open, so a re-render
+// (triggered by a drift reply arriving mid-burst) doesn't snap it shut.
+const libOpen = new Set<string>();
 
 function refreshLibrary(): void {
   send({ type: 'requestLibrary' });
@@ -157,9 +161,12 @@ refs.libraryList.addEventListener('click', (ev) => {
   const act = btn.dataset.act;
   if (act === 'menu') {
     const row = btn.closest('.lib-row') as HTMLElement | null;
+    const menuDocId = row?.dataset.docId;
     const bar = row?.nextElementSibling as HTMLElement | null;
-    if (bar && bar.classList.contains('lib-actions')) {
-      bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+    if (menuDocId && bar && bar.classList.contains('lib-actions')) {
+      const open = bar.style.display === 'none';
+      bar.style.display = open ? 'flex' : 'none';
+      if (open) libOpen.add(menuDocId); else libOpen.delete(menuDocId);
     }
     return;
   }
@@ -170,7 +177,9 @@ refs.libraryList.addEventListener('click', (ev) => {
     case 'focus': send({ type: 'focusNode', nodeId: docId }); break;
     case 'source': if (entry) send({ type: 'focusNode', nodeId: entry.sourceNodeId }); break;
     case 'update': {
+      if (libUpdateInFlight) return;
       if (entry?.selfEdited && !confirm('This doc has manual text edits. Updating it will overwrite them with freshly generated content. Continue?')) return;
+      libUpdateInFlight = true;
       send({ type: 'requestDocSource', docId });
       break;
     }
@@ -654,6 +663,7 @@ window.onmessage = (event: MessageEvent) => {
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
       state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;
+      libUpdateInFlight = false;
       if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
       break;
     }
@@ -662,12 +672,13 @@ window.onmessage = (event: MessageEvent) => {
       stopLoader(refs);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
+      libUpdateInFlight = false;
       break;
     }
 
     case 'library': {
       libEntries = msg.entries;
-      renderLibrary(refs, libEntries, libDrift);
+      renderLibrary(refs, libEntries, libDrift, libOpen);
       startDriftChecks();
       break;
     }
@@ -677,14 +688,14 @@ window.onmessage = (event: MessageEvent) => {
       const spec = extract(msg.node, { figmaFile: msg.fileKey });
       const drifted = specContentHash(spec) !== baseline;
       libDrift.set(msg.docId, drifted ? 'drifted' : 'inSync');
-      renderLibrary(refs, libEntries, libDrift);
+      renderLibrary(refs, libEntries, libDrift, libOpen);
       break;
     }
 
     case 'driftError': {
       // Treat an un-checkable source as "in sync" (no false update prompts).
       libDrift.set(msg.docId, 'inSync');
-      renderLibrary(refs, libEntries, libDrift);
+      renderLibrary(refs, libEntries, libDrift, libOpen);
       break;
     }
 
@@ -692,11 +703,14 @@ window.onmessage = (event: MessageEvent) => {
       const src: { docId: string; node: typeof msg.node; fileKey: string; config: DocConfig } = {
         docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
       };
-      void runUpdateFromSource(refs, state, src).finally(() => renderQuota(refs, state));
+      void runUpdateFromSource(refs, state, src)
+        .then((dispatched) => { if (!dispatched) libUpdateInFlight = false; })
+        .finally(() => renderQuota(refs, state));
       break;
     }
 
     case 'docSourceError': {
+      libUpdateInFlight = false;
       showBanner(refs, 'error', msg.message);
       break;
     }
@@ -706,7 +720,8 @@ window.onmessage = (event: MessageEvent) => {
       libEntries = libEntries.filter((e) => e.docId !== msg.docId);
       libDrift.delete(msg.docId);
       libBaseline.delete(msg.docId);
-      renderLibrary(refs, libEntries, libDrift);
+      libOpen.delete(msg.docId);
+      renderLibrary(refs, libEntries, libDrift, libOpen);
       break;
     }
   }

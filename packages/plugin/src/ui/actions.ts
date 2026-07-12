@@ -438,7 +438,7 @@ export async function runUpdateFromSource(
   refs: Refs,
   state: UiState,
   src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
-): Promise<void> {
+): Promise<boolean> {
   clearBanners(refs);
   startLoader(refs, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
@@ -475,9 +475,11 @@ export async function runUpdateFromSource(
       config: src.config,
     });
     // Loader stops on docFrameDone/docFrameError (ui.ts).
+    return true;
   } catch (err) {
     stopLoader(refs);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Update failed: ${msg}`);
+    return false;
   }
 }

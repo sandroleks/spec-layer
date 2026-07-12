@@ -337,6 +337,7 @@ export function renderLibrary(
   refs: Refs,
   entries: LibraryEntry[],
   drift: Map<string, DriftState>,
+  openDocs: Set<string>,
 ): void {
   refs.libraryList.textContent = '';
   refs.libraryEmpty.style.display = entries.length ? 'none' : 'block';
@@ -371,7 +372,7 @@ export function renderLibrary(
     const actions = document.createElement('div');
     actions.className = 'lib-actions';
     actions.dataset.docId = e.docId;
-    actions.style.display = 'none';
+    actions.style.display = openDocs.has(e.docId) ? 'flex' : 'none';
     const canUpdate = e.sourceExists;
     actions.innerHTML = `
       <button data-act="focus" data-doc-id="${e.docId}">Go to doc</button>
