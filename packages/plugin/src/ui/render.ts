@@ -337,7 +337,6 @@ export function renderLibrary(
   refs: Refs,
   entries: LibraryEntry[],
   drift: Map<string, DriftState>,
-  openDocs: Set<string>,
 ): void {
   refs.libraryList.textContent = '';
   refs.libraryEmpty.style.display = entries.length ? 'none' : 'block';
@@ -357,29 +356,20 @@ export function renderLibrary(
     row.className = 'lib-row';
     row.dataset.docId = e.docId;
     row.dataset.sourceId = e.sourceNodeId;
+    // Row click goes to the doc (wired in ui.ts). The inline "Update" shows only
+    // when the doc is out of date; every other action lives in the ⋯ overflow
+    // menu. User-controlled strings are set via textContent below, never in this
+    // innerHTML; the only interpolated value is the safe-charset node id.
     row.innerHTML = `
       <div class="lib-row-main">
         <div class="lib-row-title"></div>
         <div class="lib-row-sub"><span class="lib-page"></span> <span class="lib-badge ${badge.cls}"></span></div>
       </div>
-      <button class="lib-menu-btn" data-act="menu" aria-label="Actions">⋯</button>`;
+      ${st === 'updateAvailable' ? `<button class="btn btn-secondary lib-update-inline" data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
+      <button class="lib-menu-btn" data-act="menu" data-doc-id="${e.docId}" aria-label="Actions" aria-haspopup="menu">⋯</button>`;
     (row.querySelector('.lib-row-title') as HTMLElement).textContent = e.componentName;
     (row.querySelector('.lib-page') as HTMLElement).textContent = e.pageName ? `${e.pageName}` : '';
     (row.querySelector('.lib-badge') as HTMLElement).textContent = badge.label;
     refs.libraryList.appendChild(row);
-
-    // Collapsed action bar (revealed by the overflow menu; wired in ui.ts).
-    const actions = document.createElement('div');
-    actions.className = 'lib-actions';
-    actions.dataset.docId = e.docId;
-    actions.style.display = openDocs.has(e.docId) ? 'flex' : 'none';
-    const canUpdate = e.sourceExists;
-    actions.innerHTML = `
-      <button class="btn btn-secondary" data-act="focus" data-doc-id="${e.docId}">Go to doc</button>
-      ${e.sourceExists ? `<button class="btn btn-secondary" data-act="source" data-doc-id="${e.docId}">Go to source</button>` : ''}
-      ${canUpdate ? `<button class="btn btn-secondary" data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
-      <button class="btn btn-secondary" data-act="detach" data-doc-id="${e.docId}">Detach</button>
-      <button class="btn btn-secondary" data-act="remove" data-doc-id="${e.docId}">Remove</button>`;
-    refs.libraryList.appendChild(actions);
   }
 }

@@ -127,11 +127,12 @@ let libEntries: LibraryEntry[] = [];
 const libDrift = new Map<string, DriftState>();
 // docId → storedContentHash, so a driftSource reply can compare without a lookup.
 const libBaseline = new Map<string, string>();
-// docIds whose overflow-menu action bar is currently open, so a re-render
-// (triggered by a drift reply arriving mid-burst) doesn't snap it shut.
-const libOpen = new Set<string>();
+// The docId the shared overflow menu is currently open for (null = closed). The
+// menu is one element outside the list, so a drift re-render never disturbs it.
+let libMenuDocId: string | null = null;
 
 function refreshLibrary(): void {
+  closeRowMenu();
   send({ type: 'requestLibrary' });
 }
 
@@ -147,33 +148,43 @@ function startDriftChecks(): void {
   }
 }
 
-// Overflow menu toggles the row's action bar; action buttons dispatch.
-refs.libraryList.addEventListener('click', (ev) => {
-  const t = ev.target as HTMLElement;
-  const btn = t.closest('button') as HTMLButtonElement | null;
-  if (!btn) {
-    // Row body click (not a button) → go to the doc.
-    const row = t.closest('.lib-row') as HTMLElement | null;
-    if (row?.dataset.docId) send({ type: 'focusNode', nodeId: row.dataset.docId });
-    return;
+function closeRowMenu(): void {
+  refs.libraryMenu.hidden = true;
+  libMenuDocId = null;
+}
+
+/** Open (or move) the shared overflow menu, anchored under the clicked ⋯. Menu
+ *  contents depend on state: an orphan (missing source) can only be detached or
+ *  removed. Remove sits below a divider as the one destructive action. */
+function openRowMenu(docId: string, anchor: HTMLElement): void {
+  const entry = libEntries.find((e) => e.docId === docId);
+  if (!entry) return;
+  const items: string[] = [];
+  if (entry.sourceExists) {
+    items.push(`<button role="menuitem" data-act="source" data-doc-id="${docId}">Go to source</button>`);
+    items.push(`<button role="menuitem" data-act="update" data-doc-id="${docId}">Update</button>`);
   }
-  const act = btn.dataset.act;
-  if (act === 'menu') {
-    const row = btn.closest('.lib-row') as HTMLElement | null;
-    const menuDocId = row?.dataset.docId;
-    const bar = row?.nextElementSibling as HTMLElement | null;
-    if (menuDocId && bar && bar.classList.contains('lib-actions')) {
-      const open = bar.style.display === 'none';
-      bar.style.display = open ? 'flex' : 'none';
-      if (open) libOpen.add(menuDocId); else libOpen.delete(menuDocId);
-    }
-    return;
-  }
-  const docId = btn.dataset.docId;
-  if (!docId) return;
+  items.push(`<button role="menuitem" data-act="detach" data-doc-id="${docId}">Detach</button>`);
+  items.push('<hr>');
+  items.push(`<button role="menuitem" class="danger" data-act="remove" data-doc-id="${docId}">Remove</button>`);
+  refs.libraryMenu.innerHTML = items.join('');
+
+  // Unhide first so height is measurable, then flip above the anchor if opening
+  // below would overflow the plugin window. Right-aligned under the ⋯.
+  refs.libraryMenu.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const menuH = refs.libraryMenu.offsetHeight;
+  const below = rect.bottom + 4;
+  const top = below + menuH > window.innerHeight ? Math.max(4, rect.top - 4 - menuH) : below;
+  refs.libraryMenu.style.top = `${top}px`;
+  refs.libraryMenu.style.right = `${Math.max(4, window.innerWidth - rect.right)}px`;
+  libMenuDocId = docId;
+}
+
+/** Run a row action. Shared by the inline Update button and the menu items. */
+function runRowAction(act: string, docId: string): void {
   const entry = libEntries.find((e) => e.docId === docId);
   switch (act) {
-    case 'focus': send({ type: 'focusNode', nodeId: docId }); break;
     case 'source': if (entry) send({ type: 'focusNode', nodeId: entry.sourceNodeId }); break;
     case 'update': {
       // One renderDocFrame build may be in flight at a time (main's remove->append
@@ -185,16 +196,55 @@ refs.libraryList.addEventListener('click', (ev) => {
       send({ type: 'requestDocSource', docId });
       break;
     }
-    case 'detach': {
+    case 'detach':
       if (confirm('Detach this doc? It stays on the canvas as a plain frame and stops tracking its component.')) send({ type: 'detachDoc', docId });
       break;
-    }
-    case 'remove': {
+    case 'remove':
       if (confirm('Remove this doc? This deletes the frame from the canvas.')) send({ type: 'removeDoc', docId });
       break;
-    }
   }
+}
+
+// List interactions: row body → go to doc; inline Update → update; ⋯ → toggle menu.
+refs.libraryList.addEventListener('click', (ev) => {
+  const t = ev.target as HTMLElement;
+  const btn = t.closest('button') as HTMLButtonElement | null;
+  if (!btn) {
+    const row = t.closest('.lib-row') as HTMLElement | null;
+    if (row?.dataset.docId) send({ type: 'focusNode', nodeId: row.dataset.docId });
+    return;
+  }
+  const docId = btn.dataset.docId;
+  if (!docId) return;
+  if (btn.dataset.act === 'menu') {
+    if (libMenuDocId === docId) closeRowMenu();
+    else openRowMenu(docId, btn);
+    return;
+  }
+  runRowAction(btn.dataset.act ?? '', docId);
 });
+
+// Menu item click: dispatch then close.
+refs.libraryMenu.addEventListener('click', (ev) => {
+  const btn = (ev.target as HTMLElement).closest('button') as HTMLButtonElement | null;
+  if (!btn?.dataset.docId) return;
+  const act = btn.dataset.act ?? '';
+  const docId = btn.dataset.docId;
+  closeRowMenu();
+  runRowAction(act, docId);
+});
+
+// Dismiss the menu on outside click, Escape, or scroll (the anchor moves).
+document.addEventListener('click', (ev) => {
+  if (libMenuDocId === null) return;
+  const t = ev.target as HTMLElement;
+  if (t.closest('#lib-menu') || t.closest('.lib-menu-btn')) return;
+  closeRowMenu();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && libMenuDocId !== null) closeRowMenu();
+});
+window.addEventListener('scroll', () => { if (libMenuDocId !== null) closeRowMenu(); }, true);
 
 // ---------------------------------------------------------------------------
 // Action buttons
@@ -677,8 +727,9 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'library': {
+      closeRowMenu();
       libEntries = msg.entries;
-      renderLibrary(refs, libEntries, libDrift, libOpen);
+      renderLibrary(refs, libEntries, libDrift);
       startDriftChecks();
       break;
     }
@@ -688,14 +739,14 @@ window.onmessage = (event: MessageEvent) => {
       const spec = extract(msg.node, { figmaFile: msg.fileKey });
       const drifted = specContentHash(spec) !== baseline;
       libDrift.set(msg.docId, drifted ? 'drifted' : 'inSync');
-      renderLibrary(refs, libEntries, libDrift, libOpen);
+      renderLibrary(refs, libEntries, libDrift);
       break;
     }
 
     case 'driftError': {
       // Treat an un-checkable source as "in sync" (no false update prompts).
       libDrift.set(msg.docId, 'inSync');
-      renderLibrary(refs, libEntries, libDrift, libOpen);
+      renderLibrary(refs, libEntries, libDrift);
       break;
     }
 
@@ -717,11 +768,11 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'docDetached':
     case 'docRemoved': {
+      if (libMenuDocId === msg.docId) closeRowMenu();
       libEntries = libEntries.filter((e) => e.docId !== msg.docId);
       libDrift.delete(msg.docId);
       libBaseline.delete(msg.docId);
-      libOpen.delete(msg.docId);
-      renderLibrary(refs, libEntries, libDrift, libOpen);
+      renderLibrary(refs, libEntries, libDrift);
       break;
     }
   }

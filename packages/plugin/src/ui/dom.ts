@@ -181,10 +181,28 @@ const TEMPLATE = `
     .lib-badge.checking { background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary); }
     .lib-menu-btn { flex: 0 0 auto; border: none; background: transparent; cursor: pointer; padding: 4px 6px; border-radius: 4px; color: var(--figma-color-text-secondary); }
     .lib-menu-btn:hover { background: var(--figma-color-bg-secondary); }
-    .lib-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 8px 8px 8px; }
-    /* Row actions inherit the plugin's .btn .btn-secondary style; trim the
-       padding so the set fits the compact list row without wrapping. */
-    .lib-actions button.btn { padding: 6px 12px; }
+    /* Inline shortcut for the primary action, shown only when a doc is out of
+       date. Inherits .btn .btn-secondary; just more compact for the row. */
+    .lib-update-inline.btn { flex: 0 0 auto; font-size: 11px; padding: 4px 10px; }
+    /* Overflow menu popover: one shared element, positioned on open (ui.ts). */
+    .lib-menu {
+      position: fixed; z-index: 20; min-width: 150px;
+      background: var(--figma-color-bg);
+      border: 1px solid var(--figma-color-border);
+      border-radius: 8px; padding: 4px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+    }
+    .lib-menu[hidden] { display: none; }
+    .lib-menu button {
+      display: block; width: 100%; text-align: left;
+      border: none; background: transparent; cursor: pointer;
+      font-size: 12px; color: var(--figma-color-text);
+      padding: 7px 10px; border-radius: 6px; line-height: 1;
+    }
+    .lib-menu button:hover { background: var(--figma-color-bg-secondary); }
+    .lib-menu button.danger { color: var(--figma-color-text-danger, #b3261e); }
+    .lib-menu button.danger:hover { background: var(--figma-color-bg-danger-tertiary, #fce8e6); }
+    .lib-menu hr { border: none; border-top: 1px solid var(--figma-color-border); margin: 4px 0; }
 
     /* ---- Typography / layout ---- */
     h2 { font-size: 13px; font-weight: 600; margin: 0; }
@@ -785,6 +803,7 @@ const TEMPLATE = `
         No connected docs yet. Generate one from the Selected component tab.
       </div>
       <div class="lib-list" id="lib-list"></div>
+      <div class="lib-menu" id="lib-menu" role="menu" hidden></div>
     </section>
 
     <!-- ============ Settings panel ============ -->
@@ -910,6 +929,7 @@ export interface Refs {
   libraryList: HTMLElement;
   libraryEmpty: HTMLElement;
   librarySummary: HTMLElement;
+  libraryMenu: HTMLElement;
   // Selection / main
   noSelection: HTMLDivElement;
   mainArea: HTMLDivElement;
@@ -1127,6 +1147,7 @@ export function mount(): Refs {
     libraryList: byId<HTMLElement>('lib-list'),
     libraryEmpty: byId<HTMLElement>('lib-empty'),
     librarySummary: byId<HTMLElement>('lib-summary'),
+    libraryMenu: byId<HTMLElement>('lib-menu'),
     noSelection: byId<HTMLDivElement>('no-selection'),
     mainArea: byId<HTMLDivElement>('main-area'),
     componentName: byId<HTMLHeadingElement>('component-name'),
