@@ -375,11 +375,11 @@ export function renderLibrary(
     actions.style.display = openDocs.has(e.docId) ? 'flex' : 'none';
     const canUpdate = e.sourceExists;
     actions.innerHTML = `
-      <button data-act="focus" data-doc-id="${e.docId}">Go to doc</button>
-      ${e.sourceExists ? `<button data-act="source" data-doc-id="${e.docId}">Go to source</button>` : ''}
-      ${canUpdate ? `<button data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
-      <button data-act="detach" data-doc-id="${e.docId}">Detach</button>
-      <button data-act="remove" data-doc-id="${e.docId}">Remove</button>`;
+      <button class="btn btn-secondary" data-act="focus" data-doc-id="${e.docId}">Go to doc</button>
+      ${e.sourceExists ? `<button class="btn btn-secondary" data-act="source" data-doc-id="${e.docId}">Go to source</button>` : ''}
+      ${canUpdate ? `<button class="btn btn-secondary" data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
+      <button class="btn btn-secondary" data-act="detach" data-doc-id="${e.docId}">Detach</button>
+      <button class="btn btn-secondary" data-act="remove" data-doc-id="${e.docId}">Remove</button>`;
     refs.libraryList.appendChild(actions);
   }
 }

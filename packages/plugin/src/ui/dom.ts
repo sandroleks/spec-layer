@@ -182,7 +182,9 @@ const TEMPLATE = `
     .lib-menu-btn { flex: 0 0 auto; border: none; background: transparent; cursor: pointer; padding: 4px 6px; border-radius: 4px; color: var(--figma-color-text-secondary); }
     .lib-menu-btn:hover { background: var(--figma-color-bg-secondary); }
     .lib-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 8px 8px 8px; }
-    .lib-actions button { font-size: 11px; padding: 3px 8px; }
+    /* Row actions inherit the plugin's .btn .btn-secondary style; trim the
+       padding so the set fits the compact list row without wrapping. */
+    .lib-actions button.btn { padding: 6px 12px; }
 
     /* ---- Typography / layout ---- */
     h2 { font-size: 13px; font-weight: 600; margin: 0; }
