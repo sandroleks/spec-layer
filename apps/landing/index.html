@@ -41,23 +41,45 @@
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; position: relative; }
 
   /* Hero */
-  .hero { text-align: center; padding: var(--space-3xl) 0 var(--space-lg); }
+  .hero {
+    position: relative; overflow: hidden; text-align: center;
+    padding: var(--space-3xl) 0 var(--space-2xl);
+  }
+  .hero > .wrap { position: relative; z-index: 1; }
+
+  /* Morphing shape backdrop, echoing the logo's square<->circle language. */
+  .hero-shapes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .hero-shape { position: absolute; opacity: 0; will-change: transform, border-radius; }
+  .hero-shape.filled { background: rgba(255, 255, 255, 0.045); }
+  .hero-shape.outlined { border: 1.5px solid rgba(255, 255, 255, 0.09); }
+  @media (max-width: 760px) { .hero-shape.hide-sm { display: none; } }
+
+  .hero .eyebrow {
+    display: inline-block; margin-bottom: var(--space-lg);
+    font-size: .8125rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--text-dim); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px;
+  }
   .hero img.logo {
-    width: 76px; height: 76px; border-radius: 18px;
-    display: block; margin: 0 auto var(--space-md);
+    width: 84px; height: 84px; border-radius: 20px;
+    display: block; margin: 0 auto var(--space-lg);
   }
   .hero h1 {
-    font-size: clamp(1.9rem, 5vw, 3rem);
-    line-height: 1.15;
-    letter-spacing: -0.02em;
+    font-size: clamp(2.75rem, 8vw, 4.5rem);
+    line-height: 1.0;
+    letter-spacing: -0.035em;
     font-weight: 700;
   }
-  .hero h1 span { color: var(--text-dim); font-weight: 600; }
-  .hero p.tagline {
-    max-width: 620px; margin: var(--space-sm) auto 0;
-    font-size: 1.125rem; color: var(--text-dim);
+  .hero .descriptor {
+    margin-top: 14px;
+    font-size: clamp(1.15rem, 3vw, 1.6rem);
+    font-weight: 600; letter-spacing: -0.015em; color: var(--text-dim);
   }
-  .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: var(--space-lg); flex-wrap: wrap; }
+  .hero p.tagline {
+    max-width: 600px; margin: var(--space-md) auto 0;
+    font-size: 1.0625rem; color: var(--text-dim);
+  }
+  .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: var(--space-xl); flex-wrap: wrap; }
   .btn {
     display: inline-block; padding: 12px 24px; border-radius: 10px;
     font-size: 1rem; font-weight: 600; text-decoration: none;
@@ -176,13 +198,22 @@
 <body>
 
 <header class="hero">
+  <div class="hero-shapes" aria-hidden="true">
+    <div class="hero-shape outlined" style="left: -48px; top: 72px; width: 220px; height: 220px;" data-dur="11" data-dir="1"></div>
+    <div class="hero-shape filled hide-sm" style="right: -36px; top: 40px; width: 170px; height: 170px;" data-dur="9"  data-dir="-1" data-start="circle"></div>
+    <div class="hero-shape filled hide-sm"   style="left: 9%;  top: 46%; width: 84px;  height: 84px;"  data-dur="8"  data-dir="-1"></div>
+    <div class="hero-shape outlined" style="right: 7%; top: 40%; width: 120px; height: 120px;" data-dur="10" data-dir="1"  data-start="circle"></div>
+    <div class="hero-shape outlined hide-sm" style="left: 16%; bottom: 28px; width: 66px; height: 66px;" data-dur="7"  data-dir="1"></div>
+    <div class="hero-shape filled hide-sm"   style="right: 20%; bottom: 8px; width: 96px; height: 96px;" data-dur="12" data-dir="-1" data-start="circle"></div>
+  </div>
   <div class="wrap">
-    <img class="logo" src="logo.svg" alt="Spec Layer logo" width="76" height="76">
-    <h1>Spec Layer<br><span>Auto Documentation &amp; Specs</span></h1>
+    <img class="logo" src="logo.svg" alt="Spec Layer logo" width="84" height="84">
+    <span class="eyebrow">Figma plugin</span>
+    <h1>Spec Layer</h1>
+    <p class="descriptor">Auto Documentation &amp; Specs</p>
     <p class="tagline">
-      A Figma plugin that turns your components into spec and guideline frames,
-      right on the canvas. Measurements, states, anatomy, tokens and AI-written
-      usage docs in one click.
+      Turns your components into spec and guideline frames, right on the canvas.
+      Measurements, states, anatomy, tokens and AI-written usage docs in one click.
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
@@ -336,12 +367,32 @@
   // Hero entrance.
   if (animate && !reduceMotion) {
     animate(
-      [document.querySelector('.hero .logo'), document.querySelector('.hero h1'),
-       document.querySelector('.hero p.tagline'), document.querySelector('.hero .cta-row')],
-      { opacity: [0, 1], y: [16, 0] },
-      { duration: 0.6, delay: stagger(0.08), easing: EASE_OUT }
+      ['.hero .logo', '.hero .eyebrow', '.hero h1', '.hero .descriptor',
+       '.hero p.tagline', '.hero .cta-row'].map(function (s) { return document.querySelector(s); }),
+      { opacity: [0, 1], y: [18, 0] },
+      { duration: 0.6, delay: stagger(0.07), easing: EASE_OUT }
     );
   }
+
+  // Hero shape backdrop: morph square<->circle and slowly counter-rotate, the logo's motif.
+  var MORPH_EASE = [0.76, 0, 0.24, 1];
+  document.querySelectorAll('.hero-shape').forEach(function (shape, i) {
+    var startCircle = shape.dataset.start === 'circle';
+    var radii = startCircle ? ['50%', '12%', '50%'] : ['12%', '50%', '12%'];
+    if (!animate) return;
+    if (reduceMotion) {
+      shape.style.opacity = '1';
+      shape.style.borderRadius = radii[0];
+      return;
+    }
+    animate(shape, { opacity: [0, 1] }, { duration: 1.1, delay: 0.4 + i * 0.12, easing: EASE_OUT });
+    var dir = parseFloat(shape.dataset.dir) || 1;
+    var dur = parseFloat(shape.dataset.dur) || 10;
+    animate(shape,
+      { borderRadius: radii, rotate: [0, dir * 180, dir * 360] },
+      { duration: dur, ease: MORPH_EASE, repeat: Infinity }
+    );
+  });
 
   // Reveal-on-scroll: fades a section in the first time it enters the viewport.
   function revealOnScroll(el, opts) {
