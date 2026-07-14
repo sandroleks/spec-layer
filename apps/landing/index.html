@@ -75,7 +75,7 @@
     scroll-snap-align: center;
   }
   .gallery-nav {
-    position: absolute; top: 50%; transform: translateY(-50%);
+    position: absolute; top: calc(50% - 20px);
     width: 40px; height: 40px; border-radius: 50%;
     border: 1px solid var(--border); background: rgba(11, 11, 14, .8);
     color: var(--text); font-size: 1.25rem; line-height: 1;
@@ -102,7 +102,7 @@
     border-radius: 10px; padding: 4px;
   }
   .toggle-indicator {
-    position: absolute; top: 4px; left: 4px; height: calc(100% - 8px);
+    position: absolute; top: 4px; left: 0; height: calc(100% - 8px);
     background: var(--surface-2); border-radius: 7px;
   }
   .toggle button {
