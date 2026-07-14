@@ -453,11 +453,13 @@ const TEMPLATE = `
 
     /* ---- "Write with AI" switch + card ---- */
     .ai-card {
-      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      display: flex; flex-direction: column; gap: 10px;
       padding: 11px 13px; border-radius: 10px; margin-top: 12px;
       background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
     }
+    /* Title + info on the left, toggle pushed to the right edge of the row. */
     .ai-head { display: flex; align-items: center; gap: 5px; }
+    .ai-head .switch { margin-left: auto; }
     .ai-card .ai-title { font-size: 12px; font-weight: 600; }
     /* Info disclosure: ⓘ button toggles the .ai-info panel (wired in ui.ts). */
     .info-btn {
@@ -471,7 +473,7 @@ const TEMPLATE = `
     .info-btn svg { width: 14px; height: 14px; display: block; }
     .info-btn:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; border-radius: 50%; }
     .ai-info {
-      margin-top: 8px; padding: 9px 11px; border-radius: 8px;
+      padding: 9px 11px; border-radius: 8px;
       background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
       font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.5;
     }
@@ -480,8 +482,8 @@ const TEMPLATE = `
     .ai-info p + p { margin-top: 6px; }
     .ai-info a, .ai-nokey a { color: var(--figma-color-bg-brand); cursor: pointer; }
     /* Shown whenever no key is set (incl. first run) — informational, not an error. */
-    .ai-nokey { font-size: 11px; color: var(--figma-color-text-secondary); margin-top: 6px; }
-    .switch { position: relative; width: 36px; height: 20px; flex: 0 0 auto; margin-top: 1px; }
+    .ai-nokey { font-size: 11px; color: var(--figma-color-text-secondary); }
+    .switch { position: relative; width: 36px; height: 20px; flex: 0 0 auto; }
     .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
     .switch .track {
       position: absolute; inset: 0; border-radius: 999px;
@@ -791,42 +793,40 @@ const TEMPLATE = `
         <!-- Write with AI: one switch gates AI-written prose for the AI sections.
              The ⓘ button toggles #ai-info; #ai-nokey shows whenever no key is set. -->
         <div class="ai-card" id="ai-card">
-          <div class="ai-main">
-            <div class="ai-head">
-              <span class="ai-title">Write with AI</span>
-              <button class="info-btn" id="ai-info-btn" type="button"
-                      aria-label="About Write with AI" aria-expanded="false" aria-controls="ai-info">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>
+          <div class="ai-head">
+            <span class="ai-title">Write with AI</span>
+            <button class="info-btn" id="ai-info-btn" type="button"
+                    aria-label="About Write with AI" aria-expanded="false" aria-controls="ai-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>
+              </svg>
+            </button>
+            <label class="switch">
+              <input type="checkbox" id="ai-toggle" />
+              <span class="track"></span>
+            </label>
+          </div>
+          <div id="quota-meter" class="quota-meter" hidden>
+            <div class="quota-bar"><span id="quota-bar-fill"></span></div>
+            <div class="quota-foot">
+              <span class="quota-countwrap">
+                <svg class="quota-check" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 6L9 17l-5-5"/>
                 </svg>
-              </button>
-            </div>
-            <div id="quota-meter" class="quota-meter" hidden>
-              <div class="quota-bar"><span id="quota-bar-fill"></span></div>
-              <div class="quota-foot">
-                <span class="quota-countwrap">
-                  <svg class="quota-check" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M20 6L9 17l-5-5"/>
-                  </svg>
-                  <span id="quota-count" class="quota-count"></span>
-                </span>
-                <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
-              </div>
-            </div>
-            <div class="ai-info" id="ai-info" hidden>
-              <p>AI turns a bare component into docs a teammate can actually use. It reads what Auto Docs & Specs pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
-              <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
-            </div>
-            <div class="ai-nokey" id="ai-nokey" style="display:none">
-              AI works on the free plan. No key needed.
+                <span id="quota-count" class="quota-count"></span>
+              </span>
+              <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
             </div>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="ai-toggle" />
-            <span class="track"></span>
-          </label>
+          <div class="ai-info" id="ai-info" hidden>
+            <p>AI turns a bare component into docs a teammate can actually use. It reads what Auto Docs & Specs pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
+            <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
+          </div>
+          <div class="ai-nokey" id="ai-nokey" style="display:none">
+            AI works on the free plan. No key needed.
+          </div>
         </div>
 
         <!-- Section checklist: which guideline sections to include. Rows are
