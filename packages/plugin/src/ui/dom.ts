@@ -705,6 +705,7 @@ const TEMPLATE = `
     .footer .actions { margin-top: 0; }
     .footer .banner { margin-bottom: 8px; }
     #upsell { padding: 8px 0; }
+    #upsell .upsell-text { margin: 0 0 8px; font-size: 11px; color: var(--figma-color-text-warning); }
 
     /* ---- Button tooltip (footer Download) ----
        CSS-only bubble shown on hover / keyboard focus, sitting above the
@@ -991,9 +992,9 @@ const TEMPLATE = `
     <div id="banner-info" class="banner info"></div>
     <div id="banner-error" class="banner error"></div>
     <div id="upsell" hidden>
-      <p id="upsell-text" class="hint"></p>
+      <p id="upsell-text" class="upsell-text"></p>
       <div class="actions">
-        <button class="btn btn-primary" id="upsell-upgrade-btn" type="button">Upgrade for $8/mo</button>
+        <button class="btn btn-primary" id="upsell-upgrade-btn" type="button">Upgrade for unlimited</button>
         <button class="btn btn-secondary" id="upsell-continue-btn" type="button">Continue without AI</button>
       </div>
     </div>
