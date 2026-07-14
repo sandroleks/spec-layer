@@ -48,8 +48,8 @@ All copy follows the plugin voice (plain, honest, no em dashes).
 | AI toggle off | meter hidden entirely | — | — |
 | Quota unknown (offline) | meter hidden entirely | — | — |
 
-**"Running low" threshold:** amber when `remaining > 0 && remaining <= 3`. A
-single named constant so it is trivial to tune. (Open for review — see gate.)
+**"Running low" threshold:** amber when `remaining > 0 && remaining < 5`
+(i.e. the last four). A single named constant so it stays trivial to tune.
 
 **Reset date:** the empty state derives "Aug 1" from `quota.resetsAt`. Free
 normal/low states omit it to stay quiet; only the dead end needs to say when it
@@ -75,7 +75,7 @@ export interface QuotaMeterModel {
 export function quotaMeterModel(
   q: ProxyQuota | null,
   aiEnabled: boolean,
-  lowThreshold = 3,
+  lowThreshold = 5,   // amber when remaining < lowThreshold
   now?: Date,
 ): QuotaMeterModel;
 ```
@@ -189,7 +189,7 @@ No proxy or generate-flow logic changes in this file.
 ## Testing
 
 - **Unit (Vitest):** `quotaMeterModel` across all states, null/offline, the
-  low boundary (`remaining === 3` low, `=== 4` ok, `=== 0` empty), Pro, and
+  low boundary (`remaining === 4` low, `=== 5` ok, `=== 0` empty), Pro, and
   `formatResetDate` output. These are pure and cover the branching.
 - **Manual in Figma (dark + light):** verify each state renders — set a low
   `remaining`, force empty, and a Pro key — and that the bar width, amber
