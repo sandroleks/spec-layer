@@ -14,7 +14,8 @@ import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView } from './docModel';
+import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
+import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
   showBanner,
@@ -286,47 +287,19 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
   startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
 
   try {
-    await ensureProse(refs, state);
-
-    const selected = new Set<SectionId>();
-    for (const { id } of ALL_SECTIONS) {
-      if (refs.sectionChecks[id]?.checked) selected.add(id);
-    }
-
-    if (selected.size === 0) {
-      showBanner(refs, 'error', 'Select at least one section.');
+    const built = await assembleDoc(refs, state);
+    if (!built) {
+      // No sections checked: assembleDoc showed the banner. Reset the frame UI.
       refs.createFrameBtn.disabled = false;
       stopLoader(refs);
       return;
     }
-
-    // Per-variant tokens: which variants the user ticked in the picker.
-    const variantIds = new Set<string>();
-    refs.variantList.querySelectorAll('input:checked').forEach((el) => {
-      const id = (el as HTMLInputElement).dataset.nodeId;
-      if (id) variantIds.add(id);
-    });
-
-    const model = buildDocModel(
-      state.currentSpec!,
-      state.generatedProse,
-      selected,
-      variantIds,
-      { anatomyView: state.anatomyView, measureViews: state.measureViews },
-    );
-    const config: DocConfig = {
-      sections: [...selected],
-      variantIds: [...variantIds],
-      aiEnabled: state.aiEnabled,
-      anatomyView: state.anatomyView,
-      measureViews: state.measureViews,
-    };
     send({
       type: 'renderDocFrame',
-      model,
+      model: built.model,
       nodeId: state.currentNode!.id,
       contentHash: specContentHash(state.currentSpec!),
-      config,
+      config: built.config,
     });
     // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {
@@ -335,6 +308,55 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
     showBanner(refs, 'error', `Frame failed: ${msg}`);
     refs.createFrameBtn.disabled = false;
   }
+}
+
+/**
+ * Shared prep for the two "build the doc" actions (Create frame / Download):
+ * write AI prose if needed, gather the checked sections and ticked variants,
+ * and assemble the DocFrameModel + its persisted config. Both actions build
+ * from the SAME model so the frame and the downloaded markdown always match.
+ *
+ * Returns null (after showing the "select a section" banner) when nothing is
+ * checked. Assumes the caller already ensured extraction and started the
+ * loader; the caller owns loader/button teardown for the empty-selection case.
+ */
+async function assembleDoc(
+  refs: Refs,
+  state: UiState,
+): Promise<{ model: DocFrameModel; config: DocConfig } | null> {
+  await ensureProse(refs, state);
+
+  const selected = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) {
+    if (refs.sectionChecks[id]?.checked) selected.add(id);
+  }
+  if (selected.size === 0) {
+    showBanner(refs, 'error', 'Select at least one section.');
+    return null;
+  }
+
+  // Per-variant tokens: which variants the user ticked in the picker.
+  const variantIds = new Set<string>();
+  refs.variantList.querySelectorAll('input:checked').forEach((el) => {
+    const id = (el as HTMLInputElement).dataset.nodeId;
+    if (id) variantIds.add(id);
+  });
+
+  const model = buildDocModel(
+    state.currentSpec!,
+    state.generatedProse,
+    selected,
+    variantIds,
+    { anatomyView: state.anatomyView, measureViews: state.measureViews },
+  );
+  const config: DocConfig = {
+    sections: [...selected],
+    variantIds: [...variantIds],
+    aiEnabled: state.aiEnabled,
+    anatomyView: state.anatomyView,
+    measureViews: state.measureViews,
+  };
+  return { model, config };
 }
 
 /** Status lines for the generating loader. The AI path narrates the slow
@@ -405,14 +427,46 @@ export function specMarkdownFilename(spec: IntermediateSpec, fallbackName = 'com
   return `${slug}.spec.md`;
 }
 
-export function runDownload(refs: Refs, state: UiState): void {
+export async function runDownload(refs: Refs, state: UiState): Promise<void> {
+  clearBanners(refs);
+
   if (!ensureExtracted(state)) {
     showBanner(refs, 'error', 'Select a component first.');
     return;
   }
 
-  const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
-  downloadBytes(new TextEncoder().encode(state.renderedMd), filename, 'text/markdown');
+  // Same prep as Create frame (AI prose + section/variant selection), so the
+  // downloaded markdown matches the frame. Disable the button and narrate while
+  // any generation runs.
+  refs.downloadBtn.disabled = true;
+  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
+
+  try {
+    const built = await assembleDoc(refs, state);
+    if (!built) {
+      stopLoader(refs);
+      refs.downloadBtn.disabled = false;
+      return;
+    }
+
+    const markdown = modelToMarkdown(built.model);
+    const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
+    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
+
+    stopLoader(refs);
+    refs.downloadBtn.disabled = false;
+    // Surface any AI note (quota exhausted, lapsed key, generation error) the
+    // same way the frame does via its success banner.
+    if (state.pendingAiNote) {
+      showBanner(refs, 'error', state.pendingAiNote);
+      state.pendingAiNote = '';
+    }
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Download failed: ${msg}`);
+    refs.downloadBtn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------

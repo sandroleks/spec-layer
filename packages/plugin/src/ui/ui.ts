@@ -297,11 +297,13 @@ refs.upsellContinueBtn.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Download (local .zip)
+// Download (local .md — same doc as the frame)
 // ---------------------------------------------------------------------------
 
 refs.downloadBtn.addEventListener('click', () => {
-  runDownload(refs, state);
+  // Download may generate prose (same prep as Create frame), so refresh the
+  // quota meter/upsell when it settles, like the other AI-touching actions.
+  runDownload(refs, state).finally(() => renderQuota(refs, state));
 });
 refs.licenseActivateBtn.addEventListener('click', async () => {
   const key = refs.licenseKeyInput.value.trim();
