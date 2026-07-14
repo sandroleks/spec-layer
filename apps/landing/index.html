@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec Layer: Auto Documentation &amp; Specs — Figma plugin</title>
+<meta name="description" content="A Figma plugin that turns your components into spec and guideline frames, right on the canvas. Measurements, states, anatomy, tokens and AI-written usage docs in one click.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0b0b0e;
+    --surface: #141419;
+    --surface-2: #1b1b22;
+    --border: #26262e;
+    --text: #f4f4f6;
+    --text-dim: #a2a2ad;
+    --accent: #3d7eff;
+    --accent-hover: #2f6ae0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 88px 0 56px; }
+  .hero img.logo {
+    width: 76px; height: 76px; border-radius: 18px;
+    display: block; margin: 0 auto 28px;
+  }
+  .hero h1 {
+    font-size: clamp(1.9rem, 5vw, 3rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  .hero h1 span { color: var(--text-dim); font-weight: 600; }
+  .hero p.tagline {
+    max-width: 620px; margin: 20px auto 0;
+    font-size: 1.125rem; color: var(--text-dim);
+  }
+  .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 24px; border-radius: 10px;
+    font-size: 1rem; font-weight: 600; text-decoration: none;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+
+  /* Screenshots */
+  .shots { display: grid; gap: 24px; padding: 24px 0 40px; }
+  .shots img {
+    width: 100%; height: auto; display: block;
+    border-radius: 14px; border: 1px solid var(--border);
+  }
+
+  /* Sections */
+  section { padding: 48px 0; }
+  h2 { font-size: 1.75rem; letter-spacing: -0.01em; text-align: center; margin-bottom: 36px; }
+
+  /* Pricing */
+  .toggle-row { display: flex; justify-content: center; align-items: center; gap: 4px; margin-bottom: 32px; }
+  .toggle {
+    display: inline-flex; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 4px;
+  }
+  .toggle button {
+    border: 0; background: transparent; color: var(--text-dim);
+    font: inherit; font-weight: 600; font-size: .9375rem;
+    padding: 8px 18px; border-radius: 7px; cursor: pointer;
+  }
+  .toggle button.active { background: var(--surface-2); color: var(--text); }
+  .toggle-note { color: var(--text-dim); font-size: .875rem; margin-left: 10px; }
+
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 680px) { .plans { grid-template-columns: 1fr; } }
+  .plan {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; display: flex; flex-direction: column;
+  }
+  .plan.pro { border-color: var(--accent); }
+  .plan h3 { font-size: 1.125rem; margin-bottom: 4px; }
+  .price { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .price small { font-size: 1rem; font-weight: 500; color: var(--text-dim); }
+  .price-note { color: var(--text-dim); font-size: .875rem; min-height: 1.4em; }
+  .plan ul { list-style: none; margin: 20px 0 28px; flex: 1; }
+  .plan li {
+    padding: 6px 0 6px 26px; position: relative; color: var(--text-dim); font-size: .9375rem;
+  }
+  .plan li strong { color: var(--text); font-weight: 600; }
+  .plan li::before {
+    content: ""; position: absolute; left: 0; top: 11px;
+    width: 14px; height: 14px;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="%233d7eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>') no-repeat center / contain;
+  }
+  .plan .btn { text-align: center; }
+  .fair-use { color: var(--text-dim); font-size: .8125rem; text-align: center; margin-top: 20px; }
+
+  /* FAQ */
+  .faq details {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+  }
+  .faq summary {
+    padding: 16px 20px; cursor: pointer; font-weight: 600; list-style: none;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; color: var(--text-dim); font-size: 1.25rem; font-weight: 400; }
+  .faq details[open] summary::after { content: "–"; }
+  .faq .answer { padding: 0 20px 16px; color: var(--text-dim); font-size: .9375rem; }
+  .faq .answer a { color: var(--accent); text-decoration: none; }
+  .faq .answer a:hover { text-decoration: underline; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border); margin-top: 40px;
+    padding: 36px 0 48px; text-align: center;
+  }
+  footer nav { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+  footer a { color: var(--text-dim); text-decoration: none; font-size: .9375rem; }
+  footer a:hover { color: var(--text); }
+  footer .small { color: var(--text-dim); font-size: .8125rem; }
+</style>
+</head>
+<body>
+
+<header class="hero wrap">
+  <img class="logo" src="logo.svg" alt="Spec Layer logo" width="76" height="76">
+  <h1>Spec Layer<br><span>Auto Documentation &amp; Specs</span></h1>
+  <p class="tagline">
+    A Figma plugin that turns your components into spec and guideline frames,
+    right on the canvas. Measurements, states, anatomy, tokens and AI-written
+    usage docs in one click.
+  </p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+    <a class="btn btn-secondary" href="#pricing">See pricing</a>
+  </div>
+</header>
+
+<div class="shots wrap">
+  <img src="2.png" alt="States matrix generated by the plugin next to the plugin panel" loading="lazy">
+  <img src="3.png" alt="Do's and don'ts, interactions and token tables generated by the plugin" loading="lazy">
+</div>
+
+<section id="pricing" class="wrap">
+  <h2>Pricing</h2>
+
+  <div class="toggle-row">
+    <div class="toggle" role="group" aria-label="Billing period">
+      <button type="button" id="bill-monthly" class="active" aria-pressed="true">Monthly</button>
+      <button type="button" id="bill-yearly" aria-pressed="false">Yearly</button>
+    </div>
+    <span class="toggle-note">Yearly is two months free</span>
+  </div>
+
+  <div class="plans">
+    <div class="plan">
+      <h3>Free</h3>
+      <div class="price">$0</div>
+      <div class="price-note">No account needed</div>
+      <ul>
+        <li><strong>Every spec feature, free forever.</strong> Measurements, states matrix, anatomy, variant diffs, token and theming tables</li>
+        <li>On-canvas doc frames and export</li>
+        <li>10 AI generations a month, 20 in your first month</li>
+      </ul>
+      <a class="btn btn-secondary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+    </div>
+
+    <div class="plan pro">
+      <h3>Pro</h3>
+      <div class="price"><span id="price-amount">$8</span><small id="price-period">/month</small></div>
+      <div class="price-note" id="price-note">Billed monthly, cancel anytime</div>
+      <ul>
+        <li>Everything in Free</li>
+        <li><strong>Unlimited AI generation</strong> for normal individual use</li>
+        <li>Priority support</li>
+      </ul>
+      <a class="btn btn-primary" id="checkout-btn" href="https://speclayer-docs.lemonsqueezy.com/checkout/buy/bb2d0913-6243-47f5-94f1-dfc24a33b713" target="_blank" rel="noopener">Get Pro</a>
+    </div>
+  </div>
+
+  <p class="fair-use">
+    Automated, shared, or exceptionally high-volume usage may be limited under our fair-use policy.
+  </p>
+</section>
+
+<section class="faq wrap">
+  <h2>Questions</h2>
+
+  <details>
+    <summary>How does the license work?</summary>
+    <div class="answer">
+      Buy Pro and your license key arrives by email. Open the plugin in Figma,
+      go to Settings, paste the key, and you're on Pro. One key covers your
+      individual use across your files.
+    </div>
+  </details>
+
+  <details>
+    <summary>What counts as an AI generation?</summary>
+    <div class="answer">
+      One successful AI call for a component. Regenerating docs for an
+      unchanged component hits the cache and costs nothing. Failed calls
+      never count against your quota. Everything deterministic (measurements,
+      states, anatomy, tokens) is free and doesn't use generations at all.
+    </div>
+  </details>
+
+  <details>
+    <summary>Can I get a refund?</summary>
+    <div class="answer">
+      If Pro doesn't work out, email
+      <a href="mailto:alex@neuronux.com">alex@neuronux.com</a> and we'll sort
+      out a refund.
+    </div>
+  </details>
+
+  <details>
+    <summary>Is Pro really unlimited?</summary>
+    <div class="answer">
+      For normal individual use, yes. Documenting your whole library in one
+      sitting is fine. Safeguards only kick in on automated or shared usage
+      patterns, and we'll always contact you before limiting anything.
+    </div>
+  </details>
+</section>
+
+<footer>
+  <div class="wrap">
+    <nav>
+      <a href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+      <a href="https://app.lemonsqueezy.com/my-orders" target="_blank" rel="noopener">Manage subscription</a>
+      <a href="mailto:alex@neuronux.com">Support</a>
+    </nav>
+    <p class="small">Payments are handled by Lemon Squeezy as merchant of record.</p>
+  </div>
+</footer>
+
+<script>
+  // Swap these when the Lemon Squeezy variants change.
+  var CHECKOUT_MONTHLY = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/bb2d0913-6243-47f5-94f1-dfc24a33b713';
+  var CHECKOUT_YEARLY = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/22aa893e-96b4-41d6-8846-86e21887c07a';
+
+  var monthlyBtn = document.getElementById('bill-monthly');
+  var yearlyBtn = document.getElementById('bill-yearly');
+
+  function setBilling(yearly) {
+    document.getElementById('price-amount').textContent = yearly ? '$80' : '$8';
+    document.getElementById('price-period').textContent = yearly ? '/year' : '/month';
+    document.getElementById('price-note').textContent = yearly ? 'Billed yearly, cancel anytime' : 'Billed monthly, cancel anytime';
+    document.getElementById('checkout-btn').href = yearly ? CHECKOUT_YEARLY : CHECKOUT_MONTHLY;
+    monthlyBtn.classList.toggle('active', !yearly);
+    yearlyBtn.classList.toggle('active', yearly);
+    monthlyBtn.setAttribute('aria-pressed', String(!yearly));
+    yearlyBtn.setAttribute('aria-pressed', String(yearly));
+  }
+
+  monthlyBtn.addEventListener('click', function () { setBilling(false); });
+  yearlyBtn.addEventListener('click', function () { setBilling(true); });
+</script>
+
+</body>
+</html>
