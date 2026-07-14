@@ -453,6 +453,7 @@ const TEMPLATE = `
 
     /* ---- "Write with AI" switch + card ---- */
     .ai-card {
+      position: relative;
       display: flex; flex-direction: column; gap: 10px;
       padding: 11px 13px; border-radius: 10px; margin-top: 12px;
       background: var(--figma-color-bg-secondary); border: 1px solid var(--figma-color-border);
@@ -460,24 +461,31 @@ const TEMPLATE = `
     /* Title + info on the left, toggle pushed to the right edge of the row. */
     .ai-head { display: flex; align-items: center; gap: 5px; }
     .ai-head .switch { margin-left: auto; }
+    .info-wrap { display: inline-flex; align-items: center; }
     .ai-card .ai-title { font-size: 12px; font-weight: 600; }
-    /* Info disclosure: ⓘ button toggles the .ai-info panel (wired in ui.ts). */
+    /* Info hint: the ⓘ button reveals the .ai-info popover on hover / focus.
+       The popover is absolutely positioned against .ai-card, so it overlays
+       rather than expanding the card. */
     .info-btn {
-      appearance: none; border: none; background: none; cursor: pointer; padding: 0;
+      appearance: none; border: none; background: none; cursor: help; padding: 0;
       width: 16px; height: 16px; flex: 0 0 auto;
       display: inline-flex; align-items: center; justify-content: center;
       color: var(--figma-color-text-secondary); transition: color 0.12s ease;
     }
-    .info-btn:hover { color: var(--figma-color-text); }
-    .info-btn[aria-expanded="true"] { color: var(--figma-color-bg-brand); }
+    .info-btn:hover, .info-btn:focus-visible { color: var(--figma-color-bg-brand); }
     .info-btn svg { width: 14px; height: 14px; display: block; }
     .info-btn:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; border-radius: 50%; }
     .ai-info {
+      position: absolute; top: 40px; left: 13px; right: 13px; z-index: 20;
       padding: 9px 11px; border-radius: 8px;
       background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
       font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.5;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+      opacity: 0; visibility: hidden; pointer-events: none;
+      transition: opacity 0.12s ease, visibility 0.12s ease;
     }
-    .ai-info[hidden] { display: none; }
+    .info-wrap:hover .ai-info,
+    .info-btn:focus-visible + .ai-info { opacity: 1; visibility: visible; }
     .ai-info p { margin: 0; }
     .ai-info p + p { margin-top: 6px; }
     .ai-info a, .ai-nokey a { color: var(--figma-color-bg-brand); cursor: pointer; }
@@ -795,13 +803,19 @@ const TEMPLATE = `
         <div class="ai-card" id="ai-card">
           <div class="ai-head">
             <span class="ai-title">Write with AI</span>
-            <button class="info-btn" id="ai-info-btn" type="button"
-                    aria-label="About Write with AI" aria-expanded="false" aria-controls="ai-info">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>
-              </svg>
-            </button>
+            <span class="info-wrap">
+              <button class="info-btn" id="ai-info-btn" type="button"
+                      aria-label="About Write with AI" aria-describedby="ai-info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>
+                </svg>
+              </button>
+              <div class="ai-info" id="ai-info" role="tooltip">
+                <p>AI turns a bare component into docs a teammate can actually use. It reads what Auto Docs & Specs pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
+                <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
+              </div>
+            </span>
             <label class="switch">
               <input type="checkbox" id="ai-toggle" />
               <span class="track"></span>
@@ -819,10 +833,6 @@ const TEMPLATE = `
               </span>
               <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
             </div>
-          </div>
-          <div class="ai-info" id="ai-info" hidden>
-            <p>AI turns a bare component into docs a teammate can actually use. It reads what Auto Docs & Specs pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
-            <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
           </div>
           <div class="ai-nokey" id="ai-nokey" style="display:none">
             AI works on the free plan. No key needed.

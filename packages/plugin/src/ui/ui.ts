@@ -381,13 +381,6 @@ document.getElementById('renew-link')?.addEventListener('click', (e) => {
   send({ type: 'openBrowser', url: STOREFRONT_URL });
 });
 
-// Info disclosure: toggle the details panel + the button's expanded state.
-refs.aiInfoBtn.addEventListener('click', () => {
-  const open = refs.aiInfo.hidden;
-  refs.aiInfo.hidden = !open;
-  refs.aiInfoBtn.setAttribute('aria-expanded', String(open));
-});
-
 refs.selectAllBtn.addEventListener('click', () => {
   const checks = Object.values(refs.sectionChecks);
   const allOn = checks.every((c) => c.checked);
