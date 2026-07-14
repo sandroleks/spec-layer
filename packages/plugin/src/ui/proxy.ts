@@ -1,12 +1,12 @@
 import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
 
 export const PROXY_URL = 'https://spec-layer-proxy.spec-layer-test.workers.dev';
-export const CHECKOUT_URL = 'https://speclayertest.lemonsqueezy.com/checkout/buy/bb2d0913-6243-47f5-94f1-dfc24a33b713';
+export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout';
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // Store landing page — where a lapsed/expired subscriber repurchases Pro. A
 // cancelled Lemon Squeezy subscription is resolved by buying again, not resumed
-// from the customer portal. Swap for the production store URL at launch.
-export const STOREFRONT_URL = 'https://speclayertest.lemonsqueezy.com';
+// from the customer portal.
+export const STOREFRONT_URL = 'https://speclayer-docs.lemonsqueezy.com';
 
 export interface ProxyAuth { licenseKey: string | null; figmaUserId: string | null }
 
@@ -111,6 +111,53 @@ export function quotaMeterText(q: ProxyQuota | null): string {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
+
+export type QuotaMeterState = 'hidden' | 'pro' | 'ok' | 'low' | 'empty';
+
+export interface QuotaMeterModel {
+  state: QuotaMeterState;
+  fillPct: number;   // 0..100 bar width
+  countText: string; // "" when hidden
+  linkText: string;  // "" when no link (pro / hidden)
+}
+
+/** ISO timestamp -> "Aug 1" (UTC). Empty for missing/unparseable input. */
+export function formatResetDate(resetsAt: string | undefined): string {
+  if (!resetsAt) return '';
+  const d = new Date(resetsAt);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}`;
+}
+
+/**
+ * View model for the AI-card quota meter. Pure: all branching lives here so
+ * render.ts just applies the result. Hidden when AI is off or the quota is
+ * unknown (offline). Amber ("low") when remaining < lowThreshold.
+ */
+export function quotaMeterModel(
+  q: ProxyQuota | null,
+  aiEnabled: boolean,
+  lowThreshold = 5,
+): QuotaMeterModel {
+  if (!aiEnabled || !q) return { state: 'hidden', fillPct: 0, countText: '', linkText: '' };
+  if (q.tier === 'pro') {
+    return { state: 'pro', fillPct: 0, countText: 'Unlimited generations · Pro', linkText: '' };
+  }
+  const limit = q.limit ?? 0;
+  const remaining = q.remaining ?? Math.max(0, limit - q.used);
+  const fillPct = limit > 0 ? Math.max(0, Math.min(100, (remaining / limit) * 100)) : 0;
+  if (remaining <= 0) {
+    const reset = formatResetDate(q.resetsAt);
+    return {
+      state: 'empty',
+      fillPct: 100,
+      countText: reset ? `0 left · resets ${reset}` : '0 left',
+      linkText: 'Get unlimited',
+    };
+  }
+  const state: QuotaMeterState = remaining < lowThreshold ? 'low' : 'ok';
+  return { state, fillPct, countText: `${remaining} of ${limit} left this month`, linkText: 'Upgrade' };
+}
 
 export function upsellText(resetsAt: string | undefined, now: Date = new Date()): string {
   void resetsAt; // reserved: could show the reset date later

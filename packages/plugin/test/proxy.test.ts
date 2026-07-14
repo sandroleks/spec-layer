@@ -3,7 +3,7 @@ import type { ProxyQuota } from '@spec-layer/extractor';
 import {
   authHeaders, fetchQuota, activateLicense, quotaMeterText, upsellText, PROXY_URL,
   effectiveAuth, resolveLicenseView, licenseStatusCopy, activationErrorCopy,
-  generationErrorCopy, STOREFRONT_URL,
+  generationErrorCopy, STOREFRONT_URL, quotaMeterModel, formatResetDate,
 } from '../src/ui/proxy';
 
 const proQuota: ProxyQuota = { tier: 'pro', used: 1, limit: null, remaining: null, resetsAt: '' };
@@ -152,5 +152,61 @@ describe('copy strings', () => {
   it('upsell text names the current month', () => {
     expect(upsellText(undefined, new Date('2026-07-15T00:00:00Z')))
       .toBe("You've used your free AI generations for July.");
+  });
+});
+
+describe('formatResetDate', () => {
+  it('formats an ISO date as "Mon D" in UTC', () => {
+    expect(formatResetDate('2026-08-01T00:00:00.000Z')).toBe('Aug 1');
+    expect(formatResetDate('2026-12-25T00:00:00.000Z')).toBe('Dec 25');
+  });
+  it('returns empty for missing or unparseable input', () => {
+    expect(formatResetDate('')).toBe('');
+    expect(formatResetDate(undefined)).toBe('');
+    expect(formatResetDate('not-a-date')).toBe('');
+  });
+});
+
+describe('quotaMeterModel', () => {
+  const free = (remaining: number, limit = 20): ProxyQuota =>
+    ({ tier: 'free', used: limit - remaining, limit, remaining, resetsAt: '2026-08-01T00:00:00.000Z' });
+
+  it('hidden when AI is off', () => {
+    expect(quotaMeterModel(free(17), false).state).toBe('hidden');
+  });
+  it('hidden when quota is unknown (offline)', () => {
+    expect(quotaMeterModel(null, true).state).toBe('hidden');
+  });
+  it('pro shows unlimited, no bar, no link', () => {
+    const m = quotaMeterModel({ tier: 'pro', used: 5, limit: null, remaining: null, resetsAt: '' }, true);
+    expect(m).toEqual({ state: 'pro', fillPct: 0, countText: 'Unlimited generations · Pro', linkText: '' });
+  });
+  it('ok state above the low threshold', () => {
+    const m = quotaMeterModel(free(17), true);
+    expect(m.state).toBe('ok');
+    expect(m.fillPct).toBe(85);
+    expect(m.countText).toBe('17 of 20 left this month');
+    expect(m.linkText).toBe('Upgrade');
+  });
+  it('boundary: 5 remaining is still ok', () => {
+    expect(quotaMeterModel(free(5), true).state).toBe('ok');
+  });
+  it('boundary: 4 remaining is low', () => {
+    const m = quotaMeterModel(free(4), true);
+    expect(m.state).toBe('low');
+    expect(m.countText).toBe('4 of 20 left this month');
+    expect(m.linkText).toBe('Upgrade');
+  });
+  it('empty at zero remaining names the reset date and offers unlimited', () => {
+    const m = quotaMeterModel(free(0), true);
+    expect(m.state).toBe('empty');
+    expect(m.fillPct).toBe(100);
+    expect(m.countText).toBe('0 left · resets Aug 1');
+    expect(m.linkText).toBe('Get unlimited');
+  });
+  it('falls back to used/limit when remaining is null', () => {
+    const m = quotaMeterModel({ tier: 'free', used: 18, limit: 20, remaining: null, resetsAt: '2026-08-01T00:00:00.000Z' }, true);
+    expect(m.state).toBe('low');
+    expect(m.countText).toBe('2 of 20 left this month');
   });
 });
