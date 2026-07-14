@@ -14,7 +14,7 @@ import { resolveTheme } from '../brandColors';
 import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
-import { quotaMeterText, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
+import { quotaMeterModel, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -47,9 +47,18 @@ export function renderLicense(refs: Refs, state: UiState): void {
   refs.licenseRenewRow.hidden = view !== 'inactive';
 }
 
-/** Quota meter + upsell visibility. AI off → both hidden (spec §5 state 1). */
+/** Quota meter + upsell visibility. The model owns all state branching. */
 export function renderQuota(refs: Refs, state: UiState): void {
-  refs.quotaMeter.textContent = state.aiEnabled ? quotaMeterText(state.quota) : '';
+  const m = quotaMeterModel(state.quota, state.aiEnabled);
+  refs.quotaMeter.hidden = m.state === 'hidden';
+  refs.quotaMeter.classList.toggle('pro', m.state === 'pro');
+  refs.quotaMeter.classList.toggle('low', m.state === 'low');
+  refs.quotaMeter.classList.toggle('empty', m.state === 'empty');
+  refs.quotaBarFill.style.width = `${m.fillPct}%`;
+  refs.quotaCount.textContent = m.countText;
+  refs.quotaUpgrade.hidden = m.linkText === '';
+  refs.quotaUpgrade.textContent = m.linkText;
+
   const showUpsell = state.aiEnabled && state.quotaExhausted;
   refs.upsell.hidden = !showUpsell;
   if (showUpsell) refs.upsellText.textContent = upsellText(state.quota?.resetsAt);

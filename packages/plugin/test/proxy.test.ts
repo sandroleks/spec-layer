@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
 import {
-  authHeaders, fetchQuota, activateLicense, quotaMeterText, upsellText, PROXY_URL,
+  authHeaders, fetchQuota, activateLicense, upsellText, PROXY_URL,
   effectiveAuth, resolveLicenseView, licenseStatusCopy, activationErrorCopy,
   generationErrorCopy, STOREFRONT_URL, quotaMeterModel, formatResetDate,
 } from '../src/ui/proxy';
@@ -138,17 +138,6 @@ describe('STOREFRONT_URL', () => {
 });
 
 describe('copy strings', () => {
-  it('free meter text', () => {
-    expect(quotaMeterText({ tier: 'free', used: 3, limit: 20, remaining: 17, resetsAt: '' }))
-      .toBe('17/20 AI generations left this month');
-  });
-  it('pro meter text', () => {
-    expect(quotaMeterText({ tier: 'pro', used: 5, limit: null, remaining: null, resetsAt: '' }))
-      .toBe('Pro plan active');
-  });
-  it('empty when quota unknown', () => {
-    expect(quotaMeterText(null)).toBe('');
-  });
   it('upsell text names the current month', () => {
     expect(upsellText(undefined, new Date('2026-07-15T00:00:00Z')))
       .toBe("You've used your free AI generations for July.");

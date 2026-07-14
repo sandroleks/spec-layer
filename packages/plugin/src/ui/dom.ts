@@ -9,7 +9,7 @@
  *
  * The "Selected component" tab is the single-component flow (auto-extract →
  * Write-with-AI → Create frame / Download). The "Settings" tab holds the
- * Spec Layer Pro license activation used to lift the free-tier AI quota.
+ * Auto Docs & Specs Pro license activation used to lift the free-tier AI quota.
  *
  * Figma's own chrome shows the plugin icon + name, so the UI starts straight at
  * the tab bar (no duplicate title). A light/dark theme button lives at the right
@@ -495,6 +495,35 @@ const TEMPLATE = `
     .switch input:checked + .track { background: var(--figma-color-bg-brand); }
     .switch input:checked + .track::after { transform: translateX(16px); }
 
+    /* ---- Quota meter (inside the AI card) ---- */
+    .quota-meter { display: flex; flex-direction: column; gap: 6px; }
+    .quota-meter[hidden] { display: none; }
+    .quota-bar {
+      height: 4px; border-radius: 999px; overflow: hidden;
+      background: var(--figma-color-bg-tertiary);
+    }
+    .quota-bar > span {
+      display: block; height: 100%; border-radius: 999px;
+      background: var(--figma-color-bg-brand); transition: width .18s ease;
+    }
+    .quota-meter.low .quota-bar > span,
+    .quota-meter.empty .quota-bar > span { background: var(--figma-color-bg-warning); }
+    .quota-meter.pro .quota-bar { display: none; }
+    .quota-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .quota-countwrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+    .quota-check { display: none; width: 13px; height: 13px; flex: 0 0 auto; color: var(--figma-color-bg-brand); }
+    .quota-meter.pro .quota-check { display: block; }
+    .quota-count { font-size: 11px; color: var(--figma-color-text-secondary); font-variant-numeric: tabular-nums; }
+    .quota-meter.low .quota-count,
+    .quota-meter.empty .quota-count { color: var(--figma-color-text-warning); }
+    .quota-upgrade {
+      appearance: none; background: none; border: none; cursor: pointer; padding: 0;
+      font-family: inherit; font-size: 11px; color: var(--figma-color-bg-brand); white-space: nowrap;
+    }
+    .quota-upgrade:hover { text-decoration: underline; }
+    .quota-upgrade[hidden] { display: none; }
+    .quota-upgrade:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 2px; border-radius: 3px; }
+
     /* ---- Section header + checklist ---- */
     .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
     .link-btn {
@@ -772,9 +801,21 @@ const TEMPLATE = `
                 </svg>
               </button>
             </div>
-            <span id="quota-meter" class="hint"></span>
+            <div id="quota-meter" class="quota-meter" hidden>
+              <div class="quota-bar"><span id="quota-bar-fill"></span></div>
+              <div class="quota-foot">
+                <span class="quota-countwrap">
+                  <svg class="quota-check" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5"/>
+                  </svg>
+                  <span id="quota-count" class="quota-count"></span>
+                </span>
+                <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
+              </div>
+            </div>
             <div class="ai-info" id="ai-info" hidden>
-              <p>AI turns a bare component into docs a teammate can actually use. It reads what Spec Layer pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
+              <p>AI turns a bare component into docs a teammate can actually use. It reads what Auto Docs & Specs pulls from your file (the variants, states, tokens, and layout) and works out the intent behind them: what the component is for, when to reach for each option, and the accessibility and content details that are easy to forget.</p>
               <p>The measurable parts always come straight from Figma, so your specs stay accurate whether AI is on or off. AI just adds the written layer on top. Turn it off and those written sections wait for you as editable placeholders.</p>
             </div>
             <div class="ai-nokey" id="ai-nokey" style="display:none">
@@ -862,7 +903,7 @@ const TEMPLATE = `
              aria-labelledby="tab-settings">
       <div class="stack">
         <div>
-          <h2>Spec Layer Pro</h2>
+          <h2>Auto Docs & Specs Pro</h2>
           <p class="hint" style="margin-top:4px">
             The free plan includes monthly AI generations, no setup needed.
             Pro lifts that limit for heavier use. Paste the license key from
@@ -996,6 +1037,9 @@ export interface Refs {
   aiInfo: HTMLDivElement;
   aiNokey: HTMLDivElement;
   quotaMeter: HTMLElement;
+  quotaBarFill: HTMLElement;
+  quotaCount: HTMLElement;
+  quotaUpgrade: HTMLButtonElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
@@ -1212,6 +1256,9 @@ export function mount(): Refs {
     aiInfo: byId<HTMLDivElement>('ai-info'),
     aiNokey: byId<HTMLDivElement>('ai-nokey'),
     quotaMeter: byId<HTMLElement>('quota-meter'),
+    quotaBarFill: byId<HTMLElement>('quota-bar-fill'),
+    quotaCount: byId<HTMLElement>('quota-count'),
+    quotaUpgrade: byId<HTMLButtonElement>('quota-upgrade'),
     sectionList,
     sectionChecks,
     groupChecks,

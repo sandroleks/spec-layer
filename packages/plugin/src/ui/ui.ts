@@ -364,6 +364,11 @@ refs.aiToggle.addEventListener('change', () => {
   reflectAiToggle();
 });
 
+// Quota-meter Upgrade link → checkout (same destination as the footer upsell).
+refs.quotaUpgrade.addEventListener('click', () => {
+  send({ type: 'openBrowser', url: CHECKOUT_URL });
+});
+
 // Manage-subscription link opens the billing portal via figma.openExternal.
 document.getElementById('manage-sub-link')?.addEventListener('click', (e) => {
   e.preventDefault();

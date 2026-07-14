@@ -103,12 +103,6 @@ export async function activateLicense(
   return (await res.json()) as { valid: boolean; status: string; instanceId?: string };
 }
 
-export function quotaMeterText(q: ProxyQuota | null): string {
-  if (!q) return '';
-  if (q.tier === 'pro') return 'Pro plan active';
-  return `${q.remaining ?? 0}/${q.limit ?? 0} AI generations left this month`;
-}
-
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
