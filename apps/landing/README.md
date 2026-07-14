@@ -1,6 +1,10 @@
 # Spec Layer landing page
 
-One static page, no build step. `index.html` plus the logo and two screenshots.
+One static page, no build step. `index.html` plus the logo, screenshots, and
+two vendored libraries: `lenis.min.js` (smooth scroll) and `motion.js`
+(the vanilla JS build of Motion/Framer Motion, used for entrance reveals,
+hover/press feedback, the gallery scroll tween, the pricing toggle, and the
+FAQ accordion). Both are plain `<script>` includes, no bundler.
 
 ## Preview locally
 
