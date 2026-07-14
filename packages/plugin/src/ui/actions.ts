@@ -23,10 +23,6 @@ import {
   startLoader,
   stopLoader,
 } from './render';
-import {
-  buildSingleExportFiles,
-  zipFiles,
-} from '../exportFiles';
 
 // ---------------------------------------------------------------------------
 // State
@@ -381,13 +377,12 @@ export function setBrandTheme(state: UiState, value: BrandTheme): void {
 }
 
 function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {
-  // Copy into a plain ArrayBuffer to satisfy Blob constructor typings when
-  // fflate's result carries ArrayBufferLike (may include SharedArrayBuffer).
-  const zipped = bytes;
-  const zipBuffer: ArrayBuffer = zipped.buffer instanceof ArrayBuffer
-    ? zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
-    : new Uint8Array(zipped).buffer as ArrayBuffer;
-  const blob = new Blob([zipBuffer], { type });
+  // Copy into a plain ArrayBuffer to satisfy Blob constructor typings for
+  // byte sources whose buffer may be an ArrayBufferLike (e.g. SharedArrayBuffer).
+  const buffer: ArrayBuffer = bytes.buffer instanceof ArrayBuffer
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    : new Uint8Array(bytes).buffer as ArrayBuffer;
+  const blob = new Blob([buffer], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -397,8 +392,18 @@ function downloadBytes(bytes: Uint8Array, filename: string, type: string): void 
 }
 
 // ---------------------------------------------------------------------------
-// Download — local Blob; works with no docs endpoint and no network.
+// Download — saves the rendered spec as a bare markdown file, so it drops
+// straight into an AI tool. Local Blob; no docs endpoint and no network.
 // ---------------------------------------------------------------------------
+
+/** Filename for a downloaded single-component spec: "<slug>.spec.md".
+ *  Mirrors the export slug rules: kebab-case, trim dashes, fall back to
+ *  "component" when the name reduces to nothing. */
+export function specMarkdownFilename(spec: IntermediateSpec, fallbackName = 'component'): string {
+  const name = spec.name || fallbackName;
+  const slug = toKebab(name).replace(/^-+|-+$/g, '') || 'component';
+  return `${slug}.spec.md`;
+}
 
 export function runDownload(refs: Refs, state: UiState): void {
   if (!ensureExtracted(state)) {
@@ -406,26 +411,8 @@ export function runDownload(refs: Refs, state: UiState): void {
     return;
   }
 
-  const bundle = buildSingleExportBundle(
-    state.renderedMd,
-    state.currentSpec!,
-    state.currentNode?.name ?? 'component',
-  );
-  downloadBytes(bundle.bytes, bundle.filename, 'application/zip');
-}
-
-export function buildSingleExportBundle(
-  markdown: string,
-  spec: IntermediateSpec,
-  fallbackName = 'component',
-): { filename: string; bytes: Uint8Array } {
-  const name = spec.name || fallbackName;
-  const slug = toKebab(name).replace(/^-+|-+$/g, '') || 'component';
-  const files = buildSingleExportFiles({ name, markdown, spec });
-  return {
-    filename: `${slug}.spec-layer.zip`,
-    bytes: zipFiles(files),
-  };
+  const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
+  downloadBytes(new TextEncoder().encode(state.renderedMd), filename, 'text/markdown');
 }
 
 // ---------------------------------------------------------------------------

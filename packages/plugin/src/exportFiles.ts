@@ -99,10 +99,6 @@ export function buildExportFiles(
   return result;
 }
 
-export function buildSingleExportFiles(item: ExportItem): Record<string, string> {
-  return buildExportFiles([item], '');
-}
-
 // ---------------------------------------------------------------------------
 // zipFiles
 // ---------------------------------------------------------------------------

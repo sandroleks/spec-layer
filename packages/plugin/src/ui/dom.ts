@@ -114,6 +114,26 @@ const TEMPLATE = `
       display: flex; flex-direction: column; height: 100vh;
     }
 
+    /* ---- Scrollbars ----
+       The native scrollbar ignores body[data-theme] and stays OS-light even in
+       our dark palette, so we draw our own thin, theme-aware one instead. */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--figma-color-bg-tertiary) transparent;
+    }
+    *::-webkit-scrollbar { width: 10px; height: 10px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb {
+      background-color: var(--figma-color-bg-tertiary);
+      border-radius: 8px;
+      border: 2px solid var(--figma-color-bg);
+      background-clip: padding-box;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background-color: var(--figma-color-text-disabled);
+      background-clip: padding-box;
+    }
+
     /* ---- Tab bar ----
        The topmost UI element (Figma's own chrome already shows the plugin icon +
        name, so we don't repeat a title here). Figma-native segmented style: the
@@ -657,6 +677,37 @@ const TEMPLATE = `
     .footer .banner { margin-bottom: 8px; }
     #upsell { padding: 8px 0; }
 
+    /* ---- Button tooltip (footer Download) ----
+       CSS-only bubble shown on hover / keyboard focus, sitting above the
+       button. The footer is a flex sibling of .content (not nested inside it)
+       and body overflow is visible, so the bubble escapes upward without
+       clipping. Anchored to the button's left edge and extending right so it
+       stays inside the panel even for the left-hand button. ~300ms show delay
+       keeps it from flickering during ordinary clicking. */
+    .btn[data-tooltip] { position: relative; }
+    .btn[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 0; bottom: calc(100% + 8px);
+      width: 200px; padding: 7px 9px;
+      border-radius: 8px;
+      background: var(--figma-color-bg-inverse, #1e1e1e);
+      color: var(--figma-color-text-oninverse, #fff);
+      font-size: 11px; line-height: 1.4; font-weight: 400;
+      text-align: left; white-space: normal;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+      opacity: 0; transform: translateY(4px);
+      pointer-events: none;
+      transition: opacity 80ms ease, transform 80ms ease;
+      transition-delay: 0s;
+      z-index: 30;
+    }
+    .btn[data-tooltip]:hover::after,
+    .btn[data-tooltip]:focus-visible::after {
+      opacity: 1; transform: translateY(0);
+      transition-delay: 300ms;
+    }
+
     /* ---- Reading chip (auto-extract loading indicator) ---- */
     .chip {
       display: inline-flex; align-items: center; gap: 5px;
@@ -906,7 +957,8 @@ const TEMPLATE = `
       </div>
     </div>
     <div class="actions">
-      <button class="btn btn-secondary" id="download-btn" type="button">Download</button>
+      <button class="btn btn-secondary" id="download-btn" type="button"
+              data-tooltip="Saves the spec as markdown. Drop it into Claude, Cursor, or any AI tool.">Download</button>
       <button class="btn btn-primary" id="create-frame-btn">Create frame</button>
     </div>
   </div>

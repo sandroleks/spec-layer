@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { buildExportFiles, buildSingleExportFiles, zipFiles } from '../src/exportFiles';
+import { buildExportFiles, zipFiles } from '../src/exportFiles';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 // Minimal IntermediateSpec stub carrying the field that powers the docs
@@ -176,16 +176,6 @@ describe('buildExportFiles', () => {
   it('omits the sidecar when no spec is provided (legacy/raw markdown)', () => {
     const result = buildExportFiles([{ name: 'Button', markdown: '# Button' }], 'ds');
     expect(Object.keys(result)).toEqual(['ds/button.md']);
-  });
-});
-
-describe('buildSingleExportFiles', () => {
-  it('builds a single-component sidecar-preserving bundle file map', () => {
-    const spec = specStub('Button');
-    const result = buildSingleExportFiles({ name: 'Button', markdown: '# Button', spec });
-
-    expect(result['button.md']).toBe('# Button');
-    expect(result['.spec-data/button.json']).toBe(JSON.stringify(spec, null, 2));
   });
 });
 

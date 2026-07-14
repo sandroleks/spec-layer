@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unzipSync, strFromU8 } from 'fflate';
-import { buildSingleExportBundle, proseNeedsRegen, canGenerate, createState, type UiState } from '../src/ui/actions';
+import { specMarkdownFilename, proseNeedsRegen, canGenerate, createState, type UiState } from '../src/ui/actions';
 import type { IntermediateSpec, ProseKey } from '@spec-layer/extractor';
 
 describe('proseNeedsRegen', () => {
@@ -64,15 +63,24 @@ describe('canGenerate', () => {
   });
 });
 
-describe('buildSingleExportBundle', () => {
-  it('builds a single-component zip bundle containing markdown and sidecar', () => {
-    const spec = specStub('Button');
-    const bundle = buildSingleExportBundle('# Edited Button', spec, 'Button');
+describe('specMarkdownFilename', () => {
+  it('kebab-cases the spec name and appends .spec.md', () => {
+    expect(specMarkdownFilename(specStub('Text Field'))).toBe('text-field.spec.md');
+  });
 
-    expect(bundle.filename).toBe('button.spec-layer.zip');
+  it('handles figma hierarchy names with slashes', () => {
+    expect(specMarkdownFilename(specStub('Icon/Arrow Up'))).toBe('icon-arrow-up.spec.md');
+  });
 
-    const unzipped = unzipSync(bundle.bytes);
-    expect(strFromU8(unzipped['button.md'])).toBe('# Edited Button');
-    expect(JSON.parse(strFromU8(unzipped['.spec-data/button.json']))).toEqual(spec);
+  it('strips trailing hyphen from slash-only names', () => {
+    expect(specMarkdownFilename(specStub('Icon/'))).toBe('icon.spec.md');
+  });
+
+  it('falls back to "component" when the name reduces to only hyphens', () => {
+    expect(specMarkdownFilename(specStub('---'))).toBe('component.spec.md');
+  });
+
+  it('uses the fallback name when the spec name is empty', () => {
+    expect(specMarkdownFilename(specStub(''), 'My Node')).toBe('my-node.spec.md');
   });
 });
