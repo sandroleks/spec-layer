@@ -5,6 +5,7 @@ import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { buildDocFrames } from './docFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
+import { familiesWithRequiredStyles } from './fonts';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
@@ -258,7 +259,9 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'requestFonts': {
       try {
         const fonts = await figma.listAvailableFontsAsync();
-        const families = [...new Set(fonts.map((f) => f.fontName.family))].sort();
+        // Only offer families the frame can actually use (Regular+Medium+Bold),
+        // so a picked font never silently falls back to Inter.
+        const families = familiesWithRequiredStyles(fonts);
         figma.ui.postMessage({ type: 'fontList', families } as MainToUi);
       } catch {
         /* picker falls back to a free-text input */
