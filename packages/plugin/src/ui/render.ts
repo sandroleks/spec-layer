@@ -10,7 +10,7 @@ import type { Refs } from './dom';
 import type { UiState } from './actions';
 import type { LibraryEntry } from '../messages';
 import { isAtomComponentName } from '../collectComponents';
-import { resolveTheme, matchPreset } from '../brandColors';
+import { resolveTheme } from '../brandColors';
 import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
@@ -298,15 +298,6 @@ export function renderBrandTheme(refs: Refs, state: UiState): void {
   refs.logoPreview.style.display = state.logoBase64 ? 'inline-block' : 'none';
   refs.clearLogoBtn.style.display = state.logoBase64 ? 'inline-block' : 'none';
   if (state.logoBase64) refs.logoPreview.src = `data:image/png;base64,${state.logoBase64}`;
-
-  // Exactly one card is active: the matching preset, or the Custom card when
-  // the theme matches no preset.
-  const active = matchPreset(state.brandTheme);
-  refs.presetRow.querySelectorAll<HTMLElement>('.preset-card').forEach((card) => {
-    const isCustom = card.dataset.preset === '__custom__';
-    const on = active === null ? isCustom : card.dataset.preset === active;
-    card.classList.toggle('active', on);
-  });
 }
 
 // ---------------------------------------------------------------------------

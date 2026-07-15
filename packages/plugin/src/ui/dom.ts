@@ -1008,6 +1008,10 @@ const TEMPLATE = `
 
           <div class="preset-grid" id="preset-row"></div>
 
+          <!-- Color + font controls: only shown when the theme is Custom
+               (toggled in ui.ts). The logo section below stays outside this
+               container so it is always visible. -->
+          <div class="customize-controls" id="customize-controls" hidden>
           <h3 class="customize-heading">Customize</h3>
 
           <div class="color-grid">
@@ -1061,6 +1065,7 @@ const TEMPLATE = `
             </div>
           </div>
           <p class="hint" id="font-fallback-hint" aria-live="polite"></p>
+          </div>
 
           <label class="field-label logo-label">Logo</label>
           <p class="hint" style="margin:0 0 6px">Optional. Sits in the header of the generated frame.</p>
@@ -1191,6 +1196,7 @@ export interface Refs {
   headingFontPicker: HTMLDivElement;
   bodyFontPicker: HTMLDivElement;
   fontFallbackHint: HTMLParagraphElement;
+  customizeControls: HTMLElement;
   brandColorHint: HTMLParagraphElement;
   resetColorsLink: HTMLElement;
   captureLogoBtn: HTMLButtonElement;
@@ -1480,6 +1486,7 @@ export function mount(): Refs {
     headingFontPicker: byId<HTMLDivElement>('heading-font-picker'),
     bodyFontPicker: byId<HTMLDivElement>('body-font-picker'),
     fontFallbackHint: byId<HTMLParagraphElement>('font-fallback-hint'),
+    customizeControls: byId<HTMLElement>('customize-controls'),
     brandColorHint: byId<HTMLParagraphElement>('brand-color-hint'),
     resetColorsLink: byId<HTMLElement>('reset-colors-link'),
     captureLogoBtn: byId<HTMLButtonElement>('capture-logo-btn'),

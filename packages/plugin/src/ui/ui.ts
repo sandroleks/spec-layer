@@ -33,7 +33,7 @@ import {
   CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL,
 } from './proxy';
 import { resolveComponentImage } from './ai';
-import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
+import { parseBrandHex, emptyBrandTheme, THEME_PRESETS, matchPreset } from '../brandColors';
 import { createFontPicker } from './fontPicker';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
 import {
@@ -561,6 +561,27 @@ refs.variantList.addEventListener('change', () => updateVariantCount(refs));
 // Frame brand theme (Settings)
 // ---------------------------------------------------------------------------
 
+// Custom mode is a UI-only intent (not persisted): true when the user is
+// editing their own theme, false when a preset is selected. It drives which
+// preset card is active and whether the color/font controls are shown. On boot
+// it is inferred from whether the stored theme matches a preset.
+let customMode = false;
+
+/**
+ * Paint the theme fields, then reflect the current mode: highlight exactly one
+ * preset card (the matching preset, or Custom in custom mode) and show the
+ * color/font controls only in custom mode. The logo section lives outside the
+ * controls container, so it stays visible in every mode.
+ */
+function renderTheme(): void {
+  renderBrandTheme(refs, state);
+  const activeName = customMode ? '__custom__' : (matchPreset(state.brandTheme) ?? '__custom__');
+  refs.presetRow.querySelectorAll<HTMLElement>('.preset-card').forEach((card) => {
+    card.classList.toggle('active', card.dataset.preset === activeName);
+  });
+  refs.customizeControls.hidden = !customMode;
+}
+
 /**
  * Apply a typed hex value to one theme color field. Empty input clears the
  * override (back to default); an invalid hex shows a hint and is NOT persisted
@@ -583,7 +604,7 @@ function applyBrandColor(
     refs.brandColorHint.textContent = '';
     setBrandTheme(state, { ...state.brandTheme, [field]: null });
   }
-  renderBrandTheme(refs, state);
+  renderTheme();
 }
 
 refs.headerColorInput.addEventListener('change', () =>
@@ -602,7 +623,9 @@ refs.resetColorsLink.addEventListener('click', () => {
   refs.brandColorHint.textContent = '';
   refs.fontFallbackHint.textContent = '';
   setBrandTheme(state, emptyBrandTheme());
-  renderBrandTheme(refs, state);
+  // Stay in custom mode: this clears the user's edits back to the default
+  // palette while they keep customizing (it does not re-select a preset).
+  renderTheme();
 });
 
 // Compatible families from the main thread; empty until (unless) it arrives.
@@ -622,7 +645,7 @@ function applyBrandFont(field: 'headingFont' | 'bodyFont', raw: string): void {
   refs.fontFallbackHint.textContent = unknown
     ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
     : '';
-  renderBrandTheme(refs, state);
+  renderTheme();
 }
 
 const headingFontPicker = createFontPicker({
@@ -634,17 +657,24 @@ const bodyFontPicker = createFontPicker({
   onCommit: (value) => applyBrandFont('bodyFont', value),
 });
 
-// Preset chips (injected in mount() from THEME_PRESETS): clicking one applies a
-// CLONE of the preset's theme, so later per-field edits never mutate the preset.
+// Preset cards (injected in mount()): clicking a preset applies a CLONE of its
+// theme and hides the controls; clicking Custom reveals the controls without
+// changing values, so the user edits from whatever was last active.
 refs.presetRow.addEventListener('click', (e) => {
   const card = (e.target as HTMLElement).closest('.preset-card') as HTMLElement | null;
   if (!card) return;
-  const preset = THEME_PRESETS.find((p) => p.name === card.dataset.preset);
-  if (!preset) return;
   refs.brandColorHint.textContent = '';
   refs.fontFallbackHint.textContent = '';
+  if (card.dataset.preset === '__custom__') {
+    customMode = true;
+    renderTheme();
+    return;
+  }
+  const preset = THEME_PRESETS.find((p) => p.name === card.dataset.preset);
+  if (!preset) return;
+  customMode = false;
   setBrandTheme(state, { ...preset.theme });
-  renderBrandTheme(refs, state);
+  renderTheme();
 });
 
 // Logo capture/clear — the main thread exports the current canvas selection
@@ -720,7 +750,10 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'brandTheme': {
       state.brandTheme = msg.value;
-      renderBrandTheme(refs, state);
+      // Infer the mode from the stored theme: a value that matches no preset
+      // means the user had customized, so open in custom mode with controls shown.
+      customMode = matchPreset(msg.value) === null;
+      renderTheme();
       break;
     }
 
@@ -734,14 +767,14 @@ window.onmessage = (event: MessageEvent) => {
     case 'logoCaptured': {
       state.logoBase64 = msg.base64;
       refs.logoErrorHint.textContent = '';
-      renderBrandTheme(refs, state);
+      renderTheme();
       break;
     }
 
     case 'logoCleared': {
       state.logoBase64 = null;
       refs.logoErrorHint.textContent = '';
-      renderBrandTheme(refs, state);
+      renderTheme();
       break;
     }
 
@@ -847,8 +880,9 @@ window.onmessage = (event: MessageEvent) => {
 
 clearBanners(refs);
 // Paint the theme fields/swatches from defaults immediately; the boot-time
-// 'brandTheme' message refines them with any stored overrides.
-renderBrandTheme(refs, state);
+// 'brandTheme' message refines them with any stored overrides (and sets the
+// mode). Default state is a preset, so controls start hidden.
+renderTheme();
 send({ type: 'requestSelection' });
 // Populate the font-family datalist for the theme's font pickers. If the main
 // thread can't list fonts, the inputs simply stay free-text.
