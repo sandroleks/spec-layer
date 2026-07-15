@@ -11,7 +11,17 @@ describe('identity', () => {
 
   it('prefers the license header when both are present', () => {
     const h = new Headers({ Authorization: 'Bearer key-1', 'X-Figma-User': 'u1' });
-    expect(identityFromHeaders(h, 's')).toEqual({ kind: 'license', key: 'key-1' });
+    expect(identityFromHeaders(h, 's')).toEqual({ kind: 'license', key: 'key-1', instanceId: null });
+  });
+
+  it('splits key:instanceId bearers', () => {
+    expect(identityFromHeaders(new Headers({ Authorization: 'Bearer KEY:inst-9' }), 's'))
+      .toEqual({ kind: 'license', key: 'KEY', instanceId: 'inst-9' });
+  });
+
+  it('bare key bearers carry a null instanceId (legacy clients)', () => {
+    expect(identityFromHeaders(new Headers({ Authorization: 'Bearer KEY' }), 's'))
+      .toEqual({ kind: 'license', key: 'KEY', instanceId: null });
   });
 
   it('falls back to a hashed free identity', () => {

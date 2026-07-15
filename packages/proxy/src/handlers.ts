@@ -69,7 +69,7 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   let tier: Tier = 'free';
   let identityId: string;
   if (identity.kind === 'license') {
-    const lic = await checkLicense(identity.key, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
+    const lic = await checkLicense(identity.key, identity.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
     if (lic.tier !== 'pro') return json(401, { error: 'license_not_active', reason: lic.reason });
     tier = 'pro';
     identityId = licenseIdentityId(identity.key);
@@ -136,7 +136,7 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   let tier: Tier = 'free';
   let identityId: string;
   if (identity.kind === 'license') {
-    const lic = await checkLicense(identity.key, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
+    const lic = await checkLicense(identity.key, identity.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
     tier = lic.tier === 'pro' ? 'pro' : 'free';
     identityId = licenseIdentityId(identity.key);
   } else {

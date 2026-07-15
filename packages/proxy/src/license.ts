@@ -27,15 +27,16 @@ export class LsUnreachable extends Error {
 
 interface CacheEntry { status: string; validatedAt: number }
 
-const cacheKey = (key: string) => `lic:${sha256(key)}`;
+const cacheKey = (key: string, instanceId: string | null) =>
+  `lic:${sha256(instanceId ? `${key}:${instanceId}` : key)}`;
 
-async function readCache(deps: LicenseDeps, key: string): Promise<CacheEntry | null> {
-  const raw = await deps.cache.get(cacheKey(key));
+async function readCache(deps: LicenseDeps, key: string, instanceId: string | null): Promise<CacheEntry | null> {
+  const raw = await deps.cache.get(cacheKey(key, instanceId));
   return raw ? (JSON.parse(raw) as CacheEntry) : null;
 }
 
-async function writeCache(deps: LicenseDeps, key: string, entry: CacheEntry): Promise<void> {
-  await deps.cache.put(cacheKey(key), JSON.stringify(entry), { expirationTtl: LICENSE_CACHE_KV_TTL_S });
+async function writeCache(deps: LicenseDeps, key: string, instanceId: string | null, entry: CacheEntry): Promise<void> {
+  await deps.cache.put(cacheKey(key, instanceId), JSON.stringify(entry), { expirationTtl: LICENSE_CACHE_KV_TTL_S });
 }
 
 function toResult(status: string): LicenseResult {
@@ -89,13 +90,16 @@ function effectiveStatus(reportedStatus: string, valid: boolean): string {
   return reportedStatus === 'active' ? 'invalid' : reportedStatus;
 }
 
-export async function checkLicense(key: string, deps: LicenseDeps): Promise<LicenseResult> {
+export async function checkLicense(
+  key: string, instanceId: string | null, deps: LicenseDeps,
+): Promise<LicenseResult> {
   if (!LICENSE_KEY_RE.test(key)) return { tier: 'free', reason: 'invalid' };
   const now = deps.now();
-  const cached = await readCache(deps, key);
+  const cached = await readCache(deps, key, instanceId);
   if (cached && now - cached.validatedAt < LICENSE_CACHE_TTL_MS) return toResult(cached.status);
 
-  const out = await callLs('validate', { license_key: key }, deps, 'valid');
+  const body = instanceId ? { license_key: key, instance_id: instanceId } : { license_key: key };
+  const out = await callLs('validate', body, deps, 'valid');
   if (out.kind === 'transient') {
     // Outage: honor a previously validated status within the grace window.
     if (cached && now - cached.validatedAt < LICENSE_GRACE_MS) return toResult(cached.status);
@@ -103,7 +107,7 @@ export async function checkLicense(key: string, deps: LicenseDeps): Promise<Lice
   }
   const valid = out.data.valid === true && out.reportedStatus === 'active';
   const status = effectiveStatus(out.reportedStatus, valid);
-  await writeCache(deps, key, { status, validatedAt: now });
+  await writeCache(deps, key, instanceId, { status, validatedAt: now });
   return toResult(status);
 }
 
@@ -123,7 +127,7 @@ export async function validateLicense(
   const out = await callLs('validate', body, deps, 'valid');
   if (out.kind === 'transient') throw new LsUnreachable();
   const valid = out.data.valid === true && out.reportedStatus === 'active';
-  await writeCache(deps, key, { status: effectiveStatus(out.reportedStatus, valid), validatedAt: deps.now() });
+  await writeCache(deps, key, instanceId, { status: effectiveStatus(out.reportedStatus, valid), validatedAt: deps.now() });
   return { valid, status: out.reportedStatus };
 }
 
@@ -133,9 +137,11 @@ export async function activateLicense(
   const out = await callLs('activate', { license_key: key, instance_name: instanceName }, deps, 'activated');
   if (out.kind === 'transient') throw new LsUnreachable();
   const activated = Boolean(out.data.activated);
-  if (activated) {
-    await writeCache(deps, key, { status: out.reportedStatus, validatedAt: deps.now() });
-  }
   const instanceId = typeof out.data.instance?.id === 'string' ? out.data.instance.id : undefined;
+  if (activated) {
+    // Cache under the instance-qualified key so it matches the bearer the
+    // plugin will send on the very next request (`KEY:instanceId`).
+    await writeCache(deps, key, instanceId ?? null, { status: out.reportedStatus, validatedAt: deps.now() });
+  }
   return { valid: activated, status: out.reportedStatus, instanceId };
 }

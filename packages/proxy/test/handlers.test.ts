@@ -108,8 +108,8 @@ describe('handleProse', () => {
 
   it('pro license: unlimited headers', async () => {
     const d = deps();
-    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
+    await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Tier')).toBe('pro');
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
