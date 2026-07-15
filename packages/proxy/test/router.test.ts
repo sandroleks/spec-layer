@@ -108,6 +108,31 @@ describe('route', () => {
     const res = await route(new Request('https://p.test/nope'), baseDeps());
     expect(res.status).toBe(404);
   });
+
+  it('502s activation cleanly when LS is unreachable (with CORS)', async () => {
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => { throw new Error('ls down'); }) as unknown as typeof fetch;
+    const res = await route(new Request('https://proxy.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: UUID_KEY }),
+    }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'ls_unreachable' });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('includes licenseReason in the quota body when a key is not granting pro', async () => {
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ valid: false, license_key: { status: 'expired' } }), { status: 200 },
+    )) as unknown as typeof fetch;
+    const res = await route(new Request('https://proxy.test/v1/quota', {
+      headers: { Authorization: `Bearer ${UUID_KEY}` },
+    }), d);
+    const body = await res.json() as { tier: string; licenseReason?: string };
+    expect(body.tier).toBe('free');
+    expect(body.licenseReason).toBe('expired');
+  });
 });
 
 describe('CORS', () => {

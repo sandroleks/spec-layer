@@ -1,6 +1,6 @@
 import { sha256 } from 'js-sha256';
 import { identityFromHeaders } from './identity';
-import { activateLicense, checkLicense, validateLicense, LICENSE_KEY_RE, type KVLike } from './license';
+import { activateLicense, checkLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
@@ -135,14 +135,18 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   if (!identity) return json(401, { error: 'unauthenticated' });
   let tier: Tier = 'free';
   let identityId: string;
+  let licResult: LicenseResult | null = null;
   if (identity.kind === 'license') {
-    const lic = await checkLicense(identity.key, identity.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
-    tier = lic.tier === 'pro' ? 'pro' : 'free';
+    licResult = await checkLicense(identity.key, identity.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
+    tier = licResult.tier === 'pro' ? 'pro' : 'free';
     identityId = licenseIdentityId(identity.key);
   } else {
     identityId = `free:${identity.id}`;
   }
   const s = await deps.quotaFor(identityId).snapshot(tier);
+  if (identity.kind === 'license' && tier === 'free') {
+    return json(200, { ...s, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
+  }
   return json(200, s);
 }
 
@@ -156,14 +160,19 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
   if (typeof body.key !== 'string' || !body.key) return json(400, { error: 'missing key' });
   if (!LICENSE_KEY_RE.test(body.key)) return json(200, { valid: false, status: 'invalid' });
   const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
-  // Repeat activation on a known device: validate the existing instance rather
-  // than calling activate again (which would consume another device slot).
-  if (typeof body.instanceId === 'string' && body.instanceId) {
-    const v = await validateLicense(body.key, body.instanceId, licenseDeps);
-    return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
+  try {
+    // Repeat activation on a known device: validate the existing instance rather
+    // than calling activate again (which would consume another device slot).
+    if (typeof body.instanceId === 'string' && body.instanceId) {
+      const v = await validateLicense(body.key, body.instanceId, licenseDeps);
+      return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
+    }
+    const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', licenseDeps);
+    return json(200, out);
+  } catch (err) {
+    if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });
+    throw err;
   }
-  const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', licenseDeps);
-  return json(200, out);
 }
 
 const CORS_HEADERS: Record<string, string> = {
