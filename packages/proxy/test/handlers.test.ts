@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { handleProse } from '../src/handlers';
+import { handleProse, type QuotaClient } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 
 class MemKV {
@@ -112,9 +112,28 @@ describe('handleProse', () => {
   });
 
   it('never logs the raw license key', async () => {
-    const d = deps();
+    // Force the fair_use_flag log path: stub the QuotaClient so reserve()
+    // reports flagged (as it would once the pro identity's monthly commit
+    // count reaches PRO_SOFT_THRESHOLD), instead of relying on real usage
+    // accrual. Without this the request never triggers deps.log and the
+    // assertion loop below runs zero times, passing vacuously even if a raw
+    // key were logged.
+    const flaggedQuota: QuotaClient = {
+      reserve: async () => ({ kind: 'proceed', flagged: true }),
+      commit: async () => {},
+      release: async () => {},
+      snapshot: async () => ({
+        tier: 'pro', used: 1000, limit: null, remaining: null,
+        resetsAt: new Date('2026-08-01T00:00:00Z').toISOString(),
+      }),
+    };
+    const d = deps({ quotaFor: () => flaggedQuota });
     await d.licenseCache.put(`lic:${sha256('KEY1')}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
+    expect(res.status).toBe(200);
+
+    // The log path must actually have fired, or this test would be vacuous.
+    expect((d.log as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
     for (const call of (d.log as ReturnType<typeof vi.fn>).mock.calls) {
       expect(JSON.stringify(call)).not.toContain('KEY1');
     }
