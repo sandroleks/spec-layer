@@ -357,6 +357,9 @@ const TEMPLATE = `
        Searchable combobox: a text input plus an absolutely positioned menu.
        Only families with Regular+Medium+Bold are listed (filtered on the
        main thread); typing filters, arrows navigate, Enter/click commits. */
+    /* Heading + body pickers sit side by side, matching the color grid. */
+    .font-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 8px; margin-top: 12px; }
+    .font-field { min-width: 0; }
     .font-picker { position: relative; }
     /* position: fixed (top/left/width/max-height set in fontPicker.ts) so the
        menu escapes the settings panel's overflow clipping and flips above the
@@ -372,7 +375,9 @@ const TEMPLATE = `
     .font-option.default { color: var(--figma-color-text-secondary); }
 
     /* ---- Logo row (frame theme) ---- */
-    .logo-row { display: flex; align-items: center; gap: 8px; }
+    /* Logo gets its own labelled section, separated from the fonts above. */
+    .logo-label { margin-top: 16px; }
+    .logo-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .logo-row img {
       border: 1px solid var(--figma-color-border); border-radius: 4px;
       background: var(--figma-color-bg-secondary);
@@ -994,7 +999,7 @@ const TEMPLATE = `
 
         <hr />
 
-        <div class="settings-group" id="theme-group">
+        <div class="settings-group" id="theme-group" style="padding-bottom:12px">
           <h2>Frame theme</h2>
           <p class="hint" style="margin-top:4px">
             Pick a theme for the generated Guidelines frame, or adjust any value below.
@@ -1038,20 +1043,27 @@ const TEMPLATE = `
           <p class="hint" id="brand-color-hint"></p>
           <p class="hint" style="margin-top:6px"><a id="reset-colors-link">Reset to defaults</a></p>
 
-          <label class="field-label" for="heading-font-input" style="margin-top:10px">Heading font</label>
-          <div class="font-picker" id="heading-font-picker">
-            <input type="text" id="heading-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
-            <div class="font-menu" hidden></div>
-          </div>
-
-          <label class="field-label" for="body-font-input" style="margin-top:10px">Body font</label>
-          <div class="font-picker" id="body-font-picker">
-            <input type="text" id="body-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
-            <div class="font-menu" hidden></div>
+          <div class="font-grid">
+            <div class="font-field">
+              <label class="field-label" for="heading-font-input">Heading font</label>
+              <div class="font-picker" id="heading-font-picker">
+                <input type="text" id="heading-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
+                <div class="font-menu" hidden></div>
+              </div>
+            </div>
+            <div class="font-field">
+              <label class="field-label" for="body-font-input">Body font</label>
+              <div class="font-picker" id="body-font-picker">
+                <input type="text" id="body-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
+                <div class="font-menu" hidden></div>
+              </div>
+            </div>
           </div>
           <p class="hint" id="font-fallback-hint" aria-live="polite"></p>
 
-          <div class="logo-row" style="margin-top:10px">
+          <label class="field-label logo-label">Logo</label>
+          <p class="hint" style="margin:0 0 6px">Optional. Sits in the header of the generated frame.</p>
+          <div class="logo-row">
             <button class="btn btn-secondary" id="capture-logo-btn" type="button">Use selected node as logo</button>
             <img id="logo-preview" alt="" style="display:none; height:24px;" />
             <button class="link-btn" id="clear-logo-btn" type="button" style="display:none;">Remove</button>
