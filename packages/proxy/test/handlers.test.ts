@@ -2,11 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import { handleProse, type QuotaClient } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
+import { SlidingWindowLimiter } from '../src/ratelimit';
+
+const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 class MemKV {
   map = new Map<string, string>();
   async get(k: string) { return this.map.get(k) ?? null; }
-  async put(k: string, v: string) { this.map.set(k, v); }
+  async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
 }
 
 /** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
@@ -45,6 +48,7 @@ function deps(overrides: Partial<Parameters<typeof handleProse>[1]> = {}) {
     now: () => Date.parse('2026-07-01T00:00:00Z'),
     quotaFor: memQuota(() => Date.parse('2026-07-01T00:00:00Z')),
     log: vi.fn(),
+    licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     _anthropic: anthropic,
     ...overrides,
   };
@@ -104,8 +108,8 @@ describe('handleProse', () => {
 
   it('pro license: unlimited headers', async () => {
     const d = deps();
-    await d.licenseCache.put(`lic:${sha256('KEY1')}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
+    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Tier')).toBe('pro');
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
@@ -128,14 +132,14 @@ describe('handleProse', () => {
       }),
     };
     const d = deps({ quotaFor: () => flaggedQuota });
-    await d.licenseCache.put(`lic:${sha256('KEY1')}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
+    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
     expect(res.status).toBe(200);
 
     // The log path must actually have fired, or this test would be vacuous.
     expect((d.log as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
     for (const call of (d.log as ReturnType<typeof vi.fn>).mock.calls) {
-      expect(JSON.stringify(call)).not.toContain('KEY1');
+      expect(JSON.stringify(call)).not.toContain(UUID_KEY);
     }
   });
 });

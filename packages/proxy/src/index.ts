@@ -1,5 +1,8 @@
 import { route, type HandlerDeps, type QuotaClient } from './handlers';
 import { QuotaEngine, type ReserveResult, type QuotaSnapshot, type Tier } from './quota';
+import { SlidingWindowLimiter } from './ratelimit';
+
+const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
 
 export interface Env {
   LICENSE_CACHE: KVNamespace;
@@ -56,6 +59,7 @@ export default {
       now: () => Date.now(),
       quotaFor: (id) => doQuotaClient(env.QUOTA, id),
       log: (event, fields) => console.log(JSON.stringify({ event, ...fields })),
+      licenseLimiter,
     };
     return route(req, deps);
   },

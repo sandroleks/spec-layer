@@ -3,6 +3,11 @@ import { sha256 } from 'js-sha256';
 export const LICENSE_CACHE_TTL_MS = 24 * 3600_000;
 export const LICENSE_GRACE_MS = 5 * 864e5;
 
+export const LICENSE_KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 30 days — comfortably past the 5-day grace window, so grace reads never miss. */
+export const LICENSE_CACHE_KV_TTL_S = 30 * 86400;
+
 const LS_BASE = 'https://api.lemonsqueezy.com/v1/licenses';
 
 export interface KVLike {
@@ -30,7 +35,7 @@ async function readCache(deps: LicenseDeps, key: string): Promise<CacheEntry | n
 }
 
 async function writeCache(deps: LicenseDeps, key: string, entry: CacheEntry): Promise<void> {
-  await deps.cache.put(cacheKey(key), JSON.stringify(entry));
+  await deps.cache.put(cacheKey(key), JSON.stringify(entry), { expirationTtl: LICENSE_CACHE_KV_TTL_S });
 }
 
 function toResult(status: string): LicenseResult {
@@ -85,6 +90,7 @@ function effectiveStatus(reportedStatus: string, valid: boolean): string {
 }
 
 export async function checkLicense(key: string, deps: LicenseDeps): Promise<LicenseResult> {
+  if (!LICENSE_KEY_RE.test(key)) return { tier: 'free', reason: 'invalid' };
   const now = deps.now();
   const cached = await readCache(deps, key);
   if (cached && now - cached.validatedAt < LICENSE_CACHE_TTL_MS) return toResult(cached.status);

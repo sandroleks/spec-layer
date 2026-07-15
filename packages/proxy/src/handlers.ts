@@ -1,7 +1,8 @@
 import { sha256 } from 'js-sha256';
 import { identityFromHeaders } from './identity';
-import { activateLicense, checkLicense, validateLicense, type KVLike } from './license';
+import { activateLicense, checkLicense, validateLicense, LICENSE_KEY_RE, type KVLike } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
+import type { SlidingWindowLimiter } from './ratelimit';
 
 /** Quota/DO identity for a license — hashed so the raw key never reaches DO names or logs. */
 export function licenseIdentityId(key: string): string {
@@ -23,6 +24,7 @@ export interface HandlerDeps {
   now(): number;
   quotaFor(identityId: string): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
+  licenseLimiter: SlidingWindowLimiter;
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -145,9 +147,14 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
 }
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.licenseLimiter.allow(ip, deps.now())) {
+    return json(429, { error: 'rate_limited' });
+  }
   let body: { key?: unknown; instanceName?: unknown; instanceId?: unknown };
   try { body = (await req.json()) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
   if (typeof body.key !== 'string' || !body.key) return json(400, { error: 'missing key' });
+  if (!LICENSE_KEY_RE.test(body.key)) return json(200, { valid: false, status: 'invalid' });
   const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
   // Repeat activation on a known device: validate the existing instance rather
   // than calling activate again (which would consume another device slot).

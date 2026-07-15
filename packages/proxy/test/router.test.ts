@@ -1,11 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { route } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
+import { SlidingWindowLimiter } from '../src/ratelimit';
+
+const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 class MemKV {
   map = new Map<string, string>();
   async get(k: string) { return this.map.get(k) ?? null; }
-  async put(k: string, v: string) { this.map.set(k, v); }
+  async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
 }
 
 function memQuota(now: () => number) {
@@ -30,6 +33,7 @@ const baseDeps = () => ({
   now: () => Date.parse('2026-07-01T00:00:00Z'),
   quotaFor: memQuota(() => Date.parse('2026-07-01T00:00:00Z')),
   log: vi.fn(),
+  licenseLimiter: new SlidingWindowLimiter(20, 60_000),
 });
 
 describe('route', () => {
@@ -54,7 +58,7 @@ describe('route', () => {
     }), { status: 200 })) as unknown as typeof fetch;
     const res = await route(new Request('https://p.test/v1/license/activate', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: 'K', instanceName: 'Figma plugin' }),
+      body: JSON.stringify({ key: UUID_KEY, instanceName: 'Figma plugin' }),
     }), d);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
@@ -69,11 +73,35 @@ describe('route', () => {
     }) as unknown as typeof fetch;
     const res = await route(new Request('https://p.test/v1/license/activate', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: 'K', instanceId: 'inst-1' }),
+      body: JSON.stringify({ key: UUID_KEY, instanceId: 'inst-1' }),
     }), d);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ valid: true, status: 'active', instanceId: 'inst-1' });
     expect(activateCalls).toEqual(['https://api.lemonsqueezy.com/v1/licenses/validate']);
+  });
+
+  it('429s /v1/license/activate after 20 calls from one IP inside a minute', async () => {
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => new Response(JSON.stringify({
+      activated: true, instance: { id: 'i1' }, license_key: { status: 'active' },
+    }), { status: 200 })) as unknown as typeof fetch;
+    const req = () => new Request('https://proxy.test/v1/license/activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'CF-Connecting-IP': '1.2.3.4' },
+      body: JSON.stringify({ key: UUID_KEY }),
+    });
+    for (let i = 0; i < 20; i++) await route(req(), d);
+    const res = await route(req(), d);
+    expect(res.status).toBe(429);
+  });
+
+  it('400s a malformed key on /v1/license/activate as a definitive invalid, no LS call', async () => {
+    const d = baseDeps();
+    const res = await route(new Request('https://proxy.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'hunter2' }),
+    }), d);
+    expect(res.status).toBe(200); // contract with old plugins: body carries the verdict
+    expect(await res.json()).toEqual({ valid: false, status: 'invalid' });
   });
 
   it('404s unknown paths', async () => {
