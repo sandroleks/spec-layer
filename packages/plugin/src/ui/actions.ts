@@ -215,6 +215,20 @@ function willGenerateProse(refs: Refs, state: UiState): boolean {
   return proseNeedsRegen(state, requested);
 }
 
+/** Note + state effect for a failed license during generation. Pure for tests. */
+export function licenseFailureNote(reason: string | undefined): { note: string; markInactive: boolean } {
+  if (reason === 'unreachable') {
+    return {
+      note: "We couldn't check your Pro key this time, so AI didn't run. Your key is still saved. Try again in a minute.",
+      markInactive: false,
+    };
+  }
+  return {
+    note: "Your Pro subscription isn't active, so AI didn't run this time. You're back on the free tier, and the renew option is in Settings.",
+    markInactive: true,
+  };
+}
+
 async function ensureProse(refs: Refs, state: UiState): Promise<void> {
   state.pendingAiNote = '';
   if (!willGenerateProse(refs, state)) return;
@@ -229,7 +243,7 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
     // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
     state.generatedProse = await generateProse(
       state.currentSpec!,
-      effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
       state.currentNode!.id,
       requested,
       (q) => { state.quota = q; },
@@ -246,11 +260,13 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
         return; // callers proceed without AI; the UI renders the upgrade fork
       }
       if (err.code === 'license_not_active') {
-        // Key lapsed mid-session: drop to the free identity for the next run and
+        // Key lapsed mid-session (or the license server was unreachable): drop to
+        // the free identity ONLY on a definite lapse, never on a mere outage, and
         // explain it. This frame builds with placeholders; the next generation
-        // authenticates as free. Settings reflects the lapse on its next refresh.
-        state.licenseActive = false;
-        state.pendingAiNote = "Your Pro subscription isn't active, so AI didn't run this time. You're back on the free tier, and the renew option is in Settings.";
+        // re-probes. Settings reflects the lapse on its next refresh.
+        const { note, markInactive } = licenseFailureNote(err.reason);
+        if (markInactive) state.licenseActive = false;
+        state.pendingAiNote = note;
         return;
       }
       state.pendingAiNote = generationErrorCopy(err.code);
@@ -383,9 +399,10 @@ function generatingMessages(withAi: boolean): string[] {
 // ---------------------------------------------------------------------------
 
 export function setLicenseKey(state: UiState, value: string, instanceId: string | null): void {
-  state.licenseKey = value || null;
-  state.licenseInstanceId = instanceId;
-  send({ type: 'setLicenseKey', value, instanceId });
+  const key = value.trim() || null;
+  state.licenseKey = key;
+  state.licenseInstanceId = key ? instanceId : null;
+  send({ type: 'setLicenseKey', value: key ?? '', instanceId: key ? instanceId : null });
 }
 
 export function setAiEnabled(state: UiState, value: boolean): void {
@@ -492,7 +509,7 @@ export async function runUpdateFromSource(
       try {
         prose = await generateProse(
           spec,
-          effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
           src.node.id,
           requested,
           (q) => { state.quota = q; },
@@ -551,7 +568,7 @@ export async function runDownloadFromSource(
       try {
         prose = await generateProse(
           spec,
-          effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
           src.node.id,
           requested,
           (q) => { state.quota = q; },

@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { specMarkdownFilename, proseNeedsRegen, canGenerate, createState, type UiState } from '../src/ui/actions';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  specMarkdownFilename,
+  proseNeedsRegen,
+  canGenerate,
+  createState,
+  setLicenseKey,
+  licenseFailureNote,
+  type UiState,
+} from '../src/ui/actions';
 import type { IntermediateSpec, ProseKey } from '@spec-layer/extractor';
 
 describe('proseNeedsRegen', () => {
@@ -82,5 +90,41 @@ describe('specMarkdownFilename', () => {
 
   it('uses the fallback name when the spec name is empty', () => {
     expect(specMarkdownFilename(specStub(''), 'My Node')).toBe('my-node.spec.md');
+  });
+});
+
+describe('setLicenseKey normalization', () => {
+  // send() posts to `parent` (the Figma iframe host), which doesn't exist in
+  // this node test environment; stub it so we can assert on state alone.
+  beforeEach(() => {
+    vi.stubGlobal('parent', { postMessage: vi.fn() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('stores null for an empty value and drops the instance id with it', () => {
+    const state = createState();
+    setLicenseKey(state, '   ', 'inst-1');
+    expect(state.licenseKey).toBeNull();
+    expect(state.licenseInstanceId).toBeNull();
+  });
+  it('trims the stored key', () => {
+    const state = createState();
+    setLicenseKey(state, '  LK-1  ', 'inst-1');
+    expect(state.licenseKey).toBe('LK-1');
+    expect(state.licenseInstanceId).toBe('inst-1');
+  });
+});
+
+describe('licenseFailureNote', () => {
+  it('an unreachable license server never flips the key to inactive', () => {
+    const out = licenseFailureNote('unreachable');
+    expect(out.markInactive).toBe(false);
+    expect(out.note).toContain('still saved');
+  });
+  it('a definite lapse drops to the free tier', () => {
+    expect(licenseFailureNote('expired').markInactive).toBe(true);
+    expect(licenseFailureNote(undefined).markInactive).toBe(true);
   });
 });
