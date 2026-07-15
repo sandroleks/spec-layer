@@ -79,6 +79,15 @@ cache inside the DO; prompts and prose are never logged.
 - **Cancellations propagate within 24h.** A refunded/cancelled subscription
   keeps Pro access until its cache entry (24h TTL) expires — a deliberate
   trade-off for staying available during Lemon Squeezy outages.
+- **A bare-key bearer only checks subscription status, not the seat count.**
+  `Authorization: Bearer <key>` with no `:instanceId` suffix validates that
+  the key's subscription is active, but skips the per-device instance check,
+  so a key used this way grants Pro without occupying a device slot. This is
+  intentional backward compat for older plugin builds; the current plugin
+  always sends `key:instanceId`. Lemon Squeezy still enforces the
+  subscription's overall activation limit, so a bare key can't be shared
+  past that ceiling. Bare-key bearers can be sunset once no legacy builds
+  remain in the wild.
 
 ## Bindings & secrets
 

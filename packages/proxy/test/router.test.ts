@@ -97,7 +97,7 @@ describe('route', () => {
     expect(res.status).toBe(429);
   });
 
-  it('400s a malformed key on /v1/license/activate as a definitive invalid, no LS call', async () => {
+  it('returns 200 {valid:false,status:invalid} for a malformed key on activate', async () => {
     const d = baseDeps();
     const res = await route(new Request('https://proxy.test/v1/license/activate', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'hunter2' }),

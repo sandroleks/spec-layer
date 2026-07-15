@@ -74,8 +74,10 @@ async function refreshQuota(): Promise<void> {
     if (state.quota.tier === 'pro') {
       state.licenseActive = true;
     } else if (state.quota.licenseReason !== 'unreachable') {
+      const reason = state.quota.licenseReason;
       state.licenseActive = false;
-      state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, false));
+      const free = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, false));
+      state.quota = free ? { ...free, licenseReason: reason } : free;
     }
   }
   renderLicense(refs, state);

@@ -156,6 +156,11 @@ describe('licenseStatusCopy reasons', () => {
     expect(copy).toContain('Activate');
     expect(copy).not.toContain('Renew');
   });
+  it('inactive with no reason falls back to press-Activate copy, not Renew', () => {
+    const copy = licenseStatusCopy('inactive');
+    expect(copy).toContain('Activate');
+    expect(copy).not.toContain('Renew');
+  });
 });
 
 describe('activationErrorCopy', () => {
