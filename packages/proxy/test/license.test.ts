@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { checkLicense, activateLicense, validateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS } from '../src/license';
+import { checkLicense, activateLicense, validateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS, LsUnreachable } from '../src/license';
 
 class MemKV {
   map = new Map<string, string>();
@@ -123,5 +123,73 @@ describe('validateLicense', () => {
       fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0,
     });
     expect(out).toEqual({ valid: false, status: 'active' });
+  });
+});
+
+const lsHttp = (status: number, body: unknown) =>
+  vi.fn(async () => new Response(JSON.stringify(body), { status }));
+
+describe('checkLicense transient-error handling', () => {
+  it('does NOT cache an LS 429 as invalid; falls back to the cached active status', async () => {
+    const cache = new MemKV();
+    let now = T0;
+    await checkLicense('K', { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => now });
+    now = T0 + LICENSE_CACHE_TTL_MS + 1; // cache stale → revalidates → LS is rate-limiting
+    const limited = lsHttp(429, { message: 'Too many requests' });
+    expect(await checkLicense('K', { fetcher: limited as unknown as typeof fetch, cache, now: () => now }))
+      .toEqual({ tier: 'pro' }); // grace path, NOT a cached 'invalid'
+    // and the good cache entry survived
+    expect(await checkLicense('K', { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => now }))
+      .toEqual({ tier: 'pro' });
+  });
+
+  it('treats a 5xx JSON body as an outage, not a verdict', async () => {
+    const cache = new MemKV();
+    const down = lsHttp(500, { message: 'server error' });
+    expect(await checkLicense('K', { fetcher: down as unknown as typeof fetch, cache, now: () => T0 }))
+      .toEqual({ tier: 'free', reason: 'unreachable' });
+    expect(cache.map.size).toBe(0); // nothing cached
+  });
+
+  it('treats a 200 body with no boolean `valid` as an outage', async () => {
+    const weird = lsHttp(200, { message: 'maintenance' });
+    expect(await checkLicense('K', { fetcher: weird as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
+      .toEqual({ tier: 'free', reason: 'unreachable' });
+  });
+
+  it('passes the inactive status through as its own reason', async () => {
+    expect(await checkLicense('K', { fetcher: lsOk('inactive', false) as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
+      .toEqual({ tier: 'free', reason: 'inactive' });
+  });
+});
+
+describe('validateLicense cache write (renewal fix)', () => {
+  it('overwrites a stale negative cache entry on a successful revalidation', async () => {
+    const cache = new MemKV();
+    let now = T0;
+    // A lapse got cached…
+    await checkLicense('K', { fetcher: lsOk('expired', false) as unknown as typeof fetch, cache, now: () => now });
+    // …then the user renewed and hit Activate (validate path, instance known).
+    const active = vi.fn(async () => new Response(JSON.stringify({ valid: true, license_key: { status: 'active' } }), { status: 200 }));
+    await validateLicense('K', 'inst-1', { fetcher: active as unknown as typeof fetch, cache, now: () => now });
+    // The very next quota check must see Pro from the refreshed cache, no LS call.
+    const neverCalled = vi.fn();
+    expect(await checkLicense('K', { fetcher: neverCalled as unknown as typeof fetch, cache, now: () => now }))
+      .toEqual({ tier: 'pro' });
+    expect(neverCalled).not.toHaveBeenCalled();
+  });
+
+  it('throws LsUnreachable on a transient LS failure instead of reporting invalid', async () => {
+    const limited = lsHttp(429, { message: 'Too many requests' });
+    await expect(validateLicense('K', 'inst-1', { fetcher: limited as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
+      .rejects.toBeInstanceOf(LsUnreachable);
+  });
+});
+
+describe('activateLicense transient handling', () => {
+  it('throws LsUnreachable on an LS 429 instead of reporting invalid', async () => {
+    const limited = lsHttp(429, { message: 'Too many requests' });
+    await expect(activateLicense('K', 'Figma plugin', { fetcher: limited as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
+      .rejects.toBeInstanceOf(LsUnreachable);
   });
 });
