@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { draftProse, proseCacheKey } from '../src/prose/client';
+import { draftProse, proseCacheKey, ProseProxyError } from '../src/prose/client';
 import type { IntermediateSpec } from '../src/extract';
 
 const spec = {
@@ -158,5 +158,30 @@ describe('draftProse proxy mode', () => {
     const out = await draftProse(spec, { apiKey: null, fetcher: second as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
     expect(out?.definition).toBe('D');
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it('sends key:instanceId in the bearer when the proxy auth has an instance', async () => {
+    const fetcher = vi.fn(async () => new Response(PROSE_OK, { status: 200 }));
+    const { get, set } = memStore();
+    await draftProse(spec, {
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set },
+      proxy: { url: 'https://proxy.test', licenseKey: 'LK', licenseInstanceId: 'inst-1' },
+    });
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer LK:inst-1');
+  });
+
+  it('exposes the 401 reason on ProseProxyError', async () => {
+    const fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ error: 'license_not_active', reason: 'unreachable' }), { status: 401 },
+    ));
+    const { get, set } = memStore();
+    const err = await draftProse(spec, {
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set },
+      proxy: { url: 'https://proxy.test', licenseKey: 'LK' },
+    }).catch((e) => e as ProseProxyError);
+    expect(err).toBeInstanceOf(ProseProxyError);
+    expect((err as ProseProxyError).code).toBe('license_not_active');
+    expect((err as ProseProxyError).reason).toBe('unreachable');
   });
 });

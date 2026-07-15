@@ -51,6 +51,8 @@ export interface ProxyQuota {
   limit: number | null;
   remaining: number | null;
   resetsAt: string;
+  /** Why a stored key is not granting pro; only present on license identities. */
+  licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable';
 }
 
 export type ProseProxyErrorCode =
@@ -59,7 +61,7 @@ export type ProseProxyErrorCode =
 
 /** Typed proxy failure — the plugin branches on `code` (402 → upsell, etc.). */
 export class ProseProxyError extends Error {
-  constructor(public code: ProseProxyErrorCode, public resetsAt?: string) {
+  constructor(public code: ProseProxyErrorCode, public resetsAt?: string, public reason?: string) {
     super(code);
     this.name = 'ProseProxyError';
   }
@@ -114,6 +116,7 @@ export interface DraftOptions {
   proxy?: {
     url: string;
     licenseKey?: string | null;
+    licenseInstanceId?: string | null;
     figmaUserId?: string | null;
     onQuota?: (q: ProxyQuota) => void;
   };
@@ -151,8 +154,13 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
 
   let res: Response;
   if (opts.proxy) {
-    const auth: Record<string, string> = opts.proxy.licenseKey
-      ? { Authorization: `Bearer ${opts.proxy.licenseKey}` }
+    const bearer = opts.proxy.licenseKey
+      ? opts.proxy.licenseInstanceId
+        ? `${opts.proxy.licenseKey}:${opts.proxy.licenseInstanceId}`
+        : opts.proxy.licenseKey
+      : null;
+    const auth: Record<string, string> = bearer
+      ? { Authorization: `Bearer ${bearer}` }
       : { 'X-Figma-User': opts.proxy.figmaUserId ?? '' };
     res = await opts.fetcher(`${opts.proxy.url}/v1/prose`, {
       method: 'POST',
@@ -162,8 +170,13 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
     if (!res.ok) {
       const code = PROXY_ERROR_BY_STATUS[res.status] ?? 'upstream';
       let resetsAt: string | undefined;
-      try { resetsAt = ((await res.json()) as { resetsAt?: string }).resetsAt; } catch { /* body optional */ }
-      throw new ProseProxyError(code, resetsAt);
+      let reason: string | undefined;
+      try {
+        const b = (await res.json()) as { resetsAt?: string; reason?: string };
+        resetsAt = b.resetsAt;
+        reason = b.reason;
+      } catch { /* body optional */ }
+      throw new ProseProxyError(code, resetsAt, reason);
     }
     const quota = parseQuotaHeaders(res.headers);
     if (quota && opts.proxy.onQuota) opts.proxy.onQuota(quota);
