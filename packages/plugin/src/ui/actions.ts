@@ -524,3 +524,57 @@ export async function runUpdateFromSource(
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Download from source (My Library) — save a library doc's spec as a bare .md,
+// WITHOUT touching the Selected-component tab's live state. Re-extracts the
+// source and rebuilds the SAME model Update would, then encodes it to markdown
+// and downloads it instead of rendering a frame. Prose runs only when the
+// stored config had AI on, and hits generateProse's in-session cache when the
+// doc's prose was already generated this session (no quota on a cache hit).
+// The .md reflects the source, not any manual canvas edits.
+// ---------------------------------------------------------------------------
+export async function runDownloadFromSource(
+  refs: Refs,
+  state: UiState,
+  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+): Promise<void> {
+  clearBanners(refs);
+  startLoader(refs, ['Reading the component', 'Composing sections', 'Saving the markdown']);
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const selected = new Set<SectionId>(src.config.sections);
+
+    let prose = null as Awaited<ReturnType<typeof generateProse>>;
+    const requested = proseKeysForSections(selected);
+    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
+      try {
+        prose = await generateProse(
+          spec,
+          effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive),
+          src.node.id,
+          requested,
+          (q) => { state.quota = q; },
+        );
+      } catch {
+        // AI is best-effort garnish: fall through to placeholders on any failure.
+        prose = null;
+      }
+    }
+
+    const variantIds = new Set<string>(src.config.variantIds);
+    const model = buildDocModel(spec, prose, selected, variantIds, {
+      anatomyView: src.config.anatomyView,
+      measureViews: src.config.measureViews,
+    });
+
+    const markdown = modelToMarkdown(model);
+    const filename = specMarkdownFilename(spec, src.node.name || 'component');
+    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
+    stopLoader(refs);
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Download failed: ${msg}`);
+  }
+}

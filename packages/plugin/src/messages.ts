@@ -4,6 +4,11 @@ import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig } from './docLink';
 
+/** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
+ *  or to save the spec as a bare .md (Download). The main thread echoes it back
+ *  on `docSource` so the UI dispatches to the right handler. */
+export type DocSourceIntent = 'update' | 'download';
+
 export interface LibraryEntry {
   docId: string;
   componentName: string;
@@ -33,7 +38,7 @@ export type MainToUi =
   | { type: 'docRemoved'; docId: string }
   | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string }
   | { type: 'driftError'; docId: string }
-  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean }
+  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string };
 
 export type UiToMain =
@@ -53,4 +58,4 @@ export type UiToMain =
   | { type: 'detachDoc'; docId: string }
   | { type: 'removeDoc'; docId: string }
   | { type: 'requestDrift'; docId: string; sourceNodeId: string }
-  | { type: 'requestDocSource'; docId: string };
+  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent };

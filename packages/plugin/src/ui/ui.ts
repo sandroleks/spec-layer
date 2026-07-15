@@ -23,6 +23,7 @@ import {
   runCreateDocFrame,
   runAutoExtract,
   runUpdateFromSource,
+  runDownloadFromSource,
   setLicenseKey,
   setAiEnabled,
   setBrandTheme,
@@ -131,6 +132,9 @@ const libBaseline = new Map<string, string>();
 // The docId the shared overflow menu is currently open for (null = closed). The
 // menu is one element outside the list, so a drift re-render never disturbs it.
 let libMenuDocId: string | null = null;
+// The docId a .md download is in flight for (null = none). Blocks a second
+// Download from stacking; cleared when the docSource reply resolves or errors.
+let downloadingDocId: string | null = null;
 
 function refreshLibrary(): void {
   closeRowMenu();
@@ -164,6 +168,7 @@ function openRowMenu(docId: string, anchor: HTMLElement): void {
   if (entry.sourceExists) {
     items.push(`<button role="menuitem" data-act="source" data-doc-id="${docId}">Go to source</button>`);
     items.push(`<button role="menuitem" data-act="update" data-doc-id="${docId}">Update</button>`);
+    items.push(`<button role="menuitem" data-act="download" data-doc-id="${docId}">Download .md</button>`);
   }
   items.push(`<button role="menuitem" data-act="detach" data-doc-id="${docId}">Detach</button>`);
   items.push('<hr>');
@@ -194,7 +199,16 @@ function runRowAction(act: string, docId: string): void {
       if (refs.createFrameBtn.disabled) return;
       if (entry?.selfEdited && !confirm('This doc has manual text edits. Updating it will overwrite them with freshly generated content. Continue?')) return;
       refs.createFrameBtn.disabled = true;
-      send({ type: 'requestDocSource', docId });
+      send({ type: 'requestDocSource', docId, intent: 'update' });
+      break;
+    }
+    case 'download': {
+      // Download re-extracts the source (like Update) but writes a .md instead
+      // of rebuilding the frame. It never mutates the canvas, so no confirm and
+      // no create-frame lock — just guard against stacking downloads.
+      if (downloadingDocId) return;
+      downloadingDocId = docId;
+      send({ type: 'requestDocSource', docId, intent: 'download' });
       break;
     }
     case 'detach':
@@ -769,13 +783,21 @@ window.onmessage = (event: MessageEvent) => {
       const src: { docId: string; node: typeof msg.node; fileKey: string; config: DocConfig } = {
         docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
       };
-      void runUpdateFromSource(refs, state, src)
-        .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })
-        .finally(() => renderQuota(refs, state));
+      if (msg.intent === 'download') {
+        void runDownloadFromSource(refs, state, src)
+          .finally(() => { downloadingDocId = null; renderQuota(refs, state); });
+      } else {
+        void runUpdateFromSource(refs, state, src)
+          .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })
+          .finally(() => renderQuota(refs, state));
+      }
       break;
     }
 
     case 'docSourceError': {
+      // The error doesn't say which intent asked, so release both locks — the
+      // one that wasn't held is a no-op.
+      downloadingDocId = null;
       refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;

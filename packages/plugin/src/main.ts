@@ -515,14 +515,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         const src = await figma.getNodeByIdAsync(data.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'The source component is gone, so this doc cannot be updated.' } as MainToUi);
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'The source component is gone, so this doc can no longer be rebuilt.' } as MainToUi);
           break;
         }
         const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, config: data.config, selfEdited } as MainToUi);
+        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, config: data.config, selfEdited, intent: msg.intent } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
