@@ -8,11 +8,18 @@ export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // from the customer portal.
 export const STOREFRONT_URL = 'https://speclayer-docs.lemonsqueezy.com';
 
-export interface ProxyAuth { licenseKey: string | null; figmaUserId: string | null }
+export interface ProxyAuth {
+  licenseKey: string | null;
+  licenseInstanceId: string | null;
+  figmaUserId: string | null;
+}
 
 /** License wins over the free identity — mirrors the proxy's own precedence. */
 export function authHeaders(auth: ProxyAuth): Record<string, string> | null {
-  if (auth.licenseKey) return { Authorization: `Bearer ${auth.licenseKey}` };
+  if (auth.licenseKey) {
+    const bearer = auth.licenseInstanceId ? `${auth.licenseKey}:${auth.licenseInstanceId}` : auth.licenseKey;
+    return { Authorization: `Bearer ${bearer}` };
+  }
   if (auth.figmaUserId) return { 'X-Figma-User': auth.figmaUserId };
   return null;
 }
@@ -25,10 +32,12 @@ export function authHeaders(auth: ProxyAuth): Record<string, string> | null {
  */
 export function effectiveAuth(
   licenseKey: string | null,
+  licenseInstanceId: string | null,
   figmaUserId: string | null,
   licenseActive: boolean | null,
 ): ProxyAuth {
-  return { licenseKey: licenseActive === false ? null : licenseKey, figmaUserId };
+  const useKey = licenseActive === false ? null : licenseKey;
+  return { licenseKey: useKey, licenseInstanceId: useKey ? licenseInstanceId : null, figmaUserId };
 }
 
 export type LicenseView = 'none' | 'pro' | 'inactive' | 'unknown';
@@ -42,13 +51,18 @@ export type LicenseView = 'none' | 'pro' | 'inactive' | 'unknown';
 export function resolveLicenseView(hasKey: boolean, quota: ProxyQuota | null): LicenseView {
   if (!hasKey) return 'none';
   if (!quota) return 'unknown';
-  return quota.tier === 'pro' ? 'pro' : 'inactive';
+  if (quota.tier === 'pro') return 'pro';
+  // A proxy that could not reach the license server is a blip, not a lapse.
+  return quota.licenseReason === 'unreachable' ? 'unknown' : 'inactive';
 }
 
-export function licenseStatusCopy(view: LicenseView): string {
+export function licenseStatusCopy(view: LicenseView, reason?: string): string {
   switch (view) {
     case 'pro': return 'Pro plan active ✓';
-    case 'inactive': return "Your Pro subscription isn't active right now, so you're on the free plan. Renew to switch Pro back on.";
+    case 'inactive':
+      return reason === 'expired'
+        ? "Your Pro subscription isn't active right now, so you're on the free plan. Renew to switch Pro back on."
+        : "Your Pro key isn't connected to this device right now, so you're on the free plan. Press Activate to reconnect it.";
     case 'unknown': return 'Your Pro key is saved.';
     case 'none': return '';
   }
@@ -59,6 +73,7 @@ export function activationErrorCopy(status: string): string {
   switch (status) {
     case 'expired': return 'That subscription has expired. Grab Pro again from the store to switch it back on.';
     case 'disabled': return "That key has been turned off. Reach out to support if that's unexpected.";
+    case 'inactive': return "That key exists but isn't connected to a device. Press Activate again to link this one.";
     default: return "We couldn't find that key. Double-check it against your purchase email.";
   }
 }
@@ -100,7 +115,27 @@ export async function activateLicense(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`activation failed: ${res.status}`);
   return (await res.json()) as { valid: boolean; status: string; instanceId?: string };
+}
+
+/** Best-effort slot release. A failure only means the slot stays used in LS. */
+export async function deactivateLicense(
+  key: string,
+  instanceId: string,
+  fetcher: typeof fetch = window.fetch.bind(window),
+): Promise<boolean> {
+  try {
+    const res = await fetcher(`${PROXY_URL}/v1/license/deactivate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key, instanceId }),
+    });
+    if (!res.ok) return false;
+    return Boolean(((await res.json()) as { deactivated?: boolean }).deactivated);
+  } catch {
+    return false;
+  }
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
