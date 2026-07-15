@@ -1,3 +1,5 @@
+import { sha256 } from 'js-sha256';
+
 export const LICENSE_CACHE_TTL_MS = 24 * 3600_000;
 export const LICENSE_GRACE_MS = 5 * 864e5;
 
@@ -20,7 +22,7 @@ export class LsUnreachable extends Error {
 
 interface CacheEntry { status: string; validatedAt: number }
 
-const cacheKey = (key: string) => `lic:${key}`;
+const cacheKey = (key: string) => `lic:${sha256(key)}`;
 
 async function readCache(deps: LicenseDeps, key: string): Promise<CacheEntry | null> {
   const raw = await deps.cache.get(cacheKey(key));

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { sha256 } from 'js-sha256';
 import { handleProse } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 
@@ -103,10 +104,19 @@ describe('handleProse', () => {
 
   it('pro license: unlimited headers', async () => {
     const d = deps();
-    await d.licenseCache.put('lic:KEY1', JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    await d.licenseCache.put(`lic:${sha256('KEY1')}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
     const res = await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Tier')).toBe('pro');
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
+  });
+
+  it('never logs the raw license key', async () => {
+    const d = deps();
+    await d.licenseCache.put(`lic:${sha256('KEY1')}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    await handleProse(proseReq(GOOD_BODY, { Authorization: 'Bearer KEY1' }), d);
+    for (const call of (d.log as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(JSON.stringify(call)).not.toContain('KEY1');
+    }
   });
 });

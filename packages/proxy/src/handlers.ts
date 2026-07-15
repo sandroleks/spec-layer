@@ -1,6 +1,12 @@
+import { sha256 } from 'js-sha256';
 import { identityFromHeaders } from './identity';
 import { activateLicense, checkLicense, validateLicense, type KVLike } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
+
+/** Quota/DO identity for a license — hashed so the raw key never reaches DO names or logs. */
+export function licenseIdentityId(key: string): string {
+  return `lic:${sha256(key)}`;
+}
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
@@ -64,7 +70,7 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     const lic = await checkLicense(identity.key, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
     if (lic.tier !== 'pro') return json(401, { error: 'license_not_active', reason: lic.reason });
     tier = 'pro';
-    identityId = `lic:${identity.key}`;
+    identityId = licenseIdentityId(identity.key);
   } else {
     identityId = `free:${identity.id}`;
   }
@@ -130,7 +136,7 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   if (identity.kind === 'license') {
     const lic = await checkLicense(identity.key, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
     tier = lic.tier === 'pro' ? 'pro' : 'free';
-    identityId = `lic:${identity.key}`;
+    identityId = licenseIdentityId(identity.key);
   } else {
     identityId = `free:${identity.id}`;
   }

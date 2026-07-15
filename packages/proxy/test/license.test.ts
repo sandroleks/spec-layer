@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { sha256 } from 'js-sha256';
 import { checkLicense, activateLicense, validateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS, LsUnreachable } from '../src/license';
 
 class MemKV {
@@ -206,5 +207,16 @@ describe('activateLicense transient handling', () => {
     const limited = lsHttp(429, { message: 'Too many requests' });
     await expect(activateLicense('K', 'Figma plugin', { fetcher: limited as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
       .rejects.toBeInstanceOf(LsUnreachable);
+  });
+});
+
+describe('cache key hygiene', () => {
+  it('never stores the raw license key in KV', async () => {
+    const cache = new MemKV();
+    await checkLicense('SECRET-KEY-123', { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    for (const k of cache.map.keys()) {
+      expect(k).not.toContain('SECRET-KEY-123');
+      expect(k).toBe(`lic:${sha256('SECRET-KEY-123')}`);
+    }
   });
 });
