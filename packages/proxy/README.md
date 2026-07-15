@@ -52,6 +52,34 @@ Atomicity: one Durable Object per identity (`QuotaDO`) serializes all quota
 ops. The only server-side content storage is the 24h idempotency response
 cache inside the DO; prompts and prose are never logged.
 
+## Accepted risks and operational notes
+
+- **License identities are hashed.** License-cache keys, quota Durable Object
+  names, and log lines all carry `sha256(key)`, never the raw license key.
+- **Device instances are validated per request.** Every call checks the
+  `key:instanceId` bearer against Lemon Squeezy; deactivating a device in the
+  LS dashboard frees its slot, visible here within the 24h cache TTL.
+- **Transient Lemon Squeezy errors are never cached as verdicts.** A 429, a
+  5xx, or a response with no verdict body is treated as unknown rather than
+  `invalid`, so an LS outage doesn't lock out active subscribers. A 5-day
+  grace window honors the last known-good status while LS is down.
+- **License verdicts expire after 30 days.** KV verdict-cache entries are
+  bounded by TTL, not retained indefinitely.
+- **License endpoints are format-gated and rate-limited in-isolate.**
+  Non-UUID keys are rejected before they reach Lemon Squeezy, and a per-IP
+  limiter caps requests at 20/min. That limiter is best-effort per isolate;
+  the durable backstop is a Cloudflare WAF rate rule on `/v1/license/*`
+  (**operational TODO** — not yet configured in the dashboard).
+- **Free identities are client-asserted.** `X-Figma-User` isn't
+  authenticated; rotating it re-mints a free identity with a fresh boost
+  window, bounded per request by the model/max_tokens allowlist.
+- **Salt rotation resets free identities.** Changing `FIGMA_ID_SALT` renames
+  every free identity's Durable Object: quotas reset and every user
+  re-enters the boost window. Rotate only with that intent.
+- **Cancellations propagate within 24h.** A refunded/cancelled subscription
+  keeps Pro access until its cache entry (24h TTL) expires — a deliberate
+  trade-off for staying available during Lemon Squeezy outages.
+
 ## Bindings & secrets
 
 | Name | Kind | Purpose |
