@@ -12,7 +12,7 @@ import type {
 import type { resolveTheme } from './brandColors';
 import {
   palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, setFontFamilies, matchVariableModes,
+  headingFont, setFontFamilies, matchVariableModes, radius, setCornerStyle,
   type FontStyle,
 } from './frameKit';
 import { buildMeasureSection } from './measureSection';
@@ -92,7 +92,7 @@ function splitLead(md: string): { lead: string; rest: string } {
 function accentRule(): FrameNode {
   const rule = figma.createFrame();
   rule.resize(28, 3);
-  rule.cornerRadius = 2;
+  rule.cornerRadius = radius(2);
   rule.fills = solidFill(palette.accent);
   return rule;
 }
@@ -228,7 +228,7 @@ function applyColWidth(cell: FrameNode, width: ColWidth): void {
 function buildTable(columns: string[], rows: string[][]): FrameNode {
   const widths = columnWidths(columns);
   const table = vstack(0);
-  table.cornerRadius = 8;
+  table.cornerRadius = radius(8);
   table.clipsContent = true;
   table.strokes = solidFill(palette.border);
   table.strokeWeight = 1;
@@ -298,7 +298,7 @@ function buildTable(columns: string[], rows: string[][]): FrameNode {
 function colorChip(color: RGB): FrameNode {
   const chip = figma.createFrame();
   chip.resize(12, 12);
-  chip.cornerRadius = 3;
+  chip.cornerRadius = radius(3);
   chip.fills = solidFill(color);
   chip.strokes = solidFill(palette.border);
   chip.strokeWeight = 1;
@@ -326,7 +326,7 @@ async function makeTokenCell(token: string, unbound = false): Promise<FrameNode>
   chip.paddingBottom = 3;
   chip.paddingLeft = 8;
   chip.paddingRight = 8;
-  chip.cornerRadius = 6;
+  chip.cornerRadius = radius(6);
 
   if (unbound) {
     // Raw value: no swatch, no fill, dashed muted outline.
@@ -394,7 +394,7 @@ async function buildTokenTable(
 
   const table = vstack(0);
   if (bordered) {
-    table.cornerRadius = 8;
+    table.cornerRadius = radius(8);
     table.clipsContent = true;
     table.strokes = solidFill(palette.border);
     table.strokeWeight = 1;
@@ -644,7 +644,7 @@ async function buildAnatomyDiagram(
   card.paddingTop = card.paddingBottom = ANATOMY_PAD;
   card.paddingLeft = card.paddingRight = ANATOMY_PAD;
   card.fills = solidFill(palette.paneBg);
-  card.cornerRadius = 8;
+  card.cornerRadius = radius(8);
   card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
@@ -706,7 +706,7 @@ async function buildAnatomyDiagram(
   const connectDot = (x: number, y: number): void => {
     const dot = figma.createFrame();
     dot.resize(6, 6);
-    dot.cornerRadius = 3;
+    dot.cornerRadius = radius(3);
     dot.fills = solidFill(palette.accent);
     dot.x = Math.round(x - 3);
     dot.y = Math.round(y - 3);
@@ -827,7 +827,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       // A bordered card split into a left pane (preview + PROPERTIES) and a
       // right pane (token table), like the docs inspector.
       const card = hstack(0);
-      card.cornerRadius = 12;
+      card.cornerRadius = radius(12);
       card.clipsContent = true;
       card.strokes = solidFill(palette.border);
       card.strokeWeight = 1;
@@ -1096,7 +1096,7 @@ async function buildGroupFrame(
   frame.counterAxisSizingMode = 'FIXED';
   frame.itemSpacing = 0;
   frame.fills = solidFill(palette.bg);
-  frame.cornerRadius = 16;
+  frame.cornerRadius = radius(16);
   frame.clipsContent = true;
   frame.strokes = solidFill(palette.border);
   frame.strokeWeight = 1;
@@ -1181,6 +1181,10 @@ export async function buildDocFrames(
   palette.accent = hex(theme.accent);
   palette.body = hex(theme.bodyText);
   palette.tableHeadBg = hex(theme.tableHeadBg);
+
+  // Corner style is module state in frameKit, same as the font families —
+  // set it every build so styles never leak into the next build.
+  setCornerStyle(theme.cornerStyle);
 
   // Fonts: try the requested families; ANY failure reverts that family to Inter
   // (families missing Medium/Bold are common — robustness beats partial styling).

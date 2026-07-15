@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { DEFAULT_HEADER_BG, DEFAULT_ACCENT } from './brandColors';
+import { DEFAULT_HEADER_BG, DEFAULT_ACCENT, type CornerStyle } from './brandColors';
 
 /** Parse a #rrggbb string into a normalized RGB object. */
 export function hex(value: string): RGB {
@@ -46,6 +46,19 @@ let bodyFamily = 'Inter';
 export function setFontFamilies(heading: string, body: string): void {
   headingFamily = heading;
   bodyFamily = body;
+}
+
+// Mutable like the font families so the theme can swap corner styles.
+// buildDocFrames sets it every build; 'soft' (scale 1) is the default look.
+let cornerScale = 1;
+
+export function setCornerStyle(style: CornerStyle): void {
+  cornerScale = style === 'sharp' ? 0 : style === 'round' ? 1.75 : 1;
+}
+
+/** Theme-scaled corner radius. `base` is the soft (default) radius. */
+export function radius(base: number): number {
+  return Math.round(base * cornerScale);
 }
 
 /** Body-font face. Heading text nodes are still created via makeText with the
@@ -150,7 +163,7 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160): Prom
   slot.counterAxisAlignItems = 'CENTER';
   slot.paddingTop = slot.paddingBottom = slot.paddingLeft = slot.paddingRight = 12;
   slot.fills = solidFill(palette.bg);
-  slot.cornerRadius = 8;
+  slot.cornerRadius = radius(8);
   slot.clipsContent = true;
   slot.strokes = solidFill(palette.divider);
   slot.strokeWeight = 1;
