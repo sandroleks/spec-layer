@@ -1221,7 +1221,9 @@ export async function buildDocFrames(
 
   // Definition lead → Usage subtitle. Fall back to keeping the definition as a
   // body section if lifting would leave nothing to render.
-  let { subtitle, sections } = liftDefinitionLead(model.sections);
+  const lifted = liftDefinitionLead(model.sections);
+  let subtitle = lifted.subtitle;
+  const sections = lifted.sections;
   let groups = groupSections(sections);
   if (groups.length === 0 && model.sections.length > 0) {
     subtitle = null;

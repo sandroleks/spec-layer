@@ -29,7 +29,7 @@ import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
 const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
   'related', 'interactions', 'contentConsiderations',
 ]);
-import { THEME_PRESETS } from '../brandColors';
+import { THEME_PRESETS, resolveTheme, type CornerStyle } from '../brandColors';
 
 // ---------------------------------------------------------------------------
 // Markup + styles
@@ -290,25 +290,59 @@ const TEMPLATE = `
     .license-row input, .license-row .btn { height: 34px; }
     .color-swatch {
       flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px;
-      border: 1px solid var(--figma-color-border); background: #0d2436;
+      border: 1px solid var(--figma-color-border); background: #0f172a;
     }
 
     /* ---- Theme presets (frame theme) ----
-       A row of small chips, one per built-in preset; clicking applies the
-       preset's palette to the theme fields below. */
-    .preset-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .preset-chip {
-      font-family: inherit; font-size: 11px; padding: 4px 10px;
-      border: 1px solid var(--figma-color-border); border-radius: 999px;
-      background: var(--figma-color-bg); color: var(--figma-color-text);
-      cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease;
+       A 2x2 grid of preset cards. Each card previews its theme: a band in
+       the header color with the accent dot and an "Ag" specimen in an
+       approximate font stack. The card's own border radius mirrors the
+       preset's corner style (set inline in mount()). The active card is the
+       one whose theme matches the stored theme (see renderBrandTheme). */
+    .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .preset-card {
+      display: flex; flex-direction: column; gap: 6px; padding: 5px 5px 6px;
+      border: 1px solid var(--figma-color-border); background: var(--figma-color-bg);
+      font-family: inherit; text-align: left; cursor: pointer;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
-    .preset-chip:hover { border-color: var(--figma-color-bg-brand); }
-    .preset-chip:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+    .preset-card:hover { border-color: var(--figma-color-bg-brand); }
+    .preset-card:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+    .preset-card.active {
+      border-color: var(--figma-color-bg-brand);
+      box-shadow: 0 0 0 1px var(--figma-color-bg-brand);
+    }
+    .preset-band {
+      position: relative; display: flex; align-items: center; justify-content: center;
+      height: 36px;
+    }
+    .preset-ag { color: #ffffff; font-size: 14px; font-weight: 600; line-height: 1; }
+    .preset-dot { position: absolute; right: 6px; bottom: 6px; width: 8px; height: 8px; border-radius: 50%; }
+    .preset-name { font-size: 11px; font-weight: 500; color: var(--figma-color-text); padding: 0 2px; }
 
-    /* ---- Font + logo rows (frame theme) ---- */
-    .font-row { display: flex; align-items: center; gap: 8px; }
-    .font-row input[type="text"] { flex: 1; }
+    /* ---- Customize subheading (frame theme) ---- */
+    h3.customize-heading {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--figma-color-text-secondary);
+      margin: 16px 0 8px;
+    }
+
+    /* ---- Font pickers (frame theme) ----
+       Searchable combobox: a text input plus an absolutely positioned menu.
+       Only families with Regular+Medium+Bold are listed (filtered on the
+       main thread); typing filters, arrows navigate, Enter/click commits. */
+    .font-picker { position: relative; }
+    .font-menu {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+      max-height: 190px; overflow-y: auto; padding: 4px;
+      background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
+      border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    }
+    .font-option { padding: 6px 8px; border-radius: 5px; font-size: 12px; cursor: pointer; }
+    .font-option:hover, .font-option.active { background: var(--figma-color-bg-secondary); }
+    .font-option.default { color: var(--figma-color-text-secondary); }
+
+    /* ---- Logo row (frame theme) ---- */
     .logo-row { display: flex; align-items: center; gap: 8px; }
     .logo-row img {
       border: 1px solid var(--figma-color-border); border-radius: 4px;
@@ -934,21 +968,23 @@ const TEMPLATE = `
         <div class="settings-group" id="theme-group">
           <h2>Frame theme</h2>
           <p class="hint" style="margin-top:4px">
-            Brand theme used in the generated Guidelines frame. Enter 6-digit hex values, or leave blank to use the default.
+            Pick a theme for the generated Guidelines frame, or adjust any value below.
           </p>
 
-          <div class="preset-row" id="preset-row"></div>
+          <div class="preset-grid" id="preset-row"></div>
 
-          <label class="field-label" for="header-color-input" style="margin-top:8px">Header background</label>
+          <h3 class="customize-heading">Customize</h3>
+
+          <label class="field-label" for="header-color-input">Header background</label>
           <div class="color-row">
             <span class="color-swatch" id="header-color-swatch"></span>
-            <input type="text" id="header-color-input" placeholder="#0d2436" />
+            <input type="text" id="header-color-input" placeholder="#0f172a" />
           </div>
 
           <label class="field-label" for="accent-color-input" style="margin-top:10px">Accent</label>
           <div class="color-row">
             <span class="color-swatch" id="accent-color-swatch"></span>
-            <input type="text" id="accent-color-input" placeholder="#12b3a6" />
+            <input type="text" id="accent-color-input" placeholder="#2563eb" />
           </div>
 
           <label class="field-label" for="body-color-input" style="margin-top:10px">Body text</label>
@@ -967,15 +1003,17 @@ const TEMPLATE = `
           <p class="hint" style="margin-top:6px"><a id="reset-colors-link">Reset to defaults</a></p>
 
           <label class="field-label" for="heading-font-input" style="margin-top:10px">Heading font</label>
-          <div class="font-row">
-            <input type="text" id="heading-font-input" list="font-families" placeholder="Inter" />
+          <div class="font-picker" id="heading-font-picker">
+            <input type="text" id="heading-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
+            <div class="font-menu" hidden></div>
           </div>
 
           <label class="field-label" for="body-font-input" style="margin-top:10px">Body font</label>
-          <div class="font-row">
-            <input type="text" id="body-font-input" list="font-families" placeholder="Inter" />
+          <div class="font-picker" id="body-font-picker">
+            <input type="text" id="body-font-input" placeholder="Inter" autocomplete="off" spellcheck="false" />
+            <div class="font-menu" hidden></div>
           </div>
-          <datalist id="font-families"></datalist>
+          <p class="hint" id="font-fallback-hint" aria-live="polite"></p>
 
           <div class="logo-row" style="margin-top:10px">
             <button class="btn btn-secondary" id="capture-logo-btn" type="button">Use selected node as logo</button>
@@ -983,7 +1021,6 @@ const TEMPLATE = `
             <button class="link-btn" id="clear-logo-btn" type="button" style="display:none;">Remove</button>
           </div>
           <p class="hint" id="logo-error-hint" style="color: var(--figma-color-text-danger)"></p>
-          <p class="hint" style="margin-top:6px">Fonts need Regular, Medium, and Bold styles. Without them, the frame falls back to Inter.</p>
         </div>
       </div>
     </section>
@@ -1100,7 +1137,9 @@ export interface Refs {
   tableheadColorSwatch: HTMLSpanElement;
   headingFontInput: HTMLInputElement;
   bodyFontInput: HTMLInputElement;
-  fontDatalist: HTMLDataListElement;
+  headingFontPicker: HTMLDivElement;
+  bodyFontPicker: HTMLDivElement;
+  fontFallbackHint: HTMLParagraphElement;
   brandColorHint: HTMLParagraphElement;
   resetColorsLink: HTMLElement;
   captureLogoBtn: HTMLButtonElement;
@@ -1232,15 +1271,51 @@ export function mount(): Refs {
     sectionChecks['measurements'].setAttribute('aria-expanded', String(sectionChecks['measurements'].checked));
   }
 
-  // Inject one preset chip per built-in theme (wired to setBrandTheme in ui.ts).
+  // Inject one preset card per built-in theme (wired to setBrandTheme in
+  // ui.ts). Each card previews its theme; the specimen uses an approximate
+  // CSS stack since the iframe cannot load Figma's fonts.
+  const PRESET_FONT_STACKS: Record<string, string> = {
+    Lora: "Georgia, 'Times New Roman', serif",
+    'Space Grotesk': "Futura, 'Trebuchet MS', sans-serif",
+    'DM Sans': 'Verdana, sans-serif',
+  };
+  // [card radius, band radius] per corner style, mirroring the frame's look.
+  const PRESET_RADII: Record<CornerStyle, [number, number]> = {
+    sharp: [0, 0],
+    soft: [8, 5],
+    round: [14, 10],
+  };
   const presetRow = byId<HTMLDivElement>('preset-row');
   for (const preset of THEME_PRESETS) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'preset-chip';
-    chip.textContent = preset.name;
-    chip.dataset.preset = preset.name;
-    presetRow.appendChild(chip);
+    const resolved = resolveTheme(preset.theme);
+    const [cardR, bandR] = PRESET_RADII[resolved.cornerStyle];
+
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'preset-card';
+    card.dataset.preset = preset.name;
+    card.style.borderRadius = `${cardR}px`;
+
+    const band = document.createElement('span');
+    band.className = 'preset-band';
+    band.style.background = resolved.headerBg;
+    band.style.borderRadius = `${bandR}px`;
+
+    const ag = document.createElement('span');
+    ag.className = 'preset-ag';
+    ag.style.fontFamily = PRESET_FONT_STACKS[resolved.headingFont] ?? 'Inter, sans-serif';
+    ag.textContent = 'Ag';
+
+    const dot = document.createElement('span');
+    dot.className = 'preset-dot';
+    dot.style.background = resolved.accent;
+
+    band.append(ag, dot);
+    const name = document.createElement('span');
+    name.className = 'preset-name';
+    name.textContent = preset.name;
+    card.append(band, name);
+    presetRow.appendChild(card);
   }
 
   return {
@@ -1311,7 +1386,9 @@ export function mount(): Refs {
     tableheadColorSwatch: byId<HTMLSpanElement>('tablehead-color-swatch'),
     headingFontInput: byId<HTMLInputElement>('heading-font-input'),
     bodyFontInput: byId<HTMLInputElement>('body-font-input'),
-    fontDatalist: byId<HTMLDataListElement>('font-families'),
+    headingFontPicker: byId<HTMLDivElement>('heading-font-picker'),
+    bodyFontPicker: byId<HTMLDivElement>('body-font-picker'),
+    fontFallbackHint: byId<HTMLParagraphElement>('font-fallback-hint'),
     brandColorHint: byId<HTMLParagraphElement>('brand-color-hint'),
     resetColorsLink: byId<HTMLElement>('reset-colors-link'),
     captureLogoBtn: byId<HTMLButtonElement>('capture-logo-btn'),

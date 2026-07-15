@@ -10,7 +10,7 @@ import type { Refs } from './dom';
 import type { UiState } from './actions';
 import type { LibraryEntry } from '../messages';
 import { isAtomComponentName } from '../collectComponents';
-import { resolveTheme } from '../brandColors';
+import { resolveTheme, matchPreset } from '../brandColors';
 import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
 import { detectStateMatrix } from '@spec-layer/extractor';
@@ -297,6 +297,11 @@ export function renderBrandTheme(refs: Refs, state: UiState): void {
   refs.logoPreview.style.display = state.logoBase64 ? 'inline-block' : 'none';
   refs.clearLogoBtn.style.display = state.logoBase64 ? 'inline-block' : 'none';
   if (state.logoBase64) refs.logoPreview.src = `data:image/png;base64,${state.logoBase64}`;
+
+  const active = matchPreset(state.brandTheme);
+  refs.presetRow.querySelectorAll<HTMLElement>('.preset-card').forEach((card) => {
+    card.classList.toggle('active', card.dataset.preset === active);
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ import {
 } from './proxy';
 import { resolveComponentImage } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS } from '../brandColors';
+import { createFontPicker } from './fontPicker';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
 import {
   renderSelection,
@@ -559,32 +560,49 @@ refs.tableheadColorInput.addEventListener('change', () =>
 );
 refs.resetColorsLink.addEventListener('click', () => {
   refs.brandColorHint.textContent = '';
+  refs.fontFallbackHint.textContent = '';
   setBrandTheme(state, emptyBrandTheme());
   renderBrandTheme(refs, state);
 });
 
-/** Apply a typed font family to a theme font field (empty → default). */
+// Compatible families from the main thread; empty until (unless) it arrives.
+let fontFamilies: string[] = [];
+
+/**
+ * Apply a committed font family (empty → default). A free-typed family that
+ * is not in the compatible list still commits, but gets a fallback warning
+ * since the build will revert it to Inter if styles are missing.
+ */
 function applyBrandFont(field: 'headingFont' | 'bodyFont', raw: string): void {
   const trimmed = raw.trim();
   setBrandTheme(state, { ...state.brandTheme, [field]: trimmed || null });
+  const unknown =
+    trimmed !== '' && trimmed !== 'Inter' &&
+    fontFamilies.length > 0 && !fontFamilies.includes(trimmed);
+  refs.fontFallbackHint.textContent = unknown
+    ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
+    : '';
   renderBrandTheme(refs, state);
 }
 
-refs.headingFontInput.addEventListener('change', () =>
-  applyBrandFont('headingFont', refs.headingFontInput.value),
-);
-refs.bodyFontInput.addEventListener('change', () =>
-  applyBrandFont('bodyFont', refs.bodyFontInput.value),
-);
+const headingFontPicker = createFontPicker({
+  root: refs.headingFontPicker,
+  onCommit: (value) => applyBrandFont('headingFont', value),
+});
+const bodyFontPicker = createFontPicker({
+  root: refs.bodyFontPicker,
+  onCommit: (value) => applyBrandFont('bodyFont', value),
+});
 
 // Preset chips (injected in mount() from THEME_PRESETS): clicking one applies a
 // CLONE of the preset's theme, so later per-field edits never mutate the preset.
 refs.presetRow.addEventListener('click', (e) => {
-  const chip = (e.target as HTMLElement).closest('.preset-chip') as HTMLElement | null;
-  if (!chip) return;
-  const preset = THEME_PRESETS.find((p) => p.name === chip.dataset.preset);
+  const card = (e.target as HTMLElement).closest('.preset-card') as HTMLElement | null;
+  if (!card) return;
+  const preset = THEME_PRESETS.find((p) => p.name === card.dataset.preset);
   if (!preset) return;
   refs.brandColorHint.textContent = '';
+  refs.fontFallbackHint.textContent = '';
   setBrandTheme(state, { ...preset.theme });
   renderBrandTheme(refs, state);
 });
@@ -667,12 +685,9 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'fontList': {
-      refs.fontDatalist.textContent = '';
-      for (const family of msg.families) {
-        const option = document.createElement('option');
-        option.value = family;
-        refs.fontDatalist.appendChild(option);
-      }
+      fontFamilies = msg.families;
+      headingFontPicker.setFamilies(fontFamilies);
+      bodyFontPicker.setFamilies(fontFamilies);
       break;
     }
 
