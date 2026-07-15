@@ -43,7 +43,7 @@ export async function generateProse(
     apiKey: null,
     fetcher: window.fetch.bind(window),
     cacheStore,
-    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, figmaUserId: auth.figmaUserId, onQuota },
+    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId, onQuota },
     imageBase64: img?.base64 ?? null,
     imageMediaType: img?.mediaType,
     requested,

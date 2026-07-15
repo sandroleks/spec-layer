@@ -994,6 +994,7 @@ const TEMPLATE = `
           </div>
           <p class="hint" id="license-status" style="margin-top:6px" aria-live="polite"></p>
           <p class="hint" id="license-renew-row" hidden style="margin-top:6px"><a id="renew-link" href="#" target="_blank">Renew Pro</a></p>
+          <p class="hint" id="license-remove-row" hidden style="margin-top:6px"><a id="remove-key-link" href="#">Remove key from this device</a></p>
           <p class="hint" style="margin-top:6px"><a id="manage-sub-link" href="#" target="_blank">Manage subscription</a></p>
         </div>
 
@@ -1173,6 +1174,8 @@ export interface Refs {
   licenseActivateBtn: HTMLButtonElement;
   licenseStatus: HTMLElement;
   licenseRenewRow: HTMLElement;
+  licenseRemoveRow: HTMLElement;
+  removeKeyLink: HTMLAnchorElement;
   // Frame brand theme (Settings tab)
   presetRow: HTMLDivElement;
   headerColorInput: HTMLInputElement;
@@ -1461,6 +1464,8 @@ export function mount(): Refs {
     licenseActivateBtn: byId<HTMLButtonElement>('license-activate-btn'),
     licenseStatus: byId<HTMLElement>('license-status'),
     licenseRenewRow: byId<HTMLElement>('license-renew-row'),
+    licenseRemoveRow: byId<HTMLElement>('license-remove-row'),
+    removeKeyLink: byId<HTMLAnchorElement>('remove-key-link'),
     presetRow,
     headerColorInput: byId<HTMLInputElement>('header-color-input'),
     headerColorSwatch: byId<HTMLSpanElement>('header-color-swatch'),

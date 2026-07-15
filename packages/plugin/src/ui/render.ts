@@ -43,8 +43,9 @@ export function clearBanners(refs: Refs): void {
  */
 export function renderLicense(refs: Refs, state: UiState): void {
   const view = resolveLicenseView(Boolean(state.licenseKey), state.quota);
-  refs.licenseStatus.textContent = licenseStatusCopy(view);
-  refs.licenseRenewRow.hidden = view !== 'inactive';
+  refs.licenseStatus.textContent = licenseStatusCopy(view, state.quota?.licenseReason);
+  refs.licenseRenewRow.hidden = !(view === 'inactive' && state.quota?.licenseReason === 'expired');
+  refs.licenseRemoveRow.hidden = !state.licenseKey;
 }
 
 /** Quota meter + upsell visibility. The model owns all state branching. */

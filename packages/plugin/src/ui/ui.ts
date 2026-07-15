@@ -29,7 +29,7 @@ import {
   setBrandTheme,
 } from './actions';
 import {
-  activateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
+  activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
   CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL,
 } from './proxy';
 import { resolveComponentImage } from './ai';
@@ -66,18 +66,16 @@ const state = createState();
 // ---------------------------------------------------------------------------
 
 async function refreshQuota(): Promise<void> {
-  state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.figmaUserId, state.licenseActive));
-  // Learn the key's real standing from the probe. A definite free-tier response
-  // while a key is stored (and we haven't already ruled it inactive) means the
-  // key isn't granting Pro — drop to the free identity and re-read the meter so
-  // it shows the user's real free quota, not the license identity's empty one.
-  // A null quota (offline) teaches us nothing and leaves the key untouched.
+  state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive));
+  // Learn the key's real standing from the probe. Only a DEFINITE non-pro
+  // verdict demotes the key; licenseReason 'unreachable' (and a null quota)
+  // teach us nothing and leave the key in place for the next attempt.
   if (state.licenseKey && state.licenseActive !== false && state.quota) {
     if (state.quota.tier === 'pro') {
       state.licenseActive = true;
-    } else {
+    } else if (state.quota.licenseReason !== 'unreachable') {
       state.licenseActive = false;
-      state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.figmaUserId, false));
+      state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, false));
     }
   }
   renderLicense(refs, state);
@@ -322,24 +320,31 @@ refs.downloadBtn.addEventListener('click', () => {
 });
 refs.licenseActivateBtn.addEventListener('click', async () => {
   const key = refs.licenseKeyInput.value.trim();
-  if (!key) return;
+  if (!key || refs.licenseActivateBtn.disabled) return;
+  // In-flight guard: a double click (or Enter twice) on a first-time
+  // activation would register two LS device instances and burn two slots.
+  refs.licenseActivateBtn.disabled = true;
   refs.licenseStatus.textContent = 'Checking…';
   refs.licenseRenewRow.hidden = true;
   try {
-    let out = await activateLicense(key, state.licenseInstanceId);
-    // A stored instance id can go stale (the device was deactivated in the
-    // dashboard, or it came from an older build). If revalidating it fails,
-    // register a fresh instance instead of showing a false "not active" error.
-    if (!out.valid && state.licenseInstanceId) {
+    // A stored instance id belongs to the stored key. If the user pasted a
+    // different key, start fresh instead of validating a mismatched pair.
+    const knownInstance = key === state.licenseKey ? state.licenseInstanceId : null;
+    let out = await activateLicense(key, knownInstance);
+    // A stored instance id can go stale (deactivated in the dashboard, or an
+    // older build). If revalidating it fails, register a fresh instance.
+    if (!out.valid && knownInstance) {
       out = await activateLicense(key, null);
     }
     if (out.valid && out.status === 'active') {
       state.licenseActive = true;
-      setLicenseKey(state, key, out.instanceId ?? state.licenseInstanceId);
+      setLicenseKey(state, key, out.instanceId ?? knownInstance);
       // The main thread only persists the key (no licenseKey echo back), so
       // refresh the toggle affordance here or a stale "no identity" hint lingers.
       reflectAiToggle();
-      await refreshQuota(); // sets the status line to "Pro plan active ✓"
+      // Confirm immediately; refreshQuota repaints from the live quota after.
+      refs.licenseStatus.textContent = 'Pro plan active ✓';
+      await refreshQuota();
     } else if (out.status === 'active') {
       // Valid, active key that couldn't be activated here: almost always the
       // per-key device limit is full, not a bad key.
@@ -351,11 +356,30 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
     }
   } catch {
     refs.licenseStatus.textContent = "Couldn't reach the license server. Give it another go in a minute.";
+  } finally {
+    refs.licenseActivateBtn.disabled = false;
   }
   renderQuota(refs, state);
 });
 refs.licenseKeyInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') refs.licenseActivateBtn.click();
+});
+
+// Best-effort: free the LS device slot. Local removal happens regardless, so a
+// network failure only means the slot stays used until the dashboard.
+refs.removeKeyLink.addEventListener('click', async (e) => {
+  e.preventDefault();
+  refs.licenseStatus.textContent = 'Removing…';
+  if (state.licenseKey && state.licenseInstanceId) {
+    await deactivateLicense(state.licenseKey, state.licenseInstanceId);
+  }
+  setLicenseKey(state, '', null);
+  state.licenseActive = null;
+  refs.licenseKeyInput.value = '';
+  refs.licenseStatus.textContent = 'Key removed from this device.';
+  refs.licenseRemoveRow.hidden = true;
+  reflectAiToggle();
+  await refreshQuota();
 });
 
 // ---------------------------------------------------------------------------

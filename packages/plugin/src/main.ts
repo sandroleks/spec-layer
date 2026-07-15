@@ -243,8 +243,14 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'setLicenseKey':
-      await figma.clientStorage.setAsync('licenseKey', msg.value);
-      await figma.clientStorage.setAsync('licenseInstanceId', msg.instanceId);
+      if (msg.value) {
+        await figma.clientStorage.setAsync('licenseKey', msg.value);
+        if (msg.instanceId) await figma.clientStorage.setAsync('licenseInstanceId', msg.instanceId);
+        else await figma.clientStorage.deleteAsync('licenseInstanceId');
+      } else {
+        await figma.clientStorage.deleteAsync('licenseKey');
+        await figma.clientStorage.deleteAsync('licenseInstanceId');
+      }
       break;
 
     case 'setAiEnabled':
