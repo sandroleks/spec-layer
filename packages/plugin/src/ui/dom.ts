@@ -332,8 +332,11 @@ const TEMPLATE = `
        Only families with Regular+Medium+Bold are listed (filtered on the
        main thread); typing filters, arrows navigate, Enter/click commits. */
     .font-picker { position: relative; }
+    /* position: fixed (top/left/width/max-height set in fontPicker.ts) so the
+       menu escapes the settings panel's overflow clipping and flips above the
+       input when it would otherwise run past the window's bottom edge. */
     .font-menu {
-      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+      position: fixed; z-index: 20;
       max-height: 190px; overflow-y: auto; padding: 4px;
       background: var(--figma-color-bg); border: 1px solid var(--figma-color-border);
       border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);

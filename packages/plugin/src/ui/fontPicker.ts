@@ -11,6 +11,52 @@
  */
 import { filterFamilies } from '../fonts';
 
+const MENU_GAP = 4; // px between the input and the menu
+const MENU_MARGIN = 8; // px kept clear of the window edge
+const MENU_DESIRED_HEIGHT = 190; // px, matches the CSS max-height
+
+export interface MenuRect {
+  top: number;
+  bottom: number;
+  left: number;
+  width: number;
+}
+
+export interface MenuPlacement {
+  /** Set when opening downward: distance from the viewport top. */
+  top?: number;
+  /** Set when opening upward: distance from the viewport bottom. Anchoring by
+   *  bottom keeps the menu flush to the input as the filtered list shrinks. */
+  bottom?: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+  openUp: boolean;
+}
+
+/**
+ * Decide where a fixed-position menu should sit relative to its input, so it
+ * never gets clipped by the window edge. Opens downward normally; flips up
+ * when there is not enough room below and more room above. Pure (no DOM), so
+ * the geometry is unit-tested. Coordinates are viewport-relative (for
+ * position: fixed), which escapes the settings panel's overflow clipping.
+ */
+export function computeMenuPlacement(
+  input: MenuRect,
+  viewportHeight: number,
+  desiredHeight = MENU_DESIRED_HEIGHT,
+): MenuPlacement {
+  const spaceBelow = viewportHeight - input.bottom - MENU_GAP - MENU_MARGIN;
+  const spaceAbove = input.top - MENU_GAP - MENU_MARGIN;
+  const openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+  const room = Math.max(0, openUp ? spaceAbove : spaceBelow);
+  const maxHeight = Math.min(desiredHeight, room);
+  const base = { left: input.left, width: input.width, maxHeight, openUp };
+  return openUp
+    ? { ...base, bottom: viewportHeight - input.top + MENU_GAP }
+    : { ...base, top: input.bottom + MENU_GAP };
+}
+
 export interface FontPickerOpts {
   /** The .font-picker wrapper containing the input and the .font-menu div. */
   root: HTMLElement;
@@ -48,17 +94,45 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
     activeIndex = -1;
   }
 
+  // The menu is position: fixed (see CSS) so it escapes the settings panel's
+  // overflow clipping and the window edge. We must therefore place it in
+  // viewport coordinates ourselves and keep it anchored as the panel scrolls.
+  function positionMenu(): void {
+    const r = input.getBoundingClientRect();
+    const p = computeMenuPlacement(r, window.innerHeight);
+    menu.style.left = `${p.left}px`;
+    menu.style.width = `${p.width}px`;
+    menu.style.maxHeight = `${p.maxHeight}px`;
+    if (p.openUp) {
+      menu.style.top = 'auto';
+      menu.style.bottom = `${p.bottom}px`;
+    } else {
+      menu.style.bottom = 'auto';
+      menu.style.top = `${p.top}px`;
+    }
+  }
+
+  const reposition = (): void => { if (open) positionMenu(); };
+
   function openMenu(): void {
     if (families.length === 0) return; // degraded free-text mode
     renderMenu();
     menu.hidden = false;
     open = true;
+    positionMenu();
+    // Reposition (not close) so the menu tracks the input while the panel
+    // scrolls or the window resizes. Capture phase catches the scrolling
+    // ancestor's scroll events too.
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
   }
 
   function closeMenu(): void {
     menu.hidden = true;
     open = false;
     activeIndex = -1;
+    window.removeEventListener('scroll', reposition, true);
+    window.removeEventListener('resize', reposition);
   }
 
   function commit(value: string): void {
@@ -76,7 +150,7 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
 
   input.addEventListener('focus', openMenu);
   input.addEventListener('input', () => {
-    if (open) renderMenu();
+    if (open) { renderMenu(); positionMenu(); }
     else openMenu();
   });
   input.addEventListener('keydown', (e) => {
