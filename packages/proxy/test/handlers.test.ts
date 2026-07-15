@@ -115,6 +115,14 @@ describe('handleProse', () => {
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
   });
 
+  it('401 with license_not_active + reason for a non-pro license', async () => {
+    const d = deps();
+    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'expired', validatedAt: d.now() }));
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'license_not_active', reason: 'expired' });
+  });
+
   it('never logs the raw license key', async () => {
     // Force the fair_use_flag log path: stub the QuotaClient so reserve()
     // reports flagged (as it would once the pro identity's monthly commit

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { sha256 } from 'js-sha256';
 import { route } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { SlidingWindowLimiter } from '../src/ratelimit';
@@ -132,6 +133,37 @@ describe('route', () => {
     const body = await res.json() as { tier: string; licenseReason?: string };
     expect(body.tier).toBe('free');
     expect(body.licenseReason).toBe('expired');
+  });
+
+  it('omits licenseReason from the quota body for an active (pro) license', async () => {
+    const d = baseDeps();
+    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: d.now() }));
+    const res = await route(new Request('https://proxy.test/v1/quota', {
+      headers: { Authorization: `Bearer ${UUID_KEY}` },
+    }), d);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.tier).toBe('pro');
+    expect('licenseReason' in body).toBe(false);
+  });
+
+  it('rethrows a non-LsUnreachable error raised during activation instead of turning it into a 502', async () => {
+    // callLs funnels every fetch-level failure (thrown errors, non-2xx, missing verdict
+    // field) into the LsUnreachable/502 path, so a fetch throw alone can't reach the
+    // `throw err` branch in handleActivate's catch. Force a *different* failure past
+    // the transient check: let LS report a successful activation, then make the cache
+    // write (which only runs after a definitive verdict) throw a plain Error.
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => new Response(JSON.stringify({
+      activated: true, instance: { id: 'i1' }, license_key: { status: 'active' },
+    }), { status: 200 })) as unknown as typeof fetch;
+    d.licenseCache = {
+      get: async () => null,
+      put: async () => { throw new Error('boom'); },
+    };
+    await expect(route(new Request('https://proxy.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: UUID_KEY }),
+    }), d)).rejects.toThrow('boom');
   });
 });
 

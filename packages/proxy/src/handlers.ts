@@ -145,6 +145,9 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   }
   const s = await deps.quotaFor(identityId).snapshot(tier);
   if (identity.kind === 'license' && tier === 'free') {
+    // licResult is always non-null here: the `identity.kind === 'license'` branch above
+    // always assigns it. The `licResult &&` guard exists only to satisfy TS control-flow
+    // analysis (it can't see that `tier === 'free'` implies the license branch ran).
     return json(200, { ...s, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
   }
   return json(200, s);
