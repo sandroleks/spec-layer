@@ -184,6 +184,21 @@ describe('validateLicense cache write (renewal fix)', () => {
     await expect(validateLicense('K', 'inst-1', { fetcher: limited as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
       .rejects.toBeInstanceOf(LsUnreachable);
   });
+
+  it('caches the demoted status (not the raw reported one) when valid:false claims active', async () => {
+    const cache = new MemKV();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      valid: false, license_key: { status: 'active' },
+    }), { status: 200 }));
+    const out = await validateLicense('K', 'inst-1', { fetcher: fetcher as unknown as typeof fetch, cache, now: () => T0 });
+    expect(out).toEqual({ valid: false, status: 'active' }); // return value keeps the raw reported status
+    // The cache must hold the demoted status: a subsequent checkLicense must see free/invalid,
+    // never a false pro from a cached raw 'active'.
+    const neverCalled = vi.fn();
+    expect(await checkLicense('K', { fetcher: neverCalled as unknown as typeof fetch, cache, now: () => T0 }))
+      .toEqual({ tier: 'free', reason: 'invalid' });
+    expect(neverCalled).not.toHaveBeenCalled();
+  });
 });
 
 describe('activateLicense transient handling', () => {
