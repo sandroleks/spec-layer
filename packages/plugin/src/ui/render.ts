@@ -298,9 +298,13 @@ export function renderBrandTheme(refs: Refs, state: UiState): void {
   refs.clearLogoBtn.style.display = state.logoBase64 ? 'inline-block' : 'none';
   if (state.logoBase64) refs.logoPreview.src = `data:image/png;base64,${state.logoBase64}`;
 
+  // Exactly one card is active: the matching preset, or the Custom card when
+  // the theme matches no preset.
   const active = matchPreset(state.brandTheme);
   refs.presetRow.querySelectorAll<HTMLElement>('.preset-card').forEach((card) => {
-    card.classList.toggle('active', card.dataset.preset === active);
+    const isCustom = card.dataset.preset === '__custom__';
+    const on = active === null ? isCustom : card.dataset.preset === active;
+    card.classList.toggle('active', on);
   });
 }
 

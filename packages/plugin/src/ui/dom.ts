@@ -279,7 +279,11 @@ const TEMPLATE = `
        the effective color (override or default); the input holds the override
        (empty = default, surfaced via placeholder). */
     .color-row { display: flex; align-items: center; gap: 8px; }
-    .color-row input[type="text"] { flex: 1; }
+    .color-row input[type="text"] { flex: 1; min-width: 0; }
+    /* Four color fields in a 2x2 grid. min-width:0 lets the hex inputs shrink
+       inside their grid cells instead of overflowing. */
+    .color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 8px; margin-top: 8px; }
+    .color-field { min-width: 0; }
 
     /* ---- License activation row (Settings tab) ---- */
     .license-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
@@ -294,14 +298,18 @@ const TEMPLATE = `
     }
 
     /* ---- Theme presets (frame theme) ----
-       A 2x2 grid of preset cards. Each card previews its theme: a band in
-       the header color with the accent dot and an "Ag" specimen in an
-       approximate font stack. The card's own border radius mirrors the
-       preset's corner style (set inline in mount()). The active card is the
-       one whose theme matches the stored theme (see renderBrandTheme). */
-    .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+       A compact row of preset cards plus a trailing "Custom" card. Each preset
+       card previews its theme: a band in the header color with the accent dot
+       and an "Ag" specimen in an approximate font stack. The card's own border
+       radius mirrors the preset's corner style (set inline in mount()). Exactly
+       one card is always active: the matching preset, or Custom when the theme
+       has been edited away from every preset (see renderBrandTheme). */
+    .preset-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+      gap: 6px; margin-top: 8px;
+    }
     .preset-card {
-      display: flex; flex-direction: column; gap: 6px; padding: 5px 5px 6px;
+      position: relative; display: flex; flex-direction: column; gap: 4px; padding: 3px 3px 4px;
       border: 1px solid var(--figma-color-border); background: var(--figma-color-bg);
       font-family: inherit; text-align: left; cursor: pointer;
       transition: border-color 0.12s ease, box-shadow 0.12s ease;
@@ -314,11 +322,29 @@ const TEMPLATE = `
     }
     .preset-band {
       position: relative; display: flex; align-items: center; justify-content: center;
-      height: 36px;
+      height: 24px;
     }
-    .preset-ag { color: #ffffff; font-size: 14px; font-weight: 600; line-height: 1; }
-    .preset-dot { position: absolute; right: 6px; bottom: 6px; width: 8px; height: 8px; border-radius: 50%; }
-    .preset-name { font-size: 11px; font-weight: 500; color: var(--figma-color-text); padding: 0 2px; }
+    .preset-ag { color: #ffffff; font-size: 12px; font-weight: 600; line-height: 1; }
+    .preset-dot { position: absolute; right: 4px; bottom: 4px; width: 7px; height: 7px; border-radius: 50%; }
+    .preset-name {
+      font-size: 10px; font-weight: 500; color: var(--figma-color-text);
+      padding: 0 1px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Checkmark badge on the active card. */
+    .preset-check {
+      display: none; position: absolute; top: -6px; right: -6px;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand);
+      align-items: center; justify-content: center;
+    }
+    .preset-check svg { width: 9px; height: 9px; display: block; }
+    .preset-card.active .preset-check { display: flex; }
+    /* The Custom card has no palette to preview: a neutral band with a small
+       sliders glyph reads as "your own mix". */
+    .preset-card.custom .preset-band { background: var(--figma-color-bg-secondary); }
+    .preset-card.custom .preset-band svg {
+      width: 14px; height: 14px; color: var(--figma-color-text-secondary); display: block;
+    }
 
     /* ---- Customize subheading (frame theme) ---- */
     h3.customize-heading {
@@ -978,28 +1004,35 @@ const TEMPLATE = `
 
           <h3 class="customize-heading">Customize</h3>
 
-          <label class="field-label" for="header-color-input">Header background</label>
-          <div class="color-row">
-            <span class="color-swatch" id="header-color-swatch"></span>
-            <input type="text" id="header-color-input" placeholder="#0f172a" />
-          </div>
-
-          <label class="field-label" for="accent-color-input" style="margin-top:10px">Accent</label>
-          <div class="color-row">
-            <span class="color-swatch" id="accent-color-swatch"></span>
-            <input type="text" id="accent-color-input" placeholder="#2563eb" />
-          </div>
-
-          <label class="field-label" for="body-color-input" style="margin-top:10px">Body text</label>
-          <div class="color-row">
-            <span class="color-swatch" id="body-color-swatch"></span>
-            <input type="text" id="body-color-input" placeholder="#334155" />
-          </div>
-
-          <label class="field-label" for="tablehead-color-input" style="margin-top:10px">Table header</label>
-          <div class="color-row">
-            <span class="color-swatch" id="tablehead-color-swatch"></span>
-            <input type="text" id="tablehead-color-input" placeholder="#f8fafc" />
+          <div class="color-grid">
+            <div class="color-field">
+              <label class="field-label" for="header-color-input">Header background</label>
+              <div class="color-row">
+                <span class="color-swatch" id="header-color-swatch"></span>
+                <input type="text" id="header-color-input" placeholder="#0f172a" />
+              </div>
+            </div>
+            <div class="color-field">
+              <label class="field-label" for="accent-color-input">Accent</label>
+              <div class="color-row">
+                <span class="color-swatch" id="accent-color-swatch"></span>
+                <input type="text" id="accent-color-input" placeholder="#2563eb" />
+              </div>
+            </div>
+            <div class="color-field">
+              <label class="field-label" for="body-color-input">Body text</label>
+              <div class="color-row">
+                <span class="color-swatch" id="body-color-swatch"></span>
+                <input type="text" id="body-color-input" placeholder="#334155" />
+              </div>
+            </div>
+            <div class="color-field">
+              <label class="field-label" for="tablehead-color-input">Table header</label>
+              <div class="color-row">
+                <span class="color-swatch" id="tablehead-color-swatch"></span>
+                <input type="text" id="tablehead-color-input" placeholder="#f8fafc" />
+              </div>
+            </div>
           </div>
 
           <p class="hint" id="brand-color-hint"></p>
@@ -1288,6 +1321,19 @@ export function mount(): Refs {
     soft: [8, 5],
     round: [14, 10],
   };
+  const CHECK_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+  const SLIDERS_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2" fill="currentColor" stroke="none"/></svg>';
+
+  // A checkmark badge, shown on whichever card is active (CSS toggles it).
+  const addCheck = (card: HTMLElement): void => {
+    const check = document.createElement('span');
+    check.className = 'preset-check';
+    check.innerHTML = CHECK_SVG;
+    card.appendChild(check);
+  };
+
   const presetRow = byId<HTMLDivElement>('preset-row');
   for (const preset of THEME_PRESETS) {
     const resolved = resolveTheme(preset.theme);
@@ -1318,6 +1364,31 @@ export function mount(): Refs {
     name.className = 'preset-name';
     name.textContent = preset.name;
     card.append(band, name);
+    addCheck(card);
+    presetRow.appendChild(card);
+  }
+
+  // Trailing "Custom" card: a state indicator, not a preset. It has no palette
+  // to apply (clicking it is a no-op, since it matches no THEME_PRESETS entry);
+  // renderBrandTheme marks it active whenever the theme matches no preset.
+  {
+    const [cardR, bandR] = PRESET_RADII.soft;
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'preset-card custom';
+    card.dataset.preset = '__custom__';
+    card.style.borderRadius = `${cardR}px`;
+
+    const band = document.createElement('span');
+    band.className = 'preset-band';
+    band.style.borderRadius = `${bandR}px`;
+    band.innerHTML = SLIDERS_SVG;
+
+    const name = document.createElement('span');
+    name.className = 'preset-name';
+    name.textContent = 'Custom';
+    card.append(band, name);
+    addCheck(card);
     presetRow.appendChild(card);
   }
 

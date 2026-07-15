@@ -77,14 +77,18 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
 
   const rows = (): HTMLElement[] => Array.from(menu.querySelectorAll('.font-option'));
 
-  function renderMenu(): void {
+  // showAll ignores the current input text so the whole list is browsable on
+  // open (otherwise a committed value pre-filters the list to just itself and
+  // you can never pick a different family). Typing then filters normally.
+  function renderMenu(showAll = false): void {
+    const query = showAll ? '' : input.value;
     menu.textContent = '';
     const def = document.createElement('div');
     def.className = 'font-option default';
     def.dataset.value = '';
     def.textContent = 'Default (Inter)';
     menu.appendChild(def);
-    for (const family of filterFamilies(families, input.value)) {
+    for (const family of filterFamilies(families, query)) {
       const row = document.createElement('div');
       row.className = 'font-option';
       row.dataset.value = family;
@@ -92,6 +96,19 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
       menu.appendChild(row);
     }
     activeIndex = -1;
+  }
+
+  // Pre-highlight the currently committed family (if listed) so it is the
+  // starting point for arrow keys and is scrolled into view on open.
+  function highlightCurrent(): void {
+    const val = input.value.trim();
+    if (!val) return;
+    const all = rows();
+    const idx = all.findIndex((r) => r.dataset.value === val);
+    if (idx < 0) return;
+    activeIndex = idx;
+    all[idx].classList.add('active');
+    all[idx].scrollIntoView({ block: 'nearest' });
   }
 
   // The menu is position: fixed (see CSS) so it escapes the settings panel's
@@ -114,12 +131,13 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
 
   const reposition = (): void => { if (open) positionMenu(); };
 
-  function openMenu(): void {
+  function openMenu(showAll = true): void {
     if (families.length === 0) return; // degraded free-text mode
-    renderMenu();
+    renderMenu(showAll);
     menu.hidden = false;
     open = true;
     positionMenu();
+    if (showAll) highlightCurrent();
     // Reposition (not close) so the menu tracks the input while the panel
     // scrolls or the window resizes. Capture phase catches the scrolling
     // ancestor's scroll events too.
@@ -148,10 +166,15 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
     all[activeIndex].scrollIntoView({ block: 'nearest' });
   }
 
-  input.addEventListener('focus', openMenu);
+  input.addEventListener('focus', () => {
+    // Select the text so the first keystroke replaces the committed value, and
+    // open the full list so any family is reachable.
+    input.select();
+    openMenu(true);
+  });
   input.addEventListener('input', () => {
-    if (open) { renderMenu(); positionMenu(); }
-    else openMenu();
+    if (open) { renderMenu(false); positionMenu(); }
+    else openMenu(false);
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
