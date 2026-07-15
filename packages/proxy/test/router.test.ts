@@ -117,6 +117,36 @@ describe('route', () => {
     expect(await res.json()).toEqual({ deactivated: true });
   });
 
+  it('400s a malformed key on /v1/license/deactivate', async () => {
+    const d = baseDeps();
+    const res = await route(new Request('https://proxy.test/v1/license/deactivate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'not-a-uuid', instanceId: 'inst-1' }),
+    }), d);
+    expect(res.status).toBe(400);
+  });
+
+  it('400s /v1/license/deactivate when instanceId is missing', async () => {
+    const d = baseDeps();
+    const res = await route(new Request('https://proxy.test/v1/license/deactivate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: UUID_KEY }),
+    }), d);
+    expect(res.status).toBe(400);
+  });
+
+  it('502s deactivation cleanly when LS is unreachable (with CORS)', async () => {
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => { throw new Error('ls down'); }) as unknown as typeof fetch;
+    const res = await route(new Request('https://proxy.test/v1/license/deactivate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: UUID_KEY, instanceId: 'inst-1' }),
+    }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'ls_unreachable' });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
   it('404s unknown paths', async () => {
     const res = await route(new Request('https://p.test/nope'), baseDeps());
     expect(res.status).toBe(404);

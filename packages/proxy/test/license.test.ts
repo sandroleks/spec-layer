@@ -310,6 +310,18 @@ describe('deactivateLicense', () => {
     await expect(deactivateLicense(UUID_KEY, 'inst-1', { fetcher: down as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
       .rejects.toBeInstanceOf(LsUnreachable);
   });
+
+  it('does not clear either cache entry when LS reports a failed deactivation', async () => {
+    const cache = new MemKV();
+    await checkLicense(UUID_KEY, null, { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    await checkLicense(UUID_KEY, 'inst-1', { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    expect(cache.map.size).toBe(2); // both the bare-key and instance-qualified verdicts are seeded
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ deactivated: false }), { status: 200 }));
+    const out = await deactivateLicense(UUID_KEY, 'inst-1', { fetcher: fetcher as unknown as typeof fetch, cache, now: () => T0 });
+    expect(out).toEqual({ deactivated: false });
+    // A failed deactivation must never wipe a valid verdict from either cache slot.
+    expect(cache.map.size).toBe(2);
+  });
 });
 
 describe('cache key hygiene', () => {
