@@ -123,6 +123,23 @@ describe('activateLicense', () => {
     });
     expect(out).toEqual({ valid: true, status: 'active', instanceId: 'inst-1' });
   });
+
+  it('caches the activation under the instance-qualified key', async () => {
+    const cache = new MemKV();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      activated: true, instance: { id: 'inst-1' }, license_key: { status: 'active' },
+    }), { status: 200 }));
+    await activateLicense(UUID_KEY, 'Figma plugin', {
+      fetcher: fetcher as unknown as typeof fetch, cache, now: () => T0,
+    });
+    // The plugin's next request bears `key:instanceId` — checkLicense for that
+    // exact pair must be served from cache, no LS call.
+    const neverCalled = vi.fn();
+    expect(await checkLicense(UUID_KEY, 'inst-1', { fetcher: neverCalled as unknown as typeof fetch, cache, now: () => T0 }))
+      .toEqual({ tier: 'pro' });
+    expect(neverCalled).not.toHaveBeenCalled();
+    expect(cache.map.has(`lic:${sha256(`${UUID_KEY}:inst-1`)}`)).toBe(true);
+  });
 });
 
 describe('validateLicense', () => {
@@ -223,6 +240,22 @@ describe('validateLicense cache write (renewal fix)', () => {
     // cached separately, so this only holds when the instanceId matches.)
     const neverCalled = vi.fn();
     expect(await checkLicense(UUID_KEY, 'inst-1', { fetcher: neverCalled as unknown as typeof fetch, cache, now: () => now }))
+      .toEqual({ tier: 'pro' });
+    expect(neverCalled).not.toHaveBeenCalled();
+  });
+
+  it('overwrites a stale negative cache entry on a successful revalidation (null instance)', async () => {
+    const cache = new MemKV();
+    const now = T0;
+    // A lapse got cached for the bare key (no instance)…
+    await checkLicense(UUID_KEY, null, { fetcher: lsOk('expired', false) as unknown as typeof fetch, cache, now: () => now });
+    // …then the user renewed and hit Activate (validate path, no instance known).
+    const active = vi.fn(async () => new Response(JSON.stringify({ valid: true, license_key: { status: 'active' } }), { status: 200 }));
+    await validateLicense(UUID_KEY, null, { fetcher: active as unknown as typeof fetch, cache, now: () => now });
+    // The very next quota check for the bare key must see Pro from the
+    // refreshed cache, no LS call.
+    const neverCalled = vi.fn();
+    expect(await checkLicense(UUID_KEY, null, { fetcher: neverCalled as unknown as typeof fetch, cache, now: () => now }))
       .toEqual({ tier: 'pro' });
     expect(neverCalled).not.toHaveBeenCalled();
   });
