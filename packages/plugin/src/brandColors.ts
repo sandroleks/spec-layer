@@ -3,15 +3,15 @@
  * Guidelines frame, plus pure helpers shared by the UI (validation/preview)
  * and the main thread (resolving stored overrides to concrete values).
  *
- * Only two colors are customizable: the navy header band and the teal accent.
+ * Only two colors are customizable: the header band and the accent color.
  * The rest of the frame palette (body ink, borders, table tints) stays fixed.
  *
  * Stored shape: each field is either a normalized `#rrggbb` string or `null`
  * (meaning "use the default"). No DOM, no Figma APIs — trivially testable.
  */
 
-export const DEFAULT_HEADER_BG = '#0d2436';
-export const DEFAULT_ACCENT = '#12b3a6';
+export const DEFAULT_HEADER_BG = '#0f172a';
+export const DEFAULT_ACCENT = '#2563eb';
 
 export interface BrandColors {
   /** Header band background, or null to use DEFAULT_HEADER_BG. */
@@ -69,6 +69,9 @@ export const DEFAULT_BODY_TEXT = '#334155';
 export const DEFAULT_TABLE_HEAD_BG = '#f8fafc';
 export const DEFAULT_FONT = 'Inter';
 
+export type CornerStyle = 'sharp' | 'soft' | 'round';
+export const DEFAULT_CORNER_STYLE: CornerStyle = 'soft';
+
 export interface BrandTheme {
   headerBg: string | null;
   accent: string | null;
@@ -78,6 +81,8 @@ export interface BrandTheme {
   headingFont: string | null;
   /** Font family name for body copy, or null to use DEFAULT_FONT. */
   bodyFont: string | null;
+  /** Corner style for the generated frame, or null to use 'soft'. */
+  cornerStyle: CornerStyle | null;
 }
 
 /** Empty overrides — every field falls back to its default. */
@@ -89,6 +94,7 @@ export function emptyBrandTheme(): BrandTheme {
     tableHeadBg: null,
     headingFont: null,
     bodyFont: null,
+    cornerStyle: null,
   };
 }
 
@@ -103,6 +109,7 @@ export function resolveTheme(stored: BrandTheme | null | undefined): {
   tableHeadBg: string;
   headingFont: string;
   bodyFont: string;
+  cornerStyle: CornerStyle;
 } {
   return {
     headerBg: stored?.headerBg ?? DEFAULT_HEADER_BG,
@@ -111,6 +118,7 @@ export function resolveTheme(stored: BrandTheme | null | undefined): {
     tableHeadBg: stored?.tableHeadBg ?? DEFAULT_TABLE_HEAD_BG,
     headingFont: stored?.headingFont ?? DEFAULT_FONT,
     bodyFont: stored?.bodyFont ?? DEFAULT_FONT,
+    cornerStyle: stored?.cornerStyle ?? DEFAULT_CORNER_STYLE,
   };
 }
 
@@ -126,10 +134,65 @@ export function migrateBrandColors(
   return { ...emptyBrandTheme(), ...legacy };
 }
 
-/** Built-in theme presets offered in the UI. "Default" matches the frame's built-in palette. */
+/**
+ * Built-in theme presets. Each preset is a full personality: all four
+ * colors, both fonts, and a corner style. "Default" stores concrete values
+ * equal to the built-in defaults so active-preset detection is uniform.
+ * Heading fonts are Google Fonts available in Figma by default; the build
+ * still falls back to Inter if one is missing.
+ */
 export const THEME_PRESETS: { name: string; theme: BrandTheme }[] = [
-  { name: 'Default', theme: emptyBrandTheme() },
-  { name: 'Slate', theme: { ...emptyBrandTheme(), headerBg: '#1e293b', accent: '#818cf8' } },
-  { name: 'Forest', theme: { ...emptyBrandTheme(), headerBg: '#14261d', accent: '#34d399' } },
-  { name: 'Plum', theme: { ...emptyBrandTheme(), headerBg: '#2b1b3d', accent: '#e879a6' } },
+  {
+    name: 'Default',
+    theme: {
+      headerBg: '#0f172a', accent: '#2563eb', bodyText: '#334155',
+      tableHeadBg: '#f8fafc', headingFont: 'Inter', bodyFont: 'Inter',
+      cornerStyle: 'soft',
+    },
+  },
+  {
+    name: 'Editorial',
+    theme: {
+      headerBg: '#1c1917', accent: '#b45309', bodyText: '#3f3a36',
+      tableHeadBg: '#faf9f7', headingFont: 'Lora', bodyFont: 'Inter',
+      cornerStyle: 'sharp',
+    },
+  },
+  {
+    name: 'Tech',
+    theme: {
+      headerBg: '#1e293b', accent: '#6366f1', bodyText: '#334155',
+      tableHeadBg: '#f6f7fb', headingFont: 'Space Grotesk', bodyFont: 'Inter',
+      cornerStyle: 'round',
+    },
+  },
+  {
+    name: 'Warm',
+    theme: {
+      headerBg: '#2b1b3d', accent: '#e879a6', bodyText: '#3d3450',
+      tableHeadBg: '#faf8fb', headingFont: 'DM Sans', bodyFont: 'Inter',
+      cornerStyle: 'soft',
+    },
+  },
 ];
+
+/**
+ * Which preset (if any) the stored theme currently equals. Compares RESOLVED
+ * values so a null field and a concrete field holding the default are equal.
+ * Returns the preset name, or null when the theme is custom.
+ */
+export function matchPreset(theme: BrandTheme | null | undefined): string | null {
+  const t = resolveTheme(migrateBrandColors(theme));
+  for (const preset of THEME_PRESETS) {
+    const p = resolveTheme(preset.theme);
+    if (
+      p.headerBg === t.headerBg && p.accent === t.accent &&
+      p.bodyText === t.bodyText && p.tableHeadBg === t.tableHeadBg &&
+      p.headingFont === t.headingFont && p.bodyFont === t.bodyFont &&
+      p.cornerStyle === t.cornerStyle
+    ) {
+      return preset.name;
+    }
+  }
+  return null;
+}
