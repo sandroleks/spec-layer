@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { checkLicense, activateLicense, validateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS, LsUnreachable } from '../src/license';
+import { checkLicense, activateLicense, validateLicense, deactivateLicense, LICENSE_CACHE_TTL_MS, LICENSE_GRACE_MS, LsUnreachable } from '../src/license';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -8,6 +8,7 @@ class MemKV {
   map = new Map<string, string>();
   async get(k: string) { return this.map.get(k) ?? null; }
   async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
+  async delete(k: string) { this.map.delete(k); }
 }
 
 const lsOk = (status: string, valid = status === 'active') =>
@@ -107,6 +108,7 @@ describe('KV expiry', () => {
     const cache = {
       get: async () => null,
       put: async (_k: string, _v: string, opts?: { expirationTtl?: number }) => { puts.push({ opts }); },
+      delete: async () => {},
     };
     await checkLicense(UUID_KEY, null, { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
     expect(puts[0].opts?.expirationTtl).toBe(30 * 86400);
@@ -286,6 +288,26 @@ describe('activateLicense transient handling', () => {
   it('throws LsUnreachable on an LS 429 instead of reporting invalid', async () => {
     const limited = lsHttp(429, { message: 'Too many requests' });
     await expect(activateLicense('K', 'Figma plugin', { fetcher: limited as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
+      .rejects.toBeInstanceOf(LsUnreachable);
+  });
+});
+
+describe('deactivateLicense', () => {
+  it('calls LS deactivate and clears both cache entries', async () => {
+    const cache = new MemKV();
+    await checkLicense(UUID_KEY, null, { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    await checkLicense(UUID_KEY, 'inst-1', { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ deactivated: true }), { status: 200 }));
+    const out = await deactivateLicense(UUID_KEY, 'inst-1', { fetcher: fetcher as unknown as typeof fetch, cache, now: () => T0 });
+    expect(out).toEqual({ deactivated: true });
+    expect(cache.map.size).toBe(0);
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/deactivate');
+    expect(JSON.parse(String(init.body))).toEqual({ license_key: UUID_KEY, instance_id: 'inst-1' });
+  });
+  it('throws LsUnreachable on a transient failure', async () => {
+    const down = vi.fn(async () => { throw new Error('down'); });
+    await expect(deactivateLicense(UUID_KEY, 'inst-1', { fetcher: down as unknown as typeof fetch, cache: new MemKV(), now: () => T0 }))
       .rejects.toBeInstanceOf(LsUnreachable);
   });
 });

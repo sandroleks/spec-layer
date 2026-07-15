@@ -1,6 +1,6 @@
 import { sha256 } from 'js-sha256';
 import { identityFromHeaders } from './identity';
-import { activateLicense, checkLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
+import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
@@ -178,6 +178,22 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
   }
 }
 
+export async function handleDeactivate(req: Request, deps: HandlerDeps): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.licenseLimiter.allow(ip, deps.now())) return json(429, { error: 'rate_limited' });
+  let body: { key?: unknown; instanceId?: unknown };
+  try { body = (await req.json()) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+  if (typeof body.key !== 'string' || !LICENSE_KEY_RE.test(body.key)) return json(400, { error: 'missing key' });
+  if (typeof body.instanceId !== 'string' || !body.instanceId) return json(400, { error: 'missing instanceId' });
+  try {
+    const out = await deactivateLicense(body.key, body.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
+    return json(200, out);
+  } catch (err) {
+    if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });
+    throw err;
+  }
+}
+
 const CORS_HEADERS: Record<string, string> = {
   // Figma plugin iframes run with Origin: null — '*' (with header-based auth,
   // no cookies) is the correct and safe setting here.
@@ -201,6 +217,7 @@ async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
   if (req.method === 'POST' && pathname === '/v1/prose') return handleProse(req, deps);
   if (req.method === 'GET' && pathname === '/v1/quota') return handleQuota(req, deps);
   if (req.method === 'POST' && pathname === '/v1/license/activate') return handleActivate(req, deps);
+  if (req.method === 'POST' && pathname === '/v1/license/deactivate') return handleDeactivate(req, deps);
   return json(404, { error: 'not_found' });
 }
 

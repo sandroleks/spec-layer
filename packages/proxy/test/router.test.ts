@@ -10,6 +10,7 @@ class MemKV {
   map = new Map<string, string>();
   async get(k: string) { return this.map.get(k) ?? null; }
   async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
+  async delete(k: string) { this.map.delete(k); }
 }
 
 function memQuota(now: () => number) {
@@ -105,6 +106,17 @@ describe('route', () => {
     expect(await res.json()).toEqual({ valid: false, status: 'invalid' });
   });
 
+  it('POST /v1/license/deactivate proxies to LS and returns the outcome', async () => {
+    const ls = vi.fn(async () => new Response(JSON.stringify({ deactivated: true }), { status: 200 }));
+    const d = { ...baseDeps(), fetcher: ls as unknown as typeof fetch };
+    const res = await route(new Request('https://proxy.test/v1/license/deactivate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', instanceId: 'inst-1' }),
+    }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deactivated: true });
+  });
+
   it('404s unknown paths', async () => {
     const res = await route(new Request('https://p.test/nope'), baseDeps());
     expect(res.status).toBe(404);
@@ -159,6 +171,7 @@ describe('route', () => {
     d.licenseCache = {
       get: async () => null,
       put: async () => { throw new Error('boom'); },
+      delete: async () => {},
     };
     await expect(route(new Request('https://proxy.test/v1/license/activate', {
       method: 'POST', headers: { 'content-type': 'application/json' },

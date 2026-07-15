@@ -13,6 +13,7 @@ const LS_BASE = 'https://api.lemonsqueezy.com/v1/licenses';
 export interface KVLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
 export interface LicenseDeps { fetcher: typeof fetch; cache: KVLike; now: () => number }
@@ -46,7 +47,7 @@ function toResult(status: string): LicenseResult {
   return { tier: 'free', reason };
 }
 
-type RawLsData = Record<string, unknown> & { license_key?: { status?: unknown }; instance?: { id?: unknown } };
+type RawLsData = Record<string, unknown> & { license_key?: { status?: unknown }; instance?: { id?: unknown }; deactivated?: boolean };
 type LsOutcome = { kind: 'verdict'; reportedStatus: string; data: RawLsData } | { kind: 'transient' };
 
 /**
@@ -55,11 +56,11 @@ type LsOutcome = { kind: 'verdict'; reportedStatus: string; data: RawLsData } | 
  * JSON error bodies that would otherwise read as 'invalid' and poison the
  * cache for 24h — those are transient, as is any 200 body missing the
  * endpoint's own verdict flag (`valid` for /validate, `activated` for
- * /activate — /activate's success payload has no top-level `valid`, so
- * checking for `valid` there would misclassify every real activation as
- * transient).
+ * /activate, `deactivated` for /deactivate — each success payload lacks the
+ * other endpoints' flags, so checking for `valid` there would misclassify
+ * every real activation/deactivation as transient).
  */
-async function callLs(path: string, body: unknown, deps: LicenseDeps, verdictKey: 'valid' | 'activated'): Promise<LsOutcome> {
+async function callLs(path: string, body: unknown, deps: LicenseDeps, verdictKey: 'valid' | 'activated' | 'deactivated'): Promise<LsOutcome> {
   let res: Response;
   let data: unknown;
   try {
@@ -144,4 +145,23 @@ export async function activateLicense(
     await writeCache(deps, key, instanceId ?? null, { status: out.reportedStatus, validatedAt: deps.now() });
   }
   return { valid: activated, status: out.reportedStatus, instanceId };
+}
+
+/**
+ * Frees a device slot at LS. On success, drops both the instance-qualified
+ * and bare-key cache entries so the next check revalidates against LS
+ * instead of replaying a stale pro verdict for a device that no longer holds
+ * a slot. Throws LsUnreachable when LS gives no verdict.
+ */
+export async function deactivateLicense(
+  key: string, instanceId: string, deps: LicenseDeps,
+): Promise<{ deactivated: boolean }> {
+  const out = await callLs('deactivate', { license_key: key, instance_id: instanceId }, deps, 'deactivated');
+  if (out.kind === 'transient') throw new LsUnreachable();
+  const deactivated = Boolean(out.data.deactivated);
+  if (deactivated) {
+    await deps.cache.delete(cacheKey(key, instanceId));
+    await deps.cache.delete(cacheKey(key, null));
+  }
+  return { deactivated };
 }
