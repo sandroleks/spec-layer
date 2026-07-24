@@ -10,6 +10,27 @@ npm run build:plugin
 Import `packages/plugin/manifest.json` through Figma desktop's development
 plugin menu. The plugin needs no local server and no account to run.
 
+## Pre-merge pass
+
+Before merging a branch that touched the plugin, walk these in order. Each one
+covers something unit tests cannot reach, roughly highest risk first:
+
+1. **Selected component** (below), on a component set with two variant axes.
+2. **Doc frame content**, which is where most rendering regressions show up.
+3. **My Library**, the newest surface and the least covered by tests.
+4. **Quota meter** and **Settings, Pro license**, which need a real proxy round
+   trip and cannot be faked locally.
+5. **Settings, Frame theme**, then the keyboard and visual checks.
+
+Two things worth knowing before you start:
+
+- The manifest points at the **staging** proxy. Activating a real license here
+  hits staging, not production.
+- Deploy order matters. The plugin sends `Bearer key:instanceId`; an older
+  deployed proxy reads that whole string as the key and silently falls back to
+  the free tier. If licensing behaves oddly, confirm the proxy is current
+  before debugging the plugin.
+
 ## Network model
 
 The only network destination the manifest permits is the Spec Layer proxy:
@@ -36,6 +57,58 @@ component's structured summary and a rendered image of the selected node.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state.
+
+## Doc frame content
+
+Build one frame with every section enabled, against a component set that has at
+least two variant axes and a hardcoded (unbound) paint somewhere. Then check
+each section renders rather than silently dropping out:
+
+1. **Anatomy**: switch the view between **Diagram**, **Table**, and **Both**.
+   The diagram numbers each part and the numbers match the table rows. Nested
+   components show their depth and main-component name.
+2. **Measurements**: toggle the **size**, **padding**, and **spacing** lenses.
+   Each selected lens renders its own mini-diagram; deselecting all falls back
+   to all three rather than producing an empty section.
+3. **States**: with a state axis present, confirm the matrix renders with
+   lifecycle-ordered columns. With more than four row values, confirm the
+   capped note appears instead of an unbounded grid.
+4. **Variants**: confirm the default variant's card lists all rows, and
+   non-default cards list only rows that differ, with a "same as default"
+   count for the rest.
+5. **Tokens used**: confirm condition-aware rows read correctly, and that the
+   hardcoded paint appears as a raw value rather than an invented token name.
+6. Confirm unchecking a section removes it from the frame, and that unchecking
+   every section in a group drops the whole group heading.
+
+## My Library
+
+This tab tracks generated docs and is the newest surface, so give it the most
+attention. Each entry stores its source node id and the content hash at
+generation time.
+
+1. Generate two or three doc frames, then open **My Library**. Confirm every
+   doc is listed with its component name and page name, and that the summary
+   count matches.
+2. Click an entry and confirm it focuses the doc frame on canvas.
+3. **In sync**: a freshly generated doc reports no pending changes.
+4. **Update available**: edit the source component (change a padding value or
+   rebind a token), reopen the tab, and confirm the entry flags that an update
+   is available. Run **Update** and confirm the frame is replaced in place
+   (same position, not a duplicate) and the status returns to in sync.
+5. **Edited**: hand-edit text inside a generated frame, reopen the tab, and
+   confirm the entry reports the doc was edited. This is hash-based, so
+   confirm that re-running Update overwrites the hand edit.
+6. **Orphaned**: delete a source component and confirm its doc reports the
+   source is missing, and that Update is not offered for it.
+7. **Download .md** from an entry. Confirm the file matches what Update would
+   have rendered, including AI prose when the stored config had AI on.
+8. Confirm **Update** and **Download** both work without disturbing whatever is
+   selected on the Selected component tab.
+9. **Detach** an entry and confirm it leaves the canvas frame alone but drops
+   out of the library. **Remove** and confirm the expected cleanup.
+10. Close and reopen the plugin. Confirm the library survives, since it is
+    stored in the document rather than per device.
 
 ## Quota meter (free plan)
 
