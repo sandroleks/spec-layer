@@ -1,35 +1,29 @@
 /**
- * actions.ts — the action handlers (runExtract / runDownload / runSendToDocs /
- * runExportAll + export-message handlers) plus the module-scoped UI state.
+ * actions.ts — the action handlers (runExtract / runDownload / runCreateDocFrame)
+ * plus the module-scoped UI state.
  *
  * Logic only — DOM reads/writes that are view concerns live in render.ts; these
- * handlers call into render for banners/phase updates. The `canSendToDocs`
- * guard, `fileKeyOverride` plumbing, and endpoint handling are preserved
- * exactly from the original monolithic ui.ts.
+ * handlers call into render for banners/phase updates.
  */
 
-import { extract, renderSpec } from '@spec-layer/extractor';
-import type { SerializedNode, IntermediateSpec } from '@spec-layer/extractor';
+import { extract, renderSpec, ProseProxyError, specContentHash } from '@spec-layer/extractor';
+import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
+import type { DocConfig } from '../docLink';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
-import { canSendToDocs } from './sendGuard';
+import { generateProse } from './ai';
+import { effectiveAuth, generationErrorCopy } from './proxy';
+import { emptyBrandTheme, type BrandTheme } from '../brandColors';
+import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
+import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
   showBanner,
   clearBanners,
   renderPhase,
-  renderExportScanning,
-  renderExportProgress,
-  renderExportDone,
-  showInlineFileKeyPrompt,
+  startLoader,
+  stopLoader,
 } from './render';
-import {
-  buildExportFiles,
-  buildSingleExportFiles,
-  zipFiles,
-  type ExportItem,
-} from '../exportFiles';
-import type { FileKeySource } from '../fileKey';
 
 // ---------------------------------------------------------------------------
 // State
@@ -39,21 +33,42 @@ export interface UiState {
   phase: UiPhase;
   currentNode: SerializedNode | null;
   currentFileKey: string;
-  currentFileKeySource: FileKeySource;
-  fileKeyOverride: string | null;
   currentSpec: IntermediateSpec | null;
   currentExtractedAt: string;
   renderedMd: string;
-  docsEndpoint: string;
-  // Export-all accumulator. Carries the structured `spec` (not just markdown)
-  // so the zip can emit the `.spec-data` sidecars that power the docs variant
-  // grid — matching what "Send to docs" persists.
-  exportItems: ExportItem[];
-  exportFileKey: string;
-  exportTotal: number;
-  exportSkippedAtoms: number;
-  // Count of components that failed to render in the UI (kept out of the zip).
-  exportFailed: number;
+  // Proxy-routed AI flow: a pro license key (mirrored to clientStorage via
+  // main) and/or the Figma user id (free-tier identity), the global "Write
+  // with AI" preference, and the most recent generated prose drafts used to
+  // fill AI sections.
+  licenseKey: string | null;
+  licenseInstanceId: string | null;
+  // Session-only view of whether the stored key is granting Pro: null = not yet
+  // probed (re-probe each session), true = active, false = known inactive (drop
+  // to the free identity). Never persisted, so a renewal reactivates on reload.
+  licenseActive: boolean | null;
+  figmaUserId: string | null;
+  // Latest quota snapshot from the proxy (null until a request completes), and
+  // whether the free-tier monthly quota is currently exhausted.
+  quota: ProxyQuota | null;
+  quotaExhausted: boolean;
+  aiEnabled: boolean;
+  generatedProse: ProseDrafts | null;
+  // The prose-key set the current draft was generated for. A checkbox change
+  // that requests a key not in this set triggers exactly one regeneration;
+  // unchecking never does. Null whenever generatedProse is null.
+  generatedProseKeys: Set<ProseKey> | null;
+  // Set when an AI generation attempt fails so the next frame-build can note it
+  // ("built with placeholders") instead of aborting the whole frame.
+  pendingAiNote: string;
+  // User-customized brand theme for the generated frame (null fields = default).
+  brandTheme: BrandTheme;
+  // Captured logo (base64 PNG), or null if none set.
+  logoBase64: string | null;
+  // How the anatomy section renders: numbered diagram, tabular list, or both.
+  anatomyView: 'diagram' | 'table' | 'both';
+  // Which measurement lenses the Measure section renders (each as its own
+  // focused mini-diagram). Empty falls back to all three in the model.
+  measureViews: MeasureView[];
 }
 
 export function createState(): UiState {
@@ -61,17 +76,23 @@ export function createState(): UiState {
     phase: 'idle',
     currentNode: null,
     currentFileKey: '',
-    currentFileKeySource: 'missing',
-    fileKeyOverride: null,
     currentSpec: null,
     currentExtractedAt: '',
     renderedMd: '',
-    docsEndpoint: 'http://localhost:3000',
-    exportItems: [],
-    exportFileKey: '',
-    exportTotal: 0,
-    exportSkippedAtoms: 0,
-    exportFailed: 0,
+    licenseKey: null,
+    licenseInstanceId: null,
+    licenseActive: null,
+    figmaUserId: null,
+    quota: null,
+    quotaExhausted: false,
+    aiEnabled: false,
+    generatedProse: null,
+    generatedProseKeys: null,
+    pendingAiNote: '',
+    brandTheme: emptyBrandTheme(),
+    logoBase64: null,
+    anatomyView: 'diagram',
+    measureViews: ['size', 'padding', 'spacing'],
   };
 }
 
@@ -95,17 +116,6 @@ export function renderOne(
   const spec = extract(node, { figmaFile: fileKey });
   const markdown = renderSpec(spec, { prose: null, extractedAt });
   return { name: spec.name, markdown, spec, extractedAt };
-}
-
-/** Keep extracted output aligned with the latest effective Figma file key. */
-export function refreshRenderedSpecFileKey(state: UiState, fileKey: string): void {
-  state.currentFileKey = fileKey;
-  if (!state.currentNode || !state.currentSpec) return;
-
-  const refreshed = renderOne(state.currentNode, fileKey);
-  state.currentSpec = refreshed.spec;
-  state.currentExtractedAt = refreshed.extractedAt;
-  state.renderedMd = refreshed.markdown;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,109 +142,286 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Export all — initiates a bulk export via the main thread.
+// Implicit extraction — make the legacy Download/Send and the new AI/frame
+// actions work without a visible Extract button. If a spec is already present it
+// is reused; otherwise we extract the current node on demand.
 // ---------------------------------------------------------------------------
 
-export function runExportAll(refs: Refs, state: UiState): void {
-  // Guard against double-runs.
-  refs.exportAllBtn.disabled = true;
-  // Reset accumulator.
-  state.exportItems = [];
-  state.exportFileKey = '';
-  state.exportTotal = 0;
-  state.exportSkippedAtoms = 0;
-  state.exportFailed = 0;
-  // Immediate feedback: the main thread's scan (loadAllPagesAsync +
-  // findAllWithCriteria) runs before exportAllStart, so acknowledge the click
-  // right away instead of leaving the panel silent.
-  renderExportScanning(refs);
-  send({ type: 'requestExportAll', includeAtoms: refs.includeAtomsInput.checked });
-}
-
-export function handleExportAllScanning(refs: Refs): void {
-  renderExportScanning(refs);
+export function ensureExtracted(state: UiState): boolean {
+  if (state.currentSpec) return true;
+  if (!state.currentNode) return false;
+  const { spec, markdown, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
+  state.currentSpec = spec;
+  state.renderedMd = markdown;
+  state.currentExtractedAt = extractedAt;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
-// Export-all message handlers — called from ui.ts window.onmessage.
+// Auto-extract on selection — keeps the spec always-ready so Export/Download and
+// the frame never block on a missing spec. The (synchronous) extract is deferred
+// one frame so the panel paints identity + sections first; a "Reading…" chip
+// shows meanwhile and clears when the spec is ready.
 // ---------------------------------------------------------------------------
 
-export function handleExportAllStart(
-  refs: Refs,
-  state: UiState,
-  total: number,
-  fileKey: string,
-  skippedAtoms: number,
-): void {
-  state.exportTotal = total;
-  state.exportFileKey = fileKey;
-  state.exportSkippedAtoms = skippedAtoms;
-  state.exportItems = [];
-  renderExportProgress(refs, 0, total);
+export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void): void {
+  if (!state.currentNode) return;
+  if (state.currentSpec) { onReady?.(); return; }
+  refs.phaseLabel.className = 'chip';
+  refs.phaseLabel.textContent = 'Reading…';
+  requestAnimationFrame(() => {
+    try {
+      ensureExtracted(state);
+    } catch {
+      /* errors surface when an action actually runs */
+    }
+    refs.phaseLabel.className = 'phase-label';
+    refs.phaseLabel.textContent = '';
+    onReady?.();
+  });
 }
 
-export function handleExportComponent(
-  refs: Refs,
-  state: UiState,
-  node: SerializedNode,
-  index: number,
-  total: number,
-): void {
-  // Isolate per-component failures: one component whose extract/render throws
-  // must not stall the whole stream or freeze progress at a fixed number.
-  try {
-    const item = renderOne(node, state.exportFileKey);
-    state.exportItems.push(item);
-  } catch (err) {
-    state.exportFailed++;
-    const m = err instanceof Error ? err.message : String(err);
-    console.warn(`[export-all] failed to render "${node.name}": ${m}`);
+// ---------------------------------------------------------------------------
+// Write with AI — when the global toggle is on (and a key + AI section exist),
+// draft guideline prose once and cache it on state. A no-op when AI is off, no
+// key is set, or no AI-flagged section is checked. Reuses prior drafts so a
+// second action in the same selection doesn't re-bill the API.
+// ---------------------------------------------------------------------------
+
+/** The prose keys the currently-checked sections need. */
+function requestedProseKeys(refs: Refs): Set<ProseKey> {
+  const checked = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) if (refs.sectionChecks[id]?.checked) checked.add(id);
+  return proseKeysForSections(checked);
+}
+
+/** True when a fresh draft is needed: no draft yet, or the cached draft was
+ *  generated for a key set that does not cover everything now requested. */
+export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boolean {
+  if (!state.generatedProse || !state.generatedProseKeys) return true;
+  for (const k of requested) if (!state.generatedProseKeys.has(k)) return true;
+  return false;
+}
+
+/** AI runs when the toggle is on and any identity exists — free tier needs no key. */
+export function canGenerate(state: UiState): boolean {
+  return state.aiEnabled && Boolean(state.licenseKey || state.figmaUserId);
+}
+
+function willGenerateProse(refs: Refs, state: UiState): boolean {
+  if (!canGenerate(state)) return false;
+  const requested = requestedProseKeys(refs);
+  if (requested.size === 0) return false;
+  return proseNeedsRegen(state, requested);
+}
+
+/** Note + state effect for a failed license during generation. Pure for tests. */
+export function licenseFailureNote(reason: string | undefined): { note: string; markInactive: boolean } {
+  if (reason === 'unreachable') {
+    return {
+      note: "We couldn't check your Pro key this time, so AI didn't run. Your key is still saved. Try again in a minute.",
+      markInactive: false,
+    };
   }
-  renderExportProgress(refs, index, total, undefined, state.exportFailed);
+  return {
+    note: "Your Pro subscription isn't active, so AI didn't run this time. You're back on the free tier, and the renew option is in Settings.",
+    markInactive: true,
+  };
 }
 
-export function handleExportAllDone(refs: Refs, state: UiState): void {
-  // Nothing to zip (no components found, or all failed) — say so plainly
-  // instead of downloading an empty/near-empty archive silently.
-  if (state.exportItems.length === 0) {
-    renderExportDone(refs, 0, '', state.exportFailed, state.exportSkippedAtoms);
-    refs.exportAllBtn.disabled = false;
+async function ensureProse(refs: Refs, state: UiState): Promise<void> {
+  state.pendingAiNote = '';
+  if (!willGenerateProse(refs, state)) return;
+  const requested = requestedProseKeys(refs);
+
+  // The generating loader (started by runCreateDocFrame) surfaces progress; this
+  // path is best-effort. AI is an enhancement, never a blocker. If generation fails
+  // (rate limit, network, unexpected response), fall back to placeholders and
+  // let the frame build anyway — the note surfaces on the success banner.
+  try {
+    // willGenerateProse guarantees a non-null identity, spec, and node. A key
+    // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
+    state.generatedProse = await generateProse(
+      state.currentSpec!,
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      state.currentNode!.id,
+      requested,
+      (q) => { state.quota = q; },
+    );
+    // Record the covered key set only when a draft actually came back, so a
+    // null result (degraded mode) leaves the reuse guard forcing a retry.
+    state.generatedProseKeys = state.generatedProse ? requested : null;
+  } catch (err) {
+    state.generatedProse = null;
+    state.generatedProseKeys = null;
+    if (err instanceof ProseProxyError) {
+      if (err.code === 'quota_exhausted') {
+        state.quotaExhausted = true;
+        return; // callers proceed without AI; the UI renders the upgrade fork
+      }
+      if (err.code === 'license_not_active') {
+        // Key lapsed mid-session (or the license server was unreachable): drop to
+        // the free identity ONLY on a definite lapse, never on a mere outage, and
+        // explain it. This frame builds with placeholders; the next generation
+        // re-probes. Settings reflects the lapse on its next refresh.
+        const { note, markInactive } = licenseFailureNote(err.reason);
+        if (markInactive) state.licenseActive = false;
+        state.pendingAiNote = note;
+        return;
+      }
+      state.pendingAiNote = generationErrorCopy(err.code);
+      return;
+    }
+    const detail = err instanceof Error ? err.message : String(err);
+    state.pendingAiNote = `AI didn't run (${detail}), so placeholders were used`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create doc frame — optionally write AI prose, then assemble a DocFrameModel
+// from the checked sections and ask the main thread to build/place the frame.
+// Success/failure banners arrive via the docFrameDone/docFrameError handlers.
+// ---------------------------------------------------------------------------
+
+export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<void> {
+  clearBanners(refs);
+
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
     return;
   }
 
-  const folderName = (refs.folderInput.value.trim() || 'design-system')
-    .replace(/[^a-z0-9-_]/gi, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-|-$/g, '') || 'design-system';
+  // Guard against a double-click sending two renderDocFrame messages (and
+  // building two frames). Re-enabled by docFrameDone/docFrameError, or here on
+  // an early failure (e.g. AI generation throwing before we dispatch).
+  refs.createFrameBtn.disabled = true;
 
-  const files = buildExportFiles(state.exportItems, folderName);
-  const zipped = zipFiles(files);
-  downloadBytes(zipped, `${folderName}.zip`, 'application/zip');
+  // Livelier than a static banner: cycle status messages while we work. The AI
+  // path is slow (network) and deserves the richer narration; the no-AI path is
+  // fast, so it gets a shorter set. stopLoader runs on done/error (ui.ts) or in
+  // the catch below.
+  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
 
-  renderExportDone(
-    refs,
-    state.exportItems.length,
-    folderName,
-    state.exportFailed,
-    state.exportSkippedAtoms,
-  );
-  refs.exportAllBtn.disabled = false;
+  try {
+    const built = await assembleDoc(refs, state);
+    if (!built) {
+      // No sections checked: assembleDoc showed the banner. Reset the frame UI.
+      refs.createFrameBtn.disabled = false;
+      stopLoader(refs);
+      return;
+    }
+    send({
+      type: 'renderDocFrame',
+      model: built.model,
+      nodeId: state.currentNode!.id,
+      contentHash: specContentHash(state.currentSpec!),
+      config: built.config,
+    });
+    // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Frame failed: ${msg}`);
+    refs.createFrameBtn.disabled = false;
+  }
 }
 
-export function handleExportAllError(refs: Refs, state: UiState, message: string): void {
-  // Surface the error in the export-all status area and re-enable the button.
-  renderExportProgress(refs, 0, 0, message);
-  refs.exportAllBtn.disabled = false;
+/**
+ * Shared prep for the two "build the doc" actions (Create frame / Download):
+ * write AI prose if needed, gather the checked sections and ticked variants,
+ * and assemble the DocFrameModel + its persisted config. Both actions build
+ * from the SAME model so the frame and the downloaded markdown always match.
+ *
+ * Returns null (after showing the "select a section" banner) when nothing is
+ * checked. Assumes the caller already ensured extraction and started the
+ * loader; the caller owns loader/button teardown for the empty-selection case.
+ */
+async function assembleDoc(
+  refs: Refs,
+  state: UiState,
+): Promise<{ model: DocFrameModel; config: DocConfig } | null> {
+  await ensureProse(refs, state);
+
+  const selected = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) {
+    if (refs.sectionChecks[id]?.checked) selected.add(id);
+  }
+  if (selected.size === 0) {
+    showBanner(refs, 'error', 'Select at least one section.');
+    return null;
+  }
+
+  // Per-variant tokens: which variants the user ticked in the picker.
+  const variantIds = new Set<string>();
+  refs.variantList.querySelectorAll('input:checked').forEach((el) => {
+    const id = (el as HTMLInputElement).dataset.nodeId;
+    if (id) variantIds.add(id);
+  });
+
+  const model = buildDocModel(
+    state.currentSpec!,
+    state.generatedProse,
+    selected,
+    variantIds,
+    { anatomyView: state.anatomyView, measureViews: state.measureViews },
+  );
+  const config: DocConfig = {
+    sections: [...selected],
+    variantIds: [...variantIds],
+    aiEnabled: state.aiEnabled,
+    anatomyView: state.anatomyView,
+    measureViews: state.measureViews,
+  };
+  return { model, config };
+}
+
+/** Status lines for the generating loader. The AI path narrates the slow
+ *  network round-trip; the no-AI path is near-instant so it stays terse. */
+function generatingMessages(withAi: boolean): string[] {
+  return withAi
+    ? [
+        'Looking at the component',
+        'Writing the guidelines',
+        'Composing sections',
+        'Placing the frame on the canvas',
+      ]
+    : [
+        'Reading the component',
+        'Composing sections',
+        'Laying out the content',
+        'Placing the frame on the canvas',
+      ];
+}
+
+// ---------------------------------------------------------------------------
+// AI plumbing — update state + persist via the main thread. The state mutations
+// live here for testability; ui.ts wires the input/toggle events to them.
+// ---------------------------------------------------------------------------
+
+export function setLicenseKey(state: UiState, value: string, instanceId: string | null): void {
+  const key = value.trim() || null;
+  state.licenseKey = key;
+  state.licenseInstanceId = key ? instanceId : null;
+  send({ type: 'setLicenseKey', value: key ?? '', instanceId: key ? instanceId : null });
+}
+
+export function setAiEnabled(state: UiState, value: boolean): void {
+  state.aiEnabled = value;
+  send({ type: 'setAiEnabled', value });
+}
+
+export function setBrandTheme(state: UiState, value: BrandTheme): void {
+  state.brandTheme = value;
+  send({ type: 'setBrandTheme', value });
 }
 
 function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {
-  // Copy into a plain ArrayBuffer to satisfy Blob constructor typings when
-  // fflate's result carries ArrayBufferLike (may include SharedArrayBuffer).
-  const zipped = bytes;
-  const zipBuffer: ArrayBuffer = zipped.buffer instanceof ArrayBuffer
-    ? zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
-    : new Uint8Array(zipped).buffer as ArrayBuffer;
-  const blob = new Blob([zipBuffer], { type });
+  // Copy into a plain ArrayBuffer to satisfy Blob constructor typings for
+  // byte sources whose buffer may be an ArrayBufferLike (e.g. SharedArrayBuffer).
+  const buffer: ArrayBuffer = bytes.buffer instanceof ArrayBuffer
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    : new Uint8Array(bytes).buffer as ArrayBuffer;
+  const blob = new Blob([buffer], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -244,92 +431,167 @@ function downloadBytes(bytes: Uint8Array, filename: string, type: string): void 
 }
 
 // ---------------------------------------------------------------------------
-// Download — local Blob; works with no docs endpoint and no network.
+// Download — saves the rendered spec as a bare markdown file, so it drops
+// straight into an AI tool. Local Blob; no docs endpoint and no network.
 // ---------------------------------------------------------------------------
 
-export function runDownload(refs: Refs, state: UiState): void {
-  if (!state.currentSpec) {
-    showBanner(refs, 'error', 'Extract a spec first to download.');
-    return;
-  }
-
-  const bundle = buildSingleExportBundle(
-    refs.specTextarea.value,
-    state.currentSpec,
-    state.currentNode?.name ?? 'component',
-  );
-  downloadBytes(bundle.bytes, bundle.filename, 'application/zip');
-}
-
-export function buildSingleExportBundle(
-  markdown: string,
-  spec: IntermediateSpec,
-  fallbackName = 'component',
-): { filename: string; bytes: Uint8Array } {
+/** Filename for a downloaded single-component spec: "<slug>.spec.md".
+ *  Mirrors the export slug rules: kebab-case, trim dashes, fall back to
+ *  "component" when the name reduces to nothing. */
+export function specMarkdownFilename(spec: IntermediateSpec, fallbackName = 'component'): string {
   const name = spec.name || fallbackName;
   const slug = toKebab(name).replace(/^-+|-+$/g, '') || 'component';
-  const files = buildSingleExportFiles({ name, markdown, spec });
-  return {
-    filename: `${slug}.spec-layer.zip`,
-    bytes: zipFiles(files),
-  };
+  return `${slug}.spec.md`;
 }
 
-// ---------------------------------------------------------------------------
-// Send to docs — optional, guarded by canSendToDocs + a real file key.
-// ---------------------------------------------------------------------------
+export async function runDownload(refs: Refs, state: UiState): Promise<void> {
+  clearBanners(refs);
 
-export async function runSendToDocs(refs: Refs, state: UiState): Promise<void> {
-  if (!state.currentSpec) return;
-
-  // Guard: figma.fileKey is the only automatic source for the file key.
-  // When the file is unsaved/dev or detection failed, effectiveFileKey returns
-  // the sentinel "unknown". There is no API to fabricate a share link without a
-  // real key, so we block the send and prompt the user to paste the URL instead.
-  const guard = canSendToDocs(state.currentFileKey);
-  if (!guard.allowed) {
-    showBanner(refs, 'error', guard.reason ?? 'No Figma file detected — paste the file URL below.');
-    showInlineFileKeyPrompt(refs, true);
-    refs.inlineFileKeyInput.focus();
+  if (!ensureExtracted(state)) {
+    showBanner(refs, 'error', 'Select a component first.');
     return;
   }
 
-  const base = state.docsEndpoint.replace(/\/+$/, '');
-  const url = `${base}/api/specs/import`;
-
-  showBanner(refs, 'info', 'Sending to docs…');
-  refs.sendBtn.disabled = true;
+  // Same prep as Create frame (AI prose + section/variant selection), so the
+  // downloaded markdown matches the frame. Disable the button and narrate while
+  // any generation runs.
+  refs.downloadBtn.disabled = true;
+  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
 
   try {
-    const res = await window.fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spec: state.currentSpec, extractedAt: state.currentExtractedAt }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      showBanner(refs, 'error', `Send failed (${res.status}): ${text}`);
+    const built = await assembleDoc(refs, state);
+    if (!built) {
+      stopLoader(refs);
+      refs.downloadBtn.disabled = false;
       return;
     }
 
-    const data = await res.json() as { ok: boolean; path?: string; slug?: string; warning?: string };
-    state.phase = nextStatus(state.phase, 'sent');
-    renderPhase(refs, state);
+    const markdown = modelToMarkdown(built.model);
+    const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
+    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
 
-    const slug = data.slug ?? '';
-    const successMsg = slug ? `Sent → _inbox/${slug}` : 'Sent to docs.';
-    showBanner(refs, 'info', successMsg + (data.warning ? `  ⚠ ${data.warning}` : ''));
-    send({ type: 'notify', message: `Spec sent: ${state.currentSpec.name}` });
-
-    const browserUrl = slug
-      ? `${base}/components/_inbox/${slug}`
-      : `${base}/inbox`;
-    send({ type: 'openBrowser', url: browserUrl });
+    stopLoader(refs);
+    refs.downloadBtn.disabled = false;
+    // Surface any AI note (quota exhausted, lapsed key, generation error) the
+    // same way the frame does via its success banner.
+    if (state.pendingAiNote) {
+      showBanner(refs, 'error', state.pendingAiNote);
+      state.pendingAiNote = '';
+    }
   } catch (err) {
+    stopLoader(refs);
     const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Send failed: ${msg}`);
-  } finally {
-    refs.sendBtn.disabled = false;
+    showBanner(refs, 'error', `Download failed: ${msg}`);
+    refs.downloadBtn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update from source (My Library) — regenerate a doc in place using its stored
+// config, WITHOUT touching the Selected-component tab's live state. Extraction
+// is deterministic; prose runs only when the stored config had AI on. Dispatches
+// renderDocFrame, which replaces the existing doc (matched by sourceNodeId).
+// ---------------------------------------------------------------------------
+export async function runUpdateFromSource(
+  refs: Refs,
+  state: UiState,
+  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+): Promise<boolean> {
+  clearBanners(refs);
+  startLoader(refs, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const selected = new Set<SectionId>(src.config.sections);
+
+    let prose = null as Awaited<ReturnType<typeof generateProse>>;
+    const requested = proseKeysForSections(selected);
+    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
+      try {
+        prose = await generateProse(
+          spec,
+          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+          src.node.id,
+          requested,
+          (q) => { state.quota = q; },
+        );
+      } catch {
+        // AI is best-effort garnish: fall through to placeholders on any failure.
+        prose = null;
+      }
+    }
+
+    const variantIds = new Set<string>(src.config.variantIds);
+    const model = buildDocModel(spec, prose, selected, variantIds, {
+      anatomyView: src.config.anatomyView,
+      measureViews: src.config.measureViews,
+    });
+    send({
+      type: 'renderDocFrame',
+      model,
+      nodeId: src.node.id,
+      contentHash: specContentHash(spec),
+      config: src.config,
+    });
+    // Loader stops on docFrameDone/docFrameError (ui.ts).
+    return true;
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Update failed: ${msg}`);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Download from source (My Library) — save a library doc's spec as a bare .md,
+// WITHOUT touching the Selected-component tab's live state. Re-extracts the
+// source and rebuilds the SAME model Update would, then encodes it to markdown
+// and downloads it instead of rendering a frame. Prose runs only when the
+// stored config had AI on, and hits generateProse's in-session cache when the
+// doc's prose was already generated this session (no quota on a cache hit).
+// The .md reflects the source, not any manual canvas edits.
+// ---------------------------------------------------------------------------
+export async function runDownloadFromSource(
+  refs: Refs,
+  state: UiState,
+  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+): Promise<void> {
+  clearBanners(refs);
+  startLoader(refs, ['Reading the component', 'Composing sections', 'Saving the markdown']);
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const selected = new Set<SectionId>(src.config.sections);
+
+    let prose = null as Awaited<ReturnType<typeof generateProse>>;
+    const requested = proseKeysForSections(selected);
+    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
+      try {
+        prose = await generateProse(
+          spec,
+          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+          src.node.id,
+          requested,
+          (q) => { state.quota = q; },
+        );
+      } catch {
+        // AI is best-effort garnish: fall through to placeholders on any failure.
+        prose = null;
+      }
+    }
+
+    const variantIds = new Set<string>(src.config.variantIds);
+    const model = buildDocModel(spec, prose, selected, variantIds, {
+      anatomyView: src.config.anatomyView,
+      measureViews: src.config.measureViews,
+    });
+
+    const markdown = modelToMarkdown(model);
+    const filename = specMarkdownFilename(spec, src.node.name || 'component');
+    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
+    stopLoader(refs);
+  } catch (err) {
+    stopLoader(refs);
+    const msg = err instanceof Error ? err.message : String(err);
+    showBanner(refs, 'error', `Download failed: ${msg}`);
   }
 }

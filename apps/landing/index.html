@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec Layer: Auto Documentation &amp; Specs — Figma plugin</title>
+<meta name="description" content="A Figma plugin that turns your components into spec and guideline frames, right on the canvas. Measurements, states, anatomy, tokens and AI-written usage docs in one click.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1e1e1e;
+    --border: #2b2b2b;
+    --text: #f5f5f5;
+    --text-dim: #9a9a9a;
+    --accent: #ffffff;
+    --accent-hover: #d0d0d0;
+    --on-accent: #0a0a0a;
+
+    --space-xs: 8px;
+    --space-sm: 16px;
+    --space-md: 24px;
+    --space-lg: 32px;
+    --space-xl: 48px;
+    --space-2xl: 64px;
+    --space-3xl: 96px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html.lenis, html.lenis body { height: auto; }
+  .lenis.lenis-smooth { scroll-behavior: auto !important; }
+  .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+  .lenis.lenis-stopped { overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; position: relative; }
+
+  /* Hero */
+  .hero {
+    position: relative; overflow: hidden; text-align: center;
+    padding: var(--space-3xl) 0 var(--space-2xl);
+  }
+  .hero > .wrap { position: relative; z-index: 1; }
+
+  /* Morphing shape backdrop, echoing the logo's square<->circle language. */
+  .hero-shapes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .hero-shape { position: absolute; opacity: 0; will-change: transform, border-radius; }
+  .hero-shape.filled { background: rgba(255, 255, 255, 0.045); }
+  .hero-shape.outlined { border: 1.5px solid rgba(255, 255, 255, 0.09); }
+  @media (max-width: 760px) { .hero-shape.hide-sm { display: none; } }
+
+  .hero img.logo {
+    width: 84px; height: 84px; border-radius: 20px;
+    display: block; margin: 0 auto var(--space-lg);
+  }
+  .hero h1 {
+    font-size: clamp(2.75rem, 8vw, 4.5rem);
+    line-height: 1.0;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+  }
+  .hero .descriptor {
+    margin-top: 14px;
+    font-size: clamp(1.15rem, 3vw, 1.6rem);
+    font-weight: 600; letter-spacing: -0.015em; color: var(--text-dim);
+  }
+  .hero p.tagline {
+    max-width: 600px; margin: var(--space-md) auto 0;
+    font-size: 1.0625rem; color: var(--text-dim);
+  }
+  .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: var(--space-xl); flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 24px; border-radius: 10px;
+    font-size: 1rem; font-weight: 600; text-decoration: none;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .btn-primary { background: var(--accent); color: var(--on-accent); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+  .btn { will-change: transform; }
+
+  /* Gallery */
+  .gallery-track {
+    display: flex; overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    border-radius: 14px; border: 1px solid var(--border);
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+  }
+  .gallery-track::-webkit-scrollbar { display: none; }
+  .gallery-track img,
+  .gallery-track video {
+    flex: 0 0 100%; width: 100%; height: auto; display: block;
+    scroll-snap-align: center;
+    /* Swipe still scrolls the track; block the browser's native image drag. */
+    -webkit-user-drag: none; user-select: none; -webkit-user-select: none;
+  }
+  /* Surface fill avoids a black flash before the demo clip loads. */
+  .gallery-track video { background: var(--surface); }
+
+  .gallery-controls {
+    display: flex; align-items: center; justify-content: center;
+    gap: var(--space-sm); margin-top: var(--space-md);
+  }
+  .gallery-nav {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 1.125rem; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex: none;
+  }
+  .gallery-nav:hover { border-color: var(--text-dim); background: var(--surface-2); }
+  .gallery-dots { display: flex; gap: 8px; align-items: center; }
+  .gallery-dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0;
+    background: var(--border); cursor: pointer;
+  }
+  .gallery-dots button.active { background: var(--text-dim); }
+
+  /* Sections */
+  section { padding: var(--space-lg) 0; }
+  h2 { font-size: 1.75rem; letter-spacing: -0.01em; text-align: center; margin-bottom: var(--space-xl); }
+
+  /* Features */
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-xl) var(--space-lg);
+  }
+  .feature-icon {
+    width: 42px; height: 42px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); margin-bottom: var(--space-md);
+  }
+  .feature-icon svg { width: 22px; height: 22px; }
+  .feature h3 { font-size: 1.0625rem; font-weight: 600; margin-bottom: 6px; }
+  .feature p { color: var(--text-dim); font-size: .9375rem; }
+
+  /* Pricing */
+  .toggle-row { display: flex; justify-content: center; align-items: center; gap: 4px; margin-bottom: 32px; }
+  .toggle {
+    display: inline-flex; position: relative; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 4px;
+  }
+  .toggle-indicator {
+    position: absolute; top: 4px; left: 0; height: calc(100% - 8px);
+    background: var(--surface-2); border-radius: 7px;
+  }
+  .toggle button {
+    position: relative; border: 0; background: transparent; color: var(--text-dim);
+    font: inherit; font-weight: 600; font-size: .9375rem;
+    padding: 8px 18px; border-radius: 7px; cursor: pointer;
+  }
+  .toggle button.active { color: var(--text); }
+  .toggle-note { color: var(--text-dim); font-size: .875rem; margin-left: 10px; }
+
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 680px) { .plans { grid-template-columns: 1fr; } }
+  .plan {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; display: flex; flex-direction: column;
+    will-change: transform;
+  }
+  .plan.pro { border-color: var(--accent); }
+  .plan h3 { font-size: 1.125rem; margin-bottom: 4px; }
+  .price { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .price small { font-size: 1rem; font-weight: 500; color: var(--text-dim); }
+  .price-note { color: var(--text-dim); font-size: .875rem; min-height: 1.4em; }
+  .plan ul { list-style: none; margin: 20px 0 28px; flex: 1; }
+  .plan li {
+    padding: 6px 0 6px 26px; position: relative; color: var(--text-dim); font-size: .9375rem;
+  }
+  .plan li strong { color: var(--text); font-weight: 600; }
+  .plan li::before {
+    content: ""; position: absolute; left: 0; top: 11px;
+    width: 14px; height: 14px;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="%23f5f5f5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>') no-repeat center / contain;
+  }
+  .plan .btn { text-align: center; }
+  .fair-use { color: var(--text-dim); font-size: .8125rem; text-align: center; margin-top: 20px; }
+
+  /* FAQ */
+  .faq details {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+  }
+  .faq summary {
+    padding: 16px 20px; cursor: pointer; font-weight: 600; list-style: none;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; color: var(--text-dim); font-size: 1.25rem; font-weight: 400; }
+  .faq details[open] summary::after { content: "–"; }
+  .faq .answer { color: var(--text-dim); font-size: .9375rem; }
+  .faq .answer.js-animated { overflow: hidden; }
+  .faq .answer-inner { padding: 0 20px 16px; }
+  .faq .answer a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+  .faq .answer a:hover { color: var(--accent); }
+
+  /* Footer */
+  footer {
+    padding: var(--space-lg) 0 var(--space-xl); text-align: center;
+  }
+  footer nav { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+  footer a { color: var(--text-dim); text-decoration: none; font-size: .9375rem; }
+  footer a:hover { color: var(--text); }
+  footer .small { color: var(--text-dim); font-size: .8125rem; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-shapes" aria-hidden="true">
+    <div class="hero-shape outlined" style="left: -48px; top: 72px; width: 220px; height: 220px;" data-dur="11" data-dir="1"></div>
+    <div class="hero-shape filled hide-sm" style="right: -36px; top: 40px; width: 170px; height: 170px;" data-dur="9"  data-dir="-1" data-start="circle"></div>
+    <div class="hero-shape filled hide-sm"   style="left: 9%;  top: 46%; width: 84px;  height: 84px;"  data-dur="8"  data-dir="-1"></div>
+    <div class="hero-shape outlined" style="right: 7%; top: 40%; width: 120px; height: 120px;" data-dur="10" data-dir="1"  data-start="circle"></div>
+    <div class="hero-shape outlined hide-sm" style="left: 16%; bottom: 28px; width: 66px; height: 66px;" data-dur="7"  data-dir="1"></div>
+    <div class="hero-shape filled hide-sm"   style="right: 20%; bottom: 8px; width: 96px; height: 96px;" data-dur="12" data-dir="-1" data-start="circle"></div>
+  </div>
+  <div class="wrap">
+    <img class="logo" src="logo.svg" alt="Spec Layer logo" width="84" height="84">
+    <h1>Spec Layer</h1>
+    <p class="descriptor">Auto Documentation &amp; Specs</p>
+    <p class="tagline">
+      Turns your components into spec and guideline frames, right on the canvas.
+      Measurements, states, anatomy, tokens and AI-written usage docs in one click.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+      <a class="btn btn-secondary" href="#pricing">See pricing</a>
+    </div>
+  </div>
+</header>
+
+<section class="gallery">
+  <div class="wrap">
+    <div class="gallery-track" id="gallery-track" aria-label="Plugin demo and screenshots" data-lenis-prevent-touch>
+      <!-- demo.mp4 is a 1080p H.264 transcode of the source recording (audio stripped, muted loop).
+           demo-poster.jpg is its first frame, shown until the clip loads. -->
+      <video id="gallery-demo" src="demo.mp4" poster="demo-poster.jpg"
+             autoplay muted loop playsinline preload="auto"
+             draggable="false" aria-label="Spec Layer plugin demo"></video>
+      <img src="1.png" draggable="false" alt="Generated spec frame with anatomy, measurements and configuration next to the plugin panel">
+      <img src="2.png" draggable="false" alt="States matrix generated by the plugin next to the plugin panel" loading="lazy">
+      <img src="3.png" draggable="false" alt="Do's and don'ts, interactions and token tables generated by the plugin" loading="lazy">
+      <img src="4.png" draggable="false" alt="Frame theme settings with brand colors, fonts and company logo" loading="lazy">
+    </div>
+    <div class="gallery-controls">
+      <button type="button" class="gallery-nav prev" id="gallery-prev" aria-label="Previous screenshot">&#8249;</button>
+      <div class="gallery-dots" id="gallery-dots" role="tablist" aria-label="Go to screenshot"></div>
+      <button type="button" class="gallery-nav next" id="gallery-next" aria-label="Next screenshot">&#8250;</button>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M3 8v8"/><path d="M21 8v8"/><path d="M9 10v4"/><path d="M15 10v4"/></svg>
+        </div>
+        <h3>Measurements</h3>
+        <p>Spacing, padding and sizing annotated right on the component.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </div>
+        <h3>States matrix</h3>
+        <p>Every variant and state laid out together in one grid.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="10" rx="2"/><path d="M13 12h5"/><circle cx="20" cy="12" r="1.4"/></svg>
+        </div>
+        <h3>Anatomy</h3>
+        <p>Each part labeled so people know what they are looking at.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="8" r="3.5"/><path d="M14 7h7"/><path d="M3 16h18"/><path d="M3 20h11"/></svg>
+        </div>
+        <h3>Tokens and theming</h3>
+        <p>Token tables, plus your brand colors and fonts on the frame.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9"/><path d="M8 12h6"/><path d="M8 16h5"/><path d="M18 3l.9 2.1L21 6l-2.1.9L18 9l-.9-2.1L15 6l2.1-.9z"/></svg>
+        </div>
+        <h3>Usage docs, drafted by AI</h3>
+        <p>Overview, do's and don'ts and interaction notes written for you.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+        </div>
+        <h3>My Library</h3>
+        <p>Track the components you've documented and update their docs in a click when they change.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <h2>Pricing</h2>
+
+    <div class="toggle-row">
+      <div class="toggle" role="group" aria-label="Billing period">
+        <div class="toggle-indicator" id="toggle-indicator"></div>
+        <button type="button" id="bill-monthly" class="active" aria-pressed="true">Monthly</button>
+        <button type="button" id="bill-yearly" aria-pressed="false">Yearly</button>
+      </div>
+      <span class="toggle-note">Yearly is two months free</span>
+    </div>
+
+    <div class="plans">
+      <div class="plan">
+        <h3>Free</h3>
+        <div class="price">$0</div>
+        <div class="price-note">No account needed</div>
+        <ul>
+          <li><strong>Every spec feature, free forever.</strong> Measurements, states matrix, anatomy, variant diffs, token and theming tables</li>
+          <li>On-canvas doc frames and export</li>
+          <li>10 AI generations a month, 20 in your first month</li>
+        </ul>
+        <a class="btn btn-secondary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+      </div>
+
+      <div class="plan pro">
+        <h3>Pro</h3>
+        <div class="price"><span id="price-amount">$7.99</span><small id="price-period">/month</small></div>
+        <div class="price-note" id="price-note">Billed monthly, cancel anytime</div>
+        <ul>
+          <li>Everything in Free</li>
+          <li><strong>Unlimited AI generation</strong> for normal individual use</li>
+          <li>Priority support</li>
+        </ul>
+        <a class="btn btn-primary" id="checkout-btn" href="https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6" target="_blank" rel="noopener">Get Pro</a>
+      </div>
+    </div>
+
+    <p class="fair-use">
+      Automated, shared, or exceptionally high-volume usage may be limited under our fair-use policy.
+    </p>
+  </div>
+</section>
+
+<section class="faq">
+  <div class="wrap">
+    <h2>Questions</h2>
+
+    <details>
+      <summary>How does the license work?</summary>
+      <div class="answer"><div class="answer-inner">
+        Buy Pro and your license key arrives by email. Open the plugin in Figma,
+        go to Settings, paste the key, and you're on Pro. One key covers your
+        individual use across your files.
+      </div></div>
+    </details>
+
+    <details>
+      <summary>What counts as an AI generation?</summary>
+      <div class="answer"><div class="answer-inner">
+        One successful AI call for a component. Regenerating docs for an
+        unchanged component hits the cache and costs nothing. Failed calls
+        never count against your quota. Everything deterministic (measurements,
+        states, anatomy, tokens) is free and doesn't use generations at all.
+      </div></div>
+    </details>
+
+    <details>
+      <summary>Can I get a refund?</summary>
+      <div class="answer"><div class="answer-inner">
+        If Pro doesn't work out, email
+        <a href="mailto:oleksandr.kurchev@gmail.com">oleksandr.kurchev@gmail.com</a> within 30 days
+        and we'll sort out a refund. See our <a href="refund.html">Refund Policy</a> for details.
+      </div></div>
+    </details>
+
+    <details>
+      <summary>Is Pro really unlimited?</summary>
+      <div class="answer"><div class="answer-inner">
+        For normal individual use, yes. Documenting your whole library in one
+        sitting is fine. Safeguards only kick in on automated or shared usage
+        patterns, and we'll always contact you before limiting anything.
+      </div></div>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <nav>
+      <a href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
+      <a href="https://app.lemonsqueezy.com/my-orders" target="_blank" rel="noopener">Manage subscription</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="refund.html">Refund Policy</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="security.html">Security</a>
+      <a href="mailto:oleksandr.kurchev@gmail.com">Support</a>
+    </nav>
+    <p class="small">Payments are handled by Lemon Squeezy as merchant of record.</p>
+  </div>
+</footer>
+
+<script src="lenis.min.js"></script>
+<script src="motion.js"></script>
+<script>
+  var reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var animate = window.Motion && window.Motion.animate;
+  var inView = window.Motion && window.Motion.inView;
+  var stagger = window.Motion && window.Motion.stagger;
+
+  // Smooth scroll. Skip when the visitor prefers reduced motion.
+  var lenis = null;
+  if (!reduceMotion && window.Lenis) {
+    lenis = new Lenis({ lerp: 0.1 });
+    function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
+    requestAnimationFrame(raf);
+  }
+
+  // Anchor links go through Lenis so "See pricing" eases into view.
+  document.querySelectorAll('a[href^="#"]').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      var target = document.querySelector(link.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      if (lenis) { lenis.scrollTo(target); }
+      else { target.scrollIntoView(); }
+    });
+  });
+
+  var EASE_OUT = [0.16, 1, 0.3, 1];
+
+  // Hero entrance.
+  if (animate && !reduceMotion) {
+    animate(
+      ['.hero .logo', '.hero h1', '.hero .descriptor',
+       '.hero p.tagline', '.hero .cta-row'].map(function (s) { return document.querySelector(s); }),
+      { opacity: [0, 1], y: [18, 0] },
+      { duration: 0.6, delay: stagger(0.07), easing: EASE_OUT }
+    );
+  }
+
+  // Hero shape backdrop: morph square<->circle and slowly counter-rotate, the logo's motif.
+  var MORPH_EASE = [0.76, 0, 0.24, 1];
+  document.querySelectorAll('.hero-shape').forEach(function (shape, i) {
+    var startCircle = shape.dataset.start === 'circle';
+    var radii = startCircle ? ['50%', '12%', '50%'] : ['12%', '50%', '12%'];
+    if (!animate) return;
+    if (reduceMotion) {
+      shape.style.opacity = '1';
+      shape.style.borderRadius = radii[0];
+      return;
+    }
+    animate(shape, { opacity: [0, 1] }, { duration: 1.1, delay: 0.4 + i * 0.12, easing: EASE_OUT });
+    var dir = parseFloat(shape.dataset.dir) || 1;
+    var dur = parseFloat(shape.dataset.dur) || 10;
+    animate(shape,
+      { borderRadius: radii, rotate: [0, dir * 180, dir * 360] },
+      { duration: dur, ease: MORPH_EASE, repeat: Infinity }
+    );
+  });
+
+  // Reveal-on-scroll: fades a section in the first time it enters the viewport.
+  // Only elements that are currently BELOW the fold are pre-hidden. An element
+  // already on screen is left untouched, so it never blinks from visible ->
+  // hidden -> visible when the observer fires (that snap was the scroll flicker).
+  function revealOnScroll(el, opts) {
+    if (!inView || !animate || reduceMotion || !el) return;
+    if (el.getBoundingClientRect().top < window.innerHeight) return;
+    el.style.opacity = '0';
+    var stop = inView(el, function () {
+      animate(el, { opacity: [0, 1], y: [24, 0] }, Object.assign({ duration: 0.6, easing: EASE_OUT }, opts || {}));
+      stop();
+    }, { amount: 0.2 });
+  }
+
+  revealOnScroll(document.getElementById('gallery-track'));
+  revealOnScroll(document.getElementById('pricing'));
+  revealOnScroll(document.querySelector('.faq'));
+  revealOnScroll(document.querySelector('footer'));
+
+  // Features stagger in as the grid enters view. Cards stay visible by
+  // default, so if the observer never fires they simply don't animate
+  // (rather than staying hidden).
+  var featureGrid = document.querySelector('.features-grid');
+  if (inView && animate && !reduceMotion && featureGrid &&
+      featureGrid.getBoundingClientRect().top >= window.innerHeight) {
+    var featureItems = featureGrid.querySelectorAll('.feature');
+    featureItems.forEach(function (it) { it.style.opacity = '0'; });
+    var stopFeatures = inView(featureGrid, function () {
+      animate(featureItems, { opacity: [0, 1], y: [20, 0] }, { duration: 0.5, delay: stagger(0.06), easing: EASE_OUT });
+      stopFeatures();
+    }, { amount: 0.15 });
+  }
+
+  // Tactile press/hover for buttons and plan cards: a small spring scale, not a CSS transition.
+  function addPressFeel(el, opts) {
+    if (!animate || reduceMotion || !el) return;
+    var hoverScale = (opts && opts.hoverScale) || 1.02;
+    var pressScale = (opts && opts.pressScale) || 0.97;
+    el.addEventListener('pointerenter', function () { animate(el, { scale: hoverScale }, { easing: 'ease-out', duration: 0.2 }); });
+    el.addEventListener('pointerleave', function () { animate(el, { scale: 1 }, { easing: 'ease-out', duration: 0.2 }); });
+    el.addEventListener('pointerdown', function () { animate(el, { scale: pressScale }, { easing: 'ease-out', duration: 0.1 }); });
+    el.addEventListener('pointerup', function () { animate(el, { scale: hoverScale }, { easing: 'ease-out', duration: 0.15 }); });
+  }
+
+  document.querySelectorAll('.btn').forEach(function (btn) { addPressFeel(btn, { hoverScale: 1.03, pressScale: 0.96 }); });
+  document.querySelectorAll('.gallery-nav').forEach(function (nav) { addPressFeel(nav, { hoverScale: 1.1, pressScale: 0.9 }); });
+
+  // Plan cards lift on hover rather than scale.
+  if (animate && !reduceMotion) {
+    document.querySelectorAll('.plan').forEach(function (plan) {
+      plan.addEventListener('pointerenter', function () { animate(plan, { y: -6 }, { easing: 'ease-out', duration: 0.25 }); });
+      plan.addEventListener('pointerleave', function () { animate(plan, { y: 0 }, { easing: 'ease-out', duration: 0.25 }); });
+    });
+  }
+
+  // Swap these when the Lemon Squeezy variants change.
+  var CHECKOUT_MONTHLY = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6';
+  var CHECKOUT_YEARLY = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/90f8ba94-3613-4c5d-929e-4ac8faa3fd42';
+
+  var monthlyBtn = document.getElementById('bill-monthly');
+  var yearlyBtn = document.getElementById('bill-yearly');
+  var toggleIndicator = document.getElementById('toggle-indicator');
+  var priceBlock = document.querySelector('.plan.pro .price');
+
+  function moveIndicatorTo(btn, instant) {
+    if (!toggleIndicator) return;
+    var x = btn.offsetLeft;
+    var w = btn.offsetWidth;
+    if (animate && !reduceMotion && !instant) {
+      animate(toggleIndicator, { x: x, width: w }, { type: 'spring', stiffness: 500, damping: 40 });
+    } else {
+      toggleIndicator.style.transform = 'translateX(' + x + 'px)';
+      toggleIndicator.style.width = w + 'px';
+    }
+  }
+
+  function applyBillingText(yearly) {
+    document.getElementById('price-amount').textContent = yearly ? '$79.99' : '$7.99';
+    document.getElementById('price-period').textContent = yearly ? '/year' : '/month';
+    document.getElementById('price-note').textContent = yearly ? 'Billed yearly, cancel anytime' : 'Billed monthly, cancel anytime';
+    document.getElementById('checkout-btn').href = yearly ? CHECKOUT_YEARLY : CHECKOUT_MONTHLY;
+  }
+
+  function setBilling(yearly) {
+    monthlyBtn.classList.toggle('active', !yearly);
+    yearlyBtn.classList.toggle('active', yearly);
+    monthlyBtn.setAttribute('aria-pressed', String(!yearly));
+    yearlyBtn.setAttribute('aria-pressed', String(yearly));
+    moveIndicatorTo(yearly ? yearlyBtn : monthlyBtn);
+
+    if (animate && !reduceMotion && priceBlock) {
+      animate(priceBlock, { opacity: [1, 0], y: [0, -4] }, { duration: 0.12, easing: EASE_OUT }).finished.then(function () {
+        applyBillingText(yearly);
+        animate(priceBlock, { opacity: [0, 1], y: [4, 0] }, { duration: 0.2, easing: EASE_OUT });
+      });
+    } else {
+      applyBillingText(yearly);
+    }
+  }
+
+  monthlyBtn.addEventListener('click', function () { setBilling(false); });
+  yearlyBtn.addEventListener('click', function () { setBilling(true); });
+  window.addEventListener('resize', function () { moveIndicatorTo(yearlyBtn.classList.contains('active') ? yearlyBtn : monthlyBtn, true); });
+  moveIndicatorTo(monthlyBtn, true);
+
+  // Gallery
+  var track = document.getElementById('gallery-track');
+  var dotsWrap = document.getElementById('gallery-dots');
+  var slideCount = track.children.length;
+
+  /* Respect reduced-motion: don't autoplay the demo, offer controls instead. */
+  var demoVideo = track.querySelector('video');
+  if (demoVideo && reduceMotion) {
+    demoVideo.removeAttribute('autoplay');
+    demoVideo.controls = true;
+    try { demoVideo.pause(); } catch (e) {}
+  }
+
+  for (var i = 0; i < slideCount; i++) {
+    var dot = document.createElement('button');
+    dot.type = 'button';
+    dot.setAttribute('aria-label', 'Screenshot ' + (i + 1));
+    dot.addEventListener('click', goTo.bind(null, i));
+    dotsWrap.appendChild(dot);
+  }
+
+  function currentSlide() {
+    return Math.round(track.scrollLeft / track.clientWidth);
+  }
+
+  function goTo(index) {
+    var clamped = Math.max(0, Math.min(slideCount - 1, index));
+    var from = track.scrollLeft;
+    var to = clamped * track.clientWidth;
+    track.style.scrollSnapType = 'none';
+    if (!animate || document.hidden || reduceMotion) {
+      track.scrollLeft = to;
+      track.style.scrollSnapType = '';
+      updateDots();
+      return;
+    }
+    animate(from, to, {
+      duration: 0.4, easing: EASE_OUT,
+      onUpdate: function (latest) { track.scrollLeft = latest; },
+      onComplete: function () { track.style.scrollSnapType = ''; }
+    });
+  }
+
+  function updateDots() {
+    var active = currentSlide();
+    for (var j = 0; j < dotsWrap.children.length; j++) {
+      dotsWrap.children[j].classList.toggle('active', j === active);
+    }
+  }
+
+  document.getElementById('gallery-prev').addEventListener('click', function () { goTo(currentSlide() - 1); });
+  document.getElementById('gallery-next').addEventListener('click', function () { goTo(currentSlide() + 1); });
+  track.addEventListener('scroll', updateDots, { passive: true });
+  updateDots();
+
+  // FAQ: animated open/close. Falls back to native <details> behavior without JS or Motion.
+  if (animate) {
+    document.querySelectorAll('.faq details').forEach(function (details) {
+      var summary = details.querySelector('summary');
+      var answer = details.querySelector('.answer');
+      answer.classList.add('js-animated');
+      answer.style.height = '0';
+
+      summary.addEventListener('click', function (e) {
+        e.preventDefault();
+        var opening = !details.open;
+
+        if (reduceMotion) {
+          details.open = opening;
+          answer.style.height = opening ? 'auto' : '0';
+          return;
+        }
+
+        if (opening) {
+          details.open = true;
+          var target = answer.scrollHeight;
+          animate(answer, { height: [0, target] }, { duration: 0.3, easing: EASE_OUT }).finished.then(function () {
+            answer.style.height = 'auto';
+          });
+        } else {
+          var current = answer.scrollHeight;
+          answer.style.height = current + 'px';
+          requestAnimationFrame(function () {
+            animate(answer, { height: [current, 0] }, { duration: 0.25, easing: EASE_OUT }).finished.then(function () {
+              details.open = false;
+            });
+          });
+        }
+      });
+    });
+  }
+</script>
+
+</body>
+</html>

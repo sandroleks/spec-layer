@@ -5,7 +5,7 @@ component:
   figma_key: m3-button
   figma_file: FILE1
   figma_node: 1:100
-content_hash: 08a6cc2c442f51b110b29e910b7078df2014498a66d8bad02b3a9b79f1e09ae6
+content_hash: d445791b4151e4bfa53b61e535851d2aa5a8a4fbf0276251a2049ee9798194e7
 extracted_at: 2026-06-10T00:00:00.000Z
 ---
 

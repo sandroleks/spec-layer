@@ -17,3 +17,8 @@ coverage/
 **/.spec-data/
 apps/web/content/components/_inbox/*
 !apps/web/content/components/_inbox/.gitkeep
+
+# Screen recordings and marketing video source — tens of MB each, and git can
+# never forget a blob once it lands. These are working files, not shipped assets.
+# (apps/landing/demo.mp4 IS tracked; the landing page needs it to deploy.)
+screenshots/*.mp4

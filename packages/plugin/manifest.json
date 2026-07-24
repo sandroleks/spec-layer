@@ -1,20 +1,19 @@
 {
-  "name": "Spec Layer",
-  "id": "spec-layer-dev",
+  "name": "Spec Layer: Auto Docs & Specs",
+  "id": "1652104411578396548",
   "api": "1.0.0",
   "main": "dist/main.js",
   "ui": "dist/ui.html",
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
+  "permissions": ["currentuser"],
   "networkAccess": {
     "allowedDomains": [
-      "http://localhost:3000",
-      "http://localhost:3001"
+      "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ],
-    "reasoning": "The plugin POSTs extracted component specs to a locally running docs web app (Send to docs). The Docs URL is user-configurable in the Settings tab, so the allowlist must cover the port the dev server actually runs on (3000, and 3001 when 3000 is taken). Figma's manifest validator rejects raw IP literals like 127.0.0.1, so only the 'localhost' hostname is listed — use 'localhost' (not 127.0.0.1) in the Settings Docs URL; both resolve to the same loopback. Widen this list explicitly if/when a production docs host exists.",
+    "reasoning": "AI guideline text is generated through the Spec Layer proxy service, which enforces free-tier quotas and Pro licenses. No user API keys are required or stored; requests carry only the component's structured summary.",
     "devAllowedDomains": [
-      "http://localhost:3000",
-      "http://localhost:3001"
+      "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ]
   }
 }

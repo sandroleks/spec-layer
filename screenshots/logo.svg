@@ -1,0 +1,133 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+@keyframes kf_morph-square_transform_0 {
+  0% {
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  5% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  46.67% {
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(3.142rad) translate(-65px, -65px);
+  }
+  53.33% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(3.142rad) translate(-65px, -65px);
+  }
+  95% {
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(6.283rad) translate(-65px, -65px);
+  }
+  100% {
+    transform: translateX(97px) translateY(97px) translate(65px, 65px) rotate(6.283rad) translate(-65px, -65px);
+  }
+}
+#morph-square {
+  transform-origin: 0 0;
+  animation: kf_morph-square_transform_0 6s linear infinite;
+}
+@keyframes kf_morph-circle-outlined_transform_0 {
+  0% {
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  8.33% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  41.67% {
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(-3.142rad) translate(-65px, -65px);
+  }
+  58.33% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(-3.142rad) translate(-65px, -65px);
+  }
+  91.67% {
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(-6.283rad) translate(-65px, -65px);
+  }
+  100% {
+    transform: translateX(285px) translateY(97px) translate(65px, 65px) rotate(-6.283rad) translate(-65px, -65px);
+  }
+}
+#morph-circle-outlined {
+  transform-origin: 0 0;
+  animation: kf_morph-circle-outlined_transform_0 6s linear infinite;
+}
+@keyframes kf_morph-square-outlined_transform_0 {
+  0% {
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  3.33% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  46.67% {
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(3.142rad) translate(-65px, -65px);
+  }
+  53.33% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(3.142rad) translate(-65px, -65px);
+  }
+  96.67% {
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(6.283rad) translate(-65px, -65px);
+  }
+  100% {
+    transform: translateX(97px) translateY(285px) translate(65px, 65px) rotate(6.283rad) translate(-65px, -65px);
+  }
+}
+#morph-square-outlined {
+  transform-origin: 0 0;
+  animation: kf_morph-square-outlined_transform_0 6s linear infinite;
+}
+@keyframes kf_morph-circle_transform_0 {
+  0% {
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  6.67% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(0rad) translate(-65px, -65px);
+  }
+  43.33% {
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(-3.142rad) translate(-65px, -65px);
+  }
+  56.67% {
+    animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(-3.142rad) translate(-65px, -65px);
+  }
+  93.33% {
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(-6.283rad) translate(-65px, -65px);
+  }
+  100% {
+    transform: translateX(285px) translateY(285px) translate(65px, 65px) rotate(-6.283rad) translate(-65px, -65px);
+  }
+}
+#morph-circle {
+  transform-origin: 0 0;
+  animation: kf_morph-circle_transform_0 6s linear infinite;
+}
+</style>
+<g id="spec-layer-core_5" clip-path="url(#clip0_22_1278)">
+<rect width="512" height="512" id="spec-layer-core_5_bg_0" fill="black">
+</rect>
+<rect id="morph-square" transform="translate(97 97)" width="130" height="130" fill="white">
+<animate attributeName="rx" values="0; 0; 65; 65; 0; 0" keyTimes="0; 0.1333; 0.3667; 0.6333; 0.8667; 1" keySplines="0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1" dur="6s" calcMode="spline" repeatCount="indefinite" />
+
+</rect>
+<rect id="morph-circle-outlined" transform="translate(285 97)" width="130" height="130" rx="65" stroke="white" stroke-width="10">
+<animate attributeName="rx" values="65; 65; 0; 0; 65; 65" keyTimes="0; 0.1333; 0.3667; 0.6333; 0.8667; 1" keySplines="0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1" dur="6s" calcMode="spline" repeatCount="indefinite" />
+
+</rect>
+<rect id="morph-square-outlined" transform="translate(97 285)" width="130" height="130" stroke="white" stroke-width="10">
+<animate attributeName="rx" values="0; 0; 65; 65; 0; 0; 65; 65; 0; 0; 0" keyTimes="0; 0.05; 0.1667; 0.25; 0.3667; 0.4667; 0.5833; 0.6667; 0.7833; 0.8833; 1" keySplines="0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0 0 1 1" dur="6s" calcMode="spline" repeatCount="indefinite" />
+
+</rect>
+<rect id="morph-circle" transform="translate(285 285)" width="130" height="130" rx="65" fill="white">
+<animate attributeName="rx" values="65; 65; 0; 0; 65; 65; 0; 0; 65; 65; 65" keyTimes="0; 0.05; 0.1667; 0.25; 0.3667; 0.4667; 0.5833; 0.6667; 0.7833; 0.8833; 1" keySplines="0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0.76 0 0.24 1; 0 0 1 1; 0 0 1 1" dur="6s" calcMode="spline" repeatCount="indefinite" />
+
+</rect>
+</g>
+<defs>
+<clipPath id="clip0_22_1278">
+<rect width="512" height="512" fill="white"/>
+</clipPath>
+</defs>
+</svg>

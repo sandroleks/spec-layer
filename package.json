@@ -23,7 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc -p packages/format/tsconfig.json --noEmit && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/format/tsconfig.json --noEmit && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
     "lint": "eslint .",
     "build": "npm run build -w md-ds",
     "build:plugin": "node packages/plugin/build.mjs",

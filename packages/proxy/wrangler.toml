@@ -1,0 +1,16 @@
+name = "spec-layer-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+account_id = "f3ea0f8b485b5b11e917f415c224b1cb"
+
+kv_namespaces = [
+  { binding = "LICENSE_CACHE", id = "46fbd911b2194babbf2019fd4d0b412a" }
+]
+
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "QuotaDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaDO"]

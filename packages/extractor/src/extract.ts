@@ -3,6 +3,7 @@ import { extractAnatomy, type AnatomyPart } from './anatomy';
 import { extractProps, extractVariants, extractStates, type ComponentProp, type VariantAxis } from './props';
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
+import { extractRawValues, type RawValue } from './rawValues';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -24,6 +25,9 @@ export interface IntermediateSpec {
   figmaFile: string;
   figmaNode: string;
   anatomy: AnatomyPart[];
+  /** Node id of the default-variant COMPONENT — the coordinate space anatomy
+   *  part ids map into, and the node the doc frame screenshots for its diagram. */
+  anatomyComponentId: string;
   props: ComponentProp[];
   variants: VariantAxis[];
   variantInstances: VariantInstance[];
@@ -32,6 +36,7 @@ export interface IntermediateSpec {
   related: string[];
   gaps: Gap[];
   layout: LayoutSummary[];
+  rawValues: RawValue[];
 }
 
 function extractVariantInstances(root: SerializedNode): VariantInstance[] {
@@ -40,13 +45,14 @@ function extractVariantInstances(root: SerializedNode): VariantInstance[] {
 }
 
 export function extract(root: SerializedNode, meta: { figmaFile: string }): IntermediateSpec {
-  const { parts, related } = extractAnatomy(root);
+  const { parts, related, componentId } = extractAnatomy(root);
   return {
     name: root.name,
     figmaKey: root.key ?? '',
     figmaFile: meta.figmaFile,
     figmaNode: root.id,
     anatomy: parts,
+    anatomyComponentId: componentId,
     props: extractProps(root),
     variants: extractVariants(root),
     variantInstances: extractVariantInstances(root),
@@ -55,5 +61,6 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
     related,
     gaps: extractGaps(root),
     layout: extractLayout(root),
+    rawValues: extractRawValues(root),
   };
 }

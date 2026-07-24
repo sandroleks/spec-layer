@@ -35,7 +35,7 @@ function validSpec(name = "Button"): IntermediateSpec {
     figmaKey: "component-key",
     figmaFile: "file-key",
     figmaNode: "12:34",
-    anatomy: [],
+    anatomy: [], anatomyComponentId: "",
     props: [],
     variants: [],
     variantInstances: [
@@ -46,6 +46,7 @@ function validSpec(name = "Button"): IntermediateSpec {
     related: [],
     gaps: [],
     layout: [],
+    rawValues: [],
   };
 }
 

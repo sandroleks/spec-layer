@@ -14,10 +14,3 @@ export function resolveFileKey(
   if (override) return { fileKey: override, source: 'override' };
   return { fileKey: 'unknown', source: 'missing' };
 }
-
-export function effectiveFileKey(
-  figmaFileKey: string | null | undefined,
-  override: string | null,
-): string {
-  return resolveFileKey(figmaFileKey, override).fileKey;
-}

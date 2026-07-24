@@ -4,6 +4,24 @@ All notable changes to Spec Layer are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- License hardening: transient Lemon Squeezy errors (rate limits, 5xx,
+  malformed responses) no longer read as invalid keys, and renewals show
+  as Pro immediately after Activate instead of a stale cached status.
+  Device instances are validated on every request, so a deactivated
+  device's slot frees up rather than staying claimed. License endpoints
+  are rate-limited and format-gated, and license keys are hashed in
+  server-side storage and logs rather than kept in the clear.
+
+### Changed
+
+- The Figma plugin adds a Remove key action and clearer Settings status
+  copy that distinguishes a proxy outage from an expired subscription or
+  an unactivated key.
+
 ## [1.0.0] - 2026-06-15
 
 ### Changed

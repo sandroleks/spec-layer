@@ -1,0 +1,285 @@
+import { describe, it, expect, vi } from 'vitest';
+import type { ProxyQuota } from '@spec-layer/extractor';
+import {
+  authHeaders, fetchQuota, activateLicense, deactivateLicense, upsellText, PROXY_URL,
+  effectiveAuth, resolveLicenseView, licenseStatusCopy, activationErrorCopy,
+  generationErrorCopy, STOREFRONT_URL, quotaMeterModel, formatResetDate, isQuotaExhausted,
+} from '../src/ui/proxy';
+
+const proQuota: ProxyQuota = { tier: 'pro', used: 1, limit: null, remaining: null, resetsAt: '' };
+const freeQuota: ProxyQuota = { tier: 'free', used: 2, limit: 10, remaining: 8, resetsAt: '' };
+
+describe('authHeaders', () => {
+  it('prefers the license key', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' })).toEqual({ Authorization: 'Bearer LK' });
+  });
+  it('falls back to the figma user id', () => {
+    expect(authHeaders({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' })).toEqual({ 'X-Figma-User': 'u1' });
+  });
+  it('returns null with no identity', () => {
+    expect(authHeaders({ licenseKey: null, licenseInstanceId: null, figmaUserId: null })).toBeNull();
+  });
+});
+
+describe('instance-aware auth', () => {
+  it('sends key:instanceId in the bearer when an instance is known', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' }))
+      .toEqual({ Authorization: 'Bearer LK:i1' });
+  });
+  it('falls back to the bare key without an instance', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' }))
+      .toEqual({ Authorization: 'Bearer LK' });
+  });
+});
+
+describe('fetchQuota', () => {
+  it('GETs /v1/quota with auth and returns the snapshot', async () => {
+    const fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ tier: 'free', used: 3, limit: 20, remaining: 17, resetsAt: '2026-08-10T00:00:00.000Z' }),
+      { status: 200 },
+    ));
+    const q = await fetchQuota({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' }, fetcher as unknown as typeof fetch);
+    expect(q).toEqual({ tier: 'free', used: 3, limit: 20, remaining: 17, resetsAt: '2026-08-10T00:00:00.000Z' });
+    expect(fetcher).toHaveBeenCalledWith(`${PROXY_URL}/v1/quota`, { headers: { 'X-Figma-User': 'u1' } });
+  });
+  it('returns null with no identity (no network call)', async () => {
+    const fetcher = vi.fn();
+    expect(await fetchQuota({ licenseKey: null, licenseInstanceId: null, figmaUserId: null }, fetcher as unknown as typeof fetch)).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('returns null on network failure (meter simply hides)', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('offline'); });
+    expect(await fetchQuota({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' }, fetcher as unknown as typeof fetch)).toBeNull();
+  });
+});
+
+describe('activateLicense', () => {
+  it('activates with an instance name when no instance id is stored yet', async () => {
+    const fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ valid: true, status: 'active', instanceId: 'i1' }), { status: 200 },
+    ));
+    const out = await activateLicense('LK-1', null, fetcher as unknown as typeof fetch);
+    expect(out).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${PROXY_URL}/v1/license/activate`);
+    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceName: 'Figma plugin' });
+  });
+
+  it('sends the stored instance id so the proxy revalidates instead of re-activating', async () => {
+    const fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ valid: true, status: 'active', instanceId: 'i1' }), { status: 200 },
+    ));
+    await activateLicense('LK-1', 'i1', fetcher as unknown as typeof fetch);
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceId: 'i1' });
+  });
+});
+
+describe('activateLicense error handling', () => {
+  it('throws on a non-ok proxy response instead of returning a bogus verdict', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: 'ls_unreachable' }), { status: 502 }));
+    await expect(activateLicense('LK', null, fetcher as unknown as typeof fetch)).rejects.toThrow();
+  });
+});
+
+describe('deactivateLicense', () => {
+  it('POSTs to /v1/license/deactivate and reports the outcome', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ deactivated: true }), { status: 200 }));
+    expect(await deactivateLicense('LK', 'i1', fetcher as unknown as typeof fetch)).toBe(true);
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${PROXY_URL}/v1/license/deactivate`);
+    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK', instanceId: 'i1' });
+  });
+  it('returns false on any failure (best-effort)', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('offline'); });
+    expect(await deactivateLicense('LK', 'i1', fetcher as unknown as typeof fetch)).toBe(false);
+  });
+});
+
+describe('effectiveAuth', () => {
+  it('uses the key when active', () => {
+    expect(effectiveAuth('LK', 'i1', 'u1', true)).toEqual({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' });
+  });
+  it('uses the key when standing is still unknown (so the probe can run)', () => {
+    expect(effectiveAuth('LK', 'i1', 'u1', null)).toEqual({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' });
+  });
+  it('drops the inactive key back to the free identity', () => {
+    expect(effectiveAuth('LK', 'i1', 'u1', false)).toEqual({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' });
+  });
+});
+
+describe('resolveLicenseView', () => {
+  it('none when no key is stored', () => {
+    expect(resolveLicenseView(false, freeQuota)).toBe('none');
+    expect(resolveLicenseView(false, null)).toBe('none');
+  });
+  it('pro when the live check says pro', () => {
+    expect(resolveLicenseView(true, proQuota)).toBe('pro');
+  });
+  it('inactive on a definite free-tier response with a key stored', () => {
+    expect(resolveLicenseView(true, freeQuota)).toBe('inactive');
+  });
+  it('unknown when the server is unreachable (null quota), never inactive', () => {
+    expect(resolveLicenseView(true, null)).toBe('unknown');
+  });
+});
+
+describe('resolveLicenseView with licenseReason', () => {
+  it('an unreachable license reads as unknown, never inactive', () => {
+    const q: ProxyQuota = { tier: 'free', used: 0, limit: 10, remaining: 10, resetsAt: '', licenseReason: 'unreachable' };
+    expect(resolveLicenseView(true, q)).toBe('unknown');
+  });
+  it('a definite expired reason still reads as inactive', () => {
+    const q: ProxyQuota = { tier: 'free', used: 0, limit: 10, remaining: 10, resetsAt: '', licenseReason: 'expired' };
+    expect(resolveLicenseView(true, q)).toBe('inactive');
+  });
+});
+
+describe('licenseStatusCopy', () => {
+  it('pro', () => expect(licenseStatusCopy('pro')).toBe('Pro plan active ✓'));
+  it('none is empty', () => expect(licenseStatusCopy('none')).toBe(''));
+  it('inactive invites a renewal', () => {
+    expect(licenseStatusCopy('inactive', 'expired')).toMatch(/isn't active right now/);
+    expect(licenseStatusCopy('inactive', 'expired')).toMatch(/Renew/);
+  });
+  it('unknown keeps the neutral saved copy (no false alarm)', () => {
+    expect(licenseStatusCopy('unknown')).toBe('Your Pro key is saved.');
+  });
+});
+
+describe('licenseStatusCopy reasons', () => {
+  it('expired suggests renewing', () => {
+    expect(licenseStatusCopy('inactive', 'expired')).toContain('Renew');
+  });
+  it('inactive suggests re-activating, not renewing', () => {
+    const copy = licenseStatusCopy('inactive', 'inactive');
+    expect(copy).toContain('Activate');
+    expect(copy).not.toContain('Renew');
+  });
+  it('inactive with no reason falls back to press-Activate copy, not Renew', () => {
+    const copy = licenseStatusCopy('inactive');
+    expect(copy).toContain('Activate');
+    expect(copy).not.toContain('Renew');
+  });
+});
+
+describe('activationErrorCopy', () => {
+  it('expired routes to the store, not support', () => {
+    expect(activationErrorCopy('expired')).toMatch(/from the store/);
+  });
+  it('disabled routes to support', () => {
+    expect(activationErrorCopy('disabled')).toMatch(/support/);
+  });
+  it('inactive invites pressing Activate again, not a purchase-email lookup', () => {
+    expect(activationErrorCopy('inactive')).toMatch(/Activate/);
+  });
+  it('anything else reads as a wrong key', () => {
+    expect(activationErrorCopy('invalid')).toMatch(/purchase email/);
+    expect(activationErrorCopy('whatever')).toMatch(/purchase email/);
+  });
+  it('never leaks the raw status in parentheses (the old bug)', () => {
+    for (const s of ['expired', 'disabled', 'invalid', 'inactive']) {
+      expect(activationErrorCopy(s)).not.toContain(`(${s})`);
+    }
+  });
+});
+
+describe('generationErrorCopy', () => {
+  it('rate_limited', () => expect(generationErrorCopy('rate_limited')).toMatch(/a minute/));
+  it('generation_pending', () => expect(generationErrorCopy('generation_pending')).toMatch(/already generating/));
+  it('other codes fall back to placeholders copy without leaking the code', () => {
+    expect(generationErrorCopy('upstream')).toBe("AI didn't run this time, so placeholders were used.");
+    expect(generationErrorCopy('bad_request')).not.toContain('bad_request');
+  });
+});
+
+describe('STOREFRONT_URL', () => {
+  it('points at the lemonsqueezy store front', () => {
+    expect(STOREFRONT_URL).toMatch(/lemonsqueezy\.com/);
+  });
+});
+
+describe('copy strings', () => {
+  it('upsell text names the current month', () => {
+    expect(upsellText(undefined, new Date('2026-07-15T00:00:00Z')))
+      .toBe("You've used your free AI generations for July.");
+  });
+});
+
+describe('formatResetDate', () => {
+  it('formats an ISO date as "Mon D" in UTC', () => {
+    expect(formatResetDate('2026-08-01T00:00:00.000Z')).toBe('Aug 1');
+    expect(formatResetDate('2026-12-25T00:00:00.000Z')).toBe('Dec 25');
+  });
+  it('returns empty for missing or unparseable input', () => {
+    expect(formatResetDate('')).toBe('');
+    expect(formatResetDate(undefined)).toBe('');
+    expect(formatResetDate('not-a-date')).toBe('');
+  });
+});
+
+describe('quotaMeterModel', () => {
+  const free = (remaining: number, limit = 20): ProxyQuota =>
+    ({ tier: 'free', used: limit - remaining, limit, remaining, resetsAt: '2026-08-01T00:00:00.000Z' });
+
+  it('hidden when AI is off', () => {
+    expect(quotaMeterModel(free(17), false).state).toBe('hidden');
+  });
+  it('hidden when quota is unknown (offline)', () => {
+    expect(quotaMeterModel(null, true).state).toBe('hidden');
+  });
+  it('pro shows unlimited, no bar, no link', () => {
+    const m = quotaMeterModel({ tier: 'pro', used: 5, limit: null, remaining: null, resetsAt: '' }, true);
+    expect(m).toEqual({ state: 'pro', fillPct: 0, countText: 'Unlimited generations · Pro', linkText: '' });
+  });
+  it('ok state above the low threshold', () => {
+    const m = quotaMeterModel(free(17), true);
+    expect(m.state).toBe('ok');
+    expect(m.fillPct).toBe(85);
+    expect(m.countText).toBe('17 of 20 left this month');
+    expect(m.linkText).toBe('Upgrade');
+  });
+  it('boundary: 5 remaining is still ok', () => {
+    expect(quotaMeterModel(free(5), true).state).toBe('ok');
+  });
+  it('boundary: 4 remaining is low', () => {
+    const m = quotaMeterModel(free(4), true);
+    expect(m.state).toBe('low');
+    expect(m.countText).toBe('4 of 20 left this month');
+    expect(m.linkText).toBe('Upgrade');
+  });
+  it('empty at zero remaining names the reset date and offers unlimited', () => {
+    const m = quotaMeterModel(free(0), true);
+    expect(m.state).toBe('empty');
+    expect(m.fillPct).toBe(100);
+    expect(m.countText).toBe('0 left · resets Aug 1');
+    expect(m.linkText).toBe('Get unlimited');
+  });
+  it('falls back to used/limit when remaining is null', () => {
+    const m = quotaMeterModel({ tier: 'free', used: 18, limit: 20, remaining: null, resetsAt: '2026-08-01T00:00:00.000Z' }, true);
+    expect(m.state).toBe('low');
+    expect(m.countText).toBe('2 of 20 left this month');
+  });
+});
+
+describe('isQuotaExhausted', () => {
+  const q = (over: Partial<ProxyQuota>): ProxyQuota =>
+    ({ tier: 'free', used: 0, limit: 20, remaining: 20, resetsAt: '', ...over });
+
+  it('is false for a null quota (offline / unknown)', () => {
+    expect(isQuotaExhausted(null)).toBe(false);
+  });
+  it('is false for pro regardless of counts', () => {
+    expect(isQuotaExhausted({ tier: 'pro', used: 999, limit: null, remaining: null, resetsAt: '' })).toBe(false);
+  });
+  it('is false when free generations remain', () => {
+    expect(isQuotaExhausted(q({ remaining: 1 }))).toBe(false);
+  });
+  it('is true when the free allowance is used up', () => {
+    expect(isQuotaExhausted(q({ used: 20, remaining: 0 }))).toBe(true);
+  });
+  it('falls back to used/limit when remaining is null', () => {
+    expect(isQuotaExhausted(q({ used: 20, limit: 20, remaining: null }))).toBe(true);
+    expect(isQuotaExhausted(q({ used: 5, limit: 20, remaining: null }))).toBe(false);
+  });
+});

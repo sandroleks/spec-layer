@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractAnatomy } from '../src/anatomy';
+import { extractAnatomy, defaultVariant } from '../src/anatomy';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
 import type { SerializedNode } from '../src/tree';
@@ -19,6 +19,14 @@ describe('extractAnatomy', () => {
   it('excludes invisible layers', () => {
     expect(result.parts.find((p) => p.name === 'debug-overlay')).toBeUndefined();
   });
+
+  it('carries each part node id and the default-variant component id', () => {
+    // The doc frame resolves geometry live from these ids to place its callout
+    // pins, so every part must carry a non-empty id and the result must point at
+    // the screenshotted default variant.
+    expect(result.parts.every((p) => typeof p.id === 'string' && p.id.length > 0)).toBe(true);
+    expect(result.componentId).toBe(defaultVariant(button as SerializedNode).id);
+  });
 });
 
 describe('extractAnatomy — single-wrapper descent (bug 2)', () => {
@@ -37,6 +45,51 @@ describe('extractAnatomy — single-wrapper descent (bug 2)', () => {
 
   it('collects related atoms from inside the wrapper', () => {
     expect(chipResult.related).toEqual(['Icon']);
+  });
+});
+
+describe('extractAnatomy — bounded depth-first walk (Task 7)', () => {
+  it('walks up to 3 levels, depth-first, recording depth', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      children: [
+        {
+          id: '2', name: 'header', type: 'FRAME', visible: true,
+          children: [
+            { id: '3', name: 'title', type: 'TEXT', visible: true },
+            {
+              id: '4', name: 'meta', type: 'FRAME', visible: true,
+              children: [
+                { id: '5', name: 'timestamp', type: 'TEXT', visible: true,
+                  children: [{ id: '6', name: 'too-deep', type: 'TEXT', visible: true }] },
+              ],
+            },
+          ],
+        },
+        { id: '7', name: 'body', type: 'TEXT', visible: true },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.depth])).toEqual([
+      ['header', 0], ['title', 1], ['meta', 1], ['timestamp', 2], ['body', 0],
+    ]);
+  });
+
+  it('stops at nested component boundaries and records the component name', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Field', type: 'COMPONENT', visible: true,
+      children: [
+        {
+          id: '2', name: 'icon', type: 'INSTANCE', visible: true,
+          mainComponent: { name: 'Icon/Search', key: 'k' },
+          children: [{ id: '3', name: 'vector', type: 'VECTOR', visible: true }],
+        },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts).toEqual([
+      { id: '2', name: 'icon', type: 'INSTANCE', nested: true, depth: 0, component: 'Icon/Search' },
+    ]);
   });
 });
 

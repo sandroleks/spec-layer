@@ -43,6 +43,24 @@ describe('prose', () => {
     expect(() => parseProseResponse('not json')).toThrow();
   });
 
+  it('coerces an accessibility array of lines into bulleted text', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":["**Keyboard:** Tab moves focus.","Announces its label."],"dos":[],"donts":[]}',
+    );
+    expect(out.accessibility).toBe('- **Keyboard:** Tab moves focus.\n- Announces its label.');
+  });
+
+  it('coerces a definition array into paragraphs', () => {
+    const out = parseProseResponse('{"definition":["One.","Two."],"accessibility":"A","dos":[],"donts":[]}');
+    expect(out.definition).toBe('One.\n\nTwo.');
+  });
+
+  it('still throws when a required field is truly absent', () => {
+    expect(() =>
+      parseProseResponse('{"definition":"D","dos":[],"donts":[]}'),
+    ).toThrow(/accessibility/);
+  });
+
   it('normalizes em dashes (and spaced en dashes) out of every field', () => {
     const out = parseProseResponse(
       '{"definition":"Use Primary — it leads.","accessibility":"A","dos":["Do this — because reason."],"donts":["Avoid that – it confuses."]}',
@@ -125,6 +143,138 @@ describe('prose', () => {
     expect(store.set).toHaveBeenCalledOnce();
   });
 
+  it('populates variantsSummary when present in the payload', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style varies from solid to outlined to text."}',
+    );
+    expect(out.variantsSummary).toBe('Style varies from solid to outlined to text.');
+  });
+
+  it('leaves variantsSummary undefined when absent, without throwing', () => {
+    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
+    expect(out.variantsSummary).toBeUndefined();
+  });
+
+  it('falls back to undefined when variantsSummary is the wrong type', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":42}',
+    );
+    expect(out.variantsSummary).toBeUndefined();
+  });
+
+  it('coerces an array-of-lines variantsSummary via joinParagraphs', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":["One.","Two."]}',
+    );
+    expect(out.variantsSummary).toBe('One.\n\nTwo.');
+  });
+
+  it('normalizes em dashes out of variantsSummary when present', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style — controls weight."}',
+    );
+    expect(out.variantsSummary).toBe('Style, controls weight.');
+  });
+
+  it('the 4 required fields are still required when variantsSummary is present', () => {
+    expect(() =>
+      parseProseResponse('{"accessibility":"A","dos":[],"donts":[],"variantsSummary":"x"}'),
+    ).toThrow(/definition/);
+  });
+
+  it('populates anatomySummary when present in the payload', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label inside a container."}',
+    );
+    expect(out.anatomySummary).toBe('A label inside a container.');
+  });
+
+  it('leaves anatomySummary undefined when absent, without throwing', () => {
+    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
+    expect(out.anatomySummary).toBeUndefined();
+  });
+
+  it('normalizes em dashes out of anatomySummary when present', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label — inside a container."}',
+    );
+    expect(out.anatomySummary).toBe('A label, inside a container.');
+  });
+
+  it('parses anatomyParts as {name, description} pairs', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"Label","description":"Names the action."}]}',
+    );
+    expect(out.anatomyParts).toEqual([
+      { name: 'Container', description: 'Holds the label.' },
+      { name: 'Label', description: 'Names the action.' },
+    ]);
+  });
+
+  it('drops malformed anatomyParts entries but keeps the usable ones', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"","description":"no name"},{"name":"Label"},"nope",{"description":"no name key"}]}',
+    );
+    expect(out.anatomyParts).toEqual([{ name: 'Container', description: 'Holds the label.' }]);
+  });
+
+  it('leaves anatomyParts undefined when absent, non-array, or empty after filtering', () => {
+    expect(parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}').anatomyParts).toBeUndefined();
+    expect(
+      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":"Container"}').anatomyParts,
+    ).toBeUndefined();
+    expect(
+      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"","description":""}]}').anatomyParts,
+    ).toBeUndefined();
+  });
+
+  it('normalizes em dashes out of anatomyParts descriptions', () => {
+    const out = parseProseResponse(
+      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Label","description":"Names the action — clearly."}]}',
+    );
+    expect(out.anatomyParts?.[0].description).toBe('Names the action, clearly.');
+  });
+
+  it('few-shot exemplar carries an anatomy summary and per-part descriptions', () => {
+    const drafts = parseProseResponse(proseFewShot()[1].content);
+    expect(drafts.anatomySummary).toBeTruthy();
+    expect(drafts.anatomyParts?.map((p) => p.name)).toEqual(['Container', 'Label', 'Leading icon']);
+  });
+
+  it('prompt asks for anatomyParts matching the listed part names', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toContain('anatomyParts');
+    expect(prompt).toMatch(/EXACTLY matches one of the Anatomy part names/);
+  });
+
+  it('few-shot definition is a value-led overview with no style names', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    // Multi-sentence narrative, not a bare one-liner.
+    expect(drafts.definition.split(/[.!?]\s/).length).toBeGreaterThan(2);
+    // No specific variant/style names leak into the Overview.
+    expect(drafts.definition).not.toMatch(/\b(filled|outlined|ghost|brand|neutral|destructive)\b/i);
+  });
+
+  it('few-shot definition is a plain paragraph with no per-type guide', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    expect(drafts.definition).not.toMatch(/^-\s/m);            // no bullet lines
+    expect(drafts.definition.toLowerCase()).not.toContain('when to use');
+  });
+
+  it('few-shot variantsSummary carries a bulleted when-to-use-which-type guide', () => {
+    const [, assistant] = proseFewShot();
+    const drafts = parseProseResponse(assistant.content);
+    expect(drafts.variantsSummary).toMatch(/-\s\*\*/);         // bold-name bullets
+    expect(drafts.variantsSummary?.toLowerCase()).toContain('when to use');
+  });
+
+  it('prompt asks for the type guide under variants, not definition', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toMatch(/when to use which type/i);
+  });
+
   it('throws when dos contains a non-string element', () => {
     expect(() =>
       parseProseResponse('{"definition":"d","accessibility":"a","dos":[1],"donts":[]}'),
@@ -150,9 +300,9 @@ describe('prose', () => {
     expect(out.accessibility).toContain('### Keyboard');
   });
 
-  it('few-shot exemplar uses a Definition variant list and bold lead-ins', () => {
+  it('few-shot exemplar uses a Variants type list and bold lead-ins', () => {
     const drafts = parseProseResponse(proseFewShot()[1].content);
-    expect(drafts.definition).toMatch(/\n- \*\*/); // bulleted variant guide with bold names
+    expect(drafts.variantsSummary).toMatch(/\n- \*\*/); // bulleted type guide with bold names
     expect(drafts.accessibility).toMatch(/^- \*\*/m); // bold lead-in on each bullet
     expect(drafts.dos[0].startsWith('**')).toBe(true); // bold rule summary
   });
@@ -263,5 +413,115 @@ describe('prose', () => {
     await draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: store });
     await draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: store, imageUrl: 'https://x/y.png' });
     expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  // --- Task 1: selection-aware buildProsePrompt --------------------------------
+
+  it('buildProsePrompt with a requested subset asks only for those keys', () => {
+    const prompt = buildProsePrompt(spec, new Set(['definition', 'interactions']));
+    expect(prompt).toContain('interactions (');
+    expect(prompt).toContain('definition (');
+    expect(prompt).not.toContain('dos (');
+    expect(prompt).not.toContain('designConsiderations (');
+  });
+
+  it('buildProsePrompt default (no requested set) still asks for the legacy keys', () => {
+    const prompt = buildProsePrompt(spec);
+    expect(prompt).toContain('anatomyParts');
+    expect(prompt).toMatch(/when to use which type/i);
+  });
+
+  it('interactions instruction names the Mouse/Keyboard/Other subheadings', () => {
+    const prompt = buildProsePrompt(spec, new Set(['interactions']));
+    expect(prompt).toMatch(/### Mouse/);
+    expect(prompt).toMatch(/### Keyboard/);
+    expect(prompt).toMatch(/### Other/);
+  });
+
+  it('appends the interactions/accessibility overlap note only when both are requested', () => {
+    expect(buildProsePrompt(spec, new Set(['accessibility', 'interactions'])))
+      .toMatch(/keyboard and mouse mechanics belong to Interactions/i);
+    expect(buildProsePrompt(spec, new Set(['accessibility'])))
+      .not.toMatch(/belong to Interactions/i);
+  });
+
+  // --- Task 2: selection-aware parseProseResponse ------------------------------
+
+  it('parses the three new fields when present', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      interactions: '### Mouse\n- Click activates.',
+      designConsiderations: '- Meet 4.5:1 contrast.',
+      contentConsiderations: '- Keep labels short.',
+    }));
+    expect(out.interactions).toContain('### Mouse');
+    expect(out.designConsiderations).toContain('4.5:1');
+    expect(out.contentConsiderations).toContain('labels');
+  });
+
+  it('coerces a new-field array of lines into bulleted text', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      designConsiderations: ['Meet contrast.', 'Show focus.'],
+    }));
+    expect(out.designConsiderations).toBe('- Meet contrast.\n- Show focus.');
+  });
+
+  it('normalizes em dashes out of the new fields', () => {
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'D', accessibility: 'A', dos: [], donts: [],
+      interactions: 'Click — activates.',
+    }));
+    expect(out.interactions).toBe('Click, activates.');
+  });
+
+  it('when requested, requires only the requested keys', () => {
+    const out = parseProseResponse(
+      JSON.stringify({ definition: 'D', interactions: '- x' }),
+      new Set(['definition', 'interactions']),
+    );
+    expect(out.definition).toBe('D');
+    expect(out.interactions).toBe('- x');
+  });
+
+  it('when requested, a missing requested key still throws', () => {
+    expect(() =>
+      parseProseResponse(JSON.stringify({ definition: 'D' }), new Set(['definition', 'interactions'])),
+    ).toThrow(/interactions/);
+  });
+
+  it('no requested set preserves the legacy required contract', () => {
+    expect(() => parseProseResponse('{"definition":"D","dos":[],"donts":[]}')).toThrow(/accessibility/);
+  });
+
+  // --- Task 3: few-shot carries the new sections -------------------------------
+
+  it('few-shot exemplar carries Interactions and both Considerations sections', () => {
+    const drafts = parseProseResponse(proseFewShot()[1].content);
+    expect(drafts.interactions).toMatch(/### Mouse/);
+    expect(drafts.interactions).toMatch(/### Keyboard/);
+    expect(drafts.designConsiderations).toMatch(/^- /m);
+    expect(drafts.contentConsiderations).toMatch(/^- /m);
+    expect(proseFewShot()[1].content).not.toMatch(/—/);
+  });
+
+  // --- Task 4: client threads the requested set --------------------------------
+
+  it('passes the requested set to the prompt, requires it on parse, and lifts max_tokens', async () => {
+    let body: AnthropicRequestBody | undefined;
+    const fetcher = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as AnthropicRequestBody;
+      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","interactions":"- x"}' }] }) };
+    }) as unknown as typeof fetch;
+    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
+    const out = await draftProse(spec, {
+      apiKey: 'k', fetcher, cacheStore: store,
+      requested: new Set(['definition', 'interactions']),
+    });
+    expect(out?.interactions).toBe('- x');
+    expect((body as unknown as { max_tokens: number }).max_tokens).toBe(3000);
+    const content = String(lastMessage(body!).content);
+    expect(content).toContain('interactions (');
+    expect(content).not.toContain('accessibility (');
   });
 });

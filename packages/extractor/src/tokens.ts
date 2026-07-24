@@ -43,7 +43,7 @@ export function parseVariantName(name: string): Record<string, string> | null {
 }
 
 /** Layer names carry Figma prop-binding artifacts like "icon-primary#" — strip them. */
-const cleanPartName = (name: string) => name.replace(/#+\s*$/, '').trim();
+export const cleanPartName = (name: string) => name.replace(/#+\s*$/, '').trim();
 
 /** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {

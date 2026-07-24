@@ -1,5 +1,5 @@
 import type { IntermediateSpec } from './extract';
-import { contentHash } from './hash';
+import { specContentHash } from './hash';
 import type { TokenRule } from './tokens';
 import { serializeFrontmatter, type SpecFrontmatter } from '@spec-layer/format';
 import type { ProseDrafts } from './prose/prompt';
@@ -124,12 +124,17 @@ export function renderSpec(
   spec: IntermediateSpec,
   opts: { prose: ProseDrafts | null; extractedAt: string; status?: SpecFrontmatter['status'] },
 ): string {
+  // content_hash is computed by specContentHash (see hash.ts) so the drift
+  // baseline and this frontmatter can never diverge: it excludes rawValues
+  // (presentation-only) and reduces anatomy to the legacy depth-0-only,
+  // {id,name,type,nested} shape so canvas-only additions (rawValues, deeper
+  // anatomy) never flip content_hash for existing committed specs.
   const fm: SpecFrontmatter = {
     spec_version: '0.1',
     // Status is optional: omitted unless the caller explicitly supplies one.
     ...(opts.status ? { status: opts.status } : {}),
     component: { name: spec.name, figma_key: spec.figmaKey, figma_file: spec.figmaFile, figma_node: spec.figmaNode },
-    content_hash: contentHash(spec),
+    content_hash: specContentHash(spec),
     extracted_at: opts.extractedAt,
   };
   const p = opts.prose;
@@ -137,7 +142,10 @@ export function renderSpec(
   const lines: string[] = [
     '## Definition', '', p?.definition ?? '_To be written._', '',
     '## Anatomy', '',
-    ...spec.anatomy.map((a, i) => `${i + 1}. ${a.name}${a.nested ? ' (component)' : ''}`), '',
+    // Markdown lists depth-0 parts only: deeper structure (Task 7's bounded
+    // walk) is for the canvas anatomy frame, not the prose list, and keeping
+    // this filtered is also what keeps content_hash stable (see above).
+    ...spec.anatomy.filter((a) => a.depth === 0).map((a, i) => `${i + 1}. ${a.name}${a.nested ? ' (component)' : ''}`), '',
     '## Configuration', '',
     ...renderConfiguration(spec), '',
     '## Variants', '',
