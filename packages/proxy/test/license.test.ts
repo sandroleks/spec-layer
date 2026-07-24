@@ -231,7 +231,7 @@ describe('checkLicense transient-error handling', () => {
 describe('validateLicense cache write (renewal fix)', () => {
   it('overwrites a stale negative cache entry on a successful revalidation', async () => {
     const cache = new MemKV();
-    let now = T0;
+    const now = T0;
     // A lapse got cached, from the same device (instance) that will renew…
     await checkLicense(UUID_KEY, 'inst-1', { fetcher: lsOk('expired', false) as unknown as typeof fetch, cache, now: () => now });
     // …then the user renewed and hit Activate (validate path, instance known).
