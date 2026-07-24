@@ -13,8 +13,8 @@ Spec Layer gains a second product surface: a **hosted MCP endpoint** that serves
 a design system's component specs to a developer's coding agent.
 
 The designer documents components in Figma as they do today, then clicks
-**Publish**. The plugin pushes an agent-optimised projection of every documented
-component to our Worker, which returns a stable share link. The designer sends
+**Publish**. The plugin pushes the full context of every doc frame, including the
+AI-generated prose sections, to our Worker, which returns a stable share link. The designer sends
 that link to a developer, who pastes one line into their agent's MCP config. The
 agent can then ask for the reviewed spec of any component at codegen time and
 write on-token code instead of hardcoded values.
@@ -53,11 +53,12 @@ therefore strictly push: plugin publishes, Worker stores, agent reads. There is
 no sync daemon, no Figma OAuth, and no webhook path. This is a hard constraint,
 not a preference.
 
-**3.2 The agent's context window is the real budget.** A full `IntermediateSpec`
+**3.2 The agent's context window is a real budget.** A full `IntermediateSpec`
 carries `variantInstances`, node-id-keyed `anatomy`, and per-part render detail
-that exists to drive our doc frames. Injecting that into an agent's context burns
-tokens and buries the signal. The published artifact must be a deliberate
-projection, not the raw extraction.
+that exists purely to drive our doc frames. Injecting that into an agent's context
+burns tokens and buries the signal. The published artifact therefore mirrors the
+frame's *content* while excluding render scaffolding (§4), and `get_spec` lets a
+caller narrow to the sections it needs (§5.5).
 
 **3.3 Handoff crosses a person boundary.** The designer has the specs and cannot
 push to the developer's repo. The developer has the repo and has neither the
@@ -69,9 +70,28 @@ cleanly. This is why the local-repo MCP option was rejected.
 
 ## 4. The published artifact
 
-One JSON projection per component. Derived from `IntermediateSpec`
-(`packages/extractor/src/extract.ts:22`), keeping what informs code generation and
-dropping what only drives rendering.
+**The link mirrors the doc frame.** Whatever sections the designer chose to put on
+the frame are exactly what the endpoint serves. There is no separate notion of
+"what gets published", which keeps one mental model: what you see on the canvas is
+what the agent gets.
+
+This matters because the frame is not just a token table. Seven of its twelve
+sections are AI-generated prose (`ALL_SECTIONS`, `docModel.ts:14`):
+
+| Group | Sections |
+|---|---|
+| Usage | Overview\*, Variants\*, Do's & Don'ts\*, Related |
+| Specifications | Anatomy\*, Measurements, Configuration, States, Tokens used |
+| Accessibility | Semantics & Focus\*, Interactions\*, Content Considerations\* |
+
+\* AI prose
+
+Do's and don'ts, focus and semantics, interaction behaviour, and content guidance
+are precisely the "when and why" an agent cannot get anywhere else. Storybook
+knows code, not intent. Serving only a token map would discard the most
+differentiated half of the artifact.
+
+### 4.1 Shape
 
 ```jsonc
 {
@@ -81,41 +101,90 @@ dropping what only drives rendering.
   "status": "approved",
   "content_hash": "9f2a…",
   "published_at": "2026-07-24T10:12:00Z",
+  "sections_published": ["definition", "anatomy", "configuration", "tokens", "dosDonts"],
 
-  "props":    [{ "name": "variant", "kind": "variant",
-                 "options": ["primary", "secondary"], "default": "primary" }],
-  "variants": [{ "prop": "size", "values": ["sm", "md", "lg"] }],
-  "states":   ["default", "hover", "disabled"],
+  "sections": {
+    "definition":    { "kind": "prose", "label": "Overview",
+                       "body": "Use primary for the single most important action…" },
+    "anatomy":       { "kind": "mixed", "label": "Anatomy",
+                       "parts": [{ "name": "Container", "type": "FRAME", "depth": 0 }],
+                       "body": "The container owns padding and radius…" },
+    "configuration": { "kind": "data", "label": "Configuration",
+                       "props": [{ "name": "variant", "kind": "variant",
+                                   "options": ["primary", "secondary"], "default": "primary" }],
+                       "variants": [{ "prop": "size", "values": ["sm", "md", "lg"] }] },
+    "states":        { "kind": "data", "label": "States",
+                       "states": ["default", "hover", "disabled"] },
+    "measurements":  { "kind": "data", "label": "Measurements",
+                       "layout": [{ "part": "Container",
+                                    "summary": "horizontal, padding 8/16/8/16, gap 8, radius 4" }] },
+    "tokens":        { "kind": "data", "label": "Tokens used",
+                       "rules": [{ "part": "Container", "property": "fill",
+                                   "conditions": { "State": ["Hover"] },
+                                   "token": "Background/Action/Hover" }] },
+    "dosDonts":      { "kind": "prose", "label": "Do's & Don'ts", "body": "…" }
+  },
 
-  "anatomy":  [{ "name": "Container", "type": "FRAME", "depth": 0 }],
-  "tokens":   [{ "part": "Container", "property": "fill",
-                 "conditions": { "State": ["Hover"] },
-                 "token": "Background/Action/Hover" }],
-  "layout":   [{ "part": "Container", "summary": "horizontal, padding 8/16/8/16, gap 8, radius 4" }],
-  "unbound":  [{ "part": "Icon", "property": "fill", "value": "#6750A4" }],
-
-  "related":  ["Icon"],
-  "guidance": "Use primary for the single most important action…"
+  "unbound": [{ "part": "Icon", "property": "fill", "value": "#6750A4" }],
+  "related": ["Icon"]
 }
 ```
 
-**Kept and why:**
+Sections are keyed by `SectionId` so consumers can address them stably, and each
+carries its `kind` (`prose`, `data`, or `mixed`) so an agent knows whether to read
+narrative or structure. `sections_published` makes omissions explicit: an absent
+section means the designer turned it off, not that extraction failed.
 
-| Field | Source | Why an agent needs it |
-|---|---|---|
-| `tokens` | `TokenRule[]`, verbatim | The crown jewel. Condition-aware design-to-token truth. This is what makes the agent write `var(--background-action-hover)`. |
-| `props`, `variants`, `states` | as extracted | The component's API surface. |
-| `anatomy` | minus node ids | Part names that `tokens` and `layout` reference. Ids are meaningless outside the file. |
-| `layout` | `LayoutSummary[]` | Already a compact string (`"padding 8/16/8/16, gap 8"`). Directly useful for building the component. |
-| `unbound` | `RawValue[]`, renamed | Tells the agent a value is genuinely hardcoded in the design so it does not invent a token that does not exist. Honest, and quietly advertises the drift problem. |
-| `guidance` | the AI prose, optional | The meaning layer: when to reach for which variant. This is the thing Storybook structurally cannot say. |
+`unbound` is the one field that is not a frame section. It lists values genuinely
+hardcoded in the design (`RawValue[]`), so the agent does not invent a token that
+does not exist. It is a codegen aid derived from extraction, and it quietly
+surfaces the drift problem.
 
-**Dropped:** `variantInstances` (render-only, the largest field), `anatomyComponentId`,
-`figmaNode`, and `gaps` (internal extraction diagnostics; `unbound` covers the
-part a consumer can act on).
+### 4.2 What does not transfer
 
-Expected size is roughly 2 to 6 KB per component, which is a reasonable
-single-tool-call payload.
+The link carries the frame's **content**, not its **rendering**. Anatomy's part
+list and prose transfer; the annotated screenshot does not. Same for the measure
+overlays, the states matrix, and the variants grid. This is the right trade: those
+images are large, and an agent gets little from them. Sending rendered PNGs to a
+vision model is a separate future direction and is out of scope here.
+
+Also dropped from the underlying extraction: `variantInstances` (render-only, the
+largest field), `anatomyComponentId`, `figmaNode`, and `gaps` (internal
+diagnostics; `unbound` covers the actionable part).
+
+Expected size is roughly 5 to 15 KB per component with all sections on. That is
+fine for a single `get_spec` call and is exactly why the storage model uses
+per-component keys (§5.2) rather than one bundle.
+
+### 4.3 Persisting the model (new work)
+
+Today the prose has **no durable home**. `DocLinkData` (`docLink.ts:28`) stores only
+`sourceNodeId`, `contentHash`, `selfHash`, `config`, `generatedAt`, and
+`pluginVersion`. The generated prose exists solely as rendered text nodes on the
+canvas, so there is nothing for Publish to read.
+
+The plugin must therefore **persist the generated doc model at build time**, under
+a pluginData key separate from `DocLinkData`:
+
+- **Separate key, not an added field.** `DocLinkData` is parsed during library
+  enumeration and every drift check; bloating it would worsen the list-rebuild
+  costs already noted as F1 and F2 in the holistic review. The model key is read
+  only on publish and on Download MD.
+- **Versioned** (`v: 1`) for forward compatibility.
+- **Size-guarded**, with a clear error when a component exceeds the per-entry
+  pluginData limit.
+- **Bonus:** Download MD can reuse it instead of regenerating.
+
+Consequences, accepted:
+
+- **Hand-edits on the frame do not reach the agent.** Publish sends the stored
+  generated model, so a designer who edits frame text by hand creates a silent
+  divergence between canvas and link. The existing `selfHash` / `edited` detection
+  already identifies this case, so a warning on publish can be added later at
+  small cost if it becomes a support issue.
+- **Frames built before this change have no stored model.** Publish must detect
+  this and tell the designer to regenerate the frame first, rather than failing
+  obscurely or publishing an empty spec.
 
 ---
 
@@ -145,7 +214,7 @@ project automatically, which is the correct default for a team.
 | `token:<shareToken>` | `projectId` | every MCP call |
 | `proj:<projectId>` | name, owner license hash, files[], `lapsedAt`, `rotatedFrom`, revoked | auth, Library |
 | `idx:<projectId>` | `[{ name, slug, file, status, hash }]` | `list_components` |
-| `spec:<projectId>:<slug>` | the §4 projection | `get_spec` |
+| `spec:<projectId>:<slug>` | the §4 artifact | `get_spec` |
 | `files:<projectId>:<fileKey>` | `[slug]` | publish diff |
 
 Per-component keys, not one bundle: `get_spec("Button")` must not read a
@@ -184,7 +253,7 @@ nothing to bill or debug beyond the request itself.
 | Tool | Arguments | Returns |
 |---|---|---|
 | `list_components` | none | project name, `published_at` per file, and the component index |
-| `get_spec` | `name` | the §4 projection, or a disambiguation list on collision |
+| `get_spec` | `name`, optional `sections` | the §4 artifact, or a disambiguation list on collision. `sections` narrows the response (for example just `tokens`) so an agent doing pure codegen need not pull the accessibility prose |
 | `find_token` | `property`, optional `component` | matching `TokenRule`s across the project, for "which token is the hover background?" |
 
 `list_components` carries project metadata so the agent can reason about
@@ -313,6 +382,9 @@ doing manual data surgery for customers within months.
    pastes, and access to Rotate and Revoke.
 4. **Upsell.** For free users, Publish explains the Pro requirement rather than
    failing.
+5. **Legacy frames.** A frame built before model persistence (§4.3) cannot be
+   published. Publish detects the missing model and asks the designer to
+   regenerate that frame first, stating why.
 
 All copy follows `docs/plugin-voice-and-copy.md`.
 
@@ -363,6 +435,8 @@ not billed inference.
 | MCP spec churn breaks clients | The URL is versioned (`/mcp/v1/`). Transport is intentionally minimal, which limits exposure. |
 | Adoption depends on developers accepting a config paste | Real, and unproven. This is the primary thing to validate with early users. |
 | Storage growth from abandoned projects | Bounded by the archival sweep in §8. |
+| Hand-edited frames diverge silently from the published spec | Accepted (§4.3). Publish sends the stored generated model. `selfHash` already detects the case, so a warning can be added cheaply if it surfaces in support. |
+| Persisted model exceeds the pluginData entry limit on a large component | Guarded with a size check and a clear error at build time (§4.3), rather than failing at publish. |
 
 ---
 
@@ -371,9 +445,12 @@ not billed inference.
 This spec is larger than one implementation plan. It splits cleanly into three,
 each independently verifiable:
 
-1. **Projection and publish path.** The §4 projection as a pure, tested function
-   over `IntermediateSpec`, plus the Worker's project/publish routes and the KV
-   model including diff-delete. Verifiable without any MCP code.
+1. **Model persistence and publish path.** Persist the generated doc model to
+   pluginData at frame build time (§4.3), derive the §4 artifact from it as a pure
+   tested function, then add the Worker's project/publish routes and the KV model
+   including diff-delete. Verifiable without any MCP code. The persistence step is
+   a prerequisite for everything else and touches existing frame-build code, so it
+   should land first and on its own.
 2. **The MCP endpoint.** JSON-RPC handler, three tools, token auth, rate limiting.
    Verifiable against a real agent using a hand-seeded project.
 3. **Plugin UX and lifecycle.** Library publish state, project picker, link panel,
@@ -391,5 +468,5 @@ investing in plugin UX.
   Cursor, including the exact config shape quoted in §6 and whether plain JSON
   responses are accepted without SSE. Knowledge cutoff makes this worth checking
   against live docs rather than assuming.
-- Confirm the projection in §4 is sufficient for a real codegen task by hand-running
+- Confirm the artifact in §4 is sufficient for a real codegen task by hand-running
   an agent against one exported component before building the endpoint.
