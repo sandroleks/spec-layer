@@ -3,7 +3,7 @@ import type { ProxyQuota } from '@spec-layer/extractor';
 import {
   authHeaders, fetchQuota, activateLicense, deactivateLicense, upsellText, PROXY_URL,
   effectiveAuth, resolveLicenseView, licenseStatusCopy, activationErrorCopy,
-  generationErrorCopy, STOREFRONT_URL, quotaMeterModel, formatResetDate,
+  generationErrorCopy, STOREFRONT_URL, quotaMeterModel, formatResetDate, isQuotaExhausted,
 } from '../src/ui/proxy';
 
 const proQuota: ProxyQuota = { tier: 'pro', used: 1, limit: null, remaining: null, resetsAt: '' };
@@ -259,5 +259,27 @@ describe('quotaMeterModel', () => {
     const m = quotaMeterModel({ tier: 'free', used: 18, limit: 20, remaining: null, resetsAt: '2026-08-01T00:00:00.000Z' }, true);
     expect(m.state).toBe('low');
     expect(m.countText).toBe('2 of 20 left this month');
+  });
+});
+
+describe('isQuotaExhausted', () => {
+  const q = (over: Partial<ProxyQuota>): ProxyQuota =>
+    ({ tier: 'free', used: 0, limit: 20, remaining: 20, resetsAt: '', ...over });
+
+  it('is false for a null quota (offline / unknown)', () => {
+    expect(isQuotaExhausted(null)).toBe(false);
+  });
+  it('is false for pro regardless of counts', () => {
+    expect(isQuotaExhausted({ tier: 'pro', used: 999, limit: null, remaining: null, resetsAt: '' })).toBe(false);
+  });
+  it('is false when free generations remain', () => {
+    expect(isQuotaExhausted(q({ remaining: 1 }))).toBe(false);
+  });
+  it('is true when the free allowance is used up', () => {
+    expect(isQuotaExhausted(q({ used: 20, remaining: 0 }))).toBe(true);
+  });
+  it('falls back to used/limit when remaining is null', () => {
+    expect(isQuotaExhausted(q({ used: 20, limit: 20, remaining: null }))).toBe(true);
+    expect(isQuotaExhausted(q({ used: 5, limit: 20, remaining: null }))).toBe(false);
   });
 });

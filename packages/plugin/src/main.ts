@@ -99,21 +99,37 @@ function findComponent(
 // downloaded spec can reference its source file. It's read-only here — there's
 // no manual override in this build.
 
+// Bumped on every selection change. Serializing a selection is async, so a
+// rapid A->B switch can resolve out of order; only the latest request is allowed
+// to post, so B never gets overwritten by a late-arriving A.
+let selectionSeq = 0;
+
 async function postSelection(): Promise<void> {
+  const seq = ++selectionSeq;
   const resolved = resolveFileKey(figma.fileKey, null);
   const component = findComponent(figma.currentPage.selection);
 
   if (!component) {
     figma.notify('Select a component or component set');
+    if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source };
     figma.ui.postMessage(msg);
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const node = await serializeNode(component as any, resolver);
-  const msg: MainToUi = { type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source };
-  figma.ui.postMessage(msg);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const node = await serializeNode(component as any, resolver);
+    if (seq !== selectionSeq) return; // a newer selection superseded this one
+    const msg: MainToUi = { type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source };
+    figma.ui.postMessage(msg);
+  } catch {
+    // Serialization failed: show the empty state rather than leaving the panel
+    // stuck on the previous component with no feedback.
+    if (seq !== selectionSeq) return;
+    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source };
+    figma.ui.postMessage(msg);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +190,7 @@ figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
 
 // React to selection changes.
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
-figma.on('selectionchange', () => { postSelection(); });
+figma.on('selectionchange', () => { void postSelection().catch(() => {/* handled inside */}); });
 
 // Collect a node subtree's TEXT characters in document order (DFS). Used to
 // compute the self-hash that detects hand-edits to a generated Section.
@@ -182,6 +198,11 @@ function collectText(node: BaseNode): string[] {
   const out: string[] = [];
   const visit = (n: BaseNode): void => {
     if (n.type === 'TEXT') out.push((n as TextNode).characters);
+    // Do NOT descend into embedded component instances (variant slots, matrix
+    // cells, anatomy preview): their text mirrors the SOURCE component, so
+    // including it would make a source-side text change read as a hand-edit to
+    // the doc. Only the doc's own generated/editable text should be hashed.
+    if (n.type === 'INSTANCE') return;
     if ('children' in n) {
       for (const c of (n as BaseNode & ChildrenMixin).children) visit(c);
     }
@@ -225,16 +246,28 @@ async function findExistingDoc(
       }
     } catch { /* dangling id; enumerate task prunes these */ }
   }
-  // Legacy adoption fallback: name match on the current page.
+  // Legacy adoption fallback: name match on the current page. Only adopt a
+  // Section that is NOT already another source's doc — a stamped link for a
+  // different sourceNodeId means this is someone else's (or another component's)
+  // documentation that merely shares the name, and must not be replaced.
   for (const child of figma.currentPage.children) {
     try {
-      if (child.type === 'SECTION' && child.name === sectionName) return child;
+      if (child.type === 'SECTION' && child.name === sectionName) {
+        const data = parseDocLink((child as SectionNode).getPluginData(DOC_LINK_KEY));
+        if (!data || data.sourceNodeId === sourceNodeId) return child as SectionNode;
+      }
     } catch { /* skip unresolved child */ }
   }
   return null;
 }
 
 // React to UI messages
+// True while a doc-frame build is in progress. The message handler is async and
+// re-entrant, and a build mutates shared module state (theme palette, layout
+// widths, font families) assumed single-threaded; a second overlapping build
+// would corrupt widths/theme or duplicate the doc. One build at a time.
+let docFrameRendering = false;
+
 figma.ui.onmessage = async (raw: unknown) => {
   const msg = raw as UiToMain;
   switch (msg.type) {
@@ -343,11 +376,17 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'renderDocFrame': {
+      if (docFrameRendering) { figma.notify('Still finishing the previous frame'); break; }
+      docFrameRendering = true;
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
       try {
         const sectionName = `${msg.model.componentName}: Documentation`;
         const existing = await findExistingDoc(msg.nodeId, sectionName);
+        // Capture the id now: after existing.remove() below, reading any
+        // property of a removed node (except `removed`) throws, and this id is
+        // needed post-commit to prune the old doc from the registry.
+        const existingId = existing ? existing.id : null;
 
         // Regenerate in place: reuse the old doc's position AND its page.
         let targetPage: PageNode = figma.currentPage;
@@ -396,7 +435,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
-        if (existing && existing.id !== section.id) reg = { v: 1, docIds: reg.docIds.filter((id) => id !== existing.id) };
+        if (existingId && existingId !== section.id) reg = { v: 1, docIds: reg.docIds.filter((id) => id !== existingId) };
         reg = addDoc(reg, section.id);
         writeRegistry(reg);
 
@@ -406,7 +445,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           figma.viewport.scrollAndZoomIntoView([section]);
         } catch { /* selection/zoom is non-essential */ }
 
-        figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name } as MainToUi);
+        // `replaced` lets the UI say "Updated" vs "Created": an existing doc was
+        // found and swapped out, so this regenerated in place rather than adding.
+        figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name, replaced: existingId !== null } as MainToUi);
       } catch (err) {
         // Clean up an orphan only if we failed BEFORE committing the replacement;
         // after commit the section is the live doc and must not be removed.
@@ -415,6 +456,8 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
+      } finally {
+        docFrameRendering = false;
       }
       break;
     }

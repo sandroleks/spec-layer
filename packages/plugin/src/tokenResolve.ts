@@ -8,16 +8,33 @@
 // variables, text styles) and the resolvers that use them to turn a token
 // name from the spec into a swatch color, a number, or a typography summary.
 
+// Index items by name, but DROP any name that appears in more than one item.
+// A spec token is only a name string with no collection context, so if two
+// variables/styles in different collections share a name we cannot know which
+// one was bound — resolving to either would be a confident guess that is wrong
+// half the time. Leaving ambiguous names unresolved (no swatch/suffix) is the
+// honest choice; unique names (the common case) resolve exactly as before.
+function indexByUniqueName<T extends { name: string }>(items: readonly T[]): Map<string, T> {
+  const map = new Map<string, T>();
+  const ambiguous = new Set<string>();
+  for (const it of items) {
+    if (ambiguous.has(it.name)) continue;
+    if (map.has(it.name)) { map.delete(it.name); ambiguous.add(it.name); }
+    else map.set(it.name, it);
+  }
+  return map;
+}
+
 // Local COLOR variables, loaded once, keyed by full name (e.g. "color/bg/brand")
 // so a token string from the spec can be resolved to a swatch.
 let colorVarCache: Map<string, Variable> | null = null;
 
 async function loadColorVars(): Promise<Map<string, Variable>> {
   if (colorVarCache) return colorVarCache;
-  const map = new Map<string, Variable>();
+  let map = new Map<string, Variable>();
   try {
     const vars = await figma.variables.getLocalVariablesAsync('COLOR');
-    for (const v of vars) map.set(v.name, v);
+    map = indexByUniqueName(vars);
   } catch {
     /* variables API unavailable — swatches simply won't render */
   }
@@ -60,10 +77,10 @@ let floatVarCache: Map<string, Variable> | null = null;
 
 async function loadFloatVars(): Promise<Map<string, Variable>> {
   if (floatVarCache) return floatVarCache;
-  const map = new Map<string, Variable>();
+  let map = new Map<string, Variable>();
   try {
     const vars = await figma.variables.getLocalVariablesAsync('FLOAT');
-    for (const v of vars) map.set(v.name, v);
+    map = indexByUniqueName(vars);
   } catch {
     /* variables API unavailable — no suffixes */
   }
@@ -105,10 +122,10 @@ let textStyleCache: Map<string, TextStyle> | null = null;
 
 async function loadTextStyles(): Promise<Map<string, TextStyle>> {
   if (textStyleCache) return textStyleCache;
-  const map = new Map<string, TextStyle>();
+  let map = new Map<string, TextStyle>();
   try {
     const styles = await figma.getLocalTextStylesAsync();
-    for (const s of styles) map.set(s.name, s);
+    map = indexByUniqueName(styles);
   } catch {
     /* text styles API unavailable — no suffixes */
   }

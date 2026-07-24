@@ -278,6 +278,48 @@ it is not in this design.
 | `POST /v1/projects/:id/revoke` | Bearer license, Pro | immediate hard stop |
 | `POST /mcp/v1/:token` | share token | the MCP endpoint |
 
+### 5.7 Getting the data from Figma to the Worker
+
+Publishing crosses the plugin's thread split, so it is worth stating the path
+explicitly.
+
+1. **Main thread** (Figma API, no network). Walks the Library's doc frames, reads
+   each frame's persisted model from `pluginData` (§4.3), derives the §4 artifact
+   via the pure function, and posts the batch to the UI over `postMessage`.
+2. **UI iframe** (network, no Figma API). All existing network already lives here
+   (`ui/proxy.ts`); `main.ts` contains no `fetch` calls at all. The iframe
+   compresses the batch and POSTs it with the Bearer license header, then reports
+   progress back to the main thread.
+3. **Worker.** Writes spec keys, diffs against the stored file slug set, deletes
+   removals, then swaps the index.
+
+**Nothing is stored outside `pluginData`.** The doc model lives in the Figma file,
+which is the correct home: it travels with the file, survives a plugin reinstall,
+and needs no separate sync. `figma.clientStorage` is deliberately not used, since
+it is per-user-per-device and would make a file publishable only from the machine
+that generated it.
+
+**Batching.** A 300-component library at 5 to 15 KB each is 1.5 to 4.5 MB. That
+cannot be one request, and it cannot be one `postMessage` either (review finding
+F5 already flags unguarded large postMessage). Publish streams in batches of
+roughly 25 components or 1 MB, whichever comes first, with progress and a cancel
+in the UI.
+
+**Commit is an index swap.** Batches write `spec:` keys, which are invisible to
+readers because `list_components` reads only `idx:`. The index is written last. A
+failure mid-publish therefore leaves orphaned spec keys that the next successful
+publish overwrites, and a reader never observes a half-published project.
+
+**Publish is incremental.** The plugin already knows each frame's `contentHash`,
+so publish sends only components whose hash changed since the last successful
+publish of that file, plus the complete slug set so the Worker can still compute
+deletions. The first publish sends everything; a typical re-publish sends a
+handful. This is the main thing keeping write volume (§11) low.
+
+**Compression.** `fflate` is already a plugin dependency (`exportFiles.ts`), so
+the publish body is gzipped. These specs are repetitive JSON and compress at
+roughly 5:1, which makes even a first publish of a large library cheap to move.
+
 ---
 
 ## 6. Workflow
@@ -410,7 +452,81 @@ not billed inference.
 
 ---
 
-## 11. Non-goals
+## 11. Cost and launch prerequisites
+
+Figures below are Cloudflare's published pricing as of 2026-07-24 and should be
+re-checked before launch.
+
+### 11.1 What a customer consumes
+
+Reads dominate, because every MCP call costs two KV reads (token indirection,
+then the spec) while publishing is incremental and rare.
+
+| | Per Pro customer per month | Note |
+|---|---|---|
+| KV reads | ~20,000 | assumes a heavy team at ~10,000 MCP calls |
+| KV writes | ~200 | incremental republish (§5.7); only changed components |
+| Storage | ~3 MB | 300 components at ~10 KB |
+
+### 11.2 Workers Paid
+
+$5/month, including 10 million Worker requests and 10 million KV reads. Beyond
+that, reads are $0.50 per million and writes $5 per million.
+
+At the read rate above, the included quota carries roughly **500 customers**
+before any overage. At 1,000 customers the bill is about **$11/month**. Storage
+is a rounding error: 1,000 customers is 3 GB, or about $1.50.
+
+This is not a business risk. Hosting cost tracks paying customers directly, and
+the margin is not close.
+
+### 11.3 Why the free plan cannot ship this
+
+The account is currently on the free plan. Its limits are not merely smaller,
+they behave differently:
+
+| | Free | Failure mode |
+|---|---|---|
+| Worker requests | 100,000/day | **Error 1027**, the Worker is bypassed entirely |
+| KV reads | 100,000/day | the operation fails with an error |
+| KV writes | **1,000/day** | the operation fails with an error |
+| Storage | 1 GB | — |
+
+Two problems, in order of severity.
+
+**The quotas are account-wide and shared with the existing proxy.** KV reads and
+writes come out of the same pool as `LICENSE_CACHE`; Worker requests are shared
+with `/v1/prose`, `/v1/quota`, and `/v1/license/*`. An agent polling the MCP
+endpoint hard enough to exhaust the daily quota would stop paying customers from
+activating licenses or generating prose, and because Error 1027 bypasses the
+Worker we could not even return a readable explanation. A new, free-to-read
+surface must not be able to take down the surface that collects money.
+
+**1,000 KV writes/day is too tight for a real library.** A first publish of a
+500-component library is ~500 writes. Two of those exhaust the day, account-wide,
+and the second one fails partway through. Incremental publish (§5.7) keeps steady
+state well inside the limit, but first publishes do not.
+
+Cron Triggers are available on the free plan (5 per account), so the §8 archival
+sweep is not a factor either way. SQLite-backed Durable Objects are why `QuotaDO`
+works on free today, and that does not change.
+
+### 11.4 Launch prerequisites
+
+Neither of these blocks development. Phases 1 and 2 can be built and tested
+entirely on the free plan against small fixtures of 10 to 30 components. Both must
+be settled **before the first share link reaches anyone outside the team**:
+
+1. **Production domain.** Finding A1: the Worker still runs on the
+   `spec-layer-test` workers.dev staging host. This URL goes into developer
+   configs and is painful to change afterwards (§6).
+2. **Cloudflare Workers Paid.** $5/month, ideally activated slightly ahead of
+   launch rather than on the day, since the failure mode above hits existing paying
+   customers rather than the new feature.
+
+---
+
+## 12. Non-goals
 
 - **No live Figma sync.** The endpoint serves the last published snapshot on
   purpose, so a developer builds against the reviewed contract rather than
@@ -426,7 +542,7 @@ not billed inference.
 
 ---
 
-## 12. Risks
+## 13. Risks
 
 | Risk | Assessment |
 |---|---|
@@ -440,7 +556,7 @@ not billed inference.
 
 ---
 
-## 13. Suggested decomposition
+## 14. Suggested decomposition
 
 This spec is larger than one implementation plan. It splits cleanly into three,
 each independently verifiable:
@@ -457,12 +573,12 @@ each independently verifiable:
    plus grace, rotation, revoke, and re-bind.
 
 Phase 1 and 2 together produce a demonstrable end-to-end result with a manually
-created project, which is the cheapest way to settle the §14 questions before
+created project, which is the cheapest way to settle the §15 questions before
 investing in plugin UX.
 
 ---
 
-## 14. Validation before build
+## 15. Validation before build
 
 - Confirm current MCP client behaviour for remote HTTP servers in Claude Code and
   Cursor, including the exact config shape quoted in §6 and whether plain JSON

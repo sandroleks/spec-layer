@@ -21,6 +21,28 @@ describe('docLink data', () => {
     expect(parseDocLink(JSON.stringify({ v: 2 }))).toBeNull();
     expect(parseDocLink(JSON.stringify({ v: 1, sourceNodeId: 5 }))).toBeNull();
   });
+  it('normalizes missing/invalid config sub-fields to safe defaults', () => {
+    const raw = JSON.stringify({
+      ...DATA,
+      config: { sections: ['definition', 42, 'anatomy'], anatomyView: 'bogus' },
+    });
+    const parsed = parseDocLink(raw);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.config).toEqual({
+      sections: ['definition', 'anatomy'], // non-string dropped
+      variantIds: [],                       // missing → default
+      aiEnabled: false,                     // missing → default
+      anatomyView: 'both',                  // invalid → default
+      measureViews: [],                     // missing → default
+    });
+  });
+  it('drops invalid measureViews entries but keeps valid ones', () => {
+    const raw = JSON.stringify({
+      ...DATA,
+      config: { ...DATA.config, measureViews: ['size', 'nope', 'spacing'] },
+    });
+    expect(parseDocLink(raw)!.config.measureViews).toEqual(['size', 'spacing']);
+  });
 });
 
 describe('registry', () => {

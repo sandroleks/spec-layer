@@ -145,18 +145,24 @@ const TEMPLATE = `
       border-bottom: 1px solid var(--figma-color-border);
       flex: 0 0 auto;
     }
-    /* Cycling light/dark/auto button — pushed to the right edge of the tab row. */
-    .theme-btn {
-      appearance: none; flex: 0 0 auto; cursor: pointer; margin-left: auto;
+    /* Right-aligned icon cluster: website + LinkedIn links, then the theme
+       toggle. margin-left:auto pushes the whole group to the tab row's edge. */
+    .tab-actions {
+      display: flex; align-items: center; gap: 4px;
+      flex: 0 0 auto; margin-left: auto;
+    }
+    /* Cycling light/dark button + the link icons share one look. */
+    .theme-btn, .icon-link {
+      appearance: none; flex: 0 0 auto; cursor: pointer; text-decoration: none;
       width: 26px; height: 26px; border-radius: 7px;
       display: inline-flex; align-items: center; justify-content: center;
       border: 1px solid var(--figma-color-border);
       background: var(--figma-color-bg); color: var(--figma-color-text);
       transition: background 0.12s ease, border-color 0.12s ease;
     }
-    .theme-btn:hover { background: var(--figma-color-bg-secondary); border-color: var(--figma-color-text-secondary); }
-    .theme-btn:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
-    .theme-btn svg { width: 15px; height: 15px; display: block; }
+    .theme-btn:hover, .icon-link:hover { background: var(--figma-color-bg-secondary); border-color: var(--figma-color-text-secondary); }
+    .theme-btn:focus-visible, .icon-link:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
+    .theme-btn svg, .icon-link svg { width: 15px; height: 15px; display: block; }
     .tab {
       appearance: none; background: none; border: none; cursor: pointer;
       padding: 5px 10px; border-radius: 6px;
@@ -230,6 +236,9 @@ const TEMPLATE = `
     .hint { font-size: 11px; color: var(--figma-color-text-secondary); margin: 4px 0 0; }
     .hint a { color: var(--figma-color-bg-brand); cursor: pointer; }
     .hint a:hover { text-decoration: underline; }
+    /* License action links laid out in one horizontal row (Get Pro / Renew Pro
+       share a slot with Manage subscription); wraps if the panel is narrow. */
+    .license-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
     .row { display: flex; align-items: center; gap: 8px; }
     .stack { display: flex; flex-direction: column; gap: 10px; }
     hr { border: none; border-top: 1px solid var(--figma-color-border); margin: 14px 0; }
@@ -585,22 +594,34 @@ const TEMPLATE = `
       background: var(--figma-color-bg-brand); transition: width .18s ease;
     }
     .quota-meter.low .quota-bar > span,
-    .quota-meter.empty .quota-bar > span { background: var(--figma-color-bg-warning); }
+    .quota-meter.exhausted .quota-bar > span { background: var(--figma-color-bg-warning); }
     .quota-meter.pro .quota-bar { display: none; }
-    .quota-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .quota-countwrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+    .quota-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    /* Count takes the slack and truncates rather than wrapping, so the foot is
+       always exactly one line tall — the block height never shifts between the
+       "N of M left" and "0 left · resets …" states. */
+    .quota-countwrap { display: inline-flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; }
     .quota-check { display: none; width: 13px; height: 13px; flex: 0 0 auto; color: var(--figma-color-bg-brand); }
     .quota-meter.pro .quota-check { display: block; }
-    .quota-count { font-size: 11px; color: var(--figma-color-text-secondary); font-variant-numeric: tabular-nums; }
-    .quota-meter.low .quota-count,
-    .quota-meter.empty .quota-count { color: var(--figma-color-text-warning); }
-    .quota-upgrade {
-      appearance: none; background: none; border: none; cursor: pointer; padding: 0;
-      font-family: inherit; font-size: 11px; color: var(--figma-color-bg-brand); white-space: nowrap;
+    .quota-count {
+      font-size: 11px; color: var(--figma-color-text-secondary); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
-    .quota-upgrade:hover { text-decoration: underline; }
-    .quota-upgrade[hidden] { display: none; }
-    .quota-upgrade:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 2px; border-radius: 3px; }
+    .quota-meter.low .quota-count,
+    .quota-meter.exhausted .quota-count { color: var(--figma-color-text-warning); }
+    /* Both links sit together on the right; never shrink or wrap. */
+    .quota-links { display: inline-flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .quota-upgrade, .quota-activate {
+      appearance: none; background: none; border: none; cursor: pointer; padding: 0;
+      font-family: inherit; font-size: 11px; white-space: nowrap;
+    }
+    .quota-upgrade { color: var(--figma-color-bg-brand); }
+    .quota-activate { color: var(--figma-color-text-secondary); }
+    .quota-upgrade:hover, .quota-activate:hover { text-decoration: underline; }
+    .quota-upgrade[hidden], .quota-activate[hidden] { display: none; }
+    .quota-upgrade:focus-visible, .quota-activate:focus-visible {
+      outline: 2px solid var(--figma-color-bg-brand); outline-offset: 2px; border-radius: 3px;
+    }
 
     /* ---- Section header + checklist ---- */
     .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
@@ -774,6 +795,8 @@ const TEMPLATE = `
     /* ---- Action buttons ---- */
     .actions { display: flex; gap: 8px; margin-top: 16px; }
     .actions > .btn { flex: 1; }
+    /* Author rule needed so [hidden] beats the .actions display:flex above. */
+    .actions[hidden] { display: none; }
 
     /* ---- Sticky action footer (Selected-component tab) ---- */
     .footer {
@@ -842,8 +865,18 @@ const TEMPLATE = `
             aria-controls="tab-panel-library">My Library</button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false"
             aria-controls="tab-panel-settings">Settings</button>
-    <button class="theme-btn" id="theme-btn" type="button" title="Theme"
-            aria-label="Toggle light/dark theme"></button>
+    <div class="tab-actions">
+      <a class="icon-link" id="site-link" href="#" target="_blank" rel="noopener"
+         title="spec-layer.com" aria-label="Visit spec-layer.com">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </a>
+      <a class="icon-link" id="linkedin-link" href="#" target="_blank" rel="noopener"
+         title="LinkedIn" aria-label="Alex Kurchev on LinkedIn">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></svg>
+      </a>
+      <button class="theme-btn" id="theme-btn" type="button" title="Theme"
+              aria-label="Toggle light/dark theme"></button>
+    </div>
   </div>
 
   <div class="content">
@@ -899,7 +932,10 @@ const TEMPLATE = `
                 </svg>
                 <span id="quota-count" class="quota-count"></span>
               </span>
-              <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
+              <span class="quota-links">
+                <button id="quota-activate" class="quota-activate" type="button">Activate license</button>
+                <button id="quota-upgrade" class="quota-upgrade" type="button">Upgrade</button>
+              </span>
             </div>
           </div>
           <div class="ai-nokey" id="ai-nokey" style="display:none">
@@ -993,9 +1029,12 @@ const TEMPLATE = `
             <button class="btn btn-primary" id="license-activate-btn" type="button">Activate</button>
           </div>
           <p class="hint" id="license-status" style="margin-top:6px" aria-live="polite"></p>
-          <p class="hint" id="license-renew-row" hidden style="margin-top:6px"><a id="renew-link" href="#" target="_blank">Renew Pro</a></p>
+          <div class="hint license-links" style="margin-top:6px">
+            <span id="license-getpro-row" hidden><a id="get-pro-link" href="#" target="_blank">Get Pro</a></span>
+            <span id="license-renew-row" hidden><a id="renew-link" href="#" target="_blank">Renew Pro</a></span>
+            <a id="manage-sub-link" href="#" target="_blank">Manage subscription</a>
+          </div>
           <p class="hint" id="license-remove-row" hidden style="margin-top:6px"><a id="remove-key-link" href="#">Remove key from this device</a></p>
-          <p class="hint" style="margin-top:6px"><a id="manage-sub-link" href="#" target="_blank">Manage subscription</a></p>
         </div>
 
         <hr />
@@ -1099,7 +1138,7 @@ const TEMPLATE = `
         <button class="btn btn-secondary" id="upsell-continue-btn" type="button">Continue without AI</button>
       </div>
     </div>
-    <div class="actions">
+    <div class="actions" id="primary-actions">
       <button class="btn btn-secondary" id="download-btn" type="button"
               data-tooltip="Saves the spec as markdown. Drop it into Claude, Cursor, or any AI tool.">Download</button>
       <button class="btn btn-primary" id="create-frame-btn">Create frame</button>
@@ -1142,6 +1181,7 @@ export interface Refs {
   quotaBarFill: HTMLElement;
   quotaCount: HTMLElement;
   quotaUpgrade: HTMLButtonElement;
+  quotaActivate: HTMLButtonElement;
   // Section checklist + new actions
   sectionList: HTMLDivElement;
   sectionChecks: Record<string, HTMLInputElement>;
@@ -1162,6 +1202,7 @@ export interface Refs {
   createFrameBtn: HTMLButtonElement;
   // Sticky footer
   actionFooter: HTMLDivElement;
+  primaryActions: HTMLDivElement;
   // Banners + generating loader
   bannerInfo: HTMLDivElement;
   bannerError: HTMLDivElement;
@@ -1180,6 +1221,7 @@ export interface Refs {
   licenseStatus: HTMLElement;
   licenseRenewRow: HTMLElement;
   licenseRemoveRow: HTMLElement;
+  licenseGetProRow: HTMLElement;
   removeKeyLink: HTMLAnchorElement;
   // Frame brand theme (Settings tab)
   presetRow: HTMLDivElement;
@@ -1440,6 +1482,7 @@ export function mount(): Refs {
     quotaBarFill: byId<HTMLElement>('quota-bar-fill'),
     quotaCount: byId<HTMLElement>('quota-count'),
     quotaUpgrade: byId<HTMLButtonElement>('quota-upgrade'),
+    quotaActivate: byId<HTMLButtonElement>('quota-activate'),
     sectionList,
     sectionChecks,
     groupChecks,
@@ -1457,6 +1500,7 @@ export function mount(): Refs {
     variantCount: byId<HTMLSpanElement>('variant-count'),
     createFrameBtn: byId<HTMLButtonElement>('create-frame-btn'),
     actionFooter: byId<HTMLDivElement>('action-footer'),
+    primaryActions: byId<HTMLDivElement>('primary-actions'),
     bannerInfo: byId<HTMLDivElement>('banner-info'),
     bannerError: byId<HTMLDivElement>('banner-error'),
     loader: byId<HTMLDivElement>('loader'),
@@ -1471,6 +1515,7 @@ export function mount(): Refs {
     licenseStatus: byId<HTMLElement>('license-status'),
     licenseRenewRow: byId<HTMLElement>('license-renew-row'),
     licenseRemoveRow: byId<HTMLElement>('license-remove-row'),
+    licenseGetProRow: byId<HTMLElement>('license-getpro-row'),
     removeKeyLink: byId<HTMLAnchorElement>('remove-key-link'),
     presetRow,
     headerColorInput: byId<HTMLInputElement>('header-color-input'),

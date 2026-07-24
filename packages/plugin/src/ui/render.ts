@@ -46,6 +46,9 @@ export function renderLicense(refs: Refs, state: UiState): void {
   refs.licenseStatus.textContent = licenseStatusCopy(view, state.quota?.licenseReason);
   refs.licenseRenewRow.hidden = !(view === 'inactive' && state.quota?.licenseReason === 'expired');
   refs.licenseRemoveRow.hidden = !state.licenseKey;
+  // "Get Pro" points a free, keyless user at the store. Hidden once a key is
+  // stored — the expired case gets "Renew Pro" instead, active/unknown need no buy link.
+  refs.licenseGetProRow.hidden = view !== 'none';
 }
 
 /** Quota meter + upsell visibility. The model owns all state branching. */
@@ -54,14 +57,25 @@ export function renderQuota(refs: Refs, state: UiState): void {
   refs.quotaMeter.hidden = m.state === 'hidden';
   refs.quotaMeter.classList.toggle('pro', m.state === 'pro');
   refs.quotaMeter.classList.toggle('low', m.state === 'low');
-  refs.quotaMeter.classList.toggle('empty', m.state === 'empty');
+  // 'exhausted', not 'empty': a bare `empty` class collides with the global
+  // .empty placeholder rule (padding: 32px) and balloons the card height.
+  refs.quotaMeter.classList.toggle('exhausted', m.state === 'empty');
   refs.quotaBarFill.style.width = `${m.fillPct}%`;
   refs.quotaCount.textContent = m.countText;
   refs.quotaUpgrade.hidden = m.linkText === '';
   refs.quotaUpgrade.textContent = m.linkText;
+  // "Activate license" rides alongside the upgrade link on the free tier —
+  // buying Pro and connecting an existing key are different doors. Hidden in
+  // the pro/hidden states, exactly like the upgrade link.
+  refs.quotaActivate.hidden = m.linkText === '';
 
   const showUpsell = state.aiEnabled && state.quotaExhausted;
   refs.upsell.hidden = !showUpsell;
+  // Fold the default Download/Create-frame row away while the upsell owns the
+  // footer, so there's a single set of actions instead of a confusing double
+  // footer. "Continue without AI" is the create-frame path here; toggling AI
+  // off (or continuing) restores the default row.
+  refs.primaryActions.hidden = showUpsell;
   if (showUpsell) refs.upsellText.textContent = upsellText(state.quota?.resetsAt);
 }
 

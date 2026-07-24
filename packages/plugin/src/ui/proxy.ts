@@ -1,5 +1,9 @@
 import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
 
+// Staging environment. The `spec-layer-test` workers.dev account IS the staging
+// target for now; manifest allowedDomains/devAllowedDomains both point here on
+// purpose. Swap this (and the manifest hosts) for a production domain before a
+// public release.
 export const PROXY_URL = 'https://spec-layer-proxy.spec-layer-test.workers.dev';
 export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout';
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
@@ -7,6 +11,9 @@ export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // cancelled Lemon Squeezy subscription is resolved by buying again, not resumed
 // from the customer portal.
 export const STOREFRONT_URL = 'https://speclayer-docs.lemonsqueezy.com';
+// Marketing / author links surfaced as icons in the tab bar.
+export const SITE_URL = 'https://spec-layer.com/';
+export const LINKEDIN_URL = 'https://www.linkedin.com/in/alexkurchev/';
 
 export interface ProxyAuth {
   licenseKey: string | null;
@@ -186,6 +193,18 @@ export function quotaMeterModel(
   }
   const state: QuotaMeterState = remaining < lowThreshold ? 'low' : 'ok';
   return { state, fillPct, countText: `${remaining} of ${limit} left this month`, linkText: 'Upgrade' };
+}
+
+/**
+ * Whether a fetched quota means the free AI allowance is used up. Pro is never
+ * exhausted; a null quota (offline / not yet probed) tells us nothing, so it is
+ * not treated as exhausted. Mirrors the `empty` branch of quotaMeterModel so the
+ * upsell fork and the meter agree on when the user is out.
+ */
+export function isQuotaExhausted(q: ProxyQuota | null): boolean {
+  if (!q || q.tier === 'pro') return false;
+  const remaining = q.remaining ?? Math.max(0, (q.limit ?? 0) - q.used);
+  return remaining <= 0;
 }
 
 export function upsellText(resetsAt: string | undefined, now: Date = new Date()): string {

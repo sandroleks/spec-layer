@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security & Responsible Disclosure — Spec Layer</title>
+<meta name="description" content="How to report a security vulnerability in Spec Layer, and how we handle it.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root { --bg:#0a0a0a; --surface:#141414; --border:#2b2b2b; --text:#f5f5f5; --text-dim:#9a9a9a; --accent:#fff; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
+  header.site { padding:28px 0; border-bottom:1px solid var(--border); }
+  header.site .wrap { display:flex; align-items:center; }
+  header.site a.brand { display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--text); font-weight:600; font-size:1.0625rem; }
+  header.site img { width:34px; height:34px; border-radius:9px; }
+  main { padding:56px 0 72px; }
+  main h1 { font-size:2.25rem; letter-spacing:-0.02em; margin-bottom:8px; }
+  main .meta { color:var(--text-dim); font-size:.9rem; margin-bottom:40px; }
+  main h2 { font-size:1.25rem; letter-spacing:-0.01em; margin:36px 0 12px; }
+  main p, main li { color:#d8d8d8; font-size:1rem; margin-bottom:12px; }
+  main ul { padding-left:22px; margin-bottom:12px; }
+  main a { color:var(--text); }
+  main strong { color:var(--text); }
+  footer { border-top:1px solid var(--border); padding:32px 0; }
+  footer nav { display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin-bottom:12px; }
+  footer a { color:var(--text-dim); text-decoration:none; font-size:.9375rem; }
+  footer a:hover { color:var(--text); }
+  footer .small { color:var(--text-dim); font-size:.8125rem; text-align:center; }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="logo.svg" alt="Spec Layer">Spec Layer</a>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <h1>Security & responsible disclosure</h1>
+    <p class="meta">Last updated 23 July 2026</p>
+    <p>
+      We take the security of Spec Layer seriously. If you believe you have found a
+      security vulnerability in the Spec Layer plugin or its backend, we want to hear
+      from you and will work with you to resolve it.
+    </p>
+    <h2>Reporting a vulnerability</h2>
+    <p>
+      Email <a href="mailto:oleksandr.kurchev@gmail.com">oleksandr.kurchev@gmail.com</a>
+      with the details. Please include:
+    </p>
+    <ul>
+      <li>a description of the issue and its potential impact;</li>
+      <li>clear steps to reproduce it, ideally with a proof of concept;</li>
+      <li>the affected component (the Figma plugin or the backend endpoint).</li>
+    </ul>
+    <p>
+      Please do not include real credentials or private design-system data in your
+      report. Give us a reasonable amount of time to investigate and fix the issue
+      before disclosing it publicly.
+    </p>
+    <h2>What to expect</h2>
+    <ul>
+      <li>We aim to acknowledge your report within a few business days.</li>
+      <li>We triage and fix confirmed issues ourselves and will keep you informed of progress.</li>
+      <li>We are happy to credit you once the issue is resolved, if you would like that.</li>
+    </ul>
+    <p>
+      Spec Layer is maintained by an independent developer. We do not currently run a
+      paid bug-bounty program.
+    </p>
+    <h2>Scope</h2>
+    <p>
+      This policy covers the Spec Layer Figma plugin and the backend it talks to. The
+      backend runs on Cloudflare Workers, a managed runtime that Cloudflare keeps
+      patched, so there is no server or operating system for us to maintain. Our
+      Anthropic API key is held server-side and never reaches the plugin, prompts and
+      generated text are never logged, and license keys are stored only as salted
+      hashes. Payments are handled by Lemon Squeezy as merchant of record, so we never
+      handle payment card data.
+    </p>
+    <h2>Safe harbor</h2>
+    <p>
+      If you make a good-faith effort to comply with this policy during your research,
+      we will consider your testing to be authorized, and we will not pursue legal
+      action against you. Please act in good faith: avoid privacy violations, data
+      destruction, and any disruption of the service, and only interact with accounts
+      or data that belong to you.
+    </p>
+    <h2>Contact</h2>
+    <p>
+      Security questions or reports:
+      <a href="mailto:oleksandr.kurchev@gmail.com">oleksandr.kurchev@gmail.com</a>.
+    </p>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="refund.html">Refund Policy</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="security.html">Security</a>
+      <a href="mailto:oleksandr.kurchev@gmail.com">Support</a>
+    </nav>
+    <p class="small">Payments are handled by Lemon Squeezy as merchant of record.</p>
+  </div>
+</footer>
+</body>
+</html>

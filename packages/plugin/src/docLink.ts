@@ -50,7 +50,10 @@ export function serializeDocLink(d: DocLinkData): string {
   return JSON.stringify(d);
 }
 
-/** Defensive parse: returns null on empty/garbage/wrong-shape (never throws). */
+/** Defensive parse: returns null on empty/garbage/wrong-shape (never throws).
+ *  The top-level fields must be well-formed; the DocConfig sub-fields beyond
+ *  `sections` are normalized (missing/invalid ones coerced to safe defaults) so
+ *  a partially-corrupt blob can't feed `undefined` into rebuild. */
 export function parseDocLink(raw: string): DocLinkData | null {
   if (!raw) return null;
   try {
@@ -64,7 +67,17 @@ export function parseDocLink(raw: string): DocLinkData | null {
       typeof j.generatedAt === 'number' &&
       typeof j.pluginVersion === 'string'
     ) {
-      return j as DocLinkData;
+      const c = j.config as Partial<DocConfig>;
+      const config: DocConfig = {
+        sections: (c.sections ?? []).filter((x): x is SectionId => typeof x === 'string'),
+        variantIds: Array.isArray(c.variantIds) ? c.variantIds.filter((x): x is string => typeof x === 'string') : [],
+        aiEnabled: c.aiEnabled === true,
+        anatomyView: c.anatomyView === 'diagram' || c.anatomyView === 'table' || c.anatomyView === 'both' ? c.anatomyView : 'both',
+        measureViews: Array.isArray(c.measureViews)
+          ? c.measureViews.filter((x): x is MeasureView => x === 'size' || x === 'padding' || x === 'spacing')
+          : [],
+      };
+      return { ...(j as DocLinkData), config };
     }
   } catch { /* fall through */ }
   return null;

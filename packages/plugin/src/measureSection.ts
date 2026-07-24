@@ -645,6 +645,20 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
  * Any created instance is removed before returning null so the canvas is
  * never left with an orphaned node.
  */
+// Remove the topmost on-canvas frame that `node` lives inside (or `node` itself)
+// so a partially built diagram/card is never left orphaned when a Figma-API call
+// throws mid-build. Walks up to just below the page, since createFrame/
+// createInstance auto-append to the page and each build frame is nested.
+function removeCanvasSubtree(node: SceneNode): void {
+  try {
+    let top: SceneNode = node;
+    while (top.parent && top.parent.type !== 'PAGE' && top.parent.type !== 'DOCUMENT') {
+      top = top.parent as SceneNode;
+    }
+    top.remove();
+  } catch { /* already gone */ }
+}
+
 export async function buildMeasureSection(block: MeasureBlockData): Promise<FrameNode | null> {
   let node: BaseNode | null;
   try {
@@ -683,11 +697,10 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     try {
       box = buildDiagram(component, inst, block.tokens, part, scale, views);
     } catch {
-      // Diagram build failed: clean up the instance (still attached to no
-      // parent frame yet, or attached to a partial box we also discard).
-      try {
-        inst.remove();
-      } catch { /* already gone */ }
+      // Diagram build failed: buildDiagram may have created its frame and
+      // parented inst into it, so remove the whole subtree (not just inst,
+      // which would leave the frame orphaned on the canvas).
+      removeCanvasSubtree(inst);
       return null;
     }
 
@@ -706,11 +719,10 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
 
     return card;
   } catch {
-    // Unexpected throw during composition: tear down the instance so the
-    // canvas is never littered.
-    try {
-      inst.remove();
-    } catch { /* already gone */ }
+    // Unexpected throw during composition (card/bindings): tear down the whole
+    // subtree inst now lives in (box, or the card wrapping it) so the canvas is
+    // never littered with a half-built diagram.
+    removeCanvasSubtree(inst);
     return null;
   }
 }

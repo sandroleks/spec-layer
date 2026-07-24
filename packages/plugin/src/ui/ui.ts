@@ -30,7 +30,7 @@ import {
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
-  CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL,
+  isQuotaExhausted, CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL, SITE_URL, LINKEDIN_URL,
 } from './proxy';
 import { resolveComponentImage } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS, matchPreset } from '../brandColors';
@@ -65,21 +65,51 @@ const state = createState();
 // each generation attempt so the meter/upsell always reflect the latest quota.
 // ---------------------------------------------------------------------------
 
+// Monotonic token guarding against stale overwrites. On boot the `userInfo` and
+// `licenseKey` messages each kick off a refresh; `userInfo` arrives first (it's
+// posted synchronously, while `licenseKey` waits on clientStorage), so its probe
+// runs against the *free* Figma identity before the key is known. Without this
+// guard, if that free probe resolves last it clobbers the Pro quota and the
+// demotion branch below flips an active key to "not activated". Only the latest
+// refresh is allowed to commit.
+let quotaSeq = 0;
+
 async function refreshQuota(): Promise<void> {
-  state.quota = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive));
+  const seq = ++quotaSeq;
+  let quota = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive));
+  let nextActive = state.licenseActive;
   // Learn the key's real standing from the probe. Only a DEFINITE non-pro
   // verdict demotes the key; licenseReason 'unreachable' (and a null quota)
   // teach us nothing and leave the key in place for the next attempt.
-  if (state.licenseKey && state.licenseActive !== false && state.quota) {
-    if (state.quota.tier === 'pro') {
-      state.licenseActive = true;
-    } else if (state.quota.licenseReason !== 'unreachable') {
-      const reason = state.quota.licenseReason;
-      state.licenseActive = false;
+  if (state.licenseKey && state.licenseActive !== false && quota) {
+    if (quota.tier === 'pro') {
+      nextActive = true;
+    } else if (quota.licenseReason !== 'unreachable') {
+      const reason = quota.licenseReason;
+      nextActive = false;
       const free = await fetchQuota(effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, false));
-      state.quota = free ? { ...free, licenseReason: reason } : free;
+      // Keep the demotion reason either way. If there's no free identity to fall
+      // back on (no Figma user id, so the free probe returns null), synthesize a
+      // free quota carrying the reason so the license view still resolves to
+      // `inactive` (Renew for an expired key) instead of the ambiguous
+      // "Your Pro key is saved." — see B8. The 0-left meter is accurate: with no
+      // free identity the user has no usable generations until they renew.
+      quota = free
+        ? { ...free, licenseReason: reason }
+        : { tier: 'free', used: 0, limit: null, remaining: null, resetsAt: '', licenseReason: reason };
     }
   }
+  // A newer refresh started while we awaited — its result supersedes ours, so
+  // drop this one rather than racing it to the last write.
+  if (seq !== quotaSeq) return;
+  state.quota = quota;
+  state.licenseActive = nextActive;
+  // Reconcile the optimistic exhaustion flag (set when a generation returns
+  // quota_exhausted) with the authoritative quota. Activating Pro or a monthly
+  // reset refills the allowance; without this the upsell fork would strand a
+  // user who is no longer out of generations. Only a definite quota clears it;
+  // a null (offline) quota leaves the flag as-is.
+  if (state.quota && !isQuotaExhausted(state.quota)) state.quotaExhausted = false;
   renderLicense(refs, state);
   renderQuota(refs, state);
 }
@@ -355,6 +385,9 @@ refs.licenseActivateBtn.addEventListener('click', async () => {
       // Differentiated by the raw LS status: expired → renew, disabled →
       // support, anything else → wrong key. No raw code leaks to the user.
       refs.licenseStatus.textContent = activationErrorCopy(out.status);
+      // This failure path doesn't refresh the quota-derived license view, so
+      // surface the Renew link directly for an expired subscription.
+      refs.licenseRenewRow.hidden = out.status !== 'expired';
     }
   } catch {
     refs.licenseStatus.textContent = "Couldn't reach the license server. Give it another go in a minute.";
@@ -410,6 +443,13 @@ refs.quotaUpgrade.addEventListener('click', () => {
   send({ type: 'openBrowser', url: CHECKOUT_URL });
 });
 
+// "Activate license" → Settings, where the license key is entered. Focus the
+// input so the user lands ready to paste.
+refs.quotaActivate.addEventListener('click', () => {
+  switchTab(refs, 'settings');
+  refs.licenseKeyInput.focus();
+});
+
 // Manage-subscription link opens the billing portal via figma.openExternal.
 document.getElementById('manage-sub-link')?.addEventListener('click', (e) => {
   e.preventDefault();
@@ -422,6 +462,23 @@ document.getElementById('renew-link')?.addEventListener('click', (e) => {
   send({ type: 'openBrowser', url: STOREFRONT_URL });
 });
 
+// Get Pro link (shown only to a free, keyless user) opens the store to buy.
+document.getElementById('get-pro-link')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  send({ type: 'openBrowser', url: STOREFRONT_URL });
+});
+
+// Tab-bar icons: website + author LinkedIn. Anchors don't navigate inside the
+// plugin iframe, so route through openBrowser like every other external link.
+document.getElementById('site-link')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  send({ type: 'openBrowser', url: SITE_URL });
+});
+document.getElementById('linkedin-link')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  send({ type: 'openBrowser', url: LINKEDIN_URL });
+});
+
 refs.selectAllBtn.addEventListener('click', () => {
   const checks = Object.values(refs.sectionChecks);
   const allOn = checks.every((c) => c.checked);
@@ -431,7 +488,7 @@ refs.selectAllBtn.addEventListener('click', () => {
       c.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
-  refs.selectAllBtn.textContent = allOn ? 'Select all' : 'Clear all';
+  syncSelectAllLabel();
   syncAllGroups();
 });
 
@@ -457,6 +514,16 @@ function syncGroup(groupId: string): void {
 
 function syncAllGroups(): void {
   for (const g of GROUPS) syncGroup(g.id);
+}
+
+// The Select-all button toggles between "select all" and "clear all". Its label
+// must reflect the LIVE checkbox state: "Clear all" only when every section is
+// on, "Select all" otherwise (including the mixed default). Computed here rather
+// than hardcoded so the first click never does the opposite of its label.
+function syncSelectAllLabel(): void {
+  const checks = Object.values(refs.sectionChecks);
+  const allOn = checks.length > 0 && checks.every((c) => c.checked);
+  refs.selectAllBtn.textContent = allOn ? 'Clear all' : 'Select all';
 }
 
 for (const g of GROUPS) {
@@ -486,6 +553,7 @@ refs.sectionList.addEventListener('change', (e) => {
 });
 
 syncAllGroups(); // initial state
+syncSelectAllLabel(); // initial label must match the mixed default, not a hardcode
 
 // Toggling the Tokens section re-renders the variant card's gated state
 // (mutes it + collapses the body when Tokens is off; see renderVariantPicker).
@@ -718,6 +786,11 @@ window.onmessage = (event: MessageEvent) => {
       runAutoExtract(refs, state, () => {
         renderVariantPicker(refs, state);
         renderStatesHint(refs, state);
+        // renderStatesHint can force the States checkbox on/off programmatically,
+        // which fires no change event, so re-sync the group masters/counts and
+        // the Select-all label to match the new checkbox state.
+        syncAllGroups();
+        syncSelectAllLabel();
       });
       break;
     }
@@ -800,7 +873,8 @@ window.onmessage = (event: MessageEvent) => {
     case 'docFrameDone': {
       stopLoader(refs);
       const note = state.pendingAiNote ? `. ${state.pendingAiNote}` : '';
-      showBanner(refs, state.pendingAiNote ? 'error' : 'info', `Created ${msg.frameName}${note}`);
+      const verb = msg.replaced ? 'Updated' : 'Created';
+      showBanner(refs, state.pendingAiNote ? 'error' : 'info', `${verb} ${msg.frameName}${note}`);
       state.pendingAiNote = '';
       refs.createFrameBtn.disabled = false;
       if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
@@ -824,6 +898,10 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'driftSource': {
       const baseline = libBaseline.get(msg.docId);
+      // No baseline means this reply is stale (the library was refreshed since
+      // we asked, dropping this docId). Ignore it rather than comparing against
+      // `undefined`, which would always read as drifted → a phantom "Update".
+      if (baseline === undefined) break;
       const spec = extract(msg.node, { figmaFile: msg.fileKey });
       const drifted = specContentHash(spec) !== baseline;
       libDrift.set(msg.docId, drifted ? 'drifted' : 'inSync');

@@ -31,7 +31,7 @@ export type MainToUi =
   | { type: 'logoError'; message: string }
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
-  | { type: 'docFrameDone'; frameName: string }
+  | { type: 'docFrameDone'; frameName: string; replaced: boolean }
   | { type: 'docFrameError'; message: string }
   | { type: 'library'; entries: LibraryEntry[] }
   | { type: 'docDetached'; docId: string }

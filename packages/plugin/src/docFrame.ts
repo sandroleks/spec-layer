@@ -1235,6 +1235,7 @@ export async function buildDocFrames(
   const GAP = 80; // gap between frames
   const PAD = 64; // breathing room between the frames and the Section edge
   const frames: FrameNode[] = [];
+  let section: SectionNode | null = null;
   try {
     for (const group of groups) {
       const sub = group.sections.some((s) => s.id === 'definition') ? subtitle : null;
@@ -1246,7 +1247,7 @@ export async function buildDocFrames(
     // frames out inside at PAD offsets, then resize the Section to the frames'
     // bounding box (+ padding) so it actually holds all three. Section children
     // use section-relative coordinates, so a later section.x/y move carries them.
-    const section = figma.createSection();
+    section = figma.createSection();
     section.name = `${componentName}: Documentation`;
     section.x = 0;
     section.y = 0;
@@ -1269,7 +1270,10 @@ export async function buildDocFrames(
     );
     return section;
   } catch (err) {
-    for (const f of frames) f.remove(); // never litter the canvas on failure
+    // Never litter the canvas on failure: remove the frames AND the Section
+    // itself (a throw during appendChild/resize leaves it created but empty).
+    for (const f of frames) { try { f.remove(); } catch { /* already gone */ } }
+    if (section) { try { section.remove(); } catch { /* already gone */ } }
     throw err;
   }
 }
