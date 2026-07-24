@@ -1,133 +1,163 @@
 # Spec Layer
 
 [![CI](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml)
+[![Figma Community](https://img.shields.io/badge/Figma-Community-f24e1e?logo=figma&logoColor=white)](https://www.figma.com/community/plugin/1652104411578396548)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.9-43853d.svg)](https://nodejs.org)
 
-Spec Layer is a local-first toolkit for turning Figma components into structured Markdown design-system documentation. It combines a Figma plugin, a deterministic extractor, an open Markdown format, and a Next.js authoring app.
+A Figma plugin that turns your components into spec and guideline frames, right on the canvas. Measurements, states, anatomy, tokens, and AI-written usage docs in one click.
 
-The project is currently intended for trusted local development. The web app reads and writes files on the host machine and is not hardened as a public multi-user service.
-
-![A Spec Layer component page for Button, showing the library sidebar, a live Figma preview of the component's variants, and the structured Markdown documentation with Guidelines and Specs tabs.](.github/assets/component.jpg)
+**[Open in Figma](https://www.figma.com/community/plugin/1652104411578396548)** · [speclayer-landing.pages.dev](https://speclayer-landing.pages.dev)
 
 ## Contents
 
-- [What Works](#what-works)
-- [Requirements](#requirements)
-- [Quick Start](#quick-start)
-- [Figma Plugin](#figma-plugin)
-- [Configuration](#configuration)
-- [Commands](#commands)
-- [Repository Layout](#repository-layout)
-- [Content Safety](#content-safety)
+- [What it generates](#what-it-generates)
+- [Free and Pro](#free-and-pro)
+- [What leaves your Figma file](#what-leaves-your-figma-file)
+- [Install](#install)
+- [How it works](#how-it-works)
+- [Development](#development)
+- [Repository layout](#repository-layout)
+- [Local docs app (legacy)](#local-docs-app-legacy)
+- [Content safety](#content-safety)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
-## What Works
+## What it generates
 
-- Extract a selected Figma component or component set into a structured spec.
-- Export one component as Markdown or all components as a ZIP archive.
-- Send an extraction from the Figma plugin to the local docs app.
-- Import Markdown or ZIP files manually.
-- Review imported components in an inbox, fill missing guidelines, save them individually or in bulk, and clear unwanted drafts.
-- Browse, search, reorganize, and edit Markdown sections in the docs app.
-- Render Figma previews when a personal access token is configured.
-- Optionally fill Definition, Accessibility, and Do's & Don'ts with Anthropic, without overwriting human prose during bulk fill.
-- Store specs in any local folder through `DS_CONTENT_DIR`.
+Select a component or component set, choose the sections you want, and the plugin builds a documentation frame next to it.
 
-There is no enforced approval workflow. The optional `status` frontmatter field is a label only.
+- **Measurements.** Spacing, padding, and sizing annotated on the component, with token names where they resolve.
+- **States matrix.** Every variant and state laid out together in one grid.
+- **Anatomy.** Each part labeled, with a description of what it does.
+- **Tokens and theming.** Token tables, plus your brand colors, fonts, and logo on the frame.
+- **Usage docs, drafted by AI.** Overview, do's and don'ts, and interaction notes.
+- **My Library.** Tracks the components you have documented. When a source component changes, its doc is flagged so you can update it in a click.
 
-## Requirements
+Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Docs can also be downloaded as Markdown, or exported for a whole library as a ZIP.
 
-- Node.js 20.9 or newer
-- npm 10 or newer
-- Figma desktop for local plugin development
+## Free and Pro
 
-## Quick Start
+Every spec feature is free, with no account needed.
+
+| | Free | Pro |
+|---|---|---|
+| Measurements, states, anatomy, tokens, theming | Yes | Yes |
+| On-canvas doc frames, Markdown and ZIP export | Yes | Yes |
+| AI generations | 20 your first month, then 10 a month | Unlimited for normal individual use |
+| Priority support | | Yes |
+
+Pro is $7.99/month, or a yearly plan at two months free. Buy it on the [landing page](https://speclayer-landing.pages.dev) and your license key arrives by email. Paste it into the plugin's Settings tab. One key covers your individual use across your files. Payments are handled by Lemon Squeezy as merchant of record.
+
+Some honest detail on the numbers:
+
+- One generation is one successful AI call for a component. Failed calls never count.
+- Regenerating docs for an unchanged component hits the cache and costs nothing.
+- Deterministic sections never consume a generation.
+- "Unlimited" means normal individual use. Automated, shared, or exceptionally high-volume usage may be limited under the fair-use policy, and you get contacted before anything is limited.
+
+## What leaves your Figma file
+
+The deterministic sections run entirely inside the plugin. Nothing leaves your file.
+
+When you generate AI prose, two things are sent to the Spec Layer proxy and from there to Anthropic: a structured summary of the selected component, and a rendered image of it. Generated results are cached by content hash so an unchanged component does not get sent twice.
+
+You do not supply an API key. License keys are stored hashed on the server, never in the clear and never in a URL. See [apps/landing/privacy.html](apps/landing/privacy.html) and [apps/landing/security.html](apps/landing/security.html) for the published policies, and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Install
+
+For normal use, install from the [Figma Community listing](https://www.figma.com/community/plugin/1652104411578396548).
+
+To run a local build:
 
 ```bash
 npm ci
-cp apps/web/.env.example apps/web/.env.local
-npm run dev -w md-ds
-```
-
-Open [http://localhost:3000](http://localhost:3000). The development server binds to `localhost` (loopback only).
-
-The app starts without credentials and with an empty inbox. To use your own Markdown folder, set `DS_CONTENT_DIR` in `apps/web/.env.local` and restart the server.
-
-## Figma Plugin
-
-Build the plugin:
-
-```bash
 npm run build:plugin
 ```
 
-In Figma desktop, choose **Plugins → Development → Import plugin from manifest**, then select `packages/plugin/manifest.json`.
+Then in Figma desktop choose **Plugins → Development → Import plugin from manifest** and select `packages/plugin/manifest.json`.
 
-To use **Send to docs**:
-
-1. Make sure the web app is running.
-2. In the plugin's **Settings** tab, set the docs URL using the **`localhost`** hostname — e.g. `http://localhost:3000`, or `http://localhost:3001` if your server started on that port. **Do not use `127.0.0.1`:** Figma's plugin manifest can only allowlist the `localhost` hostname (it rejects raw IP literals), so a `127.0.0.1` URL is blocked before the request leaves the plugin and surfaces as `Failed to fetch`. Both names point to the same loopback server.
-
-> The manifest (`packages/plugin/manifest.json`) allowlists `http://localhost:3000` and `http://localhost:3001`. To use any other host or port, add it to the manifest's `networkAccess.allowedDomains` (hostnames only — not IPs) and reload the plugin in Figma.
-
-No token or account is needed. The plugin posts from its opaque origin, which the server permits automatically; same-origin and host-allowlist checks protect the local API.
-
-## Configuration
-
-| Variable | Purpose |
-|---|---|
-| `DS_CONTENT_DIR` | Folder containing component Markdown files. Defaults to `apps/web/content/components`. |
-| `SPEC_LAYER_ALLOWED_HOSTS` | Additional comma-separated `Host` values, including ports when present. |
-| `SPEC_LAYER_ALLOWED_ORIGINS` | Additional comma-separated cross-origin origins. `Origin: null` (the Figma plugin) is permitted automatically. |
-| `FIGMA_TOKEN` | Optional Figma personal access token for preview images. |
-| `ANTHROPIC_API_KEY` | Optional Anthropic key for prose generation. |
-
-Figma and Anthropic credentials can also be stored through the app's Settings page. They are written to `.ds-config.json` with owner-only permissions where the platform supports them. Environment variables are preferable for shared or automated environments.
-
-## Commands
-
-```bash
-npm run dev -w md-ds  # local docs app
-npm run lint           # ESLint
-npm run typecheck      # all TypeScript workspaces
-npm test               # Vitest suite
-npm run build          # production web build
-npm run build:plugin   # Figma plugin bundle
-npm run check          # complete local verification
-```
-
-## Repository Layout
+## How it works
 
 ```text
-apps/web/              Next.js authoring and documentation app
-packages/format/       frontmatter schema and Markdown serialization
-packages/extractor/    pure Figma-tree extraction and rendering
-packages/plugin/       Figma plugin and bulk export UI
-spec/                  format definition and reference examples
+Figma node
+  → plugin serializer (main thread)
+  → IntermediateSpec
+  → deterministic derivation: anatomy, properties, variants, states, tokens
+  → canvas doc frame, Markdown download, or ZIP export
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and trust boundaries, and [spec/SPEC.md](spec/SPEC.md) for the Markdown contract.
+The plugin owns all Figma API access. `@spec-layer/extractor` receives plain JSON and never touches the Figma runtime, which keeps extraction testable against fixtures. AI prose is the one networked path: it routes through `@spec-layer/proxy`, a Cloudflare Worker that holds the Anthropic key, enforces free-tier quotas in a Durable Object, and validates Pro licenses against Lemon Squeezy. All quota and license authority is server-side, so the plugin only displays the state it is told.
 
-Release history is recorded in [CHANGELOG.md](CHANGELOG.md).
+Generated frames store their source node id and a content hash, which is what makes drift detection and one-click updates possible.
 
-## Content Safety
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data flow and trust boundaries, and [spec/SPEC.md](spec/SPEC.md) for the Markdown contract.
 
-Generated imports are runtime data and are ignored under `apps/web/content/components/_inbox/`. Do not commit API keys, private Figma URLs, customer data, proprietary component exports, `.ds-config.json`, `.spec-cache`, or `.spec-data` sidecars.
+## Development
 
-ZIP and upload endpoints enforce compressed, expanded, per-file, and entry-count limits. API host and origin checks are defense-in-depth for local use, not a substitute for authentication, authorization, and isolation in a public deployment.
+Requires Node.js 20.9 or newer, npm 10 or newer, and Figma desktop for plugin development.
+
+```bash
+npm ci
+npm run check           # lint, typecheck, tests, both builds
+```
+
+Individual steps:
+
+```bash
+npm run lint            # ESLint
+npm run typecheck       # all TypeScript workspaces
+npm test                # Vitest suite
+npm run test:coverage   # with coverage thresholds
+npm run build           # production web build
+npm run build:plugin    # Figma plugin bundle
+```
+
+> **Note:** builds from source currently point at the staging proxy (`spec-layer-proxy.spec-layer-test.workers.dev`), in both `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`. Swap both for the production host before cutting a public release.
+
+CI runs the same stages as `npm run check`, plus `npm audit --omit=dev`, on pushes to `main` and on pull requests.
+
+## Repository layout
+
+```text
+packages/plugin/       Figma plugin: main-thread serializer and iframe UI
+packages/extractor/    deterministic extraction and Markdown rendering
+packages/format/       frontmatter schema and serialization
+packages/proxy/        Cloudflare Worker: AI relay, quota, licensing
+apps/landing/          static marketing and policy pages
+apps/web/              legacy local Markdown docs app
+spec/                  Markdown format definition and reference examples
+docs/                  specs, plans, reviews, voice and prose guides
+```
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).
+
+## Local docs app (legacy)
+
+`apps/web` is a local-first Next.js app for importing, browsing, and editing exported specs as Markdown. It predates the plugin-first direction and is no longer actively developed. It still builds and its tests pass, but it has received none of the recent work and may be removed in a future release. It is not recommended for new use.
+
+It reads and writes files on the host machine, binds to loopback, and is not hardened as a multi-user service. Setup, configuration variables, and the local API boundary are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+![A Spec Layer component page for Button in the legacy docs app, showing the library sidebar, a live Figma preview of the component's variants, and the structured Markdown documentation with Guidelines and Specs tabs.](.github/assets/component.jpg)
+
+## Content safety
+
+Do not commit API keys, private Figma URLs, customer data, proprietary component exports, `.ds-config.json`, or `.spec-cache` / `.spec-data` sidecars. A pre-commit hook in `.githooks/` scans for common key formats, but it is a backstop, not a guarantee.
+
+Bug reports and test fixtures must use synthetic or explicitly publishable data.
 
 ## Roadmap
 
-- Git-backed content synchronization and drift detection.
-- MCP tools for searching and retrieving reviewed specs.
-- Optional packaging of stable workspace APIs after their contracts are ready for independent versioning.
+- Token display mode: raw value, variable name, or Figma `codeSyntax`.
+- Configurable units (px / rem).
+- Drift detection surfaces beyond the in-Figma badge, using the committed content hash.
+
+Not planned: remote MCP or agentic vision enrichment, and new Markdown spec sections (the format is frozen for hash stability). See [docs/feature-backlog-2026-07.md](docs/feature-backlog-2026-07.md) for the full backlog and [docs/strategy/](docs/strategy/) for positioning notes.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a change. Bug reports and fixtures must use synthetic or explicitly publishable data. Use GitHub private vulnerability reporting for security issues.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a change. Use GitHub private vulnerability reporting for security issues.
 
 ## License
 
