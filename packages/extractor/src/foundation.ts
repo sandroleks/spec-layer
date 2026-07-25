@@ -248,3 +248,208 @@ function resolveValue(
   const resolved = inner.kind === 'alias' ? inner.resolved : inner;
   return { ...head, resolved };
 }
+
+// ---------------------------------------------------------------------------
+// Unit planning
+// ---------------------------------------------------------------------------
+
+export interface FoundationSelection {
+  /** Collections the user chose, with the mode ids they chose for each. */
+  collections: { collectionId: string; modeIds: string[] }[];
+  textStyles: boolean;
+}
+
+export interface FoundationUnit {
+  scope: FoundationScope;
+  /** Frame/document title: "Semantic", "Primitives · color", "Text styles". */
+  title: string;
+  rowCount: number;
+  /** Mode names present in the collection but not rendered, for the footer note. */
+  omittedModeNames: string[];
+}
+
+/** Distinct top-level groups in first-appearance order. */
+function groupsInOrder(names: string[]): string[] {
+  const seen: string[] = [];
+  for (const name of names) {
+    const g = groupOf(name);
+    if (!seen.includes(g)) seen.push(g);
+  }
+  return seen;
+}
+
+export function planFoundationUnits(
+  spec: FoundationSpec, selection: FoundationSelection,
+): FoundationUnit[] {
+  const units: FoundationUnit[] = [];
+
+  for (const chosen of selection.collections) {
+    const collection = spec.collections.find((c) => c.id === chosen.collectionId);
+    if (!collection) continue;
+
+    const requested = chosen.modeIds.filter((id) => collection.modes.some((m) => m.modeId === id));
+    const source = requested.length > 0 ? requested : collection.modes.map((m) => m.modeId);
+    const modeIds = source.slice(0, MAX_MODE_COLUMNS);
+    const omittedModeNames = collection.modes
+      .filter((m) => !modeIds.includes(m.modeId))
+      .map((m) => m.name);
+
+    const base = {
+      target: 'collection' as const,
+      collectionId: collection.id,
+      collectionName: collection.name,
+      modeIds,
+    };
+
+    if (collection.variables.length <= SPLIT_THRESHOLD) {
+      units.push({
+        scope: base, title: collection.name,
+        rowCount: collection.variables.length, omittedModeNames,
+      });
+      continue;
+    }
+
+    const groups = groupsInOrder(collection.variables.map((v) => v.name));
+    if (groups.length <= 1) {
+      // Cannot split further. One tall frame is the faithful outcome.
+      units.push({
+        scope: base, title: collection.name,
+        rowCount: collection.variables.length, omittedModeNames,
+      });
+      continue;
+    }
+
+    for (const group of groups) {
+      units.push({
+        scope: { ...base, group },
+        title: `${collection.name} · ${group}`,
+        rowCount: collection.variables.filter((v) => v.group === group).length,
+        omittedModeNames,
+      });
+    }
+  }
+
+  if (selection.textStyles && spec.textStyles.length > 0) {
+    if (spec.textStyles.length <= SPLIT_THRESHOLD) {
+      units.push({
+        scope: { target: 'textStyles' }, title: 'Text styles',
+        rowCount: spec.textStyles.length, omittedModeNames: [],
+      });
+    } else {
+      for (const group of groupsInOrder(spec.textStyles.map((s) => s.name))) {
+        units.push({
+          scope: { target: 'textStyles', group },
+          title: `Text styles · ${group}`,
+          rowCount: spec.textStyles.filter((s) => s.group === group).length,
+          omittedModeNames: [],
+        });
+      }
+    }
+  }
+
+  return units;
+}
+
+// ---------------------------------------------------------------------------
+// Row building — the single source of rendered content
+// ---------------------------------------------------------------------------
+
+export interface FoundationRowCell { modeName: string; value: FoundationValue }
+
+export interface FoundationVariableRow {
+  kind: 'variable';
+  name: string;
+  resolvedType: FoundationVariableType;
+  description: string;
+  cells: FoundationRowCell[];
+}
+
+export interface FoundationTextMetrics {
+  fontFamily: string;
+  fontStyle: string;
+  fontSize: number;
+  lineHeight: RawTextStyle['lineHeight'];
+  letterSpacing: RawTextStyle['letterSpacing'];
+  paragraphSpacing: number;
+  paragraphIndent: number;
+  textCase: string;
+  textDecoration: string;
+}
+
+export interface FoundationTextRow {
+  kind: 'textStyle';
+  name: string;
+  description: string;
+  metrics: FoundationTextMetrics;
+  boundVariables: Record<string, string>;
+}
+
+export type FoundationRow = FoundationVariableRow | FoundationTextRow;
+
+export interface FoundationUnitContent {
+  collectionName: string;   // '' for the text-styles unit
+  group?: string;
+  modeNames: string[];
+  rows: FoundationRow[];
+}
+
+/**
+ * The rows and mode columns for one output unit. Every renderer AND the drift
+ * hash consume this, which is what mechanically guarantees "the hash covers
+ * exactly what is rendered". Returns null when the scope's source is gone.
+ */
+export function unitContent(
+  spec: FoundationSpec, scope: FoundationScope,
+): FoundationUnitContent | null {
+  if (scope.target === 'textStyles') {
+    const styles = scope.group
+      ? spec.textStyles.filter((s) => s.group === scope.group)
+      : spec.textStyles;
+    return {
+      collectionName: '',
+      ...(scope.group ? { group: scope.group } : {}),
+      modeNames: [],
+      rows: styles.map((s): FoundationTextRow => ({
+        kind: 'textStyle',
+        name: s.name,
+        description: s.description,
+        metrics: {
+          fontFamily: s.fontFamily, fontStyle: s.fontStyle, fontSize: s.fontSize,
+          lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
+          paragraphSpacing: s.paragraphSpacing, paragraphIndent: s.paragraphIndent,
+          textCase: s.textCase, textDecoration: s.textDecoration,
+        },
+        boundVariables: s.boundVariables,
+      })),
+    };
+  }
+
+  const collection = spec.collections.find((c) => c.id === scope.collectionId);
+  if (!collection) return null;
+
+  // Drop stale mode ids so a deleted mode narrows the table instead of
+  // producing a blank column.
+  const modes = scope.modeIds
+    .map((id) => collection.modes.find((m) => m.modeId === id))
+    .filter((m): m is FoundationMode => m !== undefined);
+
+  const variables = scope.group
+    ? collection.variables.filter((v) => v.group === scope.group)
+    : collection.variables;
+
+  return {
+    collectionName: collection.name,
+    ...(scope.group ? { group: scope.group } : {}),
+    modeNames: modes.map((m) => m.name),
+    rows: variables.map((v): FoundationVariableRow => ({
+      kind: 'variable',
+      name: v.name,
+      resolvedType: v.resolvedType,
+      description: v.description,
+      cells: modes.map((m) => ({
+        modeName: m.name,
+        value: v.valuesByMode[m.modeId] ?? { kind: 'unresolved', reason: 'missing' },
+      })),
+    })),
+  };
+}

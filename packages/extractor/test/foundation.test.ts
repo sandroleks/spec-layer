@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildFoundation, groupOf, type SerializedFoundation } from '../src/foundation';
+import {
+  buildFoundation, groupOf, type SerializedFoundation,
+  planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
+  type FoundationSelection,
+} from '../src/foundation';
 
 /** Minimal dump with one single-mode collection holding one variable per type. */
 function dumpOneOfEach(): SerializedFoundation {
@@ -271,5 +275,183 @@ describe('buildFoundation — alias resolution', () => {
     const spec = buildFoundation(dump);
     expect(spec.collections[1].variables[0].valuesByMode.s1)
       .toEqual({ kind: 'unresolved', reason: 'missing' });
+  });
+});
+
+/** A collection with `count` COLOR variables spread over the given groups. */
+function bigDump(count: number, groups: string[]): SerializedFoundation {
+  const variables = Array.from({ length: count }, (_, i) => ({
+    id: `v${i}`,
+    name: `${groups[i % groups.length]}/item${i}`,
+    resolvedType: 'COLOR' as const,
+    description: '',
+    codeSyntax: {},
+    valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+  }));
+  return {
+    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+    collections: [{
+      id: 'c1', name: 'Primitives', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Value' }],
+      variables,
+    }],
+  };
+}
+
+const allOf = (dump: SerializedFoundation): FoundationSelection => ({
+  collections: dump.collections.map((c) => ({
+    collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
+  })),
+  textStyles: dump.textStyles.length > 0,
+});
+
+describe('planFoundationUnits', () => {
+  it('produces one unit for a collection at the threshold', () => {
+    const dump = bigDump(SPLIT_THRESHOLD, ['color']);
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    expect(units).toHaveLength(1);
+    expect(units[0].title).toBe('Primitives');
+    expect(units[0].rowCount).toBe(SPLIT_THRESHOLD);
+    expect(units[0].scope).toEqual({
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m1'],
+    });
+  });
+
+  it('splits by top-level group past the threshold', () => {
+    const dump = bigDump(SPLIT_THRESHOLD + 1, ['color', 'space']);
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    expect(units).toHaveLength(2);
+    expect(units.map((u) => u.title)).toEqual(['Primitives · color', 'Primitives · space']);
+    expect(units.reduce((n, u) => n + u.rowCount, 0)).toBe(SPLIT_THRESHOLD + 1);
+    expect(units[0].scope).toMatchObject({ group: 'color' });
+  });
+
+  it('leaves a single-group oversized collection as one tall unit', () => {
+    const dump = bigDump(SPLIT_THRESHOLD + 50, ['color']);
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    expect(units).toHaveLength(1);
+    expect(units[0].rowCount).toBe(SPLIT_THRESHOLD + 50);
+  });
+
+  it('orders split groups by first appearance, stably', () => {
+    const dump = bigDump(SPLIT_THRESHOLD + 3, ['radius', 'color', 'space']);
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    expect(units.map((u) => u.title))
+      .toEqual(['Primitives · radius', 'Primitives · color', 'Primitives · space']);
+  });
+
+  it('omits unselected collections', () => {
+    const dump = bigDump(3, ['color']);
+    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false });
+    expect(units).toEqual([]);
+  });
+
+  it('caps mode columns and reports the omitted mode names', () => {
+    const dump = bigDump(3, ['color']);
+    dump.collections[0].modes = ['A', 'B', 'C', 'D', 'E', 'F']
+      .map((name, i) => ({ modeId: `m${i}`, name }));
+    dump.collections[0].defaultModeId = 'm0';
+    for (const v of dump.collections[0].variables) {
+      v.valuesByMode = Object.fromEntries(
+        dump.collections[0].modes.map((m) => [m.modeId, { r: 0, g: 0, b: 0, a: 1 }]),
+      );
+    }
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    expect(units[0].scope).toMatchObject({ modeIds: ['m0', 'm1', 'm2', 'm3'] });
+    expect(units[0].omittedModeNames).toEqual(['E', 'F']);
+    expect(units[0].scope.target === 'collection' && units[0].scope.modeIds.length)
+      .toBe(MAX_MODE_COLUMNS);
+  });
+
+  it('honors an explicit mode selection over collection order', () => {
+    const dump = bigDump(3, ['color']);
+    dump.collections[0].modes = ['A', 'B', 'C'].map((name, i) => ({ modeId: `m${i}`, name }));
+    dump.collections[0].defaultModeId = 'm0';
+    const units = planFoundationUnits(buildFoundation(dump), {
+      collections: [{ collectionId: 'c1', modeIds: ['m2'] }], textStyles: false,
+    });
+    expect(units[0].scope).toMatchObject({ modeIds: ['m2'] });
+    expect(units[0].omittedModeNames).toEqual(['A', 'B']);
+  });
+
+  it('adds a text styles unit when selected', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = [{
+      name: 'Body/M', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }];
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    expect(units.map((u) => u.title)).toEqual(['Primitives', 'Text styles']);
+    expect(units[1].scope).toEqual({ target: 'textStyles' });
+  });
+});
+
+describe('unitContent', () => {
+  it('builds variable rows with one cell per included mode, keyed by mode name', () => {
+    const dump = dumpWithAliases();
+    const spec = buildFoundation(dump);
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c2', collectionName: 'Semantic', modeIds: ['s1', 's2'],
+    });
+    expect(content).not.toBeNull();
+    expect(content!.modeNames).toEqual(['Light', 'Dark']);
+    expect(content!.rows).toHaveLength(1);
+    const row = content!.rows[0];
+    expect(row.kind).toBe('variable');
+    expect(row.kind === 'variable' && row.name).toBe('bg/brand');
+    expect(row.kind === 'variable' && row.cells.map((c) => c.modeName)).toEqual(['Light', 'Dark']);
+  });
+
+  it('filters rows to the scope group', () => {
+    const dump = bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']);
+    const spec = buildFoundation(dump);
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      group: 'space', modeIds: ['m1'],
+    });
+    expect(content!.rows.every((r) => r.kind === 'variable' && r.name.startsWith('space/'))).toBe(true);
+  });
+
+  it('drops mode ids that no longer exist', () => {
+    const spec = buildFoundation(dumpWithAliases());
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c2', collectionName: 'Semantic',
+      modeIds: ['s1', 'gone'],
+    });
+    expect(content!.modeNames).toEqual(['Light']);
+  });
+
+  it('returns null for a collection that is gone', () => {
+    const spec = buildFoundation(dumpWithAliases());
+    expect(unitContent(spec, {
+      target: 'collection', collectionId: 'nope', collectionName: 'Nope', modeIds: [],
+    })).toBeNull();
+  });
+
+  it('builds text style rows with metrics', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = [{
+      name: 'Body/M', description: 'Default body.', fontFamily: 'Inter', fontStyle: 'Regular',
+      fontSize: 16, lineHeight: { unit: 'PIXELS', value: 24 },
+      letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 8, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: { fontSize: 'type/md' },
+    }];
+    const content = unitContent(buildFoundation(dump), { target: 'textStyles' });
+    expect(content!.modeNames).toEqual([]);
+    expect(content!.rows[0]).toEqual({
+      kind: 'textStyle', name: 'Body/M', description: 'Default body.',
+      metrics: {
+        fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+        lineHeight: { unit: 'PIXELS', value: 24 },
+        letterSpacing: { unit: 'PERCENT', value: 0 },
+        paragraphSpacing: 8, paragraphIndent: 0,
+        textCase: 'ORIGINAL', textDecoration: 'NONE',
+      },
+      boundVariables: { fontSize: 'type/md' },
+    });
   });
 });
