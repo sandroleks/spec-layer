@@ -40,10 +40,16 @@ export function specContentHash(spec: IntermediateSpec): string {
 /**
  * The drift baseline for one foundation output unit.
  *
- * Hashes exactly what unitContent() renders — collection name, group, mode
- * names, and rows — so "update available" always corresponds to a visible
- * change. Ids, extractedAt, fileKey, and anything extracted but unrendered are
- * excluded structurally: they are simply not in unitContent's output.
+ * Hashes the WHOLE unitContent() result, so "update available" always
+ * corresponds to a visible change. Ids, extractedAt, fileKey, and anything
+ * extracted but unrendered are excluded structurally: they are simply not in
+ * unitContent's output.
+ *
+ * Deliberately not a field list. An earlier draft enumerated four fields and
+ * thereby dropped omittedModeNames, which frames render in their footer, so
+ * renaming an omitted mode changed the document without moving its hash. Every
+ * field of FoundationUnitContent is rendered by definition; enumerating them
+ * here can only ever go stale. Add fields to FoundationUnitContent, not here.
  *
  * A scope whose source no longer exists hashes a stable sentinel rather than
  * throwing, so a stale link resolves to a comparable value.
