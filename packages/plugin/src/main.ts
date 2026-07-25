@@ -4,7 +4,9 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
-import { buildFoundation, planFoundationUnits, unitContent, foundationContentHash } from '@spec-layer/extractor';
+import {
+  buildFoundation, planFoundationUnits, unitContent, foundationContentHash, type FoundationSpec,
+} from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
@@ -535,6 +537,23 @@ figma.ui.onmessage = async (raw: unknown) => {
       const reg = readRegistry();
       const entries: LibraryEntry[] = [];
       const alive = new Set<string>();
+      // Foundation drift needs one live extraction to answer every foundation
+      // row, unlike component docs, which the UI checks one at a time via
+      // requestDrift. Lazy so a file with only component docs pays nothing.
+      // Caches both the success and the failure so it runs at most once here.
+      let foundationSpec: FoundationSpec | null = null;
+      let foundationExtractionFailed = false;
+      const liveFoundation = async (): Promise<FoundationSpec | null> => {
+        if (foundationSpec || foundationExtractionFailed) return foundationSpec;
+        try {
+          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+          foundationSpec = buildFoundation(dump);
+        } catch {
+          foundationExtractionFailed = true;
+        }
+        return foundationSpec;
+      };
       for (const docId of reg.docIds) {
         let node: BaseNode | null = null;
         try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
@@ -551,6 +570,30 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         if (isFoundationLink(data)) {
           const title = section.name.replace(/^Foundations: /, '');
+          const live = await liveFoundation();
+          // A renamed collection still resolves by name: retarget the scope to
+          // its current id before hashing, so a re-created collection reads as
+          // "Update available" (true: the frame's rendered title changed) and
+          // not "Source missing" (false: the collection is still there).
+          let scope = data.scope;
+          if (live && scope.target === 'collection') {
+            // Bind to a const so the 'collection' narrowing survives inside the
+            // closures below — narrowing a mutable `let` does not carry into a
+            // callback, since the closure could run after `scope` is reassigned.
+            const collectionScope = scope;
+            if (!live.collections.some((c) => c.id === collectionScope.collectionId)) {
+              const byName = live.collections.find((c) => c.name === collectionScope.collectionName);
+              if (byName) scope = { ...collectionScope, collectionId: byName.id };
+            }
+          }
+          const currentContentHash = live ? foundationContentHash(live, scope) : undefined;
+          // A scope that no longer resolves is orphaned. unitContent returns
+          // null for a deleted collection, and foundationContentHash turns that
+          // into a stable sentinel, so compare against unitContent directly
+          // rather than re-deriving the sentinel here. When extraction failed
+          // outright, give the doc the benefit of the doubt rather than
+          // reporting it missing on no evidence.
+          const sourceExists = live ? unitContent(live, scope) !== null : true;
           entries.push({
             docId,
             kind: 'foundation',
@@ -558,11 +601,10 @@ figma.ui.onmessage = async (raw: unknown) => {
             componentName: `Foundations · ${title}`,
             pageName: page?.name ?? '',
             sourceNodeId: '',
-            // Resolved against a live extraction in Task 13; a tracked
-            // foundation doc is never orphaned merely by existing.
-            sourceExists: true,
+            sourceExists,
             selfEdited,
             storedContentHash: data.contentHash,
+            currentContentHash,
           });
           continue;
         }

@@ -22,6 +22,10 @@ export interface LibraryEntry {
   sourceExists: boolean;
   selfEdited: boolean;
   storedContentHash: string;
+  /** Foundation rows only: the live hash for this scope, for drift comparison.
+   *  Component rows resolve drift separately via requestDrift. Absent when the
+   *  live extraction failed, in which case the row must not read as drifted. */
+  currentContentHash?: string;
 }
 
 export type MainToUi =

@@ -179,12 +179,23 @@ function refreshLibrary(): void {
   send({ type: 'requestLibrary' });
 }
 
-/** Kick off a drift check for every doc whose source still exists. */
+/** Kick off a drift check for every doc whose source still exists. Foundation
+ *  rows are resolved already, server-side, from a single live extraction
+ *  (Task 13) — reuse that instead of sending a requestDrift that would never
+ *  get a reply. */
 function startDriftChecks(): void {
   libDrift.clear();
   libBaseline.clear();
   for (const e of libEntries) {
     if (!e.sourceExists) continue;
+    if (e.kind === 'foundation') {
+      // No live hash means extraction failed. The honest answer is "we do not
+      // know", which must render as not-drifted rather than as an update we
+      // never actually verified.
+      const drifted = e.currentContentHash !== undefined && e.currentContentHash !== e.storedContentHash;
+      libDrift.set(e.docId, drifted ? 'drifted' : 'inSync');
+      continue;
+    }
     libDrift.set(e.docId, 'pending');
     libBaseline.set(e.docId, e.storedContentHash);
     send({ type: 'requestDrift', docId: e.docId, sourceNodeId: e.sourceNodeId });
@@ -982,6 +993,11 @@ window.onmessage = (event: MessageEvent) => {
       libEntries = msg.entries;
       renderLibrary(refs, libEntries, libDrift);
       startDriftChecks();
+      // Foundation rows are resolved synchronously above (no round trip), so
+      // repaint once more immediately — otherwise they'd sit on the stale map
+      // from the last refresh until some component's driftSource happens to
+      // arrive and trigger a render.
+      renderLibrary(refs, libEntries, libDrift);
       break;
     }
 
