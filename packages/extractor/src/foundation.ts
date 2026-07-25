@@ -233,7 +233,7 @@ function resolveValue(
   };
 
   if (seen.has(raw.id)) return { ...head, resolved: { kind: 'unresolved', reason: 'cycle' } };
-  if (depth + 1 >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
+  if (depth >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
 
   const nextModeId = targetModeId(local.collection, modeName);
   const nextModeName = local.collection.modes.find((m) => m.modeId === nextModeId)?.name ?? modeName;

@@ -159,6 +159,8 @@ describe('buildFoundation — alias resolution', () => {
     const spec = buildFoundation(dumpWithAliases());
     const bg = spec.collections[1].variables[0];
     expect(bg.valuesByMode.s2).toMatchObject({ targetName: 'color/navy/900' });
+    expect(bg.valuesByMode.s2).toMatchObject({ resolved: { kind: 'color', hex: '#000033', alpha: 1 } });
+    expect(bg.valuesByMode.s2).not.toEqual(bg.valuesByMode.s1);
   });
 
   it('prefers the target mode whose name matches the source mode name', () => {
@@ -227,6 +229,29 @@ describe('buildFoundation — alias resolution', () => {
     const value = spec.collections[1].variables[0].valuesByMode.s1;
     expect(value).toMatchObject({ kind: 'alias', targetName: 'a' });
     expect(JSON.stringify(value)).toContain('"reason":"depth"');
+  });
+
+  it('resolves a chain of exactly four hops', () => {
+    const dump = dumpWithAliases();
+    // a → b → c → d → value: four hops, at MAX_ALIAS_DEPTH of 4, must not error.
+    dump.collections[0].variables = [
+      { id: 'a', name: 'a', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { type: 'VARIABLE_ALIAS', id: 'b' } } },
+      { id: 'b', name: 'b', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { type: 'VARIABLE_ALIAS', id: 'c' } } },
+      { id: 'c', name: 'c', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { type: 'VARIABLE_ALIAS', id: 'd' } } },
+      { id: 'd', name: 'd', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { r: 1, g: 0, b: 0, a: 1 } } },
+    ];
+    dump.collections[1].variables[0].valuesByMode.s1 = { type: 'VARIABLE_ALIAS', id: 'a' };
+    const spec = buildFoundation(dump);
+    const value = spec.collections[1].variables[0].valuesByMode.s1;
+    expect(value).toEqual({
+      kind: 'alias', targetName: 'a', targetCollection: 'Primitives',
+      external: false, resolved: { kind: 'color', hex: '#ff0000', alpha: 1 },
+    });
+    expect(JSON.stringify(value)).not.toContain('"reason":"depth"');
   });
 
   it('marks a library target as external with a real name and no value', () => {
