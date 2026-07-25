@@ -4,7 +4,9 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
+import { buildFoundation, planFoundationUnits, unitContent } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
+import { buildFoundationFrame } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import {
@@ -330,6 +332,10 @@ async function findExistingDoc(
 // widths, font families) assumed single-threaded; a second overlapping build
 // would corrupt widths/theme or duplicate the doc. One build at a time.
 let docFrameRendering = false;
+// Same guard as docFrameRendering, for the Foundations tab's multi-unit build:
+// a second overlapping renderFoundation would corrupt the shared theme/font
+// state in frameKit and could duplicate frames on canvas.
+let foundationRendering = false;
 
 figma.ui.onmessage = async (raw: unknown) => {
   const msg = raw as UiToMain;
@@ -576,6 +582,68 @@ figma.ui.onmessage = async (raw: unknown) => {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'foundationError', message } as MainToUi);
+      }
+      break;
+    }
+
+    case 'renderFoundation': {
+      if (foundationRendering) { figma.notify('Still finishing the previous set'); break; }
+      foundationRendering = true;
+      try {
+        // Re-extract rather than trusting the UI's dump: the Foundations tab
+        // fetches its data once per session and never refreshes, so the file
+        // may have changed by the time the user clicks Create. Re-extracting
+        // here keeps the generated frames faithful to the file as it is now.
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const dump = await serializeFoundation(
+          foundationReader, fileKey, new Date().toISOString(),
+        );
+        const spec = buildFoundation(dump);
+        const units = planFoundationUnits(spec, msg.selection);
+
+        let created = 0;
+        // Task 12 adds link stamping and in-place replacement; until then no
+        // existing frame is ever matched, so this always stays 0.
+        const replaced = 0;
+        let x = 0;
+        let y = 0;
+
+        // Place the set to the right of everything already on the page so a
+        // generated set never lands on top of existing work.
+        for (const child of figma.currentPage.children) {
+          if ('x' in child && 'width' in child) {
+            const c = child as SceneNode & { x: number; width: number; y: number };
+            x = Math.max(x, c.x + c.width + 120);
+            y = Math.min(y, c.y);
+          }
+        }
+
+        for (let i = 0; i < units.length; i++) {
+          const unit = units[i];
+          const content = unitContent(spec, unit.scope);
+          if (!content) continue;
+
+          const section = await buildFoundationFrame(
+            content, unit, resolveTheme(brandTheme),
+            msg.config.includeDescriptions, i, units.length,
+          );
+          figma.currentPage.appendChild(section);
+          section.x = x;
+          section.y = y;
+          x += section.width + 80;
+          created++;
+
+          figma.ui.postMessage({
+            type: 'foundationProgress', done: i + 1, total: units.length,
+          } as MainToUi);
+        }
+
+        figma.ui.postMessage({ type: 'foundationDone', created, replaced } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'foundationFrameError', message } as MainToUi);
+      } finally {
+        foundationRendering = false;
       }
       break;
     }

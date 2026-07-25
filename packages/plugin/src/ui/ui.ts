@@ -29,6 +29,7 @@ import {
   setBrandTheme,
   onFoundationMessage,
   onFoundationCheckboxChange,
+  currentFoundationSelection,
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
@@ -318,6 +319,22 @@ function requestFoundationOnce(): void {
 refs.foundationList.addEventListener('change', (ev) => {
   const target = ev.target as HTMLElement;
   if (target instanceof HTMLInputElement) onFoundationCheckboxChange(refs, target);
+});
+
+// Disabled while a generation is in flight (mirrors createFrameBtn/
+// docFrameRendering) — re-enabled by the foundationDone/foundationFrameError
+// handlers below, on both the success and error paths.
+refs.foundationCreate.addEventListener('click', () => {
+  if (refs.foundationCreate.disabled) return;
+  refs.foundationCreate.disabled = true;
+  send({
+    type: 'renderFoundation',
+    selection: currentFoundationSelection(),
+    // includeDescriptions is hardcoded true: v1 has no descriptions checkbox in
+    // the tab, and buildFoundationFrame already suppresses the column when no
+    // row has one. aiNotes stays false until phase 6.
+    config: { includeDescriptions: true, aiNotes: false },
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -924,6 +941,25 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'foundationError': {
       refs.foundationNotes.textContent = msg.message;
+      break;
+    }
+
+    case 'foundationProgress': {
+      refs.foundationNotes.textContent = `Creating ${msg.done} of ${msg.total}.`;
+      break;
+    }
+
+    case 'foundationDone': {
+      refs.foundationNotes.textContent = msg.replaced > 0
+        ? `Updated ${msg.replaced} foundation frames.`
+        : `Created ${msg.created} foundation frames.`;
+      refs.foundationCreate.disabled = false;
+      break;
+    }
+
+    case 'foundationFrameError': {
+      refs.foundationNotes.textContent = `Could not create the foundation frames. ${msg.message}`;
+      refs.foundationCreate.disabled = false;
       break;
     }
 

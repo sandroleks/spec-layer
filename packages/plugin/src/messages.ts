@@ -1,8 +1,8 @@
-import type { SerializedNode, SerializedFoundation } from '@spec-layer/extractor';
+import type { SerializedNode, SerializedFoundation, FoundationSelection } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
-import type { DocConfig } from './docLink';
+import type { DocConfig, FoundationConfig } from './docLink';
 
 /** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
  *  or to save the spec as a bare .md (Download). The main thread echoes it back
@@ -41,7 +41,10 @@ export type MainToUi =
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
   | { type: 'foundation'; dump: SerializedFoundation }
-  | { type: 'foundationError'; message: string };
+  | { type: 'foundationError'; message: string }
+  | { type: 'foundationProgress'; done: number; total: number }
+  | { type: 'foundationDone'; created: number; replaced: number }
+  | { type: 'foundationFrameError'; message: string };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -61,4 +64,5 @@ export type UiToMain =
   | { type: 'removeDoc'; docId: string }
   | { type: 'requestDrift'; docId: string; sourceNodeId: string }
   | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
-  | { type: 'requestFoundation' };
+  | { type: 'requestFoundation' }
+  | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig };
