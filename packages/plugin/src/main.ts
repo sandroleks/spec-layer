@@ -3,6 +3,7 @@ import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
+import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import { buildDocFrames } from './docFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
@@ -64,6 +65,62 @@ const resolver: NodeResolver = {
     } catch {
       return null;
     }
+  },
+};
+
+// ---------------------------------------------------------------------------
+// FoundationReader — wraps the variables/styles APIs for serializeFoundation
+// ---------------------------------------------------------------------------
+const foundationReader: FoundationReader = {
+  async collections() {
+    const colls = await figma.variables.getLocalVariableCollectionsAsync();
+    return colls.map((c) => ({
+      id: c.id,
+      name: c.name,
+      modes: c.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
+      defaultModeId: c.defaultModeId,
+      variableIds: c.variableIds,
+    }));
+  },
+  async variable(id) {
+    const v = await figma.variables.getVariableByIdAsync(id);
+    if (!v) return null;
+    return {
+      id: v.id,
+      name: v.name,
+      resolvedType: v.resolvedType,
+      description: v.description ?? '',
+      variableCollectionId: v.variableCollectionId,
+      // codeSyntax is Partial<Record<CodeSyntaxPlatform, string>>; drop empties.
+      codeSyntax: Object.fromEntries(
+        Object.entries(v.codeSyntax ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      ),
+      valuesByMode: v.valuesByMode as Record<string, never>,
+    };
+  },
+  async textStyles() {
+    const styles = await figma.getLocalTextStylesAsync();
+    return styles.map((s) => ({
+      name: s.name,
+      description: s.description ?? '',
+      fontName: { family: s.fontName.family, style: s.fontName.style },
+      fontSize: s.fontSize,
+      lineHeight: s.lineHeight,
+      letterSpacing: s.letterSpacing,
+      paragraphSpacing: s.paragraphSpacing,
+      paragraphIndent: s.paragraphIndent,
+      textCase: String(s.textCase),
+      textDecoration: String(s.textDecoration),
+      boundVariables: Object.fromEntries(
+        Object.entries(s.boundVariables ?? {})
+          .filter((e): e is [string, VariableAlias] => Boolean(e[1]?.id))
+          .map(([k, v]) => [k, { id: v.id }]),
+      ),
+    }));
+  },
+  async collectionName(id) {
+    const c = await figma.variables.getVariableCollectionByIdAsync(id);
+    return c?.name ?? null;
   },
 };
 
@@ -494,6 +551,20 @@ figma.ui.onmessage = async (raw: unknown) => {
       const pruned = pruneRegistry(reg, alive);
       if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
       figma.ui.postMessage({ type: 'library', entries } as MainToUi);
+      break;
+    }
+
+    case 'requestFoundation': {
+      try {
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const dump = await serializeFoundation(
+          foundationReader, fileKey, new Date().toISOString(),
+        );
+        figma.ui.postMessage({ type: 'foundation', dump } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'foundationError', message } as MainToUi);
+      }
       break;
     }
 

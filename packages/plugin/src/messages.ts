@@ -1,4 +1,4 @@
-import type { SerializedNode } from '@spec-layer/extractor';
+import type { SerializedNode, SerializedFoundation } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
@@ -39,7 +39,9 @@ export type MainToUi =
   | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string }
   | { type: 'driftError'; docId: string }
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
-  | { type: 'docSourceError'; docId: string; message: string };
+  | { type: 'docSourceError'; docId: string; message: string }
+  | { type: 'foundation'; dump: SerializedFoundation }
+  | { type: 'foundationError'; message: string };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -58,4 +60,5 @@ export type UiToMain =
   | { type: 'detachDoc'; docId: string }
   | { type: 'removeDoc'; docId: string }
   | { type: 'requestDrift'; docId: string; sourceNodeId: string }
-  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent };
+  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
+  | { type: 'requestFoundation' };
