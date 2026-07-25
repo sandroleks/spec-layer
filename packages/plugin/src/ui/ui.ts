@@ -30,6 +30,7 @@ import {
   onFoundationMessage,
   onFoundationCheckboxChange,
   currentFoundationSelection,
+  setFoundationGenerating,
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
@@ -322,11 +323,13 @@ refs.foundationList.addEventListener('change', (ev) => {
 });
 
 // Disabled while a generation is in flight (mirrors createFrameBtn/
-// docFrameRendering) — re-enabled by the foundationDone/foundationFrameError
-// handlers below, on both the success and error paths.
+// docFrameRendering), via the module-level `generating` flag in actions.ts so
+// it survives repaints triggered by checkbox toggles mid-generation. Cleared
+// by the foundationDone/foundationFrameError handlers below, on both the
+// success and error paths.
 refs.foundationCreate.addEventListener('click', () => {
   if (refs.foundationCreate.disabled) return;
-  refs.foundationCreate.disabled = true;
+  setFoundationGenerating(refs, true);
   send({
     type: 'renderFoundation',
     selection: currentFoundationSelection(),
@@ -953,13 +956,19 @@ window.onmessage = (event: MessageEvent) => {
       refs.foundationNotes.textContent = msg.replaced > 0
         ? `Updated ${msg.replaced} foundation frames.`
         : `Created ${msg.created} foundation frames.`;
-      refs.foundationCreate.disabled = false;
+      setFoundationGenerating(refs, false);
       break;
     }
 
     case 'foundationFrameError': {
-      refs.foundationNotes.textContent = `Could not create the foundation frames. ${msg.message}`;
-      refs.foundationCreate.disabled = false;
+      // Frames are appended one at a time and never rolled back, so if any
+      // landed before the failure, say so plainly rather than implying nothing
+      // happened (a user who believes that and retries gets duplicates, since
+      // in-place replacement doesn't exist yet).
+      refs.foundationNotes.textContent = msg.created > 0
+        ? `Created ${msg.created} frames before hitting an error, and they are still on the canvas. ${msg.message}`
+        : `Could not create the foundation frames. ${msg.message}`;
+      setFoundationGenerating(refs, false);
       break;
     }
 

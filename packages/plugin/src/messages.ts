@@ -44,7 +44,7 @@ export type MainToUi =
   | { type: 'foundationError'; message: string }
   | { type: 'foundationProgress'; done: number; total: number }
   | { type: 'foundationDone'; created: number; replaced: number }
-  | { type: 'foundationFrameError'; message: string };
+  | { type: 'foundationFrameError'; message: string; created: number };
 
 export type UiToMain =
   | { type: 'requestSelection' }

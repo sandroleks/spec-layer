@@ -612,12 +612,26 @@ export async function runDownloadFromSource(
 
 let foundationSpec: FoundationSpec | null = null;
 let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
+// True from the moment the create-frames click handler sends its request until
+// foundationDone/foundationFrameError comes back. Threaded into the disabled
+// computation so a repaint mid-generation (e.g. the user toggling a checkbox)
+// can't re-enable the button and let a second request through.
+let foundationGenerating = false;
 
 function paintFoundations(refs: Refs): void {
   if (!foundationSpec) return;
   renderFoundationPanel(
     refs, summarize(foundationSpec), foundationSelection, emptyStateLines(foundationSpec),
+    foundationGenerating,
   );
+}
+
+/** Set by ui.ts around the renderFoundation round-trip: true on click, false on
+ *  both foundationDone and foundationFrameError. Repaints immediately so the
+ *  button's disabled state is correct without waiting for an unrelated event. */
+export function setFoundationGenerating(refs: Refs, value: boolean): void {
+  foundationGenerating = value;
+  paintFoundations(refs);
 }
 
 export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): void {

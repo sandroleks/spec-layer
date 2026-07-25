@@ -589,6 +589,10 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'renderFoundation': {
       if (foundationRendering) { figma.notify('Still finishing the previous set'); break; }
       foundationRendering = true;
+      // Declared outside the try so the catch block can report how many frames
+      // actually landed on the canvas before the failure (Finding 2: frames are
+      // appended one at a time and are never rolled back).
+      let created = 0;
       try {
         // Re-extract rather than trusting the UI's dump: the Foundations tab
         // fetches its data once per session and never refreshes, so the file
@@ -601,7 +605,6 @@ figma.ui.onmessage = async (raw: unknown) => {
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
 
-        let created = 0;
         // Task 12 adds link stamping and in-place replacement; until then no
         // existing frame is ever matched, so this always stays 0.
         const replaced = 0;
@@ -620,6 +623,11 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         for (let i = 0; i < units.length; i++) {
           const unit = units[i];
+          // Unreachable in this path: unitContent returns null only when a
+          // collection-scoped unit's collectionId is missing from spec, but
+          // every unit here came from planFoundationUnits run against this same
+          // spec, which already drops collections it can't find. Kept as a
+          // defensive guard, not a case that needs progress-count handling.
           const content = unitContent(spec, unit.scope);
           if (!content) continue;
 
@@ -641,7 +649,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'foundationDone', created, replaced } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        figma.ui.postMessage({ type: 'foundationFrameError', message } as MainToUi);
+        figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
         foundationRendering = false;
       }

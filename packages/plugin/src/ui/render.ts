@@ -415,6 +415,7 @@ export function renderFoundationPanel(
   summary: FoundationSummary,
   selection: FoundationSelection,
   notes: string[],
+  generating: boolean,
 ): void {
   refs.foundationSummary.textContent = [
     `${summary.collectionCount} ${summary.collectionCount === 1 ? 'collection' : 'collections'}`,
@@ -498,5 +499,10 @@ export function renderFoundationPanel(
     refs.foundationList.appendChild(row);
   }
 
-  refs.foundationCreate.disabled = !canGenerate(selection);
+  // Disabled while a generation is in flight, regardless of what repaints in
+  // the meantime (e.g. a checkbox toggle) — otherwise the button re-enables
+  // mid-generation since every repaint recomputes this from the current
+  // selection alone. The main thread's `foundationRendering` guard still backs
+  // this up as defence in depth.
+  refs.foundationCreate.disabled = generating || !canGenerate(selection);
 }
