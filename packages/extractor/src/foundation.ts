@@ -193,17 +193,58 @@ export function buildFoundation(dump: SerializedFoundation): FoundationSpec {
   };
 }
 
-/** Placeholder in Task 1; Task 2 replaces the alias branch. */
+/** Pick the target collection's mode id: name match on the source mode, else default. */
+function targetModeId(collection: RawCollection, sourceModeName: string): string {
+  const named = collection.modes.find((m) => m.name === sourceModeName);
+  return named ? named.modeId : collection.defaultModeId;
+}
+
 function resolveValue(
   raw: RawVariableValue | undefined,
-  _modeName: string,
-  _index: Map<string, VarIndexEntry>,
-  _externals: Map<string, RawExternalRef>,
-  _seen: Set<string>,
-  _depth: number,
+  modeName: string,
+  index: Map<string, VarIndexEntry>,
+  externals: Map<string, RawExternalRef>,
+  seen: Set<string>,
+  depth: number,
 ): FoundationValue {
   if (raw === undefined) return { kind: 'unresolved', reason: 'missing' };
-  const plain = plainValue(raw);
-  if (plain) return plain;
-  return { kind: 'unresolved', reason: 'missing' };
+
+  if (!isAlias(raw)) {
+    const plain = plainValue(raw);
+    return plain ?? { kind: 'unresolved', reason: 'missing' };
+  }
+
+  const local = index.get(raw.id);
+
+  if (!local) {
+    const ext = externals.get(raw.id);
+    if (!ext) return { kind: 'unresolved', reason: 'missing' };
+    return {
+      kind: 'alias', targetName: ext.name, targetCollection: ext.collectionName,
+      external: true, resolved: null,
+    };
+  }
+
+  const head = {
+    kind: 'alias' as const,
+    targetName: local.variable.name,
+    targetCollection: local.collection.name,
+    external: false,
+  };
+
+  if (seen.has(raw.id)) return { ...head, resolved: { kind: 'unresolved', reason: 'cycle' } };
+  if (depth + 1 >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
+
+  const nextModeId = targetModeId(local.collection, modeName);
+  const nextModeName = local.collection.modes.find((m) => m.modeId === nextModeId)?.name ?? modeName;
+  const inner = resolveValue(
+    local.variable.valuesByMode[nextModeId], nextModeName, index, externals,
+    new Set([...seen, raw.id]), depth + 1,
+  );
+
+  // Collapse a chain to one visible hop: the reader sees the immediate target
+  // name and the final value. Intermediate hops are an implementation detail of
+  // the file's own indirection, not something the doc should enumerate.
+  const resolved = inner.kind === 'alias' ? inner.resolved : inner;
+  return { ...head, resolved };
 }
