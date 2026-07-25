@@ -15,7 +15,8 @@ import { familiesWithRequiredStyles } from './fonts';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
-  textContentHash, isFoundationLink, foundationScopeKey, type DocLinkData, type FoundationDocLink,
+  textContentHash, isFoundationLink, foundationScopeKey,
+  type DocLinkData, type FoundationDocLink, type DocRegistry,
 } from './docLink';
 
 declare const __PLUGIN_VERSION__: string;
@@ -653,6 +654,16 @@ figma.ui.onmessage = async (raw: unknown) => {
       // actually landed on the canvas before the failure (Finding 2: frames are
       // appended one at a time and are never rolled back).
       let created = 0;
+      // The page the user invoked from. A non-replacing unit always lands
+      // here; a replacing unit switches to its predecessor's page just long
+      // enough to build and place it, then control returns here before the
+      // next unit, so this page — and the layout cursor below, which is
+      // scoped to it — never drifts partway through the loop. Declared outside
+      // the try (rather than after the re-extraction below) so the catch block
+      // can restore it too: a throw from buildFoundationFrame, writeRegistry,
+      // or prior.remove() happens only after the loop has already switched
+      // pages, and skips the loop's own restore near the bottom.
+      const invokedPage = figma.currentPage;
       try {
         // Re-extract rather than trusting the UI's dump: the Foundations tab
         // fetches its data once per session and never refreshes, so the file
@@ -664,13 +675,6 @@ figma.ui.onmessage = async (raw: unknown) => {
         );
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
-
-        // The page the user invoked from. A non-replacing unit always lands
-        // here; a replacing unit switches to its predecessor's page just long
-        // enough to build and place it, then control returns here before the
-        // next unit, so this page — and the layout cursor below, which is
-        // scoped to it — never drifts partway through the loop.
-        const invokedPage = figma.currentPage;
 
         let replaced = 0;
         let x = 0;
@@ -751,15 +755,21 @@ figma.ui.onmessage = async (raw: unknown) => {
           // doc (mirrors the component doc path in renderDocFrame above).
           data.selfHash = textContentHash(collectText(section));
           section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
-          writeRegistry(addDoc(readRegistry(), section.id));
 
           if (prior) {
-            writeRegistry({
-              v: 1, docIds: readRegistry().docIds.filter((id) => id !== prior.id),
-            });
+            // Compute the registry with the prior id dropped, but don't write
+            // it until prior.remove() actually succeeds — same ordering as
+            // updateFoundationDoc below. Writing the drop first (as before)
+            // meant a throw from remove() left the registry no longer
+            // tracking a Section that was still physically on the canvas: an
+            // untracked duplicate, invisible to My Library and the self-heal
+            // prune.
+            const reg: DocRegistry = { v: 1, docIds: readRegistry().docIds.filter((id) => id !== prior.id) };
             prior.remove();
+            writeRegistry(addDoc(reg, section.id));
             replaced++;
           } else {
+            writeRegistry(addDoc(readRegistry(), section.id));
             x += section.width + 80;
             created++;
           }
@@ -778,6 +788,18 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'foundationDone', created, replaced } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // A throw earlier in the loop (buildFoundationFrame, writeRegistry, or
+        // prior.remove(), all of which can run after the loop switched to a
+        // predecessor's page) skips the loop's own restore-to-invokedPage
+        // statement. Attempt the restore here too so a failed batch never
+        // strands the user on a foreign page. This is itself a fallible async
+        // Figma call, so it's wrapped separately: if it fails, that failure
+        // must never replace the original error the user needs to see.
+        try {
+          if (figma.currentPage.id !== invokedPage.id) await figma.setCurrentPageAsync(invokedPage);
+        } catch {
+          // Best-effort only — the original `message` below still wins.
+        }
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
         foundationRendering = false;
