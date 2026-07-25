@@ -62,6 +62,15 @@ export function isFoundationLink(d: DocLinkData): d is FoundationDocLink {
   return d.kind === 'foundation';
 }
 
+/** The key by which a foundation Section is matched to its predecessor on
+ *  regenerate: two sections cover the same doc when they target the same
+ *  collection and group, or both cover text styles with the same group. */
+export function foundationScopeKey(s: FoundationScope): string {
+  return s.target === 'textStyles'
+    ? `text:${s.group ?? ''}`
+    : `coll:${s.collectionId}:${s.group ?? ''}`;
+}
+
 /** The index stored (JSON string) on figma.root. */
 export interface DocRegistry { v: 1; docIds: string[] }
 

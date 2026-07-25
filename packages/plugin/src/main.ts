@@ -4,7 +4,7 @@ import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
-import { buildFoundation, planFoundationUnits, unitContent } from '@spec-layer/extractor';
+import { buildFoundation, planFoundationUnits, unitContent, foundationContentHash } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
@@ -12,7 +12,7 @@ import { familiesWithRequiredStyles } from './fonts';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
-  textContentHash, isFoundationLink, type DocLinkData,
+  textContentHash, isFoundationLink, foundationScopeKey, type DocLinkData, type FoundationDocLink,
 } from './docLink';
 
 declare const __PLUGIN_VERSION__: string;
@@ -542,22 +542,39 @@ figma.ui.onmessage = async (raw: unknown) => {
         const section = node as SectionNode;
         const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!data) continue; // detached/foreign section still in the index → prune
+        // Mark alive before branching on kind, so the self-heal prune below
+        // never drops a valid doc's registry id regardless of which branch
+        // below builds its LibraryEntry.
         alive.add(docId);
-        // Foundation docs don't fit the component LibraryEntry shape (no
-        // sourceNodeId); Task 12 gives them their own library listing. Mark
-        // alive above first so the self-heal prune below doesn't drop a
-        // perfectly good foundation doc's registry entry just because this
-        // task doesn't build its LibraryEntry yet.
-        if (isFoundationLink(data)) continue;
-
-        let sourceExists = false;
-        try { sourceExists = (await figma.getNodeByIdAsync(data.sourceNodeId)) != null; } catch { sourceExists = false; }
         const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
         const page = pageOf(section);
 
+        if (isFoundationLink(data)) {
+          const title = section.name.replace(/^Foundations: /, '');
+          entries.push({
+            docId,
+            kind: 'foundation',
+            label: `Foundations · ${title}`,
+            componentName: `Foundations · ${title}`,
+            pageName: page?.name ?? '',
+            sourceNodeId: '',
+            // Resolved against a live extraction in Task 13; a tracked
+            // foundation doc is never orphaned merely by existing.
+            sourceExists: true,
+            selfEdited,
+            storedContentHash: data.contentHash,
+          });
+          continue;
+        }
+
+        let sourceExists = false;
+        try { sourceExists = (await figma.getNodeByIdAsync(data.sourceNodeId)) != null; } catch { sourceExists = false; }
+        const name = section.name.replace(/: Documentation$/, '');
         entries.push({
           docId,
-          componentName: section.name.replace(/: Documentation$/, ''),
+          kind: 'component',
+          label: name,
+          componentName: name,
           pageName: page?.name ?? '',
           sourceNodeId: data.sourceNodeId,
           sourceExists,
@@ -605,9 +622,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
 
-        // Task 12 adds link stamping and in-place replacement; until then no
-        // existing frame is ever matched, so this always stays 0.
-        const replaced = 0;
+        let replaced = 0;
         let x = 0;
         let y = 0;
 
@@ -618,6 +633,21 @@ figma.ui.onmessage = async (raw: unknown) => {
             const c = child as SceneNode & { x: number; width: number; y: number };
             x = Math.max(x, c.x + c.width + 120);
             y = Math.min(y, c.y);
+          }
+        }
+
+        // Index every tracked foundation Section (any page, via the registry —
+        // same reach as findExistingDoc's component lookup above) by scope, so
+        // a regenerated unit replaces its predecessor in place instead of
+        // duplicating it.
+        const existingByScope = new Map<string, SectionNode>();
+        for (const docId of readRegistry().docIds) {
+          let existingNode: BaseNode | null = null;
+          try { existingNode = await figma.getNodeByIdAsync(docId); } catch { existingNode = null; }
+          if (!existingNode || existingNode.type !== 'SECTION') continue;
+          const link = parseDocLink((existingNode as SectionNode).getPluginData(DOC_LINK_KEY));
+          if (link && isFoundationLink(link)) {
+            existingByScope.set(foundationScopeKey(link.scope), existingNode as SectionNode);
           }
         }
 
@@ -635,11 +665,45 @@ figma.ui.onmessage = async (raw: unknown) => {
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, i, units.length,
           );
+
+          const data: FoundationDocLink = {
+            v: 1,
+            kind: 'foundation',
+            scope: unit.scope,
+            contentHash: foundationContentHash(spec, unit.scope),
+            selfHash: '',   // set below, once the section's text exists
+            config: msg.config,
+            generatedAt: Date.now(),
+            pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
+          };
+
           figma.currentPage.appendChild(section);
-          section.x = x;
-          section.y = y;
-          x += section.width + 80;
-          created++;
+          const prior = existingByScope.get(foundationScopeKey(unit.scope));
+          if (prior) {
+            section.x = prior.x;
+            section.y = prior.y;
+          } else {
+            section.x = x;
+            section.y = y;
+          }
+
+          // Stamp the durable link BEFORE removing any predecessor, so a
+          // failure mid-way never leaves an unstamped orphan replacing a good
+          // doc (mirrors the component doc path in renderDocFrame above).
+          data.selfHash = textContentHash(collectText(section));
+          section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+          writeRegistry(addDoc(readRegistry(), section.id));
+
+          if (prior) {
+            writeRegistry({
+              v: 1, docIds: readRegistry().docIds.filter((id) => id !== prior.id),
+            });
+            prior.remove();
+            replaced++;
+          } else {
+            x += section.width + 80;
+            created++;
+          }
 
           figma.ui.postMessage({
             type: 'foundationProgress', done: i + 1, total: units.length,

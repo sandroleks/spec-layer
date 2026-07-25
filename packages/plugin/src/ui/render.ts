@@ -393,7 +393,7 @@ export function renderLibrary(
       </div>
       ${st === 'updateAvailable' ? `<button class="btn btn-secondary lib-update-inline" data-act="update" data-doc-id="${e.docId}">Update</button>` : ''}
       <button class="lib-menu-btn" data-act="menu" data-doc-id="${e.docId}" aria-label="Actions" aria-haspopup="menu">⋯</button>`;
-    (row.querySelector('.lib-row-title') as HTMLElement).textContent = e.componentName;
+    (row.querySelector('.lib-row-title') as HTMLElement).textContent = e.label;
     (row.querySelector('.lib-page') as HTMLElement).textContent = e.pageName ? `${e.pageName}` : '';
     (row.querySelector('.lib-badge') as HTMLElement).textContent = badge.label;
     refs.libraryList.appendChild(row);

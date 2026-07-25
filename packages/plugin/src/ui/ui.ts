@@ -204,7 +204,12 @@ function openRowMenu(docId: string, anchor: HTMLElement): void {
   if (!entry) return;
   const items: string[] = [];
   if (entry.sourceExists) {
-    items.push(`<button role="menuitem" data-act="source" data-doc-id="${docId}">Go to source</button>`);
+    // A foundation row has no source node (sourceNodeId is always ''), so
+    // "Go to source" would just fail to find anything — only a component row
+    // gets it.
+    if (entry.kind === 'component') {
+      items.push(`<button role="menuitem" data-act="source" data-doc-id="${docId}">Go to source</button>`);
+    }
     items.push(`<button role="menuitem" data-act="update" data-doc-id="${docId}">Update</button>`);
     items.push(`<button role="menuitem" data-act="download" data-doc-id="${docId}">Download .md</button>`);
   }

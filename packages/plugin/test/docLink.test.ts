@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
-  isFoundationLink, type DocLinkData, type FoundationDocLink, type ComponentDocLink,
+  isFoundationLink, foundationScopeKey, type DocLinkData, type FoundationDocLink, type ComponentDocLink,
 } from '../src/docLink';
 
 const DATA: DocLinkData = {
@@ -165,5 +165,31 @@ describe('docLink foundation variant', () => {
     const raw = JSON.stringify(FOUNDATION);
     expect(raw).not.toContain('sourceNodeId');
     expect(parseDocLink(raw)).not.toBeNull();
+  });
+});
+
+describe('foundationScopeKey', () => {
+  it('keys a collection scope by collection id and group', () => {
+    expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: [] }))
+      .toBe('coll:c1:');
+    expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', group: 'color', modeIds: [] }))
+      .toBe('coll:c1:color');
+  });
+
+  it('keys a text-styles scope by group alone, distinct from any collection key', () => {
+    expect(foundationScopeKey({ target: 'textStyles' })).toBe('text:');
+    expect(foundationScopeKey({ target: 'textStyles', group: 'Heading' })).toBe('text:Heading');
+  });
+
+  it('treats two collection scopes with the same id but different groups as distinct', () => {
+    const a = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'X', group: 'color', modeIds: [] });
+    const b = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'X', group: 'spacing', modeIds: [] });
+    expect(a).not.toBe(b);
+  });
+
+  it('is stable regardless of collectionName or modeIds, which are not part of identity', () => {
+    const a = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Old name', modeIds: ['m1'] });
+    const b = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'New name', modeIds: ['m1', 'm2'] });
+    expect(a).toBe(b);
   });
 });

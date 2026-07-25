@@ -11,8 +11,13 @@ export type DocSourceIntent = 'update' | 'download';
 
 export interface LibraryEntry {
   docId: string;
+  /** Which document type this row is. Absent on no rows: always written. */
+  kind: 'component' | 'foundation';
+  /** Row label. Component: the component name. Foundation: "Foundations · Semantic". */
+  label: string;
   componentName: string;
   pageName: string;
+  /** '' for foundation docs, which have no source node. */
   sourceNodeId: string;
   sourceExists: boolean;
   selfEdited: boolean;
