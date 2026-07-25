@@ -2085,9 +2085,14 @@ export function toggleMode(
     return { ...sel, collections: sel.collections.filter((c) => c.collectionId !== collectionId) };
   }
   if (!existing) {
-    return toggleCollection(
-      { ...sel, collections: sel.collections }, spec, collectionId, true,
-    );
+    // Honor the mode the user actually picked. Delegating to toggleCollection
+    // here would re-derive the first MAX_MODE_COLUMNS modes and silently
+    // discard their choice. Share the spec-order insert with toggleCollection
+    // via a small helper rather than duplicating the sort.
+    return {
+      ...sel,
+      collections: withCollectionEntry(spec, sel.collections, { collectionId, modeIds: nextIds }),
+    };
   }
   return {
     ...sel,
