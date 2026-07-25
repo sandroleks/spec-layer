@@ -18,6 +18,14 @@ describe('valueLabel', () => {
     expect(valueLabel({ kind: 'boolean', value: true })).toBe('true');
   });
 
+  it('labels an empty string variable as a stated fact, not a blank cell', () => {
+    expect(valueLabel({ kind: 'string', value: '' })).toBe('(empty string)');
+  });
+
+  it('labels a non-empty string unchanged', () => {
+    expect(valueLabel({ kind: 'string', value: 'Acme Corp' })).toBe('Acme Corp');
+  });
+
   it('labels a resolved alias with the arrow and the final value', () => {
     const v: FoundationValue = {
       kind: 'alias', targetName: 'color/blue/500', targetCollection: 'Primitives',

@@ -11,8 +11,7 @@
  * verified by the manual Figma pass, the same treatment docFrame.ts gets.
  */
 import type {
-  FoundationUnit, FoundationUnitContent, FoundationValue, FoundationVariableRow,
-  FoundationTextRow,
+  FoundationUnit, FoundationUnitContent, FoundationValue,
 } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, headingFont, hex,
@@ -28,10 +27,10 @@ export function valueLabel(value: FoundationValue): string {
       return value.alpha < 1 ? `${h} ${Math.round(value.alpha * 100)}%` : h;
     }
     case 'number':
-      // Strip trailing zeros: 16 stays "16", 1.50 becomes "1.5".
-      return String(Number(value.value));
+      // String() on a number never prints trailing zeros: 16 stays "16", 1.5 stays "1.5".
+      return String(value.value);
     case 'string':
-      return value.value;
+      return value.value === '' ? '(empty string)' : value.value;
     case 'boolean':
       return String(value.value);
     case 'alias': {
@@ -195,27 +194,25 @@ export async function buildFoundationFrame(
     if (hasDescriptions) cells.push(cellText(row.description, COL_DESC, true));
 
     if (row.kind === 'variable') {
-      const v = row as FoundationVariableRow;
-      for (const cell of v.cells) cells.push(swatchCell(cell.value, COL_MODE));
+      for (const cell of row.cells) cells.push(swatchCell(cell.value, COL_MODE));
     } else {
-      const t = row as FoundationTextRow;
-      const key = `${t.metrics.fontFamily}|${t.metrics.fontStyle}`;
+      const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
       const failed = failedFamilies.has(key);
       const pane = vstack(2);
       pane.resize(COL_MODE * 2, 1);
       pane.primaryAxisSizingMode = 'AUTO';
-      const specimen = makeText('Ag', 'Regular', Math.min(t.metrics.fontSize, 40), palette.heading);
+      const specimen = makeText('Ag', 'Regular', Math.min(row.metrics.fontSize, 40), palette.heading);
       if (!failed) {
-        specimen.fontName = { family: t.metrics.fontFamily, style: t.metrics.fontStyle };
+        specimen.fontName = { family: row.metrics.fontFamily, style: row.metrics.fontStyle };
       }
       pane.appendChild(specimen);
-      const lh = t.metrics.lineHeight.unit === 'AUTO'
-        ? 'auto' : `${t.metrics.lineHeight.value}${t.metrics.lineHeight.unit === 'PERCENT' ? '%' : ''}`;
+      const lh = row.metrics.lineHeight.unit === 'AUTO'
+        ? 'auto' : `${row.metrics.lineHeight.value}${row.metrics.lineHeight.unit === 'PERCENT' ? '%' : ''}`;
       pane.appendChild(makeText(
-        `${t.metrics.fontFamily} ${t.metrics.fontStyle} ${t.metrics.fontSize}/${lh}`,
+        `${row.metrics.fontFamily} ${row.metrics.fontStyle} ${row.metrics.fontSize}/${lh}`,
         'Regular', 10, palette.muted));
       if (failed) {
-        pane.appendChild(makeText('Font not available, shown in Inter.', 'Regular', 10, palette.muted));
+        pane.appendChild(makeText('Font not available, showing the default font.', 'Regular', 10, palette.muted));
       }
       cells.push(pane);
     }
