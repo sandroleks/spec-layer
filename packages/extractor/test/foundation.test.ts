@@ -333,6 +333,24 @@ describe('planFoundationUnits', () => {
     const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
     expect(units).toHaveLength(1);
     expect(units[0].rowCount).toBe(SPLIT_THRESHOLD + 50);
+    expect(units[0].title).toBe('Primitives');
+    expect(units[0].scope).not.toHaveProperty('group');
+  });
+
+  it('leaves a single-group oversized text-styles set as one tall unit', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = Array.from({ length: SPLIT_THRESHOLD + 10 }, (_, i) => ({
+      name: `Body/item${i}`, description: '', fontFamily: 'Inter', fontStyle: 'Regular',
+      fontSize: 16, lineHeight: { unit: 'PIXELS' as const, value: 24 },
+      letterSpacing: { unit: 'PERCENT' as const, value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }));
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    const textUnits = units.filter((u) => u.scope.target === 'textStyles');
+    expect(textUnits).toHaveLength(1);
+    expect(textUnits[0].title).toBe('Text styles');
+    expect(textUnits[0].scope).toEqual({ target: 'textStyles' });
   });
 
   it('orders split groups by first appearance, stably', () => {
@@ -413,6 +431,9 @@ describe('unitContent', () => {
       target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
       group: 'space', modeIds: ['m1'],
     });
+    // Groups alternate by index over SPLIT_THRESHOLD + 2 (152) variables, so
+    // 'space' (odd indices) has exactly 76 rows.
+    expect(content!.rows).toHaveLength(76);
     expect(content!.rows.every((r) => r.kind === 'variable' && r.name.startsWith('space/'))).toBe(true);
   });
 
@@ -430,6 +451,32 @@ describe('unitContent', () => {
     expect(unitContent(spec, {
       target: 'collection', collectionId: 'nope', collectionName: 'Nope', modeIds: [],
     })).toBeNull();
+  });
+
+  it('reports omitted mode names for a collection scope that excludes some modes', () => {
+    const dump = bigDump(1, ['color']);
+    dump.collections[0].modes = ['A', 'B', 'C'].map((name, i) => ({ modeId: `m${i}`, name }));
+    dump.collections[0].defaultModeId = 'm0';
+    dump.collections[0].variables[0].valuesByMode = Object.fromEntries(
+      dump.collections[0].modes.map((m) => [m.modeId, { r: 0, g: 0, b: 0, a: 1 }]),
+    );
+    const spec = buildFoundation(dump);
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m0'],
+    });
+    expect(content!.omittedModeNames).toEqual(['B', 'C']);
+  });
+
+  it('reports no omitted mode names for a text-styles scope', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = [{
+      name: 'Body/M', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }];
+    const content = unitContent(buildFoundation(dump), { target: 'textStyles' });
+    expect(content!.omittedModeNames).toEqual([]);
   });
 
   it('builds text style rows with metrics', () => {

@@ -336,13 +336,23 @@ export function planFoundationUnits(
         rowCount: spec.textStyles.length, omittedModeNames: [],
       });
     } else {
-      for (const group of groupsInOrder(spec.textStyles.map((s) => s.name))) {
+      const groups = groupsInOrder(spec.textStyles.map((s) => s.name));
+      if (groups.length <= 1) {
+        // Cannot split further. One tall frame is the faithful outcome, same
+        // as the collection path's identical case.
         units.push({
-          scope: { target: 'textStyles', group },
-          title: `Text styles · ${group}`,
-          rowCount: spec.textStyles.filter((s) => s.group === group).length,
-          omittedModeNames: [],
+          scope: { target: 'textStyles' }, title: 'Text styles',
+          rowCount: spec.textStyles.length, omittedModeNames: [],
         });
+      } else {
+        for (const group of groups) {
+          units.push({
+            scope: { target: 'textStyles', group },
+            title: `Text styles · ${group}`,
+            rowCount: spec.textStyles.filter((s) => s.group === group).length,
+            omittedModeNames: [],
+          });
+        }
       }
     }
   }
@@ -391,6 +401,15 @@ export interface FoundationUnitContent {
   group?: string;
   modeNames: string[];
   rows: FoundationRow[];
+  /**
+   * Mirrors FoundationUnit.omittedModeNames — computed from the same inputs
+   * (the collection's modes vs. scope.modeIds) and must always agree with it.
+   * It also has to live here, not just on FoundationUnit, because unitContent
+   * is what the drift hash consumes: if a footer note names an omitted mode
+   * but that name is absent from this return, renaming the mode changes what
+   * the frame renders while leaving the hash unchanged.
+   */
+  omittedModeNames: string[];
 }
 
 /**
@@ -409,6 +428,7 @@ export function unitContent(
       collectionName: '',
       ...(scope.group ? { group: scope.group } : {}),
       modeNames: [],
+      omittedModeNames: [],
       rows: styles.map((s): FoundationTextRow => ({
         kind: 'textStyle',
         name: s.name,
@@ -437,10 +457,15 @@ export function unitContent(
     ? collection.variables.filter((v) => v.group === scope.group)
     : collection.variables;
 
+  const omittedModeNames = collection.modes
+    .filter((m) => !scope.modeIds.includes(m.modeId))
+    .map((m) => m.name);
+
   return {
     collectionName: collection.name,
     ...(scope.group ? { group: scope.group } : {}),
     modeNames: modes.map((m) => m.name),
+    omittedModeNames,
     rows: variables.map((v): FoundationVariableRow => ({
       kind: 'variable',
       name: v.name,
