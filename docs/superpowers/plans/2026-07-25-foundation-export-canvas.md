@@ -640,7 +640,11 @@ function resolveValue(
   };
 
   if (seen.has(raw.id)) return { ...head, resolved: { kind: 'unresolved', reason: 'cycle' } };
-  if (depth + 1 >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
+  // `depth >= MAX` and NOT `depth + 1 >= MAX`: the guard is evaluated while
+  // examining a link, before its target is read, so `depth + 1` refuses the
+  // 4th link after only 3 hops completed. Admit 4 hops, refuse the 5th, which
+  // matches resolveVariableColor's `depth > 4` in tokenResolve.ts.
+  if (depth >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
 
   const nextModeId = targetModeId(local.collection, modeName);
   const nextModeName = local.collection.modes.find((m) => m.modeId === nextModeId)?.name ?? modeName;
