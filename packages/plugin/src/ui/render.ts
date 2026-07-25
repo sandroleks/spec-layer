@@ -13,8 +13,9 @@ import { isAtomComponentName } from '../collectComponents';
 import { resolveTheme } from '../brandColors';
 import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
-import { detectStateMatrix } from '@spec-layer/extractor';
+import { detectStateMatrix, MAX_MODE_COLUMNS, type FoundationSelection } from '@spec-layer/extractor';
 import { quotaMeterModel, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
+import { canGenerate, type FoundationSummary } from './foundationState';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -318,11 +319,12 @@ export function renderBrandTheme(refs: Refs, state: UiState): void {
 // Tabs
 // ---------------------------------------------------------------------------
 
-export type TabId = 'selected' | 'library' | 'settings';
+export type TabId = 'selected' | 'foundations' | 'library' | 'settings';
 
 export function switchTab(refs: Refs, tab: TabId): void {
   const tabs: Array<[TabId, HTMLButtonElement, HTMLElement]> = [
     ['selected', refs.tabSelected, refs.panelSelected],
+    ['foundations', refs.tabFoundations, refs.panelFoundations],
     ['library', refs.tabLibrary, refs.panelLibrary],
     ['settings', refs.tabSettings, refs.panelSettings],
   ];
@@ -396,4 +398,105 @@ export function renderLibrary(
     (row.querySelector('.lib-badge') as HTMLElement).textContent = badge.label;
     refs.libraryList.appendChild(row);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Foundations
+// ---------------------------------------------------------------------------
+
+/**
+ * Paint the Foundations panel from the pure model in foundationState.ts.
+ *
+ * Every user-controlled string (collection name, mode name) is set via
+ * textContent and never interpolated into innerHTML, matching renderLibrary.
+ */
+export function renderFoundationPanel(
+  refs: Refs,
+  summary: FoundationSummary,
+  selection: FoundationSelection,
+  notes: string[],
+): void {
+  refs.foundationSummary.textContent = [
+    `${summary.collectionCount} ${summary.collectionCount === 1 ? 'collection' : 'collections'}`,
+    `${summary.maxModeCount} ${summary.maxModeCount === 1 ? 'mode' : 'modes'}`,
+    `${summary.textStyleCount} text styles`,
+  ].join(' · ');
+
+  refs.foundationNotes.textContent = '';
+  for (const note of notes) {
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = note;
+    refs.foundationNotes.appendChild(p);
+  }
+
+  refs.foundationList.textContent = '';
+
+  for (const c of summary.collections) {
+    const chosen = selection.collections.find((s) => s.collectionId === c.id);
+
+    const row = document.createElement('div');
+    row.className = 'foundation-row';
+
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = Boolean(chosen);
+    box.dataset.act = 'toggle-collection';
+    box.dataset.collectionId = c.id;
+    label.appendChild(box);
+    const text = document.createElement('span');
+    text.textContent = ` ${c.name} · ${c.variableCount} variables · `
+      + `${c.modes.length} ${c.modes.length === 1 ? 'mode' : 'modes'}`;
+    label.appendChild(text);
+    row.appendChild(label);
+
+    // Mode checkboxes appear only when a collection has more modes than can be
+    // rendered, so the user picks which four rather than getting the first four
+    // by accident.
+    if (c.modes.length > MAX_MODE_COLUMNS) {
+      const modes = document.createElement('div');
+      modes.className = 'foundation-modes';
+      for (const m of c.modes) {
+        const ml = document.createElement('label');
+        const mb = document.createElement('input');
+        mb.type = 'checkbox';
+        mb.checked = Boolean(chosen?.modeIds.includes(m.modeId));
+        mb.disabled = !chosen;
+        mb.dataset.act = 'toggle-mode';
+        mb.dataset.collectionId = c.id;
+        mb.dataset.modeId = m.modeId;
+        ml.appendChild(mb);
+        const mt = document.createElement('span');
+        mt.textContent = ` ${m.name}`;
+        ml.appendChild(mt);
+        modes.appendChild(ml);
+      }
+      const cap = document.createElement('p');
+      cap.className = 'muted';
+      cap.textContent = 'Showing 4 modes. Uncheck one to swap in another.';
+      modes.appendChild(cap);
+      row.appendChild(modes);
+    }
+
+    refs.foundationList.appendChild(row);
+  }
+
+  if (summary.textStyleCount > 0) {
+    const row = document.createElement('div');
+    row.className = 'foundation-row';
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = selection.textStyles;
+    box.dataset.act = 'toggle-text-styles';
+    label.appendChild(box);
+    const text = document.createElement('span');
+    text.textContent = ` Text styles · ${summary.textStyleCount} styles`;
+    label.appendChild(text);
+    row.appendChild(label);
+    refs.foundationList.appendChild(row);
+  }
+
+  refs.foundationCreate.disabled = !canGenerate(selection);
 }

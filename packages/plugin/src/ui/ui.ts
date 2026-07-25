@@ -27,6 +27,8 @@ import {
   setLicenseKey,
   setAiEnabled,
   setBrandTheme,
+  onFoundationMessage,
+  onFoundationCheckboxChange,
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
@@ -149,6 +151,10 @@ refs.tabSettings.addEventListener('click', () => switchTab(refs, 'settings'));
 refs.tabLibrary.addEventListener('click', () => {
   switchTab(refs, 'library');
   refreshLibrary();
+});
+refs.tabFoundations.addEventListener('click', () => {
+  switchTab(refs, 'foundations');
+  requestFoundationOnce();
 });
 
 // ---------------------------------------------------------------------------
@@ -290,6 +296,29 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && libMenuDocId !== null) closeRowMenu();
 });
 window.addEventListener('scroll', () => { if (libMenuDocId !== null) closeRowMenu(); }, true);
+
+// ---------------------------------------------------------------------------
+// Foundations
+// ---------------------------------------------------------------------------
+
+// Unlike My Library (which re-fetches on every activation because canvas docs
+// can change at any time), the foundation dump is requested once per session:
+// re-fetching would also reset the user's in-progress collection/mode
+// selection back to defaultSelection on every tab switch.
+let foundationRequested = false;
+
+function requestFoundationOnce(): void {
+  if (foundationRequested) return;
+  foundationRequested = true;
+  send({ type: 'requestFoundation' });
+}
+
+// Collection/mode/text-style checkboxes are built dynamically in
+// renderFoundationPanel, so delegate the change listener like the variant list.
+refs.foundationList.addEventListener('change', (ev) => {
+  const target = ev.target as HTMLElement;
+  if (target instanceof HTMLInputElement) onFoundationCheckboxChange(refs, target);
+});
 
 // ---------------------------------------------------------------------------
 // Action buttons
@@ -885,6 +914,16 @@ window.onmessage = (event: MessageEvent) => {
       stopLoader(refs);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
+      break;
+    }
+
+    case 'foundation': {
+      onFoundationMessage(refs, msg.dump);
+      break;
+    }
+
+    case 'foundationError': {
+      refs.foundationNotes.textContent = msg.message;
       break;
     }
 

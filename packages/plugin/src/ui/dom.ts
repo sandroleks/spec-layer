@@ -230,6 +230,15 @@ const TEMPLATE = `
     .lib-menu button.danger:hover { background: var(--figma-color-bg-danger-tertiary, #fce8e6); }
     .lib-menu hr { border: none; border-top: 1px solid var(--figma-color-border); margin: 4px 0; }
 
+    /* ---- Foundations tab ---- */
+    .foundation-row { padding: 8px; border-radius: 6px; }
+    .foundation-row:hover { background: var(--figma-color-bg-hover); }
+    .foundation-row > label { display: flex; align-items: flex-start; gap: 6px; cursor: pointer; font-size: 12px; }
+    .foundation-modes { margin: 6px 0 0 21px; display: flex; flex-direction: column; gap: 4px; }
+    .foundation-modes label { display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; }
+    .footer-row { margin-top: 12px; }
+    .footer-row .btn { width: 100%; }
+
     /* ---- Typography / layout ---- */
     h2 { font-size: 13px; font-weight: 600; margin: 0; }
     .muted { color: var(--figma-color-text-secondary); }
@@ -863,6 +872,8 @@ const TEMPLATE = `
             aria-controls="tab-panel-selected">Selected component</button>
     <button class="tab" id="tab-library" role="tab" aria-selected="false"
             aria-controls="tab-panel-library">My Library</button>
+    <button class="tab" id="tab-foundations" role="tab" aria-selected="false"
+            aria-controls="tab-panel-foundations">Foundations</button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false"
             aria-controls="tab-panel-settings">Settings</button>
     <div class="tab-actions">
@@ -1013,6 +1024,17 @@ const TEMPLATE = `
       <div class="lib-menu" id="lib-menu" role="menu" hidden></div>
     </section>
 
+    <!-- ============ Foundations panel ============ -->
+    <section class="panel" id="tab-panel-foundations" role="tabpanel"
+             aria-labelledby="tab-foundations">
+      <p class="muted" id="foundation-summary">Reading this file's variables and styles.</p>
+      <div id="foundation-notes"></div>
+      <div id="foundation-list"></div>
+      <div class="footer-row">
+        <button class="btn btn-primary" id="foundation-create" disabled>Create foundation frames</button>
+      </div>
+    </section>
+
     <!-- ============ Settings panel ============ -->
     <section class="panel" id="tab-panel-settings" role="tabpanel"
              aria-labelledby="tab-settings">
@@ -1157,13 +1179,19 @@ export interface Refs {
   tabSelected: HTMLButtonElement;
   tabSettings: HTMLButtonElement;
   tabLibrary: HTMLButtonElement;
+  tabFoundations: HTMLButtonElement;
   panelSelected: HTMLElement;
   panelSettings: HTMLElement;
   panelLibrary: HTMLElement;
+  panelFoundations: HTMLElement;
   libraryList: HTMLElement;
   libraryEmpty: HTMLElement;
   librarySummary: HTMLElement;
   libraryMenu: HTMLElement;
+  foundationSummary: HTMLParagraphElement;
+  foundationNotes: HTMLDivElement;
+  foundationList: HTMLDivElement;
+  foundationCreate: HTMLButtonElement;
   // Selection / main
   noSelection: HTMLDivElement;
   mainArea: HTMLDivElement;
@@ -1460,13 +1488,19 @@ export function mount(): Refs {
     tabSelected: byId<HTMLButtonElement>('tab-selected'),
     tabSettings: byId<HTMLButtonElement>('tab-settings'),
     tabLibrary: byId<HTMLButtonElement>('tab-library'),
+    tabFoundations: byId<HTMLButtonElement>('tab-foundations'),
     panelSelected: byId<HTMLElement>('tab-panel-selected'),
     panelSettings: byId<HTMLElement>('tab-panel-settings'),
     panelLibrary: byId<HTMLElement>('tab-panel-library'),
+    panelFoundations: byId<HTMLElement>('tab-panel-foundations'),
     libraryList: byId<HTMLElement>('lib-list'),
     libraryEmpty: byId<HTMLElement>('lib-empty'),
     librarySummary: byId<HTMLElement>('lib-summary'),
     libraryMenu: byId<HTMLElement>('lib-menu'),
+    foundationSummary: byId<HTMLParagraphElement>('foundation-summary'),
+    foundationNotes: byId<HTMLDivElement>('foundation-notes'),
+    foundationList: byId<HTMLDivElement>('foundation-list'),
+    foundationCreate: byId<HTMLButtonElement>('foundation-create'),
     noSelection: byId<HTMLDivElement>('no-selection'),
     mainArea: byId<HTMLDivElement>('main-area'),
     componentName: byId<HTMLHeadingElement>('component-name'),

@@ -6,8 +6,11 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, renderSpec, ProseProxyError, specContentHash } from '@spec-layer/extractor';
-import type { SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
+import { extract, renderSpec, ProseProxyError, specContentHash, buildFoundation } from '@spec-layer/extractor';
+import type {
+  SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
+  SerializedFoundation, FoundationSpec, FoundationSelection,
+} from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
@@ -18,11 +21,15 @@ import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type
 import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
+  summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles, emptyStateLines,
+} from './foundationState';
+import {
   showBanner,
   clearBanners,
   renderPhase,
   startLoader,
   stopLoader,
+  renderFoundationPanel,
 } from './render';
 
 // ---------------------------------------------------------------------------
@@ -594,4 +601,58 @@ export async function runDownloadFromSource(
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Download failed: ${msg}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Foundations — the file-wide (selection-independent) variables/text-styles tab.
+// State lives at module scope like the AI plumbing above: the spec/selection
+// persist across paints within a session but never touch UiState, since they
+// have nothing to do with the current Figma selection.
+// ---------------------------------------------------------------------------
+
+let foundationSpec: FoundationSpec | null = null;
+let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
+
+function paintFoundations(refs: Refs): void {
+  if (!foundationSpec) return;
+  renderFoundationPanel(
+    refs, summarize(foundationSpec), foundationSelection, emptyStateLines(foundationSpec),
+  );
+}
+
+export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): void {
+  foundationSpec = buildFoundation(dump);
+  foundationSelection = defaultSelection(foundationSpec);
+  paintFoundations(refs);
+}
+
+export function onFoundationCheckboxChange(refs: Refs, input: HTMLInputElement): void {
+  if (!foundationSpec) return;
+  const collectionId = input.dataset.collectionId ?? '';
+  switch (input.dataset.act) {
+    case 'toggle-collection':
+      foundationSelection = toggleCollection(
+        foundationSelection, foundationSpec, collectionId, input.checked);
+      break;
+    case 'toggle-mode':
+      foundationSelection = toggleMode(
+        foundationSelection, foundationSpec, collectionId,
+        input.dataset.modeId ?? '', input.checked);
+      break;
+    case 'toggle-text-styles':
+      foundationSelection = toggleTextStyles(foundationSelection, input.checked);
+      break;
+    default:
+      return;
+  }
+  // Repaint from the model rather than trusting the DOM: toggleMode returns the
+  // selection UNCHANGED when the mode cap is hit, so a checkbox the user just
+  // clicked has to be painted back to unchecked. Mutating in place would leave
+  // the DOM claiming five modes while the model holds four.
+  paintFoundations(refs);
+}
+
+/** Read by the create-frames button; exported so ui.ts can post it. */
+export function currentFoundationSelection(): FoundationSelection {
+  return foundationSelection;
 }
