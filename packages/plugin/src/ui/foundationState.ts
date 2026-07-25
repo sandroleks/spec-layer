@@ -57,6 +57,23 @@ function inCollectionOrder(spec: FoundationSpec, collectionId: string, ids: stri
   return collection.modes.map((m) => m.modeId).filter((id) => ids.includes(id));
 }
 
+/**
+ * Add or replace a collection's entry in the selection, keeping the result
+ * ordered by the spec's collection order rather than click/insertion order.
+ * Shared by toggleCollection and toggleMode so both stay in sync.
+ */
+function withCollectionEntry(
+  spec: FoundationSpec,
+  collections: FoundationSelection['collections'],
+  entry: FoundationSelection['collections'][number],
+): FoundationSelection['collections'] {
+  const rest = collections.filter((c) => c.collectionId !== entry.collectionId);
+  return [...rest, entry].sort(
+    (a, b) => spec.collections.findIndex((c) => c.id === a.collectionId)
+            - spec.collections.findIndex((c) => c.id === b.collectionId),
+  );
+}
+
 export function toggleCollection(
   sel: FoundationSelection, spec: FoundationSpec, collectionId: string, on: boolean,
 ): FoundationSelection {
@@ -68,12 +85,7 @@ export function toggleCollection(
     collectionId,
     modeIds: collection.modes.slice(0, MAX_MODE_COLUMNS).map((m) => m.modeId),
   };
-  // Keep selection order matching spec order so units render predictably.
-  const next = [...collections, entry].sort(
-    (a, b) => spec.collections.findIndex((c) => c.id === a.collectionId)
-            - spec.collections.findIndex((c) => c.id === b.collectionId),
-  );
-  return { ...sel, collections: next };
+  return { ...sel, collections: withCollectionEntry(spec, sel.collections, entry) };
 }
 
 export function toggleMode(
@@ -98,9 +110,12 @@ export function toggleMode(
     return { ...sel, collections: sel.collections.filter((c) => c.collectionId !== collectionId) };
   }
   if (!existing) {
-    return toggleCollection(
-      { ...sel, collections: sel.collections }, spec, collectionId, true,
-    );
+    // Honor the specific mode the user picked rather than re-deriving the
+    // default (first MAX_MODE_COLUMNS) modes for the collection.
+    return {
+      ...sel,
+      collections: withCollectionEntry(spec, sel.collections, { collectionId, modeIds: nextIds }),
+    };
   }
   return {
     ...sel,

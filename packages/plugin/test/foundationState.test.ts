@@ -103,6 +103,47 @@ describe('toggles', () => {
     const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
     expect(toggleTextStyles(defaultSelection(spec), false).textStyles).toBe(false);
   });
+
+  it('turning on a single mode for a not-yet-selected collection selects only that mode', () => {
+    const d = dump();
+    d.collections[0].modes = ['A', 'B', 'C', 'D', 'E'].map((name, i) => ({ modeId: `m${i}`, name }));
+    const spec = buildFoundation(d);
+    // Start with the collection unselected entirely (not just a mode toggled off).
+    const empty = toggleCollection(defaultSelection(spec), spec, 'c1', false);
+    const sel = toggleMode(empty, spec, 'c1', 'm4', true);
+    expect(sel.collections).toEqual([{ collectionId: 'c1', modeIds: ['m4'] }]);
+  });
+
+  it('turning on a mode for a not-yet-selected collection inserts it in spec order, not at the end', () => {
+    const d = dump();
+    d.collections = [
+      { id: 'c1', name: 'A', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }], variables: [] },
+      { id: 'c2', name: 'B', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }], variables: [] },
+      { id: 'c3', name: 'C', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }], variables: [] },
+    ];
+    const spec = buildFoundation(d);
+    // c2 starts out of the selection entirely (not just a mode toggled off).
+    const withoutC2 = toggleCollection(defaultSelection(spec), spec, 'c2', false);
+    const sel = toggleMode(withoutC2, spec, 'c2', 's2', true);
+    expect(sel.collections).toEqual([
+      { collectionId: 'c1', modeIds: ['s1'] },
+      { collectionId: 'c2', modeIds: ['s2'] },
+      { collectionId: 'c3', modeIds: ['s1'] },
+    ]);
+  });
+
+  it('keeps collection order matching spec order, not click order', () => {
+    const d = dump();
+    d.collections = [
+      { id: 'c1', name: 'A', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }], variables: [] },
+      { id: 'c2', name: 'B', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }], variables: [] },
+      { id: 'c3', name: 'C', defaultModeId: 's1', modes: [{ modeId: 's1', name: 'Light' }], variables: [] },
+    ];
+    const spec = buildFoundation(d);
+    let sel = toggleCollection(defaultSelection(spec), spec, 'c2', false);
+    sel = toggleCollection(sel, spec, 'c2', true);
+    expect(sel.collections.map((c) => c.collectionId)).toEqual(['c1', 'c2', 'c3']);
+  });
 });
 
 describe('canGenerate', () => {
