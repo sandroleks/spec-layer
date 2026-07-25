@@ -1291,14 +1291,15 @@ import { unitContent, type FoundationSpec, type FoundationScope } from './founda
 export function foundationContentHash(spec: FoundationSpec, scope: FoundationScope): string {
   const content = unitContent(spec, scope);
   if (!content) return contentHash({ foundationUnit: null });
-  return contentHash({
-    collectionName: content.collectionName,
-    group: content.group,
-    modeNames: content.modeNames,
-    rows: content.rows,
-  });
+  // Hash the WHOLE unitContent result, never a cherry-picked field list. Any
+  // field added to FoundationUnitContent is rendered by definition, so it must
+  // be hashed; a hand-maintained projection here would silently drop it. This
+  // is what makes the invariant structural rather than a matter of discipline.
+  return contentHash(content);
 }
 ```
+
+**Do not replace `contentHash(content)` with a field projection.** An earlier draft of this plan listed four fields explicitly and thereby omitted `omittedModeNames`, so renaming a mode that the frame's footer names as omitted would have rendered differently without moving the hash. Task 3's review caught it. Hashing the whole object closes the class, not just the instance.
 
 The `import` goes at the top of the file with the existing imports, not inline.
 
@@ -2802,8 +2803,11 @@ export async function buildFoundationFrame(
 
   // --- footer notes ---
   const notes: string[] = [];
-  if (unit.omittedModeNames.length > 0) {
-    notes.push(`Modes not shown: ${unit.omittedModeNames.join(', ')}`);
+  // Read omitted modes from `content`, NOT from `unit`. Both carry the same
+  // value, but only content's is covered by the drift hash, and the renderer
+  // must read the same object the hash reads.
+  if (content.omittedModeNames.length > 0) {
+    notes.push(`Modes not shown: ${content.omittedModeNames.join(', ')}`);
   }
   if (unitTotal > 1 && content.group) {
     notes.push(`Part ${unitIndex + 1} of ${unitTotal}, covering ${content.group}.`);
