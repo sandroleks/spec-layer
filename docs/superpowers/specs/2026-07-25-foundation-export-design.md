@@ -99,7 +99,14 @@ export interface FoundationSpec {
   textStyles: FoundationTextStyle[];
   extractedAt: string;       // ISO 8601, not hashed
 }
+
+export type FoundationScope =
+  | { target: 'collection'; collectionId: string; collectionName: string;
+      group?: string; modeIds: string[] }
+  | { target: 'textStyles'; group?: string };
 ```
+
+`FoundationScope` lives in the extractor rather than in `docLink.ts`, because unit planning and hashing both need it and both are pure. `docLink.ts` already imports `contentHash` from `@spec-layer/extractor`, so the dependency direction is unchanged.
 
 `group` is derived as the substring of `name` before the first `/`, or the whole name when there is no `/`. It drives both subgrouping inside a frame and the split threshold.
 
@@ -107,7 +114,7 @@ export interface FoundationSpec {
 
 Mirrors the existing `serialize.ts` → `extract.ts` boundary.
 
-`packages/plugin/src/serializeFoundation.ts` (new, Figma-facing) dumps:
+`packages/plugin/src/serializeFoundation.ts` (new) dumps the raw foundation. It follows the **injected-resolver pattern already used by `serialize.ts`**: it takes a `FoundationReader` interface rather than calling Figma globals, so `main.ts` supplies the real Figma-backed implementation and the tests supply a fake. This keeps the dump builder itself unit-testable instead of being untestable glue. It dumps:
 
 - every local collection via `getLocalVariableCollectionsAsync()` — id, name, modes, `defaultModeId`
 - every variable via `getVariableByIdAsync` over `collection.variableIds` — name, `resolvedType`, `description`, `codeSyntax`, and **raw** `valuesByMode` with aliases still as `{ type: 'VARIABLE_ALIAS', id }`
@@ -136,6 +143,8 @@ This is the same instinct as the ambiguous-name handling already in `tokenResolv
 - A resolved alias keeps **both** hops: `targetName` for the arrow, `resolved` for the swatch or value.
 - Alias hops are followed **per mode**. A variable can alias different targets in different modes.
 
+**Which mode of the target to read.** An alias crossing collections lands in a collection with its own, unrelated mode ids, and Figma resolves that at render time from the consuming context — it is not statically determinable. The rule: use the target collection's mode whose **name matches** the source mode's name when one exists, otherwise the target collection's **default mode**. In the overwhelmingly common real setup (a single-mode Primitives collection aliased from a Light/Dark Semantic collection) the default-mode branch is exactly right; the name-match branch covers symmetric multi-mode collections. This is a documented approximation, not a claim of exactness.
+
 ### Hashing
 
 `foundationContentHash(spec, scope)` joins `specContentHash` in `packages/extractor/src/hash.ts`, reusing the existing `contentHash` canonical-JSON helper. It hashes the projection of `spec` **restricted to `scope`** — the named collection (optionally narrowed to one group, and to the scope's `modeIds`), or the text styles. Two frames from the same file therefore have independent baselines.
@@ -147,6 +156,8 @@ Governing rule: **the hash covers exactly what gets rendered.** Excluded:
 - anything extracted but not rendered in v1 (`hiddenFromPublishing`, variable `scopes`)
 
 So "Update available" always corresponds to a change the user can see in the frame. Same reasoning as the existing `rawValues` exclusion from `specContentHash`.
+
+**The rule is enforced mechanically, not by discipline.** A single pure function `unitContent(spec, scope)` produces the rows and mode columns for one output unit. The canvas renderer, the markdown renderer, and the hash all consume its result. There is no second path by which something could be rendered but not hashed, or hashed but not rendered.
 
 The hash is computed **per scope**, not per file, so adding a variable to one collection does not mark every foundation frame stale.
 
@@ -221,10 +232,6 @@ export interface FoundationDocLink {
 }
 
 export type DocLinkData = ComponentDocLink | FoundationDocLink;
-
-export type FoundationScope =
-  | { target: 'collection'; collectionId: string; collectionName: string; group?: string; modeIds: string[] }
-  | { target: 'textStyles'; group?: string };
 
 export interface FoundationConfig {
   includeDescriptions: boolean;
