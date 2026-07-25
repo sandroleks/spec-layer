@@ -1,5 +1,6 @@
 import { sha256 } from 'js-sha256';
 import type { IntermediateSpec } from './extract';
+import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
@@ -34,4 +35,25 @@ export function specContentHash(spec: IntermediateSpec): string {
       .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
   };
   return contentHash(hashable);
+}
+
+/**
+ * The drift baseline for one foundation output unit.
+ *
+ * Hashes exactly what unitContent() renders — collection name, group, mode
+ * names, and rows — so "update available" always corresponds to a visible
+ * change. Ids, extractedAt, fileKey, and anything extracted but unrendered are
+ * excluded structurally: they are simply not in unitContent's output.
+ *
+ * A scope whose source no longer exists hashes a stable sentinel rather than
+ * throwing, so a stale link resolves to a comparable value.
+ */
+export function foundationContentHash(spec: FoundationSpec, scope: FoundationScope): string {
+  const content = unitContent(spec, scope);
+  if (!content) return contentHash({ foundationUnit: null });
+  // Hash the WHOLE unitContent result, never a cherry-picked field list. Any
+  // field added to FoundationUnitContent is rendered by definition, so it must
+  // be hashed; a hand-maintained projection here would silently drop it. This
+  // is what makes the invariant structural rather than a matter of discipline.
+  return contentHash(content);
 }
