@@ -191,3 +191,44 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160): Prom
   }
   return slot;
 }
+
+/**
+ * Apply a resolved brand theme to this module's mutable state.
+ *
+ * palette, cornerScale, and the font families are module-level, so EVERY
+ * mutable field is set on every call: a Default build after a themed one must
+ * fully reset. Loads the requested families, reverting any family that fails to
+ * Inter (families missing Medium/Bold are common), then always loads the Inter
+ * faces since they are the fallback and are needed for bold runs.
+ *
+ * buildDocFrames still inlines an equivalent preamble; migrating it onto this
+ * helper is a follow-up.
+ */
+export async function applyThemeToKit(theme: {
+  headerBg: string; accent: string; bodyText: string; tableHeadBg: string;
+  cornerStyle: CornerStyle; headingFont: string; bodyFont: string;
+}): Promise<void> {
+  palette.headerBg = hex(theme.headerBg);
+  palette.accent = hex(theme.accent);
+  palette.body = hex(theme.bodyText);
+  palette.tableHeadBg = hex(theme.tableHeadBg);
+  setCornerStyle(theme.cornerStyle);
+
+  const tryFamily = async (family: string): Promise<string> => {
+    if (family === 'Inter') return 'Inter';
+    try {
+      await Promise.all((['Regular', 'Medium', 'Bold'] as const).map((style) =>
+        figma.loadFontAsync({ family, style })));
+      return family;
+    } catch {
+      return 'Inter';
+    }
+  };
+  const [headingFam, bodyFam] = await Promise.all([
+    tryFamily(theme.headingFont), tryFamily(theme.bodyFont),
+  ]);
+  setFontFamilies(headingFam, bodyFam);
+
+  await Promise.all((['Regular', 'Medium', 'Bold'] as FontStyle[]).map((style) =>
+    figma.loadFontAsync({ family: 'Inter', style })));
+}
