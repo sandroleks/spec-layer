@@ -100,6 +100,12 @@ describe('serializeFoundation', () => {
     const reader = fakeReader({ async variable() { return null; } });
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.collections[0].variables).toEqual([]);
+    // The text style's bound fontSize variable (id 'v1') also fails to resolve
+    // here, so its key must be dropped entirely from boundVariables rather than
+    // set to undefined/null. toEqual({}) alone wouldn't catch an undefined-valued
+    // key, so also check the key is genuinely absent.
+    expect(dump.textStyles[0].boundVariables).toEqual({});
+    expect('fontSize' in dump.textStyles[0].boundVariables).toBe(false);
   });
 
   it('returns an empty dump when the variables API is unavailable', async () => {
@@ -110,6 +116,50 @@ describe('serializeFoundation', () => {
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.collections).toEqual([]);
     expect(dump.textStyles).toEqual([]);
+  });
+
+  it('treats an alias into a later collection as local, not external', async () => {
+    // c1 is walked first and holds a variable that aliases a variable living in
+    // c2, which hasn't been walked yet at the point the alias is seen. Because
+    // externals resolution only happens after the full walk (over every
+    // collection), the target must still be recognized as local.
+    const vars: Record<string, ReaderVariable> = {
+      a1: {
+        id: 'a1', name: 'a1name', resolvedType: 'COLOR', description: '',
+        variableCollectionId: 'c1', codeSyntax: {},
+        valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'b1' } },
+      },
+      b1: {
+        id: 'b1', name: 'b1name', resolvedType: 'COLOR', description: '',
+        variableCollectionId: 'c2', codeSyntax: {},
+        valuesByMode: { m2: { r: 1, g: 1, b: 1, a: 1 } },
+      },
+    };
+    const reader: FoundationReader = {
+      async collections() {
+        return [
+          {
+            id: 'c1', name: 'C1',
+            modes: [{ modeId: 'm1', name: 'Mode1' }],
+            defaultModeId: 'm1',
+            variableIds: ['a1'],
+          },
+          {
+            id: 'c2', name: 'C2',
+            modes: [{ modeId: 'm2', name: 'Mode2' }],
+            defaultModeId: 'm2',
+            variableIds: ['b1'],
+          },
+        ];
+      },
+      async variable(id) { return vars[id] ?? null; },
+      async textStyles() { return []; },
+    };
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.externals).toEqual([]);
+    expect(dump.collections).toHaveLength(2);
+    expect(dump.collections[0].variables.map((v) => v.name)).toEqual(['a1name']);
+    expect(dump.collections[1].variables.map((v) => v.name)).toEqual(['b1name']);
   });
 
   it('falls back to an empty string for an unnamed external collection', async () => {
