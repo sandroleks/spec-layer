@@ -173,6 +173,13 @@ let libMenuDocId: string | null = null;
 // The docId a .md download is in flight for (null = none). Blocks a second
 // Download from stacking; cleared when the docSource reply resolves or errors.
 let downloadingDocId: string | null = null;
+// The docId a foundation row's Update is in flight for (null = none). A
+// foundation row has no source node, so its Update skips requestDocSource and
+// goes straight to updateFoundationDoc, which replies on the same
+// foundationDone message the Foundations tab's bulk build uses — this is how
+// the foundationDone handler tells the two apart and re-enables createFrameBtn
+// only for the row-update path (the bulk path re-enables its own button).
+let updatingFoundationDocId: string | null = null;
 
 function refreshLibrary(): void {
   closeRowMenu();
@@ -216,13 +223,18 @@ function openRowMenu(docId: string, anchor: HTMLElement): void {
   const items: string[] = [];
   if (entry.sourceExists) {
     // A foundation row has no source node (sourceNodeId is always ''), so
-    // "Go to source" would just fail to find anything — only a component row
-    // gets it.
-    if (entry.kind === 'component') {
+    // "Go to source" would just fail to find anything, and there is no
+    // markdown renderer yet for a foundation doc, so "Download .md" would just
+    // fail with a confusing "no longer linked" error — both are component-only
+    // until that renderer exists.
+    const isComponent = entry.kind === 'component';
+    if (isComponent) {
       items.push(`<button role="menuitem" data-act="source" data-doc-id="${docId}">Go to source</button>`);
     }
     items.push(`<button role="menuitem" data-act="update" data-doc-id="${docId}">Update</button>`);
-    items.push(`<button role="menuitem" data-act="download" data-doc-id="${docId}">Download .md</button>`);
+    if (isComponent) {
+      items.push(`<button role="menuitem" data-act="download" data-doc-id="${docId}">Download .md</button>`);
+    }
   }
   items.push(`<button role="menuitem" data-act="detach" data-doc-id="${docId}">Detach</button>`);
   items.push('<hr>');
@@ -251,9 +263,17 @@ function runRowAction(act: string, docId: string): void {
       // is non-atomic). Reuse the create-frame lock so this also blocks
       // Update-while-Create and Create-while-Update across tabs.
       if (refs.createFrameBtn.disabled) return;
-      if (entry?.selfEdited && !confirm('This doc has manual text edits. Updating it will overwrite them with freshly generated content. Continue?')) return;
+      if (entry?.selfEdited && !confirm('You edited this frame by hand. Updating replaces those edits.')) return;
       refs.createFrameBtn.disabled = true;
-      send({ type: 'requestDocSource', docId, intent: 'update' });
+      // A foundation row has no source node to ask requestDocSource for — it
+      // rebuilds straight from the file's current collections/text styles, so
+      // it posts updateFoundationDoc instead (routed by kind, not by intent).
+      if (entry?.kind === 'foundation') {
+        updatingFoundationDocId = docId;
+        send({ type: 'updateFoundationDoc', docId });
+      } else {
+        send({ type: 'requestDocSource', docId, intent: 'update' });
+      }
       break;
     }
     case 'download': {
@@ -969,6 +989,18 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'foundationDone': {
+      // updateFoundationDoc (a single library row's Update) replies on this same
+      // message rather than a message of its own — tell the two apart by the
+      // docId this UI is tracking, same pattern as downloadingDocId below.
+      if (updatingFoundationDocId) {
+        const label = libEntries.find((e) => e.docId === updatingFoundationDocId)?.label
+          ?? 'the foundation doc';
+        showBanner(refs, 'info', `Updated ${label}.`);
+        updatingFoundationDocId = null;
+        refs.createFrameBtn.disabled = false;
+        if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
+        break;
+      }
       refs.foundationNotes.textContent = msg.replaced > 0
         ? `Updated ${msg.replaced} foundation frames.`
         : `Created ${msg.created} foundation frames.`;
@@ -1037,9 +1069,11 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docSourceError': {
-      // The error doesn't say which intent asked, so release both locks — the
-      // one that wasn't held is a no-op.
+      // The error doesn't say which intent (or which of requestDocSource /
+      // updateFoundationDoc) asked, so release every lock it might belong to —
+      // whichever one wasn't held is a no-op.
       downloadingDocId = null;
+      updatingFoundationDocId = null;
       refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;

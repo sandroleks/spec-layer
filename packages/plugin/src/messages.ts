@@ -74,4 +74,5 @@ export type UiToMain =
   | { type: 'requestDrift'; docId: string; sourceNodeId: string }
   | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
   | { type: 'requestFoundation' }
-  | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig };
+  | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig }
+  | { type: 'updateFoundationDoc'; docId: string };

@@ -5,7 +5,8 @@ import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import {
-  buildFoundation, planFoundationUnits, unitContent, foundationContentHash, type FoundationSpec,
+  buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
+  type FoundationSpec, type FoundationUnit,
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame } from './foundationFrame';
@@ -664,13 +665,20 @@ figma.ui.onmessage = async (raw: unknown) => {
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
 
+        // The page the user invoked from. A non-replacing unit always lands
+        // here; a replacing unit switches to its predecessor's page just long
+        // enough to build and place it, then control returns here before the
+        // next unit, so this page — and the layout cursor below, which is
+        // scoped to it — never drifts partway through the loop.
+        const invokedPage = figma.currentPage;
+
         let replaced = 0;
         let x = 0;
         let y = 0;
 
         // Place the set to the right of everything already on the page so a
         // generated set never lands on top of existing work.
-        for (const child of figma.currentPage.children) {
+        for (const child of invokedPage.children) {
           if ('x' in child && 'width' in child) {
             const c = child as SceneNode & { x: number; width: number; y: number };
             x = Math.max(x, c.x + c.width + 120);
@@ -703,6 +711,16 @@ figma.ui.onmessage = async (raw: unknown) => {
           const content = unitContent(spec, unit.scope);
           if (!content) continue;
 
+          // Resolve the destination page BEFORE building: a replacing unit
+          // belongs on its predecessor's page (wherever that is), same as
+          // renderDocFrame and updateFoundationDoc above. Switching first means
+          // buildFoundationFrame's figma.createSection() (which auto-appends to
+          // the current page) lands the new Section in the right place instead
+          // of wherever the user happens to be looking.
+          const prior = existingByScope.get(foundationScopeKey(unit.scope));
+          const targetPage = prior ? (pageOf(prior) ?? invokedPage) : invokedPage;
+          if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
+
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, i, units.length,
@@ -719,8 +737,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };
 
-          figma.currentPage.appendChild(section);
-          const prior = existingByScope.get(foundationScopeKey(unit.scope));
+          targetPage.appendChild(section);
           if (prior) {
             section.x = prior.x;
             section.y = prior.y;
@@ -747,6 +764,12 @@ figma.ui.onmessage = async (raw: unknown) => {
             created++;
           }
 
+          // Return to the invoking page so the next non-replacing unit's
+          // auto-append (and this loop's own page comparisons) stay anchored
+          // there; the next replacing unit switches again to wherever its own
+          // predecessor lives.
+          if (figma.currentPage.id !== invokedPage.id) await figma.setCurrentPageAsync(invokedPage);
+
           figma.ui.postMessage({
             type: 'foundationProgress', done: i + 1, total: units.length,
           } as MainToUi);
@@ -756,6 +779,108 @@ figma.ui.onmessage = async (raw: unknown) => {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
+      } finally {
+        foundationRendering = false;
+      }
+      break;
+    }
+
+    case 'updateFoundationDoc': {
+      // Shares renderFoundation's guard: both call buildFoundationFrame, which
+      // mutates frameKit's shared theme/font module state, so the two must
+      // never run concurrently any more than two renderFoundation calls could.
+      if (foundationRendering) { figma.notify('Still finishing the previous frame'); break; }
+      foundationRendering = true;
+      try {
+        const node = await figma.getNodeByIdAsync(msg.docId);
+        if (!node || node.type !== 'SECTION') {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
+            message: 'This doc no longer exists.' } as MainToUi);
+          break;
+        }
+        const prior = node as SectionNode;
+        const link = parseDocLink(prior.getPluginData(DOC_LINK_KEY));
+        if (!link || !isFoundationLink(link)) {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
+            message: 'This doc is no longer linked.' } as MainToUi);
+          break;
+        }
+
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+        const spec = buildFoundation(dump);
+
+        // Retarget a renamed/re-created collection by name before giving up,
+        // same trap and same fix as requestLibrary's drift check above: narrowing
+        // `scope.target === 'collection'` on this mutable `let` does not survive
+        // into the `.some`/`.find` closures below, so bind the narrowed value to
+        // a const first.
+        let scope = link.scope;
+        if (scope.target === 'collection') {
+          const collectionScope = scope;
+          if (!spec.collections.some((c) => c.id === collectionScope.collectionId)) {
+            const byName = spec.collections.find((c) => c.name === collectionScope.collectionName);
+            if (byName) scope = { ...collectionScope, collectionId: byName.id };
+          }
+        }
+
+        const content = unitContent(spec, scope);
+        if (!content) {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
+            message: 'This foundation doc could no longer be rebuilt. Its collection is gone from this file.' } as MainToUi);
+          break;
+        }
+
+        const unit: FoundationUnit = {
+          scope,
+          title: scope.target === 'textStyles'
+            ? (scope.group ? `Text styles · ${scope.group}` : 'Text styles')
+            : (scope.group ? `${content.collectionName} · ${scope.group}` : content.collectionName),
+          rowCount: content.rows.length,
+          // content.omittedModeNames is the same value computed the same way;
+          // reuse it rather than re-deriving it from spec.collections here, so
+          // there is exactly one place that decides which modes were omitted.
+          omittedModeNames: content.omittedModeNames,
+        };
+
+        const section = await buildFoundationFrame(
+          content, unit, resolveTheme(brandTheme), link.config.includeDescriptions, 0, 1,
+        );
+
+        const data: FoundationDocLink = {
+          v: 1, kind: 'foundation', scope,
+          contentHash: foundationContentHash(spec, scope),
+          selfHash: '',
+          config: link.config,
+          generatedAt: Date.now(),
+          pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
+        };
+
+        // Regenerate in place: reuse the prior doc's page and position, same as
+        // renderDocFrame and renderFoundation's replacing units above.
+        const targetPage = pageOf(prior) ?? figma.currentPage;
+        if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
+        targetPage.appendChild(section);
+        section.x = prior.x;
+        section.y = prior.y;
+
+        data.selfHash = textContentHash(collectText(section));
+        section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+
+        // Point of no return, matching the component path (renderDocFrame
+        // above): the new section is stamped and placed before the old one
+        // goes, so a failure here never leaves the user having lost a good doc.
+        let reg = readRegistry();
+        reg = { v: 1, docIds: reg.docIds.filter((id) => id !== prior.id) };
+        prior.remove();
+        writeRegistry(addDoc(reg, section.id));
+
+        figma.ui.postMessage({
+          type: 'foundationDone', created: 0, replaced: 1,
+        } as MainToUi);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       } finally {
         foundationRendering = false;
       }
