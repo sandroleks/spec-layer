@@ -3755,6 +3755,16 @@ Add `FoundationUnit` to the extractor import.
 
 In `actions.ts`, where the library row's Update button posts `requestDocSource`, branch on `entry.kind`: foundation rows post `{ type: 'updateFoundationDoc', docId }` instead. Keep the existing hand-edit confirmation, using `You edited this frame by hand. Updating replaces those edits.`
 
+- [ ] **Step 2b: Make the regenerate-from-tab path page-correct**
+
+Added after Task 12's review. `renderFoundation` in `main.ts` replaces a prior frame for the same scope by appending the new Section to `figma.currentPage` and giving it the prior's raw `x`/`y`. When the prior lives on a *different* page, that silently teleports the doc to whichever page the user happens to be viewing, at coordinates chosen for a layout it is no longer on.
+
+Both sibling flows already get this right: `renderDocFrame` resolves `targetPage = pageOf(existing)` and calls `setCurrentPageAsync` before placing (`main.ts:461-479`), and Step 1's `updateFoundationDoc` does the same. Leaving `renderFoundation` as-is would make it the only one of the three that relocates a doc, which reads as a bug when the user reaches the same outcome via two buttons.
+
+The fix is not one line: `renderFoundation` processes a batch of units in one loop and computes its "place to the right of existing content" cursor once, against the invoking page's children. Per unit you must resolve the destination page, switch to it only when replacing, append there, and either return to the original page for the next non-replacing unit or track a cursor per destination page. Pick whichever reads more clearly and say which you chose and why.
+
+Non-replacing units keep today's behavior: they land on the page the user invoked from.
+
 - [ ] **Step 3: Verify Detach and Remove need no change**
 
 Run: `npx vitest run packages/plugin && npm run typecheck && npm run build:plugin`
