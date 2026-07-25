@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
-  type DocLinkData,
+  isFoundationLink, type DocLinkData, type FoundationDocLink, type ComponentDocLink,
 } from '../src/docLink';
 
 const DATA: DocLinkData = {
@@ -41,7 +41,7 @@ describe('docLink data', () => {
       ...DATA,
       config: { ...DATA.config, measureViews: ['size', 'nope', 'spacing'] },
     });
-    expect(parseDocLink(raw)!.config.measureViews).toEqual(['size', 'spacing']);
+    expect((parseDocLink(raw) as ComponentDocLink).config.measureViews).toEqual(['size', 'spacing']);
   });
 });
 
@@ -88,5 +88,82 @@ describe('resolveStatus (priority: orphaned > updateAvailable > edited > inSync)
   });
   it('inSync when all clear', () => {
     expect(resolveStatus(f({}))).toBe('inSync');
+  });
+});
+
+const FOUNDATION: FoundationDocLink = {
+  v: 1, kind: 'foundation',
+  scope: {
+    target: 'collection', collectionId: 'c1', collectionName: 'Semantic',
+    modeIds: ['s1', 's2'],
+  },
+  contentHash: 'fhash', selfHash: 'fself',
+  config: { includeDescriptions: true, aiNotes: false },
+  generatedAt: 1720000000000, pluginVersion: '3.0.0',
+};
+
+describe('docLink foundation variant', () => {
+  it('round-trips a foundation link', () => {
+    expect(parseDocLink(serializeDocLink(FOUNDATION))).toEqual(FOUNDATION);
+  });
+
+  it('round-trips a text-styles scope', () => {
+    const d: FoundationDocLink = { ...FOUNDATION, scope: { target: 'textStyles', group: 'Heading' } };
+    expect(parseDocLink(serializeDocLink(d))).toEqual(d);
+  });
+
+  it('parses a legacy blob with no kind exactly as a component link', () => {
+    const legacy = parseDocLink(serializeDocLink(DATA));
+    expect(legacy).toEqual(DATA);
+    expect(isFoundationLink(legacy!)).toBe(false);
+    expect(legacy && 'kind' in legacy && legacy.kind).toBeFalsy();
+  });
+
+  it('narrows with isFoundationLink', () => {
+    expect(isFoundationLink(FOUNDATION)).toBe(true);
+    expect(isFoundationLink(DATA)).toBe(false);
+  });
+
+  it('rejects a foundation blob with an unknown scope target', () => {
+    const raw = JSON.stringify({ ...FOUNDATION, scope: { target: 'bogus' } });
+    expect(parseDocLink(raw)).toBeNull();
+  });
+
+  it('rejects a foundation blob with a missing scope', () => {
+    const noScope = { ...FOUNDATION } as Record<string, unknown>;
+    delete noScope.scope;
+    expect(parseDocLink(JSON.stringify(noScope))).toBeNull();
+  });
+
+  it('rejects a collection scope with a non-string collectionId', () => {
+    const raw = JSON.stringify({
+      ...FOUNDATION,
+      scope: { target: 'collection', collectionId: 7, collectionName: 'X', modeIds: [] },
+    });
+    expect(parseDocLink(raw)).toBeNull();
+  });
+
+  it('filters non-string modeIds instead of rejecting the blob', () => {
+    const raw = JSON.stringify({
+      ...FOUNDATION,
+      scope: { ...FOUNDATION.scope, modeIds: ['s1', 42, 's2'] },
+    });
+    const parsed = parseDocLink(raw);
+    expect(parsed).not.toBeNull();
+    expect(isFoundationLink(parsed!) && parsed.scope.target === 'collection'
+      && parsed.scope.modeIds).toEqual(['s1', 's2']);
+  });
+
+  it('normalizes missing foundation config fields to safe defaults', () => {
+    const raw = JSON.stringify({ ...FOUNDATION, config: {} });
+    const parsed = parseDocLink(raw);
+    expect(isFoundationLink(parsed!) && parsed.config)
+      .toEqual({ includeDescriptions: true, aiNotes: false });
+  });
+
+  it('does not require sourceNodeId on a foundation blob', () => {
+    const raw = JSON.stringify(FOUNDATION);
+    expect(raw).not.toContain('sourceNodeId');
+    expect(parseDocLink(raw)).not.toBeNull();
   });
 });

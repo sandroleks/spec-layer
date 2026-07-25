@@ -10,7 +10,7 @@ import { familiesWithRequiredStyles } from './fonts';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
-  textContentHash, type DocLinkData,
+  textContentHash, isFoundationLink, type DocLinkData,
 } from './docLink';
 
 declare const __PLUGIN_VERSION__: string;
@@ -299,7 +299,9 @@ async function findExistingDoc(
       const node = await figma.getNodeByIdAsync(docId);
       if (node && node.type === 'SECTION') {
         const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
-        if (data && data.sourceNodeId === sourceNodeId) return node as SectionNode;
+        // Foundation docs have no sourceNodeId and can never match a component
+        // lookup; Task 12 gives them their own resolution path.
+        if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return node as SectionNode;
       }
     } catch { /* dangling id; enumerate task prunes these */ }
   }
@@ -311,7 +313,11 @@ async function findExistingDoc(
     try {
       if (child.type === 'SECTION' && child.name === sectionName) {
         const data = parseDocLink((child as SectionNode).getPluginData(DOC_LINK_KEY));
-        if (!data || data.sourceNodeId === sourceNodeId) return child as SectionNode;
+        // A foundation-linked section sharing this name is someone else's doc
+        // (a foundation doc, not this component's), same as a mismatched
+        // sourceNodeId below: must not be adopted. Task 12 gives foundation
+        // docs their own resolution path.
+        if (!data || (!isFoundationLink(data) && data.sourceNodeId === sourceNodeId)) return child as SectionNode;
       }
     } catch { /* skip unresolved child */ }
   }
@@ -531,6 +537,12 @@ figma.ui.onmessage = async (raw: unknown) => {
         const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!data) continue; // detached/foreign section still in the index → prune
         alive.add(docId);
+        // Foundation docs don't fit the component LibraryEntry shape (no
+        // sourceNodeId); Task 12 gives them their own library listing. Mark
+        // alive above first so the self-heal prune below doesn't drop a
+        // perfectly good foundation doc's registry entry just because this
+        // task doesn't build its LibraryEntry yet.
+        if (isFoundationLink(data)) continue;
 
         let sourceExists = false;
         try { sourceExists = (await figma.getNodeByIdAsync(data.sourceNodeId)) != null; } catch { sourceExists = false; }
@@ -630,6 +642,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         const section = docNode as SectionNode;
         const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!data) {
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
+          break;
+        }
+        // Foundation docs have no sourceNodeId to rebuild from here; Task 12
+        // gives them their own source-resolution path. The equivalent of an
+        // early `continue` for this non-loop site: bail with the same
+        // "no longer linked" message rather than reading a field that doesn't exist.
+        if (isFoundationLink(data)) {
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
           break;
         }
