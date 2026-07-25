@@ -1762,7 +1762,7 @@ Add a case to the `figma.ui.onmessage` switch, next to `case 'requestLibrary':`:
 ```ts
     case 'requestFoundation': {
       try {
-        const fileKey = resolveFileKey().key;
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
           foundationReader, fileKey, new Date().toISOString(),
         );
@@ -2913,7 +2913,7 @@ Add a case to the message switch:
       try {
         // Re-extract rather than trusting the UI's dump: the file may have
         // changed since the tab was populated.
-        const fileKey = resolveFileKey().key;
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
           foundationReader, fileKey, new Date().toISOString(),
         );
@@ -3538,7 +3538,7 @@ In `main.ts`'s `requestLibrary` case, before the registry loop, extract once —
         if (foundationSpec || foundationExtractionFailed) return foundationSpec;
         try {
           const dump = await serializeFoundation(
-            foundationReader, resolveFileKey().key, new Date().toISOString(),
+            foundationReader, resolveFileKey(figma.fileKey, null).fileKey, new Date().toISOString(),
           );
           foundationSpec = buildFoundation(dump);
         } catch {
@@ -3673,7 +3673,7 @@ In `main.ts`, add the case:
         }
 
         const dump = await serializeFoundation(
-          foundationReader, resolveFileKey().key, new Date().toISOString(),
+          foundationReader, resolveFileKey(figma.fileKey, null).fileKey, new Date().toISOString(),
         );
         const spec = buildFoundation(dump);
 
