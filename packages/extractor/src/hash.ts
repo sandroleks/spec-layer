@@ -51,6 +51,10 @@ export function specContentHash(spec: IntermediateSpec): string {
  * field of FoundationUnitContent is rendered by definition; enumerating them
  * here can only ever go stale. Add fields to FoundationUnitContent, not here.
  *
+ * The converse is FoundationUnitContent's job, not this function's: nothing
+ * may sit in that type unless a frame draws it, or this hash flips on changes
+ * whose Update produces a byte-identical frame and the badge becomes noise.
+ *
  * A scope whose source no longer exists hashes a stable sentinel rather than
  * throwing, so a stale link resolves to a comparable value.
  */

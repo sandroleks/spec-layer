@@ -133,4 +133,152 @@ describe('foundationContentHash', () => {
     expect(hashOf(dump(), gone)).toBe(hashOf(dump(), gone));
     expect(hashOf(dump(), gone)).not.toBe(hashOf(dump(), SEMANTIC));
   });
+
+  it('returns the same sentinel for a group that no longer matches anything', () => {
+    const gone: FoundationScope = { ...SEMANTIC, group: 'colour' };
+    const deleted: FoundationScope = {
+      target: 'collection', collectionId: 'deleted', collectionName: 'Deleted', modeIds: [],
+    };
+    expect(hashOf(dump(), gone)).toBe(hashOf(dump(), deleted));
+    expect(hashOf(dump(), gone)).not.toBe(hashOf(dump(), { ...SEMANTIC, group: 'bg' }));
+  });
+});
+
+/** One text style, over-specified so every unrendered field has a value to change. */
+function textDump(): SerializedFoundation {
+  return {
+    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [],
+    collections: [],
+    textStyles: [{
+      name: 'Body/M', description: 'Default body.',
+      fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS', value: 24 },
+      letterSpacing: { unit: 'PERCENT', value: 0 },
+      paragraphSpacing: 8, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: { fills: 'color/text/default' },
+    }],
+  };
+}
+
+const TEXT: FoundationScope = { target: 'textStyles' };
+const textHash = (d: SerializedFoundation) => foundationContentHash(buildFoundation(d), TEXT);
+
+describe('foundationContentHash — text styles cover exactly what is drawn', () => {
+  // A frame draws the style name, the optional description, an "Ag" specimen
+  // in the style's own font, and a "family style size/lineHeight" line. A hash
+  // that moved on anything else would offer an Update that produced a
+  // byte-identical frame, which trains the user to ignore the badge.
+
+  it('does not move when letter spacing changes', () => {
+    const d = textDump();
+    d.textStyles[0].letterSpacing = { unit: 'PERCENT', value: -4 };
+    expect(textHash(d)).toBe(textHash(textDump()));
+  });
+
+  it('does not move when text case changes', () => {
+    const d = textDump();
+    d.textStyles[0].textCase = 'UPPER';
+    expect(textHash(d)).toBe(textHash(textDump()));
+  });
+
+  it('does not move when a bound variable is rebound', () => {
+    const d = textDump();
+    d.textStyles[0].boundVariables = { fills: 'color/text/muted' };
+    expect(textHash(d)).toBe(textHash(textDump()));
+  });
+
+  it('does not move when paragraph spacing, indent, or decoration change', () => {
+    const d = textDump();
+    d.textStyles[0].paragraphSpacing = 99;
+    d.textStyles[0].paragraphIndent = 12;
+    d.textStyles[0].textDecoration = 'UNDERLINE';
+    expect(textHash(d)).toBe(textHash(textDump()));
+  });
+
+  it('moves when the family, style, size, or line height changes', () => {
+    const base = textHash(textDump());
+
+    const family = textDump();
+    family.textStyles[0].fontFamily = 'Roboto';
+    expect(textHash(family)).not.toBe(base);
+
+    const style = textDump();
+    style.textStyles[0].fontStyle = 'Bold';
+    expect(textHash(style)).not.toBe(base);
+
+    const size = textDump();
+    size.textStyles[0].fontSize = 18;
+    expect(textHash(size)).not.toBe(base);
+
+    const lineHeight = textDump();
+    lineHeight.textStyles[0].lineHeight = { unit: 'AUTO' };
+    expect(textHash(lineHeight)).not.toBe(base);
+  });
+
+  it('moves when the name or description changes', () => {
+    const base = textHash(textDump());
+
+    const renamed = textDump();
+    renamed.textStyles[0].name = 'Body/L';
+    expect(textHash(renamed)).not.toBe(base);
+
+    const described = textDump();
+    described.textStyles[0].description = 'Something else.';
+    expect(textHash(described)).not.toBe(base);
+  });
+});
+
+describe('foundationContentHash — part numbering is covered', () => {
+  /** A collection over the split threshold, spread across `groups`. */
+  function splitDump(groups: string[]): SerializedFoundation {
+    return {
+      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Primitives', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: Array.from({ length: 160 }, (_, i) => ({
+          id: `v${i}`, name: `${groups[i % groups.length]}/item${i}`,
+          resolvedType: 'COLOR' as const, description: '', codeSyntax: {},
+          valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+        })),
+      }],
+    };
+  }
+
+  it('moves when a new top-level group renumbers a surviving frame', () => {
+    // "Part 2 of 3" becoming "Part 2 of 4" is a change to what the frame says,
+    // so the doc must offer an Update. Before part lived in unitContent, the
+    // surviving frames kept stale numbers and read "In sync" forever.
+    const scope: FoundationScope = {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      group: 'space', modeIds: ['m1'],
+    };
+    const before = splitDump(['color', 'space', 'radius']);
+    const after = splitDump(['color', 'space', 'radius']);
+    after.collections[0].variables.push({
+      id: 'extra', name: 'shadow/sm', resolvedType: 'COLOR', description: '',
+      codeSyntax: {}, valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+    });
+    expect(foundationContentHash(buildFoundation(after), scope))
+      .not.toBe(foundationContentHash(buildFoundation(before), scope));
+  });
+
+  it('moves when a group is reordered ahead of this one', () => {
+    // "Part 2 of 3" becoming "Part 3 of 3" is the same class of change.
+    const scope: FoundationScope = {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      group: 'radius', modeIds: ['m1'],
+    };
+    const before = splitDump(['color', 'space', 'radius']);
+    const after = splitDump(['color', 'space', 'radius']);
+    // Move a radius variable to the front so radius becomes the first group.
+    const radiusVar = after.collections[0].variables.find((v) => v.name.startsWith('radius/'))!;
+    after.collections[0].variables = [
+      radiusVar,
+      ...after.collections[0].variables.filter((v) => v !== radiusVar),
+    ];
+    expect(foundationContentHash(buildFoundation(after), scope))
+      .not.toBe(foundationContentHash(buildFoundation(before), scope));
+  });
 });

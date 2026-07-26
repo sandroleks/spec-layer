@@ -374,16 +374,23 @@ export interface FoundationVariableRow {
   cells: FoundationRowCell[];
 }
 
+/**
+ * ONLY the metrics a frame actually draws: the specimen is set in
+ * family/style at fontSize, and the metrics line reads
+ * "family style size/lineHeight". Nothing else belongs here.
+ *
+ * letterSpacing, paragraphSpacing, paragraphIndent, textCase, and
+ * textDecoration are deliberately absent even though extraction captures all
+ * of them on FoundationTextStyle. They reach no pixel, so including them here
+ * would make the drift hash fire on changes whose Update produces a
+ * byte-identical frame. When a later phase renders them, move them back here
+ * and the hash picks them up with no other change.
+ */
 export interface FoundationTextMetrics {
   fontFamily: string;
   fontStyle: string;
   fontSize: number;
   lineHeight: RawTextStyle['lineHeight'];
-  letterSpacing: RawTextStyle['letterSpacing'];
-  paragraphSpacing: number;
-  paragraphIndent: number;
-  textCase: string;
-  textDecoration: string;
 }
 
 export interface FoundationTextRow {
@@ -391,7 +398,6 @@ export interface FoundationTextRow {
   name: string;
   description: string;
   metrics: FoundationTextMetrics;
-  boundVariables: Record<string, string>;
 }
 
 export type FoundationRow = FoundationVariableRow | FoundationTextRow;
@@ -410,12 +416,43 @@ export interface FoundationUnitContent {
    * the frame renders while leaving the hash unchanged.
    */
   omittedModeNames: string[];
+  /**
+   * Present only when this unit is one of several a single source was split
+   * into, which is exactly when `scope.group` is set. Frames render it as
+   * "Part {index + 1} of {total}, covering {group}."
+   *
+   * Derived here rather than passed in, for two reasons. It has to be inside
+   * unitContent's return or the footer note it drives is rendered but not
+   * hashed, which is how adding a group to a large collection used to leave
+   * surviving frames with stale part numbers and no "Update available" to say
+   * so. And deriving it from the scope alone is what makes the numbers agree
+   * between a whole-batch render and a single-doc rebuild: updateFoundationDoc
+   * has no batch around it to count, so any numbering the batch computed for
+   * itself would be lost on the next Update.
+   */
+  part?: { index: number; total: number };
+}
+
+/**
+ * The part numbering for a group-scoped unit, given the source's full ordered
+ * group list. Undefined when there is nothing to number: a lone group is not a
+ * split, and a frame that says "Part 1 of 1" would be noise. Absent rather
+ * than present-and-suppressed so that the hash covers the note exactly when
+ * the note is drawn.
+ */
+function partOf(groups: string[], group: string): { index: number; total: number } | undefined {
+  if (groups.length <= 1) return undefined;
+  const index = groups.indexOf(group);
+  return index < 0 ? undefined : { index, total: groups.length };
 }
 
 /**
  * The rows and mode columns for one output unit. Every renderer AND the drift
  * hash consume this, which is what mechanically guarantees "the hash covers
- * exactly what is rendered". Returns null when the scope's source is gone.
+ * exactly what is rendered".
+ *
+ * Returns null when the scope's source is gone: a collection id that is no
+ * longer in the file, or a named group that matches nothing.
  */
 export function unitContent(
   spec: FoundationSpec, scope: FoundationScope,
@@ -424,22 +461,28 @@ export function unitContent(
     const styles = scope.group
       ? spec.textStyles.filter((s) => s.group === scope.group)
       : spec.textStyles;
+    // A group is derived from style names, so a named group with no members
+    // cannot legitimately exist: zero rows means the group is gone (renamed,
+    // or its last style deleted). Reporting that as a valid empty unit would
+    // let the doc read "In sync" while rebuilding to an empty frame.
+    if (scope.group && styles.length === 0) return null;
+    const part = scope.group
+      ? partOf(groupsInOrder(spec.textStyles.map((s) => s.name)), scope.group)
+      : undefined;
     return {
       collectionName: '',
       ...(scope.group ? { group: scope.group } : {}),
       modeNames: [],
       omittedModeNames: [],
+      ...(part ? { part } : {}),
       rows: styles.map((s): FoundationTextRow => ({
         kind: 'textStyle',
         name: s.name,
         description: s.description,
         metrics: {
-          fontFamily: s.fontFamily, fontStyle: s.fontStyle, fontSize: s.fontSize,
-          lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
-          paragraphSpacing: s.paragraphSpacing, paragraphIndent: s.paragraphIndent,
-          textCase: s.textCase, textDecoration: s.textDecoration,
+          fontFamily: s.fontFamily, fontStyle: s.fontStyle,
+          fontSize: s.fontSize, lineHeight: s.lineHeight,
         },
-        boundVariables: s.boundVariables,
       })),
     };
   }
@@ -457,15 +500,26 @@ export function unitContent(
     ? collection.variables.filter((v) => v.group === scope.group)
     : collection.variables;
 
+  // Same reasoning as the text-styles branch: a group with zero variables is
+  // a group that no longer exists. A collection-scoped unit (no group) with
+  // zero variables is a different, legitimate case — an empty collection — and
+  // still returns a valid, empty unit.
+  if (scope.group && variables.length === 0) return null;
+
   const omittedModeNames = collection.modes
     .filter((m) => !scope.modeIds.includes(m.modeId))
     .map((m) => m.name);
+
+  const part = scope.group
+    ? partOf(groupsInOrder(collection.variables.map((v) => v.name)), scope.group)
+    : undefined;
 
   return {
     collectionName: collection.name,
     ...(scope.group ? { group: scope.group } : {}),
     modeNames: modes.map((m) => m.name),
     omittedModeNames,
+    ...(part ? { part } : {}),
     rows: variables.map((v): FoundationVariableRow => ({
       kind: 'variable',
       name: v.name,

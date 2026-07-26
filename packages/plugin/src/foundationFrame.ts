@@ -52,6 +52,27 @@ export function swatchColorOf(value: FoundationValue): RGB | null {
   return null;
 }
 
+/**
+ * The frame's footer lines, in render order.
+ *
+ * Takes ONLY the content object, never the surrounding batch. Everything a
+ * footer says has to come from what the drift hash reads, or the note is
+ * rendered without being covered: the part numbers used to arrive as
+ * arguments, which put them outside the hash, counted the whole batch rather
+ * than the split collection, and let a single-doc Update silently drop the
+ * line altogether.
+ */
+export function footerNotes(content: FoundationUnitContent): string[] {
+  const notes: string[] = [];
+  if (content.omittedModeNames.length > 0) {
+    notes.push(`Modes not shown: ${content.omittedModeNames.join(', ')}`);
+  }
+  if (content.part && content.group) {
+    notes.push(`Part ${content.part.index + 1} of ${content.part.total}, covering ${content.group}.`);
+  }
+  return notes;
+}
+
 const COL_NAME = 240;
 const COL_DESC = 220;
 const COL_MODE = 180;
@@ -123,8 +144,6 @@ export async function buildFoundationFrame(
   unit: FoundationUnit,
   theme: ReturnType<typeof resolveTheme>,
   includeDescriptions: boolean,
-  unitIndex: number,
-  unitTotal: number,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -221,16 +240,9 @@ export async function buildFoundationFrame(
   });
 
   // --- footer notes ---
-  const notes: string[] = [];
-  // Read omitted modes from `content`, NOT from `unit`. Both carry the same
-  // value, but only content's is covered by the drift hash, and the renderer
-  // must read the same object the hash reads.
-  if (content.omittedModeNames.length > 0) {
-    notes.push(`Modes not shown: ${content.omittedModeNames.join(', ')}`);
-  }
-  if (unitTotal > 1 && content.group) {
-    notes.push(`Part ${unitIndex + 1} of ${unitTotal}, covering ${content.group}.`);
-  }
+  // Derived from `content` alone, never from `unit` or from parameters: the
+  // renderer must read the same object the drift hash reads.
+  const notes = footerNotes(content);
   if (notes.length > 0) {
     const footer = vstack(2);
     footer.paddingTop = 14;

@@ -707,11 +707,12 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         for (let i = 0; i < units.length; i++) {
           const unit = units[i];
-          // Unreachable in this path: unitContent returns null only when a
-          // collection-scoped unit's collectionId is missing from spec, but
-          // every unit here came from planFoundationUnits run against this same
-          // spec, which already drops collections it can't find. Kept as a
-          // defensive guard, not a case that needs progress-count handling.
+          // Unreachable in this path: unitContent returns null for a missing
+          // collectionId or an empty named group, and every unit here came from
+          // planFoundationUnits run against this same spec, which drops
+          // collections it can't find and only names groups it found members
+          // for. Kept as a defensive guard, not a case that needs
+          // progress-count handling.
           const content = unitContent(spec, unit.scope);
           if (!content) continue;
 
@@ -727,7 +728,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
-            msg.config.includeDescriptions, i, units.length,
+            msg.config.includeDescriptions,
           );
 
           const data: FoundationDocLink = {
@@ -848,8 +849,20 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         const content = unitContent(spec, scope);
         if (!content) {
+          // unitContent has two reasons to give up, and they are different
+          // facts for the user: the collection itself is gone, or the
+          // collection is still there but the group this doc covers no longer
+          // matches anything (renamed, or its last member deleted). Say which.
+          // Pull the id out to a const first: narrowing a mutable `let` does
+          // not survive into the `.some` closure, the same trap the retarget
+          // above works around.
+          const scopedCollectionId = scope.target === 'collection' ? scope.collectionId : null;
+          const collectionGone = scopedCollectionId !== null
+            && !spec.collections.some((c) => c.id === scopedCollectionId);
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This foundation doc could no longer be rebuilt. Its collection is gone from this file.' } as MainToUi);
+            message: collectionGone
+              ? 'This foundation doc could no longer be rebuilt. Its collection is gone from this file.'
+              : `This foundation doc could no longer be rebuilt. Nothing in this file is named "${scope.group}" any more.` } as MainToUi);
           break;
         }
 
@@ -866,7 +879,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         };
 
         const section = await buildFoundationFrame(
-          content, unit, resolveTheme(brandTheme), link.config.includeDescriptions, 0, 1,
+          content, unit, resolveTheme(brandTheme), link.config.includeDescriptions,
         );
 
         const data: FoundationDocLink = {

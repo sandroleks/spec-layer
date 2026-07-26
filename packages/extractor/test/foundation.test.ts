@@ -479,7 +479,7 @@ describe('unitContent', () => {
     expect(content!.omittedModeNames).toEqual([]);
   });
 
-  it('builds text style rows with metrics', () => {
+  it('builds text style rows with exactly the metrics the frame draws', () => {
     const dump = bigDump(1, ['color']);
     dump.textStyles = [{
       name: 'Body/M', description: 'Default body.', fontFamily: 'Inter', fontStyle: 'Regular',
@@ -487,18 +487,182 @@ describe('unitContent', () => {
       letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 8, paragraphIndent: 0,
       textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: { fontSize: 'type/md' },
     }];
-    const content = unitContent(buildFoundation(dump), { target: 'textStyles' });
+    const spec = buildFoundation(dump);
+    const content = unitContent(spec, { target: 'textStyles' });
     expect(content!.modeNames).toEqual([]);
+    // The rendered projection carries only what reaches a pixel: the specimen
+    // font and the "family style size/lineHeight" line. Anything else here
+    // would be hashed without being drawn.
     expect(content!.rows[0]).toEqual({
       kind: 'textStyle', name: 'Body/M', description: 'Default body.',
       metrics: {
         fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
         lineHeight: { unit: 'PIXELS', value: 24 },
-        letterSpacing: { unit: 'PERCENT', value: 0 },
-        paragraphSpacing: 8, paragraphIndent: 0,
-        textCase: 'ORIGINAL', textDecoration: 'NONE',
       },
-      boundVariables: { fontSize: 'type/md' },
     });
+    // Extraction stays complete: the spec-level style keeps everything, so a
+    // later phase can render it without re-extracting.
+    expect(spec.textStyles[0].letterSpacing).toEqual({ unit: 'PERCENT', value: 0 });
+    expect(spec.textStyles[0].paragraphSpacing).toBe(8);
+    expect(spec.textStyles[0].textCase).toBe('ORIGINAL');
+    expect(spec.textStyles[0].textDecoration).toBe('NONE');
+    expect(spec.textStyles[0].boundVariables).toEqual({ fontSize: 'type/md' });
+  });
+
+  it('returns null for a group-scoped collection unit whose group has vanished', () => {
+    // A split collection's color/* variables get renamed to colour/*. The doc
+    // scoped to group 'color' now matches nothing. Reporting a valid empty
+    // unit would let it read "In sync" while rebuilding to a headed, rowless
+    // frame; null is what makes My Library say "Source missing".
+    const dump = bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']);
+    for (const v of dump.collections[0].variables) {
+      v.name = v.name.replace(/^color\//, 'colour/');
+    }
+    const spec = buildFoundation(dump);
+    expect(unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      group: 'color', modeIds: ['m1'],
+    })).toBeNull();
+    // The surviving group still resolves, so only the vanished doc is affected.
+    expect(unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      group: 'space', modeIds: ['m1'],
+    })).not.toBeNull();
+  });
+
+  it('returns null for a group-scoped text-styles unit whose group has vanished', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = [{
+      name: 'Body/M', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }];
+    const spec = buildFoundation(dump);
+    expect(unitContent(spec, { target: 'textStyles', group: 'Heading' })).toBeNull();
+    expect(unitContent(spec, { target: 'textStyles', group: 'Body' })).not.toBeNull();
+  });
+
+  it('still builds an empty unit for a collection that genuinely has no variables', () => {
+    // No group named, so zero rows is a real, legitimate state (an emptied
+    // collection) rather than evidence that the scope's source is gone.
+    const dump = bigDump(1, ['color']);
+    dump.collections[0].variables = [];
+    const content = unitContent(buildFoundation(dump), {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m1'],
+    });
+    expect(content).not.toBeNull();
+    expect(content!.rows).toEqual([]);
+    expect(content!.collectionName).toBe('Primitives');
+    expect(content!.modeNames).toEqual(['Value']);
+    expect(content!.part).toBeUndefined();
+  });
+
+  it('reports an unselected text-styles set as an empty unit, not as missing', () => {
+    const dump = bigDump(1, ['color']);
+    const content = unitContent(buildFoundation(dump), { target: 'textStyles' });
+    expect(content).not.toBeNull();
+    expect(content!.rows).toEqual([]);
+  });
+});
+
+describe('unitContent — part numbering', () => {
+  /** Two collections that each split: c1 into 3 groups, c2 into 2. */
+  function twoSplitCollections(): SerializedFoundation {
+    const varsFor = (prefix: string, groups: string[]) =>
+      Array.from({ length: SPLIT_THRESHOLD + groups.length }, (_, i) => ({
+        id: `${prefix}${i}`,
+        name: `${groups[i % groups.length]}/item${i}`,
+        resolvedType: 'COLOR' as const,
+        description: '',
+        codeSyntax: {},
+        valuesByMode: { [`${prefix}m1`]: { r: 0, g: 0, b: 0, a: 1 } },
+      }));
+    return {
+      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+      collections: [
+        { id: 'c1', name: 'Primitives', defaultModeId: 'am1',
+          modes: [{ modeId: 'am1', name: 'Value' }],
+          variables: varsFor('a', ['color', 'space', 'radius']) },
+        { id: 'c2', name: 'Semantic', defaultModeId: 'bm1',
+          modes: [{ modeId: 'bm1', name: 'Value' }],
+          variables: varsFor('b', ['bg', 'text']) },
+      ],
+    };
+  }
+
+  it('numbers parts per collection, not across the whole batch', () => {
+    const dump = twoSplitCollections();
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    // Five frames in one batch: 3 from Primitives, 2 from Semantic. Numbering
+    // that counted the batch would read 1..5 of 5.
+    expect(units).toHaveLength(5);
+    const parts = units.map((u) => unitContent(spec, u.scope)!.part);
+    expect(parts).toEqual([
+      { index: 0, total: 3 }, { index: 1, total: 3 }, { index: 2, total: 3 },
+      { index: 0, total: 2 }, { index: 1, total: 2 },
+    ]);
+  });
+
+  it('reproduces the same part for a single-doc rebuild with no batch around it', () => {
+    // The batch render: five units planned together.
+    const batchSpec = buildFoundation(twoSplitCollections());
+    const batchUnits = planFoundationUnits(batchSpec, allOf(twoSplitCollections()));
+    const rendered = batchUnits.map((u) => unitContent(batchSpec, u.scope)!.part);
+
+    // updateFoundationDoc later re-extracts the file and rebuilds ONE doc from
+    // its stored scope, with no batch and no planFoundationUnits call to
+    // supply numbering. Every doc must come back with the number it was made
+    // with, or Update silently rewrites the footer note.
+    const rebuiltSpec = buildFoundation(twoSplitCollections());
+    const rebuilt = batchUnits.map((u) => unitContent(rebuiltSpec, u.scope)!.part);
+    expect(rebuilt).toEqual(rendered);
+    expect(rebuilt[3]).toEqual({ index: 0, total: 2 });
+  });
+
+  it('leaves part undefined for an unsplit, whole-collection unit', () => {
+    const dump = bigDump(3, ['color', 'space']);
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    expect(units).toHaveLength(1);
+    expect(unitContent(spec, units[0].scope)!.part).toBeUndefined();
+  });
+
+  it('numbers split text-style parts from the full style list', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = Array.from({ length: SPLIT_THRESHOLD + 2 }, (_, i) => ({
+      name: `${['Heading', 'Body'][i % 2]}/item${i}`, description: '',
+      fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS' as const, value: 24 },
+      letterSpacing: { unit: 'PERCENT' as const, value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }));
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump))
+      .filter((u) => u.scope.target === 'textStyles');
+    expect(units).toHaveLength(2);
+    expect(units.map((u) => unitContent(spec, u.scope)!.part))
+      .toEqual([{ index: 0, total: 2 }, { index: 1, total: 2 }]);
+  });
+
+  it('renumbers surviving parts when a group is added to the collection', () => {
+    // The stale-part-numbers case: a new top-level group shifts every later
+    // frame's "of N". Because part now lives in unitContent, this moves the
+    // hash and the affected docs offer an Update.
+    const before = buildFoundation(twoSplitCollections());
+    const withNewGroup = twoSplitCollections();
+    withNewGroup.collections[0].variables.push({
+      id: 'extra', name: 'shadow/sm', resolvedType: 'COLOR', description: '',
+      codeSyntax: {}, valuesByMode: { am1: { r: 0, g: 0, b: 0, a: 1 } },
+    });
+    const after = buildFoundation(withNewGroup);
+    const scope = {
+      target: 'collection' as const, collectionId: 'c1', collectionName: 'Primitives',
+      group: 'space', modeIds: ['am1'],
+    };
+    expect(unitContent(before, scope)!.part).toEqual({ index: 1, total: 3 });
+    expect(unitContent(after, scope)!.part).toEqual({ index: 1, total: 4 });
   });
 });

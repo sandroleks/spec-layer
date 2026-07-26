@@ -25,6 +25,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   copy, including when the frame lives on another page. Renaming a
   collection reports the doc as out of date rather than as missing.
 
+  Drift covers exactly what a frame draws, in both directions. A split
+  frame's "Part 2 of 3" note is part of the tracked content, so it is
+  numbered per collection rather than per batch, survives an Update, and
+  goes out of date when adding a group renumbers it. Changing a text
+  style's letter spacing, text case, or bound variables does not offer an
+  Update, because none of those reach the canvas yet. A doc whose group
+  was renamed away now reports **Source missing** instead of rebuilding
+  to an empty frame.
+
   This covers the on-canvas half. Foundation Markdown and the docs-app
   pages are a separate piece of work, so a foundation doc offers no
   Markdown download yet.
