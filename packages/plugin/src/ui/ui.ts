@@ -165,17 +165,24 @@ refs.tabFoundations.addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * True while ANY canvas build is in flight, from any of the three entry points:
- * the component Create-frame button, My Library's row Update, and the
+ * True while a canvas BUILD is in flight, from any of the three build entry
+ * points: the component Create-frame button, My Library's row Update, and the
  * Foundations tab's bulk Create.
  *
- * The main thread serializes all of them (renderFoundation and
+ * The main thread serializes all three (renderFoundation and
  * updateFoundationDoc behind one `foundationRendering` guard, renderDocFrame
  * behind `docFrameRendering`), and every one of them mutates frameKit's shared
  * theme and font state, so only one may be dispatched at a time. When the UI
  * gated them on separate flags, both buttons stayed clickable and the main
  * thread rejected the loser, which is the failure mode this closes: nothing
  * should reach a guard the UI could have honored.
+ *
+ * Known gap: this covers builds only. Detach and Remove are not gated by it,
+ * and `figma.ui.onmessage` is async, so a removeDoc dispatched during a bulk
+ * run can interleave with the batch loop and delete a Section the loop already
+ * captured. A later `prior.remove()` then throws and aborts the batch. That is
+ * pre-existing and narrow (it needs the row menu used mid-build), and is left
+ * alone deliberately rather than papered over here.
  *
  * `createFrameBtn.disabled` is the component/row half (set by runCreateDocFrame
  * and the row Update below, cleared on docFrameDone/docFrameError/docSourceError),
@@ -200,12 +207,6 @@ let libMenuDocId: string | null = null;
 // The docId a .md download is in flight for (null = none). Blocks a second
 // Download from stacking; cleared when the docSource reply resolves or errors.
 let downloadingDocId: string | null = null;
-// The docId a foundation row's Update is in flight for (null = none). A
-// foundation row has no source node, so its Update skips requestDocSource and
-// goes straight to updateFoundationDoc. Purely a record of what is pending: the
-// foundationDone handler tells a row reply from a bulk reply by the docId the
-// MESSAGE carries, never by this flag.
-let updatingFoundationDocId: string | null = null;
 
 function refreshLibrary(): void {
   closeRowMenu();
@@ -299,7 +300,6 @@ function runRowAction(act: string, docId: string): void {
       // rebuilds straight from the file's current collections/text styles, so
       // it posts updateFoundationDoc instead (routed by kind, not by intent).
       if (entry?.kind === 'foundation') {
-        updatingFoundationDocId = docId;
         send({ type: 'updateFoundationDoc', docId });
       } else {
         send({ type: 'requestDocSource', docId, intent: 'update' });
@@ -1052,7 +1052,6 @@ window.onmessage = (event: MessageEvent) => {
         const label = libEntries.find((e) => e.docId === msg.docId)?.label
           ?? 'the foundation doc';
         showBanner(refs, 'info', `Updated ${label}.`);
-        if (updatingFoundationDocId === msg.docId) updatingFoundationDocId = null;
         refs.createFrameBtn.disabled = false;
         if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
         break;
@@ -1132,7 +1131,6 @@ window.onmessage = (event: MessageEvent) => {
       // a request that never got it, so releasing would hand a second build a
       // lock the first one is still using. Leave it to setFoundationGenerating.
       downloadingDocId = null;
-      updatingFoundationDocId = null;
       if (!isFoundationGenerating()) refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;

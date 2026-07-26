@@ -144,6 +144,38 @@ describe('foundationContentHash', () => {
   });
 });
 
+describe('foundationContentHash — variables cover exactly what is drawn', () => {
+  // A frame draws a variable's name, the optional description, and one value
+  // cell per rendered mode. Nothing draws the declared resolvedType: a cell's
+  // swatch and label come from the resolved FoundationValue's own `kind`. A
+  // hash that moved on the declared type would offer an Update that produced a
+  // byte-identical frame, which is the same trap the text-style metrics avoid.
+
+  it('does not move when a variable resolvedType changes', () => {
+    const d = dump();
+    // Values stay byte-identical, so the rendered cells are unchanged. Only the
+    // declared type differs, and nothing draws it.
+    d.collections[0].variables[0].resolvedType = 'STRING';
+    expect(hashOf(d)).toBe(hashOf(dump()));
+  });
+
+  it('still moves when that variable is renamed or revalued', () => {
+    // The companion half: trimming resolvedType must not have made the row
+    // insensitive to what a frame does draw.
+    const base = hashOf(dump());
+
+    const renamed = dump();
+    renamed.collections[0].variables[0].resolvedType = 'STRING';
+    renamed.collections[0].variables[0].name = 'bg/primary';
+    expect(hashOf(renamed)).not.toBe(base);
+
+    const revalued = dump();
+    revalued.collections[0].variables[0].resolvedType = 'STRING';
+    revalued.collections[0].variables[0].valuesByMode.s2 = { r: 1, g: 0, b: 0, a: 1 };
+    expect(hashOf(revalued)).not.toBe(base);
+  });
+});
+
 /** One text style, over-specified so every unrendered field has a value to change. */
 function textDump(): SerializedFoundation {
   return {

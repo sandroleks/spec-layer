@@ -364,12 +364,36 @@ export function planFoundationUnits(
 // Row building — the single source of rendered content
 // ---------------------------------------------------------------------------
 
+/**
+ * One value cell. `value` is drawn as the swatch and label.
+ *
+ * `modeName` is the one field in this projection no renderer reads: the column
+ * headers come from FoundationUnitContent.modeNames, and cells are matched to
+ * them positionally. It stays because it is not independently variable, so it
+ * cannot break "hashed implies rendered". unitContent builds it and modeNames
+ * from the same `modes` array in the same order, so cells[i].modeName is always
+ * modeNames[i], and no change to the file can move the hash through this field
+ * without also moving it through the column header that is drawn. It keeps each
+ * cell self-describing for any renderer that does not iterate positionally.
+ */
 export interface FoundationRowCell { modeName: string; value: FoundationValue }
 
+/**
+ * ONLY what a frame actually draws for a variable: the name, the optional
+ * description column, and one cell per rendered mode.
+ *
+ * `resolvedType` is deliberately absent even though extraction captures it on
+ * FoundationVariable. No renderer reads it (a cell's presentation is decided by
+ * the resolved FoundationValue's own `kind`, not by the declared type), so
+ * including it here would make the drift hash fire on a change whose Update
+ * produces a byte-identical frame. Same treatment as the text-style metrics
+ * below: extraction stays complete, the rendered projection stays minimal. When
+ * a later phase draws the type, move it back here and the hash picks it up with
+ * no other change.
+ */
 export interface FoundationVariableRow {
   kind: 'variable';
   name: string;
-  resolvedType: FoundationVariableType;
   description: string;
   cells: FoundationRowCell[];
 }
@@ -523,7 +547,6 @@ export function unitContent(
     rows: variables.map((v): FoundationVariableRow => ({
       kind: 'variable',
       name: v.name,
-      resolvedType: v.resolvedType,
       description: v.description,
       cells: modes.map((m) => ({
         modeName: m.name,

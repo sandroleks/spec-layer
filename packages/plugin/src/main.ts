@@ -397,7 +397,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Guard clientStorage (and the postMessage payload) against very wide
         // nodes that stay huge even at logo height: ~700K base64 chars ≈ 500KB.
         if (encoded.length > 700_000) {
-          figma.ui.postMessage({ type: 'logoError', message: 'Logo image is too large — pick a smaller node' } as MainToUi);
+          figma.ui.postMessage({ type: 'logoError', message: 'That image is too big. Pick a smaller node.' } as MainToUi);
           break;
         }
         brandLogo = encoded;
@@ -449,7 +449,17 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'renderDocFrame': {
-      if (docFrameRendering) { figma.notify('Still finishing the previous frame'); break; }
+      if (docFrameRendering) {
+        // Same rule as the two foundation paths below: reply, never drop. The
+        // shared UI lock should stop this from being reached at all, but a
+        // guard that notifies and returns nothing leaves the UI holding a
+        // button it disabled for a build that will never report back.
+        // docFrameError is the failure reply this send site already handles.
+        const message = 'Still finishing the previous frame.';
+        figma.notify(message);
+        figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
+        break;
+      }
       docFrameRendering = true;
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
