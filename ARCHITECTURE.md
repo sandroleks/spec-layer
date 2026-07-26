@@ -26,9 +26,21 @@ Defines `SpecFrontmatter`, validates format version and optional lifecycle statu
 
 Transforms serialized Figma trees into `IntermediateSpec` data and Markdown. Deterministic modules derive anatomy, properties, variants, states, token rules, gaps, and content hashes. The prose module is optional and receives only derived fields.
 
+`foundation.ts` models the layer beneath components: variable collections with their modes, and local text styles. It receives a raw dump and resolves alias chains synchronously, so cycles, depth limits, dangling targets, and cross-file references are fixture-testable rather than dependent on a live Figma runtime. An alias into a library carries its target's name and no value, because a remote variable's `valuesByMode` is keyed by the remote collection's mode ids and cannot be mapped onto local modes. `planFoundationUnits` decides how many documents a file produces: one per collection, split by top-level name group past `SPLIT_THRESHOLD` rows, with mode columns capped at `MAX_MODE_COLUMNS`.
+
+`unitContent(spec, scope)` returns everything one foundation document renders: its collection name, group, mode columns, rows, and the names of any modes left out. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline: any field added to `FoundationUnitContent` is rendered by definition and is therefore hashed, so there is no path by which something can be rendered but not covered by drift detection. Ids and `extractedAt` are excluded because they never appear in that output at all.
+
 ### `@spec-layer/plugin`
 
 Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It supports selected-component extraction, Markdown download, token-authenticated delivery to the docs app, and bulk ZIP export. The docs endpoint and token are stored in Figma `clientStorage`.
+
+A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
+
+Foundation Sections join the same doc registry as component docs. `DocLinkData` is a union discriminated on `kind`, and a blob written before foundation support carries no `kind`, so it parses through the original component path unchanged. A foundation link addresses its source by scope rather than by node id, since its source is the file's own collections. Drift for every foundation row resolves from a single extraction during a library refresh, rather than one round trip per row. A scope stores both collection id and name, so a renamed collection retargets by name and reads as out of date rather than as missing.
+
+Foundation Markdown does not exist yet, so the library row for a foundation doc offers no Markdown download.
+
+`frameKit.applyThemeToKit` and the inline theme preamble in `buildDocFrames` do the same job. Migrating `docFrame` onto the shared helper was left out of the foundation work to avoid restructuring a large file mid-feature. The duplication is deliberate and known; the two must be changed together until it is resolved.
 
 ### `md-ds`
 

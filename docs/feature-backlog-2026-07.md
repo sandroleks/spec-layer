@@ -28,9 +28,10 @@ Legend: **[feat]** new capability · **[fix]** correctness/copy fix · **[decide
 | # | Item | Notes |
 |---|------|-------|
 | 2.1 | **[feat] Source-linked documentation frame v1** ✅ built (plugin-3.0, 2026-07-13) | Store source node id + `content_hash` in `pluginData` on the generated Section. Explicit **Update** (regenerate in place), **Detach**, stale detection when source is deleted, warn if section was hand-edited since generation. Manual-edit *merge* explicitly deferred (Tier 4). Headline differentiator: "docs that stay connected to your components." **Built + per-task reviewed** (spec `docs/superpowers/specs/2026-07-12-…`, plan `docs/superpowers/plans/2026-07-12-…`, commits `168cd5d..f86849f`). Adds a **My Library** tab; badge labels In sync / Update available / Manually edited / Source missing. **Pending:** manual Figma pass + holistic whole-branch review (final-review agent hit a session limit before completing). |
-| 2.2 | **[feat] Token display mode toggle** | Raw value / variable name / Figma `codeSyntax` / name + value. Extraction: capture `codeSyntax` via `NodeResolver` in `serialize.ts`. Presentation-only → hash-safe (`rawValues` already excluded). Highest value-to-cost item in the backlog. |
+| 2.2 | **[feat] Token display mode toggle** | Raw value / variable name / Figma `codeSyntax` / name + value. Extraction: capture `codeSyntax` via `NodeResolver` in `serialize.ts`. Presentation-only → hash-safe (`rawValues` already excluded). Highest value-to-cost item in the backlog. **Note:** 2.5 already captures `codeSyntax` per variable in `serializeFoundation.ts`, so whichever of the two ships second inherits that half for free. |
 | 2.3 | **[feat] Unit setting (px / rem)** | Configurable root size. Presentation-only, hash-safe. |
 | 2.4 | **[fix] Failure-state clarity** | Every error must say whether it's *unsupported*, *quota*, or *paid*. Quota path covered by the upsell fork; audit the remaining error banners. |
+| 2.5 | **[feat] Foundation export** ✅ phases 1–4 built (foundations-1.0, 2026-07-25) | Documents variable collections (modes, alias chains, descriptions) and local text styles, mirroring the file's own structure. New Foundations tab, no selection needed. Frames are link-tracked in My Library with the same four badges plus Update / Detach / Remove; regeneration replaces in place, including cross-page. Spec `docs/superpowers/specs/2026-07-25-foundation-export-design.md`, plan `docs/superpowers/plans/2026-07-25-foundation-export-canvas.md`, commits `f98b086..34171e4`. Free, like all structural extraction. **Pending:** manual Figma pass (two checklists in `docs/manual-tests/`), then phases 5 (Markdown + docs-app pages, needs a `kind: foundation` frontmatter) and 6 (optional AI usage notes, one per unit, on the existing quota) as a separate plan. Related: 2.2, 3.3, 4.1. |
 
 ## Tier 3 — First updates after launch
 
@@ -38,7 +39,7 @@ Legend: **[feat]** new capability · **[fix]** correctness/copy fix · **[decide
 |---|------|-------|
 | 3.1 | **[feat] Hug/Fill/Fixed sizing behavior** | Render in the Measurements canvas section (canvas-only). **Constraint:** markdown spec sections are frozen for hash stability — do NOT add a markdown section without a conscious revisit of the freeze + hash projection. |
 | 3.2 | **[feat] Documentation presets** | Design system / Developer handoff / Compact / Custom, layered over `ALL_SECTIONS` + `DEFAULT_OFF_SECTIONS`. Thin UI layer. |
-| 3.3 | **[feat] Effects & shadows extraction** | Extend token/raw-value extraction; check hash-projection additivity. |
+| 3.3 | **[feat] Effects & shadows extraction** | Extend token/raw-value extraction; check hash-projection additivity. **Note:** effect styles are the natural next source to add to 2.5's `FoundationSpec`; the collection/style shape there is the template, and its hash covers whatever `unitContent` returns, so an added field is covered automatically. |
 | 3.4 | **[feat] Slot / nested-instance handling improvements** | Anatomy DFS currently depth ≤ 3 with single-wrapper descent; deep nesting produces incomplete specs per competitor comments. |
 | 3.5 | **[feat] Jira/Markdown export polish** | Zip export exists; make the md paste cleanly into Jira/Confluence. |
 | 3.6 | **[feat] Dev Mode inspect-panel surface** | Separate manifest capability + UI constraints — real project, deliberately demoted from launch-critical. |
@@ -47,7 +48,7 @@ Legend: **[feat]** new capability · **[fix]** correctness/copy fix · **[decide
 
 | # | Item | Notes |
 |---|------|-------|
-| 4.1 | **[feat] Drift detection surfaces** | `spec-layer check` CI + in-Figma drift badge via committed `content_hash`. The strategic bet (see `docs/strategy/2026-06-22-positioning-and-pivot.md`); 2.1 is its on-canvas prerequisite. |
+| 4.1 | **[feat] Drift detection surfaces** | `spec-layer check` CI + in-Figma drift badge via committed `content_hash`. The strategic bet (see `docs/strategy/2026-06-22-positioning-and-pivot.md`); 2.1 is its on-canvas prerequisite. **Note:** 2.5 adds per-scope foundation hashes, which give `spec-layer check` a file-level baseline (has the token layer moved?) rather than only per-component ones. |
 | 4.2 | **[feat] Manual-edit preservation on Update** | Three-way merge of generated frames vs. user edits vs. new extraction. Most expensive item in the analysis — deferred deliberately. |
 | 4.3 | **[feat] Team licensing** | Central billing, seats. Server handles most lifecycle already; needs LS product + UI. |
 | 4.4 | **[feat] Enterprise/BYOK option** | Re-introduce direct-key mode as an enterprise privacy feature (data never touches the proxy). |

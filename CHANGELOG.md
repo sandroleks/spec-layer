@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Foundation export. A new **Foundations** tab in the Figma plugin
+  documents the file's variable collections and local text styles, with
+  no selection required. It mirrors the file's own structure rather than
+  inferring categories: one document per collection, split by top-level
+  name group when a collection is large, plus one for text styles. Modes
+  render as columns, capped at four, and any modes not shown are named on
+  the frame. Aliases show their target and resolved value; an alias into
+  a library shows its target with no value, since a library's modes
+  cannot be mapped onto local ones.
+
+  Foundation frames are tracked like component docs. They appear in **My
+  Library** with the same In sync, Update available, Manually edited, and
+  Source missing states, and support Update, Detach, and Remove.
+  Regenerating replaces a frame in place rather than adding a second
+  copy, including when the frame lives on another page. Renaming a
+  collection reports the doc as out of date rather than as missing.
+
+  This covers the on-canvas half. Foundation Markdown and the docs-app
+  pages are a separate piece of work, so a foundation doc offers no
+  Markdown download yet.
+
 ### Security
 
 - License hardening: transient Lemon Squeezy errors (rate limits, 5xx,
