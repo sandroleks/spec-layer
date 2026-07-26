@@ -162,6 +162,59 @@ describe('serializeFoundation', () => {
     expect(dump.collections[1].variables.map((v) => v.name)).toEqual(['b1name']);
   });
 
+  it('keeps variables in variableIds order when the batched reads finish out of order', async () => {
+    // Variable reads are issued as one batch, so they resolve in whatever order
+    // the host happens to finish them. Row order inside a collection feeds the
+    // rendered frame and therefore the doc's content hash, so it must follow
+    // variableIds, not completion. Here the LAST id resolves first and the
+    // first resolves last, and 'v3' fails to resolve at all.
+    const ids = ['v1', 'v2', 'v3', 'v4', 'v5'];
+    const completed: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const reader: FoundationReader = {
+      async collections() {
+        return [{
+          id: 'c1', name: 'Primitives',
+          modes: [{ modeId: 'm1', name: 'Value' }],
+          defaultModeId: 'm1',
+          variableIds: ids,
+        }];
+      },
+      variable(id: string): Promise<ReaderVariable | null> {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // Reverse the completion order relative to the argument order.
+        const delay = (ids.length - ids.indexOf(id)) * 4;
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            inFlight--;
+            completed.push(id);
+            resolve(id === 'v3' ? null : {
+              id, name: `${id}-name`, resolvedType: 'COLOR', description: '',
+              variableCollectionId: 'c1', codeSyntax: {},
+              valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+            });
+          }, delay);
+        });
+      },
+      async textStyles() { return []; },
+    };
+
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+
+    // The reads really were concurrent (a sequential loop would peak at 1)...
+    expect(maxInFlight).toBe(ids.length);
+    // ...and really did land out of order...
+    expect(completed).toEqual(['v5', 'v4', 'v3', 'v2', 'v1']);
+    // ...yet the dump is in variableIds order, with the unresolvable id skipped
+    // rather than left as a hole or moved.
+    expect(dump.collections[0].variables.map((v) => v.id))
+      .toEqual(['v1', 'v2', 'v4', 'v5']);
+    expect(dump.collections[0].variables.map((v) => v.name))
+      .toEqual(['v1-name', 'v2-name', 'v4-name', 'v5-name']);
+  });
+
   it('falls back to an empty string for an unnamed external collection', async () => {
     const reader = fakeReader({
       async variable(id: string): Promise<ReaderVariable | null> {

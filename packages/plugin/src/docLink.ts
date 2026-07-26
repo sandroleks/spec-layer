@@ -71,6 +71,36 @@ export function foundationScopeKey(s: FoundationScope): string {
     : `coll:${s.collectionId}:${s.group ?? ''}`;
 }
 
+/**
+ * Re-point a stored foundation scope at a live collection when its recorded id
+ * no longer exists.
+ *
+ * A renamed or re-created collection keeps its name but gets a fresh id, and
+ * retargeting by name is what lets such a doc read as "Update available"
+ * instead of "Source missing". But Figma allows two collections to share a
+ * name, so a name match is only evidence when there is exactly ONE of them:
+ * with several, the doc could just as easily belong to a collection that was
+ * deleted, and guessing would rebuild it from unrelated variables and stamp the
+ * wrong id in. Ambiguous means unresolved, so the scope comes back untouched
+ * and the caller's existing "this doc can no longer be rebuilt" path handles it.
+ *
+ * Returns the scope unchanged when it targets text styles, when its id still
+ * resolves, or when the name match is anything other than a single hit.
+ */
+export function retargetScope(
+  scope: FoundationScope,
+  collections: readonly { id: string; name: string }[],
+): FoundationScope {
+  if (scope.target !== 'collection') return scope;
+  // Bind to a const so the 'collection' narrowing survives into the closures
+  // below: narrowing does not carry into a callback for a mutable binding.
+  const s = scope;
+  if (collections.some((c) => c.id === s.collectionId)) return s;
+  const byName = collections.filter((c) => c.name === s.collectionName);
+  if (byName.length !== 1) return s;
+  return { ...s, collectionId: byName[0].id };
+}
+
 /** The index stored (JSON string) on figma.root. */
 export interface DocRegistry { v: 1; docIds: string[] }
 

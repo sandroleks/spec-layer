@@ -15,7 +15,7 @@ import { familiesWithRequiredStyles } from './fonts';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
-  textContentHash, isFoundationLink, foundationScopeKey,
+  textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
   type DocLinkData, type FoundationDocLink, type DocRegistry,
 } from './docLink';
 
@@ -577,17 +577,11 @@ figma.ui.onmessage = async (raw: unknown) => {
           // its current id before hashing, so a re-created collection reads as
           // "Update available" (true: the frame's rendered title changed) and
           // not "Source missing" (false: the collection is still there).
-          let scope = data.scope;
-          if (live && scope.target === 'collection') {
-            // Bind to a const so the 'collection' narrowing survives inside the
-            // closures below — narrowing a mutable `let` does not carry into a
-            // callback, since the closure could run after `scope` is reassigned.
-            const collectionScope = scope;
-            if (!live.collections.some((c) => c.id === collectionScope.collectionId)) {
-              const byName = live.collections.find((c) => c.name === collectionScope.collectionName);
-              if (byName) scope = { ...collectionScope, collectionId: byName.id };
-            }
-          }
+          // retargetScope only does this on an unambiguous single name match;
+          // if several live collections share the name it leaves the dead id in
+          // place, and the row reads as orphaned rather than silently binding
+          // to a collection that may have nothing to do with this doc.
+          const scope = live ? retargetScope(data.scope, live.collections) : data.scope;
           const currentContentHash = live ? foundationContentHash(live, scope) : undefined;
           // A scope that no longer resolves is orphaned. unitContent returns
           // null for a deleted collection, and foundationContentHash turns that
@@ -648,7 +642,16 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'renderFoundation': {
-      if (foundationRendering) { figma.notify('Still finishing the previous set'); break; }
+      if (foundationRendering) {
+        // Post the rejection back, don't just notify. The UI holds a lock from
+        // the moment it sends, and a request that gets no reply is a lock
+        // nobody ever releases: the Foundations tab's Create button stayed
+        // disabled for the rest of the session.
+        const message = 'Another build is still finishing.';
+        figma.notify(message);
+        figma.ui.postMessage({ type: 'foundationFrameError', message, created: 0 } as MainToUi);
+        break;
+      }
       foundationRendering = true;
       // Declared outside the try so the catch block can report how many frames
       // actually landed on the canvas before the failure (Finding 2: frames are
@@ -812,7 +815,15 @@ figma.ui.onmessage = async (raw: unknown) => {
       // Shares renderFoundation's guard: both call buildFoundationFrame, which
       // mutates frameKit's shared theme/font module state, so the two must
       // never run concurrently any more than two renderFoundation calls could.
-      if (foundationRendering) { figma.notify('Still finishing the previous frame'); break; }
+      if (foundationRendering) {
+        // Same rule as renderFoundation above: reply, never drop. docSourceError
+        // is the failure reply this send site already handles, so the row's
+        // Update releases its lock instead of wedging the button it disabled.
+        const message = 'Another build is still finishing.';
+        figma.notify(message);
+        figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
+        break;
+      }
       foundationRendering = true;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
@@ -834,18 +845,12 @@ figma.ui.onmessage = async (raw: unknown) => {
         const spec = buildFoundation(dump);
 
         // Retarget a renamed/re-created collection by name before giving up,
-        // same trap and same fix as requestLibrary's drift check above: narrowing
-        // `scope.target === 'collection'` on this mutable `let` does not survive
-        // into the `.some`/`.find` closures below, so bind the narrowed value to
-        // a const first.
-        let scope = link.scope;
-        if (scope.target === 'collection') {
-          const collectionScope = scope;
-          if (!spec.collections.some((c) => c.id === collectionScope.collectionId)) {
-            const byName = spec.collections.find((c) => c.name === collectionScope.collectionName);
-            if (byName) scope = { ...collectionScope, collectionId: byName.id };
-          }
-        }
+        // the same rule requestLibrary's drift check uses: a single live
+        // collection with the stored name is the same collection renamed, but
+        // two or more is a coin flip, and rebuilding this doc from the wrong
+        // collection's variables (then stamping that id in) is worse than
+        // telling the user it could not be rebuilt.
+        const scope = retargetScope(link.scope, spec.collections);
 
         const content = unitContent(spec, scope);
         if (!content) {
@@ -910,8 +915,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         prior.remove();
         writeRegistry(addDoc(reg, section.id));
 
+        // Stamp the docId so the reply identifies itself as this row's Update
+        // rather than the Foundations tab's bulk run, which posts the same
+        // message type without one.
         figma.ui.postMessage({
-          type: 'foundationDone', created: 0, replaced: 1,
+          type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId,
         } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

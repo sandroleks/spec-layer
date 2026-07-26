@@ -57,6 +57,29 @@ function isAlias(v: RawVariableValue): v is { type: 'VARIABLE_ALIAS'; id: string
     && (v as { type?: string }).type === 'VARIABLE_ALIAS';
 }
 
+/**
+ * One variable read, with any failure mapped to null.
+ *
+ * Every read below goes through this so a batch can be awaited with
+ * `Promise.all` without one unreadable id rejecting the whole batch — the
+ * sequential version's per-read `try/catch` (skip, don't throw) survives
+ * unchanged, just moved into the helper. The `await` inside the `try` also
+ * catches a reader that throws synchronously instead of returning a rejected
+ * promise.
+ */
+async function readVariable(
+  reader: FoundationReader, id: string,
+): Promise<ReaderVariable | null> {
+  try { return await reader.variable(id); } catch { return null; }
+}
+
+/** Collection name for an external alias target. Absent method, missing
+ *  collection, or a throw all mean the same thing here: no name. */
+async function readCollectionName(reader: FoundationReader, id: string): Promise<string> {
+  if (!reader.collectionName) return '';
+  try { return (await reader.collectionName(id)) ?? ''; } catch { return ''; }
+}
+
 export async function serializeFoundation(
   reader: FoundationReader, fileKey: string, extractedAt: string,
 ): Promise<SerializedFoundation> {
@@ -73,11 +96,29 @@ export async function serializeFoundation(
   // ids are local. Keyed by id so a target aliased from ten places costs one hop.
   const aliasTargets = new Set<string>();
 
-  for (const rc of readerCollections) {
+  // Every variable in the file, read in ONE batch rather than one sequential
+  // await per id. On a 2,000-variable system the sequential version was 2,000
+  // main-thread round trips in series before the caller saw anything.
+  //
+  // Order is load-bearing: a collection's rendered row order comes straight
+  // from this array and feeds the doc's content hash, so a reorder here would
+  // spuriously mark every existing foundation doc as drifted. `Promise.all`
+  // resolves to an array in ARGUMENT order, never completion order, so
+  // `readPerCollection[i][j]` is always the result for
+  // `readerCollections[i].variableIds[j]` no matter which read finishes first.
+  // The two loops below walk those arrays by index, so the walk that fills
+  // `variables` (and, with it, the insertion order of `localIds` and
+  // `aliasTargets`) is byte-for-byte the walk the sequential version did.
+  const readPerCollection = await Promise.all(
+    readerCollections.map((rc) => Promise.all(
+      rc.variableIds.map((id) => readVariable(reader, id)),
+    )),
+  );
+
+  for (let i = 0; i < readerCollections.length; i++) {
+    const rc = readerCollections[i];
     const variables: RawVariable[] = [];
-    for (const id of rc.variableIds) {
-      let rv: ReaderVariable | null = null;
-      try { rv = await reader.variable(id); } catch { rv = null; }
+    for (const rv of readPerCollection[i]) {
       if (!rv) continue;
       localIds.add(rv.id);
       for (const value of Object.values(rv.valuesByMode)) {
@@ -102,19 +143,19 @@ export async function serializeFoundation(
   // mode ids, which cannot be mapped onto local modes, so any value we read
   // would be a guess about mode correspondence. The arrow is real; the value
   // is honestly absent.
-  const externals: RawExternalRef[] = [];
-  for (const id of aliasTargets) {
-    if (localIds.has(id)) continue;
-    let rv: ReaderVariable | null = null;
-    try { rv = await reader.variable(id); } catch { rv = null; }
-    if (!rv) continue;
-    let collectionName = '';
-    if (reader.collectionName) {
-      try { collectionName = (await reader.collectionName(rv.variableCollectionId)) ?? ''; }
-      catch { collectionName = ''; }
-    }
-    externals.push({ id: rv.id, name: rv.name, collectionName });
-  }
+  //
+  // Batched the same way, and in the Set's insertion order (which is the walk
+  // order above), so `externals` comes out in exactly the sequence the
+  // sequential version produced.
+  const externalIds = [...aliasTargets].filter((id) => !localIds.has(id));
+  const externalVars = (await Promise.all(externalIds.map((id) => readVariable(reader, id))))
+    .filter((rv): rv is ReaderVariable => rv !== null);
+  const externalCollectionNames = await Promise.all(
+    externalVars.map((rv) => readCollectionName(reader, rv.variableCollectionId)),
+  );
+  const externals: RawExternalRef[] = externalVars.map((rv, i) => ({
+    id: rv.id, name: rv.name, collectionName: externalCollectionNames[i],
+  }));
 
   let readerStyles: ReaderTextStyle[] = [];
   try {
@@ -123,24 +164,30 @@ export async function serializeFoundation(
     /* styles API unavailable */
   }
 
-  const textStyles: RawTextStyle[] = [];
-  for (const rs of readerStyles) {
+  // Batched across styles AND across each style's bound variables. Style order
+  // holds because `Promise.all` is argument-ordered; each style's
+  // `boundVariables` key order holds because the keys are written back by index
+  // over the same `entries` array they were read from, so an unresolvable
+  // binding is still dropped (never written as undefined) without shifting the
+  // keys around it.
+  const textStyles: RawTextStyle[] = await Promise.all(readerStyles.map(async (rs) => {
+    const entries = Object.entries(rs.boundVariables ?? {})
+      .filter((e): e is [string, { id: string }] => Boolean(e[1]?.id));
+    const bound = await Promise.all(entries.map(([, ref]) => readVariable(reader, ref.id)));
     const boundVariables: Record<string, string> = {};
-    for (const [property, ref] of Object.entries(rs.boundVariables ?? {})) {
-      if (!ref?.id) continue;
-      let rv: ReaderVariable | null = null;
-      try { rv = await reader.variable(ref.id); } catch { rv = null; }
+    entries.forEach(([property], i) => {
+      const rv = bound[i];
       if (rv) boundVariables[property] = rv.name;
-    }
-    textStyles.push({
+    });
+    return {
       name: rs.name, description: rs.description,
       fontFamily: rs.fontName.family, fontStyle: rs.fontName.style,
       fontSize: rs.fontSize, lineHeight: rs.lineHeight, letterSpacing: rs.letterSpacing,
       paragraphSpacing: rs.paragraphSpacing, paragraphIndent: rs.paragraphIndent,
       textCase: rs.textCase, textDecoration: rs.textDecoration,
       boundVariables,
-    });
-  }
+    };
+  }));
 
   return { fileKey, collections, textStyles, externals, extractedAt };
 }

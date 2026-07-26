@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
-  isFoundationLink, foundationScopeKey, type DocLinkData, type FoundationDocLink, type ComponentDocLink,
+  isFoundationLink, foundationScopeKey, retargetScope,
+  type DocLinkData, type FoundationDocLink, type ComponentDocLink,
 } from '../src/docLink';
 
 const DATA: DocLinkData = {
@@ -191,5 +192,40 @@ describe('foundationScopeKey', () => {
     const a = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Old name', modeIds: ['m1'] });
     const b = foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'New name', modeIds: ['m1', 'm2'] });
     expect(a).toBe(b);
+  });
+});
+
+describe('retargetScope', () => {
+  const scope = {
+    target: 'collection' as const,
+    collectionId: 'dead', collectionName: 'Semantic', modeIds: ['m1'],
+  };
+
+  it('leaves a scope alone when its collection id still resolves', () => {
+    const live = [{ id: 'dead', name: 'Renamed since' }, { id: 'other', name: 'Semantic' }];
+    expect(retargetScope(scope, live)).toBe(scope);
+  });
+
+  it('retargets to the one live collection sharing the stored name', () => {
+    const live = [{ id: 'fresh', name: 'Semantic' }, { id: 'other', name: 'Primitives' }];
+    expect(retargetScope(scope, live)).toEqual({ ...scope, collectionId: 'fresh' });
+  });
+
+  it('refuses to guess when two live collections share the stored name', () => {
+    // Figma allows duplicate collection names. The documented collection may
+    // simply be gone, so binding to one of these at random would rebuild the
+    // doc from unrelated variables and stamp the wrong id in.
+    const live = [{ id: 'a', name: 'Semantic' }, { id: 'b', name: 'Semantic' }];
+    expect(retargetScope(scope, live)).toBe(scope);
+  });
+
+  it('leaves the scope unresolved when no live collection matches the name', () => {
+    expect(retargetScope(scope, [{ id: 'a', name: 'Primitives' }])).toBe(scope);
+    expect(retargetScope(scope, [])).toBe(scope);
+  });
+
+  it('never touches a text-styles scope', () => {
+    const text = { target: 'textStyles' as const, group: 'Heading' };
+    expect(retargetScope(text, [{ id: 'a', name: 'Heading' }])).toBe(text);
   });
 });

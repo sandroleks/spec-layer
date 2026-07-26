@@ -52,7 +52,12 @@ export type MainToUi =
   | { type: 'foundation'; dump: SerializedFoundation }
   | { type: 'foundationError'; message: string }
   | { type: 'foundationProgress'; done: number; total: number }
-  | { type: 'foundationDone'; created: number; replaced: number }
+  /** Reply for BOTH foundation build paths. `docId` is what tells them apart:
+   *  set only by `updateFoundationDoc` (one My Library row), absent on the
+   *  Foundations tab's bulk `renderFoundation`. The UI must branch on this and
+   *  not on its own in-flight flag, or a bulk reply arriving while a row Update
+   *  is pending gets read as that row's. */
+  | { type: 'foundationDone'; created: number; replaced: number; docId?: string }
   | { type: 'foundationFrameError'; message: string; created: number };
 
 export type UiToMain =

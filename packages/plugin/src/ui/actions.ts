@@ -628,10 +628,24 @@ function paintFoundations(refs: Refs): void {
 
 /** Set by ui.ts around the renderFoundation round-trip: true on click, false on
  *  both foundationDone and foundationFrameError. Repaints immediately so the
- *  button's disabled state is correct without waiting for an unrelated event. */
+ *  button's disabled state is correct without waiting for an unrelated event.
+ *
+ *  Also mirrors onto createFrameBtn, which is the in-flight signal the component
+ *  Create-frame button and My Library's row Update both read. The main thread
+ *  has ONE guard covering every foundation build, so the UI must present one
+ *  lock too: three entry points behind two independent flags meant the main
+ *  thread rejected whichever request lost, and the UI had no way to tell that
+ *  rejection apart from the winner's own reply. */
 export function setFoundationGenerating(refs: Refs, value: boolean): void {
   foundationGenerating = value;
+  refs.createFrameBtn.disabled = value;
   paintFoundations(refs);
+}
+
+/** Whether the Foundations tab's bulk build is in flight. Read by ui.ts's
+ *  shared build guard, so the other two entry points can see this one. */
+export function isFoundationGenerating(): boolean {
+  return foundationGenerating;
 }
 
 export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): void {

@@ -31,6 +31,7 @@ import {
   onFoundationCheckboxChange,
   currentFoundationSelection,
   setFoundationGenerating,
+  isFoundationGenerating,
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
@@ -160,6 +161,32 @@ refs.tabFoundations.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The shared build lock
+// ---------------------------------------------------------------------------
+
+/**
+ * True while ANY canvas build is in flight, from any of the three entry points:
+ * the component Create-frame button, My Library's row Update, and the
+ * Foundations tab's bulk Create.
+ *
+ * The main thread serializes all of them (renderFoundation and
+ * updateFoundationDoc behind one `foundationRendering` guard, renderDocFrame
+ * behind `docFrameRendering`), and every one of them mutates frameKit's shared
+ * theme and font state, so only one may be dispatched at a time. When the UI
+ * gated them on separate flags, both buttons stayed clickable and the main
+ * thread rejected the loser, which is the failure mode this closes: nothing
+ * should reach a guard the UI could have honored.
+ *
+ * `createFrameBtn.disabled` is the component/row half (set by runCreateDocFrame
+ * and the row Update below, cleared on docFrameDone/docFrameError/docSourceError),
+ * and setFoundationGenerating mirrors the bulk half onto the same flag, so this
+ * reads as one boolean.
+ */
+function buildInFlight(): boolean {
+  return refs.createFrameBtn.disabled || isFoundationGenerating();
+}
+
+// ---------------------------------------------------------------------------
 // My Library
 // ---------------------------------------------------------------------------
 
@@ -175,10 +202,9 @@ let libMenuDocId: string | null = null;
 let downloadingDocId: string | null = null;
 // The docId a foundation row's Update is in flight for (null = none). A
 // foundation row has no source node, so its Update skips requestDocSource and
-// goes straight to updateFoundationDoc, which replies on the same
-// foundationDone message the Foundations tab's bulk build uses — this is how
-// the foundationDone handler tells the two apart and re-enables createFrameBtn
-// only for the row-update path (the bulk path re-enables its own button).
+// goes straight to updateFoundationDoc. Purely a record of what is pending: the
+// foundationDone handler tells a row reply from a bulk reply by the docId the
+// MESSAGE carries, never by this flag.
 let updatingFoundationDocId: string | null = null;
 
 function refreshLibrary(): void {
@@ -259,10 +285,14 @@ function runRowAction(act: string, docId: string): void {
   switch (act) {
     case 'source': if (entry) send({ type: 'focusNode', nodeId: entry.sourceNodeId }); break;
     case 'update': {
-      // One renderDocFrame build may be in flight at a time (main's remove->append
-      // is non-atomic). Reuse the create-frame lock so this also blocks
-      // Update-while-Create and Create-while-Update across tabs.
-      if (refs.createFrameBtn.disabled) return;
+      // One build may be in flight at a time (main's remove->append is not
+      // atomic). The shared lock covers all three entry points, so this blocks
+      // Update-while-Create and Create-while-Update across every tab, including
+      // the Foundations tab's bulk run.
+      if (buildInFlight()) {
+        showBanner(refs, 'info', 'Still finishing another build. Try this again when it is done.');
+        return;
+      }
       if (entry?.selfEdited && !confirm('You edited this frame by hand. Updating replaces those edits.')) return;
       refs.createFrameBtn.disabled = true;
       // A foundation row has no source node to ask requestDocSource for — it
@@ -348,6 +378,11 @@ let foundationRequested = false;
 function requestFoundationOnce(): void {
   if (foundationRequested) return;
   foundationRequested = true;
+  // Repaint the placeholder on every real send, not just the first: after a
+  // failure the panel is sitting on the error text, and the user needs to see
+  // that clicking the tab actually started another read.
+  refs.foundationSummary.textContent = "Reading this file's variables and styles.";
+  refs.foundationNotes.textContent = '';
   send({ type: 'requestFoundation' });
 }
 
@@ -365,6 +400,13 @@ refs.foundationList.addEventListener('change', (ev) => {
 // success and error paths.
 refs.foundationCreate.addEventListener('click', () => {
   if (refs.foundationCreate.disabled) return;
+  // Observe the other two entry points, not just this button. A component
+  // Create or a row Update already holds the shared lock, and the main thread
+  // would reject this build rather than run it.
+  if (buildInFlight()) {
+    refs.foundationNotes.textContent = 'Still finishing another build. Try this again when it is done.';
+    return;
+  }
   setFoundationGenerating(refs, true);
   send({
     type: 'renderFoundation',
@@ -384,6 +426,10 @@ refs.extractBtn.addEventListener('click', () => {
   runExtract(refs, state).catch(() => { /* handled inside */ });
 });
 refs.createFrameBtn.addEventListener('click', () => {
+  // Defence in depth: the button is disabled while it holds the lock itself,
+  // and setFoundationGenerating disables it for the bulk run too, so this only
+  // fires if something re-enabled it early.
+  if (buildInFlight()) return;
   runCreateDocFrame(refs, state)
     .catch(() => { /* handled inside */ })
     .finally(() => renderQuota(refs, state));
@@ -979,7 +1025,14 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'foundationError': {
-      refs.foundationNotes.textContent = msg.message;
+      // The read failed, so there is no spec, so paintFoundations returns early
+      // and this panel will never repaint itself. Two things have to happen
+      // here or the tab is dead for the session: drop the once-per-session
+      // latch so the next tab activation actually retries, and replace the
+      // summary, which is still claiming the read is in progress.
+      foundationRequested = false;
+      refs.foundationSummary.textContent = "Could not read this file's variables and styles.";
+      refs.foundationNotes.textContent = `Open this tab again to try once more. ${msg.message}`;
       break;
     }
 
@@ -990,13 +1043,16 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'foundationDone': {
       // updateFoundationDoc (a single library row's Update) replies on this same
-      // message rather than a message of its own — tell the two apart by the
-      // docId this UI is tracking, same pattern as downloadingDocId below.
-      if (updatingFoundationDocId) {
-        const label = libEntries.find((e) => e.docId === updatingFoundationDocId)?.label
+      // message rather than a message of its own, and stamps the docId it
+      // rebuilt. Branch on THAT, not on this UI's own in-flight flag: reading
+      // the flag meant a bulk reply that happened to arrive while a row Update
+      // was pending got claimed by the row, which reported an update to a doc
+      // nothing had touched and left the bulk lock held forever.
+      if (msg.docId !== undefined) {
+        const label = libEntries.find((e) => e.docId === msg.docId)?.label
           ?? 'the foundation doc';
         showBanner(refs, 'info', `Updated ${label}.`);
-        updatingFoundationDocId = null;
+        if (updatingFoundationDocId === msg.docId) updatingFoundationDocId = null;
         refs.createFrameBtn.disabled = false;
         if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
         break;
@@ -1070,11 +1126,14 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'docSourceError': {
       // The error doesn't say which intent (or which of requestDocSource /
-      // updateFoundationDoc) asked, so release every lock it might belong to —
-      // whichever one wasn't held is a no-op.
+      // updateFoundationDoc) asked, so release every lock it might belong to.
+      // Whichever one wasn't held is a no-op, with one exception: if the
+      // Foundations tab's bulk run holds the shared lock, this error belongs to
+      // a request that never got it, so releasing would hand a second build a
+      // lock the first one is still using. Leave it to setFoundationGenerating.
       downloadingDocId = null;
       updatingFoundationDocId = null;
-      refs.createFrameBtn.disabled = false;
+      if (!isFoundationGenerating()) refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;
     }
