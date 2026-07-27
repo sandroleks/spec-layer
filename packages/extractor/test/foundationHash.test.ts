@@ -145,18 +145,23 @@ describe('foundationContentHash', () => {
 });
 
 describe('foundationContentHash — variables cover exactly what is drawn', () => {
-  // A frame draws a variable's name, the optional description, and one value
-  // cell per rendered mode. Nothing draws the declared resolvedType: a cell's
-  // swatch and label come from the resolved FoundationValue's own `kind`. A
-  // hash that moved on the declared type would offer an Update that produced a
-  // byte-identical frame, which is the same trap the text-style metrics avoid.
+  // A frame draws a variable's name, the optional description, one value cell
+  // per rendered mode, and its declared resolvedType, which is what selects the
+  // layout: COLOR renders as a swatch list, everything else as a table row.
+  //
+  // This test asserted the opposite while nothing read resolvedType, and
+  // trimming it from the projection was correct then. It has to move now: a
+  // retyped variable moves between two visibly different layouts, so a hash that
+  // stayed put would leave the frame showing the wrong one with no Update
+  // offered. Both directions of the invariant still hold, just with this field
+  // on the rendered side of the line.
 
-  it('does not move when a variable resolvedType changes', () => {
+  it('moves when a variable resolvedType changes, because the layout changes', () => {
     const d = dump();
-    // Values stay byte-identical, so the rendered cells are unchanged. Only the
-    // declared type differs, and nothing draws it.
+    // Values stay byte-identical. Only the declared type differs, and it decides
+    // whether this row is drawn as a swatch or as a table cell.
     d.collections[0].variables[0].resolvedType = 'STRING';
-    expect(hashOf(d)).toBe(hashOf(dump()));
+    expect(hashOf(d)).not.toBe(hashOf(dump()));
   });
 
   it('still moves when that variable is renamed or revalued', () => {

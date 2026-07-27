@@ -46,6 +46,33 @@ host: its theme variables, its panel width, and its timing.
 - [ ] **Both themes.** Switch the plugin's theme button and confirm the tab is legible in both: selected rows, mode pills, placeholder shimmer, and the result banner. Figma's own light/dark host counts as a third case worth a look.
       Screenshot:
 
+Colour layout. Verified in a browser against a mock built from the same layout
+constants, so what is left is Figma's own text metrics and wrapping:
+
+- [ ] **Colours render as a swatch list, not a table.** A single-mode colour collection shows one large swatch per row, the token name and its description beside it, and hex, rgb and hsl right-aligned at the far edge. Compare it against a published token reference (the Salesforce Lightning surface-colour page is the shape this was built to match).
+      Screenshot:
+
+- [ ] **The colour values are correct.** Spot-check two or three swatches against Figma's own colour picker: the hex matches, and the rgb and hsl describe the same colour. `#032D60` should read `rgb(3, 45, 96)` and `hsl(212.9, 93.9%, 19.4%)`.
+      Why this is here: hsl is derived by hand and is easy to get subtly wrong. Unit tests pin it against four known values, but a wrong colour in a doc is worse than a wrong layout.
+      Screenshot:
+
+- [ ] **Multi-mode colours.** A two- or three-mode colour collection names each mode once in a heading row, with one swatch per mode below it. No mode name repeats on every row, and the swatches line up in columns down the frame.
+      Screenshot:
+
+- [ ] **Aliased colours show their target.** A semantic token shows the primitive it points at plus the resolved hex, and does not show rgb/hsl. A colour aliased into a published library shows an empty outlined swatch, its target, and `library variable`, with no invented value.
+      Setup: needs a published team library, same as the alias item below. Record as blocked if you cannot publish one.
+      Screenshot:
+
+- [ ] **A mixed collection gets both blocks.** A collection holding colours and numbers together shows a **Colors** heading over the swatch list and an **Other values** heading over the table, each heading sitting against its own block rather than floating between them. The table has no Description column unless a non-colour row actually has a description.
+      Screenshot:
+
+- [ ] **Descriptions setting governs both layouts.** With descriptions off, no colour row shows its description either.
+      Screenshot:
+
+- [ ] **Existing docs report out of date, then update cleanly.** A foundation doc generated before this change reports **Update available** in My Library (the layout is part of the tracked content). Pressing Update rebuilds it in place with the new colour layout.
+      Why this is here: this is the intended consequence of the layout depending on a variable's declared type. If an existing doc instead reads In sync and keeps the old look, drift detection is not covering the layout.
+      Screenshot:
+
 Foundation frame generation works end-to-end:
 
 - [ ] **Two collections, one single-mode and one aliasing it.** A file with two collections (single-mode Primitives, two-mode Semantic aliasing it) generates both frames. Aliases show `→ target` with the resolved swatch.

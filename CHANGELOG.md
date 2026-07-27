@@ -34,6 +34,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   was renamed away now reports **Source missing** instead of rebuilding
   to an empty frame.
 
+  Colour variables are documented as a swatch list rather than a grid of
+  hex codes: a large chip, the token's name and description, and the
+  value as hex, rgb and hsl. An aliased token shows the primitive it
+  points at plus the resolved hex, since the primitive's own frame
+  carries the formats. Multi-mode collections give each mode its own
+  swatch under a heading row naming it once. Numbers, strings and
+  booleans stay in the table, and a collection holding both gets both,
+  labelled.
+
+  Because the layout now depends on a variable's declared type,
+  retyping one from colour to number reports the doc as out of date, as
+  it should: the two are drawn completely differently.
+
   Foundation frames are laid out as component docs are: one card at a
   fixed width, opening with the branded header band that carries the
   eyebrow, the document title, a count of what it covers, and the logo

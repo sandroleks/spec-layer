@@ -12,12 +12,15 @@
  * The card chrome matches a component doc: one fixed-width card, the brand
  * header band across the top, then a bordered table on the body background.
  *
- * The pure functions here (valueLabel, swatchColorOf, footerNotes,
- * headerSubtitle, tableColumns, cardWidth) are unit-tested. Node construction
- * is verified by the manual Figma pass, the same treatment docFrame.ts gets.
+ * The pure functions here (valueLines, swatchColorOf, footerNotes,
+ * headerSubtitle, tableColumns, cardWidth) are unit-tested, and the cell
+ * builders' sizing contract is pinned against a stub of Figma's resize
+ * behaviour. Everything else about the layout is verified by the manual Figma
+ * pass, the same treatment docFrame.ts gets.
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
+  FoundationRow, FoundationVariableRow,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle } from '@spec-layer/extractor';
 import {
@@ -26,9 +29,18 @@ import {
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import type { resolveTheme } from './brandColors';
 
-/** Human label for one cell. Never returns an empty string. */
-export function valueLabel(value: FoundationValue): string {
+/**
+ * Label for a single value. Never returns an empty string.
+ *
+ * The alias branch is a floor, not a path the extractor takes: resolution
+ * flattens chains, so a resolved target is a literal or an unresolved reason.
+ * Degrading to the target's name beats rendering "[object Object]" if that ever
+ * stops being true.
+ */
+function leafLabel(value: FoundationValue): string {
   switch (value.kind) {
+    case 'alias':
+      return `→ ${value.targetName}`;
     case 'color': {
       const h = value.hex.toUpperCase();
       return value.alpha < 1 ? `${h} ${Math.round(value.alpha * 100)}%` : h;
@@ -40,16 +52,113 @@ export function valueLabel(value: FoundationValue): string {
       return value.value === '' ? '(empty string)' : value.value;
     case 'boolean':
       return String(value.value);
-    case 'alias': {
-      if (value.external) return `→ ${value.targetName} (library)`;
-      if (!value.resolved) return `→ ${value.targetName}`;
-      return `→ ${value.targetName}  ${valueLabel(value.resolved)}`;
-    }
     case 'unresolved':
       return value.reason === 'external'
         ? 'not resolved: external library variable'
         : `not resolved: ${value.reason}`;
   }
+}
+
+/**
+ * One cell's text, split across two lines.
+ *
+ * A semantic token's cell has two things to say: which primitive it points at,
+ * and what that resolves to. On one line those ran together as
+ * "→ colors/blue/500  #722ED1", which read as crowded and, at any realistic
+ * column width, overflowed into the next column. Stacking them gives each a
+ * short line and lets the column be narrower than before rather than wider.
+ *
+ * `secondary` is empty when there is nothing more to say, which is the common
+ * case for a plain literal value.
+ */
+export interface ValueLines { primary: string; secondary: string }
+
+export function valueLines(value: FoundationValue): ValueLines {
+  if (value.kind !== 'alias') return { primary: leafLabel(value), secondary: '' };
+  const primary = `→ ${value.targetName}`;
+  // A library's modes cannot be mapped onto local ones, so there is no value to
+  // show. Say which kind of reference it is rather than leaving a bare arrow.
+  if (value.external) return { primary, secondary: 'library variable' };
+  if (!value.resolved) return { primary, secondary: '' };
+  return { primary, secondary: leafLabel(value.resolved) };
+}
+
+// ---------------------------------------------------------------------------
+// Colour formats
+//
+// A colour swatch carries the value in the three notations a developer actually
+// pastes: hex, rgb, hsl. All three are derived from the same hex the drift hash
+// already covers, so they add nothing to the projection and cannot drift from
+// it: change the colour and the hex moves, so the hash moves.
+// ---------------------------------------------------------------------------
+
+/** One decimal at most, with no trailing ".0" (matching how CSS is written). */
+function round1(n: number): string {
+  return String(Math.round(n * 10) / 10);
+}
+
+function channels(hexValue: string): [number, number, number] {
+  const h = hexValue.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+/** `rgb(3, 45, 96)`, or `rgba(3, 45, 96, 0.5)` when the colour is not opaque. */
+export function rgbLabel(hexValue: string, alpha: number): string {
+  const [r, g, b] = channels(hexValue);
+  return alpha < 1
+    ? `rgba(${r}, ${g}, ${b}, ${round1(alpha * 100)}%)`
+    : `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * `hsl(212.9, 93.9%, 19.4%)`, or `hsla(...)` when the colour is not opaque.
+ *
+ * Hue is undefined for a grey, where the standard convention is 0, which is what
+ * makes white read as `hsl(0, 0%, 100%)` rather than `hsl(NaN, 0%, 100%)`.
+ */
+export function hslLabel(hexValue: string, alpha: number): string {
+  const [r255, g255, b255] = channels(hexValue);
+  const r = r255 / 255, g = g255 / 255, b = b255 / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const delta = max - min;
+  const l = (max + min) / 2;
+
+  let h = 0;
+  if (delta !== 0) {
+    if (max === r) h = 60 * (((g - b) / delta) % 6);
+    else if (max === g) h = 60 * ((b - r) / delta + 2);
+    else h = 60 * ((r - g) / delta + 4);
+    if (h < 0) h += 360;
+  }
+  const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+
+  const body = `${round1(h)}, ${round1(s * 100)}%, ${round1(l * 100)}%`;
+  return alpha < 1 ? `hsla(${body}, ${round1(alpha * 100)}%)` : `hsl(${body})`;
+}
+
+/**
+ * The value lines beside one swatch, in render order.
+ *
+ * A direct colour gets all three notations, the way a token reference table
+ * does. An alias gets its target and the resolved hex instead: the target is the
+ * fact a reader of a semantic collection needs, and the primitive it points at
+ * has its own frame carrying the full formats, so nothing is lost across the
+ * document set and a four-mode semantic row stays readable.
+ */
+export function swatchValueLines(value: FoundationValue): string[] {
+  if (value.kind === 'color') {
+    return [
+      leafLabel(value),
+      rgbLabel(value.hex, value.alpha),
+      hslLabel(value.hex, value.alpha),
+    ];
+  }
+  const { primary, secondary } = valueLines(value);
+  return secondary ? [primary, secondary] : [primary];
 }
 
 /** The swatch color for a cell, or null when there is nothing to show. */
@@ -98,8 +207,11 @@ export function footerNotes(content: FoundationUnitContent): string[] {
 
 const COL_NAME = 240;
 const COL_DESC = 220;
-const COL_MODE = 180;
-const ROW_PAD = 8;
+// Narrower than the one-line cell needed: a stacked "name over value" pair fits
+// a shorter column, so a four-mode table is now narrower than it used to be
+// rather than wider.
+const COL_MODE = 160;
+const ROW_PAD = 10;
 const CELL_GAP = 12;
 
 /** Narrowest card, matching the component doc frame so the two sit level. */
@@ -171,17 +283,49 @@ function fixWidthHugHeight(frame: FrameNode, width: number): void {
   frame.layoutSizingVertical = 'HUG';
 }
 
+/**
+ * Append a text node that wraps inside its cell instead of running past it.
+ *
+ * This is the structural half of the crowding fix. makeText leaves a text node
+ * on Figma's default sizing, which hugs its content on both axes, so a cell of
+ * FIXED width does not constrain it at all: a long token path or a description
+ * of any length simply drew over the next column, and the rightmost column's
+ * overflow was clipped by the table's own border. FILL plus a HEIGHT-only
+ * autoresize makes the text wrap to the column and the row grow to fit, which
+ * holds for any content without measuring anything.
+ *
+ * `parent` must already be FIXED on the horizontal axis; Figma rejects FILL on a
+ * child of a frame that hugs the axis being filled.
+ */
+function wrappingText(
+  parent: FrameNode, chars: string, style: 'Regular' | 'Medium', size: number, color: RGB,
+  align: 'LEFT' | 'RIGHT' = 'LEFT',
+): TextNode {
+  const node = makeText(chars, style, size, color);
+  parent.appendChild(node);
+  node.layoutSizingHorizontal = 'FILL';
+  node.textAutoResize = 'HEIGHT';
+  // Right alignment rides on FILL rather than on the parent's item alignment, so
+  // a value that wraps stays flush to the edge instead of drifting mid-column.
+  if (align === 'RIGHT') node.textAlignHorizontal = 'RIGHT';
+  return node;
+}
+
 export function cellText(label: string, width: number, muted = false): FrameNode {
-  const row = hstack(6);
-  row.counterAxisAlignItems = 'CENTER';
-  row.appendChild(makeText(label, 'Regular', 11, muted ? palette.muted : palette.body));
-  fixWidthHugHeight(row, width);
-  return row;
+  // Vertical, so wrapped lines stack rather than fighting a horizontal flow.
+  const cell = vstack(0);
+  fixWidthHugHeight(cell, width);
+  wrappingText(cell, label, 'Regular', 11, muted ? palette.muted : palette.body);
+  return cell;
 }
 
 export function swatchCell(value: FoundationValue, width: number): FrameNode {
-  const row = hstack(6);
-  row.counterAxisAlignItems = 'CENTER';
+  const cell = hstack(8);
+  // Top-aligned, not centred: a wrapped two-line cell beside a one-line cell
+  // reads as a table when their first lines align and as a mess when their
+  // midpoints do.
+  cell.counterAxisAlignItems = 'MIN';
+  fixWidthHugHeight(cell, width);
 
   const color = swatchColorOf(value);
   if (color) {
@@ -191,14 +335,219 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
     chip.fills = solidFill(color);
     chip.strokes = solidFill(palette.border);
     chip.strokeWeight = 1;
-    row.appendChild(chip);
+    cell.appendChild(chip);
   }
+
+  const lines = vstack(2);
+  cell.appendChild(lines);
+  lines.layoutSizingHorizontal = 'FILL';
+
   const unresolved = value.kind === 'unresolved'
     || (value.kind === 'alias' && !value.external && value.resolved?.kind === 'unresolved');
-  row.appendChild(makeText(valueLabel(value), 'Regular', 11,
-    unresolved ? palette.muted : palette.body));
-  fixWidthHugHeight(row, width);
-  return row;
+  const { primary, secondary } = valueLines(value);
+  wrappingText(lines, primary, 'Regular', 11, unresolved ? palette.muted : palette.body);
+  // The resolved value is supporting detail for the name above it, so it is
+  // smaller and muted whether or not the alias resolved.
+  if (secondary) wrappingText(lines, secondary, 'Regular', 10, palette.muted);
+  return cell;
+}
+
+// ---------------------------------------------------------------------------
+// Swatch list — the layout colour variables get instead of a table row.
+//
+// A grid of hex codes is the wrong shape for colour: the value a reader wants is
+// the colour itself, and the swatch has to be big enough to judge. So a colour
+// row is a swatch, the token's name and description, and the value in the
+// notations a developer pastes.
+//
+// Single-mode collections take the reference shape exactly: a column of swatches
+// down the left, name and description beside them, values right-aligned at the
+// far edge. Multi-mode collections cannot, since there is one value slot and
+// several values, so the name leads and each mode follows as its own labelled
+// swatch block.
+// ---------------------------------------------------------------------------
+
+const SWATCH = 44;          // single-mode: the reference's large chip
+const SWATCH_SMALL = 32;    // multi-mode: one per mode, so slightly smaller
+const SWATCH_GAP = 16;
+const BLOCK_GAP = 10;       // swatch to its own values
+const NAME_MIN = 300;       // single-mode: the name column FILLs beyond this
+const NAME_W = 260;         // multi-mode: fixed, so the mode blocks line up
+const VALUES_W = 210;       // single-mode: the right-aligned value stack
+const MODE_BLOCK_W = 170;   // multi-mode: swatch plus its values
+const SWATCH_ROW_PAD = 14;
+
+/** True for the rows the swatch list owns. */
+export function isColorRow(row: FoundationRow): boolean {
+  return row.kind === 'variable' && row.resolvedType === 'COLOR';
+}
+
+/**
+ * Inner width one swatch-list row needs, which the card must be wide enough to
+ * hold for the same reason the table's is: the card clips.
+ */
+export function swatchRowWidth(modeCount: number): number {
+  if (modeCount <= 1) {
+    return SWATCH + SWATCH_GAP + NAME_MIN + SWATCH_GAP + VALUES_W;
+  }
+  return NAME_W + modeCount * (SWATCH_GAP + MODE_BLOCK_W);
+}
+
+/** A colour chip. Always drawn, even with no colour to show, so rows align. */
+function swatchChip(color: RGB | null, size: number): RectangleNode {
+  const chip = figma.createRectangle();
+  chip.resize(size, size);
+  chip.cornerRadius = radius(6);
+  // An unresolved value gets an empty outlined box rather than a missing one: a
+  // gap in the swatch column reads as a rendering fault, not as "no value".
+  chip.fills = color ? solidFill(color) : [];
+  chip.strokes = solidFill(palette.border);
+  chip.strokeWeight = 1;
+  return chip;
+}
+
+/**
+ * The token's name over its description.
+ *
+ * `showDescription` is the user's Foundations setting, which governs both
+ * layouts. The swatch list ignored it at first, which quietly overrode a choice
+ * the user had made for the table in the same frame.
+ */
+function nameBlock(
+  row: FoundationVariableRow, width: number | 'fill', showDescription: boolean,
+): FrameNode {
+  const block = vstack(3);
+  if (width !== 'fill') fixWidthHugHeight(block, width);
+  const name = makeText(row.name, 'Medium', 13, palette.heading);
+  block.appendChild(name);
+  if (showDescription && row.description) {
+    const desc = makeText(row.description, 'Regular', 11, palette.muted);
+    block.appendChild(desc);
+  }
+  return block;
+}
+
+/** Wire a name block's text to wrap once its final width is settled. */
+function wrapNameBlock(block: FrameNode): void {
+  for (const child of block.children) {
+    if (child.type !== 'TEXT') continue;
+    child.layoutSizingHorizontal = 'FILL';
+    child.textAutoResize = 'HEIGHT';
+  }
+}
+
+/** One swatch-list row. */
+function swatchRow(
+  row: FoundationVariableRow, modeCount: number, divider: boolean,
+  showDescriptions: boolean,
+): FrameNode {
+  const line = hstack(SWATCH_GAP);
+  line.paddingTop = SWATCH_ROW_PAD;
+  line.paddingBottom = SWATCH_ROW_PAD;
+  line.counterAxisAlignItems = 'MIN';
+  fixWidthHugHeight(line, swatchRowWidth(modeCount));
+  if (divider) {
+    line.strokes = solidFill(palette.divider);
+    line.strokeTopWeight = 1;
+    line.strokeBottomWeight = 0;
+    line.strokeLeftWeight = 0;
+    line.strokeRightWeight = 0;
+  }
+
+  if (modeCount <= 1) {
+    // The reference shape: swatch, name, values hard right.
+    const cell = row.cells[0];
+    line.appendChild(swatchChip(cell ? swatchColorOf(cell.value) : null, SWATCH));
+
+    const names = nameBlock(row, 'fill', showDescriptions);
+    line.appendChild(names);
+    names.layoutSizingHorizontal = 'FILL';
+    wrapNameBlock(names);
+
+    const values = vstack(3);
+    line.appendChild(values);
+    fixWidthHugHeight(values, VALUES_W);
+    for (const text of cell ? swatchValueLines(cell.value) : ['not resolved: missing']) {
+      wrappingText(values, text, 'Regular', 11, palette.body, 'RIGHT');
+    }
+    return line;
+  }
+
+  const names = nameBlock(row, NAME_W, showDescriptions);
+  line.appendChild(names);
+  wrapNameBlock(names);
+
+  for (const cell of row.cells) {
+    const block = hstack(BLOCK_GAP);
+    block.counterAxisAlignItems = 'MIN';
+    line.appendChild(block);
+    fixWidthHugHeight(block, MODE_BLOCK_W);
+    block.appendChild(swatchChip(swatchColorOf(cell.value), SWATCH_SMALL));
+
+    const values = vstack(2);
+    block.appendChild(values);
+    values.layoutSizingHorizontal = 'FILL';
+    // No mode label here: the list's header row names each column once. Labelling
+    // every block repeated the mode names on every row, which for six rows and
+    // three modes meant eighteen copies of "Light / Dark / Wireframe".
+    for (const text of swatchValueLines(cell.value)) {
+      wrappingText(values, text, 'Regular', 11, palette.body);
+    }
+  }
+  return line;
+}
+
+/**
+ * The swatch list for every colour row in a unit.
+ *
+ * Borderless with hairline dividers, unlike the table: the reference reads as a
+ * list of colours rather than a grid of cells, and an outer box around 40 tall
+ * rows only boxes them in.
+ */
+function buildSwatchList(
+  rows: FoundationVariableRow[], modeNames: string[], showDescriptions: boolean,
+): FrameNode {
+  const list = vstack(0);
+  list.name = 'Colors';
+
+  // Only a multi-mode list needs headings: with one mode there is nothing to
+  // tell apart, and the reference has no header row at all.
+  if (modeNames.length > 1) {
+    const head = hstack(SWATCH_GAP);
+    head.paddingBottom = 8;
+    fixWidthHugHeight(head, swatchRowWidth(modeNames.length));
+    // An empty cell over the name column, so each heading lands on its own block.
+    const spacer = vstack(0);
+    head.appendChild(spacer);
+    fixWidthHugHeight(spacer, NAME_W);
+    for (const name of modeNames) {
+      const label = vstack(0);
+      head.appendChild(label);
+      fixWidthHugHeight(label, MODE_BLOCK_W);
+      wrappingText(label, name, 'Medium', 10, palette.muted);
+    }
+    list.appendChild(head);
+  }
+
+  rows.forEach((row, i) => {
+    list.appendChild(swatchRow(row, modeNames.length, i > 0, showDescriptions));
+  });
+  return list;
+}
+
+/**
+ * A block with its heading, used only when one frame holds both layouts.
+ *
+ * The two are grouped rather than appended side by side so the heading sits
+ * against its own block: as separate children of the body they were separated by
+ * the body's own 28px rhythm, which reads as a heading floating between blocks
+ * rather than belonging to the one below it.
+ */
+function labelledBlock(text: string, block: FrameNode): FrameNode {
+  const group = vstack(10);
+  group.appendChild(makeText(text, 'Medium', 11, palette.muted));
+  group.appendChild(block);
+  return group;
 }
 
 /**
@@ -207,10 +556,10 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
  * user chose back at them misrepresents what the mode is called.
  */
 export function headerCell(label: string, width: number): FrameNode {
-  const row = hstack(0);
-  row.appendChild(makeText(label, 'Medium', 11, palette.muted));
-  fixWidthHugHeight(row, width);
-  return row;
+  const cell = vstack(0);
+  fixWidthHugHeight(cell, width);
+  wrappingText(cell, label, 'Medium', 11, palette.muted);
+  return cell;
 }
 
 /** One table row. `divider` draws the hairline above it, as the doc tables do. */
@@ -220,7 +569,9 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
   row.paddingBottom = ROW_PAD;
   row.paddingLeft = CELL_GAP;
   row.paddingRight = CELL_GAP;
-  row.counterAxisAlignItems = 'CENTER';
+  // First lines align across the row. With cells that can wrap to different
+  // heights, centring each one against the others reads as ragged.
+  row.counterAxisAlignItems = 'MIN';
   row.layoutSizingHorizontal = 'HUG';
   for (const c of children) row.appendChild(c);
   if (divider) {
@@ -231,6 +582,31 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
     row.strokeRightWeight = 0;
   }
   return row;
+}
+
+/** The footer note block. Shared by both exits from the frame builder. */
+function buildFooter(notes: string[]): FrameNode {
+  const footer = vstack(2);
+  footer.name = 'Notes';
+  for (const n of notes) footer.appendChild(makeText(n, 'Regular', 10, palette.muted));
+  return footer;
+}
+
+/**
+ * Wrap the finished card in its Section and size the Section around it.
+ *
+ * Shared by both exits for one reason: a colours-only frame returns before the
+ * table is built, and a second copy of this would be the place a future change
+ * to one exit silently fails to reach the other.
+ */
+function finishCard(card: FrameNode, title: string): SectionNode {
+  const section = figma.createSection();
+  section.name = `Foundations: ${title}`;
+  section.appendChild(card);
+  card.x = 40;
+  card.y = 40;
+  section.resizeWithoutConstraints(card.width + 80, card.height + 80);
+  return section;
 }
 
 /**
@@ -249,12 +625,20 @@ export async function buildFoundationFrame(
   // frameKit's module state.
   await applyThemeToKit(theme);
 
+  const isText = unit.scope.target === 'textStyles';
+
+  // Colour variables render as a swatch list, everything else as a table. A
+  // mixed collection (colour plus spacing plus radius) gets both, in that order.
+  const colorRows = content.rows.filter(isColorRow) as FoundationVariableRow[];
+  const tableRows = content.rows.filter((r) => !isColorRow(r));
+
   // The column appears only when the user asked for descriptions AND some row
   // in this unit actually has one, so a file with no descriptions never gets a
-  // column of blanks.
+  // column of blanks. Judged on the TABLE's rows alone: a colour row carries its
+  // description inline, so counting those would add an all-blank column whenever
+  // only colours are described.
   const hasDescriptions = includeDescriptions
-    && content.rows.some((r) => r.description.length > 0);
-  const isText = unit.scope.target === 'textStyles';
+    && tableRows.some((r) => r.description.length > 0);
 
   // Load every family a specimen needs. Track failures so a wrong-looking
   // specimen is always acknowledged rather than silently wrong.
@@ -278,7 +662,13 @@ export async function buildFoundationFrame(
   // one function in the extractor derives all three.
   const title = foundationUnitTitle(unit.scope, content);
   const columns = tableColumns(content, isText, hasDescriptions);
-  const width = cardWidth(columns);
+  // The card has to fit whichever layouts it holds, since it clips its contents.
+  const width = Math.max(
+    tableRows.length > 0 ? cardWidth(columns) : CARD_WIDTH_MIN,
+    colorRows.length > 0
+      ? Math.max(CARD_WIDTH_MIN, swatchRowWidth(content.modeNames.length) + HEADER_PAD_X * 2)
+      : CARD_WIDTH_MIN,
+  );
 
   const card = vstack(0);
   card.name = title;
@@ -321,20 +711,36 @@ export async function buildFoundationFrame(
   card.appendChild(body);
   body.layoutSizingHorizontal = 'FILL';
 
-  // --- table ---
+  // A frame holding both layouts labels them, so the split reads as deliberate
+  // rather than as two unrelated blocks. A frame with only one needs no label.
+  const bothLayouts = colorRows.length > 0 && tableRows.length > 0;
+
+  // --- swatch list (colours) ---
+  if (colorRows.length > 0) {
+    const list = buildSwatchList(colorRows, content.modeNames, includeDescriptions);
+    body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
+  }
+
+  // --- table (everything else) ---
+  if (tableRows.length === 0) {
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+    return finishCard(card, title);
+  }
+
   const table = vstack(0);
   table.name = 'Table';
   table.cornerRadius = radius(8);
   table.clipsContent = true;
   table.strokes = solidFill(palette.border);
   table.strokeWeight = 1;
-  body.appendChild(table);
+  body.appendChild(bothLayouts ? labelledBlock('Other values', table) : table);
 
   const head = tableRow(columns.map((c) => headerCell(c.label, c.width)), false);
   head.fills = solidFill(palette.tableHeadBg);
   table.appendChild(head);
 
-  content.rows.forEach((row) => {
+  tableRows.forEach((row) => {
     // Cells are filled in column order, so a cell's width is always the width
     // its own heading was measured at.
     let next = 0;
@@ -348,9 +754,8 @@ export async function buildFoundationFrame(
     } else {
       const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
       const failed = failedFamilies.has(key);
-      const pane = vstack(2);
-      pane.resize(widthOf(), 1);
-      pane.primaryAxisSizingMode = 'AUTO';
+      const pane = vstack(4);
+      fixWidthHugHeight(pane, widthOf());
       const specimen = makeText('Ag', 'Regular', Math.min(row.metrics.fontSize, 40), palette.heading);
       if (!failed) {
         specimen.fontName = { family: row.metrics.fontFamily, style: row.metrics.fontStyle };
@@ -358,11 +763,14 @@ export async function buildFoundationFrame(
       pane.appendChild(specimen);
       const lh = row.metrics.lineHeight.unit === 'AUTO'
         ? 'auto' : `${row.metrics.lineHeight.value}${row.metrics.lineHeight.unit === 'PERCENT' ? '%' : ''}`;
-      pane.appendChild(makeText(
+      // Wrapped, like every other cell: a family name plus style and metrics is
+      // routinely longer than the column.
+      wrappingText(pane,
         `${row.metrics.fontFamily} ${row.metrics.fontStyle} ${row.metrics.fontSize}/${lh}`,
-        'Regular', 10, palette.muted));
+        'Regular', 10, palette.muted);
       if (failed) {
-        pane.appendChild(makeText('Font not available, showing the default font.', 'Regular', 10, palette.muted));
+        wrappingText(pane, 'Font not available, showing the default font.',
+          'Regular', 10, palette.muted);
       }
       cells.push(pane);
     }
@@ -376,18 +784,7 @@ export async function buildFoundationFrame(
   // Derived from `content` alone, never from `unit` or from parameters: the
   // renderer must read the same object the drift hash reads.
   const notes = footerNotes(content);
-  if (notes.length > 0) {
-    const footer = vstack(2);
-    footer.name = 'Notes';
-    for (const n of notes) footer.appendChild(makeText(n, 'Regular', 10, palette.muted));
-    body.appendChild(footer);
-  }
+  if (notes.length > 0) body.appendChild(buildFooter(notes));
 
-  const section = figma.createSection();
-  section.name = `Foundations: ${title}`;
-  section.appendChild(card);
-  card.x = 40;
-  card.y = 40;
-  section.resizeWithoutConstraints(card.width + 80, card.height + 80);
-  return section;
+  return finishCard(card, title);
 }

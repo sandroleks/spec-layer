@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  valueLabel, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
+  valueLines, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
   buildFoundationFrame, headerSubtitle, tableColumns, cardWidth, rowWidth,
+  rgbLabel, hslLabel, swatchValueLines, isColorRow, swatchRowWidth,
   type TableColumn,
 } from '../src/foundationFrame';
 import { hstack, vstack } from '../src/frameKit';
@@ -14,60 +15,102 @@ import {
   type SerializedFoundation,
 } from '@spec-layer/extractor';
 
-describe('valueLabel', () => {
+describe('valueLines', () => {
   it('labels a color as hex, adding alpha only when partial', () => {
-    expect(valueLabel({ kind: 'color', hex: '#2563eb', alpha: 1 })).toBe('#2563EB');
-    expect(valueLabel({ kind: 'color', hex: '#000000', alpha: 0.5 })).toBe('#000000 50%');
+    expect(valueLines({ kind: 'color', hex: '#2563eb', alpha: 1 }))
+      .toEqual({ primary: '#2563EB', secondary: '' });
+    expect(valueLines({ kind: 'color', hex: '#000000', alpha: 0.5 }))
+      .toEqual({ primary: '#000000 50%', secondary: '' });
   });
 
   it('labels numbers without trailing zeros', () => {
-    expect(valueLabel({ kind: 'number', value: 16 })).toBe('16');
-    expect(valueLabel({ kind: 'number', value: 1.5 })).toBe('1.5');
+    expect(valueLines({ kind: 'number', value: 16 }).primary).toBe('16');
+    expect(valueLines({ kind: 'number', value: 1.5 }).primary).toBe('1.5');
   });
 
   it('labels strings and booleans', () => {
-    expect(valueLabel({ kind: 'string', value: 'Acme' })).toBe('Acme');
-    expect(valueLabel({ kind: 'boolean', value: true })).toBe('true');
+    expect(valueLines({ kind: 'string', value: 'Acme' }).primary).toBe('Acme');
+    expect(valueLines({ kind: 'boolean', value: true }).primary).toBe('true');
   });
 
   it('labels an empty string variable as a stated fact, not a blank cell', () => {
-    expect(valueLabel({ kind: 'string', value: '' })).toBe('(empty string)');
+    expect(valueLines({ kind: 'string', value: '' }).primary).toBe('(empty string)');
   });
 
   it('labels a non-empty string unchanged', () => {
-    expect(valueLabel({ kind: 'string', value: 'Acme Corp' })).toBe('Acme Corp');
+    expect(valueLines({ kind: 'string', value: 'Acme Corp' }).primary).toBe('Acme Corp');
   });
 
-  it('labels a resolved alias with the arrow and the final value', () => {
+  it('puts an alias target and its resolved value on separate lines', () => {
+    // The whole point of the split: these two used to share one line as
+    // "→ color/blue/500  #0000FF", which read as crowded and overflowed.
     const v: FoundationValue = {
       kind: 'alias', targetName: 'color/blue/500', targetCollection: 'Primitives',
       external: false, resolved: { kind: 'color', hex: '#0000ff', alpha: 1 },
     };
-    expect(valueLabel(v)).toBe('→ color/blue/500  #0000FF');
+    expect(valueLines(v)).toEqual({ primary: '→ color/blue/500', secondary: '#0000FF' });
   });
 
-  it('marks an external alias as a library reference with no value', () => {
+  it('names a library reference as such, with no value invented for it', () => {
     const v: FoundationValue = {
       kind: 'alias', targetName: 'core/blue', targetCollection: 'Core Library',
       external: true, resolved: null,
     };
-    expect(valueLabel(v)).toBe('→ core/blue (library)');
+    expect(valueLines(v)).toEqual({ primary: '→ core/blue', secondary: 'library variable' });
+  });
+
+  it('leaves the second line empty for an unresolvable local alias', () => {
+    const v: FoundationValue = {
+      kind: 'alias', targetName: 'gone', targetCollection: 'P',
+      external: false, resolved: null,
+    };
+    expect(valueLines(v)).toEqual({ primary: '→ gone', secondary: '' });
   });
 
   it('states every unresolved reason plainly', () => {
-    expect(valueLabel({ kind: 'unresolved', reason: 'cycle' })).toBe('not resolved: cycle');
-    expect(valueLabel({ kind: 'unresolved', reason: 'missing' })).toBe('not resolved: missing');
-    expect(valueLabel({ kind: 'unresolved', reason: 'depth' })).toBe('not resolved: depth');
-    expect(valueLabel({ kind: 'unresolved', reason: 'external' }))
+    expect(valueLines({ kind: 'unresolved', reason: 'cycle' }).primary)
+      .toBe('not resolved: cycle');
+    expect(valueLines({ kind: 'unresolved', reason: 'missing' }).primary)
+      .toBe('not resolved: missing');
+    expect(valueLines({ kind: 'unresolved', reason: 'depth' }).primary)
+      .toBe('not resolved: depth');
+    expect(valueLines({ kind: 'unresolved', reason: 'external' }).primary)
       .toBe('not resolved: external library variable');
   });
 
-  it('labels an alias whose chain failed with the arrow plus the reason', () => {
+  it('carries a failed chain reason on the second line', () => {
     const v: FoundationValue = {
       kind: 'alias', targetName: 'a', targetCollection: 'P', external: false,
       resolved: { kind: 'unresolved', reason: 'cycle' },
     };
-    expect(valueLabel(v)).toBe('→ a  not resolved: cycle');
+    expect(valueLines(v)).toEqual({ primary: '→ a', secondary: 'not resolved: cycle' });
+  });
+
+  it('degrades to a name if a resolved target is ever itself an alias', () => {
+    // Resolution flattens chains, so this cannot happen today. It is here so
+    // that a model change surfaces as a plain name rather than "[object Object]".
+    const nested: FoundationValue = {
+      kind: 'alias', targetName: 'outer', targetCollection: 'P', external: false,
+      resolved: {
+        kind: 'alias', targetName: 'inner', targetCollection: 'P',
+        external: false, resolved: null,
+      },
+    };
+    expect(valueLines(nested)).toEqual({ primary: '→ outer', secondary: '→ inner' });
+  });
+
+  it('never returns an empty primary line', () => {
+    const values: FoundationValue[] = [
+      { kind: 'color', hex: '#000000', alpha: 1 },
+      { kind: 'string', value: '' },
+      { kind: 'number', value: 0 },
+      { kind: 'boolean', value: false },
+      { kind: 'unresolved', reason: 'missing' },
+      { kind: 'alias', targetName: 'a', targetCollection: 'P', external: true, resolved: null },
+    ];
+    // A blank cell reads as "this token has no value", which is never what any
+    // of these mean.
+    for (const v of values) expect(valueLines(v).primary).not.toBe('');
   });
 
   it('contains no em dash in any label', () => {
@@ -76,7 +119,11 @@ describe('valueLabel', () => {
       { kind: 'unresolved', reason: 'external' },
       { kind: 'alias', targetName: 'a', targetCollection: 'P', external: true, resolved: null },
     ];
-    for (const v of values) expect(valueLabel(v)).not.toContain('—');
+    for (const v of values) {
+      const { primary, secondary } = valueLines(v);
+      expect(primary).not.toContain('—');
+      expect(secondary).not.toContain('—');
+    }
   });
 });
 
@@ -260,59 +307,108 @@ describe('table cell sizing (row-clipping regression)', () => {
     });
   });
 
-  const builders: [string, (w: number) => FakeFrame][] = [
-    ['cellText', (w) => cellText('spacing/md', w) as unknown as FakeFrame],
-    ['cellText (muted)', (w) => cellText('a description', w, true) as unknown as FakeFrame],
-    ['swatchCell (color, with chip)', (w) =>
+  // Direction matters to the assertions: width is the PRIMARY axis of a
+  // horizontal frame and the COUNTER axis of a vertical one, which is exactly
+  // the confusion that produced the one-pixel rows. Each builder therefore
+  // declares the direction it uses.
+  const builders: [string, 'HORIZONTAL' | 'VERTICAL', (w: number) => FakeFrame][] = [
+    ['cellText', 'VERTICAL', (w) => cellText('spacing/md', w) as unknown as FakeFrame],
+    ['cellText (muted)', 'VERTICAL', (w) => cellText('a description', w, true) as unknown as FakeFrame],
+    ['swatchCell (color, with chip)', 'HORIZONTAL', (w) =>
       swatchCell({ kind: 'color', hex: '#2563eb', alpha: 1 }, w) as unknown as FakeFrame],
-    ['swatchCell (number, no chip)', (w) =>
+    ['swatchCell (number, no chip)', 'HORIZONTAL', (w) =>
       swatchCell({ kind: 'number', value: 16 }, w) as unknown as FakeFrame],
-    ['swatchCell (unresolved)', (w) =>
+    ['swatchCell (unresolved)', 'HORIZONTAL', (w) =>
       swatchCell({ kind: 'unresolved', reason: 'cycle' }, w) as unknown as FakeFrame],
-    ['headerCell', (w) => headerCell('Name', w) as unknown as FakeFrame],
+    ['headerCell', 'VERTICAL', (w) => headerCell('Name', w) as unknown as FakeFrame],
   ];
 
-  for (const [name, build] of builders) {
+  for (const [name, dir, build] of builders) {
     describe(name, () => {
+      const widthAxis = (c: FakeFrame) =>
+        (dir === 'HORIZONTAL' ? c.primaryAxisSizingMode : c.counterAxisSizingMode);
+      const heightAxis = (c: FakeFrame) =>
+        (dir === 'HORIZONTAL' ? c.counterAxisSizingMode : c.primaryAxisSizingMode);
+
       it('is FIXED horizontally at the requested column width', () => {
         const cell = build(240);
         expect(cell.layoutSizingHorizontal).toBe('FIXED');
         expect(cell.width).toBe(240);
-        // Stated on the underlying axis too: width is the PRIMARY axis here.
-        expect(cell.primaryAxisSizingMode).toBe('FIXED');
+        // Stated on the underlying axis too, so a primary/counter mix-up fails.
+        expect(widthAxis(cell)).toBe('FIXED');
       });
 
       it('HUGS vertically so the text is never clipped', () => {
         const cell = build(180);
         expect(cell.layoutSizingVertical).toBe('HUG');
-        // Height is the COUNTER axis of a horizontal frame. Asserting this is
-        // what makes a primaryAxisSizingMode-only regression fail.
-        expect(cell.counterAxisSizingMode).toBe('AUTO');
+        expect(heightAxis(cell)).toBe('AUTO');
       });
 
       it('is as tall as its content, not a one-pixel sliver', () => {
         const cell = build(180);
-        expect(cell.height).toBe(TEXT_H);
         expect(cell.height).toBeGreaterThan(1);
+        expect(cell.height).toBeGreaterThanOrEqual(TEXT_H);
       });
 
-      it('holds its content and stays a horizontal auto-layout frame', () => {
+      it('holds its content in an auto-layout frame', () => {
         const cell = build(180);
-        expect(cell.layoutMode).toBe('HORIZONTAL');
+        expect(cell.layoutMode).toBe(dir);
         expect(cell.children.length).toBeGreaterThan(0);
+      });
+
+      it('lets its text wrap inside the column instead of running past it', () => {
+        // The overflow fix. A Figma text node defaults to hugging BOTH axes, so
+        // a FIXED-width cell does not constrain it: long content drew straight
+        // over the next column. Every text node a cell owns has to FILL the
+        // width and grow in height only.
+        const cell = build(160);
+        const texts: Record<string, unknown>[] = [];
+        const walk = (f: FakeFrame) => {
+          for (const child of f.children) {
+            if (child instanceof FakeFrame) walk(child);
+            else if ((child as Record<string, unknown>).type === 'TEXT') {
+              texts.push(child as Record<string, unknown>);
+            }
+          }
+        };
+        walk(cell);
+        expect(texts.length).toBeGreaterThan(0);
+        for (const t of texts) {
+          expect(t.layoutSizingHorizontal).toBe('FILL');
+          expect(t.textAutoResize).toBe('HEIGHT');
+        }
       });
     });
   }
 
-  it('keeps the swatch chip and its label in one row', () => {
-    const cell = swatchCell({ kind: 'color', hex: '#2563eb', alpha: 1 }, 180) as unknown as FakeFrame;
-    expect(cell.children).toHaveLength(2); // chip + label
-    expect(cell.counterAxisAlignItems).toBe('CENTER'); // vertical centring preserved
+  it('stacks an alias target over its resolved value', () => {
+    const cell = swatchCell({
+      kind: 'alias', targetName: 'colors/blue/500', targetCollection: 'P',
+      external: false, resolved: { kind: 'color', hex: '#722ed1', alpha: 1 },
+    }, 160) as unknown as FakeFrame;
+    // chip + the two-line stack
+    expect(cell.children).toHaveLength(2);
+    expect(cell.textChars()).toEqual(['→ colors/blue/500', '#722ED1']);
   });
 
-  it('centres cellText content vertically', () => {
-    const cell = cellText('x', 240) as unknown as FakeFrame;
-    expect(cell.counterAxisAlignItems).toBe('CENTER');
+  it('gives a literal value a single line', () => {
+    const cell = swatchCell({ kind: 'color', hex: '#722ed1', alpha: 1 }, 160) as unknown as FakeFrame;
+    expect(cell.textChars()).toEqual(['#722ED1']);
+  });
+
+  it('top-aligns the swatch against the first line, not the midpoint', () => {
+    const cell = swatchCell({ kind: 'color', hex: '#000000', alpha: 1 }, 160) as unknown as FakeFrame;
+    expect(cell.counterAxisAlignItems).toBe('MIN');
+  });
+
+  it('sets the resolved value smaller than the name above it', () => {
+    const cell = swatchCell({
+      kind: 'alias', targetName: 'a', targetCollection: 'P',
+      external: false, resolved: { kind: 'color', hex: '#000000', alpha: 1 },
+    }, 160) as unknown as FakeFrame;
+    const stack = cell.children.find((c) => c instanceof FakeFrame) as FakeFrame;
+    const [primary, secondary] = stack.children as Record<string, unknown>[];
+    expect(Number(secondary.fontSize)).toBeLessThan(Number(primary.fontSize));
   });
 });
 
@@ -362,12 +458,13 @@ describe('buildFoundationFrame', () => {
 
   function build(opts: {
     textStyles?: boolean; descriptions?: boolean; logo?: string | null;
+    singleMode?: boolean;
   } = {}) {
     const spec = buildFoundation(dump());
     const units = planFoundationUnits(spec, {
       collections: opts.textStyles
         ? []
-        : [{ collectionId: 'c1', modeIds: ['light', 'dark'] }],
+        : [{ collectionId: 'c1', modeIds: opts.singleMode ? ['light'] : ['light', 'dark'] }],
       textStyles: opts.textStyles ?? false,
     });
     const unit = units[0];
@@ -462,14 +559,59 @@ describe('buildFoundationFrame', () => {
     expect(body.layoutSizingHorizontal).toBe('FILL');
   });
 
-  it('wraps the rows in a bordered table, as the component tables are', async () => {
+  it('wraps the non-colour rows in a bordered table, as the component tables are', async () => {
     const card = cardOf(await build());
     const table = card.findAllNamed('Table')[0];
     expect(table).toBeDefined();
     expect(table.strokeWeight).toBe(1);
     expect(table.clipsContent).toBe(true);
-    // Header row plus one row per variable.
-    expect(table.children).toHaveLength(4);
+    // The fixture has two COLOR variables and one FLOAT, so the table holds its
+    // header plus the FLOAT alone; the colours are in the swatch list.
+    expect(table.children).toHaveLength(2);
+  });
+
+  it('sends colour variables to the swatch list, not the table', async () => {
+    const card = cardOf(await build());
+    const list = card.findAllNamed('Colors')[0];
+    expect(list).toBeDefined();
+    // The fixture has two modes, so a heading row plus color/bg and color/fg.
+    expect(list.children).toHaveLength(3);
+    expect(list.textChars()).toContain('color/bg');
+    const table = card.findAllNamed('Table')[0];
+    expect(table.textChars()).toContain('space/md');
+    expect(table.textChars()).not.toContain('color/bg');
+  });
+
+  it('names each mode once in a heading row, not on every swatch', async () => {
+    const card = cardOf(await build());
+    const chars = card.findAllNamed('Colors')[0].textChars();
+    // Two colour rows over two modes: four blocks. Labelling each would repeat
+    // every mode name four times.
+    expect(chars.filter((c) => c === 'Light')).toHaveLength(1);
+    expect(chars.filter((c) => c === 'Dark')).toHaveLength(1);
+  });
+
+  it('gives a single-mode list no heading row at all', async () => {
+    // Nothing to tell apart, and the reference layout has no header.
+    const card = cardOf(await build({ singleMode: true }));
+    const list = card.findAllNamed('Colors')[0];
+    expect(list.children).toHaveLength(2); // the two colour rows only
+  });
+
+  it('labels both blocks when one frame holds colours and other values', async () => {
+    const card = cardOf(await build());
+    const texts = card.textChars();
+    expect(texts).toContain('Colors');
+    expect(texts).toContain('Other values');
+  });
+
+  it('labels nothing when a frame holds only one kind', async () => {
+    // A text-styles frame is all table, so a heading would be labelling the
+    // obvious.
+    const card = cardOf(await build({ textStyles: true }));
+    const texts = card.textChars();
+    expect(texts).not.toContain('Colors');
+    expect(texts).not.toContain('Other values');
   });
 
   it('heads the mode columns with the mode names', async () => {
@@ -480,12 +622,18 @@ describe('buildFoundationFrame', () => {
     expect(texts).toContain('Dark');
   });
 
-  it('omits the description column unless the user asked and a row has one', async () => {
-    const off = cardOf(await build({ descriptions: false }));
-    expect(off.textChars()).not.toContain('Description');
+  it('renders a colour description beside its swatch, with no table column', async () => {
+    // The only described variable in the fixture is a colour, so its description
+    // belongs in the swatch list. Adding a Description column to the table would
+    // add a column of blanks, since the FLOAT row has none.
     const on = cardOf(await build({ descriptions: true }));
-    expect(on.textChars()).toContain('Description');
-    expect(on.textChars()).toContain('Page background');
+    expect(on.findAllNamed('Colors')[0].textChars()).toContain('Page background');
+    expect(on.findAllNamed('Table')[0].textChars()).not.toContain('Description');
+  });
+
+  it('leaves a colour description out entirely when descriptions are off', async () => {
+    const off = cardOf(await build({ descriptions: false }));
+    expect(off.textChars()).not.toContain('Page background');
   });
 
   it('names the Section for the document it holds', async () => {
@@ -507,7 +655,8 @@ describe('headerSubtitle', () => {
   };
   const rows = (n: number): FoundationUnitContent['rows'] =>
     Array.from({ length: n }, (_, i) => ({
-      kind: 'variable' as const, name: `v${i}`, description: '', cells: [],
+      kind: 'variable' as const, name: `v${i}`, description: '',
+      resolvedType: 'FLOAT' as const, cells: [],
     }));
 
   it('counts variables and the modes they are shown in', () => {
@@ -553,7 +702,7 @@ describe('tableColumns', () => {
     const cols = tableColumns(content, true, false);
     expect(cols.map((c) => c.label)).toEqual(['Name', 'Specimen']);
     // The specimen needs the room two mode columns would have taken.
-    expect(cols[1].width).toBe(360);
+    expect(cols[1].width).toBe(320);
   });
 
   it('gives every column a positive width', () => {
@@ -604,7 +753,166 @@ describe('cardWidth', () => {
   it('counts the gaps between columns, not just the columns', () => {
     const one = tableColumns(content(['Value']), false, false);
     const two = tableColumns(content(['Value', 'Dark']), false, false);
-    // Adding a 180px column costs 180 plus one 12px gap.
-    expect(rowWidth(two) - rowWidth(one)).toBe(192);
+    // Adding a 160px column costs 160 plus one 12px gap.
+    expect(rowWidth(two) - rowWidth(one)).toBe(172);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Colour formats.
+//
+// The expected strings below are read off the reference design this layout was
+// asked to match, so they are an independent oracle rather than a copy of what
+// this implementation happens to produce. hsl is easy to get subtly wrong;
+// #032D60 -> hsl(212.9, 93.9%, 19.4%) pins hue, saturation and lightness at once.
+// ---------------------------------------------------------------------------
+
+describe('rgbLabel', () => {
+  it('matches the reference values', () => {
+    expect(rgbLabel('#FFFFFF', 1)).toBe('rgb(255, 255, 255)');
+    expect(rgbLabel('#F3F3F3', 1)).toBe('rgb(243, 243, 243)');
+    expect(rgbLabel('#032D60', 1)).toBe('rgb(3, 45, 96)');
+    expect(rgbLabel('#03234D', 1)).toBe('rgb(3, 35, 77)');
+  });
+
+  it('accepts a hex with no leading hash', () => {
+    expect(rgbLabel('032D60', 1)).toBe('rgb(3, 45, 96)');
+  });
+
+  it('switches to rgba for a partial alpha', () => {
+    expect(rgbLabel('#000000', 0.5)).toBe('rgba(0, 0, 0, 50%)');
+  });
+});
+
+describe('hslLabel', () => {
+  it('matches the reference values', () => {
+    expect(hslLabel('#FFFFFF', 1)).toBe('hsl(0, 0%, 100%)');
+    expect(hslLabel('#F3F3F3', 1)).toBe('hsl(0, 0%, 95.3%)');
+    expect(hslLabel('#032D60', 1)).toBe('hsl(212.9, 93.9%, 19.4%)');
+    expect(hslLabel('#03234D', 1)).toBe('hsl(214.1, 92.5%, 15.7%)');
+  });
+
+  it('reports hue 0 for a grey rather than NaN', () => {
+    // Hue is undefined when there is no chroma; 0 is the convention, and NaN
+    // would render as literal "NaN" on the canvas.
+    expect(hslLabel('#808080', 1)).toBe('hsl(0, 0%, 50.2%)');
+    expect(hslLabel('#000000', 1)).toBe('hsl(0, 0%, 0%)');
+  });
+
+  it('finds the hue in each of the three sectors', () => {
+    expect(hslLabel('#FF0000', 1)).toBe('hsl(0, 100%, 50%)');
+    expect(hslLabel('#00FF00', 1)).toBe('hsl(120, 100%, 50%)');
+    expect(hslLabel('#0000FF', 1)).toBe('hsl(240, 100%, 50%)');
+  });
+
+  it('never reports a negative hue', () => {
+    // The red sector wraps through negative values before normalising, which is
+    // the classic place this formula goes wrong.
+    for (const h of ['#FF0080', '#FF00FF', '#FF0040']) {
+      const label = hslLabel(h, 1);
+      expect(label).not.toContain('-');
+      const hue = Number(label.slice(4, label.indexOf(',')));
+      expect(hue).toBeGreaterThanOrEqual(0);
+      expect(hue).toBeLessThan(360);
+    }
+  });
+
+  it('drops a trailing .0 so values read as CSS is written', () => {
+    expect(hslLabel('#FF0000', 1)).not.toContain('.0');
+  });
+
+  it('switches to hsla for a partial alpha', () => {
+    expect(hslLabel('#FF0000', 0.25)).toBe('hsla(0, 100%, 50%, 25%)');
+  });
+});
+
+describe('swatchValueLines', () => {
+  it('gives a primitive all three notations', () => {
+    expect(swatchValueLines({ kind: 'color', hex: '#032d60', alpha: 1 })).toEqual([
+      '#032D60', 'rgb(3, 45, 96)', 'hsl(212.9, 93.9%, 19.4%)',
+    ]);
+  });
+
+  it('gives an alias its target and the resolved hex, not the formats', () => {
+    // The target is the fact a semantic collection exists to state, and the
+    // primitive it points at carries the formats in its own frame.
+    expect(swatchValueLines({
+      kind: 'alias', targetName: 'colors/blue/500', targetCollection: 'P',
+      external: false, resolved: { kind: 'color', hex: '#722ed1', alpha: 1 },
+    })).toEqual(['→ colors/blue/500', '#722ED1']);
+  });
+
+  it('names a library target with no value invented for it', () => {
+    expect(swatchValueLines({
+      kind: 'alias', targetName: 'core/blue', targetCollection: 'Lib',
+      external: true, resolved: null,
+    })).toEqual(['→ core/blue', 'library variable']);
+  });
+
+  it('states an unresolved value plainly', () => {
+    expect(swatchValueLines({ kind: 'unresolved', reason: 'cycle' }))
+      .toEqual(['not resolved: cycle']);
+  });
+
+  it('never returns an empty line', () => {
+    const values: FoundationValue[] = [
+      { kind: 'color', hex: '#000000', alpha: 1 },
+      { kind: 'unresolved', reason: 'missing' },
+      { kind: 'alias', targetName: 'a', targetCollection: 'P', external: false, resolved: null },
+    ];
+    for (const v of values) {
+      for (const line of swatchValueLines(v)) expect(line).not.toBe('');
+    }
+  });
+});
+
+describe('isColorRow', () => {
+  const row = (resolvedType: 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN') => ({
+    kind: 'variable' as const, name: 'n', description: '', resolvedType, cells: [],
+  });
+
+  it('claims colour variables', () => {
+    expect(isColorRow(row('COLOR'))).toBe(true);
+  });
+
+  it('leaves numbers, strings and booleans to the table', () => {
+    expect(isColorRow(row('FLOAT'))).toBe(false);
+    expect(isColorRow(row('STRING'))).toBe(false);
+    expect(isColorRow(row('BOOLEAN'))).toBe(false);
+  });
+
+  it('leaves text styles to the table', () => {
+    expect(isColorRow({
+      kind: 'textStyle', name: 'H1', description: '',
+      metrics: { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } },
+    })).toBe(false);
+  });
+
+  it('claims a colour that resolves to nothing at all', () => {
+    // A colour aliased into a library has no local value, and inferring from the
+    // value would drop a whole semantic collection into the numbers table.
+    expect(isColorRow({
+      kind: 'variable', name: 'bg', description: '', resolvedType: 'COLOR',
+      cells: [{ modeName: 'Light', value: { kind: 'unresolved', reason: 'external' } }],
+    })).toBe(true);
+  });
+});
+
+describe('swatchRowWidth', () => {
+  it('takes the reference shape for a single mode', () => {
+    // swatch 44 + 16 + name 300 + 16 + values 210
+    expect(swatchRowWidth(1)).toBe(586);
+    expect(swatchRowWidth(0)).toBe(586);
+  });
+
+  it('grows by one block per extra mode', () => {
+    // name 260 + n x (16 + 170)
+    expect(swatchRowWidth(2)).toBe(260 + 2 * 186);
+    expect(swatchRowWidth(4)).toBe(260 + 4 * 186);
+    expect(swatchRowWidth(4) - swatchRowWidth(3)).toBe(186);
+  });
+
+  it('stays inside the component frame ceiling at the four-mode cap', () => {
+    expect(swatchRowWidth(4) + 56 * 2).toBeLessThanOrEqual(1440);
   });
 });

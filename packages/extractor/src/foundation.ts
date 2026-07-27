@@ -405,21 +405,26 @@ export interface FoundationRowCell { modeName: string; value: FoundationValue }
 
 /**
  * ONLY what a frame actually draws for a variable: the name, the optional
- * description column, and one cell per rendered mode.
+ * description column, one cell per rendered mode, and the declared type.
  *
- * `resolvedType` is deliberately absent even though extraction captures it on
- * FoundationVariable. No renderer reads it (a cell's presentation is decided by
- * the resolved FoundationValue's own `kind`, not by the declared type), so
- * including it here would make the drift hash fire on a change whose Update
- * produces a byte-identical frame. Same treatment as the text-style metrics
- * below: extraction stays complete, the rendered projection stays minimal. When
- * a later phase draws the type, move it back here and the hash picks it up with
- * no other change.
+ * `resolvedType` was deliberately absent while nothing read it. It is here now
+ * because it selects the layout: a COLOR variable renders as a swatch list with
+ * its formats, everything else renders as a table row. That makes it the single
+ * most visible field in the projection rather than an unrendered one, so both
+ * directions of the invariant hold. Retyping a variable from COLOR to FLOAT
+ * moves the hash and the Update that follows produces a genuinely different
+ * frame.
+ *
+ * It has to be the declared type rather than the resolved value's own `kind`.
+ * A colour variable aliased entirely into a published library resolves to no
+ * local value at all, and inferring "not a colour" from that would drop a whole
+ * semantic collection into the numbers table.
  */
 export interface FoundationVariableRow {
   kind: 'variable';
   name: string;
   description: string;
+  resolvedType: FoundationVariableType;
   cells: FoundationRowCell[];
 }
 
@@ -573,6 +578,7 @@ export function unitContent(
       kind: 'variable',
       name: v.name,
       description: v.description,
+      resolvedType: v.resolvedType,
       cells: modes.map((m) => ({
         modeName: m.name,
         value: v.valuesByMode[m.modeId] ?? { kind: 'unresolved', reason: 'missing' },
