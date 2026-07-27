@@ -66,6 +66,23 @@ constants, so what is left is Figma's own text metrics and wrapping:
 - [ ] **Colours are grouped by folder.** A collection whose colours sit in several folders (`color/surface/...`, `color/text/...`) renders one block per folder, each titled with the folder path, rows of the same folder kept together even if the collection interleaves them. A collection whose colours all share one folder shows no group heading.
       Screenshot:
 
+- [ ] **Group headings read as names.** Headings are the folder's own name, capitalized (`Surface`, `Blue`), not the full path. Build a file with two folders ending in the same segment (`color/surface` and `brand/surface`) and confirm every heading widens to `Color / Surface` and `Brand / Surface` rather than showing two blocks both headed `Surface`.
+      Screenshot:
+
+- [ ] **AI group descriptions, when asked for.** Tick "Describe each colour group with AI" and build. Each group heading gains one sentence, the quota meter drops by exactly one for the whole build however many groups there were, and the text describes what the tokens actually are.
+      Read the descriptions properly rather than glancing at them. The model is shown only token names and values and is told to invent nothing, but this is the one place in the plugin where a plausible-sounding falsehood can reach a document. Anything asserting a rule your system does not have is a defect worth reporting.
+      Screenshot:
+
+- [ ] **Update keeps the descriptions without re-billing.** Press Update on a foundation doc that has AI descriptions. The descriptions survive, and the quota meter does NOT drop.
+      Why this is here: descriptions that lived only in the render call would be deleted by the first Update, and regenerating them would charge a generation on every Update. This branch already shipped that bug once with the "Part 2 of 3" note.
+      Screenshot:
+
+- [ ] **A refused or failed AI call still builds.** With AI ticked, exhaust the quota (or go offline) and build. The frames are created without descriptions and the tab says it went without, rather than the build failing.
+      Screenshot:
+
+- [ ] **The AI option is only offered when it applies.** The checkbox is hidden for a selection with no colour variables (a spacing-only collection), and unticked by default in every case.
+      Screenshot:
+
 - [ ] **A mixed collection gets both blocks.** A collection holding colours and numbers together shows a **Colors** heading over the swatch list and an **Other values** heading over the table, each heading sitting against its own block rather than floating between them. The table has no Description column unless a non-colour row actually has a description.
       Screenshot:
 

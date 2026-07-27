@@ -19,7 +19,7 @@ import {
 } from '@spec-layer/extractor';
 import { quotaMeterModel, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
 import {
-  canGenerate, allSelected, framesPerSource, frameCount,
+  canGenerate, allSelected, framesPerSource, frameCount, hasColorGroups,
   fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
   type FoundationSummary,
 } from './foundationState';
@@ -506,6 +506,9 @@ export function renderFoundationPanel(
   // Nothing to tick means nothing to head or toggle.
   const hasSources = summary.collections.length > 0 || summary.textStyleCount > 0;
   refs.foundationHead.hidden = !hasSources;
+  // Offered only when there are colour groups for it to describe, so a file of
+  // pure spacing tokens is not invited to spend a generation on nothing.
+  refs.foundationAiCard.hidden = !hasColorGroups(spec, selection);
   refs.foundationToggleAll.textContent = allSelected(spec, selection) ? 'Clear all' : 'Select all';
 
   refs.foundationList.textContent = '';

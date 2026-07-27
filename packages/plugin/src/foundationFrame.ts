@@ -22,7 +22,7 @@ import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
   FoundationRow, FoundationVariableRow,
 } from '@spec-layer/extractor';
-import { foundationUnitTitle, groupRowsByFolder } from '@spec-layer/extractor';
+import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
   headingFont,
@@ -379,6 +379,9 @@ const MODE_BLOCK_W = 170;   // multi-mode: swatch plus its values
 const SWATCH_ROW_PAD = 14;
 const GROUP_GAP = 24;       // between one titled group and the next
 const GROUP_HEAD_GAP = 10;  // a group's heading to its own rows
+// A measure, not the full row width: a description is prose, and prose set to
+// 900px runs too wide to read comfortably.
+const GROUP_NOTE_W = 560;
 
 /** True for the rows the swatch list owns. */
 export function isColorRow(row: FoundationRow): boolean {
@@ -525,19 +528,18 @@ function modeHeadings(modeNames: string[]): FrameNode {
 }
 
 /**
- * A group's title: the folder path the tokens themselves use, not a prettified
- * version of it. "color/surface/primary" is what the user named the folder, and
- * shortening it to "primary" both loses the context and collides with any other
- * folder whose last segment is the same.
+ * A group's heading. The title is derived by the extractor, which also widens it
+ * if two folders in this document would otherwise both read "Surface".
  */
-function groupHeading(folder: string): TextNode {
-  const head = makeText(folder, 'Bold', 15, palette.heading);
+function groupHeading(title: string): TextNode {
+  const head = makeText(title, 'Bold', 15, palette.heading);
   head.fontName = headingFont('Bold');
   return head;
 }
 
 function buildSwatchList(
   rows: FoundationVariableRow[], modeNames: string[], showDescriptions: boolean,
+  groupDescriptions?: Record<string, string>,
 ): FrameNode {
   const list = vstack(GROUP_GAP);
   list.name = 'Colors';
@@ -547,17 +549,28 @@ function buildSwatchList(
   if (modeNames.length > 1) list.appendChild(modeHeadings(modeNames));
 
   const groups = groupRowsByFolder(rows);
-  // One group means the frame's own title already says what these are, so a
-  // heading would only repeat it. Two or more, and the reader needs to know
-  // where each block starts.
-  const titled = groups.length > 1;
+  // Titles come from the extractor so the AI pass and the frame agree on them.
+  // Every folder-bearing group is titled now, including a lone one: a short
+  // "Surface" says something the frame's own title does not, which a repeat of
+  // the full folder path did not.
+  const titles = groupTitles(groups.map((g) => g.folder));
 
-  for (const group of groups) {
+  groups.forEach((group, gi) => {
     const block = vstack(GROUP_HEAD_GAP);
     block.name = group.folder || 'Ungrouped';
     // Rows at the root of a collection have no folder to name, so they get no
     // heading rather than an invented one.
-    if (titled && group.folder) block.appendChild(groupHeading(group.folder));
+    if (group.folder) block.appendChild(groupHeading(titles[gi]));
+
+    // Keyed by folder, not by title: the title can widen to avoid a clash, and
+    // keying on a value that moves would drop the description when it did.
+    const note = groupDescriptions?.[group.folder];
+    if (note) {
+      const wrap = vstack(0);
+      block.appendChild(wrap);
+      fixWidthHugHeight(wrap, GROUP_NOTE_W);
+      wrappingText(wrap, note, 'Regular', 11, palette.muted);
+    }
 
     const body = vstack(0);
     block.appendChild(body);
@@ -568,7 +581,7 @@ function buildSwatchList(
     });
 
     list.appendChild(block);
-  }
+  });
   return list;
 }
 
@@ -656,6 +669,7 @@ export async function buildFoundationFrame(
   theme: ReturnType<typeof resolveTheme>,
   includeDescriptions: boolean,
   logoBase64?: string | null,
+  groupDescriptions?: Record<string, string>,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -754,7 +768,8 @@ export async function buildFoundationFrame(
 
   // --- swatch list (colours) ---
   if (colorRows.length > 0) {
-    const list = buildSwatchList(colorRows, content.modeNames, includeDescriptions);
+    const list = buildSwatchList(
+      colorRows, content.modeNames, includeDescriptions, groupDescriptions);
     body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
   }
 

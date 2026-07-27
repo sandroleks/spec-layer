@@ -11,4 +11,5 @@ export * from './render';
 export * from './resolve';
 export * from './statesMatrix';
 export * from './prose/prompt';
+export * from './prose/foundationPrompt';
 export * from './prose/client';

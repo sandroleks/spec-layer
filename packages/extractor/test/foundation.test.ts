@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildFoundation, groupOf, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
-  foundationUnitTitle,
+  foundationUnitTitle, groupTitle, groupTitles,
   type FoundationSelection,
 } from '../src/foundation';
 
@@ -746,5 +746,54 @@ describe('foundationUnitTitle', () => {
     for (const r of compare(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']))) {
       expect(r.derived).not.toContain('—');
     }
+  });
+});
+
+describe('groupTitle / groupTitles', () => {
+  it('reads the final folder segment, capitalized', () => {
+    expect(groupTitle('colors/blue')).toBe('Blue');
+    expect(groupTitle('color/surface')).toBe('Surface');
+    expect(groupTitle('spacing')).toBe('Spacing');
+  });
+
+  it('capitalizes the first character and leaves the rest alone', () => {
+    // Only the first character, so a compound name keeps its shape rather than
+    // becoming LIGHT-PRESS.
+    expect(groupTitle('state/light-press')).toBe('Light-press');
+    expect(groupTitle('size/xSmall')).toBe('XSmall');
+    // The honest cost of the rule: a deliberately lowercase name does get its
+    // first letter raised, so "iOS" reads as "IOS". Judged worth it, since
+    // leaving folder names uncapitalized is the far more common case.
+    expect(groupTitle('platform/iOS')).toBe('IOS');
+  });
+
+  it('is empty for a folderless name', () => {
+    expect(groupTitle('')).toBe('');
+  });
+
+  it('leaves distinct titles alone', () => {
+    expect(groupTitles(['color/surface', 'color/text', 'color/border']))
+      .toEqual(['Surface', 'Text', 'Border']);
+  });
+
+  it('widens every title when two would collide', () => {
+    expect(groupTitles(['color/surface', 'brand/surface']))
+      .toEqual(['Color / Surface', 'Brand / Surface']);
+  });
+
+  it('keeps widening until the titles are distinct', () => {
+    expect(groupTitles(['a/x/surface', 'b/x/surface']))
+      .toEqual(['A / X / Surface', 'B / X / Surface']);
+  });
+
+  it('stops widening at the longest path rather than looping', () => {
+    // Identical folders cannot occur (groupRowsByFolder dedupes), but the
+    // function must terminate rather than spin if they ever did.
+    expect(groupTitles(['same', 'same'])).toEqual(['Same', 'Same']);
+  });
+
+  it('handles one group', () => {
+    expect(groupTitles(['colors/blue'])).toEqual(['Blue']);
+    expect(groupTitles([])).toEqual([]);
   });
 });

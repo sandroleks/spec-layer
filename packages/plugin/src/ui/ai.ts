@@ -1,5 +1,7 @@
-import { draftProse } from '@spec-layer/extractor';
-import type { IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota } from '@spec-layer/extractor';
+import { draftProse, draftGroupDescriptions } from '@spec-layer/extractor';
+import type {
+  IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota, FoundationGroupBrief,
+} from '@spec-layer/extractor';
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
 
@@ -47,5 +49,32 @@ export async function generateProse(
     imageBase64: img?.base64 ?? null,
     imageMediaType: img?.mediaType,
     requested,
+  });
+}
+
+/**
+ * One AI call for every colour group in a foundation build.
+ *
+ * Deliberately one request rather than one per group: a document with six groups
+ * costs one generation, which is what the tab's copy promises. Shares the prose
+ * cache store, so re-running an unchanged build is free.
+ */
+export async function generateGroupDescriptions(
+  collectionName: string,
+  groups: FoundationGroupBrief[],
+  auth: ProxyAuth,
+  onQuota?: (q: ProxyQuota) => void,
+): Promise<Record<string, string>> {
+  return draftGroupDescriptions({ collectionName, groups }, {
+    apiKey: null,
+    fetcher: window.fetch.bind(window),
+    cacheStore,
+    proxy: {
+      url: PROXY_URL,
+      licenseKey: auth.licenseKey,
+      licenseInstanceId: auth.licenseInstanceId,
+      figmaUserId: auth.figmaUserId,
+      onQuota,
+    },
   });
 }

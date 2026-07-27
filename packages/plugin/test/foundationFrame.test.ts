@@ -976,25 +976,33 @@ describe('buildFoundationFrame — colour groups', () => {
     ]);
     const [surface, text] = list.children as unknown as FakeFrame[];
     expect(surface.textChars()).toEqual(
-      expect.arrayContaining(['color/surface', 'color/surface/a', 'color/surface/b']));
+      expect.arrayContaining(['Surface', 'color/surface/a', 'color/surface/b']));
     expect(text.textChars()).toEqual(
-      expect.arrayContaining(['color/text', 'color/text/x', 'color/text/y']));
+      expect.arrayContaining(['Text', 'color/text/x', 'color/text/y']));
   });
 
-  it('titles each block with the folder path the tokens use', async () => {
+  it('titles each block with the capitalized folder name', async () => {
     const list = await listFor(['color/surface/a', 'color/text/x']);
     const chars = list.textChars();
-    expect(chars).toContain('color/surface');
-    expect(chars).toContain('color/text');
-    // Not a prettified last segment, which would collide across folders.
-    expect(chars).not.toContain('Surface');
+    expect(chars).toContain('Surface');
+    expect(chars).toContain('Text');
+    // The full path is what the tokens spell, not what a heading should read.
+    expect(chars).not.toContain('color/surface');
   });
 
-  it('titles nothing when every colour shares one folder', async () => {
-    // The frame's own title already says what these are.
+  it('widens every title when two folders would share one', async () => {
+    // Both end in "surface", and two blocks headed "Surface" is worse than two
+    // longer headings. The whole document steps out together.
+    const list = await listFor(['color/surface/a', 'brand/surface/b']);
+    const chars = list.textChars();
+    expect(chars).toContain('Color / Surface');
+    expect(chars).toContain('Brand / Surface');
+  });
+
+  it('titles a lone group too, since a short name still says something', async () => {
     const list = await listFor(['color/surface/a', 'color/surface/b']);
     expect(list.children).toHaveLength(1);
-    expect(list.textChars()).not.toContain('color/surface');
+    expect(list.textChars()[0]).toBe('Surface');
     expect(list.textChars()).toContain('color/surface/a');
   });
 
@@ -1014,5 +1022,68 @@ describe('buildFoundationFrame — colour groups', () => {
       'color/a/one', 'color/b/two', 'color/c/three', 'color/d/four',
     ]);
     expect(list.children).toHaveLength(4);
+  });
+});
+
+describe('buildFoundationFrame — AI group descriptions', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(uninstallFakeFigma);
+
+  const theme = {
+    headerBg: '#123456', accent: '#00ffcc', bodyText: '#222222',
+    tableHeadBg: '#fafafa', cornerStyle: 'soft' as const,
+    headingFont: 'Inter', bodyFont: 'Inter',
+  };
+
+  async function listWith(descriptions?: Record<string, string>): Promise<FakeFrame> {
+    const dump: SerializedFoundation = {
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Semantic', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: ['color/surface/a', 'color/text/x'].map((name, i) => ({
+          id: `v${i}`, name, resolvedType: 'COLOR' as const, description: '',
+          codeSyntax: {}, valuesByMode: { m1: { r: 0.1, g: 0.2, b: 0.3, a: 1 } },
+        })),
+      }],
+    };
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, {
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+    });
+    const content = unitContent(spec, units[0].scope)!;
+    const section = await buildFoundationFrame(
+      content, units[0], theme, false, null, descriptions,
+    ) as unknown as FakeSection;
+    return (section.children[0] as unknown as FakeFrame).findAllNamed('Colors')[0];
+  }
+
+  it('renders a description under its own group heading', async () => {
+    const list = await listWith({ 'color/surface': 'Backgrounds and large areas.' });
+    const [surface, text] = list.children as unknown as FakeFrame[];
+    expect(surface.textChars()).toEqual(
+      ['Surface', 'Backgrounds and large areas.', 'color/surface/a', '#1A334D',
+        'rgb(26, 51, 77)', 'hsl(210.6, 49.5%, 20.2%)']);
+    // The other group had none, so it gets none rather than a blank line.
+    expect(text.textChars()[0]).toBe('Text');
+    expect(text.textChars()[1]).toBe('color/text/x');
+  });
+
+  it('renders nothing extra when no descriptions are supplied', async () => {
+    const list = await listWith(undefined);
+    const [surface] = list.children as unknown as FakeFrame[];
+    expect(surface.textChars()[1]).toBe('color/surface/a');
+  });
+
+  it('ignores a description keyed to a folder this doc does not render', async () => {
+    const list = await listWith({ 'color/border': 'Not in this document.' });
+    expect(list.textChars()).not.toContain('Not in this document.');
+  });
+
+  it('keys on the folder, not the heading, so a widened title still matches', async () => {
+    // Titles widen to "Color / Surface" when two folders would clash; keying on
+    // a value that moves would silently drop the description when it did.
+    const list = await listWith({ 'color/surface': 'Keyed by folder.' });
+    expect(list.textChars()).toContain('Keyed by folder.');
   });
 });

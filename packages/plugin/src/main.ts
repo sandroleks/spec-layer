@@ -6,11 +6,12 @@ import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
-  foundationUnitTitle,
-  type FoundationSpec, type FoundationUnit,
+  foundationUnitTitle, groupRowsByFolder,
+  type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
+  type FoundationVariableRow,
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
-import { buildFoundationFrame } from './foundationFrame';
+import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import {
@@ -341,6 +342,28 @@ let docFrameRendering = false;
 // a second overlapping renderFoundation would corrupt the shared theme/font
 // state in frameKit and could duplicate frames on canvas.
 let foundationRendering = false;
+
+/**
+ * Pull one unit's group descriptions out of the build-wide map.
+ *
+ * The map arrives keyed `collectionId|folder`; a doc stores plain folders. Only
+ * folders this unit actually renders are kept, so a split collection's parts do
+ * not each carry the whole collection's descriptions.
+ */
+function descriptionsForUnit(
+  all: Record<string, string> | undefined,
+  unit: FoundationUnit,
+  content: FoundationUnitContent,
+): Record<string, string> | undefined {
+  if (!all) return undefined;
+  const collectionId = unit.scope.target === 'textStyles' ? 'text' : unit.scope.collectionId;
+  const out: Record<string, string> = {};
+  for (const group of groupRowsByFolder(content.rows.filter(isColorRow) as FoundationVariableRow[])) {
+    const note = all[`${collectionId}|${group.folder}`];
+    if (note) out[group.folder] = note;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 figma.ui.onmessage = async (raw: unknown) => {
   const msg = raw as UiToMain;
@@ -740,9 +763,14 @@ figma.ui.onmessage = async (raw: unknown) => {
           const targetPage = prior ? (pageOf(prior) ?? invokedPage) : invokedPage;
           if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
 
+          // The UI sends one map for the whole build, keyed collectionId|folder
+          // because two collections can hold a folder of the same name. Each doc
+          // stores only its own, keyed by plain folder.
+          const descriptions = descriptionsForUnit(msg.groupDescriptions, unit, content);
+
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
-            msg.config.includeDescriptions, brandLogo,
+            msg.config.includeDescriptions, brandLogo, descriptions,
           );
 
           const data: FoundationDocLink = {
@@ -752,6 +780,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             contentHash: foundationContentHash(spec, unit.scope),
             selfHash: '',   // set below, once the section's text exists
             config: msg.config,
+            ...(descriptions ? { groupDescriptions: descriptions } : {}),
             generatedAt: Date.now(),
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };
@@ -895,9 +924,11 @@ figma.ui.onmessage = async (raw: unknown) => {
           omittedModeNames: content.omittedModeNames,
         };
 
+        // Reuse the descriptions this doc was generated with. An Update is a
+        // source refresh, not a reason to re-ask the model and re-bill the quota.
         const section = await buildFoundationFrame(
           content, unit, resolveTheme(brandTheme), link.config.includeDescriptions,
-          brandLogo,
+          brandLogo, link.groupDescriptions,
         );
 
         const data: FoundationDocLink = {
@@ -905,6 +936,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           contentHash: foundationContentHash(spec, scope),
           selfHash: '',
           config: link.config,
+          ...(link.groupDescriptions ? { groupDescriptions: link.groupDescriptions } : {}),
           generatedAt: Date.now(),
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
         };

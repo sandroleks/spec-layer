@@ -9,7 +9,7 @@
 import { extract, renderSpec, ProseProxyError, specContentHash, buildFoundation } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
-  SerializedFoundation, FoundationSpec, FoundationSelection,
+  SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
 } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
@@ -22,7 +22,7 @@ import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles, emptyStateLines,
-  frameCount, selectAll, clearAll, allSelected,
+  frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import {
   showBanner,
@@ -725,4 +725,15 @@ export function onFoundationCheckboxChange(refs: Refs, input: HTMLInputElement):
 /** Read by the create-frames button; exported so ui.ts can post it. */
 export function currentFoundationSelection(): FoundationSelection {
   return foundationSelection;
+}
+
+/**
+ * The group briefs for the current selection, or null before the file is read.
+ *
+ * Lives here because the spec and selection do, and it keys the briefs the same
+ * way the renderer keys its lookups.
+ */
+export function currentGroupBriefs(): { collectionName: string; groups: FoundationGroupBrief[] } | null {
+  if (!foundationSpec) return null;
+  return groupBriefs(foundationSpec, foundationSelection);
 }

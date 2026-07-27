@@ -278,6 +278,38 @@ const TEMPLATE = `
     .foundation-modes input[type="checkbox"]:checked::after { left: 3.5px; top: 1px; width: 3.5px; height: 7px; }
     .foundation-cap { margin: 6px 0 0 24px; }
 
+    /* AI group descriptions opt-in. Shares the AI card's look so it reads as the
+       same kind of control as "Write with AI" on the Selected tab. */
+    .found-ai {
+      margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+      background: var(--figma-color-bg-secondary);
+      border: 1px solid var(--figma-color-border);
+    }
+    .found-ai[hidden] { display: none; }
+    .found-ai-row { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; }
+    .found-ai-row > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .found-ai-title { font-size: 12px; font-weight: 600; }
+    .found-ai .hint { margin: 0; }
+    .found-ai input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none; margin: 0; margin-top: 1px;
+      width: 15px; height: 15px; flex: 0 0 auto; position: relative; cursor: pointer;
+      border: 1.5px solid var(--figma-color-border); border-radius: 4px;
+      background: var(--figma-color-bg);
+    }
+    .found-ai input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
+    .found-ai input[type="checkbox"]:checked {
+      background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand);
+    }
+    .found-ai input[type="checkbox"]:checked::after {
+      content: ""; position: absolute; left: 4.5px; top: 1.5px;
+      width: 4px; height: 8px; box-sizing: border-box;
+      border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .found-ai input[type="checkbox"]:focus-visible {
+      outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
+    }
+
     /* Loading skeleton, shown while the file's variables and styles are read.
        Three rows the same height as real ones, so the panel does not jump when
        the data lands. */
@@ -1112,6 +1144,7 @@ const TEMPLATE = `
         <button class="link-btn" id="foundation-toggle-all" type="button">Clear all</button>
       </div>
 
+
       <!-- Placeholder rows while the file is read. Same height as real rows, so
            the panel does not jump when the data lands. -->
       <div id="foundation-skeleton" aria-hidden="true">
@@ -1130,6 +1163,22 @@ const TEMPLATE = `
       </div>
 
       <div id="foundation-list"></div>
+
+      <!-- Opt-in, and default off: it spends an AI generation from the quota, so
+           it is not something a user should discover having already paid for. -->
+      <div class="found-ai" id="foundation-ai-card" hidden>
+        <label class="found-ai-row">
+          <input type="checkbox" id="foundation-ai" />
+          <span>
+            <span class="found-ai-title">Describe each colour group with AI</span>
+            <span class="hint" id="foundation-ai-hint">
+              Adds a sentence under each group heading. Sends the group's token
+              names and resolved values to Spec Layer's AI service, and uses one
+              generation from your monthly allowance for the whole build.
+            </span>
+          </span>
+        </label>
+      </div>
       <div class="footer-row">
         <!-- Outcome of the last build. Deliberately NOT #foundation-notes: that
              div is rebuilt on every repaint, and the repaint that follows a
@@ -1303,6 +1352,8 @@ export interface Refs {
   foundationSummary: HTMLParagraphElement;
   foundationNotes: HTMLDivElement;
   foundationHead: HTMLDivElement;
+  foundationAiCard: HTMLDivElement;
+  foundationAi: HTMLInputElement;
   foundationToggleAll: HTMLButtonElement;
   foundationSkeleton: HTMLDivElement;
   foundationList: HTMLDivElement;
@@ -1618,6 +1669,8 @@ export function mount(): Refs {
     foundationSummary: byId<HTMLParagraphElement>('foundation-summary'),
     foundationNotes: byId<HTMLDivElement>('foundation-notes'),
     foundationHead: byId<HTMLDivElement>('foundation-head'),
+    foundationAiCard: byId<HTMLDivElement>('foundation-ai-card'),
+    foundationAi: byId<HTMLInputElement>('foundation-ai'),
     foundationToggleAll: byId<HTMLButtonElement>('foundation-toggle-all'),
     foundationSkeleton: byId<HTMLDivElement>('foundation-skeleton'),
     foundationList: byId<HTMLDivElement>('foundation-list'),

@@ -7,8 +7,9 @@
  * silently reorder between generations.
  */
 import {
-  MAX_MODE_COLUMNS, planFoundationUnits,
+  MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
   type FoundationSpec, type FoundationSelection, type FoundationMode,
+  type FoundationGroupBrief, type FoundationValue,
 } from '@spec-layer/extractor';
 
 function plural(n: number, one: string, many: string): string {
@@ -268,4 +269,82 @@ export function textStyleMeta(count: number, frames: number): string {
 export function createButtonLabel(frames: number): string {
   if (frames <= 0) return 'Create foundation frames';
   return frames === 1 ? 'Create 1 frame' : `Create ${frames} frames`;
+}
+
+// ---------------------------------------------------------------------------
+// AI group descriptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the current selection contains any colour variable at all.
+ *
+ * Gates the AI opt-in: only colour rows render group headings, so a file of pure
+ * spacing tokens has nothing for a description to sit under, and offering to
+ * spend a generation on it would be offering to waste one.
+ */
+export function hasColorGroups(spec: FoundationSpec, sel: FoundationSelection): boolean {
+  return sel.collections.some((chosen) => {
+    const collection = spec.collections.find((c) => c.id === chosen.collectionId);
+    return collection?.variables.some((v) => v.resolvedType === 'COLOR') ?? false;
+  });
+}
+
+/**
+ * The per-group briefs for one build, keyed `collectionId|folder` to match the
+ * message the main thread receives.
+ *
+ * Built from the same `folderOf`/`groupTitle` the renderer uses, so a description
+ * cannot arrive keyed to a folder no block will look up.
+ */
+export function groupBriefs(
+  spec: FoundationSpec, sel: FoundationSelection,
+): { collectionName: string; groups: FoundationGroupBrief[] } {
+  const groups: FoundationGroupBrief[] = [];
+  const names: string[] = [];
+
+  for (const chosen of sel.collections) {
+    const collection = spec.collections.find((c) => c.id === chosen.collectionId);
+    if (!collection) continue;
+    names.push(collection.name);
+
+    const colors = collection.variables.filter((v) => v.resolvedType === 'COLOR');
+    const byFolder = new Map<string, typeof colors>();
+    for (const variable of colors) {
+      const folder = folderOf(variable.name);
+      const bucket = byFolder.get(folder);
+      if (bucket) bucket.push(variable);
+      else byFolder.set(folder, [variable]);
+    }
+
+    const folders = [...byFolder.keys()];
+    const titles = groupTitles(folders);
+    folders.forEach((folder, i) => {
+      const members = byFolder.get(folder) ?? [];
+      // A folderless group gets no heading, so it gets no description either.
+      if (!folder) return;
+      const modeId = chosen.modeIds[0] ?? collection.defaultModeId;
+      groups.push({
+        folder: `${collection.id}|${folder}`,
+        title: titles[i],
+        resolvedType: 'COLOR',
+        tokenNames: members.map((m) => m.name),
+        sampleValues: members.map((m) => describeValue(m.valuesByMode[modeId])),
+      });
+    });
+  }
+
+  return { collectionName: names.join(', '), groups };
+}
+
+/** A short, honest rendering of one value for the prompt. */
+function describeValue(value: FoundationValue | undefined): string {
+  if (!value) return '';
+  switch (value.kind) {
+    case 'color': return value.hex;
+    case 'number': return String(value.value);
+    case 'string': return value.value;
+    case 'boolean': return String(value.value);
+    case 'alias': return `alias to ${value.targetName}`;
+    case 'unresolved': return '';
+  }
 }

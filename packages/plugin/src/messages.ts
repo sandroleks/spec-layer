@@ -79,5 +79,9 @@ export type UiToMain =
   | { type: 'requestDrift'; docId: string; sourceNodeId: string }
   | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
   | { type: 'requestFoundation' }
-  | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig }
+  /** `groupDescriptions` is keyed `collectionId|folder`, because two collections
+   *  in one build can hold a folder of the same name. The main thread filters
+   *  each unit's own keys out of it and stores them on that doc. */
+  | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
+      groupDescriptions?: Record<string, string> }
   | { type: 'updateFoundationDoc'; docId: string };

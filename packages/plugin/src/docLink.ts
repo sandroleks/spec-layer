@@ -51,6 +51,18 @@ export interface FoundationDocLink {
   contentHash: string;   // foundationContentHash for this scope at generation
   selfHash: string;
   config: FoundationConfig;
+  /**
+   * AI-written group descriptions, keyed by folder path, for the groups THIS doc
+   * renders. Stored rather than passed at render time for two reasons: an Update
+   * rebuilds a doc from its stored link with no UI round trip, so descriptions
+   * that lived only in the render call would be silently deleted by the first
+   * Update (the same way part numbers once were), and regenerating them would
+   * spend another AI generation from the user's quota every time.
+   *
+   * Absent on any doc generated without AI descriptions, including every doc
+   * written before they existed.
+   */
+  groupDescriptions?: Record<string, string>;
   generatedAt: number;
   pluginVersion: string;
 }
@@ -185,6 +197,7 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
   const scope = parseScope(j.scope);
   if (!scope) return null;
   const c = (j.config ?? {}) as Partial<FoundationConfig>;
+  const descriptions = parseGroupDescriptions(j.groupDescriptions);
   return {
     v: 1,
     kind: 'foundation',
@@ -195,9 +208,26 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
       includeDescriptions: c.includeDescriptions !== false,
       aiNotes: c.aiNotes === true,
     },
+    // Omitted rather than set to {} when there are none, so a doc written before
+    // descriptions existed still serializes byte-identically.
+    ...(descriptions ? { groupDescriptions: descriptions } : {}),
     generatedAt: j.generatedAt as number,
     pluginVersion: j.pluginVersion as string,
   };
+}
+
+/**
+ * Validate a stored description map, dropping anything that is not a
+ * string-to-string entry. Returns null when there is nothing usable, so the
+ * caller can omit the field entirely.
+ */
+function parseGroupDescriptions(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string' && v.trim()) out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 export function serializeRegistry(r: DocRegistry): string {

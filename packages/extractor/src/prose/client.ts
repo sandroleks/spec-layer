@@ -8,6 +8,12 @@ import {
   type ProseDrafts,
   type ProseKey,
 } from './prompt';
+import {
+  FOUNDATION_SYSTEM_PROMPT,
+  buildGroupPrompt,
+  parseGroupResponse,
+  type FoundationGroupBrief,
+} from './foundationPrompt';
 
 /**
  * Bumped whenever the prompt, system prompt, or few-shot changes the produced
@@ -122,36 +128,21 @@ export interface DraftOptions {
   };
 }
 
-export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseDrafts | null> {
-  if (!opts.apiKey && !opts.proxy) return null;
-
-  // Vision and text-only runs produce different output, so they must not share a
-  // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
-  // image URL, which is a signed URL that rotates hourly for an unchanged render.
-  const key = proseCacheKey(spec, {
-    image: Boolean(opts.imageUrl || opts.imageBase64),
-    keys: opts.requested ? [...opts.requested] : undefined,
-  });
-  if (!opts.bypassCache) {
-    const hit = await opts.cacheStore.get(key);
-    if (hit) return parseProseResponse(hit, opts.requested);
-  }
-
-  const prompt = buildProsePrompt(spec, opts.requested);
-  const imageBlock = opts.imageBase64
-    ? { type: 'image', source: { type: 'base64', media_type: opts.imageMediaType ?? 'image/png', data: opts.imageBase64 } }
-    : opts.imageUrl
-      ? { type: 'image', source: { type: 'url', url: opts.imageUrl } }
-      : null;
-  const content = imageBlock ? [imageBlock, { type: 'text', text: prompt }] : prompt;
-
-  const requestBody = {
-    model: 'claude-haiku-4-5',
-    max_tokens: 3000,
-    system: PROSE_SYSTEM_PROMPT,
-    messages: [...proseFewShot(), { role: 'user', content }],
-  };
-
+/**
+ * Send one completion request and return the model's text.
+ *
+ * The transport half of a prose call: proxy versus direct key, the bearer/free
+ * identity split, quota headers, and the status-to-code error mapping. Extracted
+ * so a second prompt (foundation group descriptions) reuses it rather than
+ * carrying a second copy of the auth and error handling, which is exactly the
+ * kind of duplication that drifts once and then bills or fails differently in
+ * one of the two paths.
+ */
+async function postCompletion(
+  requestBody: unknown,
+  cacheKey: string,
+  opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'proxy'>,
+): Promise<string> {
   let res: Response;
   if (opts.proxy) {
     const bearer = opts.proxy.licenseKey
@@ -165,7 +156,7 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
     res = await opts.fetcher(`${opts.proxy.url}/v1/prose`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...auth },
-      body: JSON.stringify({ cacheKey: key, request: requestBody }),
+      body: JSON.stringify({ cacheKey, request: requestBody }),
     });
     if (!res.ok) {
       const code = PROXY_ERROR_BY_STATUS[res.status] ?? 'upstream';
@@ -200,7 +191,102 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
   if (typeof raw !== 'string') {
     throw new Error(`Unexpected Claude API response shape: ${JSON.stringify(data).slice(0, 200)}`);
   }
+  return raw;
+}
+
+export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseDrafts | null> {
+  if (!opts.apiKey && !opts.proxy) return null;
+
+  // Vision and text-only runs produce different output, so they must not share a
+  // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
+  // image URL, which is a signed URL that rotates hourly for an unchanged render.
+  const key = proseCacheKey(spec, {
+    image: Boolean(opts.imageUrl || opts.imageBase64),
+    keys: opts.requested ? [...opts.requested] : undefined,
+  });
+  if (!opts.bypassCache) {
+    const hit = await opts.cacheStore.get(key);
+    if (hit) return parseProseResponse(hit, opts.requested);
+  }
+
+  const prompt = buildProsePrompt(spec, opts.requested);
+  const imageBlock = opts.imageBase64
+    ? { type: 'image', source: { type: 'base64', media_type: opts.imageMediaType ?? 'image/png', data: opts.imageBase64 } }
+    : opts.imageUrl
+      ? { type: 'image', source: { type: 'url', url: opts.imageUrl } }
+      : null;
+  const content = imageBlock ? [imageBlock, { type: 'text', text: prompt }] : prompt;
+
+  const requestBody = {
+    model: 'claude-haiku-4-5',
+    max_tokens: 3000,
+    system: PROSE_SYSTEM_PROMPT,
+    messages: [...proseFewShot(), { role: 'user', content }],
+  };
+
+  const raw = await postCompletion(requestBody, key, opts);
+
   const prose = parseProseResponse(raw, opts.requested);
   await opts.cacheStore.set(key, JSON.stringify(prose));
   return prose;
+}
+
+// ---------------------------------------------------------------------------
+// Foundation group descriptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Bumped when the foundation prompt or its system prompt changes the produced
+ * voice, so old-voice descriptions are never served from cache afterwards.
+ */
+export const GROUP_PROMPT_VERSION = 'v1';
+
+export interface GroupDraftInput {
+  collectionName: string;
+  groups: FoundationGroupBrief[];
+}
+
+/**
+ * One request covering every group in a build, so a document with six groups
+ * costs one generation rather than six.
+ */
+export async function draftGroupDescriptions(
+  input: GroupDraftInput,
+  opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'bypassCache' | 'proxy'>,
+): Promise<Record<string, string>> {
+  if (!opts.apiKey && !opts.proxy) return {};
+  if (input.groups.length === 0) return {};
+
+  const folders = input.groups.map((g) => g.folder);
+  // Keyed on everything the prompt is built from, so editing a token name or
+  // adding a group is a fresh request rather than a stale hit.
+  const key = contentHash({
+    v: GROUP_PROMPT_VERSION,
+    collectionName: input.collectionName,
+    groups: input.groups.map((g) => ({
+      folder: g.folder,
+      title: g.title,
+      resolvedType: g.resolvedType,
+      tokenNames: g.tokenNames,
+      sampleValues: g.sampleValues,
+    })),
+  });
+
+  if (!opts.bypassCache) {
+    const hit = await opts.cacheStore.get(key);
+    if (hit) return parseGroupResponse(hit, folders);
+  }
+
+  const raw = await postCompletion({
+    model: 'claude-haiku-4-5',
+    max_tokens: 1200,
+    system: FOUNDATION_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildGroupPrompt(input.collectionName, input.groups) }],
+  }, key, opts);
+
+  const parsed = parseGroupResponse(raw, folders);
+  // Cache the raw response, not the parsed map, so a later parser fix applies to
+  // an existing entry instead of being stuck behind one.
+  await opts.cacheStore.set(key, raw);
+  return parsed;
 }

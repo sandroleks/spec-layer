@@ -148,6 +148,52 @@ export function folderOf(name: string): string {
   return i <= 0 ? '' : name.slice(0, i);
 }
 
+/** Capitalize the first character only, so "iOS" and "light-press" survive. */
+function capitalize(word: string): string {
+  return word ? word.charAt(0).toUpperCase() + word.slice(1) : '';
+}
+
+function segmentsOf(folder: string): string[] {
+  return folder.split('/').filter(Boolean);
+}
+
+/** The last `depth` segments of a folder, capitalized: "Surface", "Color / Surface". */
+function titleAtDepth(folder: string, depth: number): string {
+  const parts = segmentsOf(folder);
+  return parts.slice(Math.max(parts.length - depth, 0)).map(capitalize).join(' / ');
+}
+
+/**
+ * A block's heading: the final folder segment, capitalized. "colors/blue" reads
+ * as "Blue", "color/surface" as "Surface".
+ *
+ * Not the whole path, which is what the tokens spell but not what a reader wants
+ * at the top of a block.
+ */
+export function groupTitle(folder: string): string {
+  return titleAtDepth(folder, 1);
+}
+
+/**
+ * Titles for one document's groups, widened only if they would collide.
+ *
+ * Two folders can end in the same segment ("color/surface" and "brand/surface"),
+ * and two blocks both headed "Surface" in one frame is worse than a longer
+ * heading. When that happens every title in the document takes one more segment,
+ * so the set stays uniform rather than one odd heading out. Returned in the same
+ * order as `folders`.
+ */
+export function groupTitles(folders: string[]): string[] {
+  const maxDepth = Math.max(1, ...folders.map((f) => segmentsOf(f).length));
+  let depth = 1;
+  let titles = folders.map((f) => titleAtDepth(f, depth));
+  while (depth < maxDepth && new Set(titles).size < titles.length) {
+    depth += 1;
+    titles = folders.map((f) => titleAtDepth(f, depth));
+  }
+  return titles;
+}
+
 /** One titled block of rows within a document. */
 export interface FoundationRowGroup {
   /** The shared folder path, or '' for rows that sit at the root. */

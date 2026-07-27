@@ -9,7 +9,7 @@
  * in render.ts.
  */
 
-import { extract, specContentHash } from '@spec-layer/extractor';
+import { extract, specContentHash, ProseProxyError } from '@spec-layer/extractor';
 import type { MainToUi, LibraryEntry } from '../messages';
 import type { DocConfig } from '../docLink';
 import type { MeasureView } from './docModel';
@@ -30,15 +30,17 @@ import {
   onFoundationMessage,
   onFoundationCheckboxChange,
   onFoundationToggleAll,
+  currentGroupBriefs,
   currentFoundationSelection,
   setFoundationGenerating,
   isFoundationGenerating,
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
-  isQuotaExhausted, CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL, SITE_URL, LINKEDIN_URL,
+  isQuotaExhausted, generationErrorCopy,
+  CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL, SITE_URL, LINKEDIN_URL,
 } from './proxy';
-import { resolveComponentImage } from './ai';
+import { resolveComponentImage, generateGroupDescriptions } from './ai';
 import { parseBrandHex, emptyBrandTheme, THEME_PRESETS, matchPreset } from '../brandColors';
 import { createFontPicker } from './fontPicker';
 import { applyThemeMode, toggleThemeMode, detectFigmaTheme, type ThemeMode } from './theme';
@@ -422,15 +424,59 @@ refs.foundationCreate.addEventListener('click', () => {
   // running build.
   setFoundationResult(refs, null);
   setFoundationGenerating(refs, true);
+  runFoundationBuild().catch(() => { /* handled inside */ });
+});
+
+/**
+ * Send the build, having first asked the model for group descriptions if the user
+ * opted in.
+ *
+ * A failed or refused AI call must not cost the user their frames: the build goes
+ * ahead without descriptions and says so, rather than aborting. That is the same
+ * bargain the component flow strikes with its "built with placeholders" note.
+ */
+async function runFoundationBuild(): Promise<void> {
+  const wantsAi = refs.foundationAi.checked;
+  let groupDescriptions: Record<string, string> | undefined;
+
+  if (wantsAi) {
+    const auth = effectiveAuth(
+      state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive);
+    if (!auth) {
+      setFoundationResult(refs, 'info',
+        'Building without AI descriptions: no license key or Figma identity available.');
+    } else {
+      const briefs = currentGroupBriefs();
+      if (briefs && briefs.groups.length > 0) {
+        startLoader(refs.foundationLoader, refs.foundationLoaderText,
+          ['Describing the colour groups']);
+        try {
+          groupDescriptions = await generateGroupDescriptions(
+            briefs.collectionName, briefs.groups, auth,
+            (q) => { state.quota = q; state.quotaExhausted = isQuotaExhausted(q); renderQuota(refs, state); },
+          );
+        } catch (err) {
+          // Frames are the point; the descriptions are the optional extra.
+          const message = err instanceof ProseProxyError
+            ? generationErrorCopy(err.code)
+            : 'The AI service could not be reached.';
+          setFoundationResult(refs, 'info', `Building without AI descriptions. ${message}`);
+        }
+      }
+    }
+  }
+
   send({
     type: 'renderFoundation',
     selection: currentFoundationSelection(),
     // includeDescriptions is hardcoded true: v1 has no descriptions checkbox in
     // the tab, and buildFoundationFrame already suppresses the column when no
-    // row has one. aiNotes stays false until phase 6.
-    config: { includeDescriptions: true, aiNotes: false },
+    // row has one.
+    config: { includeDescriptions: true, aiNotes: wantsAi },
+    ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
+      ? { groupDescriptions } : {}),
   });
-});
+}
 
 // ---------------------------------------------------------------------------
 // Action buttons

@@ -43,10 +43,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   booleans stay in the table, and a collection holding both gets both,
   labelled.
 
-  Colours are grouped into blocks by the folder their names sit in, each
-  titled with that folder path, so a document's structure matches the
-  folders you built in Figma. A collection whose colours all sit in one
-  folder gets no heading, since the frame's own title already says it.
+  Colours are grouped into blocks by the folder their names sit in, headed
+  by the folder's own name ("Blue", "Surface"), so a document's structure
+  matches the folders you built in Figma. If two folders would produce the
+  same heading, every heading in that document takes one more segment
+  ("Color / Surface").
+
+  Each group can carry an optional AI-written sentence under its heading,
+  off by default. One generation covers a whole build however many groups
+  it has, the description is stored with the document so an Update keeps
+  it without spending another, and a failed or refused AI call still
+  produces the frames and says it went without. The model is shown only
+  the group's token names and resolved values, and is told not to state
+  anything those do not support.
 
   Because the layout now depends on a variable's declared type,
   retyping one from colour to number reports the doc as out of date, as
