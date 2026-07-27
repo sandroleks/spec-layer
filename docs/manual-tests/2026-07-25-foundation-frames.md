@@ -62,6 +62,10 @@ Foundation frame generation works end-to-end:
 - [ ] **Theme customization applies.** Generated frames pick up a customized brand theme (header color, fonts, corner style) from Settings.
       Screenshot:
 
+- [ ] **Rows are full height and no text is clipped.** Every table row is tall enough for its text. No row shows a cropped or sliced line of type, and no cell's text overflows its row. Check the header row, variable rows, alias rows, and text-style specimen rows.
+      Why this is here: the first build shipped every row pinned to one pixel tall, so all text rendered as a thin sliced band. The cause was an auto-layout axis mix-up (`resize()` fixes both axes, and only the width was released back to hugging). Unit tests now cover the sizing contract, but they run against a stub of Figma's resize behavior, so only Figma itself is authoritative. Look at this one properly rather than skimming it.
+      Screenshot:
+
 - [ ] **Empty string variable renders as (empty string).** A STRING variable whose value is an empty string renders the literal text `(empty string)` in its cell, not a blank cell. A blank cell would wrongly read as "this token has no value".
       Screenshot:
 
