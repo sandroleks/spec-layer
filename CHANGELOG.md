@@ -43,6 +43,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   booleans stay in the table, and a collection holding both gets both,
   labelled.
 
+  Colours are grouped into blocks by the folder their names sit in, each
+  titled with that folder path, so a document's structure matches the
+  folders you built in Figma. A collection whose colours all sit in one
+  folder gets no heading, since the frame's own title already says it.
+
   Because the layout now depends on a variable's declared type,
   retyping one from colour to number reports the doc as out of date, as
   it should: the two are drawn completely differently.

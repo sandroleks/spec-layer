@@ -22,9 +22,10 @@ import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
   FoundationRow, FoundationVariableRow,
 } from '@spec-layer/extractor';
-import { foundationUnitTitle } from '@spec-layer/extractor';
+import { foundationUnitTitle, groupRowsByFolder } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
+  headingFont,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import type { resolveTheme } from './brandColors';
@@ -376,6 +377,8 @@ const NAME_W = 260;         // multi-mode: fixed, so the mode blocks line up
 const VALUES_W = 210;       // single-mode: the right-aligned value stack
 const MODE_BLOCK_W = 170;   // multi-mode: swatch plus its values
 const SWATCH_ROW_PAD = 14;
+const GROUP_GAP = 24;       // between one titled group and the next
+const GROUP_HEAD_GAP = 10;  // a group's heading to its own rows
 
 /** True for the rows the swatch list owns. */
 export function isColorRow(row: FoundationRow): boolean {
@@ -504,34 +507,68 @@ function swatchRow(
  * list of colours rather than a grid of cells, and an outer box around 40 tall
  * rows only boxes them in.
  */
+function modeHeadings(modeNames: string[]): FrameNode {
+  const head = hstack(SWATCH_GAP);
+  head.name = 'Modes';
+  fixWidthHugHeight(head, swatchRowWidth(modeNames.length));
+  // An empty cell over the name column, so each heading lands on its own block.
+  const spacer = vstack(0);
+  head.appendChild(spacer);
+  fixWidthHugHeight(spacer, NAME_W);
+  for (const name of modeNames) {
+    const label = vstack(0);
+    head.appendChild(label);
+    fixWidthHugHeight(label, MODE_BLOCK_W);
+    wrappingText(label, name, 'Medium', 10, palette.muted);
+  }
+  return head;
+}
+
+/**
+ * A group's title: the folder path the tokens themselves use, not a prettified
+ * version of it. "color/surface/primary" is what the user named the folder, and
+ * shortening it to "primary" both loses the context and collides with any other
+ * folder whose last segment is the same.
+ */
+function groupHeading(folder: string): TextNode {
+  const head = makeText(folder, 'Bold', 15, palette.heading);
+  head.fontName = headingFont('Bold');
+  return head;
+}
+
 function buildSwatchList(
   rows: FoundationVariableRow[], modeNames: string[], showDescriptions: boolean,
 ): FrameNode {
-  const list = vstack(0);
+  const list = vstack(GROUP_GAP);
   list.name = 'Colors';
 
-  // Only a multi-mode list needs headings: with one mode there is nothing to
-  // tell apart, and the reference has no header row at all.
-  if (modeNames.length > 1) {
-    const head = hstack(SWATCH_GAP);
-    head.paddingBottom = 8;
-    fixWidthHugHeight(head, swatchRowWidth(modeNames.length));
-    // An empty cell over the name column, so each heading lands on its own block.
-    const spacer = vstack(0);
-    head.appendChild(spacer);
-    fixWidthHugHeight(spacer, NAME_W);
-    for (const name of modeNames) {
-      const label = vstack(0);
-      head.appendChild(label);
-      fixWidthHugHeight(label, MODE_BLOCK_W);
-      wrappingText(label, name, 'Medium', 10, palette.muted);
-    }
-    list.appendChild(head);
-  }
+  // Only a multi-mode list needs mode headings, and only once: with one mode
+  // there is nothing to tell apart, and the reference has no header row at all.
+  if (modeNames.length > 1) list.appendChild(modeHeadings(modeNames));
 
-  rows.forEach((row, i) => {
-    list.appendChild(swatchRow(row, modeNames.length, i > 0, showDescriptions));
-  });
+  const groups = groupRowsByFolder(rows);
+  // One group means the frame's own title already says what these are, so a
+  // heading would only repeat it. Two or more, and the reader needs to know
+  // where each block starts.
+  const titled = groups.length > 1;
+
+  for (const group of groups) {
+    const block = vstack(GROUP_HEAD_GAP);
+    block.name = group.folder || 'Ungrouped';
+    // Rows at the root of a collection have no folder to name, so they get no
+    // heading rather than an invented one.
+    if (titled && group.folder) block.appendChild(groupHeading(group.folder));
+
+    const body = vstack(0);
+    block.appendChild(body);
+    group.rows.forEach((row, i) => {
+      // The divider count restarts per group: the heading already separates the
+      // block above, so a leading hairline would double it.
+      body.appendChild(swatchRow(row, modeNames.length, i > 0, showDescriptions));
+    });
+
+    list.appendChild(block);
+  }
   return list;
 }
 

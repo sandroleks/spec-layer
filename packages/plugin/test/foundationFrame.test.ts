@@ -574,9 +574,10 @@ describe('buildFoundationFrame', () => {
     const card = cardOf(await build());
     const list = card.findAllNamed('Colors')[0];
     expect(list).toBeDefined();
-    // The fixture has two modes, so a heading row plus color/bg and color/fg.
-    expect(list.children).toHaveLength(3);
+    // Two modes, so a mode heading row, then one block for the shared folder.
+    expect(list.children).toHaveLength(2);
     expect(list.textChars()).toContain('color/bg');
+    expect(list.textChars()).toContain('color/fg');
     const table = card.findAllNamed('Table')[0];
     expect(table.textChars()).toContain('space/md');
     expect(table.textChars()).not.toContain('color/bg');
@@ -591,11 +592,12 @@ describe('buildFoundationFrame', () => {
     expect(chars.filter((c) => c === 'Dark')).toHaveLength(1);
   });
 
-  it('gives a single-mode list no heading row at all', async () => {
+  it('gives a single-mode list no mode heading row at all', async () => {
     // Nothing to tell apart, and the reference layout has no header.
     const card = cardOf(await build({ singleMode: true }));
     const list = card.findAllNamed('Colors')[0];
-    expect(list.children).toHaveLength(2); // the two colour rows only
+    expect(list.children).toHaveLength(1); // the one folder block, no headings
+    expect(list.textChars()).not.toContain('Light');
   });
 
   it('labels both blocks when one frame holds colours and other values', async () => {
@@ -914,5 +916,103 @@ describe('swatchRowWidth', () => {
 
   it('stays inside the component frame ceiling at the four-mode cap', () => {
     expect(swatchRowWidth(4) + 56 * 2).toBeLessThanOrEqual(1440);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group blocks. Colour rows are divided by the folder their names sit in, so a
+// document's structure matches the folders the user built in Figma.
+// ---------------------------------------------------------------------------
+
+describe('buildFoundationFrame — colour groups', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(uninstallFakeFigma);
+
+  const theme = {
+    headerBg: '#123456', accent: '#00ffcc', bodyText: '#222222',
+    tableHeadBg: '#fafafa', cornerStyle: 'soft' as const,
+    headingFont: 'Inter', bodyFont: 'Inter',
+  };
+
+  /** Colours across three folders, deliberately interleaved in source order. */
+  function grouped(names: string[]): SerializedFoundation {
+    return {
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Semantic', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: names.map((name, i) => ({
+          id: `v${i}`, name, resolvedType: 'COLOR' as const, description: '',
+          codeSyntax: {}, valuesByMode: { m1: { r: 0.1, g: 0.2, b: 0.3, a: 1 } },
+        })),
+      }],
+    };
+  }
+
+  async function listFor(names: string[]): Promise<FakeFrame> {
+    const spec = buildFoundation(grouped(names));
+    const units = planFoundationUnits(spec, {
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+    });
+    const content = unitContent(spec, units[0].scope)!;
+    const section = await buildFoundationFrame(
+      content, units[0], theme, false,
+    ) as unknown as FakeSection;
+    const card = section.children[0] as unknown as FakeFrame;
+    return card.findAllNamed('Colors')[0];
+  }
+
+  it('makes one block per folder, in first-appearance order', async () => {
+    const list = await listFor([
+      'color/surface/primary', 'color/text/heading', 'color/surface/secondary',
+    ]);
+    expect(list.children.map((c) => (c as FakeFrame).name))
+      .toEqual(['color/surface', 'color/text']);
+  });
+
+  it('keeps rows of one folder together even when the source interleaves them', async () => {
+    const list = await listFor([
+      'color/surface/a', 'color/text/x', 'color/surface/b', 'color/text/y',
+    ]);
+    const [surface, text] = list.children as unknown as FakeFrame[];
+    expect(surface.textChars()).toEqual(
+      expect.arrayContaining(['color/surface', 'color/surface/a', 'color/surface/b']));
+    expect(text.textChars()).toEqual(
+      expect.arrayContaining(['color/text', 'color/text/x', 'color/text/y']));
+  });
+
+  it('titles each block with the folder path the tokens use', async () => {
+    const list = await listFor(['color/surface/a', 'color/text/x']);
+    const chars = list.textChars();
+    expect(chars).toContain('color/surface');
+    expect(chars).toContain('color/text');
+    // Not a prettified last segment, which would collide across folders.
+    expect(chars).not.toContain('Surface');
+  });
+
+  it('titles nothing when every colour shares one folder', async () => {
+    // The frame's own title already says what these are.
+    const list = await listFor(['color/surface/a', 'color/surface/b']);
+    expect(list.children).toHaveLength(1);
+    expect(list.textChars()).not.toContain('color/surface');
+    expect(list.textChars()).toContain('color/surface/a');
+  });
+
+  it('draws root-level colours with no heading', async () => {
+    // A name with no slash has no folder to name; inventing one would be worse.
+    const list = await listFor(['brand', 'color/text/x']);
+    const [root] = list.children as unknown as FakeFrame[];
+    expect(root.name).toBe('Ungrouped');
+    // The token name leads the block: no heading was drawn above it.
+    expect(root.textChars()[0]).toBe('brand');
+  });
+
+  it('groups on the immediate folder, not a fixed depth', async () => {
+    // These share "color" at the top level, which is why the split key is no use
+    // for blocking: it would put all four in one block.
+    const list = await listFor([
+      'color/a/one', 'color/b/two', 'color/c/three', 'color/d/four',
+    ]);
+    expect(list.children).toHaveLength(4);
   });
 });

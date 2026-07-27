@@ -63,6 +63,9 @@ constants, so what is left is Figma's own text metrics and wrapping:
       Setup: needs a published team library, same as the alias item below. Record as blocked if you cannot publish one.
       Screenshot:
 
+- [ ] **Colours are grouped by folder.** A collection whose colours sit in several folders (`color/surface/...`, `color/text/...`) renders one block per folder, each titled with the folder path, rows of the same folder kept together even if the collection interleaves them. A collection whose colours all share one folder shows no group heading.
+      Screenshot:
+
 - [ ] **A mixed collection gets both blocks.** A collection holding colours and numbers together shows a **Colors** heading over the swatch list and an **Other values** heading over the table, each heading sitting against its own block rather than floating between them. The table has no Description column unless a non-colour row actually has a description.
       Screenshot:
 

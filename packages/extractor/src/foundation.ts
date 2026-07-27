@@ -117,10 +117,62 @@ const MAX_ALIAS_DEPTH = 4;
 // Building
 // ---------------------------------------------------------------------------
 
-/** Top-level path segment. "color/bg/brand" → "color"; "standalone" → itself. */
+/**
+ * Top-level path segment. "color/bg/brand" → "color"; "standalone" → itself.
+ *
+ * This is the SPLIT key: it decides how a large collection is divided into
+ * separate documents. `folderOf` is the finer BLOCK key used to divide one
+ * document's rows into titled groups. Both exist because they answer different
+ * questions, and a design system that names everything `color/...` needs the
+ * finer one to get any grouping at all.
+ */
 export function groupOf(name: string): string {
   const i = name.indexOf('/');
   return i <= 0 ? name : name.slice(0, i);
+}
+
+/**
+ * The folder a variable sits in, which is its whole name minus the leaf:
+ * "color/surface/primary/light" → "color/surface/primary".
+ *
+ * This mirrors what Figma's own variables panel shows, where a slash is a
+ * folder, so grouping on it means the document's blocks match the structure the
+ * user built. Returns '' for a name with no folder at all, which the renderer
+ * draws without a heading rather than inventing one.
+ *
+ * Deliberately the immediate parent rather than a fixed depth: token sets nest
+ * to whatever depth they nest to, and any fixed level is wrong for somebody.
+ */
+export function folderOf(name: string): string {
+  const i = name.lastIndexOf('/');
+  return i <= 0 ? '' : name.slice(0, i);
+}
+
+/** One titled block of rows within a document. */
+export interface FoundationRowGroup {
+  /** The shared folder path, or '' for rows that sit at the root. */
+  folder: string;
+  rows: FoundationVariableRow[];
+}
+
+/**
+ * Group rows by their folder, in first-appearance order, preserving row order
+ * inside each group.
+ *
+ * Shared rather than done in the renderer because two callers need to agree: the
+ * frame builder draws these blocks, and the AI description pass keys its output
+ * by folder. If they grouped separately, a description could land on the wrong
+ * block or on none.
+ */
+export function groupRowsByFolder(rows: FoundationVariableRow[]): FoundationRowGroup[] {
+  const groups: FoundationRowGroup[] = [];
+  for (const row of rows) {
+    const folder = folderOf(row.name);
+    const existing = groups.find((g) => g.folder === folder);
+    if (existing) existing.rows.push(row);
+    else groups.push({ folder, rows: [row] });
+  }
+  return groups;
 }
 
 function hex2(n: number): string {
