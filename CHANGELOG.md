@@ -49,6 +49,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   same heading, every heading in that document takes one more segment
   ("Color / Surface").
 
+  A mapped (multi-mode) colour table reads less tight: bigger swatches,
+  more row and group spacing, and a clear hierarchy between the value that
+  matters most (the mapping, or the hex for a plain colour) and the detail
+  underneath it (the resolved value, or rgb/hsl), which previously
+  rendered as one undifferentiated block of small type.
+
   Each group can carry an optional AI-written sentence under its heading,
   off by default. One generation covers a whole build however many groups
   it has, the description is stored with the document so an Update keeps

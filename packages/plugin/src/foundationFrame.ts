@@ -369,16 +369,19 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
 // ---------------------------------------------------------------------------
 
 const SWATCH = 44;          // single-mode: the reference's large chip
-const SWATCH_SMALL = 32;    // multi-mode: one per mode, so slightly smaller
-const SWATCH_GAP = 16;
-const BLOCK_GAP = 10;       // swatch to its own values
+const SWATCH_SMALL = 36;    // multi-mode: one per mode, so slightly smaller
+const SWATCH_GAP = 18;
+const BLOCK_GAP = 12;       // swatch to its own values
 const NAME_MIN = 300;       // single-mode: the name column FILLs beyond this
-const NAME_W = 260;         // multi-mode: fixed, so the mode blocks line up
+const NAME_W = 280;         // multi-mode: fixed, so the mode blocks line up
 const VALUES_W = 210;       // single-mode: the right-aligned value stack
-const MODE_BLOCK_W = 170;   // multi-mode: swatch plus its values
-const SWATCH_ROW_PAD = 14;
-const GROUP_GAP = 24;       // between one titled group and the next
-const GROUP_HEAD_GAP = 10;  // a group's heading to its own rows
+const MODE_BLOCK_W = 190;   // multi-mode: swatch plus its values
+// Row rhythm. Bumped from the first pass, which read as cramped once a mapped
+// (multi-mode) collection had three or four columns of small type packed
+// together: the row itself needs more air, not just the text inside it.
+const SWATCH_ROW_PAD = 18;
+const GROUP_GAP = 32;       // between one titled group and the next
+const GROUP_HEAD_GAP = 14;  // a group's heading to its own rows
 // A measure, not the full row width: a description is prose, and prose set to
 // 900px runs too wide to read comfortably.
 const GROUP_NOTE_W = 560;
@@ -422,7 +425,7 @@ function swatchChip(color: RGB | null, size: number): RectangleNode {
 function nameBlock(
   row: FoundationVariableRow, width: number | 'fill', showDescription: boolean,
 ): FrameNode {
-  const block = vstack(3);
+  const block = vstack(4);
   if (width !== 'fill') fixWidthHugHeight(block, width);
   const name = makeText(row.name, 'Medium', 13, palette.heading);
   block.appendChild(name);
@@ -440,6 +443,26 @@ function wrapNameBlock(block: FrameNode): void {
     child.layoutSizingHorizontal = 'FILL';
     child.textAutoResize = 'HEIGHT';
   }
+}
+
+/**
+ * Render a value stack with a primary/secondary hierarchy, instead of every
+ * line looking the same.
+ *
+ * `swatchValueLines` and `valueLines` both already put the fact that matters
+ * first: the hex for a literal colour, the target name for an alias. Styling by
+ * POSITION rather than by what the line contains is what lets one function serve
+ * both cases and stay correct if a third value kind is ever added. Without this,
+ * "→ colors/red/500" and "#F53F3F" read as two equally-weighted facts, which is
+ * why the table felt flat rather than scannable.
+ */
+function appendSwatchValues(
+  parent: FrameNode, lines: string[], align: 'LEFT' | 'RIGHT' = 'LEFT',
+): void {
+  lines.forEach((text, i) => {
+    if (i === 0) wrappingText(parent, text, 'Medium', 12, palette.body, align);
+    else wrappingText(parent, text, 'Regular', 10, palette.muted, align);
+  });
 }
 
 /** One swatch-list row. */
@@ -470,12 +493,11 @@ function swatchRow(
     names.layoutSizingHorizontal = 'FILL';
     wrapNameBlock(names);
 
-    const values = vstack(3);
+    const values = vstack(4);
     line.appendChild(values);
     fixWidthHugHeight(values, VALUES_W);
-    for (const text of cell ? swatchValueLines(cell.value) : ['not resolved: missing']) {
-      wrappingText(values, text, 'Regular', 11, palette.body, 'RIGHT');
-    }
+    appendSwatchValues(
+      values, cell ? swatchValueLines(cell.value) : ['not resolved: missing'], 'RIGHT');
     return line;
   }
 
@@ -490,15 +512,13 @@ function swatchRow(
     fixWidthHugHeight(block, MODE_BLOCK_W);
     block.appendChild(swatchChip(swatchColorOf(cell.value), SWATCH_SMALL));
 
-    const values = vstack(2);
+    const values = vstack(3);
     block.appendChild(values);
     values.layoutSizingHorizontal = 'FILL';
     // No mode label here: the list's header row names each column once. Labelling
     // every block repeated the mode names on every row, which for six rows and
     // three modes meant eighteen copies of "Light / Dark / Wireframe".
-    for (const text of swatchValueLines(cell.value)) {
-      wrappingText(values, text, 'Regular', 11, palette.body);
-    }
+    appendSwatchValues(values, swatchValueLines(cell.value));
   }
   return line;
 }

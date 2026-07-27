@@ -5,7 +5,7 @@ import {
   rgbLabel, hslLabel, swatchValueLines, isColorRow, swatchRowWidth,
   type TableColumn,
 } from '../src/foundationFrame';
-import { hstack, vstack } from '../src/frameKit';
+import { hstack, vstack, solidFill, palette } from '../src/frameKit';
 import {
   installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
 } from './fakeFigma';
@@ -649,6 +649,53 @@ describe('buildFoundationFrame', () => {
     expect(section.width).toBe(card.width + 80);
     expect(section.height).toBe(card.height + 80);
   });
+
+  it('gives the primary value line more visual weight than the ones under it', async () => {
+    // Single-mode: values = [hex, rgb, hsl]. The hex is the fact that matters
+    // most at a glance, so it carries the weight; rgb/hsl are supporting detail.
+    const card = cardOf(await build({ singleMode: true }));
+    const group = card.findAllNamed('Colors')[0].children[0] as FakeFrame;
+    const body = group.children[group.children.length - 1] as FakeFrame;
+    const row = body.children[0] as FakeFrame;
+    const values = row.children[row.children.length - 1] as FakeFrame;
+    const [hex, rgb, hsl] = values.children as Record<string, unknown>[];
+
+    expect((hex.fontName as { style: string }).style).toBe('Medium');
+    expect((rgb.fontName as { style: string }).style).toBe('Regular');
+    expect((hsl.fontName as { style: string }).style).toBe('Regular');
+    expect(Number(rgb.fontSize)).toBeLessThan(Number(hex.fontSize));
+    expect(Number(hsl.fontSize)).toBe(Number(rgb.fontSize));
+  });
+
+  it('mutes every line under the primary one, not just the last', async () => {
+    const card = cardOf(await build({ singleMode: true }));
+    const group = card.findAllNamed('Colors')[0].children[0] as FakeFrame;
+    const body = group.children[group.children.length - 1] as FakeFrame;
+    const row = body.children[0] as FakeFrame;
+    const values = row.children[row.children.length - 1] as FakeFrame;
+    const [hex, rgb, hsl] = values.children as Record<string, unknown>[];
+
+    expect(hex.fills).toEqual(solidFill(palette.body));
+    expect(rgb.fills).toEqual(solidFill(palette.muted));
+    expect(hsl.fills).toEqual(solidFill(palette.muted));
+  });
+
+  it('keeps the same hierarchy inside a multi-mode block', async () => {
+    // Position decides the style, not which mode the value belongs to: every
+    // mode's block leads with its own hex, muted below it, same as single mode.
+    const card = cardOf(await build());
+    const group = card.findAllNamed('Colors')[0].children[1] as FakeFrame; // [0] is the mode-heading row
+    const body = group.children[group.children.length - 1] as FakeFrame;
+    const row = body.children[0] as FakeFrame;
+    const modeBlock = row.children[1] as FakeFrame; // [0] is the name column
+    const values = modeBlock.children[modeBlock.children.length - 1] as FakeFrame;
+    const [hex, rgb] = values.children as Record<string, unknown>[];
+
+    expect((hex.fontName as { style: string }).style).toBe('Medium');
+    expect((rgb.fontName as { style: string }).style).toBe('Regular');
+    expect(Number(rgb.fontSize)).toBeLessThan(Number(hex.fontSize));
+  });
+
 });
 
 describe('headerSubtitle', () => {
@@ -902,16 +949,16 @@ describe('isColorRow', () => {
 
 describe('swatchRowWidth', () => {
   it('takes the reference shape for a single mode', () => {
-    // swatch 44 + 16 + name 300 + 16 + values 210
-    expect(swatchRowWidth(1)).toBe(586);
-    expect(swatchRowWidth(0)).toBe(586);
+    // swatch 44 + gap 18 + name 300 + gap 18 + values 210
+    expect(swatchRowWidth(1)).toBe(590);
+    expect(swatchRowWidth(0)).toBe(590);
   });
 
   it('grows by one block per extra mode', () => {
-    // name 260 + n x (16 + 170)
-    expect(swatchRowWidth(2)).toBe(260 + 2 * 186);
-    expect(swatchRowWidth(4)).toBe(260 + 4 * 186);
-    expect(swatchRowWidth(4) - swatchRowWidth(3)).toBe(186);
+    // name 280 + n x (gap 18 + block 190)
+    expect(swatchRowWidth(2)).toBe(280 + 2 * 208);
+    expect(swatchRowWidth(4)).toBe(280 + 4 * 208);
+    expect(swatchRowWidth(4) - swatchRowWidth(3)).toBe(208);
   });
 
   it('stays inside the component frame ceiling at the four-mode cap', () => {
