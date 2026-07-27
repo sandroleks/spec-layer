@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "js-sha256": "^0.11.0"
+    "js-sha256": "^1.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260701.0",

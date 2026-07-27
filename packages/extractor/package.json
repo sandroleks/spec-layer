@@ -6,6 +6,6 @@
   "main": "src/index.ts",
   "dependencies": {
     "@spec-layer/format": "*",
-    "js-sha256": "^0.11.0"
+    "js-sha256": "^1.0.0"
   }
 }
