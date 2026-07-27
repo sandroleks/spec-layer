@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildFoundation, type SerializedFoundation } from '@spec-layer/extractor';
+import {
+  buildFoundation, SPLIT_THRESHOLD, type SerializedFoundation,
+} from '@spec-layer/extractor';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   emptyStateLines, canGenerate,
+  frameCount, framesPerSource, selectAll, clearAll, allSelected,
+  fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
 } from '../src/ui/foundationState';
 
 function dump(over: Partial<SerializedFoundation> = {}): SerializedFoundation {
@@ -183,5 +187,173 @@ describe('emptyStateLines', () => {
 
   it('says nothing when the file has both, including color', () => {
     expect(emptyStateLines(buildFoundation(dump({ textStyles: [bodyStyle] })))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Frame counts. A large collection splits into one frame per top-level group,
+// so a two-row selection can produce five frames. The tab had no way to say so.
+// ---------------------------------------------------------------------------
+
+/** A collection of `count` variables spread over `groups`, plus `styles` styles. */
+function bigDump(count: number, groups: string[], styles = 0): SerializedFoundation {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', externals: [],
+    collections: [{
+      id: 'big', name: 'Primitives', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Value' }],
+      variables: Array.from({ length: count }, (_, i) => ({
+        id: `v${i}`, name: `${groups[i % groups.length]}/t${i}`,
+        resolvedType: 'COLOR' as const, description: '', codeSyntax: {},
+        valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+      })),
+    }],
+    textStyles: Array.from({ length: styles }, (_, i) => ({ ...bodyStyle, name: `Body/${i}` })),
+  };
+}
+
+describe('frameCount', () => {
+  it('counts one frame for a small collection', () => {
+    const spec = buildFoundation(dump());
+    expect(frameCount(spec, defaultSelection(spec))).toBe(1);
+  });
+
+  it('counts every part of a split collection', () => {
+    // 152 variables over two groups is past the split threshold, so two frames.
+    const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']));
+    expect(frameCount(spec, defaultSelection(spec))).toBe(2);
+  });
+
+  it('adds the text-styles frame', () => {
+    const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space'], 3));
+    expect(frameCount(spec, defaultSelection(spec))).toBe(3);
+  });
+
+  it('is zero when nothing is selected', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    expect(frameCount(spec, clearAll())).toBe(0);
+  });
+
+  it('drops a deselected collection from the count', () => {
+    const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space'], 3));
+    const sel = toggleCollection(defaultSelection(spec), spec, 'big', false);
+    expect(frameCount(spec, sel)).toBe(1); // text styles only
+  });
+});
+
+describe('framesPerSource', () => {
+  it('reports each source, whether or not it is selected', () => {
+    const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 3, ['color', 'space', 'radius'], 2));
+    expect(framesPerSource(spec)).toEqual({ collections: { big: 3 }, textStyles: 1 });
+  });
+
+  it('reports one frame for an unsplit collection', () => {
+    const spec = buildFoundation(dump());
+    expect(framesPerSource(spec)).toEqual({ collections: { c1: 1 }, textStyles: 0 });
+  });
+
+  it('is independent of which modes are chosen', () => {
+    // Splitting turns on variable count and name groups only, so a row's count
+    // must not move when the user swaps a mode column.
+    const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']));
+    const before = framesPerSource(spec);
+    toggleMode(defaultSelection(spec), spec, 'big', 'm1', false);
+    expect(framesPerSource(spec)).toEqual(before);
+  });
+});
+
+describe('select all / clear all', () => {
+  it('round-trips through clear and back', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    const all = selectAll(spec);
+    expect(allSelected(spec, all)).toBe(true);
+    expect(allSelected(spec, clearAll())).toBe(false);
+    expect(selectAll(spec)).toEqual(defaultSelection(spec));
+  });
+
+  it('counts a collection as selected even with a subset of its modes', () => {
+    // Four columns is all a frame can show, so a capped collection is fully
+    // selected; the link would otherwise read "Select all" with everything on.
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    const sel = toggleMode(selectAll(spec), spec, 'c1', 's2', false);
+    expect(allSelected(spec, sel)).toBe(true);
+  });
+
+  it('is not all-selected while one collection is off', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    expect(allSelected(spec, toggleCollection(selectAll(spec), spec, 'c1', false))).toBe(false);
+  });
+
+  it('is not all-selected while text styles are off', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    expect(allSelected(spec, toggleTextStyles(selectAll(spec), false))).toBe(false);
+  });
+
+  it('ignores text styles a file does not have', () => {
+    // Otherwise the link reads "Select all" forever on a file with no styles.
+    const spec = buildFoundation(dump());
+    expect(allSelected(spec, selectAll(spec))).toBe(true);
+  });
+});
+
+describe('panel copy', () => {
+  it('summarizes a file holding both kinds of source', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle, bodyStyle] }));
+    expect(fileSummary(summarize(spec)))
+      .toBe('This file has 1 variable collection and 2 text styles.');
+  });
+
+  it('names only what the file actually has', () => {
+    const noStyles = buildFoundation(dump());
+    expect(fileSummary(summarize(noStyles))).toBe('This file has 1 variable collection.');
+
+    const noCollections = buildFoundation(
+      dump({ collections: [], textStyles: [bodyStyle] }));
+    expect(fileSummary(summarize(noCollections))).toBe('This file has 1 text style.');
+  });
+
+  it('says so plainly when there is nothing at all', () => {
+    const empty = buildFoundation(dump({ collections: [], textStyles: [] }));
+    expect(fileSummary(summarize(empty))).toBe('Nothing to document in this file yet.');
+  });
+
+  it('mentions a split in the row meta, and stays quiet about one frame', () => {
+    const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }] };
+    expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · splits into 3 frames');
+    expect(collectionMeta(c, 1)).toBe('170 variables · 1 mode');
+  });
+
+  it('uses the singular for a one-variable, one-mode collection', () => {
+    const c = { id: 'x', name: 'P', variableCount: 1, modes: [{ modeId: 'm', name: 'V' }] };
+    expect(collectionMeta(c, 1)).toBe('1 variable · 1 mode');
+  });
+
+  it('describes the text-styles row', () => {
+    expect(textStyleMeta(5, 1)).toBe('5 styles');
+    expect(textStyleMeta(1, 1)).toBe('1 style');
+    expect(textStyleMeta(200, 2)).toBe('200 styles · splits into 2 frames');
+  });
+
+  it('names the frame count on the button, singular included', () => {
+    expect(createButtonLabel(5)).toBe('Create 5 frames');
+    expect(createButtonLabel(1)).toBe('Create 1 frame');
+  });
+
+  it('falls back to a neutral button label when nothing is selected', () => {
+    // The disabled button still has to read as a sentence, not "Create 0 frames".
+    expect(createButtonLabel(0)).toBe('Create foundation frames');
+  });
+
+  it('contains no em dash anywhere in the panel copy', () => {
+    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
+    const c = { id: 'x', name: 'P', variableCount: 9, modes: [{ modeId: 'm', name: 'V' }] };
+    const strings = [
+      fileSummary(summarize(spec)),
+      collectionMeta(c, 3),
+      textStyleMeta(4, 2),
+      createButtonLabel(3),
+      createButtonLabel(0),
+    ];
+    for (const s of strings) expect(s).not.toContain('—');
   });
 });

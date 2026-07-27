@@ -20,6 +20,32 @@ Import the plugin into Figma desktop from `packages/plugin/manifest.json` using 
 
 ## Checklist
 
+The Foundations tab itself. These were verified in a browser against the built
+`ui.html` with a scripted file, so what is left is confirming Figma's own
+host: its theme variables, its panel width, and its timing.
+
+- [ ] **Placeholder rows show while the file is read.** Opening the tab on a large file shows three shimmering placeholder rows, no header row, and a disabled button, then the real list replaces them without the panel jumping. On a small file this may be too fast to see; say so rather than ticking it blind.
+      Screenshot:
+
+- [ ] **The build loader matches a component build.** Creating frames shows the same sparkle-and-shimmer loader the Selected component tab uses, above the button. It cycles phases, then switches to `Creating frame N of M` once frames start landing, and disappears when the build ends.
+      Screenshot:
+
+- [ ] **The result is reported and stays put.** After a build the tab shows `Created N foundation frames.` and the message remains readable (it does not flash and vanish). Toggling a checkbox afterwards leaves it alone; starting another build clears it.
+      Why this is here: the message used to be written and then erased by the repaint that immediately followed, so a successful build reported nothing at all.
+      Screenshot:
+
+- [ ] **Frame counts are honest.** The button reads `Create N frames` and matches the number of Sections that actually appear on the canvas. A collection past 150 variables shows `splits into N frames` on its row, and that N matches the parts it produces.
+      Screenshot:
+
+- [ ] **Mode pills.** On a collection with more than four modes, the modes render as pills, four checked. Unchecking one and checking another swaps them. Unchecking the collection greys every pill out.
+      Screenshot:
+
+- [ ] **Select all / Clear all.** The link clears every source, then restores them, and its label always describes what the next click will do. The button label and disabled state follow.
+      Screenshot:
+
+- [ ] **Both themes.** Switch the plugin's theme button and confirm the tab is legible in both: selected rows, mode pills, placeholder shimmer, and the result banner. Figma's own light/dark host counts as a third case worth a look.
+      Screenshot:
+
 Foundation frame generation works end-to-end:
 
 - [ ] **Two collections, one single-mode and one aliasing it.** A file with two collections (single-mode Primitives, two-mode Semantic aliasing it) generates both frames. Aliases show `→ target` with the resolved swatch.

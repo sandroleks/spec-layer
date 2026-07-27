@@ -230,13 +230,82 @@ const TEMPLATE = `
     .lib-menu button.danger:hover { background: var(--figma-color-bg-danger-tertiary, #fce8e6); }
     .lib-menu hr { border: none; border-top: 1px solid var(--figma-color-border); margin: 4px 0; }
 
-    /* ---- Foundations tab ---- */
-    .foundation-row { padding: 8px; border-radius: 6px; }
-    .foundation-row:hover { background: var(--figma-color-bg-hover); }
-    .foundation-row > label { display: flex; align-items: flex-start; gap: 6px; cursor: pointer; font-size: 12px; }
-    .foundation-modes { margin: 6px 0 0 21px; display: flex; flex-direction: column; gap: 4px; }
-    .foundation-modes label { display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; }
-    .footer-row { margin-top: 12px; }
+    /* ---- Foundations tab ----
+       Rows are the same two-line shape as a My Library row (title + muted meta)
+       and share the Selected tab's checkbox, so the three checklists in the
+       plugin read as one control rather than three. */
+    #foundation-list { display: flex; flex-direction: column; gap: 4px; }
+    .foundation-row {
+      border: 1px solid var(--figma-color-border); border-radius: 8px;
+      padding: 9px 10px; background: var(--figma-color-bg);
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .foundation-row:hover { border-color: var(--figma-color-text-secondary); }
+    /* A selected source reads as selected without relying on the box alone. */
+    .foundation-row.on { background: var(--figma-color-bg-secondary); }
+    .foundation-row > label {
+      display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+    }
+    .foundation-main { flex: 1 1 auto; min-width: 0; }
+    .foundation-title {
+      font-size: 12px; font-weight: 600; line-height: 1.35;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .foundation-meta {
+      font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Mode pills, indented to sit under the title rather than the checkbox. */
+    .foundation-modes {
+      margin: 8px 0 0 24px; display: flex; flex-wrap: wrap; gap: 5px;
+    }
+    .foundation-modes label {
+      display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+      font-size: 11px; padding: 3px 8px 3px 6px; border-radius: 999px;
+      border: 1px solid var(--figma-color-border);
+      background: var(--figma-color-bg);
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .foundation-modes label:hover { border-color: var(--figma-color-text-secondary); }
+    .foundation-modes label.on {
+      border-color: var(--figma-color-bg-brand);
+      background: var(--figma-color-bg-brand-tertiary, var(--figma-color-bg-secondary));
+    }
+    /* A mode cannot be picked until its collection is, so the whole pill reads
+       as unavailable rather than just its box. */
+    .foundation-modes label.off { opacity: 0.45; cursor: default; }
+    .foundation-modes input[type="checkbox"] { width: 13px; height: 13px; border-radius: 3px; }
+    .foundation-modes input[type="checkbox"]:checked::after { left: 3.5px; top: 1px; width: 3.5px; height: 7px; }
+    .foundation-cap { margin: 6px 0 0 24px; }
+
+    /* Loading skeleton, shown while the file's variables and styles are read.
+       Three rows the same height as real ones, so the panel does not jump when
+       the data lands. */
+    #foundation-skeleton { display: flex; flex-direction: column; gap: 4px; }
+    #foundation-skeleton[hidden] { display: none; }
+    .skel-row {
+      display: flex; align-items: center; gap: 9px;
+      border: 1px solid var(--figma-color-border); border-radius: 8px;
+      padding: 9px 10px;
+    }
+    .skel { position: relative; overflow: hidden; border-radius: 4px; background: var(--figma-color-bg-secondary); }
+    .skel::after {
+      content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+      /* bg-tertiary, not bg-hover: this palette does not define bg-hover, and an
+         undefined var in a gradient voids the whole declaration, which left the
+         sweep invisible and the skeleton looking like three dead grey bars. */
+      background: linear-gradient(90deg, transparent, var(--figma-color-bg-tertiary), transparent);
+      animation: skel-sweep 1.5s ease-in-out infinite;
+    }
+    @keyframes skel-sweep { to { transform: translateX(100%); } }
+    .skel-box { width: 15px; height: 15px; flex: 0 0 auto; border-radius: 4px; }
+    .skel-lines { flex: 1 1 auto; display: flex; flex-direction: column; gap: 5px; }
+    .skel-line { height: 9px; }
+    .skel-line.short { width: 42%; }
+    .skel-line.mid { width: 66%; }
+    @media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
+
+    .footer-row { margin-top: 14px; }
     .footer-row .btn { width: 100%; }
 
     /* ---- Typography / layout ---- */
@@ -501,30 +570,35 @@ const TEMPLATE = `
       background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary);
       font-size: 11px;
     }
-    /* ---- Custom checkbox (section checklist, variant picker) ----
+    /* ---- Custom checkbox (section checklist, variant picker, foundations) ----
        Native checkboxes render inconsistently across platforms and ignore most
        theming; appearance:none lets us draw a Figma-style box + CSS checkmark
-       that tracks the theme tokens. Scoped to .sec-row so the AI switch
-       (a visually-hidden checkbox) is untouched. */
-    .sec-row input[type="checkbox"] {
+       that tracks the theme tokens. Scoped to the rows that want it, so the AI
+       switch (a visually-hidden checkbox) is untouched. */
+    .sec-row input[type="checkbox"],
+    .foundation-row input[type="checkbox"] {
       appearance: none; -webkit-appearance: none; margin: 0;
       width: 15px; height: 15px; flex: 0 0 auto; position: relative; cursor: pointer;
       border: 1.5px solid var(--figma-color-border); border-radius: 4px;
       background: var(--figma-color-bg);
       transition: background 0.1s ease, border-color 0.1s ease;
     }
-    .sec-row input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
-    .sec-row input[type="checkbox"]:checked {
+    .sec-row input[type="checkbox"]:hover,
+    .foundation-row input[type="checkbox"]:hover { border-color: var(--figma-color-bg-brand); }
+    .sec-row input[type="checkbox"]:checked,
+    .foundation-row input[type="checkbox"]:checked {
       background: var(--figma-color-bg-brand); border-color: var(--figma-color-bg-brand);
     }
     /* CSS checkmark: a rotated rectangle with two borders. */
-    .sec-row input[type="checkbox"]:checked::after {
+    .sec-row input[type="checkbox"]:checked::after,
+    .foundation-row input[type="checkbox"]:checked::after {
       content: ""; position: absolute; left: 4.5px; top: 1.5px;
       width: 4px; height: 8px; box-sizing: border-box;
       border: solid var(--figma-color-text-onbrand); border-width: 0 2px 2px 0;
       transform: rotate(45deg);
     }
-    .sec-row input[type="checkbox"]:focus-visible {
+    .sec-row input[type="checkbox"]:focus-visible,
+    .foundation-row input[type="checkbox"]:focus-visible {
       outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px;
     }
 
@@ -634,6 +708,9 @@ const TEMPLATE = `
 
     /* ---- Section header + checklist ---- */
     .section-head { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; }
+    /* An author display declaration beats the UA rule for [hidden], so hiding
+       one of these with the attribute alone does nothing. */
+    .section-head[hidden] { display: none; }
     .link-btn {
       appearance: none; background: none; border: none; cursor: pointer; padding: 0;
       font-family: inherit; font-size: 11px; color: var(--figma-color-bg-brand);
@@ -1027,10 +1104,45 @@ const TEMPLATE = `
     <!-- ============ Foundations panel ============ -->
     <section class="panel" id="tab-panel-foundations" role="tabpanel"
              aria-labelledby="tab-foundations">
-      <p class="muted" id="foundation-summary">Reading this file's variables and styles.</p>
+      <p class="hint" id="foundation-summary" style="margin-top:0">Reading this file's variables and styles.</p>
       <div id="foundation-notes"></div>
+
+      <div class="section-head" id="foundation-head" hidden>
+        <label class="field-label" style="margin:0">Include in the docs</label>
+        <button class="link-btn" id="foundation-toggle-all" type="button">Clear all</button>
+      </div>
+
+      <!-- Placeholder rows while the file is read. Same height as real rows, so
+           the panel does not jump when the data lands. -->
+      <div id="foundation-skeleton" aria-hidden="true">
+        <div class="skel-row">
+          <span class="skel skel-box"></span>
+          <span class="skel-lines"><span class="skel skel-line short"></span><span class="skel skel-line mid"></span></span>
+        </div>
+        <div class="skel-row">
+          <span class="skel skel-box"></span>
+          <span class="skel-lines"><span class="skel skel-line mid"></span><span class="skel skel-line short"></span></span>
+        </div>
+        <div class="skel-row">
+          <span class="skel skel-box"></span>
+          <span class="skel-lines"><span class="skel skel-line short"></span><span class="skel skel-line mid"></span></span>
+        </div>
+      </div>
+
       <div id="foundation-list"></div>
       <div class="footer-row">
+        <!-- Outcome of the last build. Deliberately NOT #foundation-notes: that
+             div is rebuilt on every repaint, and the repaint that follows a
+             finished build used to wipe the result before the user could read
+             it. -->
+        <div id="foundation-result" class="banner info" role="status" aria-live="polite"></div>
+        <div id="foundation-loader" class="loader" role="status" aria-live="polite">
+          <span class="loader-icon" aria-hidden="true"></span>
+          <span class="loader-body">
+            <span class="loader-text" id="foundation-loader-text"></span>
+            <span class="loader-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+          </span>
+        </div>
         <button class="btn btn-primary" id="foundation-create" disabled>Create foundation frames</button>
       </div>
     </section>
@@ -1190,8 +1302,14 @@ export interface Refs {
   libraryMenu: HTMLElement;
   foundationSummary: HTMLParagraphElement;
   foundationNotes: HTMLDivElement;
+  foundationHead: HTMLDivElement;
+  foundationToggleAll: HTMLButtonElement;
+  foundationSkeleton: HTMLDivElement;
   foundationList: HTMLDivElement;
   foundationCreate: HTMLButtonElement;
+  foundationLoader: HTMLDivElement;
+  foundationLoaderText: HTMLSpanElement;
+  foundationResult: HTMLDivElement;
   // Selection / main
   noSelection: HTMLDivElement;
   mainArea: HTMLDivElement;
@@ -1499,8 +1617,14 @@ export function mount(): Refs {
     libraryMenu: byId<HTMLElement>('lib-menu'),
     foundationSummary: byId<HTMLParagraphElement>('foundation-summary'),
     foundationNotes: byId<HTMLDivElement>('foundation-notes'),
+    foundationHead: byId<HTMLDivElement>('foundation-head'),
+    foundationToggleAll: byId<HTMLButtonElement>('foundation-toggle-all'),
+    foundationSkeleton: byId<HTMLDivElement>('foundation-skeleton'),
     foundationList: byId<HTMLDivElement>('foundation-list'),
     foundationCreate: byId<HTMLButtonElement>('foundation-create'),
+    foundationLoader: byId<HTMLDivElement>('foundation-loader'),
+    foundationLoaderText: byId<HTMLSpanElement>('foundation-loader-text'),
+    foundationResult: byId<HTMLDivElement>('foundation-result'),
     noSelection: byId<HTMLDivElement>('no-selection'),
     mainArea: byId<HTMLDivElement>('main-area'),
     componentName: byId<HTMLHeadingElement>('component-name'),

@@ -29,6 +29,7 @@ import {
   setBrandTheme,
   onFoundationMessage,
   onFoundationCheckboxChange,
+  onFoundationToggleAll,
   currentFoundationSelection,
   setFoundationGenerating,
   isFoundationGenerating,
@@ -53,6 +54,9 @@ import {
   clearBanners,
   showBanner,
   stopLoader,
+  startLoader,
+  setFoundationLoading,
+  setFoundationResult,
   renderLibrary,
   type DriftState,
 } from './render';
@@ -383,6 +387,9 @@ function requestFoundationOnce(): void {
   // that clicking the tab actually started another read.
   refs.foundationSummary.textContent = "Reading this file's variables and styles.";
   refs.foundationNotes.textContent = '';
+  // Clear the previous failure: the retry is starting, so its message is history.
+  setFoundationResult(refs, null);
+  setFoundationLoading(refs, true);
   send({ type: 'requestFoundation' });
 }
 
@@ -391,6 +398,10 @@ function requestFoundationOnce(): void {
 refs.foundationList.addEventListener('change', (ev) => {
   const target = ev.target as HTMLElement;
   if (target instanceof HTMLInputElement) onFoundationCheckboxChange(refs, target);
+});
+
+refs.foundationToggleAll.addEventListener('click', () => {
+  onFoundationToggleAll(refs);
 });
 
 // Disabled while a generation is in flight (mirrors createFrameBtn/
@@ -404,9 +415,12 @@ refs.foundationCreate.addEventListener('click', () => {
   // Create or a row Update already holds the shared lock, and the main thread
   // would reject this build rather than run it.
   if (buildInFlight()) {
-    refs.foundationNotes.textContent = 'Still finishing another build. Try this again when it is done.';
+    setFoundationResult(refs, 'info', 'Still finishing another build. Try this again when it is done.');
     return;
   }
+  // Drop the previous outcome so a stale "Created 5 frames" never sits beside a
+  // running build.
+  setFoundationResult(refs, null);
   setFoundationGenerating(refs, true);
   send({
     type: 'renderFoundation',
@@ -910,7 +924,7 @@ window.onmessage = (event: MessageEvent) => {
       // generating prose for A then selecting B would pair B's spec with A's prose.
       state.generatedProse = null;
       state.generatedProseKeys = null;
-      stopLoader(refs);
+      stopLoader(refs.loader);
       renderSelection(refs, state);
       // Extract right away so Download and the frame are always ready;
       // once the spec is in, (re)populate the per-variant picker.
@@ -1002,7 +1016,7 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docFrameDone': {
-      stopLoader(refs);
+      stopLoader(refs.loader);
       const note = state.pendingAiNote ? `. ${state.pendingAiNote}` : '';
       const verb = msg.replaced ? 'Updated' : 'Created';
       showBanner(refs, state.pendingAiNote ? 'error' : 'info', `${verb} ${msg.frameName}${note}`);
@@ -1013,7 +1027,7 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docFrameError': {
-      stopLoader(refs);
+      stopLoader(refs.loader);
       showBanner(refs, 'error', `Frame failed: ${msg.message}`);
       refs.createFrameBtn.disabled = false;
       break;
@@ -1031,13 +1045,17 @@ window.onmessage = (event: MessageEvent) => {
       // latch so the next tab activation actually retries, and replace the
       // summary, which is still claiming the read is in progress.
       foundationRequested = false;
+      setFoundationLoading(refs, false);
       refs.foundationSummary.textContent = "Could not read this file's variables and styles.";
-      refs.foundationNotes.textContent = `Open this tab again to try once more. ${msg.message}`;
+      setFoundationResult(refs, 'error', `Open this tab again to try once more. ${msg.message}`);
       break;
     }
 
     case 'foundationProgress': {
-      refs.foundationNotes.textContent = `Creating ${msg.done} of ${msg.total}.`;
+      // Real progress beats the cycling phase guesses, so pin the loader to it.
+      // A single-message startLoader clears the cycle and holds this line.
+      startLoader(refs.foundationLoader, refs.foundationLoaderText,
+        [`Creating frame ${msg.done} of ${msg.total}`]);
       break;
     }
 
@@ -1056,9 +1074,9 @@ window.onmessage = (event: MessageEvent) => {
         if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
         break;
       }
-      refs.foundationNotes.textContent = msg.replaced > 0
+      setFoundationResult(refs, 'info', msg.replaced > 0
         ? `Updated ${msg.replaced} foundation frames.`
-        : `Created ${msg.created} foundation frames.`;
+        : `Created ${msg.created} foundation frames.`);
       setFoundationGenerating(refs, false);
       break;
     }
@@ -1068,9 +1086,9 @@ window.onmessage = (event: MessageEvent) => {
       // landed before the failure, say so plainly rather than implying nothing
       // happened (a user who believes that and retries gets duplicates, since
       // in-place replacement doesn't exist yet).
-      refs.foundationNotes.textContent = msg.created > 0
+      setFoundationResult(refs, 'error', msg.created > 0
         ? `Created ${msg.created} frames before hitting an error, and they are still on the canvas. ${msg.message}`
-        : `Could not create the foundation frames. ${msg.message}`;
+        : `Could not create the foundation frames. ${msg.message}`);
       setFoundationGenerating(refs, false);
       break;
     }

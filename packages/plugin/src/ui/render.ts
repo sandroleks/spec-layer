@@ -13,9 +13,16 @@ import { isAtomComponentName } from '../collectComponents';
 import { resolveTheme } from '../brandColors';
 import { resolveStatus, type DocStatus } from '../docLink';
 import { defaultVariantId } from './docModel';
-import { detectStateMatrix, MAX_MODE_COLUMNS, type FoundationSelection } from '@spec-layer/extractor';
+import {
+  detectStateMatrix, MAX_MODE_COLUMNS,
+  type FoundationSelection, type FoundationSpec,
+} from '@spec-layer/extractor';
 import { quotaMeterModel, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
-import { canGenerate, type FoundationSummary } from './foundationState';
+import {
+  canGenerate, allSelected, framesPerSource, frameCount,
+  fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
+  type FoundationSummary,
+} from './foundationState';
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -86,32 +93,36 @@ export function renderQuota(refs: Refs, state: UiState): void {
 // Replaces the old static "Building frame…" banner with something livelier.
 // ---------------------------------------------------------------------------
 
-// Single in-flight cycle. Module-scoped so stopLoader can always clear it, even
-// if startLoader is called twice (the second run cancels the first).
-let loaderTimer: ReturnType<typeof setInterval> | null = null;
+// One in-flight cycle PER loader, keyed by its own element. There are two
+// loaders now (the component footer and the Foundations tab), and a single
+// module-level timer would have let either one's stop cancel the other's cycle,
+// leaving a live loader frozen on whatever message it happened to be showing.
+const loaderTimers = new WeakMap<HTMLElement, ReturnType<typeof setInterval>>();
 
-/** Show the loader and cycle `messages` every ~2.6s. The shimmer + dots carry
- *  the motion, so the title is swapped in place (no fade-to-blank — that left a
- *  visibly empty pill mid-transition). Loops, so a long job keeps cycling rather
- *  than parking on the last line. A single message just stays put. */
-export function startLoader(refs: Refs, messages: string[]): void {
-  stopLoader(refs);
+/** Show `root`'s loader and cycle `messages` every ~2.6s. The shimmer + dots
+ *  carry the motion, so the title is swapped in place (no fade-to-blank — that
+ *  left a visibly empty pill mid-transition). Loops, so a long job keeps
+ *  cycling rather than parking on the last line. A single message just stays
+ *  put, which is the honest choice for a job with no phases to report. */
+export function startLoader(root: HTMLElement, text: HTMLElement, messages: string[]): void {
+  stopLoader(root);
   const msgs = messages.length ? messages : ['Working…'];
-  refs.loader.classList.add('show');
-  refs.loaderText.textContent = msgs[0];
+  root.classList.add('show');
+  text.textContent = msgs[0];
   if (msgs.length === 1) return;
 
   let i = 0;
-  loaderTimer = setInterval(() => {
+  loaderTimers.set(root, setInterval(() => {
     i = (i + 1) % msgs.length;
-    refs.loaderText.textContent = msgs[i];
-  }, 2600);
+    text.textContent = msgs[i];
+  }, 2600));
 }
 
-/** Hide the loader and stop cycling. Safe to call when already stopped. */
-export function stopLoader(refs: Refs): void {
-  if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; }
-  refs.loader.classList.remove('show');
+/** Hide `root`'s loader and stop its cycle. Safe to call when already stopped. */
+export function stopLoader(root: HTMLElement): void {
+  const timer = loaderTimers.get(root);
+  if (timer) { clearInterval(timer); loaderTimers.delete(root); }
+  root.classList.remove('show');
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +416,68 @@ export function renderLibrary(
 // ---------------------------------------------------------------------------
 
 /**
+ * Show the placeholder rows while the file's variables and styles are read.
+ *
+ * The read is one round trip with no phases to report, so this is a skeleton
+ * rather than a cycling loader: it says "something is coming, and roughly this
+ * shape" without inventing progress it cannot know. The build loader, which
+ * does have phases, is the cycling one.
+ */
+export function setFoundationLoading(refs: Refs, loading: boolean): void {
+  refs.foundationSkeleton.hidden = !loading;
+  if (loading) {
+    refs.foundationHead.hidden = true;
+    refs.foundationList.textContent = '';
+    refs.foundationCreate.disabled = true;
+  }
+}
+
+/**
+ * Report the outcome of the last foundation action.
+ *
+ * Separate from #foundation-notes, which states facts about the file (no local
+ * text styles, no colour variables) and is rebuilt on every repaint. Outcomes
+ * used to be written there and were erased microseconds later by the repaint
+ * that follows a finished build, so a successful build reported nothing at all.
+ * The shared banner in the sticky footer is no use here either: that footer is
+ * hidden unless the Selected tab has a component.
+ */
+export function setFoundationResult(
+  refs: Refs, kind: 'info' | 'error' | null, text = '',
+): void {
+  refs.foundationResult.className = kind === 'error' ? 'banner error' : 'banner info';
+  refs.foundationResult.textContent = kind ? text : '';
+  refs.foundationResult.style.display = kind ? 'flex' : 'none';
+}
+
+/** A collection or text-styles row: checkbox, title, and one muted meta line. */
+function foundationRow(
+  opts: { title: string; meta: string; checked: boolean },
+  box: HTMLInputElement,
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = opts.checked ? 'foundation-row on' : 'foundation-row';
+
+  const label = document.createElement('label');
+  label.appendChild(box);
+
+  const main = document.createElement('div');
+  main.className = 'foundation-main';
+  const title = document.createElement('div');
+  title.className = 'foundation-title';
+  title.textContent = opts.title;
+  const meta = document.createElement('div');
+  meta.className = 'foundation-meta';
+  meta.textContent = opts.meta;
+  main.appendChild(title);
+  main.appendChild(meta);
+
+  label.appendChild(main);
+  row.appendChild(label);
+  return row;
+}
+
+/**
  * Paint the Foundations panel from the pure model in foundationState.ts.
  *
  * Every user-controlled string (collection name, mode name) is set via
@@ -412,45 +485,46 @@ export function renderLibrary(
  */
 export function renderFoundationPanel(
   refs: Refs,
+  spec: FoundationSpec,
   summary: FoundationSummary,
   selection: FoundationSelection,
   notes: string[],
   generating: boolean,
 ): void {
-  refs.foundationSummary.textContent = [
-    `${summary.collectionCount} ${summary.collectionCount === 1 ? 'collection' : 'collections'}`,
-    `${summary.maxModeCount} ${summary.maxModeCount === 1 ? 'mode' : 'modes'}`,
-    `${summary.textStyleCount} text styles`,
-  ].join(' · ');
+  setFoundationLoading(refs, false);
+
+  refs.foundationSummary.textContent = fileSummary(summary);
 
   refs.foundationNotes.textContent = '';
   for (const note of notes) {
     const p = document.createElement('p');
-    p.className = 'muted';
+    p.className = 'hint';
     p.textContent = note;
     refs.foundationNotes.appendChild(p);
   }
 
+  // Nothing to tick means nothing to head or toggle.
+  const hasSources = summary.collections.length > 0 || summary.textStyleCount > 0;
+  refs.foundationHead.hidden = !hasSources;
+  refs.foundationToggleAll.textContent = allSelected(spec, selection) ? 'Clear all' : 'Select all';
+
   refs.foundationList.textContent = '';
+  const frames = framesPerSource(spec);
 
   for (const c of summary.collections) {
     const chosen = selection.collections.find((s) => s.collectionId === c.id);
 
-    const row = document.createElement('div');
-    row.className = 'foundation-row';
-
-    const label = document.createElement('label');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = Boolean(chosen);
     box.dataset.act = 'toggle-collection';
     box.dataset.collectionId = c.id;
-    label.appendChild(box);
-    const text = document.createElement('span');
-    text.textContent = ` ${c.name} · ${c.variableCount} variables · `
-      + `${c.modes.length} ${c.modes.length === 1 ? 'mode' : 'modes'}`;
-    label.appendChild(text);
-    row.appendChild(label);
+
+    const row = foundationRow({
+      title: c.name,
+      meta: collectionMeta(c, frames.collections[c.id] ?? 1),
+      checked: Boolean(chosen),
+    }, box);
 
     // Mode checkboxes appear only when a collection has more modes than can be
     // rendered, so the user picks which four rather than getting the first four
@@ -459,45 +533,47 @@ export function renderFoundationPanel(
       const modes = document.createElement('div');
       modes.className = 'foundation-modes';
       for (const m of c.modes) {
+        const on = Boolean(chosen?.modeIds.includes(m.modeId));
         const ml = document.createElement('label');
+        ml.className = !chosen ? 'off' : on ? 'on' : '';
         const mb = document.createElement('input');
         mb.type = 'checkbox';
-        mb.checked = Boolean(chosen?.modeIds.includes(m.modeId));
+        mb.checked = on;
         mb.disabled = !chosen;
         mb.dataset.act = 'toggle-mode';
         mb.dataset.collectionId = c.id;
         mb.dataset.modeId = m.modeId;
         ml.appendChild(mb);
         const mt = document.createElement('span');
-        mt.textContent = ` ${m.name}`;
+        mt.textContent = m.name;
         ml.appendChild(mt);
         modes.appendChild(ml);
       }
-      const cap = document.createElement('p');
-      cap.className = 'muted';
-      cap.textContent = 'Showing 4 modes. Uncheck one to swap in another.';
-      modes.appendChild(cap);
       row.appendChild(modes);
+      const cap = document.createElement('p');
+      cap.className = 'hint foundation-cap';
+      cap.textContent = `A frame shows ${MAX_MODE_COLUMNS} modes. Uncheck one to swap in another.`;
+      row.appendChild(cap);
     }
 
     refs.foundationList.appendChild(row);
   }
 
   if (summary.textStyleCount > 0) {
-    const row = document.createElement('div');
-    row.className = 'foundation-row';
-    const label = document.createElement('label');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = selection.textStyles;
     box.dataset.act = 'toggle-text-styles';
-    label.appendChild(box);
-    const text = document.createElement('span');
-    text.textContent = ` Text styles · ${summary.textStyleCount} styles`;
-    label.appendChild(text);
-    row.appendChild(label);
-    refs.foundationList.appendChild(row);
+    refs.foundationList.appendChild(foundationRow({
+      title: 'Text styles',
+      meta: textStyleMeta(summary.textStyleCount, frames.textStyles || 1),
+      checked: selection.textStyles,
+    }, box));
   }
+
+  // Naming the count is the only place the user learns that a large collection
+  // splits, so a two-row selection can produce five frames.
+  refs.foundationCreate.textContent = createButtonLabel(frameCount(spec, selection));
 
   // Disabled while a generation is in flight, regardless of what repaints in
   // the meantime (e.g. a checkbox toggle) — otherwise the button re-enables

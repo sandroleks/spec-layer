@@ -42,6 +42,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version applied to the fonts but not to the frame. A card is never
   narrower than a component doc frame and widens to fit its columns.
 
+  The Foundations tab itself reads like the rest of the plugin. Each
+  source is a card with its name and what it holds, using the same
+  checkbox as the Sections list, and modes are pills rather than a
+  stacked list. A **Select all** / **Clear all** link matches the
+  Sections header. Placeholder rows show while the file is read, and a
+  build shows the same animated loader as a component doc, switching to
+  real progress ("Creating frame 3 of 5") once frames start landing.
+
+  The tab now says how many frames a build will make, on the button and
+  on any row that splits, so a two-row selection producing five frames is
+  visible before the click rather than after it. A finished build also
+  reports its result, which it previously computed and then immediately
+  erased.
+
   This covers the on-canvas half. Foundation Markdown and the docs-app
   pages are a separate piece of work, so a foundation doc offers no
   Markdown download yet.

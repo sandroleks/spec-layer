@@ -22,6 +22,7 @@ import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles, emptyStateLines,
+  frameCount, selectAll, clearAll, allSelected,
 } from './foundationState';
 import {
   showBanner,
@@ -307,14 +308,14 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
   // path is slow (network) and deserves the richer narration; the no-AI path is
   // fast, so it gets a shorter set. stopLoader runs on done/error (ui.ts) or in
   // the catch below.
-  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
+  startLoader(refs.loader, refs.loaderText, generatingMessages(willGenerateProse(refs, state)));
 
   try {
     const built = await assembleDoc(refs, state);
     if (!built) {
       // No sections checked: assembleDoc showed the banner. Reset the frame UI.
       refs.createFrameBtn.disabled = false;
-      stopLoader(refs);
+      stopLoader(refs.loader);
       return;
     }
     send({
@@ -326,7 +327,7 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
     });
     // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {
-    stopLoader(refs);
+    stopLoader(refs.loader);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Frame failed: ${msg}`);
     refs.createFrameBtn.disabled = false;
@@ -463,12 +464,12 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
   // downloaded markdown matches the frame. Disable the button and narrate while
   // any generation runs.
   refs.downloadBtn.disabled = true;
-  startLoader(refs, generatingMessages(willGenerateProse(refs, state)));
+  startLoader(refs.loader, refs.loaderText, generatingMessages(willGenerateProse(refs, state)));
 
   try {
     const built = await assembleDoc(refs, state);
     if (!built) {
-      stopLoader(refs);
+      stopLoader(refs.loader);
       refs.downloadBtn.disabled = false;
       return;
     }
@@ -477,7 +478,7 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
     const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
     downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
 
-    stopLoader(refs);
+    stopLoader(refs.loader);
     refs.downloadBtn.disabled = false;
     // Surface any AI note (quota exhausted, lapsed key, generation error) the
     // same way the frame does via its success banner.
@@ -486,7 +487,7 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
       state.pendingAiNote = '';
     }
   } catch (err) {
-    stopLoader(refs);
+    stopLoader(refs.loader);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Download failed: ${msg}`);
     refs.downloadBtn.disabled = false;
@@ -505,7 +506,7 @@ export async function runUpdateFromSource(
   src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
 ): Promise<boolean> {
   clearBanners(refs);
-  startLoader(refs, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
+  startLoader(refs.loader, refs.loaderText, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey });
     const selected = new Set<SectionId>(src.config.sections);
@@ -542,7 +543,7 @@ export async function runUpdateFromSource(
     // Loader stops on docFrameDone/docFrameError (ui.ts).
     return true;
   } catch (err) {
-    stopLoader(refs);
+    stopLoader(refs.loader);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Update failed: ${msg}`);
     return false;
@@ -564,7 +565,7 @@ export async function runDownloadFromSource(
   src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
 ): Promise<void> {
   clearBanners(refs);
-  startLoader(refs, ['Reading the component', 'Composing sections', 'Saving the markdown']);
+  startLoader(refs.loader, refs.loaderText, ['Reading the component', 'Composing sections', 'Saving the markdown']);
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey });
     const selected = new Set<SectionId>(src.config.sections);
@@ -595,9 +596,9 @@ export async function runDownloadFromSource(
     const markdown = modelToMarkdown(model);
     const filename = specMarkdownFilename(spec, src.node.name || 'component');
     downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
-    stopLoader(refs);
+    stopLoader(refs.loader);
   } catch (err) {
-    stopLoader(refs);
+    stopLoader(refs.loader);
     const msg = err instanceof Error ? err.message : String(err);
     showBanner(refs, 'error', `Download failed: ${msg}`);
   }
@@ -621,8 +622,8 @@ let foundationGenerating = false;
 function paintFoundations(refs: Refs): void {
   if (!foundationSpec) return;
   renderFoundationPanel(
-    refs, summarize(foundationSpec), foundationSelection, emptyStateLines(foundationSpec),
-    foundationGenerating,
+    refs, foundationSpec, summarize(foundationSpec), foundationSelection,
+    emptyStateLines(foundationSpec), foundationGenerating,
   );
 }
 
@@ -639,7 +640,34 @@ function paintFoundations(refs: Refs): void {
 export function setFoundationGenerating(refs: Refs, value: boolean): void {
   foundationGenerating = value;
   refs.createFrameBtn.disabled = value;
+  // The loader lives with the flag rather than at the call sites, so a build
+  // cannot end up running with no loader (or a loader with no build): both
+  // callers set the flag, and there are three ways a build can finish.
+  if (value) {
+    startLoader(
+      refs.foundationLoader, refs.foundationLoaderText,
+      foundationBuildMessages(foundationSpec
+        ? frameCount(foundationSpec, foundationSelection) : 0),
+    );
+  } else {
+    stopLoader(refs.foundationLoader);
+  }
   paintFoundations(refs);
+}
+
+/**
+ * What the build loader says while frames are produced. These phases are real:
+ * the main thread re-reads the file, lays out each table, then places the
+ * Sections. The last line is singular for a one-frame build, since claiming
+ * "frames" for one frame is the kind of small lie that makes a user distrust
+ * the rest of the message.
+ */
+function foundationBuildMessages(frames: number): string[] {
+  return [
+    "Reading this file's variables and styles",
+    'Laying out the tables',
+    frames === 1 ? 'Placing the frame on the canvas' : 'Placing the frames on the canvas',
+  ];
 }
 
 /** Whether the Foundations tab's bulk build is in flight. Read by ui.ts's
@@ -651,6 +679,20 @@ export function isFoundationGenerating(): boolean {
 export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): void {
   foundationSpec = buildFoundation(dump);
   foundationSelection = defaultSelection(foundationSpec);
+  paintFoundations(refs);
+}
+
+/**
+ * The head link: select everything, or clear everything.
+ *
+ * Reads its direction from the same predicate the link's label does, so the
+ * label can never describe the opposite of what the click will do.
+ */
+export function onFoundationToggleAll(refs: Refs): void {
+  if (!foundationSpec) return;
+  foundationSelection = allSelected(foundationSpec, foundationSelection)
+    ? clearAll()
+    : selectAll(foundationSpec);
   paintFoundations(refs);
 }
 

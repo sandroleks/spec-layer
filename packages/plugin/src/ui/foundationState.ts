@@ -7,8 +7,13 @@
  * silently reorder between generations.
  */
 import {
-  MAX_MODE_COLUMNS, type FoundationSpec, type FoundationSelection, type FoundationMode,
+  MAX_MODE_COLUMNS, planFoundationUnits,
+  type FoundationSpec, type FoundationSelection, type FoundationMode,
 } from '@spec-layer/extractor';
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
 
 export interface FoundationSummaryCollection {
   id: string;
@@ -151,4 +156,116 @@ export function emptyStateLines(spec: FoundationSpec): string[] {
   if (!hasColor) return ['No color variables found, so the docs will have no swatches.'];
 
   return [];
+}
+
+// ---------------------------------------------------------------------------
+// How many frames a build will produce
+//
+// A large collection splits into one frame per top-level group, so "one row,
+// one frame" is not true and the user has no way to know it from the row. These
+// derive the real counts from planFoundationUnits, the same function the main
+// thread plans the build with, rather than re-implementing the split rule where
+// it could drift from the build it describes.
+// ---------------------------------------------------------------------------
+
+/** Frames the current selection will produce. */
+export function frameCount(spec: FoundationSpec, sel: FoundationSelection): number {
+  return planFoundationUnits(spec, sel).length;
+}
+
+/**
+ * Frames each source would produce if it were selected, so a row can say so
+ * whether or not it is currently checked. Splitting depends on variable count
+ * and name groups, never on which modes are chosen, so planning over
+ * everything gives each source its true count.
+ */
+export function framesPerSource(
+  spec: FoundationSpec,
+): { collections: Record<string, number>; textStyles: number } {
+  const units = planFoundationUnits(spec, {
+    collections: spec.collections.map((c) => ({
+      collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
+    })),
+    textStyles: spec.textStyles.length > 0,
+  });
+
+  const collections: Record<string, number> = {};
+  let textStyles = 0;
+  for (const unit of units) {
+    if (unit.scope.target === 'textStyles') textStyles += 1;
+    else {
+      collections[unit.scope.collectionId] = (collections[unit.scope.collectionId] ?? 0) + 1;
+    }
+  }
+  return { collections, textStyles };
+}
+
+// ---------------------------------------------------------------------------
+// Select all / clear all
+// ---------------------------------------------------------------------------
+
+/** Everything in the file, with each collection's modes at the column cap. */
+export function selectAll(spec: FoundationSpec): FoundationSelection {
+  return defaultSelection(spec);
+}
+
+export function clearAll(): FoundationSelection {
+  return { collections: [], textStyles: false };
+}
+
+/**
+ * Whether every source in the file is selected, which is what the toggle-all
+ * link's label reads from. Judged on sources, not modes: a collection past the
+ * column cap is fully selected with only four of its modes, since four is all a
+ * frame can show.
+ */
+export function allSelected(spec: FoundationSpec, sel: FoundationSelection): boolean {
+  const everyCollection = spec.collections.every((c) =>
+    sel.collections.some((s) => s.collectionId === c.id));
+  const stylesSettled = spec.textStyles.length === 0 || sel.textStyles;
+  return everyCollection && stylesSettled;
+}
+
+// ---------------------------------------------------------------------------
+// Copy
+// ---------------------------------------------------------------------------
+
+/** One line describing what the file holds. */
+export function fileSummary(summary: FoundationSummary): string {
+  const parts: string[] = [];
+  if (summary.collectionCount > 0) {
+    parts.push(plural(summary.collectionCount, 'variable collection', 'variable collections'));
+  }
+  if (summary.textStyleCount > 0) {
+    parts.push(plural(summary.textStyleCount, 'text style', 'text styles'));
+  }
+  if (parts.length === 0) return 'Nothing to document in this file yet.';
+  return `This file has ${parts.join(' and ')}.`;
+}
+
+/** A collection row's second line. */
+export function collectionMeta(c: FoundationSummaryCollection, frames: number): string {
+  const parts = [
+    plural(c.variableCount, 'variable', 'variables'),
+    plural(c.modes.length, 'mode', 'modes'),
+  ];
+  // Only worth saying when it is not the obvious one frame.
+  if (frames > 1) parts.push(`splits into ${frames} frames`);
+  return parts.join(' · ');
+}
+
+/** The text-styles row's second line. */
+export function textStyleMeta(count: number, frames: number): string {
+  const parts = [plural(count, 'style', 'styles')];
+  if (frames > 1) parts.push(`splits into ${frames} frames`);
+  return parts.join(' · ');
+}
+
+/**
+ * The create button's label. Naming the count is the only place the user learns
+ * that a build produces more frames than rows they ticked.
+ */
+export function createButtonLabel(frames: number): string {
+  if (frames <= 0) return 'Create foundation frames';
+  return frames === 1 ? 'Create 1 frame' : `Create ${frames} frames`;
 }
