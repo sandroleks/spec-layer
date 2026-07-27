@@ -78,19 +78,35 @@ const COL_DESC = 220;
 const COL_MODE = 180;
 const ROW_PAD = 8;
 
-function cellText(label: string, width: number, muted = false): FrameNode {
+/**
+ * Pin a cell to a fixed column width while its height keeps hugging its text.
+ *
+ * Uses the axis-explicit layoutSizing* API on purpose. The primary/counter API
+ * is a trap here: on a HORIZONTAL frame the primary axis is the WIDTH and the
+ * counter axis is the HEIGHT, so `resize(width, 1)` followed by
+ * `primaryAxisSizingMode = 'FIXED'` re-fixes the axis resize had already fixed
+ * and leaves the height pinned at the literal 1 that was passed, clipping every
+ * row to a sliver. resize() fixes BOTH axes in the Figma API, so the height hug
+ * must be restored explicitly, and it must be restored on the vertical axis.
+ *
+ * Call this AFTER the children are appended so the hug has content to measure.
+ */
+function fixWidthHugHeight(frame: FrameNode, width: number): void {
+  frame.layoutSizingHorizontal = 'FIXED';
+  frame.resize(width, frame.height); // current height, never a literal
+  frame.layoutSizingVertical = 'HUG';
+}
+
+export function cellText(label: string, width: number, muted = false): FrameNode {
   const row = hstack(6);
-  row.resize(width, 1);
-  row.primaryAxisSizingMode = 'FIXED';
   row.counterAxisAlignItems = 'CENTER';
   row.appendChild(makeText(label, 'Regular', 11, muted ? palette.muted : palette.body));
+  fixWidthHugHeight(row, width);
   return row;
 }
 
-function swatchCell(value: FoundationValue, width: number): FrameNode {
+export function swatchCell(value: FoundationValue, width: number): FrameNode {
   const row = hstack(6);
-  row.resize(width, 1);
-  row.primaryAxisSizingMode = 'FIXED';
   row.counterAxisAlignItems = 'CENTER';
 
   const color = swatchColorOf(value);
@@ -107,14 +123,14 @@ function swatchCell(value: FoundationValue, width: number): FrameNode {
     || (value.kind === 'alias' && !value.external && value.resolved?.kind === 'unresolved');
   row.appendChild(makeText(valueLabel(value), 'Regular', 11,
     unresolved ? palette.muted : palette.body));
+  fixWidthHugHeight(row, width);
   return row;
 }
 
-function headerCell(label: string, width: number): FrameNode {
+export function headerCell(label: string, width: number): FrameNode {
   const row = hstack(0);
-  row.resize(width, 1);
-  row.primaryAxisSizingMode = 'FIXED';
   row.appendChild(makeText(label, 'Medium', 10, palette.label));
+  fixWidthHugHeight(row, width);
   return row;
 }
 
