@@ -34,6 +34,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   was renamed away now reports **Source missing** instead of rebuilding
   to an empty frame.
 
+  Foundation frames are laid out as component docs are: one card at a
+  fixed width, opening with the branded header band that carries the
+  eyebrow, the document title, a count of what it covers, and the logo
+  captured in Settings, then a bordered table below. They pick up the
+  brand theme in full, including the header colour, which the first
+  version applied to the fonts but not to the frame. A card is never
+  narrower than a component doc frame and widens to fit its columns.
+
   This covers the on-canvas half. Foundation Markdown and the docs-app
   pages are a separate piece of work, so a foundation doc offers no
   Markdown download yet.

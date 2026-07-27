@@ -6,6 +6,7 @@ import { resolveFileKey } from './fileKey';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
+  foundationUnitTitle,
   type FoundationSpec, type FoundationUnit,
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
@@ -741,7 +742,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
-            msg.config.includeDescriptions,
+            msg.config.includeDescriptions, brandLogo,
           );
 
           const data: FoundationDocLink = {
@@ -883,9 +884,10 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         const unit: FoundationUnit = {
           scope,
-          title: scope.target === 'textStyles'
-            ? (scope.group ? `Text styles · ${scope.group}` : 'Text styles')
-            : (scope.group ? `${content.collectionName} · ${scope.group}` : content.collectionName),
+          // One derivation for every title, shared with planFoundationUnits and
+          // the renderer, so a rebuilt doc cannot end up named differently from
+          // the doc it replaces.
+          title: foundationUnitTitle(scope, content),
           rowCount: content.rows.length,
           // content.omittedModeNames is the same value computed the same way;
           // reuse it rather than re-deriving it from spec.collections here, so
@@ -895,6 +897,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         const section = await buildFoundationFrame(
           content, unit, resolveTheme(brandTheme), link.config.includeDescriptions,
+          brandLogo,
         );
 
         const data: FoundationDocLink = {

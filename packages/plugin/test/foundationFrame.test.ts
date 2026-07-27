@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   valueLabel, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
+  buildFoundationFrame, headerSubtitle, tableColumns, cardWidth, rowWidth,
+  type TableColumn,
 } from '../src/foundationFrame';
 import { hstack, vstack } from '../src/frameKit';
+import {
+  installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
+} from './fakeFigma';
 import {
   buildFoundation, planFoundationUnits, unitContent,
   SPLIT_THRESHOLD, type FoundationValue, type FoundationUnitContent,
@@ -202,113 +207,9 @@ describe('swatchColorOf', () => {
 // tests, which pin the emulation itself.
 // ---------------------------------------------------------------------------
 
-type SizeMode = 'FIXED' | 'AUTO';
-type LayoutSizing = 'FIXED' | 'HUG';
-
-const TEXT_H = 14;
-
-/**
- * A minimal auto-layout frame that models the two things this bug turned on:
- * resize() fixing both axes, and layoutSizing{Horizontal,Vertical} being views
- * onto primary/counter that depend on layoutMode.
- */
-class FakeFrame {
-  layoutMode: 'NONE' | 'HORIZONTAL' | 'VERTICAL' = 'NONE';
-  primaryAxisSizingMode: SizeMode = 'AUTO';
-  counterAxisSizingMode: SizeMode = 'AUTO';
-  itemSpacing = 0;
-  paddingTop = 0;
-  paddingBottom = 0;
-  children: { height: number }[] = [];
-  fills: unknown = [];
-  [k: string]: unknown;
-
-  private fixedW = 0.01;
-  private fixedH = 0.01;
-
-  appendChild(n: { height?: number }): void {
-    this.children.push({ height: n.height ?? TEXT_H });
-  }
-
-  /**
-   * Figma's real behaviour: an explicit resize pins BOTH axes to FIXED. This is
-   * the single most important line in the stub.
-   */
-  resize(w: number, h: number): void {
-    this.fixedW = w;
-    this.fixedH = h;
-    this.primaryAxisSizingMode = 'FIXED';
-    this.counterAxisSizingMode = 'FIXED';
-  }
-
-  /** Which sizing mode governs the horizontal axis, given the layout direction. */
-  private get horizontalMode(): SizeMode {
-    return this.layoutMode === 'VERTICAL' ? this.counterAxisSizingMode : this.primaryAxisSizingMode;
-  }
-
-  private get verticalMode(): SizeMode {
-    return this.layoutMode === 'VERTICAL' ? this.primaryAxisSizingMode : this.counterAxisSizingMode;
-  }
-
-  private setAxis(axis: 'horizontal' | 'vertical', mode: SizeMode): void {
-    const isPrimary = this.layoutMode === 'VERTICAL' ? axis === 'vertical' : axis === 'horizontal';
-    if (isPrimary) this.primaryAxisSizingMode = mode;
-    else this.counterAxisSizingMode = mode;
-  }
-
-  get layoutSizingHorizontal(): LayoutSizing {
-    return this.horizontalMode === 'AUTO' ? 'HUG' : 'FIXED';
-  }
-
-  set layoutSizingHorizontal(v: LayoutSizing) {
-    this.setAxis('horizontal', v === 'HUG' ? 'AUTO' : 'FIXED');
-  }
-
-  get layoutSizingVertical(): LayoutSizing {
-    return this.verticalMode === 'AUTO' ? 'HUG' : 'FIXED';
-  }
-
-  set layoutSizingVertical(v: LayoutSizing) {
-    this.setAxis('vertical', v === 'HUG' ? 'AUTO' : 'FIXED');
-  }
-
-  get width(): number {
-    if (this.horizontalMode === 'FIXED') return this.fixedW;
-    // A hugging width is not modelled: nothing here asserts on one, and
-    // returning a made-up number would make a future test quietly meaningless.
-    throw new Error('FakeFrame: hugging width is not modelled');
-  }
-
-  /** A hugging height is measured from the content, so a clipped row shows up. */
-  get height(): number {
-    if (this.verticalMode === 'FIXED') return this.fixedH;
-    const content = this.layoutMode === 'VERTICAL'
-      ? this.children.reduce((a, c) => a + c.height, 0)
-        + Math.max(this.children.length - 1, 0) * this.itemSpacing
-      : this.children.reduce((a, c) => Math.max(a, c.height), 0);
-    return content + this.paddingTop + this.paddingBottom;
-  }
-}
-
-function fakeRect(): Record<string, unknown> {
-  const r: Record<string, unknown> = {
-    width: 0, height: 0,
-    resize(w: number, h: number) { r.width = w; r.height = h; },
-  };
-  return r;
-}
-
-function installFigma(): void {
-  (globalThis as Record<string, unknown>).figma = {
-    createFrame: () => new FakeFrame(),
-    createText: () => ({ type: 'TEXT', height: TEXT_H }) as Record<string, unknown>,
-    createRectangle: () => fakeRect(),
-  };
-}
-
 describe('table cell sizing (row-clipping regression)', () => {
-  beforeEach(installFigma);
-  afterEach(() => { delete (globalThis as Record<string, unknown>).figma; });
+  beforeEach(() => installFakeFigma());
+  afterEach(uninstallFakeFigma);
 
   describe('stub fidelity — without these the suite cannot catch the bug', () => {
     it('resize() pins BOTH sizing modes to FIXED, as the real Figma API does', () => {
@@ -412,5 +313,298 @@ describe('table cell sizing (row-clipping regression)', () => {
   it('centres cellText content vertically', () => {
     const cell = cellText('x', 240) as unknown as FakeFrame;
     expect(cell.counterAxisAlignItems).toBe('CENTER');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The whole card. Foundation frames are meant to read as the same family of
+// document as component frames: the brand header band, the captured logo, the
+// theme colours, one fixed-width card. Before this they were an unbranded white
+// box that applied the theme's fonts and ignored its header colour entirely.
+// ---------------------------------------------------------------------------
+
+describe('buildFoundationFrame', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(uninstallFakeFigma);
+
+  const theme = {
+    headerBg: '#123456', accent: '#00ffcc', bodyText: '#222222',
+    tableHeadBg: '#fafafa', cornerStyle: 'soft' as const,
+    headingFont: 'Inter', bodyFont: 'Inter',
+  };
+
+  /** Two modes, three described variables, plus one text style. */
+  function dump(): SerializedFoundation {
+    return {
+      fileKey: 'FILE1', extractedAt: '2026-07-27T00:00:00.000Z', externals: [],
+      collections: [{
+        id: 'c1', name: 'Primitives', defaultModeId: 'light',
+        modes: [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
+        variables: [
+          { id: 'v1', name: 'color/bg', resolvedType: 'COLOR', description: 'Page background',
+            codeSyntax: {}, valuesByMode: {
+              light: { r: 1, g: 1, b: 1, a: 1 }, dark: { r: 0, g: 0, b: 0, a: 1 } } },
+          { id: 'v2', name: 'color/fg', resolvedType: 'COLOR', description: '',
+            codeSyntax: {}, valuesByMode: {
+              light: { r: 0, g: 0, b: 0, a: 1 }, dark: { r: 1, g: 1, b: 1, a: 1 } } },
+          { id: 'v3', name: 'space/md', resolvedType: 'FLOAT', description: '',
+            codeSyntax: {}, valuesByMode: { light: 16, dark: 16 } },
+        ],
+      }],
+      textStyles: [{
+        name: 'Heading/H1', description: '', fontFamily: 'Inter', fontStyle: 'Bold',
+        fontSize: 32, lineHeight: { unit: 'PERCENT', value: 120 },
+        letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 0,
+        paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {},
+      }],
+    };
+  }
+
+  function build(opts: {
+    textStyles?: boolean; descriptions?: boolean; logo?: string | null;
+  } = {}) {
+    const spec = buildFoundation(dump());
+    const units = planFoundationUnits(spec, {
+      collections: opts.textStyles
+        ? []
+        : [{ collectionId: 'c1', modeIds: ['light', 'dark'] }],
+      textStyles: opts.textStyles ?? false,
+    });
+    const unit = units[0];
+    const content = unitContent(spec, unit.scope)!;
+    return buildFoundationFrame(
+      content, unit, theme, opts.descriptions ?? false, opts.logo,
+    ) as unknown as Promise<FakeSection>;
+  }
+
+  /** The card is the Section's only child. */
+  function cardOf(section: FakeSection): FakeFrame {
+    return section.children[0] as unknown as FakeFrame;
+  }
+
+  it('opens with a header band painted in the theme header colour', async () => {
+    const card = cardOf(await build());
+    const band = card.children[0] as FakeFrame;
+    expect(band.name).toBe('Header');
+    // #123456 from the theme, not the default navy and not the card background.
+    expect(band.fills).toEqual([{
+      type: 'SOLID',
+      color: { r: 0x12 / 255, g: 0x34 / 255, b: 0x56 / 255 },
+    }]);
+  });
+
+  it('labels the band Foundations and titles it from the content', async () => {
+    const card = cardOf(await build());
+    const texts = card.textChars();
+    expect(texts).toContain('FOUNDATIONS');
+    expect(texts).toContain('Primitives');
+  });
+
+  it('titles the text-styles document from its scope, not a collection name', async () => {
+    // content.collectionName is '' for this unit, so a title read straight off
+    // the content would render a blank header.
+    const card = cardOf(await build({ textStyles: true }));
+    expect(card.textChars()).toContain('Text styles');
+    expect(card.name).toBe('Text styles');
+  });
+
+  it('counts what the document covers in the subtitle', async () => {
+    const card = cardOf(await build());
+    expect(card.textChars()).toContain('3 variables across 2 modes');
+  });
+
+  it('stamps the captured logo into the header', async () => {
+    const card = cardOf(await build({ logo: 'AAAA' }));
+    const band = card.children[0] as FakeFrame;
+    const row = band.children[0] as FakeFrame;
+    const logo = row.children.find((k) => (k as Record<string, unknown>).type === 'RECTANGLE');
+    expect(logo).toBeDefined();
+  });
+
+  it('renders without a logo when the user has not captured one', async () => {
+    const card = cardOf(await build({ logo: null }));
+    const band = card.children[0] as FakeFrame;
+    // The eyebrow sits directly in the band, with no logo row around it.
+    expect((band.children[0] as Record<string, unknown>).type).toBe('TEXT');
+  });
+
+  it('is one fixed-width card whose height hugs its rows', async () => {
+    const card = cardOf(await build());
+    expect(card.layoutSizingHorizontal).toBe('FIXED');
+    // The bug this branch already fixed once, now at the card level: a FIXED
+    // height here would clip the whole table rather than one row.
+    expect(card.layoutSizingVertical).toBe('HUG');
+    expect(card.height).toBeGreaterThan(1);
+  });
+
+  it('never renders narrower than a component doc frame', async () => {
+    // Name (240) + two modes (360) + gaps is far short of 880 on its own; a card
+    // that narrow cannot carry the header band's 38px title.
+    const card = cardOf(await build());
+    expect(card.width).toBe(880);
+  });
+
+  it('widens past the minimum when the table needs the room', async () => {
+    const wide = cardWidth(tableColumns(
+      { collectionName: 'C', modeNames: ['a', 'b', 'c', 'd'], omittedModeNames: [], rows: [] },
+      false, true,
+    ));
+    // Name 240 + Description 220 + 4 x 180 = 1180, plus gaps and padding.
+    expect(wide).toBeGreaterThan(880);
+    const card = cardOf(await build());
+    expect(card.width).toBeLessThan(wide);
+  });
+
+  it('stretches the header and the body to the card width', async () => {
+    const card = cardOf(await build());
+    const [band, body] = card.children as unknown as FakeFrame[];
+    expect(band.layoutSizingHorizontal).toBe('FILL');
+    expect(body.layoutSizingHorizontal).toBe('FILL');
+  });
+
+  it('wraps the rows in a bordered table, as the component tables are', async () => {
+    const card = cardOf(await build());
+    const table = card.findAllNamed('Table')[0];
+    expect(table).toBeDefined();
+    expect(table.strokeWeight).toBe(1);
+    expect(table.clipsContent).toBe(true);
+    // Header row plus one row per variable.
+    expect(table.children).toHaveLength(4);
+  });
+
+  it('heads the mode columns with the mode names', async () => {
+    const card = cardOf(await build());
+    const texts = card.textChars();
+    expect(texts).toContain('Name');
+    expect(texts).toContain('Light');
+    expect(texts).toContain('Dark');
+  });
+
+  it('omits the description column unless the user asked and a row has one', async () => {
+    const off = cardOf(await build({ descriptions: false }));
+    expect(off.textChars()).not.toContain('Description');
+    const on = cardOf(await build({ descriptions: true }));
+    expect(on.textChars()).toContain('Description');
+    expect(on.textChars()).toContain('Page background');
+  });
+
+  it('names the Section for the document it holds', async () => {
+    const section = await build();
+    expect(section.name).toBe('Foundations: Primitives');
+  });
+
+  it('sizes the Section around the card', async () => {
+    const section = await build();
+    const card = cardOf(section);
+    expect(section.width).toBe(card.width + 80);
+    expect(section.height).toBe(card.height + 80);
+  });
+});
+
+describe('headerSubtitle', () => {
+  const base: FoundationUnitContent = {
+    collectionName: 'P', modeNames: ['Value'], omittedModeNames: [], rows: [],
+  };
+  const rows = (n: number): FoundationUnitContent['rows'] =>
+    Array.from({ length: n }, (_, i) => ({
+      kind: 'variable' as const, name: `v${i}`, description: '', cells: [],
+    }));
+
+  it('counts variables and the modes they are shown in', () => {
+    expect(headerSubtitle({ ...base, rows: rows(12), modeNames: ['L', 'D'] }, false))
+      .toBe('12 variables across 2 modes');
+  });
+
+  it('says one variable and one mode in the singular', () => {
+    expect(headerSubtitle({ ...base, rows: rows(1) }, false))
+      .toBe('1 variable across 1 mode');
+  });
+
+  it('counts text styles, which have no modes', () => {
+    expect(headerSubtitle({ ...base, rows: rows(8) }, true)).toBe('8 text styles');
+    expect(headerSubtitle({ ...base, rows: rows(1) }, true)).toBe('1 text style');
+  });
+
+  it('states an empty document plainly rather than leaving the line blank', () => {
+    expect(headerSubtitle(base, false)).toBe('0 variables across 1 mode');
+  });
+
+  it('contains no em dash', () => {
+    expect(headerSubtitle({ ...base, rows: rows(3) }, false)).not.toContain('—');
+  });
+});
+
+describe('tableColumns', () => {
+  const content: FoundationUnitContent = {
+    collectionName: 'P', modeNames: ['Light', 'Dark'], omittedModeNames: [], rows: [],
+  };
+
+  it('is Name plus one column per rendered mode', () => {
+    expect(tableColumns(content, false, false).map((c) => c.label))
+      .toEqual(['Name', 'Light', 'Dark']);
+  });
+
+  it('inserts Description between Name and the modes', () => {
+    expect(tableColumns(content, false, true).map((c) => c.label))
+      .toEqual(['Name', 'Description', 'Light', 'Dark']);
+  });
+
+  it('replaces the mode columns with one wide Specimen column for text styles', () => {
+    const cols = tableColumns(content, true, false);
+    expect(cols.map((c) => c.label)).toEqual(['Name', 'Specimen']);
+    // The specimen needs the room two mode columns would have taken.
+    expect(cols[1].width).toBe(360);
+  });
+
+  it('gives every column a positive width', () => {
+    for (const col of tableColumns(content, false, true)) {
+      expect(col.width).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('cardWidth', () => {
+  const content = (modes: string[]): FoundationUnitContent => ({
+    collectionName: 'P', modeNames: modes, omittedModeNames: [], rows: [],
+  });
+
+  /** Every shape a foundation table can take, widest last. */
+  const shapes: [string, TableColumn[]][] = [
+    ['one mode', tableColumns(content(['Value']), false, false)],
+    ['one mode + descriptions', tableColumns(content(['Value']), false, true)],
+    ['text styles', tableColumns(content([]), true, false)],
+    ['text styles + descriptions', tableColumns(content([]), true, true)],
+    ['four modes', tableColumns(content(['a', 'b', 'c', 'd']), false, false)],
+    ['four modes + descriptions', tableColumns(content(['a', 'b', 'c', 'd']), false, true)],
+  ];
+
+  for (const [name, columns] of shapes) {
+    it(`leaves room for the whole table: ${name}`, () => {
+      // The card clips its contents, so anything wider than the space inside its
+      // padding loses its right-hand column. This is the check that the row's own
+      // padding is counted, which it originally was not.
+      const inside = cardWidth(columns) - 56 * 2;
+      expect(inside).toBeGreaterThanOrEqual(rowWidth(columns));
+    });
+  }
+
+  it('never drops below the component frame width', () => {
+    for (const [, columns] of shapes) {
+      expect(cardWidth(columns)).toBeGreaterThanOrEqual(880);
+    }
+  });
+
+  it('stays inside the component frame ceiling at its widest', () => {
+    // The widest table possible is descriptions plus the four-mode cap. If this
+    // ever exceeds 1440 the two frame families stop looking like a set.
+    const widest = shapes[shapes.length - 1][1];
+    expect(cardWidth(widest)).toBeLessThanOrEqual(1440);
+  });
+
+  it('counts the gaps between columns, not just the columns', () => {
+    const one = tableColumns(content(['Value']), false, false);
+    const two = tableColumns(content(['Value', 'Dark']), false, false);
+    // Adding a 180px column costs 180 plus one 12px gap.
+    expect(rowWidth(two) - rowWidth(one)).toBe(192);
   });
 });

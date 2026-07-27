@@ -15,6 +15,7 @@ import {
   headingFont, setFontFamilies, matchVariableModes, radius, setCornerStyle,
   type FontStyle,
 } from './frameKit';
+import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
 import { buildMatrixSection } from './statesSection';
 import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
@@ -24,7 +25,9 @@ import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTok
 // ---------------------------------------------------------------------------
 
 // Layout constants
-const PAD_X = 56; // horizontal padding for header + content
+// Horizontal padding for header + content. Taken from the shared header so the
+// band's padding and the content column's padding cannot drift out of line.
+const PAD_X = HEADER_PAD_X;
 const VAR_LEFT_W = 240; // per-variant card: left pane (preview + properties)
 const VAR_PANE_PAD = 20; // per-variant card: pane padding
 const TOKEN_KEY_COL_W = 120; // token tables: fixed width of the non-Token columns
@@ -962,67 +965,28 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
 // Header band
 // ---------------------------------------------------------------------------
 
+/**
+ * The component doc header. The band itself is shared with foundation docs (see
+ * brandHeader.ts); what stays here is the one component-specific part: the
+ * subtitle is markdown lifted from the Definition, so its **bold** runs are
+ * parsed out and re-applied to the text node.
+ */
 async function buildHeader(
   componentName: string,
   subtitleMd: string | null,
   eyebrow: string,
   logoBase64?: string | null,
 ): Promise<FrameNode> {
-  const band = vstack(14);
-  band.fills = solidFill(palette.headerBg);
-  band.paddingTop = 48;
-  band.paddingBottom = subtitleMd ? 44 : 48;
-  band.paddingLeft = PAD_X;
-  band.paddingRight = PAD_X;
-
-  // We append children, set FILL, then fill text — order matters for FILL.
-  // Nodes in `tmp` get FILL after all appends. When the eyebrow sits inside a
-  // logo row, the ROW is what FILLs (the eyebrow FILLs within it, set inline).
-  const tmp: (TextNode | FrameNode)[] = [];
-
-  const eyebrowNode = makeText(eyebrow.toUpperCase(), 'Medium', 12, palette.onHeaderMuted);
-  if (logoBase64) {
-    // Eyebrow + logo on one row, logo pushed to the right edge.
-    const row = hstack(12);
-    band.appendChild(row);
-    row.counterAxisAlignItems = 'CENTER';
-    row.appendChild(eyebrowNode);
-    eyebrowNode.layoutSizingHorizontal = 'FILL';
-    try {
-      const image = figma.createImage(figma.base64Decode(logoBase64));
-      const { width, height } = await image.getSizeAsync();
-      const logoH = 28;
-      const logo = figma.createRectangle();
-      logo.resize(Math.round((width / Math.max(height, 1)) * logoH), logoH);
-      logo.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FIT' }];
-      row.appendChild(logo);
-    } catch {
-      /* corrupt logo → header renders without it */
-    }
-    tmp.push(row); // the row FILLs; the eyebrow already FILLs within it
-  } else {
-    band.appendChild(eyebrowNode);
-    tmp.push(eyebrowNode);
-  }
-
-  const title = makeText(componentName, 'Bold', 38, palette.onHeader, 115);
-  title.fontName = headingFont('Bold'); // heading family (guaranteed loaded)
-  band.appendChild(title);
-  tmp.push(title);
-
-  if (subtitleMd) {
-    // Parse the lead for **bold** runs and drop any leading list marker so no
-    // raw markdown shows in the subtitle.
-    const runs = parseRuns(subtitleMd.replace(/^[-*]\s+/, ''));
-    const plain = runs.map((r) => r.text).join('');
-    const sub = makeText(plain, 'Regular', 16, palette.onHeaderMuted, 155);
-    band.appendChild(sub);
-    applyBoldRuns(sub, runs, 0);
-    tmp.push(sub);
-  }
-
-  for (const t of tmp) t.layoutSizingHorizontal = 'FILL';
-  return band;
+  // Parse the lead for **bold** runs and drop any leading list marker so no
+  // raw markdown shows in the subtitle.
+  const runs = subtitleMd ? parseRuns(subtitleMd.replace(/^[-*]\s+/, '')) : null;
+  return buildBrandHeader({
+    eyebrow,
+    title: componentName,
+    subtitle: runs ? runs.map((r) => r.text).join('') : null,
+    logoBase64,
+    styleSubtitle: runs ? (node) => applyBoldRuns(node, runs, 0) : undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -60,6 +60,21 @@ Foundation frame generation works end-to-end:
       Screenshot:
 
 - [ ] **Theme customization applies.** Generated frames pick up a customized brand theme (header color, fonts, corner style) from Settings.
+      Check the header band is actually painted in the theme's header color, not the default navy. The first version of these frames read the theme for its fonts and its table tint but never used its header color, because the frame had no header band to paint.
+      Screenshot:
+
+- [ ] **Foundation frames match component frames.** Put a generated foundation frame beside a generated component doc for the same file and confirm they read as the same kind of document: the same header band and header color, the same eyebrow and title treatment, the same card corner and shadow, the same width unless the foundation table needs more room.
+      Why this is here: "follows the component style" is the requirement, and no unit test can judge it. Two frames that are each individually fine can still fail this.
+      Screenshot:
+
+- [ ] **Logo appears in the foundation header.** With a logo captured in Settings, generated foundation frames show it at the right of the header band, at the same size as on a component doc. Then clear the logo, regenerate, and confirm the eyebrow sits alone with no gap left behind.
+      Screenshot:
+
+- [ ] **Header title and count are right.** The header title matches the document (`Semantic`, or `Primitives · color` for a split part, or `Text styles`), and the line below it counts what the frame actually shows: `12 variables across 2 modes`, `1 variable across 1 mode`, `8 text styles`. Check a single-mode collection and a single-variable collection for the singular wording.
+      Screenshot:
+
+- [ ] **The widest table still fits the card.** Generate a frame for a four-mode collection with descriptions turned on, which is the widest table the plugin can produce. No column is cut off at the right edge, and the table's border is fully inside the card on both sides.
+      Why this is here: the card clips its contents, so a card sized from the columns alone loses its right-hand column. Covered by unit tests, but only Figma is authoritative on layout.
       Screenshot:
 
 - [ ] **Rows are full height and no text is clipped.** Every table row is tall enough for its text. No row shows a cropped or sliced line of type, and no cell's text overflows its row. Check the header row, variable rows, alias rows, and text-style specimen rows.

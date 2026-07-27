@@ -3,20 +3,27 @@
  * foundationFrame.ts — renders one foundation output unit as a Figma Section.
  *
  * Deliberately separate from docFrame.ts: that file owns the component
- * document and is already large. Both share frameKit.ts primitives, so a
- * foundation frame inherits the user's brand theme, fonts, and corner style
- * with no new theming code.
+ * document and is already large. What the two share, they share through code
+ * rather than by resemblance — frameKit primitives for the palette, fonts and
+ * corner style, and brandHeader for the header band — so a foundation frame
+ * inherits the user's brand theme and captured logo with no theming code of its
+ * own, and stays in step when the component frame is restyled.
  *
- * valueLabel and swatchColorOf are pure and unit-tested. Node construction is
- * verified by the manual Figma pass, the same treatment docFrame.ts gets.
+ * The card chrome matches a component doc: one fixed-width card, the brand
+ * header band across the top, then a bordered table on the body background.
+ *
+ * The pure functions here (valueLabel, swatchColorOf, footerNotes,
+ * headerSubtitle, tableColumns, cardWidth) are unit-tested. Node construction
+ * is verified by the manual Figma pass, the same treatment docFrame.ts gets.
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
 } from '@spec-layer/extractor';
+import { foundationUnitTitle } from '@spec-layer/extractor';
 import {
-  palette, solidFill, makeText, vstack, hstack, radius, headingFont, hex,
-  applyThemeToKit,
+  palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
 } from './frameKit';
+import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import type { resolveTheme } from './brandColors';
 
 /** Human label for one cell. Never returns an empty string. */
@@ -52,6 +59,22 @@ export function swatchColorOf(value: FoundationValue): RGB | null {
   return null;
 }
 
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * The header band's subtitle line: what this document covers, counted.
+ *
+ * Reads only `content`, for the same reason footerNotes does: everything the
+ * frame states has to come from what the drift hash reads.
+ */
+export function headerSubtitle(content: FoundationUnitContent, isText: boolean): string {
+  if (isText) return plural(content.rows.length, 'text style', 'text styles');
+  return `${plural(content.rows.length, 'variable', 'variables')} across `
+    + plural(content.modeNames.length, 'mode', 'modes');
+}
+
 /**
  * The frame's footer lines, in render order.
  *
@@ -77,9 +100,59 @@ const COL_NAME = 240;
 const COL_DESC = 220;
 const COL_MODE = 180;
 const ROW_PAD = 8;
+const CELL_GAP = 12;
+
+/** Narrowest card, matching the component doc frame so the two sit level. */
+const CARD_WIDTH_MIN = 880;
+
+export interface TableColumn { label: string; width: number }
 
 /**
- * Pin a cell to a fixed column width while its height keeps hugging its text.
+ * The table's columns, in render order, as label/width pairs.
+ *
+ * One list drives the header row, every data row, and the card width, so a
+ * column cannot be labelled at one width and filled at another.
+ */
+export function tableColumns(
+  content: FoundationUnitContent, isText: boolean, hasDescriptions: boolean,
+): TableColumn[] {
+  const columns: TableColumn[] = [{ label: 'Name', width: COL_NAME }];
+  if (hasDescriptions) columns.push({ label: 'Description', width: COL_DESC });
+  if (isText) columns.push({ label: 'Specimen', width: COL_MODE * 2 });
+  else for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
+  return columns;
+}
+
+/**
+ * The laid-out width of a table row: its cells, the gaps between them, and the
+ * row's own left and right padding, which keeps the first and last cell off the
+ * table's border.
+ *
+ * The card's width has to be derived from this exact number. The card clips its
+ * contents, so a table one pixel wider than the space inside the card's padding
+ * is a table with a clipped right-hand column.
+ */
+export function rowWidth(columns: TableColumn[]): number {
+  return columns.reduce((sum, c) => sum + c.width, 0)
+    + CELL_GAP * Math.max(columns.length - 1, 0)
+    + CELL_GAP * 2;
+}
+
+/**
+ * The card's width: whatever the table needs plus the shared padding, but never
+ * narrower than a component doc frame. A single-mode collection would otherwise
+ * produce a card too narrow to carry the header band's 38px title.
+ *
+ * Unbounded above, unlike the component frame, and safely so: the widest table
+ * this can produce is a description column plus the four-mode cap, which lands
+ * inside the component frame's own ceiling.
+ */
+export function cardWidth(columns: TableColumn[]): number {
+  return Math.max(CARD_WIDTH_MIN, rowWidth(columns) + HEADER_PAD_X * 2);
+}
+
+/**
+ * Pin a frame to a fixed width while its height keeps hugging its content.
  *
  * Uses the axis-explicit layoutSizing* API on purpose. The primary/counter API
  * is a trap here: on a HORIZONTAL frame the primary axis is the WIDTH and the
@@ -89,7 +162,8 @@ const ROW_PAD = 8;
  * row to a sliver. resize() fixes BOTH axes in the Figma API, so the height hug
  * must be restored explicitly, and it must be restored on the vertical axis.
  *
- * Call this AFTER the children are appended so the hug has content to measure.
+ * Safe before or after the children exist: resize is handed the frame's current
+ * height rather than a literal, and the HUG on the last line is what governs.
  */
 function fixWidthHugHeight(frame: FrameNode, width: number): void {
   frame.layoutSizingHorizontal = 'FIXED';
@@ -127,24 +201,32 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
   return row;
 }
 
+/**
+ * A column heading. Not uppercased, unlike the component doc's table headings:
+ * half of these labels are user-authored mode names, and shouting a name the
+ * user chose back at them misrepresents what the mode is called.
+ */
 export function headerCell(label: string, width: number): FrameNode {
   const row = hstack(0);
-  row.appendChild(makeText(label, 'Medium', 10, palette.label));
+  row.appendChild(makeText(label, 'Medium', 11, palette.muted));
   fixWidthHugHeight(row, width);
   return row;
 }
 
-function tableRow(children: FrameNode[], withDivider: boolean): FrameNode {
-  const row = hstack(12);
+/** One table row. `divider` draws the hairline above it, as the doc tables do. */
+function tableRow(children: FrameNode[], divider: boolean): FrameNode {
+  const row = hstack(CELL_GAP);
   row.paddingTop = ROW_PAD;
   row.paddingBottom = ROW_PAD;
+  row.paddingLeft = CELL_GAP;
+  row.paddingRight = CELL_GAP;
   row.counterAxisAlignItems = 'CENTER';
   row.layoutSizingHorizontal = 'HUG';
   for (const c of children) row.appendChild(c);
-  if (withDivider) {
+  if (divider) {
     row.strokes = solidFill(palette.divider);
-    row.strokeBottomWeight = 1;
-    row.strokeTopWeight = 0;
+    row.strokeTopWeight = 1;
+    row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
     row.strokeRightWeight = 0;
   }
@@ -160,6 +242,7 @@ export async function buildFoundationFrame(
   unit: FoundationUnit,
   theme: ReturnType<typeof resolveTheme>,
   includeDescriptions: boolean,
+  logoBase64?: string | null,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -189,52 +272,84 @@ export async function buildFoundationFrame(
     }
   }
 
+  // Derived from content, not read off `unit`: the title is rendered text, so it
+  // has to come from the same object the drift hash reads. It also has to agree
+  // with the title the batch and a later single-doc Update compute, which is why
+  // one function in the extractor derives all three.
+  const title = foundationUnitTitle(unit.scope, content);
+  const columns = tableColumns(content, isText, hasDescriptions);
+  const width = cardWidth(columns);
+
   const card = vstack(0);
-  card.name = unit.title;
+  card.name = title;
   card.fills = solidFill(palette.bg);
   card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
-  card.cornerRadius = radius(12);
-  card.paddingTop = 0;
-  card.paddingBottom = 20;
-  card.paddingLeft = 24;
-  card.paddingRight = 24;
+  card.cornerRadius = radius(16);
+  card.clipsContent = true; // so the header band's corners follow the card's
+  card.effects = [
+    {
+      type: 'DROP_SHADOW',
+      color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
+      offset: { x: 0, y: 12 },
+      radius: 32,
+      spread: 0,
+      visible: true,
+      blendMode: 'NORMAL',
+    },
+  ];
+  // Fix the width BEFORE appending: a child can only be set to FILL once its
+  // parent is FIXED on that axis.
+  fixWidthHugHeight(card, width);
 
-  // --- header band ---
-  const header = vstack(4);
-  header.paddingTop = 20;
-  header.paddingBottom = 16;
-  header.appendChild(makeText('Foundations', 'Medium', 10, palette.muted));
-  const title = makeText(unit.title, 'Bold', 20, palette.heading);
-  title.fontName = headingFont('Bold');
-  header.appendChild(title);
-  const subtitle = isText
-    ? `${content.rows.length} text styles`
-    : `${content.rows.length} variables · ${content.modeNames.length} modes`;
-  header.appendChild(makeText(subtitle, 'Regular', 11, palette.muted));
+  // --- brand header band ---
+  const header = await buildBrandHeader({
+    eyebrow: 'Foundations',
+    title,
+    subtitle: headerSubtitle(content, isText),
+    logoBase64,
+  });
   card.appendChild(header);
+  header.layoutSizingHorizontal = 'FILL';
 
-  // --- table header ---
-  const columns: FrameNode[] = [headerCell('Name', COL_NAME)];
-  if (hasDescriptions) columns.push(headerCell('Description', COL_DESC));
-  if (isText) columns.push(headerCell('Specimen', COL_MODE * 2));
-  else for (const m of content.modeNames) columns.push(headerCell(m, COL_MODE));
-  const head = tableRow(columns, true);
+  const body = vstack(28);
+  body.name = 'Content';
+  body.paddingTop = 40;
+  body.paddingBottom = 48;
+  body.paddingLeft = HEADER_PAD_X;
+  body.paddingRight = HEADER_PAD_X;
+  card.appendChild(body);
+  body.layoutSizingHorizontal = 'FILL';
+
+  // --- table ---
+  const table = vstack(0);
+  table.name = 'Table';
+  table.cornerRadius = radius(8);
+  table.clipsContent = true;
+  table.strokes = solidFill(palette.border);
+  table.strokeWeight = 1;
+  body.appendChild(table);
+
+  const head = tableRow(columns.map((c) => headerCell(c.label, c.width)), false);
   head.fills = solidFill(palette.tableHeadBg);
-  card.appendChild(head);
+  table.appendChild(head);
 
-  // --- rows ---
-  content.rows.forEach((row, i) => {
-    const cells: FrameNode[] = [cellText(row.name, COL_NAME)];
-    if (hasDescriptions) cells.push(cellText(row.description, COL_DESC, true));
+  content.rows.forEach((row) => {
+    // Cells are filled in column order, so a cell's width is always the width
+    // its own heading was measured at.
+    let next = 0;
+    const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
+
+    const cells: FrameNode[] = [cellText(row.name, widthOf())];
+    if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
 
     if (row.kind === 'variable') {
-      for (const cell of row.cells) cells.push(swatchCell(cell.value, COL_MODE));
+      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf()));
     } else {
       const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
       const failed = failedFamilies.has(key);
       const pane = vstack(2);
-      pane.resize(COL_MODE * 2, 1);
+      pane.resize(widthOf(), 1);
       pane.primaryAxisSizingMode = 'AUTO';
       const specimen = makeText('Ag', 'Regular', Math.min(row.metrics.fontSize, 40), palette.heading);
       if (!failed) {
@@ -252,7 +367,9 @@ export async function buildFoundationFrame(
       cells.push(pane);
     }
 
-    card.appendChild(tableRow(cells, i < content.rows.length - 1));
+    // Every row after the header carries the hairline above it, so the table's
+    // own border is never doubled at the last row.
+    table.appendChild(tableRow(cells, true));
   });
 
   // --- footer notes ---
@@ -261,13 +378,13 @@ export async function buildFoundationFrame(
   const notes = footerNotes(content);
   if (notes.length > 0) {
     const footer = vstack(2);
-    footer.paddingTop = 14;
+    footer.name = 'Notes';
     for (const n of notes) footer.appendChild(makeText(n, 'Regular', 10, palette.muted));
-    card.appendChild(footer);
+    body.appendChild(footer);
   }
 
   const section = figma.createSection();
-  section.name = `Foundations: ${unit.title}`;
+  section.name = `Foundations: ${title}`;
   section.appendChild(card);
   card.x = 40;
   card.y = 40;

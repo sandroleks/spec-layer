@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildFoundation, groupOf, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
+  foundationUnitTitle,
   type FoundationSelection,
 } from '../src/foundation';
 
@@ -664,5 +665,86 @@ describe('unitContent — part numbering', () => {
     };
     expect(unitContent(before, scope)!.part).toEqual({ index: 1, total: 3 });
     expect(unitContent(after, scope)!.part).toEqual({ index: 1, total: 4 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Titles. Three places need a document's title: planFoundationUnits when
+// building a batch, the renderer when drawing the header band, and the plugin's
+// updateFoundationDoc when rebuilding one doc from its stored scope with no
+// batch around it. They used to derive it separately, in three copies of the
+// same string format. These tests pin them to one answer.
+// ---------------------------------------------------------------------------
+
+/** A text-style dump with `count` styles spread over `groups`. */
+function textStyleDump(count: number, groups: string[]): SerializedFoundation {
+  return {
+    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [],
+    collections: [],
+    textStyles: Array.from({ length: count }, (_, i) => ({
+      name: `${groups[i % groups.length]}/style${i}`,
+      description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'AUTO' as const },
+      letterSpacing: { unit: 'PERCENT' as const, value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {},
+    })),
+  };
+}
+
+describe('foundationUnitTitle', () => {
+  /** Every unit's planned title beside the one derived from its content. */
+  function compare(dump: SerializedFoundation): { planned: string; derived: string }[] {
+    const spec = buildFoundation(dump);
+    return planFoundationUnits(spec, allOf(dump)).map((unit) => ({
+      planned: unit.title,
+      derived: foundationUnitTitle(unit.scope, unitContent(spec, unit.scope)!),
+    }));
+  }
+
+  it('names an unsplit collection after the collection', () => {
+    const rows = compare(dumpOneOfEach());
+    expect(rows.map((r) => r.planned)).toEqual(['Primitives']);
+    for (const r of rows) expect(r.derived).toBe(r.planned);
+  });
+
+  it('appends the group to every part of a split collection', () => {
+    const rows = compare(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']));
+    expect(rows.map((r) => r.planned))
+      .toEqual(['Primitives · color', 'Primitives · space']);
+    for (const r of rows) expect(r.derived).toBe(r.planned);
+  });
+
+  it('names the text-styles document without a collection to borrow from', () => {
+    const rows = compare(textStyleDump(3, ['heading']));
+    expect(rows.map((r) => r.planned)).toEqual(['Text styles']);
+    for (const r of rows) expect(r.derived).toBe(r.planned);
+  });
+
+  it('appends the group to every part of split text styles', () => {
+    const rows = compare(textStyleDump(SPLIT_THRESHOLD + 2, ['heading', 'body']));
+    expect(rows.map((r) => r.planned))
+      .toEqual(['Text styles · heading', 'Text styles · body']);
+    for (const r of rows) expect(r.derived).toBe(r.planned);
+  });
+
+  it('derives from content, so a renamed collection retitles its document', () => {
+    // A doc keeps its stored scope across a rename; the scope's collectionName
+    // is the stale one, and the title has to follow the file, not the stamp.
+    const dump = dumpOneOfEach();
+    const spec = buildFoundation(dump);
+    const stale = {
+      target: 'collection' as const,
+      collectionId: 'c1',
+      collectionName: 'Old name',
+      modeIds: ['m1'],
+    };
+    expect(foundationUnitTitle(stale, unitContent(spec, stale)!)).toBe('Primitives');
+  });
+
+  it('contains no em dash', () => {
+    for (const r of compare(bigDump(SPLIT_THRESHOLD + 2, ['color', 'space']))) {
+      expect(r.derived).not.toContain('—');
+    }
   });
 });

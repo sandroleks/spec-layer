@@ -268,6 +268,31 @@ export interface FoundationUnit {
   omittedModeNames: string[];
 }
 
+/** The one place the title format lives: "Semantic", "Primitives · color". */
+function titleOf(base: string, group?: string): string {
+  return group ? `${base} · ${group}` : base;
+}
+
+/** Title for the text-styles unit, which has no collection to name. */
+const TEXT_STYLES_TITLE = 'Text styles';
+
+/**
+ * The document title for one unit, derived from its scope and rendered content.
+ *
+ * Three places need this title: planFoundationUnits (building the batch), the
+ * renderer (drawing the header band), and updateFoundationDoc (rebuilding one
+ * doc from its stored scope, with no batch around it). Deriving it in one place
+ * is what stops those three from disagreeing about what a document is called,
+ * and derives it from fields the drift hash already covers rather than from a
+ * separately stored string.
+ */
+export function foundationUnitTitle(
+  scope: FoundationScope, content: FoundationUnitContent,
+): string {
+  const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE : content.collectionName;
+  return titleOf(base, content.group);
+}
+
 /** Distinct top-level groups in first-appearance order. */
 function groupsInOrder(names: string[]): string[] {
   const seen: string[] = [];
@@ -303,7 +328,7 @@ export function planFoundationUnits(
 
     if (collection.variables.length <= SPLIT_THRESHOLD) {
       units.push({
-        scope: base, title: collection.name,
+        scope: base, title: titleOf(collection.name),
         rowCount: collection.variables.length, omittedModeNames,
       });
       continue;
@@ -313,7 +338,7 @@ export function planFoundationUnits(
     if (groups.length <= 1) {
       // Cannot split further. One tall frame is the faithful outcome.
       units.push({
-        scope: base, title: collection.name,
+        scope: base, title: titleOf(collection.name),
         rowCount: collection.variables.length, omittedModeNames,
       });
       continue;
@@ -322,7 +347,7 @@ export function planFoundationUnits(
     for (const group of groups) {
       units.push({
         scope: { ...base, group },
-        title: `${collection.name} · ${group}`,
+        title: titleOf(collection.name, group),
         rowCount: collection.variables.filter((v) => v.group === group).length,
         omittedModeNames,
       });
@@ -332,7 +357,7 @@ export function planFoundationUnits(
   if (selection.textStyles && spec.textStyles.length > 0) {
     if (spec.textStyles.length <= SPLIT_THRESHOLD) {
       units.push({
-        scope: { target: 'textStyles' }, title: 'Text styles',
+        scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
         rowCount: spec.textStyles.length, omittedModeNames: [],
       });
     } else {
@@ -341,14 +366,14 @@ export function planFoundationUnits(
         // Cannot split further. One tall frame is the faithful outcome, same
         // as the collection path's identical case.
         units.push({
-          scope: { target: 'textStyles' }, title: 'Text styles',
+          scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
           rowCount: spec.textStyles.length, omittedModeNames: [],
         });
       } else {
         for (const group of groups) {
           units.push({
             scope: { target: 'textStyles', group },
-            title: `Text styles · ${group}`,
+            title: titleOf(TEXT_STYLES_TITLE, group),
             rowCount: spec.textStyles.filter((s) => s.group === group).length,
             omittedModeNames: [],
           });
