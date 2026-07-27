@@ -94,6 +94,23 @@ export function generationErrorCopy(code: ProseProxyErrorCode): string {
   }
 }
 
+/**
+ * The same failures, worded for a foundation build.
+ *
+ * A foundation frame has no placeholders to fall back on, so the component copy
+ * ("placeholders were used") describes something that did not happen. Same
+ * causes, different consequence, so different words.
+ */
+export function groupErrorCopy(code: ProseProxyErrorCode): string {
+  switch (code) {
+    case 'rate_limited': return 'Too many requests just now. Give it a minute and press Update.';
+    case 'quota_exhausted': return 'Your monthly AI allowance is used up.';
+    case 'license_not_active': return 'The AI service did not accept this license key.';
+    case 'generation_pending': return 'Another generation is already running.';
+    default: return 'The AI service could not be reached.';
+  }
+}
+
 /** Quota snapshot for the meter. Null (no identity / offline) hides the meter. */
 export async function fetchQuota(
   auth: ProxyAuth, fetcher: typeof fetch = window.fetch.bind(window),

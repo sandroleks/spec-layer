@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260701.0",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.0.0",
+    "@spec-layer/extractor": "*"
   }
 }

@@ -45,8 +45,14 @@ interface ProseBody {
   request?: { model?: unknown; max_tokens?: unknown; messages?: unknown };
 }
 
-/** The proxy must not be usable as a generic Anthropic relay. */
-function validateProseBody(body: ProseBody): string | null {
+/**
+ * The proxy must not be usable as a generic Anthropic relay.
+ *
+ * Exported so a client can be tested against the real rules rather than against
+ * a guess at them. The cacheKey prefix in particular is a contract a client
+ * cannot discover by reading its own code.
+ */
+export function validateProseBody(body: ProseBody): string | null {
   if (typeof body.cacheKey !== 'string' || !/^prose:v\d+:/.test(body.cacheKey)) return 'bad cacheKey';
   const r = body.request;
   if (!r || typeof r !== 'object') return 'missing request';

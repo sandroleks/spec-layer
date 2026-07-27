@@ -247,6 +247,57 @@ export interface GroupDraftInput {
 }
 
 /**
+ * The cache key for a group-description request.
+ *
+ * The `prose:v<n>:` prefix is not decoration: the proxy REJECTS any cacheKey that
+ * does not match `/^prose:v\d+:/`, so it is a deployed server contract, not a
+ * local convention. Sending a bare hash returns 400 and the whole feature reads
+ * as "the AI did not run". The `groups:` segment keeps these keys out of the
+ * component prose namespace, so the server's cache can never answer one with the
+ * other.
+ *
+ * Centralised for the same reason `proseCacheKey` is: a key built two ways is a
+ * silent cache miss, and here it is also a hard rejection.
+ */
+export function groupCacheKey(input: GroupDraftInput): string {
+  return `prose:${GROUP_PROMPT_VERSION}:groups:${contentHash({
+    collectionName: input.collectionName,
+    groups: input.groups.map((g) => ({
+      folder: g.folder,
+      title: g.title,
+      resolvedType: g.resolvedType,
+      tokenNames: g.tokenNames,
+      sampleValues: g.sampleValues,
+    })),
+  })}`;
+}
+
+/**
+ * The exact `{cacheKey, request}` payload posted for group descriptions.
+ *
+ * Exported so the proxy's own validator can be run against it in a test. The bug
+ * this shape once had (an unprefixed cacheKey) was invisible to any test that
+ * stubbed fetch, because the rule being broken lived on the server.
+ */
+export function groupProseRequest(input: GroupDraftInput): {
+  cacheKey: string;
+  request: { model: string; max_tokens: number; system: string; messages: unknown[] };
+} {
+  return {
+    cacheKey: groupCacheKey(input),
+    request: {
+      model: 'claude-haiku-4-5',
+      max_tokens: 1200,
+      system: FOUNDATION_SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: buildGroupPrompt(input.collectionName, input.groups),
+      }],
+    },
+  };
+}
+
+/**
  * One request covering every group in a build, so a document with six groups
  * costs one generation rather than six.
  */
@@ -260,33 +311,18 @@ export async function draftGroupDescriptions(
   const folders = input.groups.map((g) => g.folder);
   // Keyed on everything the prompt is built from, so editing a token name or
   // adding a group is a fresh request rather than a stale hit.
-  const key = contentHash({
-    v: GROUP_PROMPT_VERSION,
-    collectionName: input.collectionName,
-    groups: input.groups.map((g) => ({
-      folder: g.folder,
-      title: g.title,
-      resolvedType: g.resolvedType,
-      tokenNames: g.tokenNames,
-      sampleValues: g.sampleValues,
-    })),
-  });
+  const { cacheKey, request } = groupProseRequest(input);
 
   if (!opts.bypassCache) {
-    const hit = await opts.cacheStore.get(key);
+    const hit = await opts.cacheStore.get(cacheKey);
     if (hit) return parseGroupResponse(hit, folders);
   }
 
-  const raw = await postCompletion({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1200,
-    system: FOUNDATION_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildGroupPrompt(input.collectionName, input.groups) }],
-  }, key, opts);
+  const raw = await postCompletion(request, cacheKey, opts);
 
   const parsed = parseGroupResponse(raw, folders);
   // Cache the raw response, not the parsed map, so a later parser fix applies to
   // an existing entry instead of being stuck behind one.
-  await opts.cacheStore.set(key, raw);
+  await opts.cacheStore.set(cacheKey, raw);
   return parsed;
 }

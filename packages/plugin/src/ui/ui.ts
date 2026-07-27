@@ -37,7 +37,7 @@ import {
 } from './actions';
 import {
   activateLicense, deactivateLicense, fetchQuota, effectiveAuth, activationErrorCopy,
-  isQuotaExhausted, generationErrorCopy,
+  isQuotaExhausted, groupErrorCopy,
   CHECKOUT_URL, MANAGE_SUB_URL, STOREFRONT_URL, SITE_URL, LINKEDIN_URL,
 } from './proxy';
 import { resolveComponentImage, generateGroupDescriptions } from './ai';
@@ -428,6 +428,20 @@ refs.foundationCreate.addEventListener('click', () => {
 });
 
 /**
+ * Why the last build produced no AI descriptions, if it was asked to and did not.
+ *
+ * Held rather than shown immediately: the build's own result banner lands after
+ * this and would overwrite it, which is exactly how a 400 from the proxy turned
+ * into a silent "the AI just didn't run".
+ */
+let foundationAiSkip = '';
+
+/** "1 foundation frame", "3 foundation frames". */
+function countFrames(n: number): string {
+  return `${n} foundation ${n === 1 ? 'frame' : 'frames'}`;
+}
+
+/**
  * Send the build, having first asked the model for group descriptions if the user
  * opted in.
  *
@@ -438,30 +452,41 @@ refs.foundationCreate.addEventListener('click', () => {
 async function runFoundationBuild(): Promise<void> {
   const wantsAi = refs.foundationAi.checked;
   let groupDescriptions: Record<string, string> | undefined;
+  foundationAiSkip = '';
 
   if (wantsAi) {
-    const auth = effectiveAuth(
-      state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive);
-    if (!auth) {
-      setFoundationResult(refs, 'info',
-        'Building without AI descriptions: no license key or Figma identity available.');
+    // effectiveAuth always returns an object, so the identity has to be checked
+    // on its contents. An earlier `if (!auth)` here was dead code that read as a
+    // guard, which is worse than no guard: the request went out unidentified and
+    // came back 401.
+    const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
+    const briefs = currentGroupBriefs();
+
+    if (!hasIdentity) {
+      foundationAiSkip = 'AI descriptions were skipped: no license key or Figma identity yet.';
+    } else if (!briefs || briefs.groups.length === 0) {
+      // Said out loud rather than passed over: the checkbox was ticked, so the
+      // user is owed a reason nothing appeared.
+      foundationAiSkip = 'AI descriptions were skipped: no named colour groups to describe.';
     } else {
-      const briefs = currentGroupBriefs();
-      if (briefs && briefs.groups.length > 0) {
-        startLoader(refs.foundationLoader, refs.foundationLoaderText,
-          ['Describing the colour groups']);
-        try {
-          groupDescriptions = await generateGroupDescriptions(
-            briefs.collectionName, briefs.groups, auth,
-            (q) => { state.quota = q; state.quotaExhausted = isQuotaExhausted(q); renderQuota(refs, state); },
-          );
-        } catch (err) {
-          // Frames are the point; the descriptions are the optional extra.
-          const message = err instanceof ProseProxyError
-            ? generationErrorCopy(err.code)
-            : 'The AI service could not be reached.';
-          setFoundationResult(refs, 'info', `Building without AI descriptions. ${message}`);
+      startLoader(refs.foundationLoader, refs.foundationLoaderText,
+        ['Describing the colour groups']);
+      try {
+        groupDescriptions = await generateGroupDescriptions(
+          briefs.collectionName, briefs.groups,
+          effectiveAuth(
+            state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+          (q) => { state.quota = q; state.quotaExhausted = isQuotaExhausted(q); renderQuota(refs, state); },
+        );
+        if (Object.keys(groupDescriptions).length === 0) {
+          foundationAiSkip = 'AI descriptions came back empty, so the frames have none.';
         }
+      } catch (err) {
+        // Frames are the point; the descriptions are the optional extra.
+        const message = err instanceof ProseProxyError
+          ? groupErrorCopy(err.code)
+          : 'The AI service could not be reached.';
+        foundationAiSkip = `AI descriptions were skipped. ${message}`;
       }
     }
   }
@@ -1120,9 +1145,13 @@ window.onmessage = (event: MessageEvent) => {
         if (refs.panelLibrary.classList.contains('active')) refreshLibrary();
         break;
       }
-      setFoundationResult(refs, 'info', msg.replaced > 0
-        ? `Updated ${msg.replaced} foundation frames.`
-        : `Created ${msg.created} foundation frames.`);
+      setFoundationResult(refs, foundationAiSkip ? 'error' : 'info', [
+        msg.replaced > 0
+          ? `Updated ${countFrames(msg.replaced)}.`
+          : `Created ${countFrames(msg.created)}.`,
+        foundationAiSkip,
+      ].filter(Boolean).join(' '));
+      foundationAiSkip = '';
       setFoundationGenerating(refs, false);
       break;
     }
@@ -1132,9 +1161,13 @@ window.onmessage = (event: MessageEvent) => {
       // landed before the failure, say so plainly rather than implying nothing
       // happened (a user who believes that and retries gets duplicates, since
       // in-place replacement doesn't exist yet).
-      setFoundationResult(refs, 'error', msg.created > 0
-        ? `Created ${msg.created} frames before hitting an error, and they are still on the canvas. ${msg.message}`
-        : `Could not create the foundation frames. ${msg.message}`);
+      setFoundationResult(refs, 'error', [
+        msg.created > 0
+          ? `Created ${msg.created} frames before hitting an error, and they are still on the canvas. ${msg.message}`
+          : `Could not create the foundation frames. ${msg.message}`,
+        foundationAiSkip,
+      ].filter(Boolean).join(' '));
+      foundationAiSkip = '';
       setFoundationGenerating(refs, false);
       break;
     }
