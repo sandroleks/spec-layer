@@ -13,7 +13,15 @@ const dist = resolve(__dirname, 'dist');
 mkdirSync(dist, { recursive: true });
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
-const define = { __PLUGIN_VERSION__: JSON.stringify(pkg.version) };
+
+// The vNext UI is opt-in until every screen has landed. `UI_VNEXT=1 node
+// build.mjs` produces the new shell; a plain build produces the legacy tabbed
+// UI, so both can be loaded in Figma and compared on the same file.
+const uiVNext = process.env.UI_VNEXT === '1';
+const define = {
+  __PLUGIN_VERSION__: JSON.stringify(pkg.version),
+  __UI_VNEXT__: JSON.stringify(uiVNext),
+};
 
 // ---------------------------------------------------------------------------
 // Build 1: main thread → dist/main.js (IIFE, bundled)

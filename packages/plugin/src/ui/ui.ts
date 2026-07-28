@@ -15,6 +15,7 @@ import type { DocConfig } from '../docLink';
 import type { MeasureView } from './docModel';
 import { ALL_SECTIONS, GROUPS } from './docModel';
 import { mount } from './dom';
+import { mountShell, wireShellTheme } from './shell/shell';
 import {
   createState,
   send,
@@ -67,6 +68,12 @@ import {
 // Mount + state
 // ---------------------------------------------------------------------------
 
+// One branch, at the top: the vNext shell and the legacy tabbed UI never run
+// together. Everything below this line is legacy wiring and is deleted with
+// the legacy path once every screen has migrated.
+if (__UI_VNEXT__) {
+  wireShellTheme(mountShell());
+}
 const refs = mount();
 const state = createState();
 
