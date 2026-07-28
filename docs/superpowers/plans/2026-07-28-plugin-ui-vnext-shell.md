@@ -388,7 +388,9 @@ git commit -m "feat(plugin): add the vNext shell icon set"
   - `allowanceCopy(state: AllowanceState): AllowanceCopy`
   - `LOW_REMAINING: number`
 
-`LOW_REMAINING` is 5, matching the existing `lowThreshold` default in `proxy.ts:193`, so the header and the license page agree about what "low" means.
+`LOW_REMAINING` is 5, matching the existing `lowThreshold` default in `proxy.ts:193`, so the header and the license page agree about what "low" means. Combined with a strict `<`, that reproduces the boundary the existing tests already pin in `proxy.test.ts`: **5 remaining is still normal, 4 is low**. Do not change this constant to make a test pass — the boundary tests below exist to catch exactly that.
+
+Note the real free tier is `MONTHLY_LIMIT = 10` (or `BOOST_LIMIT = 20` during a boost), not 5. The prototype's "4 of 5 free uses left" was mock copy, so fixtures here use realistic limits.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -446,10 +448,10 @@ describe('allowanceCopy', () => {
 
   it('counts remaining free uses and offers the upgrade', () => {
     const copy = allowanceCopy({
-      kind: 'free', remaining: 4, limit: 5, resetsAt: '2026-08-01T00:00:00Z',
+      kind: 'free', remaining: 8, limit: 10, resetsAt: '2026-08-01T00:00:00Z',
     });
     expect(copy.tone).toBe('normal');
-    expect(copy.detail).toBe('4 of 5 free uses left');
+    expect(copy.detail).toBe('8 of 10 free uses left');
     expect(copy.showUpgrade).toBe(true);
     expect(copy.fillPct).toBe(80);
   });
@@ -459,6 +461,21 @@ describe('allowanceCopy', () => {
       kind: 'free', remaining: LOW_REMAINING - 1, limit: 20, resetsAt: '',
     });
     expect(copy.tone).toBe('low');
+  });
+
+  /**
+   * These two pin the same boundary proxy.test.ts already pins for the license
+   * page's meter. If the header and the license page ever disagree about what
+   * "low" means, one of these fails.
+   */
+  it('treats 5 remaining as normal, like the license page does', () => {
+    expect(allowanceCopy({ kind: 'free', remaining: 5, limit: 20, resetsAt: '' }).tone)
+      .toBe('normal');
+  });
+
+  it('treats 4 remaining as low, like the license page does', () => {
+    expect(allowanceCopy({ kind: 'free', remaining: 4, limit: 20, resetsAt: '' }).tone)
+      .toBe('low');
   });
 
   it('explains exhaustion without blocking anything', () => {
@@ -608,7 +625,7 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/plugin/test/allowance.test.ts`
-Expected: PASS, 14 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit**
 
