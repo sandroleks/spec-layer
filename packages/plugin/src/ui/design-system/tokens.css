@@ -1,0 +1,157 @@
+:root {
+  color-scheme: dark;
+
+  /* Typography */
+  --sl-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sl-font-size-1: 8px;
+  --sl-font-size-2: 9px;
+  --sl-font-size-3: 10px;
+  --sl-font-size-4: 11px;
+  --sl-font-size-5: 12px;
+  --sl-font-size-6: 14px;
+  --sl-font-size-7: 16px;
+  --sl-font-size-8: 20px;
+  --sl-line-height-tight: 1.15;
+  --sl-line-height-control: 1.25;
+  --sl-line-height-body: 1.4;
+  --sl-font-weight-regular: 450;
+  --sl-font-weight-medium: 560;
+  --sl-font-weight-semibold: 650;
+  --sl-font-weight-bold: 720;
+
+  /* Spacing */
+  --sl-space-0: 0;
+  --sl-space-1: 4px;
+  --sl-space-2: 8px;
+  --sl-space-3: 12px;
+  --sl-space-4: 16px;
+  --sl-space-5: 24px;
+  --sl-space-6: 32px;
+
+  /* Shape */
+  --sl-radius-xs: 3px;
+  --sl-radius-sm: 4px;
+  --sl-radius-md: 7px;
+  --sl-radius-lg: 10px;
+  --sl-radius-pill: 999px;
+
+  /* Controls */
+  --sl-control-xs: 24px;
+  --sl-control-sm: 28px;
+  --sl-control-md: 34px;
+  --sl-control-lg: 36px;
+  --sl-touch-target: 36px;
+
+  /* Layout */
+  --sl-plugin-width: 480px;
+  --sl-plugin-height: 680px;
+  --sl-sidebar-width: 52px;
+  --sl-header-height: 48px;
+  --sl-footer-height: 56px;
+  --sl-content-max: 680px;
+
+  /* Motion */
+  --sl-motion-fast: 120ms;
+  --sl-motion-standard: 180ms;
+  --sl-motion-slow: 260ms;
+  --sl-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --sl-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Elevation */
+  --sl-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --sl-shadow-menu: 0 10px 30px rgba(0, 0, 0, 0.38);
+  --sl-shadow-overlay: 0 18px 54px rgba(0, 0, 0, 0.46);
+
+  /* Dark color roles */
+  --sl-color-canvas: #1f1f1f;
+  --sl-color-chrome: #232323;
+  --sl-color-surface: #292929;
+  --sl-color-surface-subdued: #252525;
+  --sl-color-surface-raised: #303030;
+  --sl-color-surface-hover: #343434;
+  --sl-color-surface-pressed: #383838;
+  --sl-color-surface-selected: rgba(11, 153, 255, 0.14);
+  --sl-color-overlay: rgba(0, 0, 0, 0.62);
+
+  --sl-color-border: #414141;
+  --sl-color-border-muted: #343434;
+  --sl-color-border-strong: #505050;
+
+  --sl-color-text: #f3f3f3;
+  --sl-color-text-muted: #adadad;
+  --sl-color-text-quiet: #828282;
+  --sl-color-text-disabled: #666666;
+  --sl-color-text-on-accent: #ffffff;
+
+  --sl-color-accent: #0b99ff;
+  --sl-color-accent-hover: #31a8ff;
+  --sl-color-accent-pressed: #0786e0;
+  --sl-color-accent-soft: rgba(11, 153, 255, 0.14);
+  --sl-color-focus: #62b8ff;
+
+  --sl-color-success: #73d66d;
+  --sl-color-success-soft: rgba(42, 153, 63, 0.16);
+  --sl-color-warning: #e2a64f;
+  --sl-color-warning-soft: rgba(226, 166, 79, 0.16);
+  --sl-color-danger: #ff716c;
+  --sl-color-danger-soft: rgba(255, 113, 108, 0.14);
+
+  /* Inverse overlays are intentionally theme-independent. */
+  --sl-color-tooltip-bg: #111315;
+  --sl-color-tooltip-text: #f7f7f8;
+  --sl-color-tooltip-border: #383b3f;
+}
+
+body[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body[data-theme="light"] {
+  color-scheme: light;
+
+  --sl-color-canvas: #f7f7f8;
+  --sl-color-chrome: #f0f1f2;
+  --sl-color-surface: #f0f1f2;
+  --sl-color-surface-subdued: #f3f4f5;
+  --sl-color-surface-raised: #ffffff;
+  --sl-color-surface-hover: #e7e9eb;
+  --sl-color-surface-pressed: #dde0e3;
+  --sl-color-surface-selected: rgba(8, 117, 193, 0.1);
+  --sl-color-overlay: rgba(22, 24, 27, 0.42);
+
+  --sl-color-border: #d5d7da;
+  --sl-color-border-muted: #e2e3e5;
+  --sl-color-border-strong: #b9bdc2;
+
+  --sl-color-text: #1d1f22;
+  --sl-color-text-muted: #5d6268;
+  --sl-color-text-quiet: #737980;
+  --sl-color-text-disabled: #9ca1a7;
+  --sl-color-text-on-accent: #ffffff;
+
+  --sl-color-accent: #0875c1;
+  --sl-color-accent-hover: #0565a8;
+  --sl-color-accent-pressed: #04568f;
+  --sl-color-accent-soft: rgba(8, 117, 193, 0.1);
+  --sl-color-focus: #0875c1;
+
+  --sl-color-success: #338a39;
+  --sl-color-success-soft: rgba(51, 138, 57, 0.1);
+  --sl-color-warning: #94600d;
+  --sl-color-warning-soft: rgba(148, 96, 13, 0.1);
+  --sl-color-danger: #c33f3a;
+  --sl-color-danger-soft: rgba(195, 63, 58, 0.1);
+
+  --sl-shadow-raised: 0 1px 2px rgba(18, 22, 26, 0.08);
+  --sl-shadow-menu: 0 10px 30px rgba(18, 22, 26, 0.18);
+  --sl-shadow-overlay: 0 18px 54px rgba(18, 22, 26, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sl-motion-fast: 0ms;
+    --sl-motion-standard: 0ms;
+    --sl-motion-slow: 0ms;
+  }
+}
+

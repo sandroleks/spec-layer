@@ -200,7 +200,7 @@ async function postSelection(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-figma.showUI(__html__, { width: 480, height: 640, themeColors: true });
+figma.showUI(__html__, { width: 480, height: 680, themeColors: true });
 
 // Send stored license key (+ its activated instance id) and the Figma user id on startup
 Promise.all([
