@@ -1421,6 +1421,22 @@ if (process.env.UI_HARNESS === '1') {
 Run: `npx vitest run packages/plugin/test/uiHtml.test.ts`
 Expected: PASS, 6 tests.
 
+- [ ] **Step 5a: Exclude the harness from coverage**
+
+`harness.ts` is now the third literal esbuild entry point, alongside `main.ts`
+and `ui.ts`. `vitest.config.ts` already excludes those two by that exact
+rationale, and CI gates on `npm run test:coverage`.
+
+In `vitest.config.ts`, in `coverage.exclude`, directly below the
+`'packages/plugin/src/ui/ui.ts',` line, add:
+
+```js
+        'packages/plugin/src/ui/harness.ts',
+```
+
+This applies the existing documented rule to a new entry point. Do not touch
+the thresholds: they are a ratchet and only move up.
+
 - [ ] **Step 6: Verify the shell renders**
 
 ```bash
@@ -1436,10 +1452,18 @@ Open `packages/plugin/dist/ui-harness.html` in a browser and check each of these
 
 Only chrome exists at this point, so compare the rail, header, allowance control, and both themes. The screen area is intentionally empty. Record any drift in the PR description rather than fixing it here — screen-level fidelity belongs to the screen plans.
 
-- [ ] **Step 7: Run the full check**
+- [ ] **Step 7: Run the full check, including coverage**
 
 Run: `npm run check`
 Expected: lint, typecheck, tests, and both builds pass.
+
+Run: `npm run test:coverage`
+Expected: PASS, with every threshold still met (statements 45, branches 40,
+functions 50, lines 45). CI runs this and `npm run check` does not, so it is
+checked explicitly here.
+
+If a threshold fails, report it rather than lowering it. The fix is more tests
+on the pure functions, never a smaller number in the config.
 
 - [ ] **Step 8: Commit**
 
