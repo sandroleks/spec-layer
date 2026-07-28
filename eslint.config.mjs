@@ -22,5 +22,9 @@ export default defineConfig([
     "**/node_modules/**",
     "**/*.tsbuildinfo",
     ".worktrees/**",
+    // A verbatim archive of the prototype the plugin UI redesign was approved
+    // from. It is a visual reference, not source: nothing here ships, and it
+    // is deliberately preserved as it was written rather than corrected.
+    "docs/plugin-ui-vnext/prototype/**",
   ]),
 ]);
