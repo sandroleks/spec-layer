@@ -36,3 +36,28 @@ describe('dist/ui.html', () => {
     expect(html).toContain('<script>');
   });
 });
+
+import { existsSync, rmSync } from 'node:fs';
+
+describe('dist/ui-harness.html', () => {
+  const harness = fileURLToPath(new URL('../dist/ui-harness.html', import.meta.url));
+
+  it('is not emitted by a normal build, so it can never ship as the plugin UI', () => {
+    rmSync(harness, { force: true });
+    execFileSync('node', ['build.mjs'], { cwd: pluginDir, stdio: 'pipe' });
+    expect(existsSync(harness)).toBe(false);
+  });
+
+  it('is emitted when explicitly asked for', () => {
+    execFileSync('node', ['build.mjs'], {
+      cwd: pluginDir, stdio: 'pipe', env: { ...process.env, UI_HARNESS: '1' },
+    });
+    expect(existsSync(harness)).toBe(true);
+  });
+
+  it('is never referenced by the manifest', () => {
+    const manifest = readFileSync(
+      fileURLToPath(new URL('../manifest.json', import.meta.url)), 'utf-8');
+    expect(manifest).not.toContain('ui-harness');
+  });
+});

@@ -87,3 +87,34 @@ if (existsSync(uiEntry)) {
   writeFileSync(resolve(dist, 'ui.html'), placeholder, 'utf-8');
   console.log('Built dist/ui.html (placeholder — src/ui/ui.ts not found)');
 }
+
+// ---------------------------------------------------------------------------
+// Build 3 (opt-in): dev harness → dist/ui-harness.html
+//   Renders the vNext shell outside Figma for visual comparison against the
+//   archived prototype screenshots. Emitted only under UI_HARNESS=1 and never
+//   referenced by manifest.json, so it cannot ship as the plugin's UI.
+// ---------------------------------------------------------------------------
+if (process.env.UI_HARNESS === '1') {
+  const harness = await esbuild.build({
+    entryPoints: [resolve(__dirname, 'src/ui/harness.ts')],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2017',
+    write: false,
+    define: { ...define, __UI_VNEXT__: 'true' },
+  });
+  writeFileSync(resolve(dist, 'ui-harness.html'), `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spec Layer UI harness</title>
+<style>${designSystemCss}</style>
+<style>html,body{margin:0;width:480px;height:680px;overflow:hidden}</style>
+</head>
+<body data-theme="dark">
+<script>${harness.outputFiles[0].text}</script>
+</body>
+</html>`, 'utf-8');
+  console.log('Built dist/ui-harness.html (dev only)');
+}
