@@ -31,6 +31,7 @@ import {
   createState,
   ensureExtracted,
   renderOne,
+  runDownload,
   runUpdateFromSource,
   runDownloadFromSource,
   setAiEnabled,
@@ -161,6 +162,30 @@ describe('ensureExtracted', () => {
 
   it('reports failure when nothing is selected', () => {
     expect(ensureExtracted(createState())).toBe(false);
+  });
+});
+
+describe('runDownload legacy adapter', () => {
+  it('reads the legacy section controls and restores its Download button', async () => {
+    const downloadBtn = { disabled: false };
+    const refs = {
+      sectionChecks: { configuration: { checked: true } },
+      variantList: { querySelectorAll: () => [] },
+      downloadBtn,
+      loader: {},
+      loaderText: {},
+    } as unknown as Refs;
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'FILE1';
+
+    await runDownload(refs, state);
+
+    expect(clicked).toBe(1);
+    expect(downloadBtn.disabled).toBe(false);
+    expect(clearBanners).toHaveBeenCalledOnce();
+    expect(startLoader).toHaveBeenCalledOnce();
+    expect(stopLoader).toHaveBeenCalledOnce();
   });
 });
 

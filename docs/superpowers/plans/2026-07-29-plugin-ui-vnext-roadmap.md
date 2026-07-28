@@ -16,6 +16,8 @@ Landed and verified:
 - The shell: rail, utility header, allowance control, theme, dev harness.
 - `Generate component docs`, partially: sections, groups, AI switch, anatomy
   segmented control, measurement chips, `Create docs`.
+- Phase 1 action decoupling: shared presenters, value-based selections,
+  source actions, and a Foundation host with legacy adapters.
 
 Not landed: four of five screens, and several functions inside the one screen
 that exists. The plugin is not usable on the new UI yet.
@@ -37,19 +39,17 @@ Every remaining screen hits the same wall. Doing that decoupling once, up
 front, is Phase 1. Skipping it means each screen either duplicates logic or
 shims fake DOM nodes.
 
-### Still coupled to `Refs`
+### Remaining legacy-only `Refs` path
 
 | Function | File | Used by |
 |---|---|---|
 | `runExtract` | actions.ts:133 | legacy only. The vNext screen extracts through `autoExtract`, so this one is not decoupled; it dies with the legacy UI in Phase 8 |
-| `runAutoExtract` | actions.ts:175 | component |
-| `runDownload` | actions.ts:502 | component, library |
-| `runUpdateFromSource` | actions.ts | library |
-| `runDownloadFromSource` | actions.ts | library |
-| `setFoundationGenerating` | actions.ts:693 | foundations |
-| `onFoundationMessage` | actions.ts:732 | foundations |
-| `onFoundationToggleAll` | actions.ts:744 | foundations |
-| `onFoundationCheckboxChange` | actions.ts:752 | foundations |
+
+`runAutoExtract`, `runDownload`, `runUpdateFromSource`,
+`runDownloadFromSource`, and `onFoundationCheckboxChange` now remain only as
+thin legacy adapters. Their reusable actions take state, selections, source
+values, presenters, or `FoundationChange` values instead of reading `Refs`.
+Foundation repaint, busy state, and progress flow through `FoundationHost`.
 
 All twelve renderers in `render.ts` are also `Refs`-bound, but those are legacy
 presentation and get **replaced**, not decoupled. They die in Phase 8.
@@ -72,8 +72,9 @@ mostly a rendering job because of this.
 
 **Plan: `2026-07-29-plugin-ui-vnext-decoupling.md` (written).**
 
-Extends the proven pattern to the eight remaining `Refs`-bound actions. No
-visible change; every existing test stays green. Gates every phase below.
+**Completed 2026-07-29.** The shared action layer is now drivable without the
+legacy DOM, while the default build and legacy adapters preserve existing
+behavior. This gates every phase below.
 
 ---
 

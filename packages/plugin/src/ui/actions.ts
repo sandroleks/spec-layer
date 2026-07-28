@@ -21,7 +21,7 @@ import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type
 import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
-  summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles, emptyStateLines,
+  defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import {
@@ -30,7 +30,6 @@ import {
   renderPhase,
   startLoader,
   stopLoader,
-  renderFoundationPanel,
 } from './render';
 
 // ---------------------------------------------------------------------------
@@ -172,21 +171,42 @@ export function ensureExtracted(state: UiState): boolean {
 // shows meanwhile and clears when the spec is ready.
 // ---------------------------------------------------------------------------
 
-export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void): void {
+/**
+ * Extract the current selection off the critical path.
+ *
+ * `onReading` brackets the synchronous extraction so a UI can show that it is
+ * busy: extraction blocks the thread, so the caller has to paint before it
+ * starts and again when it ends.
+ */
+export function autoExtract(
+  state: UiState,
+  onReading: (reading: boolean) => void,
+  onReady?: () => void,
+): void {
   if (!state.currentNode) return;
   if (state.currentSpec) { onReady?.(); return; }
-  refs.phaseLabel.className = 'chip';
-  refs.phaseLabel.textContent = 'Reading…';
+  onReading(true);
   requestAnimationFrame(() => {
     try {
       ensureExtracted(state);
     } catch {
       /* errors surface when an action actually runs */
     }
-    refs.phaseLabel.className = 'phase-label';
-    refs.phaseLabel.textContent = '';
+    onReading(false);
     onReady?.();
   });
+}
+
+/** Legacy adapter: drives the old phase-label chip. */
+export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void): void {
+  autoExtract(
+    state,
+    (reading) => {
+      refs.phaseLabel.className = reading ? 'chip' : 'phase-label';
+      refs.phaseLabel.textContent = reading ? 'Reading…' : '';
+    },
+    onReady,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -308,10 +328,12 @@ export interface BuildPresenter {
   clear(): void;
   /** Show a failure the user needs to read. */
   error(message: string): void;
+  /** Report an outcome that is not a failure. */
+  info(message: string): void;
   /** Disable or re-enable the action that started this build. */
   setBusy(busy: boolean): void;
-  /** Begin and end the "working on it" narration. */
-  startProgress(withAi: boolean): void;
+  /** Begin the "working on it" narration with the given lines. */
+  startProgress(messages: string[]): void;
   stopProgress(): void;
 }
 
@@ -338,7 +360,7 @@ export async function createDocFrame(
   // building two frames). Re-enabled by docFrameDone/docFrameError, or here on
   // an early failure (e.g. AI generation throwing before we dispatch).
   ui.setBusy(true);
-  ui.startProgress(willGenerateProseFor(state, selection.sections));
+  ui.startProgress(generatingMessages(willGenerateProseFor(state, selection.sections)));
 
   try {
     const built = await assembleDocFor(state, selection);
@@ -382,9 +404,9 @@ export function refsPresenter(refs: Refs, button: HTMLButtonElement): BuildPrese
   return {
     clear: () => clearBanners(refs),
     error: (message) => showBanner(refs, 'error', message),
+    info: (message) => showBanner(refs, 'info', message),
     setBusy: (busy) => { button.disabled = busy; },
-    startProgress: (withAi) =>
-      startLoader(refs.loader, refs.loaderText, generatingMessages(withAi)),
+    startProgress: (messages) => startLoader(refs.loader, refs.loaderText, messages),
     stopProgress: () => stopLoader(refs.loader),
   };
 }
@@ -432,7 +454,7 @@ async function assembleDocFor(
 
 /** Status lines for the generating loader. The AI path narrates the slow
  *  network round-trip; the no-AI path is near-instant so it stays terse. */
-function generatingMessages(withAi: boolean): string[] {
+export function generatingMessages(withAi: boolean): string[] {
   return withAi
     ? [
         'Looking at the component',
@@ -499,31 +521,30 @@ export function specMarkdownFilename(spec: IntermediateSpec, fallbackName = 'com
   return `${slug}.spec.md`;
 }
 
-export async function runDownload(refs: Refs, state: UiState): Promise<void> {
-  clearBanners(refs);
+export async function downloadDoc(
+  state: UiState,
+  selection: DocSelection,
+  ui: BuildPresenter,
+): Promise<void> {
+  ui.clear();
 
   if (!ensureExtracted(state)) {
-    showBanner(refs, 'error', 'Select a component first.');
+    ui.error('Select a component first.');
     return;
   }
 
   // Same prep as Create frame (AI prose + section/variant selection), so the
   // downloaded markdown matches the frame. Disable the button and narrate while
   // any generation runs.
-  refs.downloadBtn.disabled = true;
-  const selection = selectionFromRefs(refs);
-  startLoader(
-    refs.loader,
-    refs.loaderText,
-    generatingMessages(willGenerateProseFor(state, selection.sections)),
-  );
+  ui.setBusy(true);
+  ui.startProgress(generatingMessages(willGenerateProseFor(state, selection.sections)));
 
   try {
     const built = await assembleDocFor(state, selection);
     if (!built) {
-      showBanner(refs, 'error', 'Select at least one section.');
-      stopLoader(refs.loader);
-      refs.downloadBtn.disabled = false;
+      ui.error('Select at least one section.');
+      ui.stopProgress();
+      ui.setBusy(false);
       return;
     }
 
@@ -531,20 +552,25 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
     const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
     downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
 
-    stopLoader(refs.loader);
-    refs.downloadBtn.disabled = false;
+    ui.stopProgress();
+    ui.setBusy(false);
     // Surface any AI note (quota exhausted, lapsed key, generation error) the
     // same way the frame does via its success banner.
     if (state.pendingAiNote) {
-      showBanner(refs, 'error', state.pendingAiNote);
+      ui.error(state.pendingAiNote);
       state.pendingAiNote = '';
     }
   } catch (err) {
-    stopLoader(refs.loader);
+    ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Download failed: ${msg}`);
-    refs.downloadBtn.disabled = false;
+    ui.error(`Download failed: ${msg}`);
+    ui.setBusy(false);
   }
+}
+
+/** Legacy adapter: reads the old controls and drives its banner and loader. */
+export function runDownload(refs: Refs, state: UiState): Promise<void> {
+  return downloadDoc(state, selectionFromRefs(refs), refsPresenter(refs, refs.downloadBtn));
 }
 
 // ---------------------------------------------------------------------------
@@ -553,13 +579,25 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
 // is deterministic; prose runs only when the stored config had AI on. Dispatches
 // renderDocFrame, which replaces the existing doc (matched by sourceNodeId).
 // ---------------------------------------------------------------------------
-export async function runUpdateFromSource(
-  refs: Refs,
+/** A library row's stored source: what it was built from, and how. */
+export type DocSource = {
+  docId: string;
+  node: SerializedNode;
+  fileKey: string;
+  config: DocConfig;
+};
+
+export async function updateFromSource(
   state: UiState,
-  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+  src: DocSource,
+  ui: BuildPresenter,
 ): Promise<boolean> {
-  clearBanners(refs);
-  startLoader(refs.loader, refs.loaderText, ['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
+  // The caller acquires the shared build lock before requesting this source.
+  // Success deliberately leaves progress running until docFrameDone or
+  // docFrameError releases that lock; only a synchronous failure tears down
+  // here. The vNext Library must preserve that caller-owned lifecycle.
+  ui.clear();
+  ui.startProgress(['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey });
     const selected = new Set<SectionId>(src.config.sections);
@@ -596,11 +634,20 @@ export async function runUpdateFromSource(
     // Loader stops on docFrameDone/docFrameError (ui.ts).
     return true;
   } catch (err) {
-    stopLoader(refs.loader);
+    ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Update failed: ${msg}`);
+    ui.error(`Update failed: ${msg}`);
     return false;
   }
+}
+
+/** Legacy adapter for a Library row update. */
+export function runUpdateFromSource(
+  refs: Refs,
+  state: UiState,
+  src: DocSource,
+): Promise<boolean> {
+  return updateFromSource(state, src, refsPresenter(refs, refs.createFrameBtn));
 }
 
 // ---------------------------------------------------------------------------
@@ -612,13 +659,13 @@ export async function runUpdateFromSource(
 // doc's prose was already generated this session (no quota on a cache hit).
 // The .md reflects the source, not any manual canvas edits.
 // ---------------------------------------------------------------------------
-export async function runDownloadFromSource(
-  refs: Refs,
+export async function downloadFromSource(
   state: UiState,
-  src: { docId: string; node: SerializedNode; fileKey: string; config: DocConfig },
+  src: DocSource,
+  ui: BuildPresenter,
 ): Promise<void> {
-  clearBanners(refs);
-  startLoader(refs.loader, refs.loaderText, ['Reading the component', 'Composing sections', 'Saving the markdown']);
+  ui.clear();
+  ui.startProgress(['Reading the component', 'Composing sections', 'Saving the markdown']);
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey });
     const selected = new Set<SectionId>(src.config.sections);
@@ -649,12 +696,21 @@ export async function runDownloadFromSource(
     const markdown = modelToMarkdown(model);
     const filename = specMarkdownFilename(spec, src.node.name || 'component');
     downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
-    stopLoader(refs.loader);
+    ui.stopProgress();
   } catch (err) {
-    stopLoader(refs.loader);
+    ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Download failed: ${msg}`);
+    ui.error(`Download failed: ${msg}`);
   }
+}
+
+/** Legacy adapter for a Library row download. */
+export function runDownloadFromSource(
+  refs: Refs,
+  state: UiState,
+  src: DocSource,
+): Promise<void> {
+  return downloadFromSource(state, src, refsPresenter(refs, refs.downloadBtn));
 }
 
 // ---------------------------------------------------------------------------
@@ -672,12 +728,36 @@ let foundationSelection: FoundationSelection = { collections: [], textStyles: fa
 // can't re-enable the button and let a second request through.
 let foundationGenerating = false;
 
-function paintFoundations(refs: Refs): void {
-  if (!foundationSpec) return;
-  renderFoundationPanel(
-    refs, foundationSpec, summarize(foundationSpec), foundationSelection,
-    emptyStateLines(foundationSpec), foundationGenerating,
-  );
+/**
+ * How foundation state reaches a UI.
+ *
+ * The handlers below mutate module state and then need something repainted.
+ * Registering a host lets either UI receive that instead of reaching for one
+ * specific set of DOM nodes.
+ */
+export interface FoundationHost {
+  repaint(): void;
+  setBusy(busy: boolean): void;
+  startProgress(messages: string[]): void;
+  stopProgress(): void;
+}
+
+const noopFoundationHost: FoundationHost = {
+  repaint: () => {},
+  setBusy: () => {},
+  startProgress: () => {},
+  stopProgress: () => {},
+};
+
+let foundationHost: FoundationHost = noopFoundationHost;
+
+export function setFoundationHost(host: FoundationHost): void {
+  foundationHost = host;
+}
+
+/** The parsed file, for a UI that renders its own foundation rows. */
+export function currentFoundationSpec(): FoundationSpec | null {
+  return foundationSpec;
 }
 
 /** Set by ui.ts around the renderFoundation round-trip: true on click, false on
@@ -690,22 +770,22 @@ function paintFoundations(refs: Refs): void {
  *  lock too: three entry points behind two independent flags meant the main
  *  thread rejected whichever request lost, and the UI had no way to tell that
  *  rejection apart from the winner's own reply. */
-export function setFoundationGenerating(refs: Refs, value: boolean): void {
+export function setFoundationGenerating(value: boolean): void {
   foundationGenerating = value;
-  refs.createFrameBtn.disabled = value;
+  foundationHost.setBusy(value);
   // The loader lives with the flag rather than at the call sites, so a build
   // cannot end up running with no loader (or a loader with no build): both
   // callers set the flag, and there are three ways a build can finish.
   if (value) {
-    startLoader(
-      refs.foundationLoader, refs.foundationLoaderText,
-      foundationBuildMessages(foundationSpec
-        ? frameCount(foundationSpec, foundationSelection) : 0),
+    foundationHost.startProgress(
+      foundationBuildMessages(
+        foundationSpec ? frameCount(foundationSpec, foundationSelection) : 0,
+      ),
     );
   } else {
-    stopLoader(refs.foundationLoader);
+    foundationHost.stopProgress();
   }
-  paintFoundations(refs);
+  foundationHost.repaint();
 }
 
 /**
@@ -729,10 +809,10 @@ export function isFoundationGenerating(): boolean {
   return foundationGenerating;
 }
 
-export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): void {
+export function onFoundationMessage(dump: SerializedFoundation): void {
   foundationSpec = buildFoundation(dump);
   foundationSelection = defaultSelection(foundationSpec);
-  paintFoundations(refs);
+  foundationHost.repaint();
 }
 
 /**
@@ -741,38 +821,66 @@ export function onFoundationMessage(refs: Refs, dump: SerializedFoundation): voi
  * Reads its direction from the same predicate the link's label does, so the
  * label can never describe the opposite of what the click will do.
  */
-export function onFoundationToggleAll(refs: Refs): void {
+export function onFoundationToggleAll(): void {
   if (!foundationSpec) return;
   foundationSelection = allSelected(foundationSpec, foundationSelection)
     ? clearAll()
     : selectAll(foundationSpec);
-  paintFoundations(refs);
+  foundationHost.repaint();
 }
 
-export function onFoundationCheckboxChange(refs: Refs, input: HTMLInputElement): void {
+/** A foundation choice expressed without depending on a particular UI's DOM. */
+export type FoundationChange =
+  | { kind: 'collection'; collectionId: string; checked: boolean }
+  | { kind: 'mode'; collectionId: string; modeId: string; checked: boolean }
+  | { kind: 'textStyles'; checked: boolean };
+
+export function onFoundationChange(change: FoundationChange): void {
   if (!foundationSpec) return;
-  const collectionId = input.dataset.collectionId ?? '';
-  switch (input.dataset.act) {
-    case 'toggle-collection':
+  switch (change.kind) {
+    case 'collection':
       foundationSelection = toggleCollection(
-        foundationSelection, foundationSpec, collectionId, input.checked);
+        foundationSelection, foundationSpec, change.collectionId, change.checked);
       break;
-    case 'toggle-mode':
+    case 'mode':
       foundationSelection = toggleMode(
-        foundationSelection, foundationSpec, collectionId,
-        input.dataset.modeId ?? '', input.checked);
+        foundationSelection, foundationSpec, change.collectionId,
+        change.modeId, change.checked);
       break;
-    case 'toggle-text-styles':
-      foundationSelection = toggleTextStyles(foundationSelection, input.checked);
+    case 'textStyles':
+      foundationSelection = toggleTextStyles(foundationSelection, change.checked);
       break;
-    default:
-      return;
+    default: {
+      const exhaustive: never = change;
+      throw new Error(`Unhandled foundation change: ${String(exhaustive)}`);
+    }
   }
   // Repaint from the model rather than trusting the DOM: toggleMode returns the
   // selection UNCHANGED when the mode cap is hit, so a checkbox the user just
   // clicked has to be painted back to unchecked. Mutating in place would leave
   // the DOM claiming five modes while the model holds four.
-  paintFoundations(refs);
+  foundationHost.repaint();
+}
+
+/** Legacy adapter: translate a rendered checkbox into a value for the action. */
+export function onFoundationCheckboxChange(input: HTMLInputElement): void {
+  const collectionId = input.dataset.collectionId ?? '';
+  switch (input.dataset.act) {
+    case 'toggle-collection':
+      onFoundationChange({ kind: 'collection', collectionId, checked: input.checked });
+      break;
+    case 'toggle-mode':
+      onFoundationChange({
+        kind: 'mode',
+        collectionId,
+        modeId: input.dataset.modeId ?? '',
+        checked: input.checked,
+      });
+      break;
+    case 'toggle-text-styles':
+      onFoundationChange({ kind: 'textStyles', checked: input.checked });
+      break;
+  }
 }
 
 /** Read by the create-frames button; exported so ui.ts can post it. */

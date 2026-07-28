@@ -31,7 +31,9 @@ import {
   onFoundationCheckboxChange,
   onFoundationToggleAll,
   currentGroupBriefs,
+  currentFoundationSpec,
   currentFoundationSelection,
+  setFoundationHost,
   setFoundationGenerating,
   isFoundationGenerating,
 } from './actions';
@@ -59,9 +61,11 @@ import {
   startLoader,
   setFoundationLoading,
   setFoundationResult,
+  renderFoundationPanel,
   renderLibrary,
   type DriftState,
 } from './render';
+import { emptyStateLines, summarize } from './foundationState';
 
 // ---------------------------------------------------------------------------
 // Mount + state
@@ -69,6 +73,27 @@ import {
 
 const refs = mount();
 const state = createState();
+
+// The legacy foundation host: the same repaint, button, and loader the
+// handlers used to reach for directly.
+setFoundationHost({
+  repaint: () => {
+    const spec = currentFoundationSpec();
+    if (!spec) return;
+    renderFoundationPanel(
+      refs,
+      spec,
+      summarize(spec),
+      currentFoundationSelection(),
+      emptyStateLines(spec),
+      isFoundationGenerating(),
+    );
+  },
+  setBusy: (busy) => { refs.createFrameBtn.disabled = busy; },
+  startProgress: (messages) =>
+    startLoader(refs.foundationLoader, refs.foundationLoaderText, messages),
+  stopProgress: () => stopLoader(refs.foundationLoader),
+});
 
 // ---------------------------------------------------------------------------
 // Quota — fetched whenever identity changes (license key or Figma user id
@@ -399,11 +424,11 @@ function requestFoundationOnce(): void {
 // renderFoundationPanel, so delegate the change listener like the variant list.
 refs.foundationList.addEventListener('change', (ev) => {
   const target = ev.target as HTMLElement;
-  if (target instanceof HTMLInputElement) onFoundationCheckboxChange(refs, target);
+  if (target instanceof HTMLInputElement) onFoundationCheckboxChange(target);
 });
 
 refs.foundationToggleAll.addEventListener('click', () => {
-  onFoundationToggleAll(refs);
+  onFoundationToggleAll();
 });
 
 // Disabled while a generation is in flight (mirrors createFrameBtn/
@@ -423,7 +448,7 @@ refs.foundationCreate.addEventListener('click', () => {
   // Drop the previous outcome so a stale "Created 5 frames" never sits beside a
   // running build.
   setFoundationResult(refs, null);
-  setFoundationGenerating(refs, true);
+  setFoundationGenerating(true);
   runFoundationBuild().catch(() => { /* handled inside */ });
 });
 
@@ -1105,16 +1130,15 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'foundation': {
-      onFoundationMessage(refs, msg.dump);
+      onFoundationMessage(msg.dump);
       break;
     }
 
     case 'foundationError': {
-      // The read failed, so there is no spec, so paintFoundations returns early
-      // and this panel will never repaint itself. Two things have to happen
-      // here or the tab is dead for the session: drop the once-per-session
-      // latch so the next tab activation actually retries, and replace the
-      // summary, which is still claiming the read is in progress.
+      // The read failed, so there is no parsed spec for the foundation host to
+      // repaint. Two things have to happen here or the tab is dead for the
+      // session: drop the once-per-session latch so the next tab activation
+      // retries, and replace the summary, which still claims a read is running.
       foundationRequested = false;
       setFoundationLoading(refs, false);
       refs.foundationSummary.textContent = "Could not read this file's variables and styles.";
@@ -1152,7 +1176,7 @@ window.onmessage = (event: MessageEvent) => {
         foundationAiSkip,
       ].filter(Boolean).join(' '));
       foundationAiSkip = '';
-      setFoundationGenerating(refs, false);
+      setFoundationGenerating(false);
       break;
     }
 
@@ -1168,7 +1192,7 @@ window.onmessage = (event: MessageEvent) => {
         foundationAiSkip,
       ].filter(Boolean).join(' '));
       foundationAiSkip = '';
-      setFoundationGenerating(refs, false);
+      setFoundationGenerating(false);
       break;
     }
 

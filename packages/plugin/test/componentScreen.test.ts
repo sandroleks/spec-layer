@@ -105,6 +105,7 @@ describe('createDocFrame', () => {
       busy,
       clear: vi.fn(),
       error: (message: string) => { errors.push(message); },
+      info: vi.fn(),
       setBusy: (value: boolean) => { busy.push(value); },
       startProgress: vi.fn(),
       stopProgress: vi.fn(),

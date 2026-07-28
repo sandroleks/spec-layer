@@ -21,9 +21,9 @@ import {
   type ComponentSelection,
 } from './screens/component';
 import {
+  autoExtract,
   createDocFrame,
   createState,
-  ensureExtracted,
   send,
   setAiEnabled,
   type BuildPresenter,
@@ -100,6 +100,11 @@ function presenter(): BuildPresenter {
     error: (message) => {
       screen = { kind: 'error', componentName: currentName(), message };
       paint();
+    },
+    info: () => {
+      // The component screen learns about success from docFrameDone, which
+      // carries whether the frame was replaced. An info line here would be a
+      // second, less informed source for the same fact.
     },
     setBusy: (busy) => {
       if (!busy && screen.kind === 'building') {
@@ -219,13 +224,14 @@ window.onmessage = (event: MessageEvent): void => {
       }
       screen = { kind: 'reading', componentName: node.name };
       paint();
-      // Extraction is synchronous and can be slow on a large component, so let
-      // the reading state paint before it blocks the thread.
-      requestAnimationFrame(() => {
-        ensureExtracted(state);
-        screen = { kind: 'ready', componentName: node.name };
-        paint();
-      });
+      autoExtract(
+        state,
+        () => { /* the reading state is already painted */ },
+        () => {
+          screen = { kind: 'ready', componentName: node.name };
+          paint();
+        },
+      );
       return;
     }
 
