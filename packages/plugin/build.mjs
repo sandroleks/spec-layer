@@ -51,15 +51,17 @@ const uiEntry = resolve(__dirname, uiVNext ? 'src/ui/ui-vnext.ts' : 'src/ui/ui.t
 // no second copy can drift. Order is the documented cascade: tokens define the
 // roles, components consume them, patterns compose components.
 //
-// It is gated on the builds that actually render the new shell. The layers
-// open with a global reset and set :root/body theme rules that the legacy UI
-// also sets, so shipping them in a plain build silently restyles the legacy
-// tabbed UI (measured: tab buttons 79x38 -> 85x45, different font).
-const designSystemCss = (uiVNext || process.env.UI_HARNESS === '1')
-  ? ['tokens.css', 'components.css', 'patterns.css']
-      .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
-      .join('\n')
-  : '';
+// The layers open with a global reset and set :root/body theme rules that the
+// legacy UI also sets, so shipping them anywhere the legacy UI renders
+// silently restyles it (measured: tab buttons 79x38 -> 85x45, different font).
+// Hence two separate values: the harness always needs the CSS, but ui.html
+// only gets it when ui.html is actually the new shell.
+const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
+  .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
+  .join('\n');
+
+/** Empty unless this build's ui.html is the vNext shell. */
+const uiHtmlCss = uiVNext ? designSystemCss : '';
 
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
@@ -77,7 +79,7 @@ if (existsSync(uiEntry)) {
 <head>
 <meta charset="utf-8" />
 <title>Spec Layer</title>
-<style>${designSystemCss}</style>
+<style>${uiHtmlCss}</style>
 </head>
 <body>
 <script>${js}</script>
