@@ -1373,11 +1373,17 @@ import { mountShell, setActiveView } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { applyThemeMode, type ThemeMode } from './theme';
 
+/**
+ * Each fixture must actually render the tone it is named after. `LOW_REMAINING`
+ * is 5, so a "normal" fixture needs more than 5 remaining: 4 of 5 would render
+ * amber and quietly invalidate every visual check made against it. Limits track
+ * the real free tier, `MONTHLY_LIMIT = 10`.
+ */
 const ALLOWANCES: Record<string, AllowanceState> = {
   loading: { kind: 'loading' },
-  normal: { kind: 'free', remaining: 4, limit: 5, resetsAt: '2026-08-01T00:00:00Z' },
-  low: { kind: 'free', remaining: 2, limit: 20, resetsAt: '2026-08-01T00:00:00Z' },
-  exhausted: { kind: 'free', remaining: 0, limit: 5, resetsAt: '2026-08-01T00:00:00Z' },
+  normal: { kind: 'free', remaining: 8, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
+  low: { kind: 'free', remaining: 4, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
+  exhausted: { kind: 'free', remaining: 0, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
   pro: { kind: 'pro' },
   unknown: { kind: 'unknown', message: 'Plan status unavailable' },
 };
@@ -1393,6 +1399,10 @@ const refs = mountShell(VIEWS.includes(view) ? view : 'component');
 
 const theme = param('theme', 'dark') as ThemeMode;
 applyThemeMode(refs.themeButton, theme === 'light' ? 'light' : 'dark');
+// applyThemeMode sets title but not aria-label. wireShellTheme copies one onto
+// the other in the real shell, and the harness has to do the same: showing an
+// accessible name the real plugin would never show is its own kind of lie.
+refs.themeButton.setAttribute('aria-label', refs.themeButton.title);
 
 setActiveView(refs, VIEWS.includes(view) ? view : 'component');
 renderAllowance(refs.header, ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal);
