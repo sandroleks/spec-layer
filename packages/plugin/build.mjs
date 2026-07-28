@@ -36,6 +36,14 @@ console.log('Built dist/main.js');
 // ---------------------------------------------------------------------------
 const uiEntry = resolve(__dirname, 'src/ui/ui.ts');
 
+// The design system is embedded from disk rather than imported through the
+// TypeScript graph, so src/ui/design-system/*.css stays the single source and
+// no second copy can drift. Order is the documented cascade: tokens define the
+// roles, components consume them, patterns compose components.
+const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
+  .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
+  .join('\n');
+
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
     entryPoints: [uiEntry],
@@ -49,7 +57,11 @@ if (existsSync(uiEntry)) {
   const js = result.outputFiles[0].text;
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8" /><title>Spec Layer</title></head>
+<head>
+<meta charset="utf-8" />
+<title>Spec Layer</title>
+<style>${designSystemCss}</style>
+</head>
 <body>
 <script>${js}</script>
 </body>
