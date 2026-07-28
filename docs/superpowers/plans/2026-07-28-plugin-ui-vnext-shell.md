@@ -238,7 +238,9 @@ git commit -m "feat(plugin): add vNext presentation contracts"
 - Consumes: nothing.
 - Produces: `ICON_PATHS: Record<IconName, string>` (inner SVG markup, no wrapper), `type IconName`, and `icon(name: IconName, size?: number): string` returning a complete `<svg>` string with `aria-hidden="true"`.
 
-The prototype drew these from `@tabler/icons-react`, which the plugin cannot take: it is a React package and the UI ships as one embedded HTML file. These are hand-authored in the 24-viewBox stroked style the codebase already uses in `theme.ts` and `dom.ts`. `world` and `brandLinkedin` are lifted verbatim from `dom.ts:991` and `dom.ts:995`; `sun` and `moon` from `theme.ts:47-52`.
+The prototype drew these from `@tabler/icons-react`, which the plugin cannot take: it is a React package and the UI ships as one embedded HTML file. These are hand-authored in the 24-viewBox stroked style the codebase already uses in `theme.ts` and `dom.ts`. `world` is lifted verbatim from `dom.ts:991`; `sun` and `moon` from `theme.ts:47-52`.
+
+`brandLinkedin` is deliberately **not** the mark at `dom.ts:995`. That one is a solid `fill="currentColor"` logo, which cannot survive this module's shared `fill="none"` stroke wrapper. The stroked "in" badge below matches what the prototype's rail actually showed. The legacy header keeps its own solid mark until the legacy UI is deleted, so the two coexist only behind the flag.
 
 - [ ] **Step 1: Write the failing test**
 
