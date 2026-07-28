@@ -382,6 +382,11 @@ const MODE_BLOCK_W = 190;   // multi-mode: swatch plus its values
 const SWATCH_ROW_PAD = 18;
 const GROUP_GAP = 32;       // between one titled group and the next
 const GROUP_HEAD_GAP = 14;  // a group's heading to its own rows
+// The mode-heading row ("Light  Dark  Wireframe") is a caption for the table
+// directly under it, not a section break, so it sits close to it: a fraction of
+// GROUP_GAP, which is reserved for the bigger, structural gap between one titled
+// group and the next.
+const HEADER_GAP = 12;
 // A measure, not the full row width: a description is prose, and prose set to
 // 900px runs too wide to read comfortably.
 const GROUP_NOTE_W = 560;
@@ -561,12 +566,22 @@ function buildSwatchList(
   rows: FoundationVariableRow[], modeNames: string[], showDescriptions: boolean,
   groupDescriptions?: Record<string, string>,
 ): FrameNode {
-  const list = vstack(GROUP_GAP);
-  list.name = 'Colors';
+  // Two different gaps live here, and a single auto-layout frame can only ever
+  // apply one itemSpacing between its children, so this is two nested frames
+  // rather than one: `wrap` (HEADER_GAP) holds the optional mode-heading row
+  // next to `groups` (GROUP_GAP), which holds the group blocks. Without the
+  // split, the header's caption-to-table relationship and the bigger break
+  // between two groups were forced to the same number, and the header ended up
+  // as far from the table as one whole group is from the next.
+  const wrap = vstack(HEADER_GAP);
+  wrap.name = 'Colors';
 
   // Only a multi-mode list needs mode headings, and only once: with one mode
   // there is nothing to tell apart, and the reference has no header row at all.
-  if (modeNames.length > 1) list.appendChild(modeHeadings(modeNames));
+  if (modeNames.length > 1) wrap.appendChild(modeHeadings(modeNames));
+
+  const groupsList = vstack(GROUP_GAP);
+  wrap.appendChild(groupsList);
 
   const groups = groupRowsByFolder(rows);
   // Titles come from the extractor so the AI pass and the frame agree on them.
@@ -586,10 +601,10 @@ function buildSwatchList(
     // keying on a value that moves would drop the description when it did.
     const note = groupDescriptions?.[group.folder];
     if (note) {
-      const wrap = vstack(0);
-      block.appendChild(wrap);
-      fixWidthHugHeight(wrap, GROUP_NOTE_W);
-      wrappingText(wrap, note, 'Regular', 11, palette.muted);
+      const wrapNote = vstack(0);
+      block.appendChild(wrapNote);
+      fixWidthHugHeight(wrapNote, GROUP_NOTE_W);
+      wrappingText(wrapNote, note, 'Regular', 11, palette.muted);
     }
 
     const body = vstack(0);
@@ -600,9 +615,9 @@ function buildSwatchList(
       body.appendChild(swatchRow(row, modeNames.length, i > 0, showDescriptions));
     });
 
-    list.appendChild(block);
+    groupsList.appendChild(block);
   });
-  return list;
+  return wrap;
 }
 
 /**

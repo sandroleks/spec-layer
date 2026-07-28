@@ -49,6 +49,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   same heading, every heading in that document takes one more segment
   ("Color / Surface").
 
+  The mode-heading row above a mapped (multi-mode) table now sits close
+  to it, as a caption should, instead of a full group-to-group gap away
+  as if it were its own section.
+
   A mapped (multi-mode) colour table reads less tight: bigger swatches,
   more row and group spacing, and a clear hierarchy between the value that
   matters most (the mapping, or the hex for a plain colour) and the detail

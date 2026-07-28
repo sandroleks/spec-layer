@@ -66,6 +66,9 @@ constants, so what is left is Figma's own text metrics and wrapping:
 - [ ] **Colours are grouped by folder.** A collection whose colours sit in several folders (`color/surface/...`, `color/text/...`) renders one block per folder, each titled with the folder path, rows of the same folder kept together even if the collection interleaves them. A collection whose colours all share one folder shows no group heading.
       Screenshot:
 
+- [ ] **The mode-heading row sits close to its table.** On a multi-mode collection, `Light` / `Dark` / `Wireframe` (or whatever the modes are named) sit as a tight caption directly above the first row of swatches, clearly closer than the gap between one group and the next below it.
+      Screenshot:
+
 - [ ] **A mapped (multi-mode) colour table reads comfortably, not cramped.** Generate a collection with 3-4 modes, several rows of colours. The rows have visible breathing room (not stacked edge to edge), the swatches read as a deliberate size next to the text rather than an afterthought, and within a value stack the top line (the mapping, e.g. `→ colors/red/500`) is visibly more prominent than the line under it (the resolved hex), not the same weight.
       Screenshot:
 

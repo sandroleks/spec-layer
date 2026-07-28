@@ -9,6 +9,18 @@ import { hstack, vstack, solidFill, palette } from '../src/frameKit';
 import {
   installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
 } from './fakeFigma';
+
+/**
+ * The group-blocks list inside a "Colors" swatch-list frame.
+ *
+ * buildSwatchList nests two frames with different gaps (HEADER_GAP between the
+ * optional mode-heading row and the table, GROUP_GAP between one group and the
+ * next), so the group blocks always sit one level deeper than the "Colors"
+ * frame itself, as its LAST child whether or not a heading row precedes it.
+ */
+function groupsOf(colorsFrame: FakeFrame): FakeFrame {
+  return colorsFrame.children[colorsFrame.children.length - 1] as FakeFrame;
+}
 import {
   buildFoundation, planFoundationUnits, unitContent,
   SPLIT_THRESHOLD, type FoundationValue, type FoundationUnitContent,
@@ -574,8 +586,8 @@ describe('buildFoundationFrame', () => {
     const card = cardOf(await build());
     const list = card.findAllNamed('Colors')[0];
     expect(list).toBeDefined();
-    // Two modes, so a mode heading row, then one block for the shared folder.
-    expect(list.children).toHaveLength(2);
+    // color/bg and color/fg share one folder, so one group block.
+    expect(groupsOf(list).children).toHaveLength(1);
     expect(list.textChars()).toContain('color/bg');
     expect(list.textChars()).toContain('color/fg');
     const table = card.findAllNamed('Table')[0];
@@ -596,7 +608,9 @@ describe('buildFoundationFrame', () => {
     // Nothing to tell apart, and the reference layout has no header.
     const card = cardOf(await build({ singleMode: true }));
     const list = card.findAllNamed('Colors')[0];
-    expect(list.children).toHaveLength(1); // the one folder block, no headings
+    // Only the group list itself, no heading row sitting before it.
+    expect(list.children).toHaveLength(1);
+    expect(groupsOf(list).children).toHaveLength(1); // the one folder block
     expect(list.textChars()).not.toContain('Light');
   });
 
@@ -654,7 +668,7 @@ describe('buildFoundationFrame', () => {
     // Single-mode: values = [hex, rgb, hsl]. The hex is the fact that matters
     // most at a glance, so it carries the weight; rgb/hsl are supporting detail.
     const card = cardOf(await build({ singleMode: true }));
-    const group = card.findAllNamed('Colors')[0].children[0] as FakeFrame;
+    const group = groupsOf(card.findAllNamed('Colors')[0]).children[0] as FakeFrame;
     const body = group.children[group.children.length - 1] as FakeFrame;
     const row = body.children[0] as FakeFrame;
     const values = row.children[row.children.length - 1] as FakeFrame;
@@ -669,7 +683,7 @@ describe('buildFoundationFrame', () => {
 
   it('mutes every line under the primary one, not just the last', async () => {
     const card = cardOf(await build({ singleMode: true }));
-    const group = card.findAllNamed('Colors')[0].children[0] as FakeFrame;
+    const group = groupsOf(card.findAllNamed('Colors')[0]).children[0] as FakeFrame;
     const body = group.children[group.children.length - 1] as FakeFrame;
     const row = body.children[0] as FakeFrame;
     const values = row.children[row.children.length - 1] as FakeFrame;
@@ -680,11 +694,25 @@ describe('buildFoundationFrame', () => {
     expect(hsl.fills).toEqual(solidFill(palette.muted));
   });
 
+  it('sits the mode-heading row close to the table, not one group-gap away', async () => {
+    // The bug this closes: the header row and the group list used to share one
+    // vstack's itemSpacing, so "Light / Dark / Wireframe" sat as far from its
+    // own table as one whole group sits from the next. The header's gap has to
+    // be the smaller of the two, and strictly smaller than the group-to-group
+    // gap it used to be equal to.
+    const card = cardOf(await build());
+    const colors = card.findAllNamed('Colors')[0];
+    const groupList = groupsOf(colors);
+    expect(colors.itemSpacing).toBeLessThan(groupList.itemSpacing as number);
+  });
+
   it('keeps the same hierarchy inside a multi-mode block', async () => {
     // Position decides the style, not which mode the value belongs to: every
     // mode's block leads with its own hex, muted below it, same as single mode.
     const card = cardOf(await build());
-    const group = card.findAllNamed('Colors')[0].children[1] as FakeFrame; // [0] is the mode-heading row
+    // groupsOf finds the group list regardless of the mode-heading row, which
+    // used to make this a fragile "index 1, because index 0 is the header" guess.
+    const group = groupsOf(card.findAllNamed('Colors')[0]).children[0] as FakeFrame;
     const body = group.children[group.children.length - 1] as FakeFrame;
     const row = body.children[0] as FakeFrame;
     const modeBlock = row.children[1] as FakeFrame; // [0] is the name column
@@ -1006,7 +1034,9 @@ describe('buildFoundationFrame — colour groups', () => {
       content, units[0], theme, false,
     ) as unknown as FakeSection;
     const card = section.children[0] as unknown as FakeFrame;
-    return card.findAllNamed('Colors')[0];
+    // Every test below wants the group blocks themselves; none cares about the
+    // (absent, single-mode) heading row, so return the group list directly.
+    return groupsOf(card.findAllNamed('Colors')[0]);
   }
 
   it('makes one block per folder, in first-appearance order', async () => {
@@ -1102,7 +1132,8 @@ describe('buildFoundationFrame — AI group descriptions', () => {
     const section = await buildFoundationFrame(
       content, units[0], theme, false, null, descriptions,
     ) as unknown as FakeSection;
-    return (section.children[0] as unknown as FakeFrame).findAllNamed('Colors')[0];
+    const card = section.children[0] as unknown as FakeFrame;
+    return groupsOf(card.findAllNamed('Colors')[0]);
   }
 
   it('renders a description under its own group heading', async () => {
