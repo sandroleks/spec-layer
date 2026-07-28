@@ -30,6 +30,7 @@ describe('icon', () => {
 
   it('defaults to 17px, the rail and header size', () => {
     expect(icon('folder')).toContain('width="17"');
+    expect(icon('folder')).toContain('height="17"');
   });
 
   it('strokes with currentColor so tokens drive the color', () => {

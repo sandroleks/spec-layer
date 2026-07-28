@@ -3,9 +3,11 @@
  *
  * Hand-authored in the same 24-viewBox stroked style the plugin already uses
  * (theme.ts, dom.ts) rather than pulled from an icon package: the UI ships as
- * one embedded HTML file and takes no runtime dependencies. `world` and
- * `brandLinkedin` are the existing paths from dom.ts; `sun` and `moon` are the
- * existing paths from theme.ts.
+ * one embedded HTML file and takes no runtime dependencies. `world` is an
+ * existing path from dom.ts; `sun` and `moon` are existing paths from theme.ts.
+ * `brandLinkedin` is intentionally a stroked badge rather than the solid logo
+ * in dom.ts, because a solid fill cannot survive the shared `fill="none"` stroke
+ * wrapper.
  *
  * Values are inner markup only. `icon()` owns the wrapper so every glyph gets
  * the same sizing, stroke, and aria treatment.
