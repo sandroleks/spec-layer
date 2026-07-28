@@ -21,6 +21,16 @@
 
 **Scope:** PR 1 (Tasks 1-2) and PR 2 (Tasks 3-8) of the eight in `docs/superpowers/specs/2026-07-28-plugin-ui-vnext-design.md`. The five screens get their own plans once the interfaces below exist.
 
+## As built: two corrections to this plan
+
+The final whole-branch review found two critical defects, both authored here rather than introduced during implementation. The spec is corrected; read it, not the task steps below, for how the flag and the CSS actually work.
+
+1. **Task 1 embedded the design-system CSS in every build.** Those layers open with a global reset and set `:root`/`body[data-theme]` rules the legacy UI also sets, so a default build measurably restyled the legacy UI (tab buttons 79x38 to 85x45, different font). The embed is now gated: the harness always gets the CSS, `ui.html` gets it only when it is the shell.
+
+2. **Task 7's flag was inert.** Branching inside `ui.ts` did not work, because `mountShell()` wrote the shell into `document.body` and the legacy `mount()` on the very next line overwrote it. Task 7's grep-the-bundle verification could not catch that. `UI_VNEXT=1` now selects a different entry point, `src/ui/ui-vnext.ts`, and `ui.ts` is left untouched. Screens wire into `ui-vnext.ts`.
+
+The lesson worth carrying: both defects were invisible to every algebraic review and only appeared when the built artifact was actually rendered and measured. Render the thing.
+
 ---
 
 ### Task 1: Embed the design-system CSS in the built UI

@@ -100,16 +100,34 @@ which sidesteps the fact that esbuild's text loader and Vite disagree about
 what `import x from './a.css'` returns — the same disagreement would otherwise
 surface as a broken test run. One token source; no second copy to drift.
 
+**The embed is gated on the build actually rendering the new shell.** These are
+not only `sl-` prefixed rules: `components.css` opens with a global reset over
+`*`, `html, body`, `button, input, select, textarea`, and `[hidden]`, and
+`tokens.css` sets `:root` and `body[data-theme]` rules that the legacy UI also
+sets. Shipping them in a plain build measurably restyled the legacy UI, growing
+its tab buttons from 79x38 to 85x45 and changing their font. A plain build now
+contains no `--sl-` anything. The harness always gets the CSS; `ui.html` gets it
+only when `ui.html` is the shell.
+
 The legacy UI keeps its `--figma-color-*` palette untouched. Because the two
 UIs never render together under the flag approach, there is no half-migrated
 state to reconcile and no reason to alias one palette onto the other.
 
 ### The flag
 
-A build-time define, `__UI_VNEXT__`. `ui.ts` branches once at boot between
-`mountLegacy()` and `mountShell()`. It defaults to legacy through PR 6, flips in
-PR 7, and the legacy path is deleted in PR 8. Building the old UI stays a
-one-variable affair so both can be compared on the same Figma file.
+`UI_VNEXT=1` selects a different **entry point**, rather than branching inside a
+shared module. `build.mjs` bundles `src/ui/ui-vnext.ts` instead of
+`src/ui/ui.ts`, so the legacy module is not in the vNext bundle at all and the
+two can never both run. `ui.ts` is untouched by this migration.
+
+This was learned the hard way. The first attempt did branch inside `ui.ts`, and
+the flag was inert: `mountShell()` wrote the shell into `document.body`, and the
+legacy `mount()` on the next line overwrote it. A flagged build rendered the
+legacy UI with no shell in the DOM, and the tests passed because they grepped
+the bundle for strings rather than checking what survived boot.
+
+The default stays legacy through PR 6, flips in PR 7, and the legacy entry point
+is deleted in PR 8. Screens are wired into `ui-vnext.ts` as their plans land.
 
 ### Frame size
 
