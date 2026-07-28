@@ -49,10 +49,10 @@ describe('allowanceCopy', () => {
 
   it('counts remaining free uses and offers the upgrade', () => {
     const copy = allowanceCopy({
-      kind: 'free', remaining: 4, limit: 5, resetsAt: '2026-08-01T00:00:00Z',
+      kind: 'free', remaining: 8, limit: 10, resetsAt: '2026-08-01T00:00:00Z',
     });
     expect(copy.tone).toBe('normal');
-    expect(copy.detail).toBe('4 of 5 free uses left');
+    expect(copy.detail).toBe('8 of 10 free uses left');
     expect(copy.showUpgrade).toBe(true);
     expect(copy.fillPct).toBe(80);
   });
@@ -62,6 +62,21 @@ describe('allowanceCopy', () => {
       kind: 'free', remaining: LOW_REMAINING - 1, limit: 20, resetsAt: '',
     });
     expect(copy.tone).toBe('low');
+  });
+
+  /**
+   * These two pin the same boundary proxy.test.ts already pins for the license
+   * page's meter. If the header and the license page ever disagree about what
+   * "low" means, one of these fails.
+   */
+  it('treats 5 remaining as normal, like the license page does', () => {
+    expect(allowanceCopy({ kind: 'free', remaining: 5, limit: 20, resetsAt: '' }).tone)
+      .toBe('normal');
+  });
+
+  it('treats 4 remaining as low, like the license page does', () => {
+    expect(allowanceCopy({ kind: 'free', remaining: 4, limit: 20, resetsAt: '' }).tone)
+      .toBe('low');
   });
 
   it('explains exhaustion without blocking anything', () => {

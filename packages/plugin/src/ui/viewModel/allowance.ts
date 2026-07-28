@@ -13,8 +13,12 @@ import type { ProxyQuota } from '@spec-layer/extractor';
 import type { AllowanceState } from './contracts';
 import { assertNever } from './contracts';
 
-/** Matches the `lowThreshold` default in proxy.ts, so header and license agree. */
-export const LOW_REMAINING = 4;
+/**
+ * Matches the `lowThreshold` default in proxy.ts, so the header and the
+ * license page's quota meter agree on what "low" means. Do not retune this
+ * to make a test pass — fix the test's fixture instead.
+ */
+export const LOW_REMAINING = 5;
 
 export function allowanceState(quota: ProxyQuota | null, fetched: boolean): AllowanceState {
   if (!fetched) return { kind: 'loading' };
