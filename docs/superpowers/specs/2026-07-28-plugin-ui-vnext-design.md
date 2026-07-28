@@ -94,10 +94,11 @@ is a compile error instead of a blank panel.
 
 ### CSS delivery
 
-`build.mjs` gains `loader: { '.css': 'text' }` on the UI build, plus a `*.css`
-module declaration for `tsc`. The three files are imported as strings and
-interpolated into the `<style>` block in the order `index.css` documents. One
-token source; no second copy to drift.
+`build.mjs` reads the three files from disk and embeds them in a `<style>`
+block in the order `index.css` documents. The TypeScript never imports CSS,
+which sidesteps the fact that esbuild's text loader and Vite disagree about
+what `import x from './a.css'` returns — the same disagreement would otherwise
+surface as a broken test run. One token source; no second copy to drift.
 
 The legacy UI keeps its `--figma-color-*` palette untouched. Because the two
 UIs never render together under the flag approach, there is no half-migrated
