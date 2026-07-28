@@ -617,3 +617,39 @@
   }
 }
 
+
+/* Centered state for a screen that has nothing to act on yet. */
+.sl-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sl-space-2);
+  min-height: 320px;
+  padding: var(--sl-space-6) var(--sl-space-4);
+  text-align: center;
+}
+
+.sl-empty-state > strong {
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-6);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-empty-state > p {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-4);
+  line-height: var(--sl-line-height-body);
+}
+
+/* Where a screen puts its build result. Collapses to nothing when empty, so it
+   costs no space until there is something to say. */
+.sl-screen-status:empty {
+  display: none;
+}
+
+.sl-screen-status {
+  margin: var(--sl-space-3) 0 var(--sl-space-2);
+}

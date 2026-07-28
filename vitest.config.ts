@@ -30,6 +30,7 @@ export default defineConfig({
         'packages/*/src/index.ts',
         'packages/plugin/src/main.ts',
         'packages/plugin/src/ui/ui.ts',
+        'packages/plugin/src/ui/ui-vnext.ts',
         'packages/plugin/src/ui/harness.ts',
       ],
       // A ratchet, not an aspiration: this floor only moves up. Raise it as

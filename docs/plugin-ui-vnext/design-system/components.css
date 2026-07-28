@@ -282,6 +282,12 @@ button {
   content: "";
 }
 
+/* The check glyph is always in the markup so the box does not need rebuilding
+   on every toggle. Native state decides whether it is visible. */
+.sl-choice-input:not(:checked):not([data-mixed="true"]) + .sl-checkbox-box > svg {
+  visibility: hidden;
+}
+
 .sl-choice-input:checked + .sl-checkbox-box,
 .sl-choice-input[data-mixed="true"] + .sl-checkbox-box {
   background: var(--sl-color-accent);
@@ -342,6 +348,9 @@ button {
 .sl-switch-track {
   width: 32px;
   height: 18px;
+  /* Without a display rule a <span> track stays inline and drops both the
+     width and the height above, collapsing the switch to its thumb. */
+  display: inline-block;
   flex: 0 0 auto;
   padding: 2px;
   background: var(--sl-color-border-strong);

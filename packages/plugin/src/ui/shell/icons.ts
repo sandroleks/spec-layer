@@ -48,6 +48,10 @@ export const ICON_PATHS = {
     '<rect x="3" y="3" width="18" height="18" rx="2"/>' +
     '<path d="M8 11v5"/><path d="M8 8v.01"/>' +
     '<path d="M12 16v-5"/><path d="M16 16v-3a2 2 0 0 0-4 0"/>',
+  /** Disclosure affordance. The CSS rotates it 180deg when expanded. */
+  chevronDown: '<path d="M6 9l6 6 6-6"/>',
+  infoCircle:
+    '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

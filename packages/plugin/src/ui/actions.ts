@@ -197,12 +197,6 @@ export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void)
 // ---------------------------------------------------------------------------
 
 /** The prose keys the currently-checked sections need. */
-function requestedProseKeys(refs: Refs): Set<ProseKey> {
-  const checked = new Set<SectionId>();
-  for (const { id } of ALL_SECTIONS) if (refs.sectionChecks[id]?.checked) checked.add(id);
-  return proseKeysForSections(checked);
-}
-
 /** True when a fresh draft is needed: no draft yet, or the cached draft was
  *  generated for a key set that does not cover everything now requested. */
 export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boolean {
@@ -216,9 +210,9 @@ export function canGenerate(state: UiState): boolean {
   return state.aiEnabled && Boolean(state.licenseKey || state.figmaUserId);
 }
 
-function willGenerateProse(refs: Refs, state: UiState): boolean {
+export function willGenerateProseFor(state: UiState, sections: Set<SectionId>): boolean {
   if (!canGenerate(state)) return false;
-  const requested = requestedProseKeys(refs);
+  const requested = proseKeysForSections(sections);
   if (requested.size === 0) return false;
   return proseNeedsRegen(state, requested);
 }
@@ -237,10 +231,10 @@ export function licenseFailureNote(reason: string | undefined): { note: string; 
   };
 }
 
-async function ensureProse(refs: Refs, state: UiState): Promise<void> {
+async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise<void> {
   state.pendingAiNote = '';
-  if (!willGenerateProse(refs, state)) return;
-  const requested = requestedProseKeys(refs);
+  if (!willGenerateProseFor(state, sections)) return;
+  const requested = proseKeysForSections(sections);
 
   // The generating loader (started by runCreateDocFrame) surfaces progress; this
   // path is best-effort. AI is an enhancement, never a blocker. If generation fails
@@ -291,31 +285,67 @@ async function ensureProse(refs: Refs, state: UiState): Promise<void> {
 // Success/failure banners arrive via the docFrameDone/docFrameError handlers.
 // ---------------------------------------------------------------------------
 
-export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<void> {
-  clearBanners(refs);
+/**
+ * What the user picked, passed in rather than read from the DOM.
+ *
+ * The legacy UI keeps this in its checkboxes and the vNext screen keeps it in
+ * module state, so the build path cannot read either one directly. Threading it
+ * through as a value is what lets both UIs drive the same code.
+ */
+export interface DocSelection {
+  sections: Set<SectionId>;
+  variantIds: Set<string>;
+}
+
+/**
+ * How a build reports itself. Each UI supplies its own: the legacy one writes
+ * to its banner and loader, the vNext screen to its status row and footer
+ * button. Keeping this an interface is what stops the build logic from being
+ * copied once per UI.
+ */
+export interface BuildPresenter {
+  /** Clear any status left over from a previous run. */
+  clear(): void;
+  /** Show a failure the user needs to read. */
+  error(message: string): void;
+  /** Disable or re-enable the action that started this build. */
+  setBusy(busy: boolean): void;
+  /** Begin and end the "working on it" narration. */
+  startProgress(withAi: boolean): void;
+  stopProgress(): void;
+}
+
+/**
+ * Build the doc frame and send it to the main thread.
+ *
+ * On success the progress narration deliberately keeps running: it stops when
+ * docFrameDone or docFrameError comes back, which is what makes the canvas work
+ * feel connected to the button that started it.
+ */
+export async function createDocFrame(
+  state: UiState,
+  selection: DocSelection,
+  ui: BuildPresenter,
+): Promise<void> {
+  ui.clear();
 
   if (!ensureExtracted(state)) {
-    showBanner(refs, 'error', 'Select a component first.');
+    ui.error('Select a component first.');
     return;
   }
 
   // Guard against a double-click sending two renderDocFrame messages (and
   // building two frames). Re-enabled by docFrameDone/docFrameError, or here on
   // an early failure (e.g. AI generation throwing before we dispatch).
-  refs.createFrameBtn.disabled = true;
-
-  // Livelier than a static banner: cycle status messages while we work. The AI
-  // path is slow (network) and deserves the richer narration; the no-AI path is
-  // fast, so it gets a shorter set. stopLoader runs on done/error (ui.ts) or in
-  // the catch below.
-  startLoader(refs.loader, refs.loaderText, generatingMessages(willGenerateProse(refs, state)));
+  ui.setBusy(true);
+  ui.startProgress(willGenerateProseFor(state, selection.sections));
 
   try {
-    const built = await assembleDoc(refs, state);
+    const built = await assembleDocFor(state, selection);
     if (!built) {
-      // No sections checked: assembleDoc showed the banner. Reset the frame UI.
-      refs.createFrameBtn.disabled = false;
-      stopLoader(refs.loader);
+      ui.error('Select at least one section.');
+      ui.setBusy(false);
+      ui.stopProgress();
       return;
     }
     send({
@@ -325,13 +355,42 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
       contentHash: specContentHash(state.currentSpec!),
       config: built.config,
     });
-    // Keep the loader running — it stops on docFrameDone/docFrameError (ui.ts).
   } catch (err) {
-    stopLoader(refs.loader);
+    ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    showBanner(refs, 'error', `Frame failed: ${msg}`);
-    refs.createFrameBtn.disabled = false;
+    ui.error(`Frame failed: ${msg}`);
+    ui.setBusy(false);
   }
+}
+
+/** Read the legacy UI's checkboxes into a selection value. */
+export function selectionFromRefs(refs: Refs): DocSelection {
+  const sections = new Set<SectionId>();
+  for (const { id } of ALL_SECTIONS) {
+    if (refs.sectionChecks[id]?.checked) sections.add(id);
+  }
+  const variantIds = new Set<string>();
+  refs.variantList.querySelectorAll('input:checked').forEach((el) => {
+    const id = (el as HTMLInputElement).dataset.nodeId;
+    if (id) variantIds.add(id);
+  });
+  return { sections, variantIds };
+}
+
+/** Drive the legacy banner, loader, and Create-frame button. */
+export function refsPresenter(refs: Refs, button: HTMLButtonElement): BuildPresenter {
+  return {
+    clear: () => clearBanners(refs),
+    error: (message) => showBanner(refs, 'error', message),
+    setBusy: (busy) => { button.disabled = busy; },
+    startProgress: (withAi) =>
+      startLoader(refs.loader, refs.loaderText, generatingMessages(withAi)),
+    stopProgress: () => stopLoader(refs.loader),
+  };
+}
+
+export function runCreateDocFrame(refs: Refs, state: UiState): Promise<void> {
+  return createDocFrame(state, selectionFromRefs(refs), refsPresenter(refs, refs.createFrameBtn));
 }
 
 /**
@@ -344,27 +403,15 @@ export async function runCreateDocFrame(refs: Refs, state: UiState): Promise<voi
  * checked. Assumes the caller already ensured extraction and started the
  * loader; the caller owns loader/button teardown for the empty-selection case.
  */
-async function assembleDoc(
-  refs: Refs,
+async function assembleDocFor(
   state: UiState,
+  { sections: selected, variantIds }: DocSelection,
 ): Promise<{ model: DocFrameModel; config: DocConfig } | null> {
-  await ensureProse(refs, state);
+  await ensureProseFor(state, selected);
 
-  const selected = new Set<SectionId>();
-  for (const { id } of ALL_SECTIONS) {
-    if (refs.sectionChecks[id]?.checked) selected.add(id);
-  }
-  if (selected.size === 0) {
-    showBanner(refs, 'error', 'Select at least one section.');
-    return null;
-  }
-
-  // Per-variant tokens: which variants the user ticked in the picker.
-  const variantIds = new Set<string>();
-  refs.variantList.querySelectorAll('input:checked').forEach((el) => {
-    const id = (el as HTMLInputElement).dataset.nodeId;
-    if (id) variantIds.add(id);
-  });
+  // Null rather than a banner: the caller owns how an empty selection reads,
+  // because the two UIs put that message in different places.
+  if (selected.size === 0) return null;
 
   const model = buildDocModel(
     state.currentSpec!,
@@ -464,11 +511,17 @@ export async function runDownload(refs: Refs, state: UiState): Promise<void> {
   // downloaded markdown matches the frame. Disable the button and narrate while
   // any generation runs.
   refs.downloadBtn.disabled = true;
-  startLoader(refs.loader, refs.loaderText, generatingMessages(willGenerateProse(refs, state)));
+  const selection = selectionFromRefs(refs);
+  startLoader(
+    refs.loader,
+    refs.loaderText,
+    generatingMessages(willGenerateProseFor(state, selection.sections)),
+  );
 
   try {
-    const built = await assembleDoc(refs, state);
+    const built = await assembleDocFor(state, selection);
     if (!built) {
+      showBanner(refs, 'error', 'Select at least one section.');
       stopLoader(refs.loader);
       refs.downloadBtn.disabled = false;
       return;

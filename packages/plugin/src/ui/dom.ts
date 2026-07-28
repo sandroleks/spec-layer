@@ -24,11 +24,9 @@
 
 import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
 
-/** Sections that start unchecked: Related (rarely wanted) and the verbose,
- *  token-costly guidelines additions, which are opt-in. */
-const DEFAULT_OFF_SECTIONS = new Set<SectionId>([
-  'related', 'interactions', 'contentConsiderations',
-]);
+// Sections that start unchecked. Defined in viewModel/componentScreen so the
+// legacy UI and the vNext screen cannot drift into different defaults.
+import { DEFAULT_OFF_SECTIONS } from './viewModel/componentScreen';
 import { THEME_PRESETS, resolveTheme, type CornerStyle } from '../brandColors';
 
 // ---------------------------------------------------------------------------

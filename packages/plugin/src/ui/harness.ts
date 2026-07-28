@@ -12,9 +12,11 @@
  * thing we are verifying.
  */
 
-import type { AllowanceState, PluginView } from './viewModel/contracts';
+import type { AllowanceState, ComponentScreenState, PluginView } from './viewModel/contracts';
+import type { GroupId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
+import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { type ThemeMode } from './theme';
 
 /**
@@ -49,3 +51,27 @@ wireShellTheme(refs, theme === 'light' ? 'light' : 'dark');
 
 setActiveView(refs, VIEWS.includes(view) ? view : 'component');
 renderAllowance(refs.header, ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal);
+
+/** The component screen's states, keyed for `?state=`. */
+const COMPONENT_STATES: Record<string, ComponentScreenState> = {
+  empty: { kind: 'empty' },
+  reading: { kind: 'reading', componentName: 'buttonPrimary' },
+  ready: { kind: 'ready', componentName: 'buttonPrimary' },
+  building: { kind: 'building', componentName: 'buttonPrimary' },
+  success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
+  error: {
+    kind: 'error',
+    componentName: 'buttonPrimary',
+    message: 'Frame failed: the component has no variants to read.',
+  },
+};
+
+if (view === 'component') {
+  const screen = COMPONENT_STATES[param('state', 'ready')] ?? COMPONENT_STATES.ready;
+  const selection = createComponentSelection(param('ai', 'on') !== 'off');
+  // The harness paints once and wires nothing, so which groups are open has to
+  // come from the URL rather than from clicking: ?expand=usage,specs
+  const expand = param('expand', 'usage').split(',').filter(Boolean);
+  selection.expanded = new Set(expand as GroupId[]);
+  renderComponentScreen(refs, screen, selection);
+}
