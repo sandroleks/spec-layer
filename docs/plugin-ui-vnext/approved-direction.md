@@ -93,7 +93,7 @@ so they remain readable in both themes.
 ## Copy decisions
 
 - Use American English.
-- Use `color`, never `colour`.
+- Use American English spelling for all color terminology.
 - Use sentence case.
 - Use `AI writing`, not `AI quota`.
 - Use `Create docs` for the component workflow.
@@ -122,4 +122,3 @@ so they remain readable in both themes.
   `Choose what appears in the generated docs`, and `Sections · AI uses 1
   generation`.
 - Library summaries that repeat counts already shown in the filters.
-
