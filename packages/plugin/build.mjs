@@ -20,7 +20,6 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 const uiVNext = process.env.UI_VNEXT === '1';
 const define = {
   __PLUGIN_VERSION__: JSON.stringify(pkg.version),
-  __UI_VNEXT__: JSON.stringify(uiVNext),
 };
 
 // ---------------------------------------------------------------------------
@@ -39,18 +38,28 @@ console.log('Built dist/main.js');
 
 // ---------------------------------------------------------------------------
 // Build 2: UI iframe → dist/ui.html
-//   If src/ui/ui.ts exists: bundle it and embed in a minimal HTML document.
+//   The flag selects the entry point rather than branching inside a shared
+//   module, so a legacy build cannot contain the shell and a vNext build
+//   cannot contain the legacy UI.
+//   If the entry exists: bundle it and embed in a minimal HTML document.
 //   Otherwise: write a placeholder HTML so the manifest reference is valid.
 // ---------------------------------------------------------------------------
-const uiEntry = resolve(__dirname, 'src/ui/ui.ts');
+const uiEntry = resolve(__dirname, uiVNext ? 'src/ui/ui-vnext.ts' : 'src/ui/ui.ts');
 
 // The design system is embedded from disk rather than imported through the
 // TypeScript graph, so src/ui/design-system/*.css stays the single source and
 // no second copy can drift. Order is the documented cascade: tokens define the
 // roles, components consume them, patterns compose components.
-const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
-  .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
-  .join('\n');
+//
+// It is gated on the builds that actually render the new shell. The layers
+// open with a global reset and set :root/body theme rules that the legacy UI
+// also sets, so shipping them in a plain build silently restyles the legacy
+// tabbed UI (measured: tab buttons 79x38 -> 85x45, different font).
+const designSystemCss = (uiVNext || process.env.UI_HARNESS === '1')
+  ? ['tokens.css', 'components.css', 'patterns.css']
+      .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
+      .join('\n')
+  : '';
 
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
@@ -75,7 +84,7 @@ if (existsSync(uiEntry)) {
 </body>
 </html>`;
   writeFileSync(resolve(dist, 'ui.html'), html, 'utf-8');
-  console.log('Built dist/ui.html (from src/ui/ui.ts)');
+  console.log(`Built dist/ui.html (from ${uiVNext ? 'src/ui/ui-vnext.ts' : 'src/ui/ui.ts'})`);
 } else {
   const placeholder = `<!DOCTYPE html>
 <html lang="en">
@@ -85,7 +94,7 @@ if (existsSync(uiEntry)) {
 </body>
 </html>`;
   writeFileSync(resolve(dist, 'ui.html'), placeholder, 'utf-8');
-  console.log('Built dist/ui.html (placeholder — src/ui/ui.ts not found)');
+  console.log(`Built dist/ui.html (placeholder — ${uiEntry} not found)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +111,7 @@ if (process.env.UI_HARNESS === '1') {
     platform: 'browser',
     target: 'es2017',
     write: false,
-    define: { ...define, __UI_VNEXT__: 'true' },
+    define,
   });
   writeFileSync(resolve(dist, 'ui-harness.html'), `<!DOCTYPE html>
 <html lang="en">

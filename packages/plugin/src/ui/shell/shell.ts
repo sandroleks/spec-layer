@@ -85,9 +85,12 @@ export function setActiveView(refs: ShellRefs, view: PluginView): void {
  * Wire the header's theme control. Detection and application stay in theme.ts;
  * the shell only owns the button. applyThemeMode sets `title`, so the
  * accessible name is copied from it rather than left to go stale.
+ *
+ * `initial` exists so callers outside Figma (the dev harness) can seed the
+ * mode without re-implementing the wiring and drifting from it.
  */
-export function wireShellTheme(refs: ShellRefs): void {
-  let mode: ThemeMode = detectFigmaTheme();
+export function wireShellTheme(refs: ShellRefs, initial: ThemeMode = detectFigmaTheme()): void {
+  let mode: ThemeMode = initial;
   const paint = (): void => {
     applyThemeMode(refs.themeButton, mode);
     refs.themeButton.setAttribute('aria-label', refs.themeButton.title);

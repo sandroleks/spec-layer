@@ -13,9 +13,9 @@
  */
 
 import type { AllowanceState, PluginView } from './viewModel/contracts';
-import { mountShell, setActiveView } from './shell/shell';
+import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
-import { applyThemeMode, type ThemeMode } from './theme';
+import { type ThemeMode } from './theme';
 
 /**
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
@@ -42,11 +42,10 @@ const view = param('view', 'component') as PluginView;
 const refs = mountShell(VIEWS.includes(view) ? view : 'component');
 
 const theme = param('theme', 'dark') as ThemeMode;
-applyThemeMode(refs.themeButton, theme === 'light' ? 'light' : 'dark');
-// applyThemeMode sets title but not aria-label. wireShellTheme copies one onto
-// the other in the real shell, and the harness has to do the same: showing an
-// accessible name the real plugin would never show is its own kind of lie.
-refs.themeButton.setAttribute('aria-label', refs.themeButton.title);
+// The real wiring, seeded from the URL instead of from Figma. Re-implementing
+// it here would leave the harness's theme button inert and its accessible name
+// out of step with the plugin's, which is its own kind of lie.
+wireShellTheme(refs, theme === 'light' ? 'light' : 'dark');
 
 setActiveView(refs, VIEWS.includes(view) ? view : 'component');
 renderAllowance(refs.header, ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal);

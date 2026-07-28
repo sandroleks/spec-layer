@@ -13,7 +13,8 @@ export type PluginView =
   | "settings"
   | "license";
 
-export type ThemeMode = "light" | "dark";
+// ThemeMode is not declared here. theme.ts owns it, and the shell imports it
+// from there; a second declaration would be free to drift from the real one.
 
 export type AllowanceState =
   | { kind: "loading" }

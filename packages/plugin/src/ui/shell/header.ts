@@ -64,7 +64,14 @@ export function headerMarkup(): string {
  */
 export function renderAllowance(root: HTMLElement, state: AllowanceState): void {
   const button = root.querySelector<HTMLButtonElement>(`#${HEADER_IDS.allowance}`);
-  if (!button) return;
+  // Loud rather than invisible: a `root` that does not contain the control is
+  // a wiring mistake, and returning quietly would just leave a stale header.
+  if (!button) {
+    throw new Error(
+      `renderAllowance: no #${HEADER_IDS.allowance} inside the given root. ` +
+      'Pass the shell header element (ShellRefs.header).',
+    );
+  }
 
   const copy = allowanceCopy(state);
   button.dataset.state = copy.tone;

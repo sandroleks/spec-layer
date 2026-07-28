@@ -37,4 +37,16 @@ describe('shellMarkup', () => {
     expect(html).toContain('sl-screen-scroll');
     expect(html).toContain('sl-screen-footer');
   });
+
+  /**
+   * mountShell looks these up by id and throws when one is missing, so a rename
+   * here is a top-level crash on boot. The class-name assertions above cannot
+   * catch it: 'sl-page-header' also matches the class attribute. Pin the ids.
+   */
+  it('carries the exact ids mountShell looks up', () => {
+    const html = shellMarkup('component');
+    for (const id of ['sl-screen', 'sl-page-header', 'sl-screen-scroll', 'sl-screen-footer']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
 });

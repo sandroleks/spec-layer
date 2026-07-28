@@ -201,6 +201,18 @@ button {
     transform var(--sl-motion-fast) var(--sl-ease-out);
 }
 
+/*
+ * theme.ts swaps the theme button's innerHTML for an SVG that carries only a
+ * viewBox, discarding whatever size the shell's icon() helper wrote. The size
+ * has to come from CSS or the icon paints at its intrinsic 34px while every
+ * other icon in the header is 17px.
+ */
+.sl-icon-button > svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
 .sl-icon-button:hover:not(:disabled) {
   color: var(--sl-color-text);
   background: var(--sl-color-surface-hover);
