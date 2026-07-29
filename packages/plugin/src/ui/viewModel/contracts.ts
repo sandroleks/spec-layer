@@ -75,7 +75,13 @@ export type FoundationScreenState =
   | { kind: "empty" }
   | { kind: "error"; message: string }
   | { kind: "generating"; done: number; total: number }
-  | { kind: "result"; created: number; replaced: number; error?: string };
+  | {
+      kind: "result";
+      created: number;
+      replaced: number;
+      note?: string;
+      error?: string;
+    };
 
 export type LicenseState =
   | "free"

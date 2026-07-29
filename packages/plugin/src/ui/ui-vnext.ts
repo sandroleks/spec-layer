@@ -9,9 +9,14 @@
  * so rather than pretending to be empty screens.
  */
 
+import { ProseProxyError } from '@spec-layer/extractor';
 import type { MainToUi } from '../messages';
 import type { GroupId, SectionId } from './docModel';
-import type { ComponentScreenState, PluginView } from './viewModel/contracts';
+import type {
+  ComponentScreenState,
+  FoundationScreenState,
+  PluginView,
+} from './viewModel/contracts';
 import { allowanceState } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
 import { renderAllowance } from './shell/header';
@@ -20,6 +25,7 @@ import {
   renderComponentScreen,
   type ComponentSelection,
 } from './screens/component';
+import { renderFoundationScreen } from './screens/foundations';
 import {
   componentDocSelection,
 } from './viewModel/componentScreen';
@@ -38,12 +44,22 @@ import {
   autoExtract,
   createDocFrame,
   createState,
+  currentFoundationSelection,
+  currentFoundationSpec,
+  currentGroupBriefs,
   downloadDoc,
+  onFoundationChange,
+  onFoundationMessage,
+  onFoundationToggleAll,
   send,
   setAiEnabled,
+  setFoundationGenerating,
+  setFoundationHost,
   type BuildPresenter,
 } from './actions';
-import { effectiveAuth, fetchQuota } from './proxy';
+import { generateGroupDescriptions } from './ai';
+import { hasColorGroups } from './foundationState';
+import { effectiveAuth, fetchQuota, groupErrorCopy } from './proxy';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -51,12 +67,26 @@ wireShellTheme(refs);
 const state = createState();
 const selection: ComponentSelection = createComponentSelection(state.aiEnabled);
 let screen: ComponentScreenState = { kind: 'empty' };
+let foundationScreen: FoundationScreenState = { kind: 'loading' };
 let view: PluginView = 'component';
 let facts: ComponentFacts = NO_FACTS;
 let selectionSeq = 0;
 const operation = createOperationGate();
 type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
 let deferredSelection: SelectionMessage | null = null;
+let foundationRequested = false;
+let foundationAiNote = '';
+
+setFoundationHost({
+  repaint: () => {
+    if (view === 'foundations') paint();
+  },
+  setBusy: (busy) => {
+    if (busy) foundationScreen = { kind: 'generating', done: 0, total: 0 };
+  },
+  startProgress: () => {},
+  stopProgress: () => {},
+});
 
 /**
  * Whether the first quota request has settled. `state.quota` is null both
@@ -75,16 +105,29 @@ function paintAllowance(): void {
 }
 
 function paint(): void {
-  if (view !== 'component') {
-    refs.screen.classList.remove('sl-component-screen');
-    refs.pageHeader.hidden = true;
-    refs.footer.hidden = true;
-    refs.scroll.innerHTML =
-      '<div class="sl-empty-state"><strong>Not built yet</strong>' +
-      '<p>This workflow still lives in the current plugin UI. It moves here next.</p></div>';
-    return;
+  switch (view) {
+    case 'component':
+      renderComponentScreen(refs, screen, selection, facts);
+      return;
+    case 'foundations':
+      renderFoundationScreen(
+        refs,
+        foundationScreen,
+        currentFoundationSpec(),
+        currentFoundationSelection(),
+      );
+      return;
+    case 'library':
+    case 'settings':
+    case 'license':
+      refs.screen.className = 'sl-screen';
+      refs.pageHeader.hidden = true;
+      refs.footer.hidden = true;
+      refs.scroll.innerHTML =
+        '<div class="sl-empty-state"><strong>Not built yet</strong>' +
+        '<p>This workflow still lives in the current plugin UI. It moves here next.</p></div>';
+      return;
   }
-  renderComponentScreen(refs, screen, selection, facts);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +210,66 @@ function build(): void {
   });
 }
 
+function requestFoundations(): void {
+  if (foundationRequested) return;
+  foundationRequested = true;
+  foundationScreen = { kind: 'loading' };
+  paint();
+  send({ type: 'requestFoundation' });
+}
+
+async function buildFoundations(): Promise<void> {
+  const spec = currentFoundationSpec();
+  const foundationSelection = currentFoundationSelection();
+  if (!spec || !beginOperation(operation)) return;
+
+  foundationAiNote = '';
+  setFoundationGenerating(true);
+  let groupDescriptions: Record<string, string> | undefined;
+  const briefs = currentGroupBriefs();
+  const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
+
+  if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.groups.length) {
+    try {
+      groupDescriptions = await generateGroupDescriptions(
+        briefs.collectionName,
+        briefs.groups,
+        effectiveAuth(
+          state.licenseKey,
+          state.licenseInstanceId,
+          state.figmaUserId,
+          state.licenseActive,
+        ),
+        (quota) => {
+          state.quota = quota;
+          quotaFetched = true;
+          paintAllowance();
+        },
+      );
+      if (Object.keys(groupDescriptions).length === 0) {
+        foundationAiNote = 'AI descriptions came back empty.';
+      }
+    } catch (error) {
+      const detail = error instanceof ProseProxyError
+        ? groupErrorCopy(error.code)
+        : 'The AI service could not be reached.';
+      foundationAiNote = `AI descriptions were skipped. ${detail}`;
+    }
+  }
+
+  send({
+    type: 'renderFoundation',
+    selection: foundationSelection,
+    config: {
+      includeDescriptions: true,
+      aiNotes: Boolean(groupDescriptions && Object.keys(groupDescriptions).length > 0),
+    },
+    ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
+      ? { groupDescriptions }
+      : {}),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -198,6 +301,7 @@ document.addEventListener('click', (event) => {
   if (rail?.dataset.view) {
     view = rail.dataset.view as PluginView;
     setActiveView(refs, view);
+    if (view === 'foundations') requestFoundations();
     paint();
     return;
   }
@@ -246,6 +350,34 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.closest('#sl-create')) build();
+
+  if (target.closest('[data-foundation-bulk]')) {
+    onFoundationToggleAll();
+    paintAndFocus('[data-foundation-bulk]');
+    return;
+  }
+
+  const foundationSource = target.closest<HTMLButtonElement>('[data-foundation-source]');
+  if (foundationSource?.dataset.foundationSource) {
+    const checked = foundationSource.getAttribute('aria-pressed') !== 'true';
+    if (foundationSource.dataset.textStyles === 'true') {
+      onFoundationChange({ kind: 'textStyles', checked });
+    } else {
+      onFoundationChange({
+        kind: 'collection',
+        collectionId: foundationSource.dataset.foundationSource,
+        checked,
+      });
+    }
+    paintAndFocus(
+      `[data-foundation-source="${foundationSource.dataset.foundationSource}"]`,
+    );
+    return;
+  }
+
+  if (target.closest('#sl-foundation-create')) {
+    void buildFoundations();
+  }
 });
 
 document.addEventListener('change', (event) => {
@@ -374,6 +506,57 @@ window.onmessage = (event: MessageEvent): void => {
       state.aiEnabled = msg.value;
       selection.aiEnabled = msg.value;
       paint();
+      return;
+
+    case 'foundation':
+      onFoundationMessage(msg.dump);
+      foundationScreen = { kind: 'ready' };
+      paint();
+      return;
+
+    case 'foundationError':
+      foundationRequested = false;
+      foundationScreen = { kind: 'error', message: msg.message };
+      paint();
+      return;
+
+    case 'foundationProgress':
+      foundationScreen = {
+        kind: 'generating',
+        done: msg.done,
+        total: msg.total,
+      };
+      paint();
+      return;
+
+    case 'foundationDone':
+      // A docId belongs to a Library row update. The Library migration handles
+      // that branch; this one owns only the bulk Foundation workflow.
+      if (msg.docId) return;
+      setFoundationGenerating(false);
+      foundationScreen = {
+        kind: 'result',
+        created: msg.created,
+        replaced: msg.replaced,
+        ...(foundationAiNote ? { note: foundationAiNote } : {}),
+      };
+      foundationAiNote = '';
+      paint();
+      completeOperation();
+      void refreshQuota();
+      return;
+
+    case 'foundationFrameError':
+      setFoundationGenerating(false);
+      foundationScreen = {
+        kind: 'result',
+        created: msg.created,
+        replaced: 0,
+        error: msg.message,
+      };
+      foundationAiNote = '';
+      paint();
+      completeOperation();
       return;
 
     default:

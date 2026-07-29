@@ -319,7 +319,7 @@ describe('panel copy', () => {
 
   it('mentions a split in the row meta, and stays quiet about one frame', () => {
     const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }] };
-    expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · splits into 3 frames');
+    expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · + 3 frames');
     expect(collectionMeta(c, 1)).toBe('170 variables · 1 mode');
   });
 
@@ -331,7 +331,7 @@ describe('panel copy', () => {
   it('describes the text-styles row', () => {
     expect(textStyleMeta(5, 1)).toBe('5 styles');
     expect(textStyleMeta(1, 1)).toBe('1 style');
-    expect(textStyleMeta(200, 2)).toBe('200 styles · splits into 2 frames');
+    expect(textStyleMeta(200, 2)).toBe('200 styles · + 2 frames');
   });
 
   it('names the frame count on the button, singular included', () => {

@@ -251,14 +251,14 @@ export function collectionMeta(c: FoundationSummaryCollection, frames: number): 
     plural(c.modes.length, 'mode', 'modes'),
   ];
   // Only worth saying when it is not the obvious one frame.
-  if (frames > 1) parts.push(`splits into ${frames} frames`);
+  if (frames > 1) parts.push(`+ ${frames} frames`);
   return parts.join(' · ');
 }
 
 /** The text-styles row's second line. */
 export function textStyleMeta(count: number, frames: number): string {
   const parts = [plural(count, 'style', 'styles')];
-  if (frames > 1) parts.push(`splits into ${frames} frames`);
+  if (frames > 1) parts.push(`+ ${frames} frames`);
   return parts.join(' · ');
 }
 

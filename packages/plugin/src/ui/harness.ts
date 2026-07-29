@@ -12,11 +12,24 @@
  * thing we are verifying.
  */
 
-import type { AllowanceState, ComponentScreenState, PluginView } from './viewModel/contracts';
+import type { FoundationSpec, FoundationSelection } from '@spec-layer/extractor';
+import type {
+  AllowanceState,
+  ComponentScreenState,
+  FoundationScreenState,
+  PluginView,
+} from './viewModel/contracts';
 import type { GroupId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
+import { renderFoundationScreen } from './screens/foundations';
+import {
+  clearAll,
+  selectAll,
+  toggleCollection,
+  toggleTextStyles,
+} from './foundationState';
 import { type ThemeMode } from './theme';
 import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
 
@@ -114,4 +127,125 @@ if (view === 'component') {
   const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
   selection.variantIds = new Set(facts.defaultVariantIds);
   renderComponentScreen(refs, screen, selection, facts);
+}
+
+const FOUNDATION_SPEC = {
+  collections: [
+    {
+      id: 'mapped-colors',
+      name: 'Mapped Colors',
+      defaultModeId: 'light',
+      modes: [
+        { modeId: 'light', name: 'Light' },
+        { modeId: 'dark', name: 'Dark' },
+        { modeId: 'contrast', name: 'High contrast' },
+      ],
+      variables: Array.from({ length: 138 }, (_, index) => ({
+        id: `color-${index}`,
+        name: `Mapped/Color ${index + 1}`,
+        resolvedType: 'COLOR',
+        valuesByMode: {},
+      })),
+    },
+    {
+      id: 'foundation',
+      name: 'Foundation',
+      defaultModeId: 'default',
+      modes: [{ modeId: 'default', name: 'Default' }],
+      variables: Array.from({ length: 178 }, (_, index) => ({
+        id: `foundation-${index}`,
+        name: `Group ${Math.min(5, Math.floor(index / 36) + 1)}/Token ${index + 1}`,
+        resolvedType: 'FLOAT',
+        valuesByMode: {},
+      })),
+    },
+    {
+      id: 'mapped-density',
+      name: 'Mapped Density',
+      defaultModeId: 'comfortable',
+      modes: [
+        { modeId: 'compact', name: 'Compact' },
+        { modeId: 'comfortable', name: 'Comfortable' },
+        { modeId: 'spacious', name: 'Spacious' },
+      ],
+      variables: Array.from({ length: 24 }, (_, index) => ({
+        id: `density-${index}`,
+        name: `Density/Token ${index + 1}`,
+        resolvedType: 'FLOAT',
+        valuesByMode: {},
+      })),
+    },
+    {
+      id: 'mapped-radius',
+      name: 'Mapped Radius',
+      defaultModeId: 'default',
+      modes: [
+        { modeId: 'compact', name: 'Compact' },
+        { modeId: 'default', name: 'Default' },
+        { modeId: 'rounded', name: 'Rounded' },
+        { modeId: 'pill', name: 'Pill' },
+      ],
+      variables: Array.from({ length: 7 }, (_, index) => ({
+        id: `radius-${index}`,
+        name: `Radius/Token ${index + 1}`,
+        resolvedType: 'FLOAT',
+        valuesByMode: {},
+      })),
+    },
+  ],
+  textStyles: Array.from({ length: 21 }, (_, index) => ({
+    id: `style-${index}`,
+    name: `Text style ${index + 1}`,
+  })),
+} as unknown as FoundationSpec;
+
+const FOUNDATION_SELECTION: FoundationSelection = {
+  collections: FOUNDATION_SPEC.collections.map((collection) => ({
+    collectionId: collection.id,
+    modeIds: collection.modes.slice(0, 4).map((mode) => mode.modeId),
+  })),
+  textStyles: true,
+};
+
+if (view === 'foundations') {
+  const stateName = param('state', 'ready');
+  const state: FoundationScreenState =
+    stateName === 'loading' ? { kind: 'loading' }
+      : stateName === 'error' ? { kind: 'error', message: 'Could not read this file.' }
+        : stateName === 'progress' ? { kind: 'generating', done: 2, total: 9 }
+          : stateName === 'result' ? { kind: 'result', created: 4, replaced: 5 }
+            : { kind: 'ready' };
+  let foundationSelection = param('selection', 'all') === 'partial'
+    ? {
+        collections: FOUNDATION_SELECTION.collections.slice(0, 2),
+        textStyles: false,
+      }
+    : FOUNDATION_SELECTION;
+  renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    if (target.closest('[data-foundation-bulk]')) {
+      const all = foundationSelection.collections.length === FOUNDATION_SPEC.collections.length
+        && foundationSelection.textStyles;
+      foundationSelection = all ? clearAll() : selectAll(FOUNDATION_SPEC);
+      renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+      return;
+    }
+
+    const source = target.closest<HTMLButtonElement>('[data-foundation-source]');
+    if (!source?.dataset.foundationSource) return;
+    const checked = source.getAttribute('aria-pressed') !== 'true';
+    foundationSelection = source.dataset.textStyles === 'true'
+      ? toggleTextStyles(foundationSelection, checked)
+      : toggleCollection(
+          foundationSelection,
+          FOUNDATION_SPEC,
+          source.dataset.foundationSource,
+          checked,
+        );
+    renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+  });
 }

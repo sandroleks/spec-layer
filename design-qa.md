@@ -1,4 +1,4 @@
-# Selected Component Screen — Design QA
+# Plugin UI vNext — Design QA
 
 ## Comparison target
 
@@ -86,5 +86,82 @@ No actionable P0/P1/P2 findings remain.
 
 - [P3] Add the live Library count to the new shell when the host exposes that data.
 - [P3] Wire Help & feedback when that workflow is implemented.
+
+---
+
+# Foundation Documents Screen
+
+## Comparison target
+
+- Source visual truth (dark): `docs/plugin-ui-vnext/prototype/foundation-selection-after.png`
+- Source visual truth (light): `docs/plugin-ui-vnext/prototype/light-theme-foundations-final-v2.png`
+- Rendered implementation (dark): `docs/plugin-ui-vnext/prototype/implementation-foundations-vnext.png`
+- Rendered implementation (light): `docs/plugin-ui-vnext/prototype/implementation-foundations-vnext-light.png`
+- Side-by-side evidence: `docs/plugin-ui-vnext/prototype/qa-foundations-vnext-comparison.png` and `docs/plugin-ui-vnext/prototype/qa-foundations-vnext-light-comparison.png`
+- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=foundations&state=ready&selection=all`
+- State: all five sources included, nine generated frames, ready to create.
+
+## Normalization
+
+- Source pixels: 480 × 680 in both themes.
+- Implementation pixels: 480 × 680 in both themes.
+- CSS viewport: 480 × 680.
+- Density: 1 CSS pixel to 1 output pixel; no crop or resampling.
+
+## Full-view and focused comparison evidence
+
+The equal-density side-by-side artifacts preserve every pixel and keep all five
+rows, their secondary metadata, the bulk control, and footer action legible.
+No separate focused crop was needed. The 48px header, 38px toolbar, 54px rows,
+14px horizontal row margin, 56px footer, and full-width 30px primary action
+align with the source in dark and light themes.
+
+The implementation has no horizontal overflow (`clientWidth` and `scrollWidth`
+are both 428px for the main screen) and produced no browser warnings or errors.
+The select-all control, individual Foundation source toggle, frame-count update,
+mixed state, clear-all state, and disabled zero-selection action were exercised.
+
+## Required fidelity surfaces
+
+- Fonts and typography: heading, toolbar, row title, secondary metadata, and CTA
+  use the source hierarchy, weights, and sizes without wrapping or truncation.
+- Spacing and layout rhythm: header, toolbar, row cadence, divider insets, rail,
+  and footer geometry match at the native viewport.
+- Colors and visual tokens: dark/light canvas, chrome, borders, accent blue,
+  muted text, success-green source icons, hover states, and disabled action use
+  the production token set and visibly align with the references.
+- Image and asset fidelity: the screen has no raster imagery. The source icon is
+  the shared official Tabler puzzle path, not a handcrafted substitute.
+- Copy and content: flat-source labels, count copy, `+ 5 frames` metadata,
+  Select/Clear all labels, and `Create 9 frames` match the prototype.
+
+## Comparison history
+
+### Iteration 0 — blocked
+
+- [P2] The harness fixture planned one frame for the large Foundation collection,
+  so the row omitted the split and the CTA said `Create 5 frames`.
+- [P2] The runtime metadata used the older `splits into 5 frames` copy instead of
+  the approved compact `+ 5 frames` treatment.
+
+Fixes: modeled the five real top-level Foundation groups in the harness and
+updated the shared frame metadata copy.
+
+### Iteration 1 — passed
+
+Evidence: `docs/plugin-ui-vnext/prototype/qa-foundations-vnext-comparison.png`
+and `docs/plugin-ui-vnext/prototype/qa-foundations-vnext-light-comparison.png`.
+
+No actionable P0, P1, or P2 findings remain. The allowance fixture reads
+`8 of 10` rather than the source capture’s `4 of 5`; this is expected dynamic
+runtime content and does not change shell geometry.
+
+## Implementation checklist
+
+- [x] Match flat source list and exact native spacing.
+- [x] Preserve real frame planning and five-group Foundation split.
+- [x] Implement individual, mixed, select-all, and clear-all states.
+- [x] Match dark and light themes.
+- [x] Verify overflow and browser console.
 
 final result: passed
