@@ -275,25 +275,40 @@
 
 .sl-screen-footer {
   min-height: var(--sl-footer-height);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  align-content: center;
   gap: 6px;
   padding: 8px 12px;
   background: var(--sl-color-chrome);
   border-top: 1px solid var(--sl-color-border);
 }
 
-.sl-screen-footer > .sl-button[data-tone="primary"] {
+.sl-footer-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.sl-footer-actions > .sl-button[data-tone="primary"] {
   min-width: 118px;
 }
 
-.sl-screen-footer > .sl-button {
+.sl-footer-actions > .sl-button {
   height: 30px;
   gap: 6px;
   padding-inline: 11px;
   border-radius: 6px;
   font-size: 10.5px;
+}
+
+.sl-footer-progress {
+  min-width: 0;
+}
+
+.sl-footer-progress .sl-work-status {
+  padding: 7px 9px;
 }
 
 .sl-utility-header > .sl-icon-button {
@@ -308,10 +323,6 @@
 .sl-component-screen .sl-screen-scroll {
   overflow-x: hidden;
   padding: 0 0 68px;
-}
-
-.sl-component-screen .sl-screen-status {
-  margin: 0 12px 8px 14px;
 }
 
 .sl-component-controls {
@@ -856,15 +867,11 @@ body[data-theme="light"] .sl-library-overflow-menu {
   background: var(--sl-color-border);
 }
 
-.sl-library-progress {
-  margin: 0 10px 8px 14px;
-}
-
 .sl-library-screen .sl-empty-state {
   min-height: 260px;
 }
 
-.sl-library-screen .sl-screen-footer > .sl-button:first-child {
+.sl-library-screen .sl-footer-actions > .sl-button:first-child {
   margin-left: auto;
 }
 
@@ -1347,10 +1354,6 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-foundation-screen .sl-screen-scroll {
   padding: 0;
   overflow-x: hidden;
-}
-
-.sl-foundation-loading > .sl-work-status {
-  margin: 0 14px 8px;
 }
 
 /* --------------------------------------------------------------------------

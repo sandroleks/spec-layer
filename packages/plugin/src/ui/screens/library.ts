@@ -321,9 +321,6 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
       `<span>${label}</span><small>${count}</small></button>`
     )).join('') +
     '</div>';
-  const progress = model.progress
-    ? `<div class="sl-library-progress">${progressMarkup(model.progress)}</div>`
-    : '';
   const content = model.loading
     ? loadingRowsMarkup(5)
     : model.rows.length
@@ -334,7 +331,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
       )
       : emptyMarkup(model.filter, model.allRows.length > 0);
 
-  return filterMarkup + progress + content;
+  return filterMarkup + content;
 }
 
 export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
@@ -351,13 +348,19 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     : model.counts.updates > 0
       ? `Update all ${model.counts.updates}`
       : 'Up to date';
+  const progress = model.progress
+    ? `<div class="sl-footer-progress">${progressMarkup(model.progress)}</div>`
+    : '';
   return (
+    progress +
+    '<div class="sl-footer-actions">' +
     '<button class="sl-button sl-library-refresh" data-tone="secondary" ' +
     `type="button" data-library-refresh${busy ? ' disabled' : ''}>` +
     `${icon('refresh', 16)}<span>${refreshLabel}</span></button>` +
     '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
     `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
-    `${icon('refresh', 16)}<span>${batchLabel}</span></button>`
+    `${icon('refresh', 16)}<span>${batchLabel}</span></button>` +
+    '</div>'
   );
 }
 

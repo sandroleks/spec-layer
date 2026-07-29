@@ -431,6 +431,10 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - Component reading/building, Foundation reading/building, Library refresh,
   batch update, and download preparation share the original loader's sparkle,
   shimmer, phase copy, and reduced-motion behavior.
+- Progress is grouped with the action that started it: directly above the
+  footer button row with a 6px gap. It no longer displaces page controls,
+  source rows, filters, or Library documents. Before/after evidence and the UX
+  audit are in `docs/plugin-ui-vnext/audits/2026-07-29-progress-placement/`.
 - Foundation and Library batch progress use real `done / total` values and
   accessible progressbar attributes. Indeterminate work does not invent a
   percentage.

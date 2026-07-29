@@ -74,13 +74,19 @@ describe('foundation screen', () => {
   });
 
   it('shows loading, real progress, and persistent read errors honestly', () => {
-    expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('Reading this file');
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('sl-loading-row');
-    expect(foundationScrollMarkup(
+    expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).not.toContain('sl-work-status');
+    expect(foundationFooterMarkup({ kind: 'loading' }, null, ALL)).toContain('Reading this file');
+    expect(foundationFooterMarkup(
       { kind: 'generating', done: 1, total: 3, phase: 'Laying out the tables' },
       SPEC,
       ALL,
     )).toContain('Laying out the tables');
+    expect(foundationFooterMarkup(
+      { kind: 'generating', done: 1, total: 3 },
+      SPEC,
+      ALL,
+    )).toContain('1 of 3');
     expect(foundationScrollMarkup(
       { kind: 'result', created: 2, replaced: 1 },
       SPEC,

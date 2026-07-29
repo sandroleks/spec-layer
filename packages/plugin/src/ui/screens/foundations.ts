@@ -43,6 +43,16 @@ function resultMarkup(state: FoundationScreenState): string {
   if (state.kind === 'error') {
     return `<div class="sl-banner" data-tone="danger">${esc(state.message)}</div>`;
   }
+  return '';
+}
+
+function footerProgressMarkup(state: FoundationScreenState): string {
+  if (state.kind === 'loading') {
+    return progressMarkup({
+      label: 'Reading this file',
+      detail: 'Loading local variables and text styles',
+    });
+  }
   if (state.kind === 'generating') {
     return progressMarkup({
       label: state.phase ?? 'Creating foundation frames',
@@ -87,10 +97,6 @@ export function foundationScrollMarkup(
   if (state.kind === 'loading') {
     return (
       '<div class="sl-foundation-loading">' +
-      progressMarkup({
-        label: 'Reading this file',
-        detail: 'Loading local variables and text styles',
-      }) +
       loadingRowsMarkup(4) +
       '</div>'
     );
@@ -154,10 +160,14 @@ export function foundationFooterMarkup(
     : frames > 0
       ? createButtonLabel(frames)
       : 'Select sources to continue';
+  const progress = footerProgressMarkup(state);
   return (
+    (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
+    '<div class="sl-footer-actions">' +
     '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
     `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
-    `${esc(label)}</button>`
+    `${esc(label)}</button>` +
+    '</div>'
   );
 }
 

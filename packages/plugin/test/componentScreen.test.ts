@@ -302,11 +302,15 @@ describe('component screen markup', () => {
   });
 
   it('names slow download work accurately', () => {
-    expect(componentFooterMarkup({
+    const footer = componentFooterMarkup({
       kind: 'building',
       componentName: 'Button',
       action: 'download',
-    })).toContain('Downloading…');
+      phase: 'Saving the markdown',
+    });
+    expect(footer).toContain('Downloading…');
+    expect(footer).toContain('Saving the markdown');
+    expect(footer).toContain('sl-footer-progress');
   });
 
   it('keeps a successful build downloadable without rendering a plugin toast', () => {
@@ -332,6 +336,12 @@ describe('component screen markup', () => {
       action: 'create',
       phase: 'Placing the frame on the canvas',
     })).toContain('Placing the frame on the canvas');
+    expect(componentFooterMarkup({
+      kind: 'building',
+      componentName: 'Button',
+      action: 'create',
+      phase: 'Placing the frame on the canvas',
+    })).toContain('sl-footer-progress');
   });
 });
 

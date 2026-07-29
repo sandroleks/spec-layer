@@ -223,7 +223,7 @@ describe('library screen presentation', () => {
   });
 
   it('renders useful loading and empty states', () => {
-    expect(libraryScrollMarkup(model({
+    expect(libraryFooterMarkup(model({
       loading: true,
       progress: {
         label: 'Reading Library',
@@ -245,7 +245,7 @@ describe('library screen presentation', () => {
   });
 
   it('shows real batch progress without rendering an in-plugin toast', () => {
-    const markup = libraryScrollMarkup(model({
+    const markup = libraryFooterMarkup(model({
       updatingAll: true,
       progress: {
         label: 'Updating document 2 of 4',
@@ -257,5 +257,13 @@ describe('library screen presentation', () => {
     expect(markup).toContain('1 of 4');
     expect(markup).toContain('role="progressbar"');
     expect(markup).not.toContain('sl-banner');
+    expect(libraryScrollMarkup(model({
+      updatingAll: true,
+      progress: {
+        label: 'Updating document 2 of 4',
+        current: 1,
+        total: 4,
+      },
+    }))).not.toContain('sl-work-status');
   });
 });

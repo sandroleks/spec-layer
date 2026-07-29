@@ -297,9 +297,6 @@ export function componentScrollMarkup(
     .join('');
 
   return (
-    '<div class="sl-screen-status" id="sl-component-status" role="status" aria-live="polite">' +
-    componentStatusMarkup(state) +
-    '</div>' +
     `<fieldset class="sl-component-controls"${busy ? ' disabled aria-busy="true"' : ''}>` +
     (facts.isAtom ? atomNoticeMarkup() : '') +
     aiControlMarkup(selection.aiEnabled) +
@@ -322,6 +319,7 @@ export function componentHeaderMarkup(state: ComponentScreenState): string {
 export function componentFooterMarkup(state: ComponentScreenState): string {
   if (state.kind === 'empty') return '';
   const busy = state.kind === 'reading' || state.kind === 'building';
+  const progress = componentStatusMarkup(state);
   const createLabel = state.kind === 'building'
     ? state.action === 'download' ? 'Downloading…' : 'Creating docs'
     : 'Create docs';
@@ -331,9 +329,12 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
         `${icon('download', 15)}Download</button>`
       : '';
   return (
+    (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
+    '<div class="sl-footer-actions">' +
     download +
     `<button class="sl-button" data-tone="primary" id="sl-create" type="button"` +
-    `${busy ? ' disabled' : ''}>${icon('fileDescription', 15)}${createLabel}</button>`
+    `${busy ? ' disabled' : ''}>${icon('fileDescription', 15)}${createLabel}</button>` +
+    '</div>'
   );
 }
 
@@ -379,7 +380,4 @@ export function renderComponentScreen(
   refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts);
   refs.footer.innerHTML = componentFooterMarkup(state);
   refs.footer.hidden = state.kind === 'empty';
-
-  const status = document.getElementById('sl-component-status');
-  if (status) status.innerHTML = componentStatusMarkup(state);
 }
