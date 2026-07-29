@@ -461,3 +461,39 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - [x] No Figma bridge was used.
 
 final result: passed
+
+# Section List Interactions
+
+## Source and implementation
+
+- Source behavior: the original section list allowed selecting or clearing an
+  entire category and gave individual rows a pointer hover state.
+- Rendered implementation:
+  `http://127.0.0.1:4189/ui-harness.html?view=component&state=ready&facts=states&expand=usage&allowance=normal&theme=dark`.
+- Source/implementation comparison and interaction evidence are in
+  `docs/plugin-ui-vnext/audits/2026-07-29-section-list-interactions/`.
+
+## Findings
+
+- Usage, Specifications, and Accessibility now expose a compact `Select all` or
+  `Clear all` action beside the category count.
+- Bulk selection is independent from disclosure expansion and preserves focus
+  after the screen updates.
+- Unavailable sections are excluded from the category total and remain
+  disabled when `Select all` runs.
+- Available section rows use a full-width hover surface without moving
+  surrounding content. Keyboard focus uses the same footprint with an accent
+  surface, while disabled rows do not imply interactivity.
+- The actions and row states fit the native 480 × 680 viewport in dark and
+  light themes.
+
+## Verification
+
+- [x] Category select and clear actions pass live browser interaction checks.
+- [x] Unavailable Specifications sections remain disabled and unchecked.
+- [x] Disclosure and bulk controls have separate accessible names.
+- [x] Dark/light row feedback and category layout pass visual QA.
+- [x] All 112 test files (1,430 tests), focused lint, and TypeScript pass.
+- [x] No Figma bridge was used.
+
+final result: passed

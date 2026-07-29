@@ -39,7 +39,10 @@ import { renderLicenseScreen } from './screens/license';
 import { renderLibraryScreen } from './screens/library';
 import { globalSearchMarkup } from './screens/search';
 import {
+  applyGroupBulk,
   componentDocSelection,
+  sectionGroups,
+  unavailableSections,
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
@@ -1116,6 +1119,27 @@ document.addEventListener('click', (event) => {
   // Component and Foundation controls are inert while an async build/download
   // owns shared UiState.
   if (operation.active) return;
+
+  const groupBulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
+  if (groupBulk?.dataset.groupBulk) {
+    const groupId = groupBulk.dataset.groupBulk as GroupId;
+    const unavailable = unavailableSections(facts);
+    const groupState = sectionGroups(
+      selection.sections,
+      selection.expanded,
+      selection.aiEnabled,
+      unavailable,
+    ).find((item) => item.id === groupId);
+    if (!groupState) return;
+    applyGroupBulk(
+      selection.sections,
+      groupId,
+      groupState.included < groupState.total,
+      unavailable,
+    );
+    paintAndFocus(`[data-group-bulk="${groupId}"]`);
+    return;
+  }
 
   const group = target.closest<HTMLButtonElement>('[data-group]');
   if (group?.dataset.group) {

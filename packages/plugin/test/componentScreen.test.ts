@@ -256,13 +256,23 @@ describe('component screen markup', () => {
     expect(markup).toContain('data-variant="1:1" aria-label="Size: Small" disabled');
   });
 
-  it('uses prototype group icons without adding bulk-action clutter', () => {
+  it('keeps disclosure and bulk selection as separate category actions', () => {
     const selection = createComponentSelection(true);
     const markup = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
     expect(markup).toContain('data-group="usage"');
     expect(markup).toContain('data-group="specs"');
     expect(markup).toContain('data-group="a11y"');
-    expect(markup).not.toContain('data-group-bulk');
+    expect(markup).toContain('data-group-bulk="usage" aria-label="Select all Usage sections"');
+    expect(markup).toContain('data-group-bulk="specs" aria-label="Clear all Specifications sections"');
+    expect(markup).toContain('data-group-bulk="a11y" aria-label="Clear all Accessibility sections"');
+  });
+
+  it('marks unavailable rows so hover does not imply they can be selected', () => {
+    const selection = createComponentSelection(true);
+    const markup = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
+    expect(markup).toContain(
+      '<div class="sl-section-row is-disabled"><label class="sl-choice">',
+    );
   });
 
   it('keeps collapsed section controls out of the accessibility tree', () => {

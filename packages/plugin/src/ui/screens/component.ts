@@ -110,7 +110,7 @@ function checkboxRow(option: {
     ? `<span class="sl-type-support"> · ${esc(option.note)}</span>`
     : '';
   return (
-    '<div class="sl-section-row">' +
+    `<div class="sl-section-row${option.disabled ? ' is-disabled' : ''}">` +
     '<label class="sl-choice">' +
     `<input class="sl-choice-input" type="checkbox" data-section="${esc(option.id)}"` +
     `${option.selected ? ' checked' : ''}${option.disabled ? ' disabled' : ''} />` +
@@ -242,8 +242,11 @@ function groupMarkup(
       }) + details;
     })
     .join('');
+  const allIncluded = group.total > 0 && group.included === group.total;
+  const bulkLabel = allIncluded ? 'Clear all' : 'Select all';
   return (
     '<div class="sl-disclosure sl-section-group">' +
+    `<div class="sl-section-group-header" data-expanded="${group.expanded}">` +
     `<button class="sl-disclosure-trigger" type="button" data-group="${group.id}" ` +
       `aria-expanded="${group.expanded}" aria-controls="${panelId}">` +
       `<span class="sl-section-group-title">${icon(GROUP_ICONS[group.id], 17)}` +
@@ -251,6 +254,10 @@ function groupMarkup(
       `<span class="sl-section-count">${includedLabel(group)}</span>` +
       `<span data-chevron aria-hidden="true">${icon('chevronDown', 16)}</span>` +
       '</button>' +
+    `<button class="sl-section-group-bulk" type="button" data-group-bulk="${group.id}" ` +
+      `aria-label="${bulkLabel} ${esc(group.label)} sections"` +
+      `${group.total === 0 ? ' disabled' : ''}>${bulkLabel}</button>` +
+    '</div>' +
     `<div class="sl-disclosure-panel" id="${panelId}"${group.expanded ? '' : ' hidden'}>` +
     `<div><div class="sl-section-rows">${rows}</div></div>` +
     '</div>' +

@@ -26,7 +26,7 @@ import type {
   PluginView,
 } from './viewModel/contracts';
 import type { LibraryEntry } from '../messages';
-import type { GroupId } from './docModel';
+import type { GroupId, SectionId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
@@ -57,6 +57,11 @@ import {
   nextSearchIndex,
   type SearchDocument,
 } from './viewModel/search';
+import {
+  applyGroupBulk,
+  sectionGroups,
+  unavailableSections,
+} from './viewModel/componentScreen';
 
 /**
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
@@ -151,7 +156,52 @@ if (view === 'component') {
   const fallbackFacts = screen.kind === 'reading' ? 'unknown' : 'none';
   const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
   selection.variantIds = new Set(facts.defaultVariantIds);
-  renderComponentScreen(refs, screen, selection, facts);
+  const renderComponentFixture = () => renderComponentScreen(refs, screen, selection, facts);
+  renderComponentFixture();
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const bulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
+    if (bulk?.dataset.groupBulk) {
+      const groupId = bulk.dataset.groupBulk as GroupId;
+      const unavailable = unavailableSections(facts);
+      const groupState = sectionGroups(
+        selection.sections,
+        selection.expanded,
+        selection.aiEnabled,
+        unavailable,
+      ).find((item) => item.id === groupId);
+      if (!groupState) return;
+      applyGroupBulk(
+        selection.sections,
+        groupId,
+        groupState.included < groupState.total,
+        unavailable,
+      );
+      renderComponentFixture();
+      document.querySelector<HTMLButtonElement>(`[data-group-bulk="${groupId}"]`)?.focus();
+      return;
+    }
+    const group = target.closest<HTMLButtonElement>('[data-group]');
+    if (group?.dataset.group) {
+      const groupId = group.dataset.group as GroupId;
+      if (selection.expanded.has(groupId)) selection.expanded.delete(groupId);
+      else selection.expanded.add(groupId);
+      renderComponentFixture();
+      document.querySelector<HTMLButtonElement>(`[data-group="${groupId}"]`)?.focus();
+    }
+  });
+
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.dataset.section) return;
+    const sectionId = input.dataset.section as SectionId;
+    if (input.checked) selection.sections.add(sectionId);
+    else selection.sections.delete(sectionId);
+    renderComponentFixture();
+    document.querySelector<HTMLInputElement>(`[data-section="${sectionId}"]`)?.focus();
+  });
 }
 
 const FOUNDATION_SPEC = {
