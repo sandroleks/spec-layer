@@ -21,6 +21,7 @@ import type { GroupId, SectionId } from './docModel';
 import type {
   ComponentScreenState,
   FoundationScreenState,
+  LicenseState,
   PluginView,
 } from './viewModel/contracts';
 import { allowanceState } from './viewModel/allowance';
@@ -33,6 +34,7 @@ import {
 } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen } from './screens/settings';
+import { renderLicenseScreen } from './screens/license';
 import {
   componentDocSelection,
 } from './viewModel/componentScreen';
@@ -61,13 +63,25 @@ import {
   send,
   setAiEnabled,
   setBrandTheme,
+  setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
   type BuildPresenter,
 } from './actions';
 import { generateGroupDescriptions } from './ai';
 import { hasColorGroups } from './foundationState';
-import { effectiveAuth, fetchQuota, groupErrorCopy } from './proxy';
+import {
+  CHECKOUT_URL,
+  MANAGE_SUB_URL,
+  SITE_URL,
+  STOREFRONT_URL,
+  activateLicense as activateLicenseKey,
+  deactivateLicense,
+  effectiveAuth,
+  fetchQuota,
+  groupErrorCopy,
+  isQuotaExhausted,
+} from './proxy';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -91,6 +105,8 @@ let settingsLogoError = '';
 let settingsFonts: string[] = [];
 let settingsFontsRequested = false;
 let settingsCustomDraft: BrandTheme | null = null;
+let licenseScreenState: LicenseState = 'checking';
+let licenseInput = '';
 
 setFoundationHost({
   repaint: () => {
@@ -143,7 +159,6 @@ function paint(): void {
       });
       return;
     case 'library':
-    case 'license':
       refs.screen.className = 'sl-screen';
       refs.pageHeader.hidden = true;
       refs.footer.hidden = true;
@@ -151,6 +166,20 @@ function paint(): void {
         '<div class="sl-empty-state"><strong>Not built yet</strong>' +
         '<p>This workflow still lives in the current plugin UI. It moves here next.</p></div>';
       return;
+    case 'license': {
+      const quota = state.quota;
+      const limit = quota?.limit ?? 0;
+      const remaining = quota?.remaining ?? Math.max(0, limit - (quota?.used ?? 0));
+      renderLicenseScreen(refs, {
+        state: licenseScreenState,
+        licenseKey: state.licenseKey ?? '',
+        input: licenseInput,
+        remaining,
+        limit,
+        resetsAt: quota?.resetsAt ?? '',
+      });
+      return;
+    }
   }
 }
 
@@ -160,16 +189,101 @@ function paint(): void {
 
 let quotaSeq = 0;
 
-async function refreshQuota(): Promise<void> {
+function resolvedLicenseState(): LicenseState {
+  if (!state.licenseKey) return 'free';
+  if (!state.quota) return 'unknown';
+  if (state.quota.tier === 'pro') return 'pro';
+  if (state.quota.licenseReason === 'unreachable') return 'unknown';
+  if (state.quota.licenseReason === 'expired') return 'expired';
+  return 'inactive';
+}
+
+async function refreshQuota(syncLicense = true): Promise<void> {
   const seq = ++quotaSeq;
-  const quota = await fetchQuota(
+  let quota = await fetchQuota(
     effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
   );
+  let nextActive = state.licenseActive;
+  if (state.licenseKey && state.licenseActive !== false && quota) {
+    if (quota.tier === 'pro') {
+      nextActive = true;
+    } else if (quota.licenseReason !== 'unreachable') {
+      const reason = quota.licenseReason;
+      nextActive = false;
+      const free = await fetchQuota(
+        effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, false),
+      );
+      quota = free
+        ? { ...free, licenseReason: reason }
+        : {
+            tier: 'free',
+            used: 0,
+            limit: null,
+            remaining: null,
+            resetsAt: '',
+            licenseReason: reason,
+          };
+    }
+  }
   // A slower earlier request must not clobber a newer answer.
   if (seq !== quotaSeq) return;
   state.quota = quota;
+  state.licenseActive = nextActive;
+  if (state.quota && !isQuotaExhausted(state.quota)) state.quotaExhausted = false;
   quotaFetched = true;
+  if (syncLicense) licenseScreenState = resolvedLicenseState();
   paintAllowance();
+  if (view === 'license') paint();
+}
+
+async function activateCurrentLicense(): Promise<void> {
+  const key = licenseInput.trim();
+  if (!key || licenseScreenState === 'checking') return;
+  licenseScreenState = 'checking';
+  paint();
+  try {
+    const knownInstance = key === state.licenseKey ? state.licenseInstanceId : null;
+    let result = await activateLicenseKey(key, knownInstance);
+    if (!result.valid && knownInstance) {
+      result = await activateLicenseKey(key, null);
+    }
+    if (result.valid && result.status === 'active') {
+      state.licenseActive = true;
+      setLicenseKey(state, key, result.instanceId ?? knownInstance);
+      licenseInput = key;
+      await refreshQuota();
+      return;
+    }
+    if (result.status === 'active') {
+      licenseScreenState = 'device-limit';
+    } else if (
+      result.status === 'expired' ||
+      result.status === 'inactive' ||
+      result.status === 'disabled'
+    ) {
+      licenseScreenState = result.status;
+    } else {
+      licenseScreenState = 'invalid';
+    }
+  } catch {
+    licenseScreenState = 'unreachable';
+  }
+  paint();
+}
+
+async function removeCurrentLicense(): Promise<void> {
+  if (licenseScreenState === 'removing') return;
+  licenseScreenState = 'removing';
+  paint();
+  if (state.licenseKey && state.licenseInstanceId) {
+    await deactivateLicense(state.licenseKey, state.licenseInstanceId);
+  }
+  setLicenseKey(state, '', null);
+  state.licenseActive = null;
+  licenseInput = '';
+  licenseScreenState = 'removed';
+  paint();
+  await refreshQuota(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +445,31 @@ document.addEventListener('click', (event) => {
       send({ type: 'requestFonts' });
     }
     paint();
+    return;
+  }
+
+  const licenseOpen = target.closest<HTMLButtonElement>('[data-license-open]');
+  if (licenseOpen?.dataset.licenseOpen) {
+    const urls: Record<string, string> = {
+      upgrade: CHECKOUT_URL,
+      manage: MANAGE_SUB_URL,
+      renew: STOREFRONT_URL,
+      support: SITE_URL,
+    };
+    const url = urls[licenseOpen.dataset.licenseOpen];
+    if (url) send({ type: 'openBrowser', url });
+    return;
+  }
+
+  if (target.closest('[data-license-remove]')) {
+    void removeCurrentLicense();
+    return;
+  }
+
+  if (target.closest('[data-license-retry]')) {
+    licenseInput = state.licenseKey ?? '';
+    licenseScreenState = 'inactive';
+    paintAndFocus('[data-license-input]');
     return;
   }
 
@@ -523,6 +662,22 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
   const input = event.target;
   if (!(input instanceof HTMLInputElement) || operation.active) return;
+  if (input.matches('[data-license-input]')) {
+    licenseInput = input.value;
+    const activateButton = document.querySelector<HTMLButtonElement>('[data-license-activate]');
+    if (activateButton) activateButton.disabled = !licenseInput.trim();
+    if (
+      licenseScreenState === 'invalid' ||
+      licenseScreenState === 'disabled' ||
+      licenseScreenState === 'device-limit' ||
+      licenseScreenState === 'unreachable' ||
+      licenseScreenState === 'removed'
+    ) {
+      licenseScreenState = 'free';
+      paintAndFocus('[data-license-input]');
+    }
+    return;
+  }
   const colorField = input.dataset.themeField as
     | 'headerBg'
     | 'accent'
@@ -542,6 +697,13 @@ document.addEventListener('input', (event) => {
   setBrandTheme(state, { ...state.brandTheme, [colorField]: parsed });
   settingsCustomDraft = { ...state.brandTheme };
   paintAndFocus(`[data-theme-field="${colorField}"]`);
+});
+
+document.addEventListener('submit', (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || !form.matches('[data-license-form]')) return;
+  event.preventDefault();
+  void activateCurrentLicense();
 });
 
 // ---------------------------------------------------------------------------
@@ -628,6 +790,8 @@ window.onmessage = (event: MessageEvent): void => {
     case 'licenseKey':
       state.licenseKey = msg.value;
       state.licenseInstanceId = msg.instanceId;
+      licenseInput = msg.value ?? '';
+      licenseScreenState = msg.value ? 'checking' : 'free';
       // Re-probe rather than trusting a persisted verdict: a key may have been
       // renewed or lapsed since the last session.
       state.licenseActive = null;

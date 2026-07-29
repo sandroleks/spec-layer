@@ -75,6 +75,17 @@ export const ICON_PATHS = {
     '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
     '<path d="M16 5h4v4h-4z"/><path d="M18 4v1"/><path d="M18 9v11"/>',
   check: '<path d="M5 12l5 5l10-10"/>',
+  bolt: '<path d="M13 3l-9 10h7l-1 8l9-11h-7l1-7"/>',
+  externalLink:
+    '<path d="M12 6h-6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>' +
+    '<path d="M11 13l9-9"/><path d="M15 4h5v5"/>',
+  alertCircle:
+    '<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16v.01"/>',
+  circleCheck:
+    '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3l5-6"/>',
+  refresh:
+    '<path d="M20 11a8.1 8.1 0 0 0-15.5-2m-.5-5v5h5"/>' +
+    '<path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 5v-5h-5"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

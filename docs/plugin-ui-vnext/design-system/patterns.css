@@ -970,6 +970,445 @@
   color: var(--sl-color-warning);
 }
 
+/* --------------------------------------------------------------------------
+ * License — plan, quota, activation, and device connection
+ * ----------------------------------------------------------------------- */
+
+.sl-license-screen .sl-screen-scroll {
+  padding-top: 4px;
+  padding-bottom: 18px;
+}
+
+.sl-license-plan-card {
+  padding: 13px;
+  background: var(--sl-color-chrome);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 9px;
+}
+
+.sl-license-plan-card.is-pro {
+  background: linear-gradient(
+    145deg,
+    rgba(20, 105, 176, 0.14),
+    var(--sl-color-chrome) 58%
+  );
+  border-color: rgba(40, 158, 255, 0.42);
+}
+
+.sl-license-plan-heading {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sl-license-plan-heading > span:nth-child(2) {
+  min-width: 0;
+}
+
+.sl-license-plan-heading strong,
+.sl-license-plan-heading small {
+  display: block;
+}
+
+.sl-license-plan-heading strong {
+  color: var(--sl-color-text);
+  font-size: 11.5px;
+}
+
+.sl-license-plan-heading small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--sl-color-text-muted);
+  font-size: 9.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-plan-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--sl-color-accent);
+  background: var(--sl-color-accent-soft);
+  border-radius: 7px;
+}
+
+.sl-license-plan-badge {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  color: var(--sl-color-success);
+  background: var(--sl-color-success-soft);
+  border: 1px solid color-mix(in srgb, var(--sl-color-success) 22%, transparent);
+  border-radius: var(--sl-radius-pill);
+  font-size: 8.5px;
+  font-weight: 600;
+}
+
+.sl-license-usage {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--sl-color-border-muted);
+}
+
+.sl-license-usage-copy {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--sl-color-text-muted);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+
+.sl-license-usage-copy > span:first-child strong,
+.sl-license-usage-copy > span:first-child small {
+  display: block;
+}
+
+.sl-license-usage-copy > span:first-child strong {
+  color: var(--sl-color-text);
+  font-size: 9.5px;
+}
+
+.sl-license-usage-copy > span:first-child small {
+  margin-top: 2px;
+  color: var(--sl-color-text-muted);
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.sl-license-usage-track {
+  height: 5px;
+  display: block;
+  overflow: hidden;
+  background: var(--sl-color-surface-hover);
+  border-radius: var(--sl-radius-pill);
+}
+
+.sl-license-usage-track i {
+  height: 100%;
+  display: block;
+  background: var(--sl-color-accent);
+  border-radius: inherit;
+}
+
+.sl-license-pro-benefits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(40, 158, 255, 0.17);
+}
+
+.sl-license-pro-benefits span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sl-color-text-muted);
+  font-size: 8.5px;
+}
+
+.sl-license-pro-benefits svg {
+  flex: 0 0 auto;
+  color: var(--sl-color-accent);
+}
+
+.sl-license-unknown-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 13px;
+  padding-top: 11px;
+  color: var(--sl-color-text-muted);
+  border-top: 1px solid var(--sl-color-border-muted);
+  font-size: 8.5px;
+}
+
+.sl-license-unknown-note svg {
+  flex: 0 0 auto;
+  color: var(--sl-color-accent);
+}
+
+.sl-license-plan-actions {
+  margin-top: 12px;
+}
+
+.sl-license-plan-actions .sl-button,
+.sl-connected-license-actions .sl-button,
+.sl-license-support-actions .sl-button {
+  height: 31px;
+  min-height: 31px;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+
+.sl-license-screen .sl-button[data-tone="quiet"] {
+  background: var(--sl-color-surface);
+  border-color: var(--sl-color-border);
+}
+
+.sl-license-account,
+.sl-license-activation-section {
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--sl-color-border-muted);
+}
+
+.sl-license-account > .sl-license-activation-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sl-license-account .sl-settings-section-heading {
+  margin-bottom: 10px;
+}
+
+.sl-license-account .sl-settings-section-heading h2 {
+  margin: 0 0 4px;
+  color: var(--sl-color-text);
+  font-size: 10.5px;
+}
+
+.sl-license-account .sl-settings-section-heading p {
+  margin: 0;
+  color: var(--sl-color-text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.sl-license-status-message {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+}
+
+.sl-license-status-message > svg {
+  margin-top: 1px;
+}
+
+.sl-license-status-message strong,
+.sl-license-status-message small {
+  display: block;
+}
+
+.sl-license-status-message strong {
+  color: var(--sl-color-text);
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
+.sl-license-status-message small {
+  margin-top: 3px;
+  color: var(--sl-color-text-muted);
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.sl-license-status-message.is-warning {
+  background: rgba(183, 126, 31, 0.08);
+  border-color: rgba(231, 166, 50, 0.28);
+}
+
+.sl-license-status-message.is-warning > svg {
+  color: var(--sl-color-warning);
+}
+
+.sl-license-status-message.is-danger {
+  background: rgba(190, 66, 66, 0.08);
+  border-color: rgba(226, 88, 88, 0.28);
+}
+
+.sl-license-status-message.is-danger > svg {
+  color: var(--sl-color-danger);
+}
+
+.sl-license-status-message.is-neutral > svg {
+  color: var(--sl-color-accent);
+}
+
+.sl-license-status-message.is-success {
+  background: var(--sl-color-success-soft);
+  border-color: color-mix(in srgb, var(--sl-color-success) 28%, transparent);
+}
+
+.sl-license-status-message.is-success > svg {
+  color: var(--sl-color-success);
+}
+
+.sl-license-activation-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.sl-license-field {
+  height: 34px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--sl-color-text-quiet);
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+}
+
+.sl-license-field:focus-within {
+  border-color: var(--sl-color-accent);
+  box-shadow: 0 0 0 1px var(--sl-color-accent);
+}
+
+.sl-license-field input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  color: var(--sl-color-text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 9.5px;
+}
+
+.sl-license-field input::placeholder {
+  color: var(--sl-color-text-disabled);
+}
+
+.sl-license-field input:disabled {
+  opacity: 0.6;
+}
+
+.sl-license-activation-form .sl-button {
+  min-width: 78px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+
+.sl-license-spinner,
+.sl-connected-license-status.is-removing svg,
+.sl-license-activation-form button:disabled svg {
+  animation: sl-license-spin 0.8s linear infinite;
+}
+
+@keyframes sl-license-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sl-connected-license {
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+}
+
+.sl-connected-license-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: var(--sl-color-accent);
+  background: var(--sl-color-accent-soft);
+  border-radius: 6px;
+}
+
+.sl-connected-license strong,
+.sl-connected-license small {
+  display: block;
+}
+
+.sl-connected-license strong {
+  color: var(--sl-color-text);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.sl-connected-license small {
+  margin-top: 3px;
+  color: var(--sl-color-text-muted);
+  font-size: 8.5px;
+}
+
+.sl-connected-license-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sl-color-success);
+  font-size: 8.5px;
+}
+
+.sl-connected-license-actions,
+.sl-license-support-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.sl-button.is-danger {
+  color: var(--sl-color-danger);
+}
+
+.sl-saved-license-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 7px 6px 10px;
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+}
+
+.sl-saved-license-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sl-color-text-quiet);
+}
+
+.sl-saved-license-row strong {
+  color: var(--sl-color-text);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+body[data-theme="light"] .sl-license-plan-card,
+body[data-theme="light"] .sl-license-field,
+body[data-theme="light"] .sl-connected-license,
+body[data-theme="light"] .sl-saved-license-row {
+  background: var(--sl-color-surface-raised);
+}
+
 .sl-plan-card {
   padding: 14px;
 }

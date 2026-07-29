@@ -238,4 +238,88 @@ and unfocused light Tech comparison intentionally preserve their source states.
 - [x] Match Tech, Custom, dark, and light visual states.
 - [x] Verify color validation, preset switching, overflow, and console.
 
+---
+
+# License Screen
+
+## Comparison target
+
+- Source visual truth: `docs/plugin-ui-vnext/prototype/license-free-final.png`, `license-pro-final.png`, `license-expired-final.png`, `license-device-limit-final.png`, `license-unverified-final.png`, and `light-theme-license-final-v2.png`
+- Current product override: `docs/plugin-ui-vnext/prototype/AGENTS.md` and the current prototype `App.jsx` require the standalone `License` title without a subtitle. The newest light reference already reflects that decision; the older dark state captures retain the superseded subtitle.
+- Rendered implementation: `docs/plugin-ui-vnext/prototype/implementation-license-vnext-free.png`, `implementation-license-vnext-pro.png`, `implementation-license-vnext-expired.png`, `implementation-license-vnext-device-limit.png`, `implementation-license-vnext-unknown.png`, and `implementation-license-vnext-light.png`
+- Side-by-side evidence: the six corresponding `qa-license-vnext-*-comparison.png` files.
+- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=license&licenseState=free`
+
+## Normalization
+
+- Source and implementation pixels: 480 × 680 for every state.
+- CSS viewport: 480 × 680.
+- Density: 1 CSS pixel to 1 output pixel; no crop or resampling.
+- The old dark subtitle is classified as superseded product copy, not a spacing
+  target. Plan-card and activation content remain aligned at the same y=119
+  content origin.
+
+## Full-view and focused comparison evidence
+
+Full-view evidence covers free, Pro, expired, device-limit, unverified, and
+light states. The plan card, quota meter, recovery alert, activation form,
+connected-device row, and action groups remain legible at 1:1, so a separate
+focused crop was not required. The main screen has no horizontal overflow
+(`clientWidth` and `scrollWidth` are both 428px) and no browser warnings or
+errors.
+
+Activation, invalid/recovery rendering, Pro connection, key removal, removed
+confirmation, and unverified Retry → Reconnect were exercised. Production
+activation/deactivation uses the existing proxy and client-storage messages;
+the quota refresh now reconciles active, expired/inactive, unreachable, and
+free fallback identities instead of leaving stale plan state.
+
+## Required fidelity surfaces
+
+- Fonts and typography: standalone title, plan title/detail, badge, quota copy,
+  alerts, masked key, support actions, and form copy match the approved scale.
+- Spacing and layout rhythm: 67px header, y=119 plan-card origin, 398px card,
+  compact plan sections, 16px account separation, 34px form, and action groups
+  align with the current prototype.
+- Colors and visual tokens: dark/light cards, Pro emphasis, accent meter,
+  success/warning/danger/unknown states, disabled activation, and focus states
+  use the production semantic tokens.
+- Image and asset fidelity: no raster imagery is required. Bolt, key, check,
+  alert, refresh, and external-link marks use shared official Tabler paths.
+- Copy and content: plan, quota, recovery, activation, removal, connected-device,
+  renewal, management, and support copy is state-specific and matches the
+  approved workflow.
+
+## Comparison history
+
+### Iteration 0 — blocked
+
+- [P2] Treating the standalone License header like the 48px Foundations header
+  pulled the entire account workflow 21px too high.
+- [P2] Free-plan usage inherited loose body line height and made the plan card
+  nine pixels too tall.
+- [P2] Quiet recovery/removal actions were bare text instead of bordered buttons.
+- [P2] Device-limit harness data lost the entered key, leaving the recovery form
+  disabled and visually unlike the real failure state.
+
+Fixes: restored the global 67px header, matched compact quota rhythm, restored
+quiet-button surfaces, retained failed key input, and added light-theme raised
+surfaces.
+
+### Iteration 1 — passed
+
+The newest light source and implementation now share the exact y=119 card
+origin and current no-subtitle header. Dark state differences are limited to
+the archived subtitle and dynamic allowance data: the current free plan is
+4 of 10 rather than the older 4 of 5 capture, so its meter and low-allowance
+ring correctly differ. No actionable P0, P1, or P2 findings remain.
+
+## Implementation checklist
+
+- [x] Wire active/free/expired/inactive/unknown quota reconciliation.
+- [x] Wire first activation, stored-instance retry, device limit, and outage.
+- [x] Wire subscription/store/support destinations.
+- [x] Wire best-effort deactivation and free-quota refresh.
+- [x] Verify all key visual states, interactions, overflow, and console.
+
 final result: passed

@@ -22,6 +22,7 @@ import type {
   AllowanceState,
   ComponentScreenState,
   FoundationScreenState,
+  LicenseState,
   PluginView,
 } from './viewModel/contracts';
 import type { GroupId } from './docModel';
@@ -30,6 +31,10 @@ import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
+import {
+  renderLicenseScreen,
+  type LicenseScreenModel,
+} from './screens/license';
 import {
   clearAll,
   selectAll,
@@ -383,5 +388,109 @@ if (view === 'settings') {
     };
     renderSettingsFixture();
     document.querySelector<HTMLInputElement>(`[data-theme-field="${colorField}"]`)?.focus();
+  });
+}
+
+if (view === 'license') {
+  let licenseState = param('licenseState', 'free') as LicenseState;
+  const stored = ['pro', 'expired', 'inactive', 'unknown', 'removing'].includes(licenseState);
+  const failedAttempt = [
+    'invalid',
+    'disabled',
+    'device-limit',
+    'unreachable',
+  ].includes(licenseState);
+  const fixtureKey = stored
+    ? 'SPEC-PRO-DEMO-64PN'
+    : failedAttempt
+      ? `SPEC-${licenseState.toUpperCase()}-DEMO`
+      : '';
+  let licenseModel: LicenseScreenModel = {
+    state: licenseState,
+    licenseKey: stored ? fixtureKey : '',
+    input: fixtureKey,
+    remaining: 4,
+    limit: 10,
+    resetsAt: '2026-08-01T00:00:00Z',
+  };
+  const renderLicenseFixture = () => {
+    renderAllowance(
+      refs.header,
+      licenseModel.state === 'pro' || licenseModel.state === 'removing'
+        ? { kind: 'pro' }
+        : licenseModel.state === 'unknown'
+          ? { kind: 'unknown', message: 'Plan status unavailable' }
+          : {
+              kind: 'free',
+              remaining: licenseModel.remaining,
+              limit: licenseModel.limit,
+              resetsAt: licenseModel.resetsAt,
+            },
+    );
+    renderLicenseScreen(refs, licenseModel);
+  };
+  renderLicenseFixture();
+
+  document.addEventListener('input', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.matches('[data-license-input]')) return;
+    licenseModel = {
+      ...licenseModel,
+      input: input.value,
+      state: ['invalid', 'disabled', 'device-limit', 'unreachable', 'removed'].includes(
+        licenseModel.state,
+      )
+        ? 'free'
+        : licenseModel.state,
+    };
+    const activate = document.querySelector<HTMLButtonElement>('[data-license-activate]');
+    if (activate) activate.disabled = !input.value.trim();
+  });
+
+  document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-license-form]')) return;
+    event.preventDefault();
+    const key = licenseModel.input.trim();
+    if (!key) return;
+    const normalized = key.toUpperCase();
+    licenseState = normalized.includes('EXPIRED')
+      ? 'expired'
+      : normalized.includes('INACTIVE')
+        ? 'inactive'
+        : normalized.includes('DISABLED')
+          ? 'disabled'
+          : normalized.includes('DEVICE')
+            ? 'device-limit'
+            : normalized.includes('OFFLINE')
+              ? 'unreachable'
+              : normalized.startsWith('SPEC-PRO')
+                ? 'pro'
+                : 'invalid';
+    licenseModel = {
+      ...licenseModel,
+      state: licenseState,
+      licenseKey: ['pro', 'expired', 'inactive'].includes(licenseState) ? key : '',
+    };
+    renderLicenseFixture();
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('[data-license-retry]')) {
+      licenseModel = { ...licenseModel, state: 'inactive', input: licenseModel.licenseKey };
+      renderLicenseFixture();
+      return;
+    }
+    if (target.closest('[data-license-remove]')) {
+      licenseModel = {
+        ...licenseModel,
+        state: 'removed',
+        licenseKey: '',
+        input: '',
+      };
+      renderLicenseFixture();
+    }
   });
 }
