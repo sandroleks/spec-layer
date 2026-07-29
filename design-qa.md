@@ -397,4 +397,18 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - [x] Keep the palette in the global header across every screen.
 - [x] Verify dark/light layout, empty state, focus handling, overflow, and logs.
 
+# Full vNext Regression
+
+- Rebuilt the production vNext bundle and development harness from the same
+  TypeScript/CSS sources.
+- Rechecked Component, Foundations, Settings, License free/Pro, Library, and
+  Search dark/light at the native 480 × 680 plugin viewport.
+- Every body is exactly 480 × 680 with no body overflow. Component,
+  Foundations, Settings, and License scroll regions are 428/428px
+  client/scroll width; Library and its Search background are 417/417px.
+- Footer visibility matches each workflow: Component, Foundations, and Library
+  show actions; Settings and License do not.
+- TypeScript, focused lint, all 111 test files (1,423 tests), production build,
+  whitespace checks, and browser error logs pass.
+
 final result: passed
