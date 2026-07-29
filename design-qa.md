@@ -322,4 +322,41 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - [x] Wire best-effort deactivation and free-quota refresh.
 - [x] Verify all key visual states, interactions, overflow, and console.
 
+# Library Screen
+
+## Comparison target
+
+- Source visual truth: `docs/plugin-ui-vnext/prototype/library-icon-folder-final.png`
+  and `docs/plugin-ui-vnext/prototype/light-theme-library-final-v2.png`.
+- Rendered implementation: `docs/plugin-ui-vnext/prototype/implementation-library-vnext-dark.png`
+  and `docs/plugin-ui-vnext/prototype/implementation-library-vnext-light.png`.
+- Side-by-side evidence: `docs/plugin-ui-vnext/prototype/qa-library-vnext-dark-comparison.png`
+  and `docs/plugin-ui-vnext/prototype/qa-library-vnext-light-comparison.png`.
+- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=library&state=expanded&theme=dark`.
+
+## Normalization and findings
+
+- Source and implementation are both 480 × 680 at one CSS pixel per output
+  pixel. Body width/scroll width are both 480px; the Library scroll region is
+  417px wide with no horizontal overflow.
+- The 48px title row, content-width filters, 49px document rows, 22px identity
+  slot, fixed age/menu columns, expanded border, details inset, and 56px footer
+  align with the approved final references in dark and light themes.
+- Production intentionally renders the approved hash-only fallback rather than
+  the prototype's mock itemized change groups. The live protocol can prove that
+  a source changed but does not persist a comparable prior specification.
+- All, Updates, and In sync filters return accurate counts; disclosure, menu,
+  refresh, and batch actions were exercised. The menu exposes only supported
+  component/foundation/orphan capabilities. Browser logs contain no errors.
+
+## Implementation checklist
+
+- [x] Enrich rows with honest source labels and generation ages.
+- [x] Distinguish pending, unavailable, edited, orphaned, update, and in-sync.
+- [x] Keep detailed change copy truthful when only hash drift is available.
+- [x] Wire frame/source focus, download, detach, remove, refresh, and updates.
+- [x] Run Update all sequentially through the shared operation lock.
+- [x] Update the Library rail badge from proven live drift.
+- [x] Verify dark/light layout, interactions, overflow, and browser console.
+
 final result: passed

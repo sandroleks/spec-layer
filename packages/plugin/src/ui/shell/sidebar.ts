@@ -85,3 +85,20 @@ export function sidebarMarkup(
     '</nav>'
   );
 }
+
+/** Repaint one live badge without rebuilding the rail or losing focus. */
+export function setRailBadge(
+  root: HTMLElement,
+  view: PluginView,
+  count: number,
+): void {
+  const button = root.querySelector<HTMLButtonElement>(`[data-view="${view}"]`);
+  if (!button) return;
+  button.querySelector('.sl-sidebar-badge')?.remove();
+  if (count <= 0) return;
+  const badge = document.createElement('span');
+  badge.className = 'sl-sidebar-badge';
+  badge.setAttribute('aria-hidden', 'true');
+  badge.textContent = String(count);
+  button.appendChild(badge);
+}

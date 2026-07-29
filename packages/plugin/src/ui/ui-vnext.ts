@@ -9,14 +9,14 @@
  * workflows stay explicitly unavailable until their production mapping lands.
  */
 
-import { ProseProxyError } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
   parseBrandHex,
   type BrandTheme,
 } from '../brandColors';
-import type { MainToUi } from '../messages';
+import type { LibraryEntry, MainToUi } from '../messages';
 import type { GroupId, SectionId } from './docModel';
 import type {
   ComponentScreenState,
@@ -27,6 +27,7 @@ import type {
 import { allowanceState } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
 import { renderAllowance } from './shell/header';
+import { setRailBadge } from './shell/sidebar';
 import {
   createComponentSelection,
   renderComponentScreen,
@@ -35,9 +36,15 @@ import {
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen } from './screens/settings';
 import { renderLicenseScreen } from './screens/license';
+import { renderLibraryScreen } from './screens/library';
 import {
   componentDocSelection,
 } from './viewModel/componentScreen';
+import {
+  buildLibraryModel,
+  type LibraryDriftState,
+  type LibraryFilter,
+} from './viewModel/library';
 import {
   componentFacts,
   NO_FACTS,
@@ -56,6 +63,7 @@ import {
   currentFoundationSelection,
   currentFoundationSpec,
   currentGroupBriefs,
+  downloadFromSource,
   downloadDoc,
   onFoundationChange,
   onFoundationMessage,
@@ -66,6 +74,7 @@ import {
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
+  updateFromSource,
   type BuildPresenter,
 } from './actions';
 import { generateGroupDescriptions } from './ai';
@@ -107,6 +116,32 @@ let settingsFontsRequested = false;
 let settingsCustomDraft: BrandTheme | null = null;
 let licenseScreenState: LicenseState = 'checking';
 let licenseInput = '';
+let libraryEntries: LibraryEntry[] = [];
+const libraryDrift = new Map<string, LibraryDriftState>();
+const libraryBaseline = new Map<string, string>();
+let libraryFilter: LibraryFilter = 'all';
+let libraryExpandedDocId: string | null = null;
+let libraryMenuDocId: string | null = null;
+let libraryMenuRestore: HTMLElement | null = null;
+let libraryRefreshing = false;
+let libraryRequested = false;
+let libraryNotice = '';
+let libraryNoticeTone: 'neutral' | 'success' | 'warning' | 'danger' = 'neutral';
+
+type LibraryUpdateOperation = {
+  kind: 'update';
+  queue: string[];
+  currentDocId: string | null;
+  completed: number;
+  total: number;
+  batch: boolean;
+  confirmedOverwrite: Set<string>;
+};
+type LibraryDownloadOperation = {
+  kind: 'download';
+  currentDocId: string;
+};
+let libraryOperation: LibraryUpdateOperation | LibraryDownloadOperation | null = null;
 
 setFoundationHost({
   repaint: () => {
@@ -159,12 +194,28 @@ function paint(): void {
       });
       return;
     case 'library':
-      refs.screen.className = 'sl-screen';
-      refs.pageHeader.hidden = true;
-      refs.footer.hidden = true;
-      refs.scroll.innerHTML =
-        '<div class="sl-empty-state"><strong>Not built yet</strong>' +
-        '<p>This workflow still lives in the current plugin UI. It moves here next.</p></div>';
+      {
+        const model = currentLibraryModel();
+        const update = libraryOperation?.kind === 'update' ? libraryOperation : null;
+        const pendingChecks = model.allRows.some((row) => row.status === 'pending');
+        const failedChecks = model.allRows.some((row) => row.status === 'unavailable');
+        renderLibraryScreen(refs, {
+          ...model,
+          menuDocId: libraryMenuDocId,
+          loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
+          refreshing: libraryRefreshing || pendingChecks,
+          checksIncomplete: failedChecks,
+          updatingAll: Boolean(update?.batch),
+          updatingDocId: update?.currentDocId ?? (
+            libraryOperation?.kind === 'download'
+              ? libraryOperation.currentDocId
+              : null
+          ),
+          notice: libraryNotice
+            ? { tone: libraryNoticeTone, message: libraryNotice }
+            : null,
+        });
+      }
       return;
     case 'license': {
       const quota = state.quota;
@@ -409,6 +460,187 @@ async function buildFoundations(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Library
+// ---------------------------------------------------------------------------
+
+function currentLibraryModel() {
+  return buildLibraryModel(libraryEntries, {
+    drift: libraryDrift,
+    filter: libraryFilter,
+    expandedDocId: libraryExpandedDocId,
+  });
+}
+
+function syncLibraryBadge(): void {
+  setRailBadge(refs.sidebar, 'library', currentLibraryModel().counts.updates);
+}
+
+function refreshLibrary(): void {
+  libraryRequested = true;
+  libraryRefreshing = true;
+  libraryMenuDocId = null;
+  libraryExpandedDocId = null;
+  if (view === 'library') paint();
+  send({ type: 'requestLibrary' });
+}
+
+function startLibraryDriftChecks(): void {
+  libraryDrift.clear();
+  libraryBaseline.clear();
+  for (const entry of libraryEntries) {
+    if (!entry.sourceExists) continue;
+    if (entry.kind === 'foundation') {
+      libraryDrift.set(
+        entry.docId,
+        entry.currentContentHash === undefined
+          ? 'unavailable'
+          : entry.currentContentHash === entry.storedContentHash
+            ? 'inSync'
+            : 'drifted',
+      );
+      continue;
+    }
+    libraryDrift.set(entry.docId, 'pending');
+    libraryBaseline.set(entry.docId, entry.storedContentHash);
+    send({
+      type: 'requestDrift',
+      docId: entry.docId,
+      sourceNodeId: entry.sourceNodeId,
+    });
+  }
+  syncLibraryBadge();
+}
+
+function closeLibraryMenu(restoreFocus = false): void {
+  libraryMenuDocId = null;
+  if (view === 'library') paint();
+  if (restoreFocus) {
+    const restore = libraryMenuRestore;
+    requestAnimationFrame(() => restore?.focus());
+  }
+  libraryMenuRestore = null;
+}
+
+function libraryPresenter(): BuildPresenter {
+  return {
+    clear: () => {
+      libraryNotice = '';
+      if (view === 'library') paint();
+    },
+    error: (message) => {
+      libraryNotice = message;
+      libraryNoticeTone = 'danger';
+      if (view === 'library') paint();
+    },
+    info: (message) => {
+      libraryNotice = message;
+      libraryNoticeTone = 'success';
+      if (view === 'library') paint();
+    },
+    setBusy: () => {},
+    startProgress: () => {
+      if (view === 'library') paint();
+    },
+    stopProgress: () => {},
+  };
+}
+
+function libraryEntry(docId: string): LibraryEntry | undefined {
+  return libraryEntries.find((entry) => entry.docId === docId);
+}
+
+function finishLibraryOperation(error = ''): void {
+  const active = libraryOperation;
+  if (!active) return;
+  if (active.kind === 'update') {
+    libraryNotice = error
+      ? active.completed > 0
+        ? `Updated ${active.completed} of ${active.total}. ${error}`
+        : error
+      : active.batch
+        ? `Updated ${active.completed} ${active.completed === 1 ? 'document' : 'documents'}.`
+        : 'Document updated.';
+    libraryNoticeTone = error ? 'danger' : 'success';
+  } else if (error) {
+    libraryNotice = error;
+    libraryNoticeTone = 'danger';
+  }
+  libraryOperation = null;
+  completeOperation();
+  if (view === 'library') paint();
+  refreshLibrary();
+}
+
+function dispatchNextLibraryUpdate(): void {
+  const active = libraryOperation;
+  if (!active || active.kind !== 'update') return;
+  const docId = active.queue.shift();
+  if (!docId) {
+    finishLibraryOperation();
+    return;
+  }
+  const entry = libraryEntry(docId);
+  if (!entry || !entry.sourceExists) {
+    finishLibraryOperation('A source is no longer available, so the remaining updates stopped.');
+    return;
+  }
+  active.currentDocId = docId;
+  if (entry.kind === 'foundation') {
+    send({ type: 'updateFoundationDoc', docId });
+  } else {
+    send({ type: 'requestDocSource', docId, intent: 'update' });
+  }
+  if (view === 'library') paint();
+}
+
+function startLibraryUpdates(docIds: string[], batch: boolean): void {
+  if (docIds.length === 0 || operation.active) return;
+  const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
+  if (
+    edited.length > 0 &&
+    !window.confirm(
+      batch
+        ? `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} manual edits. Updating replaces those edits.`
+        : 'You edited this frame by hand. Updating replaces those edits.',
+    )
+  ) {
+    return;
+  }
+  if (!beginOperation(operation)) return;
+  libraryOperation = {
+    kind: 'update',
+    queue: [...docIds],
+    currentDocId: null,
+    completed: 0,
+    total: docIds.length,
+    batch,
+    confirmedOverwrite: new Set(edited),
+  };
+  libraryNotice = '';
+  libraryNoticeTone = 'neutral';
+  dispatchNextLibraryUpdate();
+}
+
+function startLibraryDownload(docId: string): void {
+  const entry = libraryEntry(docId);
+  if (!entry || entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
+  if (!beginOperation(operation)) return;
+  libraryOperation = { kind: 'download', currentDocId: docId };
+  libraryNotice = '';
+  libraryNoticeTone = 'neutral';
+  paint();
+  send({ type: 'requestDocSource', docId, intent: 'download' });
+}
+
+function completeCurrentLibraryUpdate(): void {
+  const active = libraryOperation;
+  if (!active || active.kind !== 'update' || !active.currentDocId) return;
+  active.completed += 1;
+  active.currentDocId = null;
+  dispatchNextLibraryUpdate();
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
@@ -440,12 +672,131 @@ document.addEventListener('click', (event) => {
     view = rail.dataset.view as PluginView;
     setActiveView(refs, view);
     if (view === 'foundations') requestFoundations();
+    if (view === 'library') refreshLibrary();
     if (view === 'settings' && !settingsFontsRequested) {
       settingsFontsRequested = true;
       send({ type: 'requestFonts' });
     }
     paint();
     return;
+  }
+
+  const libraryFilterButton = target.closest<HTMLButtonElement>('[data-library-filter]');
+  if (libraryFilterButton?.dataset.libraryFilter) {
+    libraryFilter = libraryFilterButton.dataset.libraryFilter as LibraryFilter;
+    libraryExpandedDocId = null;
+    libraryMenuDocId = null;
+    paintAndFocus(`[data-library-filter="${libraryFilter}"]`);
+    return;
+  }
+
+  if (target.closest('[data-library-refresh]')) {
+    if (!operation.active) refreshLibrary();
+    return;
+  }
+
+  if (target.closest('[data-library-update-all]')) {
+    const model = currentLibraryModel();
+    if (
+      model.allRows.some((row) => row.status === 'pending' || row.status === 'unavailable')
+    ) {
+      libraryNotice = 'Refresh the Library before updating so every source is checked.';
+      libraryNoticeTone = 'warning';
+      paint();
+      return;
+    }
+    startLibraryUpdates(
+      model.allRows
+        .filter((row) => row.status === 'updateAvailable')
+        .map((row) => row.docId),
+      true,
+    );
+    return;
+  }
+
+  const libraryDisclosure = target.closest<HTMLButtonElement>('[data-library-disclosure]');
+  if (libraryDisclosure?.dataset.libraryDisclosure) {
+    const docId = libraryDisclosure.dataset.libraryDisclosure;
+    libraryExpandedDocId = libraryExpandedDocId === docId ? null : docId;
+    paintAndFocus(`[data-library-disclosure="${docId}"]`);
+    return;
+  }
+
+  const libraryMenu = target.closest<HTMLButtonElement>('[data-library-menu]');
+  if (libraryMenu?.dataset.libraryMenu) {
+    const docId = libraryMenu.dataset.libraryMenu;
+    if (libraryMenuDocId === docId) {
+      closeLibraryMenu(true);
+    } else {
+      libraryMenuDocId = docId;
+      libraryMenuRestore = libraryMenu;
+      paint();
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLButtonElement>(
+          `.sl-library-overflow-menu [data-doc-id="${docId}"]`,
+        )?.focus();
+      });
+    }
+    return;
+  }
+
+  if (target.closest('[data-library-menu-close]')) {
+    closeLibraryMenu(true);
+    return;
+  }
+
+  const libraryFrame = target.closest<HTMLButtonElement>('[data-library-open-frame]');
+  if (libraryFrame?.dataset.libraryOpenFrame) {
+    send({ type: 'focusNode', nodeId: libraryFrame.dataset.libraryOpenFrame });
+    return;
+  }
+
+  const libraryAction = target.closest<HTMLButtonElement>('[data-library-action]');
+  if (libraryAction?.dataset.libraryAction && libraryAction.dataset.docId) {
+    const action = libraryAction.dataset.libraryAction;
+    const docId = libraryAction.dataset.docId;
+    const entry = libraryEntry(docId);
+    closeLibraryMenu();
+    switch (action) {
+      case 'review':
+        libraryExpandedDocId = libraryExpandedDocId === docId ? null : docId;
+        paint();
+        return;
+      case 'update':
+        startLibraryUpdates([docId], false);
+        return;
+      case 'open-frame':
+        send({ type: 'focusNode', nodeId: docId });
+        return;
+      case 'open-source':
+        if (entry?.sourceNodeId) {
+          send({ type: 'focusNode', nodeId: entry.sourceNodeId });
+        }
+        return;
+      case 'download':
+        startLibraryDownload(docId);
+        return;
+      case 'detach':
+        if (
+          !operation.active &&
+          window.confirm(
+            'Detach this documentation? It stays on the canvas as a plain frame and stops tracking its source.',
+          )
+        ) {
+          send({ type: 'detachDoc', docId });
+        }
+        return;
+      case 'remove':
+        if (
+          !operation.active &&
+          window.confirm('Remove this documentation frame from the canvas?')
+        ) {
+          send({ type: 'removeDoc', docId });
+        }
+        return;
+      default:
+        return;
+    }
   }
 
   const licenseOpen = target.closest<HTMLButtonElement>('[data-license-open]');
@@ -706,6 +1057,23 @@ document.addEventListener('submit', (event) => {
   void activateCurrentLicense();
 });
 
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && libraryMenuDocId) {
+    event.preventDefault();
+    closeLibraryMenu(true);
+  }
+});
+
+refs.scroll.addEventListener('scroll', () => {
+  if (!libraryMenuDocId) return;
+  libraryMenuDocId = null;
+  libraryMenuRestore = null;
+  refs.scroll.querySelector('.sl-library-menu-scrim')?.remove();
+  refs.scroll.querySelector('.sl-library-overflow-menu')?.remove();
+  refs.scroll.querySelector<HTMLButtonElement>('[data-library-menu][aria-expanded="true"]')
+    ?.setAttribute('aria-expanded', 'false');
+}, { passive: true });
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -763,6 +1131,11 @@ window.onmessage = (event: MessageEvent): void => {
     }
 
     case 'docFrameDone':
+      if (libraryOperation?.kind === 'update' && libraryOperation.currentDocId) {
+        completeCurrentLibraryUpdate();
+        void refreshQuota();
+        return;
+      }
       {
         const note = state.pendingAiNote;
         const outcome = msg.replaced ? 'Docs replaced' : 'Docs created';
@@ -782,6 +1155,10 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'docFrameError':
+      if (libraryOperation?.kind === 'update' && libraryOperation.currentDocId) {
+        finishLibraryOperation(`Update failed: ${msg.message}`);
+        return;
+      }
       screen = { kind: 'error', componentName: currentName(), message: msg.message };
       paint();
       completeOperation();
@@ -861,7 +1238,16 @@ window.onmessage = (event: MessageEvent): void => {
     case 'foundationDone':
       // A docId belongs to a Library row update. The Library migration handles
       // that branch; this one owns only the bulk Foundation workflow.
-      if (msg.docId) return;
+      if (msg.docId) {
+        if (
+          libraryOperation?.kind === 'update' &&
+          libraryOperation.currentDocId === msg.docId
+        ) {
+          completeCurrentLibraryUpdate();
+          void refreshQuota();
+        }
+        return;
+      }
       setFoundationGenerating(false);
       foundationScreen = {
         kind: 'result',
@@ -876,6 +1262,14 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'foundationFrameError':
+      if (
+        libraryOperation?.kind === 'update' &&
+        libraryOperation.currentDocId &&
+        libraryEntry(libraryOperation.currentDocId)?.kind === 'foundation'
+      ) {
+        finishLibraryOperation(`Update failed: ${msg.message}`);
+        return;
+      }
       setFoundationGenerating(false);
       foundationScreen = {
         kind: 'result',
@@ -888,8 +1282,103 @@ window.onmessage = (event: MessageEvent): void => {
       completeOperation();
       return;
 
+    case 'library':
+      libraryRequested = true;
+      libraryEntries = msg.entries;
+      libraryMenuDocId = null;
+      startLibraryDriftChecks();
+      libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      syncLibraryBadge();
+      if (view === 'library') paint();
+      return;
+
+    case 'driftSource': {
+      const baseline = libraryBaseline.get(msg.docId);
+      if (baseline === undefined) return;
+      try {
+        const spec = extract(msg.node, { figmaFile: msg.fileKey });
+        libraryDrift.set(
+          msg.docId,
+          specContentHash(spec) === baseline ? 'inSync' : 'drifted',
+        );
+      } catch {
+        libraryDrift.set(msg.docId, 'unavailable');
+      }
+      libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      syncLibraryBadge();
+      if (view === 'library') paint();
+      return;
+    }
+
+    case 'driftError':
+      if (!libraryBaseline.has(msg.docId)) return;
+      libraryDrift.set(msg.docId, 'unavailable');
+      libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      syncLibraryBadge();
+      if (view === 'library') paint();
+      return;
+
+    case 'docSource': {
+      const active = libraryOperation;
+      if (!active || active.currentDocId !== msg.docId) return;
+      const src = {
+        docId: msg.docId,
+        node: msg.node,
+        fileKey: msg.fileKey,
+        config: msg.config,
+      };
+      if (active.kind === 'download') {
+        void downloadFromSource(state, src, libraryPresenter()).then(() => {
+          if (
+            libraryOperation?.kind !== 'download' ||
+            libraryOperation.currentDocId !== msg.docId
+          ) return;
+          libraryNotice = `Downloaded ${msg.node.name || 'component'} documentation.`;
+          libraryNoticeTone = 'success';
+          libraryOperation = null;
+          completeOperation();
+          if (view === 'library') paint();
+          void refreshQuota();
+        });
+        return;
+      }
+
+      if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
+        if (!window.confirm('You edited this frame by hand. Updating replaces those edits.')) {
+          finishLibraryOperation('Update canceled because the frame has newer manual edits.');
+          return;
+        }
+        active.confirmedOverwrite.add(msg.docId);
+      }
+      void updateFromSource(state, src, libraryPresenter()).then((dispatched) => {
+        if (!dispatched) {
+          finishLibraryOperation('The source could not be prepared, so the remaining updates stopped.');
+        }
+      });
+      return;
+    }
+
+    case 'docSourceError':
+      if (
+        libraryOperation &&
+        libraryOperation.currentDocId === msg.docId
+      ) {
+        finishLibraryOperation(msg.message);
+      }
+      return;
+
+    case 'docDetached':
+    case 'docRemoved':
+      libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
+      libraryDrift.delete(msg.docId);
+      libraryBaseline.delete(msg.docId);
+      if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
+      if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
+      syncLibraryBadge();
+      if (view === 'library') paint();
+      return;
+
     default:
-      // Every other message belongs to a workflow that has not moved here yet.
       return;
   }
 };

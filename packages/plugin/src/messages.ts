@@ -17,6 +17,10 @@ export interface LibraryEntry {
   label: string;
   componentName: string;
   pageName: string;
+  /** Honest location/source copy for the compact Library identity row. */
+  sourceLabel: string;
+  /** Last successful generation time, copied from the persisted doc link. */
+  generatedAt: number;
   /** '' for foundation docs, which have no source node. */
   sourceNodeId: string;
   sourceExists: boolean;

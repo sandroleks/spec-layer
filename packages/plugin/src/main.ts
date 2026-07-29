@@ -646,6 +646,10 @@ figma.ui.onmessage = async (raw: unknown) => {
             label: `Foundations · ${title}`,
             componentName: `Foundations · ${title}`,
             pageName: page?.name ?? '',
+            sourceLabel: data.scope.target === 'collection'
+              ? data.scope.collectionName
+              : 'Text styles',
+            generatedAt: data.generatedAt,
             sourceNodeId: '',
             sourceExists,
             selfEdited,
@@ -655,8 +659,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           continue;
         }
 
-        let sourceExists = false;
-        try { sourceExists = (await figma.getNodeByIdAsync(data.sourceNodeId)) != null; } catch { sourceExists = false; }
+        let sourceNode: BaseNode | null = null;
+        try { sourceNode = await figma.getNodeByIdAsync(data.sourceNodeId); } catch { sourceNode = null; }
+        const sourceExists = sourceNode != null;
+        const sourcePage = sourceNode ? pageOf(sourceNode) : null;
         const name = section.name.replace(/: Documentation$/, '');
         entries.push({
           docId,
@@ -664,6 +670,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           label: name,
           componentName: name,
           pageName: page?.name ?? '',
+          sourceLabel: sourcePage?.name
+            ? `${sourcePage.name} · ${name}`
+            : name,
+          generatedAt: data.generatedAt,
           sourceNodeId: data.sourceNodeId,
           sourceExists,
           selfEdited,

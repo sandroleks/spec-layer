@@ -86,6 +86,8 @@ export const ICON_PATHS = {
   refresh:
     '<path d="M20 11a8.1 8.1 0 0 0-15.5-2m-.5-5v5h5"/>' +
     '<path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 5v-5h-5"/>',
+  dots:
+    '<path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

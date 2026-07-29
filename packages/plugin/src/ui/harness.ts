@@ -25,12 +25,14 @@ import type {
   LicenseState,
   PluginView,
 } from './viewModel/contracts';
+import type { LibraryEntry } from '../messages';
 import type { GroupId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
+import { renderLibraryScreen } from './screens/library';
 import {
   renderLicenseScreen,
   type LicenseScreenModel,
@@ -43,6 +45,12 @@ import {
 } from './foundationState';
 import { type ThemeMode } from './theme';
 import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
+import {
+  buildLibraryModel,
+  type LibraryDriftState,
+  type LibraryFilter,
+} from './viewModel/library';
+import { setRailBadge } from './shell/sidebar';
 
 /**
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
@@ -258,6 +266,149 @@ if (view === 'foundations') {
           checked,
         );
     renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+  });
+}
+
+if (view === 'library') {
+  const names = [
+    'buttonPrimary',
+    'buttonText',
+    'inputField',
+    'checkbox',
+    'radioGroup',
+    'selectMenu',
+    'searchField',
+    'navigationItem',
+    'tooltip',
+    'dialog',
+    'toast',
+    'avatar',
+    'badge',
+    'pagination',
+    'Foundations · Semantic',
+    'Foundations · Typography',
+  ];
+  const now = Date.UTC(2026, 6, 29, 12);
+  const entries: LibraryEntry[] = names.map((name, index) => ({
+    docId: `doc-${index + 1}`,
+    kind: name.startsWith('Foundations') ? 'foundation' : 'component',
+    label: name,
+    componentName: name,
+    pageName: name.startsWith('Foundations') ? 'Foundations' : 'Documentation',
+    sourceLabel: name.startsWith('Foundations')
+      ? name.replace('Foundations · ', '')
+      : `Components · ${name}`,
+    generatedAt: now - (index + 1) * 3_600_000,
+    sourceNodeId: name.startsWith('Foundations') ? '' : `source-${index + 1}`,
+    sourceExists: true,
+    selfEdited: index === 6,
+    storedContentHash: `stored-${index + 1}`,
+    ...(name.startsWith('Foundations')
+      ? { currentContentHash: `stored-${index + 1}` }
+      : {}),
+  }));
+  const drift = new Map<string, LibraryDriftState>(
+    entries.map((entry, index) => [
+      entry.docId,
+      index < 3 ? 'drifted' : 'inSync',
+    ]),
+  );
+  let libraryFilter: LibraryFilter = param('filter', 'all') as LibraryFilter;
+  let expandedDocId: string | null =
+    param('state', 'expanded') === 'expanded' ? entries[0].docId : null;
+  let menuDocId: string | null =
+    param('menu', 'closed') === 'open' ? entries[0].docId : null;
+  let refreshing = param('state', 'expanded') === 'refreshing';
+  let updatingAll = param('state', 'expanded') === 'updating';
+  let notice = '';
+
+  const renderLibraryFixture = () => {
+    const model = buildLibraryModel(entries, {
+      drift,
+      filter: libraryFilter,
+      expandedDocId,
+      now,
+    });
+    setRailBadge(refs.sidebar, 'library', model.counts.updates);
+    renderLibraryScreen(refs, {
+      ...model,
+      menuDocId,
+      refreshing,
+      updatingAll,
+      notice: notice ? { tone: 'success', message: notice } : null,
+    });
+  };
+  renderLibraryFixture();
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const filterButton = target.closest<HTMLButtonElement>('[data-library-filter]');
+    if (filterButton?.dataset.libraryFilter) {
+      libraryFilter = filterButton.dataset.libraryFilter as LibraryFilter;
+      expandedDocId = null;
+      menuDocId = null;
+      renderLibraryFixture();
+      return;
+    }
+    const disclosure = target.closest<HTMLButtonElement>('[data-library-disclosure]');
+    if (disclosure?.dataset.libraryDisclosure) {
+      const docId = disclosure.dataset.libraryDisclosure;
+      expandedDocId = expandedDocId === docId ? null : docId;
+      renderLibraryFixture();
+      return;
+    }
+    const menu = target.closest<HTMLButtonElement>('[data-library-menu]');
+    if (menu?.dataset.libraryMenu) {
+      menuDocId = menuDocId === menu.dataset.libraryMenu
+        ? null
+        : menu.dataset.libraryMenu;
+      renderLibraryFixture();
+      return;
+    }
+    if (target.closest('[data-library-menu-close]')) {
+      menuDocId = null;
+      renderLibraryFixture();
+      return;
+    }
+    if (target.closest('[data-library-refresh]')) {
+      refreshing = true;
+      renderLibraryFixture();
+      window.setTimeout(() => {
+        refreshing = false;
+        notice = 'Library refreshed.';
+        renderLibraryFixture();
+      }, 450);
+      return;
+    }
+    if (target.closest('[data-library-update-all]')) {
+      updatingAll = true;
+      renderLibraryFixture();
+      window.setTimeout(() => {
+        for (const entry of entries.slice(0, 3)) drift.set(entry.docId, 'inSync');
+        updatingAll = false;
+        expandedDocId = null;
+        notice = 'Updated 3 documents.';
+        renderLibraryFixture();
+      }, 650);
+      return;
+    }
+    const action = target.closest<HTMLButtonElement>('[data-library-action]');
+    if (!action?.dataset.libraryAction || !action.dataset.docId) return;
+    const docId = action.dataset.docId;
+    menuDocId = null;
+    if (action.dataset.libraryAction === 'review') {
+      expandedDocId = expandedDocId === docId ? null : docId;
+    } else if (action.dataset.libraryAction === 'update') {
+      drift.set(docId, 'inSync');
+      expandedDocId = null;
+      notice = 'Document updated.';
+    } else if (action.dataset.libraryAction === 'remove') {
+      const index = entries.findIndex((entry) => entry.docId === docId);
+      if (index >= 0) entries.splice(index, 1);
+      drift.delete(docId);
+    }
+    renderLibraryFixture();
   });
 }
 
