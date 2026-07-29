@@ -5,11 +5,17 @@
  * legacy UI and the new shell can never both run: the legacy module is not in
  * this bundle at all.
  *
- * Only "Generate component docs" is built. The other four rail destinations say
- * so rather than pretending to be empty screens.
+ * Each migrated screen renders through the shared shell while legacy-only
+ * workflows stay explicitly unavailable until their production mapping lands.
  */
 
 import { ProseProxyError } from '@spec-layer/extractor';
+import {
+  THEME_PRESETS,
+  matchPreset,
+  parseBrandHex,
+  type BrandTheme,
+} from '../brandColors';
 import type { MainToUi } from '../messages';
 import type { GroupId, SectionId } from './docModel';
 import type {
@@ -26,6 +32,7 @@ import {
   type ComponentSelection,
 } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
+import { renderSettingsScreen } from './screens/settings';
 import {
   componentDocSelection,
 } from './viewModel/componentScreen';
@@ -53,6 +60,7 @@ import {
   onFoundationToggleAll,
   send,
   setAiEnabled,
+  setBrandTheme,
   setFoundationGenerating,
   setFoundationHost,
   type BuildPresenter,
@@ -76,6 +84,13 @@ type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
 let deferredSelection: SelectionMessage | null = null;
 let foundationRequested = false;
 let foundationAiNote = '';
+let settingsCustomMode = false;
+let settingsColorError = '';
+let settingsFontWarning = '';
+let settingsLogoError = '';
+let settingsFonts: string[] = [];
+let settingsFontsRequested = false;
+let settingsCustomDraft: BrandTheme | null = null;
 
 setFoundationHost({
   repaint: () => {
@@ -117,8 +132,17 @@ function paint(): void {
         currentFoundationSelection(),
       );
       return;
-    case 'library':
     case 'settings':
+      renderSettingsScreen(refs, {
+        theme: state.brandTheme,
+        customMode: settingsCustomMode,
+        logoAttached: Boolean(state.logoBase64),
+        ...(settingsColorError ? { colorError: settingsColorError } : {}),
+        ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
+        ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
+      });
+      return;
+    case 'library':
     case 'license':
       refs.screen.className = 'sl-screen';
       refs.pageHeader.hidden = true;
@@ -302,11 +326,52 @@ document.addEventListener('click', (event) => {
     view = rail.dataset.view as PluginView;
     setActiveView(refs, view);
     if (view === 'foundations') requestFoundations();
+    if (view === 'settings' && !settingsFontsRequested) {
+      settingsFontsRequested = true;
+      send({ type: 'requestFonts' });
+    }
     paint();
     return;
   }
 
-  // Component controls are inert while an async build/download owns UiState.
+  if (target.closest('[data-theme-preset="__custom__"]')) {
+    settingsColorError = '';
+    settingsFontWarning = '';
+    settingsCustomMode = true;
+    settingsCustomDraft ??= { ...THEME_PRESETS[0].theme };
+    setBrandTheme(state, { ...settingsCustomDraft });
+    paintAndFocus('[data-theme-preset="__custom__"]');
+    return;
+  }
+
+  const themeChoice = target.closest<HTMLButtonElement>('[data-theme-preset]');
+  if (themeChoice?.dataset.themePreset) {
+    settingsColorError = '';
+    settingsFontWarning = '';
+    const preset = THEME_PRESETS.find(
+      (item) => item.name === themeChoice.dataset.themePreset,
+    );
+    if (!preset) return;
+    settingsCustomMode = false;
+    setBrandTheme(state, { ...preset.theme });
+    paintAndFocus(`[data-theme-preset="${themeChoice.dataset.themePreset}"]`);
+    return;
+  }
+
+  if (target.closest('[data-settings-logo-capture]')) {
+    settingsLogoError = '';
+    send({ type: 'captureLogo' });
+    return;
+  }
+
+  if (target.closest('[data-settings-logo-remove]')) {
+    settingsLogoError = '';
+    send({ type: 'clearLogo' });
+    return;
+  }
+
+  // Component and Foundation controls are inert while an async build/download
+  // owns shared UiState.
   if (operation.active) return;
 
   const group = target.closest<HTMLButtonElement>('[data-group]');
@@ -384,6 +449,54 @@ document.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement | null;
   if (!input || operation.active) return;
 
+  const colorField = input.dataset.themeField as
+    | 'headerBg'
+    | 'accent'
+    | 'bodyText'
+    | 'tableHeadBg'
+    | undefined;
+  if (colorField) {
+    const raw = input.value.trim();
+    const parsed = raw ? parseBrandHex(raw) : null;
+    if (raw && !parsed) {
+      settingsColorError = 'Enter a 6-digit hex color, e.g. #0d2436.';
+      const hint = document.querySelector<HTMLElement>('[data-settings-color-hint]');
+      if (hint) hint.textContent = settingsColorError;
+      return;
+    }
+    settingsColorError = '';
+    setBrandTheme(state, {
+      ...state.brandTheme,
+      [colorField]: parsed,
+    });
+    settingsCustomDraft = { ...state.brandTheme };
+    paintAndFocus(`[data-theme-field="${colorField}"]`);
+    return;
+  }
+
+  const fontField = input.dataset.themeFont as
+    | 'headingFont'
+    | 'bodyFont'
+    | undefined;
+  if (fontField) {
+    const value = input.value.trim();
+    setBrandTheme(state, {
+      ...state.brandTheme,
+      [fontField]: value || null,
+    });
+    settingsCustomDraft = { ...state.brandTheme };
+    const unknown =
+      value !== '' &&
+      value !== 'Inter' &&
+      settingsFonts.length > 0 &&
+      !settingsFonts.includes(value);
+    settingsFontWarning = unknown
+      ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
+      : '';
+    paintAndFocus(`[data-theme-font="${fontField}"]`);
+    return;
+  }
+
   if (input.id === 'sl-ai-toggle') {
     selection.aiEnabled = input.checked;
     setAiEnabled(state, input.checked);
@@ -405,6 +518,30 @@ document.addEventListener('change', (event) => {
     else selection.sections.delete(sectionId);
     paintAndFocus(`[data-section="${sectionId}"]`);
   }
+});
+
+document.addEventListener('input', (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || operation.active) return;
+  const colorField = input.dataset.themeField as
+    | 'headerBg'
+    | 'accent'
+    | 'bodyText'
+    | 'tableHeadBg'
+    | undefined;
+  if (!colorField) return;
+
+  const parsed = parseBrandHex(input.value);
+  if (!parsed) {
+    settingsColorError = 'Enter a 6-digit hex color, e.g. #0d2436.';
+    const hint = document.querySelector<HTMLElement>('[data-settings-color-hint]');
+    if (hint) hint.textContent = settingsColorError;
+    return;
+  }
+  settingsColorError = '';
+  setBrandTheme(state, { ...state.brandTheme, [colorField]: parsed });
+  settingsCustomDraft = { ...state.brandTheme };
+  paintAndFocus(`[data-theme-field="${colorField}"]`);
 });
 
 // ---------------------------------------------------------------------------
@@ -505,6 +642,34 @@ window.onmessage = (event: MessageEvent): void => {
     case 'aiEnabled':
       state.aiEnabled = msg.value;
       selection.aiEnabled = msg.value;
+      paint();
+      return;
+
+    case 'brandTheme':
+      state.brandTheme = msg.value;
+      settingsCustomMode = matchPreset(msg.value) === null;
+      if (settingsCustomMode) settingsCustomDraft = { ...msg.value };
+      paint();
+      return;
+
+    case 'fontList':
+      settingsFonts = msg.families;
+      return;
+
+    case 'logoCaptured':
+      state.logoBase64 = msg.base64;
+      settingsLogoError = '';
+      paint();
+      return;
+
+    case 'logoCleared':
+      state.logoBase64 = null;
+      settingsLogoError = '';
+      paint();
+      return;
+
+    case 'logoError':
+      settingsLogoError = msg.message;
       paint();
       return;
 

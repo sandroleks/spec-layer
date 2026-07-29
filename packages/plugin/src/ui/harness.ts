@@ -13,6 +13,11 @@
  */
 
 import type { FoundationSpec, FoundationSelection } from '@spec-layer/extractor';
+import {
+  THEME_PRESETS,
+  parseBrandHex,
+  type BrandTheme,
+} from '../brandColors';
 import type {
   AllowanceState,
   ComponentScreenState,
@@ -24,6 +29,7 @@ import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
+import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import {
   clearAll,
   selectAll,
@@ -225,7 +231,7 @@ if (view === 'foundations') {
 
   document.addEventListener('click', (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
+    if (!(target instanceof Element)) return;
 
     if (target.closest('[data-foundation-bulk]')) {
       const all = foundationSelection.collections.length === FOUNDATION_SPEC.collections.length
@@ -247,5 +253,135 @@ if (view === 'foundations') {
           checked,
         );
     renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+  });
+}
+
+if (view === 'settings') {
+  const frameTheme = param('frameTheme', 'tech');
+  const fixtureTheme = frameTheme === 'custom'
+    ? THEME_PRESETS[0].theme
+    : THEME_PRESETS.find((item) => item.name.toLowerCase() === frameTheme)?.theme
+      ?? THEME_PRESETS[2].theme;
+  let settingsState: SettingsScreenState = {
+    theme: { ...fixtureTheme },
+    customMode: frameTheme === 'custom',
+    logoAttached: param('logo', 'empty') === 'attached',
+  };
+  let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
+  const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);
+  renderSettingsFixture();
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('[data-theme-preset="__custom__"]')) {
+      settingsState = {
+        ...settingsState,
+        theme: { ...customDraft },
+        customMode: true,
+      };
+      renderSettingsFixture();
+      document.querySelector<HTMLElement>('[data-theme-preset="__custom__"]')?.focus();
+      return;
+    }
+    const choice = target.closest<HTMLButtonElement>('[data-theme-preset]');
+    if (choice?.dataset.themePreset) {
+      const preset = THEME_PRESETS.find((item) => item.name === choice.dataset.themePreset);
+      if (!preset) return;
+      settingsState = {
+        ...settingsState,
+        theme: { ...preset.theme },
+        customMode: false,
+        colorError: undefined,
+        fontWarning: undefined,
+      };
+      renderSettingsFixture();
+      document.querySelector<HTMLElement>(
+        `[data-theme-preset="${choice.dataset.themePreset}"]`,
+      )?.focus();
+      return;
+    }
+    if (target.closest('[data-settings-logo-capture]')) {
+      settingsState = { ...settingsState, logoAttached: true, logoError: undefined };
+      renderSettingsFixture();
+      return;
+    }
+    if (target.closest('[data-settings-logo-remove]')) {
+      settingsState = { ...settingsState, logoAttached: false, logoError: undefined };
+      renderSettingsFixture();
+    }
+  });
+
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const colorField = input.dataset.themeField as
+      | 'headerBg'
+      | 'accent'
+      | 'bodyText'
+      | 'tableHeadBg'
+      | undefined;
+    if (colorField) {
+      const value = parseBrandHex(input.value);
+      if (!value) {
+        settingsState = {
+          ...settingsState,
+          colorError: 'Enter a 6-digit hex color, e.g. #0d2436.',
+        };
+      } else {
+        customDraft = {
+          ...settingsState.theme,
+          [colorField]: value,
+        } as BrandTheme;
+        settingsState = {
+          ...settingsState,
+          theme: { ...customDraft },
+          colorError: undefined,
+        };
+      }
+      renderSettingsFixture();
+      return;
+    }
+    const fontField = input.dataset.themeFont as 'headingFont' | 'bodyFont' | undefined;
+    if (fontField) {
+      customDraft = {
+        ...settingsState.theme,
+        [fontField]: input.value.trim() || null,
+      };
+      settingsState = {
+        ...settingsState,
+        theme: { ...customDraft },
+      };
+      renderSettingsFixture();
+    }
+  });
+
+  document.addEventListener('input', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const colorField = input.dataset.themeField as
+      | 'headerBg'
+      | 'accent'
+      | 'bodyText'
+      | 'tableHeadBg'
+      | undefined;
+    if (!colorField) return;
+    const value = parseBrandHex(input.value);
+    if (!value) {
+      const hint = document.querySelector<HTMLElement>('[data-settings-color-hint]');
+      if (hint) hint.textContent = 'Enter a 6-digit hex color, e.g. #0d2436.';
+      return;
+    }
+    customDraft = {
+      ...settingsState.theme,
+      [colorField]: value,
+    } as BrandTheme;
+    settingsState = {
+      ...settingsState,
+      theme: { ...customDraft },
+      colorError: undefined,
+    };
+    renderSettingsFixture();
+    document.querySelector<HTMLInputElement>(`[data-theme-field="${colorField}"]`)?.focus();
   });
 }

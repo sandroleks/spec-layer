@@ -164,4 +164,78 @@ runtime content and does not change shell geometry.
 - [x] Match dark and light themes.
 - [x] Verify overflow and browser console.
 
+---
+
+# Settings Screen
+
+## Comparison target
+
+- Source visual truth: `docs/plugin-ui-vnext/prototype/settings-frame-theme-tech-final.png`, `docs/plugin-ui-vnext/prototype/settings-frame-theme-custom-final.png`, and `docs/plugin-ui-vnext/prototype/light-theme-settings-final-v2.png`
+- Rendered implementation: `docs/plugin-ui-vnext/prototype/implementation-settings-vnext-tech.png`, `docs/plugin-ui-vnext/prototype/implementation-settings-vnext-custom.png`, and `docs/plugin-ui-vnext/prototype/implementation-settings-vnext-light.png`
+- Side-by-side evidence: `docs/plugin-ui-vnext/prototype/qa-settings-vnext-tech-comparison.png`, `docs/plugin-ui-vnext/prototype/qa-settings-vnext-custom-comparison.png`, and `docs/plugin-ui-vnext/prototype/qa-settings-vnext-light-comparison.png`
+- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=settings&frameTheme=tech`
+- States: Tech preset, Custom theme controls, and light-theme Tech preset.
+
+## Normalization
+
+- Source and implementation pixels: 480 × 680 for every state.
+- CSS viewport: 480 × 680.
+- Density: 1 CSS pixel to 1 output pixel; no crop or resampling.
+
+## Full-view and focused comparison evidence
+
+The equal-density comparisons retain the full screen and readable custom-field
+detail, so no separate focused crop was necessary. The 67px title/subtitle
+header, 16px left content inset, five-column theme grid, compact field grid,
+section dividers, and logo action align with the source. There is no horizontal
+overflow (`clientWidth` and `scrollWidth` are both 428px) and the browser
+reported no warnings or errors.
+
+Preset switching, Custom activation, valid and invalid color entry, persisted
+swatch updates, and logo capture/removal were exercised in the rendered harness.
+
+## Required fidelity surfaces
+
+- Fonts and typography: heading, subtitle, section heading, helper copy, preset
+  labels, micro field labels, input copy, and logo action match the prototype
+  hierarchy and remain unwrapped.
+- Spacing and layout rhythm: theme cards, Custom divider, two-column fields,
+  font row, logo divider, and rail alignment match at the native viewport.
+- Colors and visual tokens: theme previews use their approved palettes; selected,
+  focus, dark, light, field, border, and error states map to existing tokens.
+- Image and asset fidelity: no raster imagery is required. The Custom and check
+  marks use shared official Tabler paths.
+- Copy and content: all fixed labels, subtitle, field names, logo instructions,
+  color-validation copy, and attached-logo status match the workflow.
+
+## Comparison history
+
+### Iteration 0 — blocked
+
+- [P2] Generic card tokens made the theme choices too light and two pixels too
+  tall, pushing the logo section down.
+- [P2] The custom fields inherited the body line height, making each grid row
+  taller than the reference.
+- [P2] Custom activated from Tech by editing the Tech values, while the approved
+  custom state starts from the stored custom/default palette.
+- [P2] The Custom icon swallowed center clicks in the harness because SVG event
+  targets were rejected.
+
+Fixes: restored the prototype surface, line-height, inset, and action geometry;
+added a separate custom draft; handled SVG event targets; and verified live
+color validation and logo controls.
+
+### Iteration 1 — passed
+
+Post-fix evidence is in all three `qa-settings-vnext-*-comparison.png` files.
+No actionable P0, P1, or P2 findings remain. The dark focused Custom comparison
+and unfocused light Tech comparison intentionally preserve their source states.
+
+## Implementation checklist
+
+- [x] Wire stored presets and custom colors/fonts to production persistence.
+- [x] Wire logo capture, replace, remove, success, and error states.
+- [x] Match Tech, Custom, dark, and light visual states.
+- [x] Verify color validation, preset switching, overflow, and console.
+
 final result: passed

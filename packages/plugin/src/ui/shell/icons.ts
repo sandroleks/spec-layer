@@ -70,6 +70,11 @@ export const ICON_PATHS = {
     '<path d="M12 13a2 2 0 0 0 .914-3.782a1.98 1.98 0 0 0-2.414 .483"/>',
   puzzle:
     '<path d="M4 7h3a1 1 0 0 0 1-1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-1a2 2 0 0 0-4 0v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a2 2 0 0 0 0-4h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1"/>',
+  adjustments:
+    '<path d="M4 8h4v4H4z"/><path d="M6 4v4"/><path d="M6 12v8"/>' +
+    '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
+    '<path d="M16 5h4v4h-4z"/><path d="M18 4v1"/><path d="M18 9v11"/>',
+  check: '<path d="M5 12l5 5l10-10"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;
