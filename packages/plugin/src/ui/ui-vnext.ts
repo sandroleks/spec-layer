@@ -1155,7 +1155,7 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  const anatomy = target.closest<HTMLElement>('[data-anatomy]');
+  const anatomy = target.closest<HTMLButtonElement>('[data-anatomy]');
   if (anatomy?.dataset.anatomy) {
     selection.anatomyView = anatomy.dataset.anatomy as ComponentSelection['anatomyView'];
     state.anatomyView = selection.anatomyView;
@@ -1163,10 +1163,10 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  const measure = target.closest<HTMLElement>('[data-measure]');
+  const measure = target.closest<HTMLButtonElement>('[data-measure]');
   if (measure?.dataset.measure) {
     const id = measure.dataset.measure as 'size' | 'padding' | 'spacing';
-    // Never let the last measurement off: an empty set falls back to all three in the
+    // Never let the last chip off: an empty set falls back to all three in the
     // model, which would contradict what the UI is showing.
     if (!(selection.measureViews.size === 1 && selection.measureViews.has(id))) {
       toggle(selection.measureViews, id);
