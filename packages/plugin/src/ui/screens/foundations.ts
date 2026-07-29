@@ -50,13 +50,11 @@ function footerProgressMarkup(state: FoundationScreenState): string {
   if (state.kind === 'loading') {
     return progressMarkup({
       label: 'Reading this file',
-      detail: 'Loading local variables and text styles',
     });
   }
   if (state.kind === 'generating') {
     return progressMarkup({
       label: state.phase ?? 'Creating foundation frames',
-      detail: 'Building tables and placing frames on the canvas',
       current: state.done,
       total: state.total,
     });

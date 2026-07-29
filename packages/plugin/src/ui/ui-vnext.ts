@@ -278,23 +278,16 @@ function paint(): void {
               label: update.batch
                 ? `Updating document ${Math.min(update.completed + 1, update.total)} of ${update.total}`
                 : 'Updating documentation',
-              detail: update.batch
-                ? 'Each connected frame is rebuilt from its current source'
-                : 'Rebuilding the connected frame from its source',
               current: update.completed,
               total: update.total,
             }
           : libraryOperation?.kind === 'download'
             ? {
                 label: 'Preparing documentation',
-                detail: 'The markdown download will start automatically',
               }
             : libraryRefreshing || pendingChecks
               ? {
                   label: libraryEntries.length === 0 ? 'Reading Library' : 'Checking source changes',
-                  detail: libraryEntries.length === 0
-                    ? 'Loading connected documentation'
-                    : 'Comparing each connected frame with its source',
                   ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
                 }
               : null;

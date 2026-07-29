@@ -343,14 +343,12 @@ if (view === 'library') {
       progress: updatingAll
         ? {
             label: 'Updating document 1 of 3',
-            detail: 'Each connected frame is rebuilt from its current source',
             current: 0,
             total: 3,
           }
         : refreshing
           ? {
               label: 'Checking source changes',
-              detail: 'Comparing each connected frame with its source',
               current: 3,
               total: entries.length,
             }

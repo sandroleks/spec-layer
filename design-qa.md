@@ -435,6 +435,9 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
   footer button row with a 6px gap. It no longer displaces page controls,
   source rows, filters, or Library documents. Before/after evidence and the UX
   audit are in `docs/plugin-ui-vnext/audits/2026-07-29-progress-placement/`.
+- Progress narration uses one text line. The phase and animated dots remain;
+  redundant explanatory copy was removed. Determinate work keeps only its
+  progress bar and compact count.
 - Foundation and Library batch progress use real `done / total` values and
   accessible progressbar attributes. Indeterminate work does not invent a
   percentage.

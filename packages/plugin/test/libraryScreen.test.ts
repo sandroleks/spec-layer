@@ -227,7 +227,6 @@ describe('library screen presentation', () => {
       loading: true,
       progress: {
         label: 'Reading Library',
-        detail: 'Loading connected documentation',
       },
     }))).toContain('Reading Library');
     expect(libraryScrollMarkup(model({ loading: true }))).toContain('sl-loading-row');

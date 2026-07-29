@@ -5,11 +5,11 @@ describe('shared progress presentation', () => {
   it('uses the original loader motion without inventing a percentage', () => {
     const markup = progressMarkup({
       label: 'Reading the component',
-      detail: 'Inspecting variants and properties',
     });
     expect(markup).toContain('sl-work-spark');
     expect(markup).toContain('sl-work-dots');
     expect(markup).not.toContain('role="progressbar"');
+    expect(markup).not.toContain('<small>');
   });
 
   it('shows real determinate counts with accessible values', () => {

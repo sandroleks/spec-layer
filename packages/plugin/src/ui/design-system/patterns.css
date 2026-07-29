@@ -2262,15 +2262,6 @@ body[data-theme="light"] .sl-saved-license-row {
   }
 }
 
-.sl-work-copy > small {
-  overflow: hidden;
-  color: var(--sl-color-text-muted);
-  font-size: 8.75px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sl-work-dots {
   display: inline-flex;
   align-items: center;

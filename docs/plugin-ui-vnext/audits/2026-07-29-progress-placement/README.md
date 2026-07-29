@@ -22,6 +22,16 @@ gap. The content region no longer shifts when work starts.
 Component before/after comparison:
 `07-component-before-after-comparison.png`.
 
+## Single-line refinement
+
+The supporting sentence was removed from every progress state after the Figma
+host review. The footer now shows one phase line plus animated dots. Work with
+real counts may still show its progress bar and compact `done of total` value;
+it does not add a second explanatory sentence.
+
+Reference/implementation comparison:
+`09-single-line-source-vs-implementation.png`.
+
 ## Steps
 
 1. **Component documentation — passed after correction**

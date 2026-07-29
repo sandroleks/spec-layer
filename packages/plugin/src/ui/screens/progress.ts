@@ -7,7 +7,6 @@
 
 export interface ProgressPresentation {
   label: string;
-  detail?: string;
   current?: number;
   total?: number;
 }
@@ -30,9 +29,6 @@ export function progressMarkup(progress: ProgressPresentation): string {
     : 0;
   const percent = determinate ? Math.round((current / progress.total!) * 100) : 0;
   const count = determinate ? `${current} of ${progress.total}` : '';
-  const detail = progress.detail
-    ? `<small>${esc(progress.detail)}</small>`
-    : '';
   const bar = determinate
     ? (
       '<span class="sl-work-progress">' +
@@ -51,7 +47,6 @@ export function progressMarkup(progress: ProgressPresentation): string {
     `<strong>${esc(progress.label)}</strong>` +
     '<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>' +
     '</span>' +
-    detail +
     bar +
     '</span></div>'
   );

@@ -346,7 +346,6 @@ export function componentStatusMarkup(state: ComponentScreenState): string {
     case 'reading':
       return progressMarkup({
         label: 'Reading the selected component',
-        detail: 'Inspecting variants, properties, and component structure',
       });
     case 'building':
       return progressMarkup({
@@ -355,9 +354,6 @@ export function componentStatusMarkup(state: ComponentScreenState): string {
             ? 'Preparing documentation'
             : 'Creating documentation'
         ),
-        detail: state.action === 'download'
-          ? 'The markdown download will start automatically'
-          : 'The finished frame will be placed on the canvas',
       });
     case 'empty':
     case 'ready':
