@@ -275,6 +275,18 @@ describe('component screen markup', () => {
     );
   });
 
+  it('renders Anatomy and Measurements as compact inline choices', () => {
+    const selection = createComponentSelection(true);
+    selection.expanded.add('specs');
+    const markup = componentScrollMarkup(READY, selection, facts());
+    expect(markup).toContain('<span class="sl-inline-options-label">Anatomy as</span>');
+    expect(markup).toContain('type="radio" name="anatomy-view" data-anatomy="diagram" checked');
+    expect(markup).toContain('<span class="sl-inline-options-label">Measure</span>');
+    expect(markup).toContain('type="checkbox" data-measure="padding" checked');
+    expect(markup).not.toContain('class="sl-segmented" role="radiogroup"');
+    expect(markup).not.toContain('class="sl-chip" type="button" data-measure');
+  });
+
   it('keeps collapsed section controls out of the accessibility tree', () => {
     const selection = createComponentSelection(true);
     selection.expanded.clear();

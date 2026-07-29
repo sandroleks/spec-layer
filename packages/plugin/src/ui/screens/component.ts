@@ -195,31 +195,53 @@ function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelectio
   );
 }
 
-/** Anatomy's view picker and the measurement chips, shown under their rows. */
+/** Compact inline controls shown under Anatomy and Measurements. */
 function detailsFor(
   sectionId: string,
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): string {
   if (sectionId === 'anatomy') {
-    const buttons = ANATOMY_VIEWS.map(
+    const choices = ANATOMY_VIEWS.map(
       (v) =>
-        `<button type="button" role="radio" data-anatomy="${v.id}" ` +
-        `aria-checked="${selection.anatomyView === v.id}">${v.label}</button>`,
+        '<label class="sl-inline-choice">' +
+        `<input class="sl-choice-input" type="radio" name="anatomy-view" ` +
+        `data-anatomy="${v.id}"${selection.anatomyView === v.id ? ' checked' : ''} />` +
+        '<span class="sl-radio-box" aria-hidden="true"></span>' +
+        `<span>${esc(v.label)}</span>` +
+        '</label>',
     ).join('');
     return (
       '<div class="sl-section-details">' +
-      `<div class="sl-segmented" role="radiogroup" aria-label="Show anatomy as">${buttons}</div>` +
+      '<div class="sl-inline-options" role="radiogroup" aria-label="Show anatomy as">' +
+      '<span class="sl-inline-options-label">Anatomy as</span>' +
+      choices +
+      '</div>' +
       '</div>'
     );
   }
   if (sectionId === 'measurements') {
-    const chips = MEASURE_CHIPS.map(
+    const choices = MEASURE_CHIPS.map(
       (c) =>
-        `<button class="sl-chip" type="button" data-measure="${c.id}" ` +
-        `aria-pressed="${selection.measureViews.has(c.id)}">${esc(c.label)}</button>`,
+        '<label class="sl-inline-choice">' +
+        `<input class="sl-choice-input" type="checkbox" data-measure="${c.id}"` +
+        `${selection.measureViews.has(c.id) ? ' checked' : ''} />` +
+        '<span class="sl-checkbox-box" aria-hidden="true">' +
+        '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" ' +
+        'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M20 6L9 17l-5-5"/></svg>' +
+        '</span>' +
+        `<span>${esc(c.label)}</span>` +
+        '</label>',
     ).join('');
-    return `<div class="sl-section-details"><div class="sl-chip-group">${chips}</div></div>`;
+    return (
+      '<div class="sl-section-details">' +
+      '<div class="sl-inline-options" role="group" aria-label="Measurements to include">' +
+      '<span class="sl-inline-options-label">Measure</span>' +
+      choices +
+      '</div>' +
+      '</div>'
+    );
   }
   if (sectionId === 'tokens') return variantPickerMarkup(facts, selection);
   return '';

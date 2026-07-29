@@ -29,7 +29,11 @@ import type { LibraryEntry } from '../messages';
 import type { GroupId, SectionId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
-import { createComponentSelection, renderComponentScreen } from './screens/component';
+import {
+  createComponentSelection,
+  renderComponentScreen,
+  type ComponentSelection,
+} from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen } from './screens/library';
@@ -162,6 +166,26 @@ if (view === 'component') {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const anatomy = target.closest<HTMLElement>('[data-anatomy]');
+    if (anatomy?.dataset.anatomy) {
+      selection.anatomyView = anatomy.dataset.anatomy as ComponentSelection['anatomyView'];
+      renderComponentFixture();
+      document.querySelector<HTMLInputElement>(
+        `[data-anatomy="${selection.anatomyView}"]`,
+      )?.focus();
+      return;
+    }
+    const measure = target.closest<HTMLElement>('[data-measure]');
+    if (measure?.dataset.measure) {
+      const id = measure.dataset.measure as 'size' | 'padding' | 'spacing';
+      if (!(selection.measureViews.size === 1 && selection.measureViews.has(id))) {
+        if (selection.measureViews.has(id)) selection.measureViews.delete(id);
+        else selection.measureViews.add(id);
+      }
+      renderComponentFixture();
+      document.querySelector<HTMLInputElement>(`[data-measure="${id}"]`)?.focus();
+      return;
+    }
     const bulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
     if (bulk?.dataset.groupBulk) {
       const groupId = bulk.dataset.groupBulk as GroupId;
