@@ -132,8 +132,8 @@ let libraryMenuDocId: string | null = null;
 let libraryMenuRestore: HTMLElement | null = null;
 let libraryRefreshing = false;
 let libraryRequested = false;
-let libraryNotice = '';
-let libraryNoticeTone: 'neutral' | 'success' | 'warning' | 'danger' = 'neutral';
+let componentProgressTimer: ReturnType<typeof setInterval> | null = null;
+let foundationProgressTimer: ReturnType<typeof setInterval> | null = null;
 
 type LibraryUpdateOperation = {
   kind: 'update';
@@ -161,8 +161,25 @@ setFoundationHost({
   setBusy: (busy) => {
     if (busy) foundationScreen = { kind: 'generating', done: 0, total: 0 };
   },
-  startProgress: () => {},
-  stopProgress: () => {},
+  startProgress: (messages) => {
+    stopFoundationProgress();
+    const phases = messages.length ? messages : ['Creating foundation frames'];
+    let index = 0;
+    const current = foundationScreen.kind === 'generating'
+      ? foundationScreen
+      : { kind: 'generating' as const, done: 0, total: 0 };
+    foundationScreen = { ...current, phase: phases[index] };
+    if (view === 'foundations') paint();
+    if (phases.length > 1) {
+      foundationProgressTimer = setInterval(() => {
+        if (foundationScreen.kind !== 'generating') return;
+        index = (index + 1) % phases.length;
+        foundationScreen = { ...foundationScreen, phase: phases[index] };
+        if (view === 'foundations') paint();
+      }, 2600);
+    }
+  },
+  stopProgress: stopFoundationProgress,
 });
 
 /**
@@ -175,6 +192,49 @@ let quotaFetched = false;
 /** The component name to keep on screen when a state change does not carry one. */
 function currentName(): string {
   return 'componentName' in screen ? screen.componentName : '';
+}
+
+function nativeNotify(
+  message: string,
+  options: { error?: boolean; timeout?: number } = {},
+): void {
+  send({ type: 'notify', message, ...options });
+}
+
+function stopComponentProgress(): void {
+  if (!componentProgressTimer) return;
+  clearInterval(componentProgressTimer);
+  componentProgressTimer = null;
+}
+
+function startComponentProgress(
+  messages: string[],
+  action: 'create' | 'download',
+): void {
+  stopComponentProgress();
+  const phases = messages.length ? messages : ['Working'];
+  let index = 0;
+  screen = {
+    kind: 'building',
+    componentName: currentName(),
+    action,
+    phase: phases[index],
+  };
+  paint();
+  if (phases.length > 1) {
+    componentProgressTimer = setInterval(() => {
+      if (screen.kind !== 'building') return;
+      index = (index + 1) % phases.length;
+      screen = { ...screen, phase: phases[index] };
+      if (view === 'component') paint();
+    }, 2600);
+  }
+}
+
+function stopFoundationProgress(): void {
+  if (!foundationProgressTimer) return;
+  clearInterval(foundationProgressTimer);
+  foundationProgressTimer = null;
 }
 
 function paintAllowance(): void {
@@ -210,6 +270,34 @@ function paint(): void {
         const update = libraryOperation?.kind === 'update' ? libraryOperation : null;
         const pendingChecks = model.allRows.some((row) => row.status === 'pending');
         const failedChecks = model.allRows.some((row) => row.status === 'unavailable');
+        const checkTotal = [...libraryDrift.values()].length;
+        const checkDone = [...libraryDrift.values()]
+          .filter((status) => status !== 'pending').length;
+        const progress = update
+          ? {
+              label: update.batch
+                ? `Updating document ${Math.min(update.completed + 1, update.total)} of ${update.total}`
+                : 'Updating documentation',
+              detail: update.batch
+                ? 'Each connected frame is rebuilt from its current source'
+                : 'Rebuilding the connected frame from its source',
+              current: update.completed,
+              total: update.total,
+            }
+          : libraryOperation?.kind === 'download'
+            ? {
+                label: 'Preparing documentation',
+                detail: 'The markdown download will start automatically',
+              }
+            : libraryRefreshing || pendingChecks
+              ? {
+                  label: libraryEntries.length === 0 ? 'Reading Library' : 'Checking source changes',
+                  detail: libraryEntries.length === 0
+                    ? 'Loading connected documentation'
+                    : 'Comparing each connected frame with its source',
+                  ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
+                }
+              : null;
         renderLibraryScreen(refs, {
           ...model,
           menuDocId: libraryMenuDocId,
@@ -222,9 +310,7 @@ function paint(): void {
               ? libraryOperation.currentDocId
               : null
           ),
-          notice: libraryNotice
-            ? { tone: libraryNoticeTone, message: libraryNotice }
-            : null,
+          progress,
         });
       }
       return;
@@ -377,33 +463,30 @@ function presenter(action: 'create' | 'download'): BuildPresenter {
       }
     },
     error: (message) => {
-      screen = { kind: 'error', componentName: currentName(), message };
+      stopComponentProgress();
+      nativeNotify(message, { error: true, timeout: 5000 });
+      screen = currentName()
+        ? { kind: 'ready', componentName: currentName() }
+        : { kind: 'empty' };
       paint();
     },
     info: (message) => {
-      // A download has no main-thread completion message, so this presenter is
-      // the only place it can report success.
-      screen = {
-        kind: 'success',
-        componentName: currentName(),
-        replaced: false,
-        message,
-      };
+      // A download has no main-thread completion message, so the presenter
+      // reports it through Figma's native notification surface.
+      stopComponentProgress();
+      nativeNotify(message);
+      screen = { kind: 'ready', componentName: currentName() };
       paint();
     },
     setBusy: (busy) => {
       if (!busy && screen.kind === 'building') {
+        stopComponentProgress();
         screen = { kind: 'ready', componentName: screen.componentName };
         paint();
       }
     },
-    startProgress: () => {
-      screen = { kind: 'building', componentName: currentName(), action };
-      paint();
-    },
-    stopProgress: () => {
-      /* The screen leaves 'building' via success, error, or setBusy(false). */
-    },
+    startProgress: (messages) => startComponentProgress(messages, action),
+    stopProgress: stopComponentProgress,
   };
 }
 
@@ -547,21 +630,14 @@ function closeLibraryMenu(restoreFocus = false): void {
   libraryMenuRestore = null;
 }
 
-function libraryPresenter(): BuildPresenter {
+function libraryPresenter(onError?: (message: string) => void): BuildPresenter {
   return {
-    clear: () => {
-      libraryNotice = '';
-      if (view === 'library') paint();
-    },
+    clear: () => {},
     error: (message) => {
-      libraryNotice = message;
-      libraryNoticeTone = 'danger';
-      if (view === 'library') paint();
+      onError?.(message);
     },
     info: (message) => {
-      libraryNotice = message;
-      libraryNoticeTone = 'success';
-      if (view === 'library') paint();
+      nativeNotify(message);
     },
     setBusy: () => {},
     startProgress: () => {
@@ -578,19 +654,19 @@ function libraryEntry(docId: string): LibraryEntry | undefined {
 function finishLibraryOperation(error = ''): void {
   const active = libraryOperation;
   if (!active) return;
+  let message = '';
   if (active.kind === 'update') {
-    libraryNotice = error
+    message = error
       ? active.completed > 0
         ? `Updated ${active.completed} of ${active.total}. ${error}`
         : error
       : active.batch
         ? `Updated ${active.completed} ${active.completed === 1 ? 'document' : 'documents'}.`
         : 'Document updated.';
-    libraryNoticeTone = error ? 'danger' : 'success';
   } else if (error) {
-    libraryNotice = error;
-    libraryNoticeTone = 'danger';
+    message = error;
   }
+  if (message) nativeNotify(message, error ? { error: true, timeout: 5000 } : {});
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
@@ -642,8 +718,6 @@ function startLibraryUpdates(docIds: string[], batch: boolean): void {
     batch,
     confirmedOverwrite: new Set(edited),
   };
-  libraryNotice = '';
-  libraryNoticeTone = 'neutral';
   dispatchNextLibraryUpdate();
 }
 
@@ -652,8 +726,6 @@ function startLibraryDownload(docId: string): void {
   if (!entry || entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
   if (!beginOperation(operation)) return;
   libraryOperation = { kind: 'download', currentDocId: docId };
-  libraryNotice = '';
-  libraryNoticeTone = 'neutral';
   paint();
   send({ type: 'requestDocSource', docId, intent: 'download' });
 }
@@ -887,9 +959,10 @@ document.addEventListener('click', (event) => {
     if (
       model.allRows.some((row) => row.status === 'pending' || row.status === 'unavailable')
     ) {
-      libraryNotice = 'Refresh the Library before updating so every source is checked.';
-      libraryNoticeTone = 'warning';
-      paint();
+      nativeNotify(
+        'Refresh the Library before updating so every source is checked.',
+        { error: true, timeout: 4500 },
+      );
       return;
     }
     startLibraryUpdates(
@@ -1393,14 +1466,18 @@ window.onmessage = (event: MessageEvent): void => {
         return;
       }
       {
+        stopComponentProgress();
         const note = state.pendingAiNote;
         const outcome = msg.replaced ? 'Docs replaced' : 'Docs created';
         screen = {
           kind: 'success',
           componentName: currentName(),
           replaced: msg.replaced,
-          ...(note ? { message: `${outcome}. ${note}`, warning: true } : {}),
         };
+        nativeNotify(
+          note ? `${outcome}. ${note}` : outcome,
+          note ? { timeout: 5500 } : {},
+        );
         state.pendingAiNote = '';
       }
       paint();
@@ -1415,7 +1492,11 @@ window.onmessage = (event: MessageEvent): void => {
         finishLibraryOperation(`Update failed: ${msg.message}`);
         return;
       }
-      screen = { kind: 'error', componentName: currentName(), message: msg.message };
+      stopComponentProgress();
+      nativeNotify(msg.message, { error: true, timeout: 5000 });
+      screen = currentName()
+        ? { kind: 'ready', componentName: currentName() }
+        : { kind: 'empty' };
       paint();
       completeOperation();
       return;
@@ -1487,6 +1568,9 @@ window.onmessage = (event: MessageEvent): void => {
         kind: 'generating',
         done: msg.done,
         total: msg.total,
+        ...(foundationScreen.kind === 'generating' && foundationScreen.phase
+          ? { phase: foundationScreen.phase }
+          : {}),
       };
       paint();
       return;
@@ -1505,12 +1589,15 @@ window.onmessage = (event: MessageEvent): void => {
         return;
       }
       setFoundationGenerating(false);
-      foundationScreen = {
-        kind: 'result',
-        created: msg.created,
-        replaced: msg.replaced,
-        ...(foundationAiNote ? { note: foundationAiNote } : {}),
-      };
+      {
+        const parts = [
+          msg.created ? `${msg.created} created` : '',
+          msg.replaced ? `${msg.replaced} updated` : '',
+          foundationAiNote,
+        ].filter(Boolean);
+        nativeNotify(parts.join(' · ') || 'Foundation docs created');
+      }
+      foundationScreen = { kind: 'ready' };
       foundationAiNote = '';
       paint();
       completeOperation();
@@ -1527,12 +1614,13 @@ window.onmessage = (event: MessageEvent): void => {
         return;
       }
       setFoundationGenerating(false);
-      foundationScreen = {
-        kind: 'result',
-        created: msg.created,
-        replaced: 0,
-        error: msg.message,
-      };
+      nativeNotify(
+        msg.created > 0
+          ? `${msg.created} created before the build stopped. ${msg.message}`
+          : msg.message,
+        { error: true, timeout: 5500 },
+      );
+      foundationScreen = { kind: 'ready' };
       foundationAiNote = '';
       paint();
       completeOperation();
@@ -1585,13 +1673,24 @@ window.onmessage = (event: MessageEvent): void => {
         config: msg.config,
       };
       if (active.kind === 'download') {
-        void downloadFromSource(state, src, libraryPresenter()).then(() => {
+        let failed = false;
+        void downloadFromSource(state, src, libraryPresenter((message) => {
+          failed = true;
+          nativeNotify(message, { error: true, timeout: 5000 });
+        })).then(() => {
           if (
+            failed ||
             libraryOperation?.kind !== 'download' ||
             libraryOperation.currentDocId !== msg.docId
-          ) return;
-          libraryNotice = `Downloaded ${msg.node.name || 'component'} documentation.`;
-          libraryNoticeTone = 'success';
+          ) {
+            if (failed && libraryOperation?.kind === 'download') {
+              libraryOperation = null;
+              completeOperation();
+              if (view === 'library') paint();
+            }
+            return;
+          }
+          nativeNotify(`Downloaded ${msg.node.name || 'component'} documentation.`);
           libraryOperation = null;
           completeOperation();
           if (view === 'library') paint();
@@ -1607,9 +1706,15 @@ window.onmessage = (event: MessageEvent): void => {
         }
         active.confirmedOverwrite.add(msg.docId);
       }
-      void updateFromSource(state, src, libraryPresenter()).then((dispatched) => {
+      let preparationError = '';
+      void updateFromSource(state, src, libraryPresenter((message) => {
+        preparationError = message;
+      })).then((dispatched) => {
         if (!dispatched) {
-          finishLibraryOperation('The source could not be prepared, so the remaining updates stopped.');
+          finishLibraryOperation(
+            preparationError ||
+            'The source could not be prepared, so the remaining updates stopped.',
+          );
         }
       });
       return;
@@ -1626,6 +1731,11 @@ window.onmessage = (event: MessageEvent): void => {
 
     case 'docDetached':
     case 'docRemoved':
+      nativeNotify(
+        msg.type === 'docDetached'
+          ? 'Documentation detached from its source.'
+          : 'Documentation connection removed.',
+      );
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
       libraryBaseline.delete(msg.docId);

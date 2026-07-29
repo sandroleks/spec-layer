@@ -309,7 +309,7 @@ describe('component screen markup', () => {
     })).toContain('Downloading…');
   });
 
-  it('keeps a successful build downloadable while surfacing an AI fallback warning', () => {
+  it('keeps a successful build downloadable without rendering a plugin toast', () => {
     const state = {
       kind: 'success',
       componentName: 'Button',
@@ -317,9 +317,21 @@ describe('component screen markup', () => {
       message: 'Docs created. AI did not run',
       warning: true,
     } as const;
-    expect(componentStatusMarkup(state)).toContain('data-tone="danger"');
-    expect(componentStatusMarkup(state)).toContain('Docs created. AI did not run');
+    expect(componentStatusMarkup(state)).toBe('');
     expect(componentFooterMarkup(state)).toContain('id="sl-download"');
+  });
+
+  it('reuses the original progress treatment for reading and build phases', () => {
+    expect(componentStatusMarkup({
+      kind: 'reading',
+      componentName: 'Button',
+    })).toContain('Reading the selected component');
+    expect(componentStatusMarkup({
+      kind: 'building',
+      componentName: 'Button',
+      action: 'create',
+      phase: 'Placing the frame on the canvas',
+    })).toContain('Placing the frame on the canvas');
   });
 });
 

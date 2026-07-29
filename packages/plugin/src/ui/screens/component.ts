@@ -19,6 +19,7 @@ import {
 import type { ComponentFacts, VariantChip } from '../viewModel/componentFacts';
 import { icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
+import { progressMarkup } from './progress';
 
 /** The user's picks. Held here, handed to createDocFrame at build time. */
 export interface ComponentSelection {
@@ -296,13 +297,15 @@ export function componentScrollMarkup(
     .join('');
 
   return (
+    '<div class="sl-screen-status" id="sl-component-status" role="status" aria-live="polite">' +
+    componentStatusMarkup(state) +
+    '</div>' +
     `<fieldset class="sl-component-controls"${busy ? ' disabled aria-busy="true"' : ''}>` +
     (facts.isAtom ? atomNoticeMarkup() : '') +
     aiControlMarkup(selection.aiEnabled) +
     '<p class="sl-section-intro">Sections to include</p>' +
     groups +
-    '</fieldset>' +
-    '<div class="sl-screen-status" id="sl-component-status" role="status" aria-live="polite"></div>'
+    '</fieldset>'
   );
 }
 
@@ -337,17 +340,26 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
 export function componentStatusMarkup(state: ComponentScreenState): string {
   switch (state.kind) {
     case 'error':
-      return `<div class="sl-banner" data-tone="danger">${esc(state.message)}</div>`;
     case 'success':
-      return (
-        `<div class="sl-banner" data-tone="${state.warning ? 'danger' : 'success'}">` +
-        `${esc(state.message ?? (state.replaced ? 'Docs replaced' : 'Docs created'))}</div>`
-      );
+      return '';
     case 'reading':
-      return '<div class="sl-banner" data-tone="neutral">Reading…</div>';
+      return progressMarkup({
+        label: 'Reading the selected component',
+        detail: 'Inspecting variants, properties, and component structure',
+      });
+    case 'building':
+      return progressMarkup({
+        label: state.phase ?? (
+          state.action === 'download'
+            ? 'Preparing documentation'
+            : 'Creating documentation'
+        ),
+        detail: state.action === 'download'
+          ? 'The markdown download will start automatically'
+          : 'The finished frame will be placed on the canvas',
+      });
     case 'empty':
     case 'ready':
-    case 'building':
       return '';
     default:
       return assertNever(state, 'ComponentScreenState');

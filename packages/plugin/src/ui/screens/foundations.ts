@@ -19,6 +19,7 @@ import {
 } from '../foundationState';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
+import { loadingRowsMarkup, progressMarkup } from './progress';
 
 function esc(value: string): string {
   return value
@@ -43,23 +44,12 @@ function resultMarkup(state: FoundationScreenState): string {
     return `<div class="sl-banner" data-tone="danger">${esc(state.message)}</div>`;
   }
   if (state.kind === 'generating') {
-    return (
-      '<div class="sl-banner" data-tone="neutral">' +
-      `Creating foundation frames${state.total > 0 ? ` · ${state.done} of ${state.total}` : ''}` +
-      '</div>'
-    );
-  }
-  if (state.kind === 'result') {
-    const parts = [
-      state.created ? `${state.created} created` : '',
-      state.replaced ? `${state.replaced} updated` : '',
-      state.note ?? '',
-      state.error ?? '',
-    ].filter(Boolean);
-    return (
-      `<div class="sl-banner" data-tone="${state.error ? 'danger' : 'success'}">` +
-      `${esc(parts.join(' · ') || 'Foundation docs created')}</div>`
-    );
+    return progressMarkup({
+      label: state.phase ?? 'Creating foundation frames',
+      detail: 'Building tables and placing frames on the canvas',
+      current: state.done,
+      total: state.total,
+    });
   }
   return '';
 }
@@ -96,9 +86,13 @@ export function foundationScrollMarkup(
 ): string {
   if (state.kind === 'loading') {
     return (
-      '<div class="sl-empty-state sl-foundation-loading">' +
-      '<strong>Reading this file</strong>' +
-      '<p>Loading local variables and text styles.</p></div>'
+      '<div class="sl-foundation-loading">' +
+      progressMarkup({
+        label: 'Reading this file',
+        detail: 'Loading local variables and text styles',
+      }) +
+      loadingRowsMarkup(4) +
+      '</div>'
     );
   }
   if (!spec) {
@@ -143,8 +137,8 @@ export function foundationScrollMarkup(
     `aria-label="${every ? 'Clear' : 'Select'} all foundation sources">` +
     checkbox(every, mixed) +
     `<span>${every ? 'Clear all' : 'Select all'}</span></button></div>` +
-    `<div class="sl-foundation-list">${rows.join('')}</div>` +
-    `<div class="sl-foundation-status">${resultMarkup(state)}</div>`
+    `<div class="sl-foundation-status">${resultMarkup(state)}</div>` +
+    `<div class="sl-foundation-list">${rows.join('')}</div>`
   );
 }
 

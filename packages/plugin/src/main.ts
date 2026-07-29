@@ -476,7 +476,10 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'notify':
-      figma.notify(msg.message);
+      figma.notify(msg.message, {
+        error: msg.error ?? false,
+        timeout: msg.timeout ?? 3200,
+      });
       break;
 
     case 'openBrowser':

@@ -66,7 +66,7 @@ export type MainToUi =
 
 export type UiToMain =
   | { type: 'requestSelection' }
-  | { type: 'notify'; message: string }
+  | { type: 'notify'; message: string; error?: boolean; timeout?: number }
   | { type: 'openBrowser'; url: string }
   | { type: 'setLicenseKey'; value: string; instanceId: string | null }
   | { type: 'setAiEnabled'; value: boolean }

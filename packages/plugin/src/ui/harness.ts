@@ -326,7 +326,6 @@ if (view === 'library') {
     param('menu', 'closed') === 'open' ? entries[0].docId : null;
   let refreshing = param('state', 'expanded') === 'refreshing';
   let updatingAll = param('state', 'expanded') === 'updating';
-  let notice = '';
 
   const renderLibraryFixture = () => {
     const model = buildLibraryModel(entries, {
@@ -341,7 +340,21 @@ if (view === 'library') {
       menuDocId,
       refreshing,
       updatingAll,
-      notice: notice ? { tone: 'success', message: notice } : null,
+      progress: updatingAll
+        ? {
+            label: 'Updating document 1 of 3',
+            detail: 'Each connected frame is rebuilt from its current source',
+            current: 0,
+            total: 3,
+          }
+        : refreshing
+          ? {
+              label: 'Checking source changes',
+              detail: 'Comparing each connected frame with its source',
+              current: 3,
+              total: entries.length,
+            }
+          : null,
     });
   };
   renderLibraryFixture();
@@ -382,7 +395,6 @@ if (view === 'library') {
       renderLibraryFixture();
       window.setTimeout(() => {
         refreshing = false;
-        notice = 'Library refreshed.';
         renderLibraryFixture();
       }, 450);
       return;
@@ -394,7 +406,6 @@ if (view === 'library') {
         for (const entry of entries.slice(0, 3)) drift.set(entry.docId, 'inSync');
         updatingAll = false;
         expandedDocId = null;
-        notice = 'Updated 3 documents.';
         renderLibraryFixture();
       }, 650);
       return;
@@ -408,7 +419,6 @@ if (view === 'library') {
     } else if (action.dataset.libraryAction === 'update') {
       drift.set(docId, 'inSync');
       expandedDocId = null;
-      notice = 'Document updated.';
     } else if (action.dataset.libraryAction === 'remove') {
       const index = entries.findIndex((entry) => entry.docId === docId);
       if (index >= 0) entries.splice(index, 1);

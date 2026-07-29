@@ -59,6 +59,16 @@ export function mountShell(active: PluginView = 'component'): ShellRefs {
   const sidebar = document.querySelector<HTMLElement>('.sl-sidebar');
   if (!root || !header || !sidebar) throw new Error('Shell failed to mount');
 
+  // Pointer activation leaves Chromium buttons focused. That focus used to
+  // keep the adjacent tooltip open after the pointer left the rail. Release
+  // pointer focus after activation; keyboard focus is untouched, so Tab users
+  // still get the same tooltip and focus ring.
+  sidebar.addEventListener('pointerup', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    target.closest<HTMLButtonElement>('.sl-sidebar-item > .sl-icon-button')?.blur();
+  });
+
   return {
     root,
     header,

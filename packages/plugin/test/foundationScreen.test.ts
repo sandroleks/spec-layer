@@ -73,18 +73,19 @@ describe('foundation screen', () => {
     expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL)).not.toContain('disabled');
   });
 
-  it('shows loading, progress, result, and error states honestly', () => {
+  it('shows loading, real progress, and persistent read errors honestly', () => {
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('Reading this file');
+    expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('sl-loading-row');
     expect(foundationScrollMarkup(
-      { kind: 'generating', done: 1, total: 3 },
+      { kind: 'generating', done: 1, total: 3, phase: 'Laying out the tables' },
       SPEC,
       ALL,
-    )).toContain('1 of 3');
+    )).toContain('Laying out the tables');
     expect(foundationScrollMarkup(
       { kind: 'result', created: 2, replaced: 1 },
       SPEC,
       ALL,
-    )).toContain('2 created · 1 updated');
+    )).not.toContain('sl-banner');
     expect(foundationScrollMarkup(
       { kind: 'error', message: 'Could not read this file.' },
       null,

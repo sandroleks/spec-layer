@@ -14,6 +14,7 @@ import type {
   LibraryRowModel,
   LibraryRowStatus,
 } from '../viewModel/library';
+import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
 
 export type { LibraryFilter } from '../viewModel/library';
 
@@ -42,10 +43,7 @@ export interface LibraryScreenPresentation
   checksIncomplete?: boolean;
   updatingAll?: boolean;
   updatingDocId?: string | null;
-  notice?: {
-    tone: 'neutral' | 'success' | 'warning' | 'danger';
-    message: string;
-  } | null;
+  progress?: ProgressPresentation | null;
 }
 
 function esc(value: string): string {
@@ -323,17 +321,11 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
       `<span>${label}</span><small>${count}</small></button>`
     )).join('') +
     '</div>';
-  const notice = model.notice
-    ? (
-      `<div class="sl-banner" data-tone="${model.notice.tone}" role="status">` +
-      `${esc(model.notice.message)}</div>`
-    )
+  const progress = model.progress
+    ? `<div class="sl-library-progress">${progressMarkup(model.progress)}</div>`
     : '';
   const content = model.loading
-    ? (
-      '<div class="sl-empty-state"><strong>Reading Library</strong>' +
-      '<p>Checking connected documentation and its sources.</p></div>'
-    )
+    ? loadingRowsMarkup(5)
     : model.rows.length
       ? (
         '<div class="sl-library-list">' +
@@ -342,7 +334,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
       )
       : emptyMarkup(model.filter, model.allRows.length > 0);
 
-  return filterMarkup + notice + content;
+  return filterMarkup + progress + content;
 }
 
 export function libraryFooterMarkup(model: LibraryScreenPresentation): string {

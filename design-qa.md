@@ -411,4 +411,46 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - TypeScript, focused lint, all 111 test files (1,423 tests), production build,
   whitespace checks, and browser error logs pass.
 
+# Feedback and Loading States
+
+## Source and implementation
+
+- Source behavior: the original plugin's cycling sparkle loader and foundation
+  skeletons in `render.ts`/`dom.ts`.
+- Rendered implementation:
+  `http://127.0.0.1:4189/ui-harness.html?view=component&state=building&theme=dark`,
+  `?view=foundations&state=loading`, `?view=foundations&state=progress`, and
+  `?view=library&state=updating`.
+- All states were checked at the native 480 × 680 plugin viewport.
+
+## Findings
+
+- Pointer-activated navigation buttons now release pointer focus; moving away
+  leaves the tooltip at opacity 0 while keyboard focus remains supported by
+  `:focus-visible`.
+- Component reading/building, Foundation reading/building, Library refresh,
+  batch update, and download preparation share the original loader's sparkle,
+  shimmer, phase copy, and reduced-motion behavior.
+- Foundation and Library batch progress use real `done / total` values and
+  accessible progressbar attributes. Indeterminate work does not invent a
+  percentage.
+- Initial Foundation and Library reads use stable skeleton rows. Each checked
+  state stays 480 × 680 with no body or horizontal overflow.
+- Operational success/error banners are absent from Component, Foundations,
+  and Library. Their production handlers send the shared `notify` message to
+  native `figma.notify`, including native error styling and longer error
+  timeouts.
+- Library download failures no longer fall through to a false success message.
+- Browser console warnings/errors: none.
+
+## Verification
+
+- [x] Plugin TypeScript passes.
+- [x] Focused lint passes.
+- [x] All 112 test files and 1,429 tests pass.
+- [x] Production vNext and development harness builds pass.
+- [x] Component, Foundation loading/progress, Library batch progress, tooltip
+  lifecycle, and absence of in-plugin result toasts pass visual QA.
+- [x] No Figma bridge was used.
+
 final result: passed

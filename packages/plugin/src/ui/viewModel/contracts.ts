@@ -74,7 +74,7 @@ export type FoundationScreenState =
   | { kind: "ready" }
   | { kind: "empty" }
   | { kind: "error"; message: string }
-  | { kind: "generating"; done: number; total: number }
+  | { kind: "generating"; done: number; total: number; phase?: string }
   | {
       kind: "result";
       created: number;

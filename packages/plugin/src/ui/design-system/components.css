@@ -665,7 +665,7 @@ button {
 }
 
 [data-tooltip-trigger]:hover > .sl-tooltip,
-[data-tooltip-trigger]:focus-within > .sl-tooltip,
+[data-tooltip-trigger] > :focus-visible ~ .sl-tooltip,
 .sl-tooltip[data-open="true"] {
   opacity: 1;
   transform: translateX(0);
