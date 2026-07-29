@@ -92,7 +92,15 @@ The screen exists but is incomplete. Known gaps, all real:
 | Reading state unverified | The `reading` state paints, but only against canned harness data. |
 | `Content Considerations` label | Title case, violating the sentence-case rule. Changing it changes generated frame headings, so it needs a deliberate call. |
 
-New: `viewModel/variantPicker.ts`, plus additions to `screens/component.ts`.
+New: `viewModel/componentFacts.ts` and `viewModel/operationGate.ts`, plus
+additions to `screens/component.ts`.
+
+**Completed 2026-07-29.** The vNext component workflow now derives selection
+facts without touching the legacy DOM, supports per-variant token selection,
+atom and state guidance, group bulk controls, working downloads, accurate
+reading/download states, and AI fallback warnings. Component operations defer
+selection changes until they finish, preventing an async build from mixing two
+components. The legacy UI remains the default build.
 
 ---
 

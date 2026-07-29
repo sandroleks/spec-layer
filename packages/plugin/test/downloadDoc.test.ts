@@ -31,15 +31,16 @@ function lifecyclePresenter() {
   const busy: boolean[] = [];
   const startProgress = vi.fn();
   const stopProgress = vi.fn();
+  const info = vi.fn();
   const ui: BuildPresenter = {
     clear: vi.fn(),
     error: (message) => { errors.push(message); },
-    info: vi.fn(),
+    info,
     setBusy: (value) => { busy.push(value); },
     startProgress,
     stopProgress,
   };
-  return { ui, errors, busy, startProgress, stopProgress };
+  return { ui, errors, busy, info, startProgress, stopProgress };
 }
 
 afterEach(() => {
@@ -108,6 +109,7 @@ describe('downloadDoc', () => {
     expect(clicks).toBe(1);
     expect(lifecycle.errors).toEqual([]);
     expect(lifecycle.busy).toEqual([true, false]);
+    expect(lifecycle.info).toHaveBeenCalledWith('Downloaded button.spec.md.');
     expect(lifecycle.startProgress).toHaveBeenCalledOnce();
     expect(lifecycle.stopProgress).toHaveBeenCalledOnce();
   });
@@ -129,6 +131,7 @@ describe('downloadDoc', () => {
 
     expect(lifecycle.errors).toEqual(['Download failed: download unavailable']);
     expect(lifecycle.busy).toEqual([true, false]);
+    expect(lifecycle.info).not.toHaveBeenCalled();
     expect(lifecycle.stopProgress).toHaveBeenCalledOnce();
   });
 });

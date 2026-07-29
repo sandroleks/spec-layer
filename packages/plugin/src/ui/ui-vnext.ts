@@ -21,9 +21,26 @@ import {
   type ComponentSelection,
 } from './screens/component';
 import {
+  applyGroupBulk,
+  componentDocSelection,
+  unavailableSections,
+} from './viewModel/componentScreen';
+import {
+  componentFacts,
+  NO_FACTS,
+  type ComponentFacts,
+} from './viewModel/componentFacts';
+import {
+  beginOperation,
+  createOperationGate,
+  deferSelection,
+  finishOperation,
+} from './viewModel/operationGate';
+import {
   autoExtract,
   createDocFrame,
   createState,
+  downloadDoc,
   send,
   setAiEnabled,
   type BuildPresenter,
@@ -37,6 +54,11 @@ const state = createState();
 const selection: ComponentSelection = createComponentSelection(state.aiEnabled);
 let screen: ComponentScreenState = { kind: 'empty' };
 let view: PluginView = 'component';
+let facts: ComponentFacts = NO_FACTS;
+let selectionSeq = 0;
+const operation = createOperationGate();
+type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
+let deferredSelection: SelectionMessage | null = null;
 
 /**
  * Whether the first quota request has settled. `state.quota` is null both
@@ -63,7 +85,7 @@ function paint(): void {
       '<p>This workflow still lives in the current plugin UI. It moves here next.</p></div>';
     return;
   }
-  renderComponentScreen(refs, screen, selection);
+  renderComponentScreen(refs, screen, selection, facts);
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +111,7 @@ async function refreshQuota(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Reports a build through the screen's own status row and footer button. */
-function presenter(): BuildPresenter {
+function presenter(action: 'create' | 'download'): BuildPresenter {
   return {
     clear: () => {
       if (screen.kind === 'error' || screen.kind === 'success') {
@@ -101,10 +123,16 @@ function presenter(): BuildPresenter {
       screen = { kind: 'error', componentName: currentName(), message };
       paint();
     },
-    info: () => {
-      // The component screen learns about success from docFrameDone, which
-      // carries whether the frame was replaced. An info line here would be a
-      // second, less informed source for the same fact.
+    info: (message) => {
+      // A download has no main-thread completion message, so this presenter is
+      // the only place it can report success.
+      screen = {
+        kind: 'success',
+        componentName: currentName(),
+        replaced: false,
+        message,
+      };
+      paint();
     },
     setBusy: (busy) => {
       if (!busy && screen.kind === 'building') {
@@ -113,7 +141,7 @@ function presenter(): BuildPresenter {
       }
     },
     startProgress: () => {
-      screen = { kind: 'building', componentName: currentName() };
+      screen = { kind: 'building', componentName: currentName(), action };
       paint();
     },
     stopProgress: () => {
@@ -122,14 +150,22 @@ function presenter(): BuildPresenter {
   };
 }
 
-function build(): void {
-  void createDocFrame(
-    state,
-    // Variant token picking has not moved to this screen yet, so no variant is
-    // requested. The model treats an empty set as "none", not "all".
-    { sections: new Set(selection.sections), variantIds: new Set<string>() },
-    presenter(),
+/** What a build or download documents, filtered to what this component can fill. */
+function docSelection() {
+  return componentDocSelection(
+    selection.sections,
+    selection.variantIds,
+    facts,
   );
+}
+
+function build(): void {
+  if (screen.kind === 'empty' || screen.kind === 'reading' || screen.kind === 'building') return;
+  if (!beginOperation(operation)) return;
+  void createDocFrame(state, docSelection(), presenter('create')).finally(() => {
+    // Success remains busy until the main thread confirms the canvas work.
+    if (screen.kind !== 'building') completeOperation();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +175,20 @@ function build(): void {
 function toggle<T>(set: Set<T>, value: T): void {
   if (set.has(value)) set.delete(value);
   else set.add(value);
+}
+
+function paintAndFocus(selector: string): void {
+  paint();
+  document.querySelector<HTMLElement>(selector)?.focus();
+}
+
+function completeOperation(): void {
+  const applyDeferred = finishOperation(operation);
+  if (applyDeferred && deferredSelection) {
+    const message = deferredSelection;
+    deferredSelection = null;
+    applySelection(message);
+  }
 }
 
 document.addEventListener('click', (event) => {
@@ -153,10 +203,33 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // Component controls are inert while an async build/download owns UiState.
+  if (operation.active) return;
+
+  const bulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
+  if (bulk?.dataset.groupBulk) {
+    const groupId = bulk.dataset.groupBulk as GroupId;
+    applyGroupBulk(
+      selection.sections,
+      groupId,
+      bulk.dataset.on === 'true',
+      unavailableSections(facts),
+    );
+    paintAndFocus(`[data-group-bulk="${groupId}"]`);
+    return;
+  }
+
   const group = target.closest<HTMLButtonElement>('[data-group]');
   if (group?.dataset.group) {
-    toggle(selection.expanded, group.dataset.group as GroupId);
-    paint();
+    const groupId = group.dataset.group as GroupId;
+    toggle(selection.expanded, groupId);
+    paintAndFocus(`[data-group="${groupId}"]`);
+    return;
+  }
+
+  if (target.closest('[data-variants]')) {
+    selection.variantsExpanded = !selection.variantsExpanded;
+    paintAndFocus('[data-variants]');
     return;
   }
 
@@ -164,7 +237,7 @@ document.addEventListener('click', (event) => {
   if (anatomy?.dataset.anatomy) {
     selection.anatomyView = anatomy.dataset.anatomy as ComponentSelection['anatomyView'];
     state.anatomyView = selection.anatomyView;
-    paint();
+    paintAndFocus(`[data-anatomy="${selection.anatomyView}"]`);
     return;
   }
 
@@ -177,21 +250,34 @@ document.addEventListener('click', (event) => {
       toggle(selection.measureViews, id);
       state.measureViews = [...selection.measureViews];
     }
-    paint();
+    paintAndFocus(`[data-measure="${id}"]`);
     return;
   }
 
+  if (target.closest('#sl-download')) {
+    if (!beginOperation(operation)) return;
+    void downloadDoc(state, docSelection(), presenter('download')).finally(completeOperation);
+    return;
+  }
   if (target.closest('#sl-create')) build();
 });
 
 document.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement | null;
-  if (!input) return;
+  if (!input || operation.active) return;
 
   if (input.id === 'sl-ai-toggle') {
     selection.aiEnabled = input.checked;
     setAiEnabled(state, input.checked);
-    paint();
+    paintAndFocus('#sl-ai-toggle');
+    return;
+  }
+
+  const variantId = input.dataset.variant;
+  if (variantId) {
+    if (input.checked) selection.variantIds.add(variantId);
+    else selection.variantIds.delete(variantId);
+    paintAndFocus(`[data-variant="${variantId}"]`);
     return;
   }
 
@@ -199,7 +285,7 @@ document.addEventListener('change', (event) => {
   if (sectionId) {
     if (input.checked) selection.sections.add(sectionId);
     else selection.sections.delete(sectionId);
-    paint();
+    paintAndFocus(`[data-section="${sectionId}"]`);
   }
 });
 
@@ -207,37 +293,72 @@ document.addEventListener('change', (event) => {
 // Messages
 // ---------------------------------------------------------------------------
 
+function applySelection(msg: SelectionMessage): void {
+  const seq = ++selectionSeq;
+  const node = msg.node;
+  state.currentNode = node;
+  state.currentFileKey = msg.fileKey;
+  state.currentSpec = null;
+  state.currentExtractedAt = '';
+  state.renderedMd = '';
+  state.generatedProse = null;
+  state.generatedProseKeys = null;
+  state.pendingAiNote = '';
+  facts = node ? componentFacts(null, node.name) : NO_FACTS;
+  selection.variantIds.clear();
+  if (!node) {
+    screen = { kind: 'empty' };
+    paint();
+    return;
+  }
+  screen = { kind: 'reading', componentName: node.name };
+  paint();
+  autoExtract(
+    state,
+    () => { /* the reading state is already painted */ },
+    () => {
+      if (seq !== selectionSeq || state.currentNode?.id !== node.id) return;
+      facts = componentFacts(state.currentSpec, node.name);
+      selection.variantIds = new Set(facts.defaultVariantIds);
+      if (facts.hasStates === true) selection.sections.add('states');
+      if (facts.hasStates === false) selection.sections.delete('states');
+      screen = { kind: 'ready', componentName: node.name };
+      paint();
+    },
+  );
+}
+
 window.onmessage = (event: MessageEvent): void => {
   const msg = (event.data?.pluginMessage ?? null) as MainToUi | null;
   if (!msg) return;
 
   switch (msg.type) {
     case 'selection': {
-      const node = msg.node;
-      state.currentNode = node;
-      state.currentFileKey = msg.fileKey;
-      state.currentSpec = null;
-      if (!node) {
-        screen = { kind: 'empty' };
-        paint();
+      // Keep an async build/download on the component it started with. Once it
+      // completes, apply the newest real selection message. The main thread
+      // suppresses its own generated-frame selection.
+      if (deferSelection(operation)) {
+        deferredSelection = msg;
         return;
       }
-      screen = { kind: 'reading', componentName: node.name };
-      paint();
-      autoExtract(
-        state,
-        () => { /* the reading state is already painted */ },
-        () => {
-          screen = { kind: 'ready', componentName: node.name };
-          paint();
-        },
-      );
+      applySelection(msg);
       return;
     }
 
     case 'docFrameDone':
-      screen = { kind: 'success', componentName: currentName(), replaced: msg.replaced };
+      {
+        const note = state.pendingAiNote;
+        const outcome = msg.replaced ? 'Docs replaced' : 'Docs created';
+        screen = {
+          kind: 'success',
+          componentName: currentName(),
+          replaced: msg.replaced,
+          ...(note ? { message: `${outcome}. ${note}`, warning: true } : {}),
+        };
+        state.pendingAiNote = '';
+      }
       paint();
+      completeOperation();
       // A build may have spent an AI use, so the header should stop showing a
       // stale count.
       void refreshQuota();
@@ -246,6 +367,7 @@ window.onmessage = (event: MessageEvent): void => {
     case 'docFrameError':
       screen = { kind: 'error', componentName: currentName(), message: msg.message };
       paint();
+      completeOperation();
       return;
 
     case 'licenseKey':

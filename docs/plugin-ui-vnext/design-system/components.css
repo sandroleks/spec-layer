@@ -412,6 +412,29 @@ button {
   cursor: not-allowed;
 }
 
+/* Variant values reuse the chip shape as read-only labels, not controls. */
+.sl-variant-chip {
+  min-height: 22px;
+  padding: 0 7px;
+  cursor: default;
+}
+
+.sl-variant-chip[data-tone="flag"] {
+  color: var(--sl-color-text);
+  background: transparent;
+}
+
+.sl-variant-chip[data-tone="muted"] {
+  color: var(--sl-color-text-quiet);
+  background: var(--sl-color-surface-subdued);
+}
+
+/* Keep an enum value attributed to its axis while letting the value lead. */
+.sl-chip-axis {
+  margin-right: 4px;
+  color: var(--sl-color-text-muted);
+}
+
 .sl-segmented {
   min-height: var(--sl-control-sm);
   display: inline-flex;
@@ -766,4 +789,3 @@ button {
     animation: none;
   }
 }
-

@@ -26,8 +26,14 @@ export type ComponentScreenState =
   | { kind: "empty" }
   | { kind: "reading"; componentName: string }
   | { kind: "ready"; componentName: string }
-  | { kind: "building"; componentName: string; phase?: string }
-  | { kind: "success"; componentName: string; replaced: boolean }
+  | { kind: "building"; componentName: string; action: "create" | "download"; phase?: string }
+  | {
+      kind: "success";
+      componentName: string;
+      replaced: boolean;
+      message?: string;
+      warning?: boolean;
+    }
   | { kind: "error"; componentName: string; message: string };
 
 export type LibraryStatus =
@@ -106,6 +112,11 @@ export interface SectionOption {
   aiCapable: boolean;
   selected: boolean;
   disabled?: boolean;
+  /**
+   * Why this row is disabled, shown as a muted suffix after the label. The
+   * label itself never changes, so it still matches the generated section.
+   */
+  note?: string;
 }
 
 export interface SectionGroupView {

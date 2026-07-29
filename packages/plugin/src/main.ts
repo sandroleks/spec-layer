@@ -3,6 +3,7 @@ import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
+import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
@@ -253,9 +254,19 @@ figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
   }
 }).catch(() => {/* ignore */});
 
+// The generated doc is selected after a successful build so the user can see
+// it. That programmatic selection is not a new component choice and must not
+// clear the source component from the UI. A real user selection never matches
+// this exact generated Section id, so it still posts normally.
+const programmaticDocSelection = new ProgrammaticSelection();
+
 // React to selection changes.
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
-figma.on('selectionchange', () => { void postSelection().catch(() => {/* handled inside */}); });
+figma.on('selectionchange', () => {
+  const selected = figma.currentPage.selection;
+  if (programmaticDocSelection.consume(selected.map((node) => node.id))) return;
+  void postSelection().catch(() => {/* handled inside */});
+});
 
 // Collect a node subtree's TEXT characters in document order (DFS). Used to
 // compute the self-hash that detects hand-edits to a generated Section.
@@ -548,9 +559,14 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         // Cosmetic tail: a focus/zoom hiccup must never fail a placed doc.
         try {
+          programmaticDocSelection.expect(section.id);
           figma.currentPage.selection = [section];
+        } catch {
+          programmaticDocSelection.cancel();
+        }
+        try {
           figma.viewport.scrollAndZoomIntoView([section]);
-        } catch { /* selection/zoom is non-essential */ }
+        } catch { /* zoom is non-essential */ }
 
         // `replaced` lets the UI say "Updated" vs "Created": an existing doc was
         // found and swapped out, so this regenerated in place rather than adding.

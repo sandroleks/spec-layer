@@ -559,6 +559,8 @@ export async function downloadDoc(
     if (state.pendingAiNote) {
       ui.error(state.pendingAiNote);
       state.pendingAiNote = '';
+    } else {
+      ui.info(`Downloaded ${filename}.`);
     }
   } catch (err) {
     ui.stopProgress();

@@ -25,8 +25,14 @@ export type ComponentScreenState =
   | { kind: "empty" }
   | { kind: "reading"; componentName: string }
   | { kind: "ready"; componentName: string }
-  | { kind: "building"; componentName: string; phase?: string }
-  | { kind: "success"; componentName: string; replaced: boolean }
+  | { kind: "building"; componentName: string; action: "create" | "download"; phase?: string }
+  | {
+      kind: "success";
+      componentName: string;
+      replaced: boolean;
+      message?: string;
+      warning?: boolean;
+    }
   | { kind: "error"; componentName: string; message: string };
 
 export type LibraryStatus =

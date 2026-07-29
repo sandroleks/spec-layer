@@ -18,6 +18,7 @@ import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { type ThemeMode } from './theme';
+import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
 
 /**
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
@@ -57,12 +58,47 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   empty: { kind: 'empty' },
   reading: { kind: 'reading', componentName: 'buttonPrimary' },
   ready: { kind: 'ready', componentName: 'buttonPrimary' },
-  building: { kind: 'building', componentName: 'buttonPrimary' },
+  building: { kind: 'building', componentName: 'buttonPrimary', action: 'create' },
+  downloading: { kind: 'building', componentName: 'buttonPrimary', action: 'download' },
   success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
+  warning: {
+    kind: 'success',
+    componentName: 'buttonPrimary',
+    replaced: false,
+    message: 'Docs created. AI did not run, so placeholders were used',
+    warning: true,
+  },
   error: {
     kind: 'error',
     componentName: 'buttonPrimary',
     message: 'Frame failed: the component has no variants to read.',
+  },
+};
+
+/** Canned facts. Real components derive these from the extracted spec. */
+const FACTS: Record<string, ComponentFacts> = {
+  unknown: NO_FACTS,
+  none: { ...NO_FACTS, hasStates: false },
+  atom: { ...NO_FACTS, isAtom: true, hasStates: false },
+  states: { ...NO_FACTS, hasStates: true },
+  variants: {
+    ...NO_FACTS,
+    hasStates: true,
+    variants: [
+      {
+        nodeId: '1:1',
+        chips: [{ text: 'Small', axis: 'Size', tone: 'value', title: 'Size: Small' }],
+      },
+      {
+        nodeId: '1:2',
+        chips: [{ text: 'Large', axis: 'Size', tone: 'value', title: 'Size: Large' }],
+      },
+      {
+        nodeId: '1:3',
+        chips: [{ text: 'Disabled', tone: 'flag', title: 'Disabled: true' }],
+      },
+    ],
+    defaultVariantIds: new Set(['1:1']),
   },
 };
 
@@ -73,5 +109,9 @@ if (view === 'component') {
   // come from the URL rather than from clicking: ?expand=usage,specs
   const expand = param('expand', 'usage').split(',').filter(Boolean);
   selection.expanded = new Set(expand as GroupId[]);
-  renderComponentScreen(refs, screen, selection);
+  selection.variantsExpanded = param('variants', 'collapsed') === 'expanded';
+  const fallbackFacts = screen.kind === 'reading' ? 'unknown' : 'none';
+  const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
+  selection.variantIds = new Set(facts.defaultVariantIds);
+  renderComponentScreen(refs, screen, selection, facts);
 }
