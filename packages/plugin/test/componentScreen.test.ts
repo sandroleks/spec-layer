@@ -14,6 +14,7 @@ import {
 import { createDocFrame, createState, type BuildPresenter } from '../src/ui/actions';
 import {
   componentFooterMarkup,
+  componentHeaderMarkup,
   componentScrollMarkup,
   componentStatusMarkup,
   createComponentSelection,
@@ -51,11 +52,11 @@ describe('defaultSections', () => {
     }
   });
 
-  it('leaves the three token-costly sections off', () => {
+  it('leaves only Related components off', () => {
     const selected = defaultSections();
     expect(selected.has('related')).toBe(false);
-    expect(selected.has('interactions')).toBe(false);
-    expect(selected.has('contentConsiderations')).toBe(false);
+    expect(selected.has('interactions')).toBe(true);
+    expect(selected.has('contentConsiderations')).toBe(true);
   });
 
   it('returns a fresh set each time, so one screen cannot mutate another', () => {
@@ -255,10 +256,13 @@ describe('component screen markup', () => {
     expect(markup).toContain('data-variant="1:1" aria-label="Size: Small" disabled');
   });
 
-  it('offers Clear all when every available section is included', () => {
+  it('uses prototype group icons without adding bulk-action clutter', () => {
     const selection = createComponentSelection(true);
     const markup = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
-    expect(markup).toContain('aria-label="Clear all Specifications sections"');
+    expect(markup).toContain('data-group="usage"');
+    expect(markup).toContain('data-group="specs"');
+    expect(markup).toContain('data-group="a11y"');
+    expect(markup).not.toContain('data-group-bulk');
   });
 
   it('keeps collapsed section controls out of the accessibility tree', () => {
@@ -273,6 +277,14 @@ describe('component screen markup', () => {
   it('disables Create docs while extraction is reading', () => {
     expect(componentFooterMarkup({ kind: 'reading', componentName: 'Button' }))
       .toContain('id="sl-create" type="button" disabled');
+  });
+
+  it('renders the selected-component eyebrow and footer icons', () => {
+    const header = componentHeaderMarkup(READY);
+    const footer = componentFooterMarkup(READY);
+    expect(header).toContain('Selected component');
+    expect(footer).toContain('id="sl-create"');
+    expect(footer).toContain('<svg');
   });
 
   it('locks component settings while reading or building', () => {

@@ -70,11 +70,17 @@ export function sidebarMarkup(
     '<nav class="sl-sidebar" aria-label="Workflows">' +
     groups +
     '<div class="sl-sidebar-spacer"></div>' +
+    '<span class="sl-sidebar-separator" aria-hidden="true"></span>' +
     '<div class="sl-sidebar-group">' +
     `<a class="sl-icon-button" id="rail-site" href="#" target="_blank" rel="noopener" ` +
     `aria-label="${SITE_LABEL}">${icon('world')}</a>` +
     `<a class="sl-icon-button" id="rail-linkedin" href="#" target="_blank" rel="noopener" ` +
     `aria-label="${LINKEDIN_LABEL}">${icon('brandLinkedin')}</a>` +
+    '<div class="sl-sidebar-item" data-tooltip-trigger>' +
+    `<button class="sl-icon-button" id="rail-help" type="button" ` +
+    `aria-label="Help & feedback">${icon('helpCircle')}</button>` +
+    '<span class="sl-tooltip" role="tooltip">Help & feedback</span>' +
+    '</div>' +
     '</div>' +
     '</nav>'
   );

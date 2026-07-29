@@ -52,6 +52,22 @@ export const ICON_PATHS = {
   chevronDown: '<path d="M6 9l6 6 6-6"/>',
   infoCircle:
     '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
+  /** Section group: component anatomy and specifications. */
+  box:
+    '<path d="M12 3l8 4.5l0 9l-8 4.5l-8-4.5l0-9l8-4.5"/>' +
+    '<path d="M12 12l8-4.5"/><path d="M12 12l0 9"/><path d="M12 12l-8-4.5"/>',
+  /** Section group: accessibility guidance. */
+  accessible:
+    '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0"/>' +
+    '<path d="M10 16.5l2-3l2 3m-2-3v-2l3-1m-6 0l3 1"/>' +
+    '<path d="M11.5 7.5a.5.5 0 1 0 1 0a.5.5 0 1 0-1 0" fill="currentColor"/>',
+  download:
+    '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
+    '<path d="M7 11l5 5l5-5"/><path d="M12 4l0 12"/>',
+  helpCircle:
+    '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0-18 0"/>' +
+    '<path d="M12 16v.01"/>' +
+    '<path d="M12 13a2 2 0 0 0 .914-3.782a1.98 1.98 0 0 0-2.414 .483"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

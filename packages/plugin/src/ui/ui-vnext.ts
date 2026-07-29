@@ -21,9 +21,7 @@ import {
   type ComponentSelection,
 } from './screens/component';
 import {
-  applyGroupBulk,
   componentDocSelection,
-  unavailableSections,
 } from './viewModel/componentScreen';
 import {
   componentFacts,
@@ -78,6 +76,7 @@ function paintAllowance(): void {
 
 function paint(): void {
   if (view !== 'component') {
+    refs.screen.classList.remove('sl-component-screen');
     refs.pageHeader.hidden = true;
     refs.footer.hidden = true;
     refs.scroll.innerHTML =
@@ -205,19 +204,6 @@ document.addEventListener('click', (event) => {
 
   // Component controls are inert while an async build/download owns UiState.
   if (operation.active) return;
-
-  const bulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
-  if (bulk?.dataset.groupBulk) {
-    const groupId = bulk.dataset.groupBulk as GroupId;
-    applyGroupBulk(
-      selection.sections,
-      groupId,
-      bulk.dataset.on === 'true',
-      unavailableSections(facts),
-    );
-    paintAndFocus(`[data-group-bulk="${groupId}"]`);
-    return;
-  }
 
   const group = target.closest<HTMLButtonElement>('[data-group]');
   if (group?.dataset.group) {

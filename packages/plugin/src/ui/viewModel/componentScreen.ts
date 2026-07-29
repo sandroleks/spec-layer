@@ -11,16 +11,14 @@ import type { SectionGroupView, SectionOption } from './contracts';
 import type { ComponentFacts } from './componentFacts';
 
 /**
- * Sections that start unchecked: Related components is rarely wanted, and the
- * two verbose accessibility additions are token-costly, so they are opt-in.
+ * Related components is the only section that starts unchecked. The approved
+ * component-screen prototype shows every accessibility section included.
  *
  * This is the one source for that default. `dom.ts` imports it too, so the
  * legacy UI and this screen cannot start from different states.
  */
 export const DEFAULT_OFF_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
   'related',
-  'interactions',
-  'contentConsiderations',
 ]);
 
 export function defaultSections(): Set<SectionId> {

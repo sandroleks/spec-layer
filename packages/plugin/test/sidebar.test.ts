@@ -53,10 +53,14 @@ describe('sidebarMarkup', () => {
     expect(sidebarMarkup('component', { library: 3 })).toContain('>3<');
   });
 
-  it('separates the three groups', () => {
+  it('separates the workflow groups and bottom utilities', () => {
     const html = sidebarMarkup('component', {});
     const separators = html.match(/sl-sidebar-separator/g) ?? [];
-    expect(separators).toHaveLength(2);
+    expect(separators).toHaveLength(3);
+  });
+
+  it('keeps Help & feedback in the bottom utility group', () => {
+    expect(sidebarMarkup('component', {})).toContain('aria-label="Help & feedback"');
   });
 
   it('puts the utility links at the bottom, below the spacer', () => {

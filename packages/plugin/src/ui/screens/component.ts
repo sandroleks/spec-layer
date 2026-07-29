@@ -17,7 +17,7 @@ import {
   variantCountLabel,
 } from '../viewModel/componentScreen';
 import type { ComponentFacts, VariantChip } from '../viewModel/componentFacts';
-import { icon } from '../shell/icons';
+import { icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 
 /** The user's picks. Held here, handed to createDocFrame at build time. */
@@ -55,6 +55,17 @@ const ANATOMY_VIEWS: { id: 'diagram' | 'table' | 'both'; label: string }[] = [
   { id: 'table', label: 'Table' },
   { id: 'both', label: 'Both' },
 ];
+
+const GROUP_ICONS: Record<GroupId, IconName> = {
+  usage: 'fileDescription',
+  specs: 'box',
+  a11y: 'accessible',
+};
+
+const DISPLAY_LABELS: Partial<Record<SectionId, string>> = {
+  contentConsiderations: 'Content considerations',
+  accessibility: 'Semantics & focus',
+};
 
 const AI_HELP =
   'AI can assist sections labeled AI. Component data, measurements, states, ' +
@@ -224,24 +235,21 @@ function groupMarkup(
       const details = option.selected || option.id === 'tokens'
         ? detailsFor(option.id, selection, facts)
         : '';
-      return checkboxRow(option) + details;
+      return checkboxRow({
+        ...option,
+        label: DISPLAY_LABELS[option.id as SectionId] ?? option.label,
+      }) + details;
     })
     .join('');
-  const available = group.options.filter((option) => !option.disabled);
-  const allOn = available.length > 0 && available.every((option) => option.selected);
   return (
     '<div class="sl-disclosure sl-section-group">' +
-    `<div class="sl-section-group-header" data-expanded="${group.expanded}">` +
     `<button class="sl-disclosure-trigger" type="button" data-group="${group.id}" ` +
       `aria-expanded="${group.expanded}" aria-controls="${panelId}">` +
-      `<span class="sl-section-group-title">${esc(group.label)}</span>` +
+      `<span class="sl-section-group-title">${icon(GROUP_ICONS[group.id], 17)}` +
+      `${esc(group.label)}</span>` +
       `<span class="sl-section-count">${includedLabel(group)}</span>` +
       `<span data-chevron aria-hidden="true">${icon('chevronDown', 16)}</span>` +
       '</button>' +
-    `<button class="sl-button" data-tone="quiet" type="button" data-group-bulk="${group.id}" ` +
-      `data-on="${!allOn}" aria-label="${allOn ? 'Clear' : 'Select'} all ${esc(group.label)} sections">` +
-      `${allOn ? 'Clear all' : 'Select all'}</button>` +
-    '</div>' +
     `<div class="sl-disclosure-panel" id="${panelId}"${group.expanded ? '' : ' hidden'}>` +
     `<div><div class="sl-section-rows">${rows}</div></div>` +
     '</div>' +
@@ -253,19 +261,19 @@ function groupMarkup(
 function aiControlMarkup(enabled: boolean): string {
   return (
     `<div class="sl-ai-control" data-enabled="${enabled}">` +
-    '<label class="sl-switch-control">' +
-    '<span class="sl-choice-copy"><strong>AI writing</strong></span>' +
-    '<span>' +
-    '<input class="sl-switch-input" id="sl-ai-toggle" type="checkbox" role="switch" ' +
-    `aria-label="AI writing"${enabled ? ' checked' : ''} />` +
-    '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
-    '</span>' +
-    '</label>' +
+    '<span class="sl-ai-control-copy">' +
+    '<strong>AI writing</strong>' +
     '<span data-tooltip-trigger>' +
     `<button class="sl-icon-button" id="sl-ai-help" type="button" aria-label="About AI writing" ` +
     `aria-describedby="sl-ai-help-text">${icon('infoCircle', 15)}</button>` +
     `<span class="sl-tooltip" id="sl-ai-help-text" role="tooltip">${AI_HELP}</span>` +
     '</span>' +
+    '</span>' +
+    '<label class="sl-switch-control">' +
+    '<input class="sl-switch-input" id="sl-ai-toggle" type="checkbox" role="switch" ' +
+    `aria-label="AI writing"${enabled ? ' checked' : ''} />` +
+    '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
+    '</label>' +
     '</div>'
   );
 }
@@ -302,6 +310,7 @@ export function componentHeaderMarkup(state: ComponentScreenState): string {
   if (state.kind === 'empty') return '';
   return (
     '<div class="sl-page-header-copy">' +
+    '<small>Selected component</small>' +
     `<h1 id="sl-component-name">${esc(state.componentName)}</h1>` +
     '</div>'
   );
@@ -315,12 +324,13 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
     : 'Create docs';
   const download =
     state.kind === 'success'
-      ? '<button class="sl-button" data-tone="secondary" id="sl-download" type="button">Download</button>'
+      ? '<button class="sl-button" data-tone="secondary" id="sl-download" type="button">' +
+        `${icon('download', 15)}Download</button>`
       : '';
   return (
     download +
     `<button class="sl-button" data-tone="primary" id="sl-create" type="button"` +
-    `${busy ? ' disabled' : ''}>${createLabel}</button>`
+    `${busy ? ' disabled' : ''}>${icon('fileDescription', 15)}${createLabel}</button>`
   );
 }
 
@@ -351,6 +361,7 @@ export function renderComponentScreen(
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): void {
+  refs.screen.classList.add('sl-component-screen');
   refs.pageHeader.innerHTML = componentHeaderMarkup(state);
   refs.pageHeader.hidden = state.kind === 'empty';
   refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts);
