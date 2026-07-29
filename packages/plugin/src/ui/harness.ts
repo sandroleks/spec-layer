@@ -33,6 +33,7 @@ import { createComponentSelection, renderComponentScreen } from './screens/compo
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen } from './screens/library';
+import { globalSearchMarkup } from './screens/search';
 import {
   renderLicenseScreen,
   type LicenseScreenModel,
@@ -51,6 +52,11 @@ import {
   type LibraryFilter,
 } from './viewModel/library';
 import { setRailBadge } from './shell/sidebar';
+import {
+  buildSearchModel,
+  nextSearchIndex,
+  type SearchDocument,
+} from './viewModel/search';
 
 /**
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
@@ -645,3 +651,186 @@ if (view === 'license') {
     }
   });
 }
+
+const SEARCH_DOCUMENTS: SearchDocument[] = [
+  { docId: 'buttonText', label: 'buttonText', sourceLabel: 'Components · Button / Text' },
+  { docId: 'inputField', label: 'inputField', sourceLabel: 'Components · Input / Field' },
+  { docId: 'radio', label: 'radio', sourceLabel: 'Components · Input / Radio' },
+  { docId: 'checkbox', label: 'checkbox', sourceLabel: 'Components · Input / Checkbox' },
+  { docId: 'buttonIcon', label: 'buttonIcon', sourceLabel: 'Components · Button / Icon' },
+  { docId: 'buttonPrimary', label: 'buttonPrimary', sourceLabel: 'Components · Button / Primary' },
+  { docId: 'buttonSegmented', label: 'buttonSegmented', sourceLabel: 'Components · Button / Segmented' },
+  { docId: 'mappedColors', label: 'Mapped Colors', sourceLabel: 'Foundations · Mapped Colors' },
+  { docId: 'typography', label: 'Foundation · typography', sourceLabel: 'Foundations · Typography' },
+];
+let harnessSearchOpen = param('search', 'closed') === 'open';
+let harnessSearchQuery = param('query', '');
+let harnessSearchIndex = Number(param('active', '0')) || 0;
+
+const renderHarnessSearch = (focusInput = false) => {
+  refs.root.querySelector('[data-global-search-dialog]')?.remove();
+  if (!harnessSearchOpen) return;
+  const model = buildSearchModel(
+    SEARCH_DOCUMENTS,
+    harnessSearchQuery,
+    harnessSearchIndex,
+  );
+  harnessSearchIndex = model.activeIndex;
+  refs.root.insertAdjacentHTML('beforeend', globalSearchMarkup(model));
+  if (focusInput) {
+    requestAnimationFrame(() => {
+      const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
+      input?.focus();
+      input?.setSelectionRange(harnessSearchQuery.length, harnessSearchQuery.length);
+    });
+  }
+};
+
+const closeHarnessSearch = () => {
+  harnessSearchOpen = false;
+  renderHarnessSearch();
+  requestAnimationFrame(() => refs.searchButton.focus());
+};
+
+const setHarnessSearchIndex = (index: number) => {
+  const model = buildSearchModel(
+    SEARCH_DOCUMENTS,
+    harnessSearchQuery,
+    index,
+  );
+  harnessSearchIndex = model.activeIndex;
+  const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
+  if (input && model.results.length) {
+    input.setAttribute(
+      'aria-activedescendant',
+      `sl-global-search-result-${harnessSearchIndex}`,
+    );
+  }
+  for (
+    const result of refs.root.querySelectorAll<HTMLButtonElement>('[data-search-index]')
+  ) {
+    const active = Number(result.dataset.searchIndex) === harnessSearchIndex;
+    result.classList.toggle('is-active', active);
+    result.setAttribute('aria-selected', String(active));
+  }
+};
+
+refs.searchButton.addEventListener('click', () => {
+  harnessSearchOpen = true;
+  harnessSearchQuery = '';
+  harnessSearchIndex = 0;
+  renderHarnessSearch(true);
+});
+
+document.addEventListener('input', (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.matches('[data-global-search-input]')) return;
+  harnessSearchQuery = input.value;
+  harnessSearchIndex = 0;
+  renderHarnessSearch(true);
+});
+
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element) || !harnessSearchOpen) return;
+  if (target.closest('[data-search-close]')) {
+    closeHarnessSearch();
+    return;
+  }
+  if (target.closest('[data-search-clear]')) {
+    harnessSearchQuery = '';
+    harnessSearchIndex = 0;
+    renderHarnessSearch(true);
+    return;
+  }
+  const result = target.closest<HTMLButtonElement>('[data-search-index]');
+  if (!result) return;
+  const nextView = result.dataset.searchView as PluginView | undefined;
+  closeHarnessSearch();
+  if (nextView) setActiveView(refs, nextView);
+  else setActiveView(refs, 'library');
+});
+
+document.addEventListener('keydown', (event) => {
+  if (
+    !event.repeat &&
+    (event.metaKey || event.ctrlKey) &&
+    event.key.toLowerCase() === 'k'
+  ) {
+    event.preventDefault();
+    if (harnessSearchOpen) closeHarnessSearch();
+    else {
+      harnessSearchOpen = true;
+      harnessSearchQuery = '';
+      harnessSearchIndex = 0;
+      renderHarnessSearch(true);
+    }
+    return;
+  }
+  if (!harnessSearchOpen) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeHarnessSearch();
+    return;
+  }
+  if (event.key === 'Tab') {
+    const dialog = refs.root.querySelector<HTMLElement>('[data-global-search-dialog]');
+    const focusable = dialog
+      ? [...dialog.querySelectorAll<HTMLElement>(
+          'input:not([disabled]), button:not([disabled]):not([tabindex="-1"])',
+        )].filter((element) => element.offsetParent !== null)
+      : [];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+    return;
+  }
+  const input = event.target instanceof HTMLInputElement
+    && event.target.matches('[data-global-search-input]');
+  if (!input) return;
+  const model = buildSearchModel(
+    SEARCH_DOCUMENTS,
+    harnessSearchQuery,
+    harnessSearchIndex,
+  );
+  if (
+    event.key === 'ArrowDown' ||
+    event.key === 'ArrowUp' ||
+    event.key === 'Home' ||
+    event.key === 'End'
+  ) {
+    event.preventDefault();
+    harnessSearchIndex = nextSearchIndex(
+      harnessSearchIndex,
+      event.key,
+      model.results.length,
+    );
+    renderHarnessSearch(true);
+  } else if (event.key === 'Enter' && model.results.length) {
+    event.preventDefault();
+    closeHarnessSearch();
+  }
+});
+
+const syncHarnessSearchPointer = (target: EventTarget | null) => {
+  if (!harnessSearchOpen || !(target instanceof Element)) return;
+  const result = target.closest<HTMLElement>('[data-search-index]');
+  if (!result?.dataset.searchIndex) return;
+  setHarnessSearchIndex(Number(result.dataset.searchIndex));
+};
+
+document.addEventListener('pointerover', (event) => {
+  syncHarnessSearchPointer(event.target);
+});
+
+document.addEventListener('focusin', (event) => {
+  syncHarnessSearchPointer(event.target);
+});
+
+renderHarnessSearch(harnessSearchOpen);

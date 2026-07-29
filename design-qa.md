@@ -359,4 +359,42 @@ ring correctly differ. No actionable P0, P1, or P2 findings remain.
 - [x] Update the Library rail badge from proven live drift.
 - [x] Verify dark/light layout, interactions, overflow, and browser console.
 
+# Global Search
+
+## Comparison target
+
+- Source visual truth: `docs/plugin-ui-vnext/prototype/search-after-fix.png`
+  and `docs/plugin-ui-vnext/prototype/search-light-after-fix.png`.
+- Rendered implementation: `docs/plugin-ui-vnext/prototype/implementation-search-vnext-dark.png`
+  and `docs/plugin-ui-vnext/prototype/implementation-search-vnext-light.png`.
+- Side-by-side evidence: `docs/plugin-ui-vnext/prototype/qa-search-vnext-dark-comparison.png`
+  and `docs/plugin-ui-vnext/prototype/qa-search-vnext-light-comparison.png`.
+- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=library&theme=dark&search=open`.
+
+## Normalization and findings
+
+- Source and implementation are 480 × 680 at one CSS pixel per output pixel.
+  The measured panel is x=12, y=56, width=456, height=519.39, with no body or
+  panel horizontal overflow.
+- Layer/scrim opacity, panel radius/elevation, 46px search field, grouped
+  headings, 41px results, 28px result icons, active row, and 32px keyboard
+  footer align in both dark and light themes.
+- The implementation intentionally uses the current product names `License`
+  and `Generated frame appearance`; the archived reference still says
+  `Subscription` and carries the superseded Settings summary.
+- Live filtering, four-document default/eight-document query cap, pointer
+  state, wrapping arrows, Home/End, Enter, empty/clear, scrim/X/Escape,
+  Command/Ctrl+K, Tab containment, active-result scrolling, and trigger focus
+  restoration were exercised. Browser logs contain no errors.
+
+## Implementation checklist
+
+- [x] Search every real workflow and connected Library document.
+- [x] Share workflow navigation behavior with the rail.
+- [x] Open real documentation frames from document results.
+- [x] Load Library identities lazily without false no-match results.
+- [x] Add full combobox/listbox semantics and keyboard behavior.
+- [x] Keep the palette in the global header across every screen.
+- [x] Verify dark/light layout, empty state, focus handling, overflow, and logs.
+
 final result: passed

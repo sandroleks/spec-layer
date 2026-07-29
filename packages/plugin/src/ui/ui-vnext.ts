@@ -37,6 +37,7 @@ import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen } from './screens/settings';
 import { renderLicenseScreen } from './screens/license';
 import { renderLibraryScreen } from './screens/library';
+import { globalSearchMarkup } from './screens/search';
 import {
   componentDocSelection,
 } from './viewModel/componentScreen';
@@ -45,6 +46,12 @@ import {
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
+import {
+  buildSearchModel,
+  nextSearchIndex,
+  type SearchModel,
+  type SearchResult,
+} from './viewModel/search';
 import {
   componentFacts,
   NO_FACTS,
@@ -142,6 +149,10 @@ type LibraryDownloadOperation = {
   currentDocId: string;
 };
 let libraryOperation: LibraryUpdateOperation | LibraryDownloadOperation | null = null;
+let searchOpen = false;
+let searchQuery = '';
+let searchActiveIndex = 0;
+let searchRestoreTarget: HTMLElement | null = null;
 
 setFoundationHost({
   repaint: () => {
@@ -232,6 +243,21 @@ function paint(): void {
       return;
     }
   }
+}
+
+function navigateToView(
+  next: PluginView,
+  options: { refreshLibrary?: boolean } = {},
+): void {
+  view = next;
+  setActiveView(refs, view);
+  if (view === 'foundations') requestFoundations();
+  if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
+  if (view === 'settings' && !settingsFontsRequested) {
+    settingsFontsRequested = true;
+    send({ type: 'requestFonts' });
+  }
+  paint();
 }
 
 // ---------------------------------------------------------------------------
@@ -641,6 +667,145 @@ function completeCurrentLibraryUpdate(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Global Search
+// ---------------------------------------------------------------------------
+
+function currentSearchModel(): SearchModel {
+  return buildSearchModel(
+    libraryEntries.map((entry) => ({
+      docId: entry.docId,
+      label: entry.label,
+      sourceLabel: entry.sourceLabel,
+    })),
+    searchQuery,
+    searchActiveIndex,
+  );
+}
+
+function ensureLibraryLoaded(): void {
+  if (libraryRequested || libraryRefreshing) return;
+  libraryRequested = true;
+  libraryRefreshing = true;
+  send({ type: 'requestLibrary' });
+}
+
+function renderGlobalSearch(focusInput = false): void {
+  const existing = refs.root.querySelector<HTMLElement>('[data-global-search-dialog]');
+  if (!searchOpen) {
+    existing?.remove();
+    return;
+  }
+  const oldInput = existing?.querySelector<HTMLInputElement>('[data-global-search-input]');
+  const hadInputFocus = document.activeElement === oldInput;
+  const selectionStart = oldInput?.selectionStart ?? searchQuery.length;
+  const markup = globalSearchMarkup(currentSearchModel(), {
+    libraryLoading: libraryRefreshing && libraryEntries.length === 0,
+  });
+  if (existing) existing.outerHTML = markup;
+  else refs.root.insertAdjacentHTML('beforeend', markup);
+  const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
+  if (input && (focusInput || hadInputFocus)) {
+    input.focus();
+    input.setSelectionRange(selectionStart, selectionStart);
+  }
+}
+
+function openGlobalSearch(): void {
+  if (searchOpen) return;
+  if (libraryMenuDocId) closeLibraryMenu();
+  searchRestoreTarget = refs.searchButton;
+  searchOpen = true;
+  searchQuery = '';
+  searchActiveIndex = 0;
+  ensureLibraryLoaded();
+  renderGlobalSearch();
+  requestAnimationFrame(() => {
+    refs.root.querySelector<HTMLInputElement>('[data-global-search-input]')?.focus();
+  });
+}
+
+function closeGlobalSearch(restoreFocus = true): void {
+  if (!searchOpen) return;
+  searchOpen = false;
+  searchQuery = '';
+  searchActiveIndex = 0;
+  refs.root.querySelector('[data-global-search-dialog]')?.remove();
+  if (restoreFocus) {
+    const restore = searchRestoreTarget ?? refs.searchButton;
+    requestAnimationFrame(() => restore.focus());
+  }
+  searchRestoreTarget = null;
+}
+
+function setSearchActiveIndex(index: number): void {
+  const model = currentSearchModel();
+  searchActiveIndex = model.results.length
+    ? Math.min(Math.max(0, index), model.results.length - 1)
+    : 0;
+  const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
+  if (input) {
+    if (model.results.length) {
+      input.setAttribute(
+        'aria-activedescendant',
+        `sl-global-search-result-${searchActiveIndex}`,
+      );
+    } else {
+      input.removeAttribute('aria-activedescendant');
+    }
+  }
+  for (
+    const result of refs.root.querySelectorAll<HTMLButtonElement>('[data-search-index]')
+  ) {
+    const active = Number(result.dataset.searchIndex) === searchActiveIndex;
+    result.classList.toggle('is-active', active);
+    result.setAttribute('aria-selected', String(active));
+  }
+  refs.root.querySelector<HTMLElement>(
+    `#sl-global-search-result-${searchActiveIndex}`,
+  )?.scrollIntoView({ block: 'nearest' });
+}
+
+function activateSearchResult(result: SearchResult | undefined): void {
+  if (!result) return;
+  closeGlobalSearch();
+  if (result.kind === 'workflow') {
+    navigateToView(result.view);
+    return;
+  }
+  libraryFilter = 'all';
+  navigateToView('library', { refreshLibrary: false });
+  send({ type: 'focusNode', nodeId: result.docId });
+}
+
+function trapSearchFocus(event: KeyboardEvent): boolean {
+  if (event.key !== 'Tab' || !searchOpen) return false;
+  const dialog = refs.root.querySelector<HTMLElement>('[data-global-search-dialog]');
+  if (!dialog) return false;
+  const focusable = [...dialog.querySelectorAll<HTMLElement>(
+    'input:not([disabled]), button:not([disabled]):not([tabindex="-1"])',
+  )].filter((element) => element.offsetParent !== null);
+  if (focusable.length === 0) return false;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
@@ -667,17 +832,39 @@ document.addEventListener('click', (event) => {
   const target = event.target as HTMLElement | null;
   if (!target) return;
 
+  if (target.closest(`#${refs.searchButton.id}`)) {
+    openGlobalSearch();
+    return;
+  }
+
+  if (target.closest('[data-search-close]')) {
+    closeGlobalSearch();
+    return;
+  }
+
+  if (target.closest('[data-search-clear]')) {
+    searchQuery = '';
+    searchActiveIndex = 0;
+    renderGlobalSearch(true);
+    return;
+  }
+
+  const searchResult = target.closest<HTMLButtonElement>('[data-search-index]');
+  if (searchResult?.dataset.searchIndex) {
+    activateSearchResult(
+      currentSearchModel().results[Number(searchResult.dataset.searchIndex)],
+    );
+    return;
+  }
+
   const rail = target.closest<HTMLButtonElement>('[data-view]');
   if (rail?.dataset.view) {
-    view = rail.dataset.view as PluginView;
-    setActiveView(refs, view);
-    if (view === 'foundations') requestFoundations();
-    if (view === 'library') refreshLibrary();
-    if (view === 'settings' && !settingsFontsRequested) {
-      settingsFontsRequested = true;
-      send({ type: 'requestFonts' });
-    }
-    paint();
+    navigateToView(rail.dataset.view as PluginView);
+    return;
+  }
+
+  if (target.closest(`#${refs.allowanceButton.id}`)) {
+    navigateToView('license');
     return;
   }
 
@@ -1012,7 +1199,14 @@ document.addEventListener('change', (event) => {
 
 document.addEventListener('input', (event) => {
   const input = event.target;
-  if (!(input instanceof HTMLInputElement) || operation.active) return;
+  if (!(input instanceof HTMLInputElement)) return;
+  if (input.matches('[data-global-search-input]')) {
+    searchQuery = input.value;
+    searchActiveIndex = 0;
+    renderGlobalSearch(true);
+    return;
+  }
+  if (operation.active) return;
   if (input.matches('[data-license-input]')) {
     licenseInput = input.value;
     const activateButton = document.querySelector<HTMLButtonElement>('[data-license-activate]');
@@ -1058,10 +1252,72 @@ document.addEventListener('submit', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (
+    !event.repeat &&
+    !event.isComposing &&
+    (event.metaKey || event.ctrlKey) &&
+    event.key.toLowerCase() === 'k'
+  ) {
+    event.preventDefault();
+    if (searchOpen) closeGlobalSearch();
+    else openGlobalSearch();
+    return;
+  }
+
+  if (searchOpen) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeGlobalSearch();
+      return;
+    }
+    if (trapSearchFocus(event)) return;
+    const input = event.target instanceof HTMLInputElement
+      && event.target.matches('[data-global-search-input]');
+    if (input) {
+      const model = currentSearchModel();
+      if (
+        event.key === 'ArrowDown' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'Home' ||
+        event.key === 'End'
+      ) {
+        event.preventDefault();
+        setSearchActiveIndex(
+          nextSearchIndex(
+            searchActiveIndex,
+            event.key,
+            model.results.length,
+          ),
+        );
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        activateSearchResult(model.results[model.activeIndex]);
+        return;
+      }
+    }
+  }
+
   if (event.key === 'Escape' && libraryMenuDocId) {
     event.preventDefault();
     closeLibraryMenu(true);
   }
+});
+
+function syncSearchPointer(target: EventTarget | null): void {
+  if (!searchOpen || !(target instanceof Element)) return;
+  const result = target.closest<HTMLElement>('[data-search-index]');
+  if (!result?.dataset.searchIndex) return;
+  setSearchActiveIndex(Number(result.dataset.searchIndex));
+}
+
+document.addEventListener('pointerover', (event) => {
+  syncSearchPointer(event.target);
+});
+
+document.addEventListener('focusin', (event) => {
+  syncSearchPointer(event.target);
 });
 
 refs.scroll.addEventListener('scroll', () => {
@@ -1290,6 +1546,7 @@ window.onmessage = (event: MessageEvent): void => {
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
       if (view === 'library') paint();
+      if (searchOpen) renderGlobalSearch();
       return;
 
     case 'driftSource': {
@@ -1376,6 +1633,7 @@ window.onmessage = (event: MessageEvent): void => {
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
       syncLibraryBadge();
       if (view === 'library') paint();
+      if (searchOpen) renderGlobalSearch();
       return;
 
     default:

@@ -88,6 +88,8 @@ export const ICON_PATHS = {
     '<path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 5v-5h-5"/>',
   dots:
     '<path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/>',
+  x: '<path d="M6 6l12 12"/><path d="M18 6l-12 12"/>',
+  chevronRight: '<path d="M9 6l6 6l-6 6"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;
