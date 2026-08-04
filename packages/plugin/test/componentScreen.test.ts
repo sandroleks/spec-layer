@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
 import {
   applyGroupBulk,
+  applyVariantBulk,
   componentDocSelection,
   DEFAULT_OFF_SECTIONS,
   defaultSections,
@@ -9,6 +10,7 @@ import {
   sectionGroups,
   sectionIdsInGroup,
   unavailableSections,
+  variantBulkState,
   variantCountLabel,
 } from '../src/ui/viewModel/componentScreen';
 import { createDocFrame, createState, type BuildPresenter } from '../src/ui/actions';
@@ -139,17 +141,16 @@ describe('unavailableSections', () => {
 });
 
 describe('sectionGroups with unavailable sections', () => {
-  it('disables the row and explains why, rather than dropping it', () => {
+  it('omits unavailable sections instead of showing disabled rows', () => {
     const groups = sectionGroups(
       defaultSections(),
       ALL_GROUPS,
       true,
       new Set<SectionId>(['states']),
     );
-    const states = groups.flatMap((group) => group.options).find((option) => option.id === 'states')!;
-    expect(states.disabled).toBe(true);
-    expect(states.note).toBe('none detected');
-    expect(states.selected).toBe(false);
+    expect(
+      groups.flatMap((group) => group.options).some((option) => option.id === 'states'),
+    ).toBe(false);
   });
 
   it('counts only selectable sections, matching the group bulk action', () => {
@@ -220,6 +221,25 @@ describe('variantCountLabel', () => {
   });
 });
 
+describe('variant bulk selection', () => {
+  const ids = ['1:1', '1:2', '1:3'];
+
+  it('distinguishes empty, mixed, and complete selection', () => {
+    expect(variantBulkState(new Set(), ids)).toEqual({ checked: false, mixed: false });
+    expect(variantBulkState(new Set(['1:1']), ids)).toEqual({ checked: false, mixed: true });
+    expect(variantBulkState(new Set(ids), ids)).toEqual({ checked: true, mixed: false });
+  });
+
+  it('selects and clears every available variant in place', () => {
+    const selected = new Set(['unrelated']);
+    applyVariantBulk(selected, ids, true);
+    expect(ids.every((id) => selected.has(id))).toBe(true);
+    applyVariantBulk(selected, ids, false);
+    expect(ids.every((id) => !selected.has(id))).toBe(true);
+    expect(selected.has('unrelated')).toBe(true);
+  });
+});
+
 describe('component screen markup', () => {
   it('shows the atom notice only for atom components', () => {
     const selection = createComponentSelection(true);
@@ -230,13 +250,13 @@ describe('component screen markup', () => {
     expect(off).not.toContain('Atom component');
   });
 
-  it('disables States only after no state axis is known', () => {
+  it('omits States once extraction confirms there is no state axis', () => {
     const selection = createComponentSelection(true);
     const reading = componentScrollMarkup(READY, selection, NO_FACTS);
     const unavailable = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
-    expect(reading).not.toContain('none detected');
-    expect(unavailable).toContain('none detected');
-    expect(unavailable).toContain('data-section="states" disabled');
+    expect(reading).toContain('data-section="states"');
+    expect(unavailable).not.toContain('data-section="states"');
+    expect(unavailable).not.toContain('none detected');
   });
 
   it('renders one accessible checkbox per variant and starts collapsed', () => {
@@ -248,30 +268,80 @@ describe('component screen markup', () => {
     expect(markup).toContain('id="sl-variant-list" hidden');
   });
 
-  it('explains disabled variant choices while Tokens is off', () => {
+  it('hides variant choices while Tokens is off', () => {
     const selection = createComponentSelection(true);
     selection.sections.delete('tokens');
     const markup = componentScrollMarkup(READY, selection, TWO_VARIANTS);
-    expect(markup).toContain('Turn on Tokens used to apply');
-    expect(markup).toContain('data-variant="1:1" aria-label="Size: Small" disabled');
+    expect(markup).not.toContain('Variants to document');
+    expect(markup).not.toContain('data-variant=');
   });
 
-  it('keeps disclosure and bulk selection as separate category actions', () => {
+  it('puts a checkbox bulk action at the start of every category row', () => {
     const selection = createComponentSelection(true);
     const markup = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
     expect(markup).toContain('data-group="usage"');
     expect(markup).toContain('data-group="specs"');
     expect(markup).toContain('data-group="a11y"');
-    expect(markup).toContain('data-group-bulk="usage" aria-label="Select all Usage sections"');
-    expect(markup).toContain('data-group-bulk="specs" aria-label="Clear all Specifications sections"');
-    expect(markup).toContain('data-group-bulk="a11y" aria-label="Clear all Accessibility sections"');
+    expect(markup).toContain('type="checkbox" data-group-bulk="usage"');
+    expect(markup).toContain('aria-label="Select all Usage sections" data-mixed="true"');
+    expect(markup).toContain('type="checkbox" data-group-bulk="specs"');
+    expect(markup).toContain('type="checkbox" data-group-bulk="a11y"');
   });
 
-  it('marks unavailable rows so hover does not imply they can be selected', () => {
+  it('renders a mixed-state Select all checkbox for partial variant selection', () => {
     const selection = createComponentSelection(true);
-    const markup = componentScrollMarkup(READY, selection, facts({ hasStates: false }));
+    selection.variantIds = new Set(['1:2']);
+    const markup = componentScrollMarkup(READY, selection, TWO_VARIANTS);
+    expect(markup).toContain('type="checkbox" data-variants-bulk');
+    expect(markup).toContain('aria-label="Select all variants" data-mixed="true"');
+    expect(markup).toContain('data-variant-count>1 of 2 selected');
+  });
+
+  it('shows nested settings only while their parent section is included', () => {
+    const selection = createComponentSelection(true);
+    selection.sections.delete('anatomy');
+    selection.sections.delete('measurements');
+    selection.sections.delete('tokens');
+    const markup = componentScrollMarkup(READY, selection, TWO_VARIANTS);
+    expect(markup).not.toContain('data-anatomy=');
+    expect(markup).not.toContain('data-measure=');
+    expect(markup).not.toContain('Variants to document');
+  });
+
+  it('renders Anatomy without display subsettings', () => {
+    const markup = componentScrollMarkup(
+      READY,
+      createComponentSelection(true),
+      facts({ hasStates: true }),
+    );
+    expect(markup).toContain('data-section="anatomy"');
+    expect(markup).not.toContain('data-anatomy=');
+    expect(markup).not.toContain('Display as');
+    expect(markup).not.toContain('Show anatomy as');
+  });
+
+  it('shows selected measurement options clearly and declares the final required option', () => {
+    const selection = createComponentSelection(true);
+    selection.measureViews = new Set(['padding']);
+    const markup = componentScrollMarkup(READY, selection, facts({ hasStates: true }));
     expect(markup).toContain(
-      '<div class="sl-section-row is-disabled"><label class="sl-choice">',
+      'data-measure="padding" aria-pressed="true" aria-disabled="true" ' +
+      'title="At least one measurement view is required"',
+    );
+    expect(markup).toContain('data-measure="size" aria-pressed="false"');
+    expect(markup).toContain('sl-option-check');
+  });
+
+  it('makes the whole section label the selection target', () => {
+    const markup = componentScrollMarkup(
+      READY,
+      createComponentSelection(true),
+      facts({ hasStates: true }),
+    );
+    expect(markup).toContain('<label class="sl-choice sl-section-choice">');
+    expect(markup).toContain(
+      '<span class="sl-choice-copy"><strong>Interactions</strong></span>' +
+      '<span class="sl-badge" data-tone="accent">AI</span></label>',
     );
   });
 

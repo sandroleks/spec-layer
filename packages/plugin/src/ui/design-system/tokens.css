@@ -1,32 +1,82 @@
 :root {
   color-scheme: dark;
 
-  /* Typography */
+  /* Typography.
+     Steps are named for the ROLE they serve, not their position in a sequence,
+     because the bug this replaced was the same role rendering at a different
+     size on each screen: a button label was 10px, 10.5px, or 11px depending on
+     which screen it sat on. A role name makes that mistake hard to repeat —
+     "which size is a button label?" has one answer.
+
+     Whole pixels only. The values this replaced ran to quarter-pixel steps
+     (8.75, 9.25, 10.75) where no adjacent pair was tellable apart.
+
+     Floor raised from 8px to 9px: the smallest four roles (micro through
+     control) each moved up by 1px, which is why control now equals body. That
+     merge is deliberate, not a bug — the same pairing (a control's label at
+     the same size as base body copy, distinguished by weight rather than
+     size) is how shadcn/ui and most dense desktop UIs size a default vs. large
+     button. Section and display were already legible at their sizes and did
+     not need to move. Because every consumer reads the role token rather than
+     a literal, this floor-raise is a 4-line diff — nothing outside this block
+     changed. */
   --sl-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --sl-font-size-1: 8px;
-  --sl-font-size-2: 9px;
-  --sl-font-size-3: 10px;
-  --sl-font-size-4: 11px;
-  --sl-font-size-5: 12px;
-  --sl-font-size-6: 14px;
-  --sl-font-size-7: 16px;
-  --sl-font-size-8: 20px;
+  --sl-font-size-micro: 9px; /* keyboard hints, the smallest badges */
+  --sl-font-size-caption: 10px; /* hints, counts, secondary <small> */
+  --sl-font-size-support: 11px; /* metadata, help text, chips */
+  --sl-font-size-control: 12px; /* buttons, control labels, row titles */
+  --sl-font-size-body: 12px; /* base body copy */
+  --sl-font-size-section: 14px; /* section headings */
+  --sl-font-size-display: 20px; /* screen h1 */
+  /* No 16px step: the screen h1 sits at 20px and section headings at 14px, so
+     nothing in the UI needs one. A role name that nothing uses is how the old
+     dead .sl-type-* utilities started, so add it back only with a consumer. */
+
+  /* `none` is for single-line controls that centre their own text; using it
+     instead of a ratio keeps an icon and its label on one optical line. */
+  --sl-line-height-none: 1;
   --sl-line-height-tight: 1.15;
   --sl-line-height-control: 1.25;
   --sl-line-height-body: 1.4;
+
   --sl-font-weight-regular: 450;
   --sl-font-weight-medium: 560;
   --sl-font-weight-semibold: 650;
   --sl-font-weight-bold: 720;
 
-  /* Spacing */
+  /* Tracking. Small uppercase labels need positive tracking to stay readable;
+     large text needs negative tracking to stop looking loose. Both were
+     previously literal em values scattered through the pattern layer. */
+  --sl-tracking-display: -0.035em; /* 20px page h1 */
+  --sl-tracking-tight: -0.01em; /* 11px+ titles */
+  --sl-tracking-caps: 0.045em; /* uppercase eyebrows and badges */
+  --sl-tracking-caps-wide: 0.07em; /* uppercase section labels */
+
+  /* Spacing.
+     A 2px scale, not 4px: with 24/28/34px control heights, 4px steps are too
+     coarse to distinguish "tight" from "comfortable" inside a single row. The
+     step name is the pixel value, so there is never a question what
+     --sl-space-6 resolves to.
+
+     8px is the anchor. Prefer a named step over a literal for any rhythm
+     spacing (gap, padding, margin). Two things are deliberately NOT on this
+     scale and stay literal in the pattern layer:
+       - 1px optical nudges that align an icon or caption to a text baseline.
+       - Computed layout values: footer scroll clearance and the nested-row
+         indents that align to a control column, which must track the thing
+         they align to rather than the rhythm. */
   --sl-space-0: 0;
-  --sl-space-1: 4px;
-  --sl-space-2: 8px;
-  --sl-space-3: 12px;
-  --sl-space-4: 16px;
-  --sl-space-5: 24px;
-  --sl-space-6: 32px;
+  --sl-space-2: 2px;
+  --sl-space-4: 4px;
+  --sl-space-6: 6px;
+  --sl-space-8: 8px;
+  --sl-space-10: 10px;
+  --sl-space-12: 12px;
+  --sl-space-14: 14px;
+  --sl-space-16: 16px;
+  --sl-space-20: 20px;
+  --sl-space-24: 24px;
+  --sl-space-32: 32px;
 
   /* Shape */
   --sl-radius-xs: 3px;
@@ -42,7 +92,10 @@
   --sl-control-lg: 36px;
   --sl-touch-target: 36px;
 
-  /* Layout */
+  /* Layout.
+     plugin-width/height mirror the figma.showUI() call in src/main.ts, which is
+     the source of truth — the iframe is sized by the host, not by CSS. They are
+     published here for reference (harness, docs); change main.ts too. */
   --sl-plugin-width: 480px;
   --sl-plugin-height: 680px;
   --sl-sidebar-width: 52px;
@@ -72,10 +125,15 @@
   --sl-color-surface-pressed: #383838;
   --sl-color-surface-selected: rgba(11, 153, 255, 0.14);
   --sl-color-overlay: rgba(0, 0, 0, 0.62);
+  --sl-color-section-header: var(--sl-color-surface);
+  --sl-color-detail-surface: var(--sl-color-surface-subdued);
+  --sl-color-ai-surface: var(--sl-color-surface-selected);
+  --sl-color-ai-border: transparent;
 
   --sl-color-border: #414141;
   --sl-color-border-muted: #343434;
   --sl-color-border-strong: #505050;
+  --sl-color-border-hover: var(--sl-color-border-strong);
 
   --sl-color-text: #f3f3f3;
   --sl-color-text-muted: #adadad;
@@ -86,15 +144,38 @@
   --sl-color-accent: #0b99ff;
   --sl-color-accent-hover: #31a8ff;
   --sl-color-accent-pressed: #0786e0;
+  --sl-color-accent-text: #9dccf2;
   --sl-color-accent-soft: rgba(11, 153, 255, 0.14);
+  --sl-color-accent-border: rgba(11, 153, 255, 0.25);
+  --sl-color-accent-border-strong: rgba(11, 153, 255, 0.8);
   --sl-color-focus: #62b8ff;
+  --sl-color-ai-badge-text: var(--sl-color-accent-text);
+  --sl-color-ai-badge-bg: var(--sl-color-accent-soft);
+  --sl-color-ai-badge-border: var(--sl-color-accent-border);
 
   --sl-color-success: #73d66d;
   --sl-color-success-soft: rgba(42, 153, 63, 0.16);
+  --sl-color-success-border: rgba(115, 214, 109, 0.3);
+  /* Library/Foundation row icons: a muted neutral, not a status color. The
+     icon is decorative — it identifies what kind of row this is, not whether
+     anything is wrong with it — so it must not repaint if success/warning/
+     danger are ever retuned for their actual state roles. */
+  --sl-color-source-icon: var(--sl-color-text-muted);
   --sl-color-warning: #e2a64f;
   --sl-color-warning-soft: rgba(226, 166, 79, 0.16);
+  --sl-color-warning-border: rgba(226, 166, 79, 0.3);
+  /* Amber as a filled shape (the quota bar, the allowance ring) rather than as
+     text. On dark the text amber already works as a fill, so this matches it.
+     On light it cannot: the text amber has to be dark enough to pass AA on
+     white, and at that darkness a 5px bar reads brown. Same split, same
+     reason as --sl-color-source-icon above. */
+  --sl-color-warning-graphic: var(--sl-color-warning);
   --sl-color-danger: #ff716c;
   --sl-color-danger-soft: rgba(255, 113, 108, 0.14);
+  --sl-color-danger-border: rgba(255, 113, 108, 0.28);
+
+  --sl-color-control-thumb: #ffffff;
+  --sl-shadow-control-thumb: 0 1px 2px rgba(0, 0, 0, 0.28);
 
   /* Inverse overlays are intentionally theme-independent. */
   --sl-color-tooltip-bg: #111315;
@@ -109,42 +190,62 @@ body[data-theme="dark"] {
 body[data-theme="light"] {
   color-scheme: light;
 
-  --sl-color-canvas: #f7f7f8;
-  --sl-color-chrome: #f0f1f2;
-  --sl-color-surface: #f0f1f2;
-  --sl-color-surface-subdued: #f3f4f5;
+  --sl-color-canvas: #ffffff;
+  --sl-color-chrome: #ffffff;
+  --sl-color-surface: #ffffff;
+  --sl-color-surface-subdued: #f7f7f7;
   --sl-color-surface-raised: #ffffff;
-  --sl-color-surface-hover: #e7e9eb;
-  --sl-color-surface-pressed: #dde0e3;
-  --sl-color-surface-selected: rgba(8, 117, 193, 0.1);
-  --sl-color-overlay: rgba(22, 24, 27, 0.42);
+  --sl-color-surface-hover: #f4f4f4;
+  --sl-color-surface-pressed: #ececec;
+  --sl-color-surface-selected: #eef7ff;
+  --sl-color-overlay: rgba(24, 24, 24, 0.34);
+  --sl-color-section-header: #f7f7f7;
+  --sl-color-detail-surface: #ffffff;
+  --sl-color-ai-surface: #f7f7f7;
+  --sl-color-ai-border: #e2e2e2;
 
-  --sl-color-border: #d5d7da;
-  --sl-color-border-muted: #e2e3e5;
-  --sl-color-border-strong: #b9bdc2;
+  --sl-color-border: #e2e2e2;
+  --sl-color-border-muted: #eeeeee;
+  --sl-color-border-strong: #8a8a8a;
+  --sl-color-border-hover: #c9c9c9;
 
-  --sl-color-text: #1d1f22;
-  --sl-color-text-muted: #5d6268;
-  --sl-color-text-quiet: #737980;
-  --sl-color-text-disabled: #9ca1a7;
+  --sl-color-text: #242424;
+  --sl-color-text-muted: #737373;
+  --sl-color-text-quiet: #8a8a8a;
+  --sl-color-text-disabled: #aaaaaa;
   --sl-color-text-on-accent: #ffffff;
 
   --sl-color-accent: #0875c1;
   --sl-color-accent-hover: #0565a8;
   --sl-color-accent-pressed: #04568f;
-  --sl-color-accent-soft: rgba(8, 117, 193, 0.1);
+  --sl-color-accent-text: #0969a8;
+  --sl-color-accent-soft: #eef7ff;
+  --sl-color-accent-border: #b9ddf5;
+  --sl-color-accent-border-strong: #0875c1;
   --sl-color-focus: #0875c1;
+  --sl-color-ai-badge-text: #737373;
+  --sl-color-ai-badge-bg: #ffffff;
+  --sl-color-ai-badge-border: #e1e1e1;
 
-  --sl-color-success: #338a39;
-  --sl-color-success-soft: rgba(51, 138, 57, 0.1);
-  --sl-color-warning: #94600d;
-  --sl-color-warning-soft: rgba(148, 96, 13, 0.1);
-  --sl-color-danger: #c33f3a;
-  --sl-color-danger-soft: rgba(195, 63, 58, 0.1);
+  --sl-color-success: #2f7d35;
+  --sl-color-success-soft: #edf7ee;
+  --sl-color-success-border: #c5e2c7;
+  --sl-color-source-icon: var(--sl-color-text-muted);
+  --sl-color-warning: #8a5a0a;
+  --sl-color-warning-soft: #fff6e6;
+  --sl-color-warning-border: #ead1a4;
+  /* Lighter than the text amber above so it still reads amber rather than
+     brown, dark enough to hold 3.1:1 against the quota bar's track and 3.4:1
+     against a white card, which is what WCAG 1.4.11 asks of a non-text shape. */
+  --sl-color-warning-graphic: #c9770d;
+  --sl-color-danger: #b93b36;
+  --sl-color-danger-soft: #fff0ef;
+  --sl-color-danger-border: #ebc2bf;
 
-  --sl-shadow-raised: 0 1px 2px rgba(18, 22, 26, 0.08);
-  --sl-shadow-menu: 0 10px 30px rgba(18, 22, 26, 0.18);
-  --sl-shadow-overlay: 0 18px 54px rgba(18, 22, 26, 0.2);
+  --sl-shadow-raised: 0 1px 2px rgba(34, 56, 76, 0.08);
+  --sl-shadow-menu: 0 10px 30px rgba(34, 56, 76, 0.16);
+  --sl-shadow-overlay: 0 18px 54px rgba(34, 56, 76, 0.2);
+  --sl-shadow-control-thumb: 0 1px 2px rgba(34, 56, 76, 0.24);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -154,4 +255,3 @@ body[data-theme="light"] {
     --sl-motion-slow: 0ms;
   }
 }
-

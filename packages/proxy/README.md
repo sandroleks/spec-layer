@@ -12,13 +12,15 @@ Auth on every endpoint: `Authorization: Bearer <license-key>` (pro) **or**
 
 ### `POST /v1/prose`
 
-Body: `{ "cacheKey": "prose:v8:<hash>...", "request": <Anthropic messages body> }`
+Body: `{ "cacheKey": "prose:v8:<hash>...", "request": <shipped prose request> }`
 
-The `request` is forwarded verbatim to `POST /v1/messages`, guarded by an
-allowlist: `model === 'claude-haiku-4-5'`, `max_tokens ≤ 3000`. The
-`cacheKey` (deterministic content hash from `proseCacheKey`) doubles as the
-idempotency key — a retry within 24h replays the stored response without a
-second upstream call or quota decrement.
+The proxy accepts only the two request contracts built by the extractor:
+component prose and Foundation group descriptions. It requires the shipped
+model, exact system prompt and few-shot messages, fixed output limit, bounded
+generated prompt shape, and supported base64 image blocks. Caller-defined
+Anthropic options, remote image URLs, extra fields, and bodies above 7 MB are
+rejected. The `cacheKey` doubles as the idempotency key: a retry replays the
+stored response without a second upstream call or quota decrement.
 
 Success: the Anthropic response JSON plus headers `X-Tier`,
 `X-Quota-Used`, `X-Quota-Limit` (`unlimited` for pro), `X-Quota-Remaining`,
@@ -45,7 +47,10 @@ endpoint and caches the status).
 - Free: 20 generations within 30 days of first sight, then 10 per UTC
   calendar month. Only uncached, successful generations count.
 - Pro: unlimited; flagged for review at ≥1,000/month (`fair_use_flag` log).
-- Rate limit: 10 requests/min per identity, both tiers.
+- Quota engine rate limit: 10 uncached generation reservations/min per
+  identity, both tiers.
+- Request edge limiter: 60 prose requests/min and 60 quota reads/min per
+  connecting IP, best-effort per isolate.
 - License status cached 24h; 5-day grace on Lemon Squeezy outages.
 
 Atomicity: one Durable Object per identity (`QuotaDO`) serializes all quota
@@ -70,6 +75,8 @@ cache inside the DO; prompts and prose are never logged.
   limiter caps requests at 20/min. That limiter is best-effort per isolate;
   the durable backstop is a Cloudflare WAF rate rule on `/v1/license/*`
   (**operational TODO** — not yet configured in the dashboard).
+- **Prose and quota endpoints are rate-limited in-isolate.** This is a
+  best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
   authenticated; rotating it re-mints a free identity with a fresh boost
   window, bounded per request by the model/max_tokens allowlist.
@@ -117,10 +124,8 @@ Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
 curl -s https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
 # {"tier":"free","used":0,"limit":20,"remaining":20,"resetsAt":"..."}
 
-curl -s -X POST https://spec-layer-proxy.<account>.workers.dev/v1/prose \
-  -H 'X-Figma-User: smoke-test-1' -H 'content-type: application/json' \
-  -d '{"cacheKey":"prose:v8:smoke1","request":{"model":"claude-haiku-4-5","max_tokens":256,"messages":[{"role":"user","content":"Say OK."}]}}'
-# Anthropic response JSON + X-Quota-Used: 1
+# Exercise POST /v1/prose through the plugin or the contract tests. Hand-written
+# generic Anthropic requests are intentionally rejected.
 ```
 
 ## Development

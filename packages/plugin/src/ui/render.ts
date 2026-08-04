@@ -266,27 +266,14 @@ function buildVariantChips(values: Record<string, string>): HTMLDivElement {
   return wrap;
 }
 
-/**
- * Disable + uncheck the States row when the component has no state-like axis,
- * so the UI never silently accepts a checked box it can't act on. The label
- * text stays "States" — detection status renders as a muted suffix span
- * instead of replacing the label outright. Restores checked + enabled (and
- * removes the suffix) once a selection with states arrives.
- */
+/** Only render the States choice when the extractor found state-like variants. */
 export function renderStatesHint(refs: Refs, state: UiState): void {
   const check = refs.sectionChecks['states'];
   if (!check) return;
   const row = check.closest('.sec-row') as HTMLElement | null;
-  const label = row?.querySelector('label');
   const hasStates = Boolean(state.currentSpec && detectStateMatrix(state.currentSpec.variants));
 
-  label?.querySelector('.sec-note')?.remove();
-  if (!hasStates && label) {
-    const note = document.createElement('span');
-    note.className = 'sec-note';
-    note.textContent = '· none detected';
-    label.appendChild(note);
-  }
+  if (row) row.hidden = !hasStates;
   check.disabled = !hasStates;
   check.checked = hasStates;
 }

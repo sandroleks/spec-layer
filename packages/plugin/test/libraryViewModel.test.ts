@@ -114,6 +114,17 @@ describe('buildLibraryRow capabilities', () => {
     });
   });
 
+  it('carries the source glyph through for foundation rows only', () => {
+    expect(buildLibraryRow(entry(), { now: NOW }).foundationIcon).toBeNull();
+    expect(buildLibraryRow(entry({
+      kind: 'foundation', foundationIcon: 'color', sourceNodeId: '',
+    }), { now: NOW }).foundationIcon).toBe('color');
+    // A foundation entry from a main thread that could not read its scope must
+    // still render a glyph rather than nothing.
+    expect(buildLibraryRow(entry({ kind: 'foundation', sourceNodeId: '' }), { now: NOW })
+      .foundationIcon).toBe('mixed');
+  });
+
   it('keeps manual Update available for a proven in-sync connection', () => {
     const row = buildLibraryRow(entry(), {
       drift: new Map([['doc-1', 'inSync']]),

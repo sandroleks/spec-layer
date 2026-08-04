@@ -38,14 +38,20 @@ The search control is stable in position and size on every screen. Library
 search appears in the same header control rather than creating a second search
 field or moving the header content.
 
-The AI allowance has enough horizontal space for two lines:
+None of the three controls carries a resting border or fill. The bar separates
+them with space and paints a surface under the pointer only. Three outlined
+boxes in a 48px bar out-shouted the screen title beneath them, which is the
+failure the visual language section already warns about.
 
-- `AI writing`
-- `{remaining} of {limit} free uses left`
+The AI allowance is one line, and the label is quieter than the number it
+qualifies:
+
+- `AI writing · {remaining} of {limit} free uses left`
 
 The allowance control includes an `Upgrade` action for free users. It must
 support normal, low, exhausted, Pro, unknown, and loading states without
-changing the header height.
+changing the header height. Under 440px it drops the label and the `Upgrade`
+action; the ring and the count still report what is left.
 
 ## Sidebar
 

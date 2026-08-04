@@ -7,6 +7,7 @@ import {
   emptyStateLines, canGenerate,
   frameCount, framesPerSource, selectAll, clearAll, allSelected,
   fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
+  collectionIconKind,
 } from '../src/ui/foundationState';
 
 function dump(over: Partial<SerializedFoundation> = {}): SerializedFoundation {
@@ -40,8 +41,59 @@ describe('summarize', () => {
       collections: [{
         id: 'c1', name: 'Semantic', variableCount: 1,
         modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
+        iconKind: 'color',
       }],
     });
+  });
+});
+
+describe('collectionIconKind', () => {
+  it('is color when every variable is COLOR', () => {
+    const spec = buildFoundation(dump());
+    expect(collectionIconKind(spec.collections[0])).toBe('color');
+  });
+
+  it('is dimension when every variable is FLOAT', () => {
+    const spec = buildFoundation(dump({
+      collections: [{
+        id: 'c1', name: 'Spacing', defaultModeId: 's1',
+        modes: [{ modeId: 's1', name: 'Default' }],
+        variables: [
+          { id: 'space-4', name: 'space/4', resolvedType: 'FLOAT', description: '',
+            codeSyntax: {}, valuesByMode: { s1: 4 } },
+          { id: 'space-8', name: 'space/8', resolvedType: 'FLOAT', description: '',
+            codeSyntax: {}, valuesByMode: { s1: 8 } },
+        ],
+      }],
+    }));
+    expect(collectionIconKind(spec.collections[0])).toBe('dimension');
+  });
+
+  it('falls back to mixed rather than guess from a majority', () => {
+    const spec = buildFoundation(dump({
+      collections: [{
+        id: 'c1', name: 'Foundation', defaultModeId: 's1',
+        modes: [{ modeId: 's1', name: 'Default' }],
+        variables: [
+          { id: 'bg', name: 'bg/brand', resolvedType: 'COLOR', description: '',
+            codeSyntax: {}, valuesByMode: { s1: { r: 0, g: 0, b: 1, a: 1 } } },
+          { id: 'radius', name: 'radius/md', resolvedType: 'FLOAT', description: '',
+            codeSyntax: {}, valuesByMode: { s1: 8 } },
+        ],
+      }],
+    }));
+    expect(collectionIconKind(spec.collections[0])).toBe('mixed');
+  });
+
+  it('falls back to mixed for an empty collection rather than crash', () => {
+    const spec = buildFoundation(dump({
+      collections: [{
+        id: 'c1', name: 'Empty', defaultModeId: 's1',
+        modes: [{ modeId: 's1', name: 'Default' }],
+        variables: [],
+      }],
+    }));
+    expect(collectionIconKind(spec.collections[0])).toBe('mixed');
   });
 });
 
@@ -318,13 +370,13 @@ describe('panel copy', () => {
   });
 
   it('mentions a split in the row meta, and stays quiet about one frame', () => {
-    const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }] };
+    const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
     expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · + 3 frames');
     expect(collectionMeta(c, 1)).toBe('170 variables · 1 mode');
   });
 
   it('uses the singular for a one-variable, one-mode collection', () => {
-    const c = { id: 'x', name: 'P', variableCount: 1, modes: [{ modeId: 'm', name: 'V' }] };
+    const c = { id: 'x', name: 'P', variableCount: 1, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
     expect(collectionMeta(c, 1)).toBe('1 variable · 1 mode');
   });
 
@@ -346,7 +398,7 @@ describe('panel copy', () => {
 
   it('contains no em dash anywhere in the panel copy', () => {
     const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
-    const c = { id: 'x', name: 'P', variableCount: 9, modes: [{ modeId: 'm', name: 'V' }] };
+    const c = { id: 'x', name: 'P', variableCount: 9, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
     const strings = [
       fileSummary(summarize(spec)),
       collectionMeta(c, 3),

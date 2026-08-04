@@ -13,6 +13,8 @@
  * the same sizing, stroke, and aria treatment.
  */
 
+import type { FoundationIconKind } from '../../foundationIcon';
+
 export const ICON_PATHS = {
   /** Generate component docs. */
   fileDescription:
@@ -70,6 +72,19 @@ export const ICON_PATHS = {
     '<path d="M12 13a2 2 0 0 0 .914-3.782a1.98 1.98 0 0 0-2.414 .483"/>',
   puzzle:
     '<path d="M4 7h3a1 1 0 0 0 1-1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-1a2 2 0 0 0-4 0v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a2 2 0 0 0 0-4h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1"/>',
+  /** Foundation row: a collection whose variables are all COLOR. */
+  swatch:
+    '<circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/>',
+  /** Foundation row: a collection whose variables are all FLOAT (spacing,
+   *  radius, density — a measured scale, not a single number). */
+  ruler:
+    '<g transform="rotate(45 12 12)">' +
+    '<rect x="4" y="9" width="16" height="6" rx="1"/>' +
+    '<path d="M8 9v3"/><path d="M12 9v3"/><path d="M16 9v3"/>' +
+    '</g>',
+  /** Foundation row: the Text styles entry. */
+  typography:
+    '<path d="M4.5 20l7.5-15l7.5 15"/><path d="M8 14h8"/>',
   adjustments:
     '<path d="M4 8h4v4H4z"/><path d="M6 4v4"/><path d="M6 12v8"/>' +
     '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
@@ -93,6 +108,21 @@ export const ICON_PATHS = {
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;
+
+/**
+ * The glyph for a foundation source, shared by every list that shows one: the
+ * Foundations tab's picker and My Library's foundation rows. One map, so a
+ * collection of colors is a swatch in both places and the user learns it once.
+ *
+ * `box` reads as "a bundle of tokens" without borrowing `puzzle`, which the
+ * Library list already owns as "this is a component."
+ */
+export const FOUNDATION_ICON: Record<FoundationIconKind, IconName> = {
+  color: 'swatch',
+  dimension: 'ruler',
+  mixed: 'box',
+  typography: 'typography',
+};
 
 /** A complete decorative svg. Icon-only controls carry their own aria-label. */
 export function icon(name: IconName, size = 17): string {

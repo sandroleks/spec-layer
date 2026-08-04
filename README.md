@@ -33,7 +33,7 @@ Select a component or component set, choose the sections you want, and the plugi
 - **Anatomy.** Each part labeled, with a description of what it does.
 - **Tokens and theming.** Token tables, plus your brand colors, fonts, and logo on the frame.
 - **Usage docs, drafted by AI.** Overview, do's and don'ts, and interaction notes.
-- **My Library.** Tracks the components you have documented. When a source component changes, its doc is flagged so you can update it in a click.
+- **Library.** Tracks the components you have documented. When a source component changes, its doc is flagged so you can update it in a click.
 
 Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Docs can also be downloaded as Markdown, or exported for a whole library as a ZIP.
 
@@ -45,10 +45,10 @@ Every spec feature is free, with no account needed.
 |---|---|---|
 | Measurements, states, anatomy, tokens, theming | Yes | Yes |
 | On-canvas doc frames, Markdown and ZIP export | Yes | Yes |
-| AI generations | 20 your first month, then 10 a month | Unlimited for normal individual use |
+| AI writing | 20 free uses in your first month, then 10 a month | Unlimited for normal individual use |
 | Priority support | | Yes |
 
-Pro is $7.99/month, or a yearly plan at two months free. Buy it on the [landing page](https://speclayer-landing.pages.dev) and your license key arrives by email. Paste it into the plugin's Settings tab. One key covers your individual use across your files. Payments are handled by Lemon Squeezy as merchant of record.
+Pro is $7.99/month, or a yearly plan at two months free. Buy it on the [landing page](https://speclayer-landing.pages.dev) and your license key arrives by email. Paste it into the plugin's License page. One key covers your individual use across your files. Payments are handled by Lemon Squeezy as merchant of record.
 
 Some honest detail on the numbers:
 
@@ -111,12 +111,16 @@ npm run typecheck       # all TypeScript workspaces
 npm test                # Vitest suite
 npm run test:coverage   # with coverage thresholds
 npm run build           # production web build
-npm run build:plugin    # Figma plugin bundle
+npm run build:plugin    # default vNext Figma plugin bundle
+npm run build:plugin:legacy # temporary rollback bundle
 ```
 
 > **Note:** builds from source currently point at the staging proxy (`spec-layer-proxy.spec-layer-test.workers.dev`), in both `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`. Swap both for the production host before cutting a public release.
 
-CI runs the same stages as `npm run check`, plus `npm audit --omit=dev`, on pushes to `main` and on pull requests.
+CI runs the same stages as `npm run check`, adds coverage thresholds, and audits
+the full production dependency tree on pushes to `main` and pull requests.
+`npm run audit:active` and `npm run audit:legacy` help attribute future
+advisories to the shipped plugin stack or the retired local docs app.
 
 ## Repository layout
 

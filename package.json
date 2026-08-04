@@ -24,17 +24,29 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p packages/format/tsconfig.json --noEmit && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "build": "npm run build -w md-ds",
     "build:plugin": "node packages/plugin/build.mjs",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run build:plugin"
+    "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs",
+    "build:plugin:vnext": "node packages/plugin/build.mjs",
+    "audit:production": "npm audit --omit=dev",
+    "audit:active": "npm audit --omit=dev --workspace @spec-layer/format --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
+    "audit:legacy": "npm audit --omit=dev --workspace md-ds",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run build:plugin:legacy && npm run build:plugin:vnext",
+    "check:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "brace-expansion": "^5.0.8",
+    "minimatch": "^10.2.6",
+    "postcss": "^8.5.24",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.8",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.12",
+    "next": "^16.2.12",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "typescript": "^5.6.0",

@@ -14,6 +14,7 @@ import {
   includedLabel,
   sectionGroups,
   unavailableSections,
+  variantBulkState,
   variantCountLabel,
 } from '../viewModel/componentScreen';
 import type { ComponentFacts, VariantChip } from '../viewModel/componentFacts';
@@ -26,7 +27,6 @@ export interface ComponentSelection {
   sections: Set<SectionId>;
   expanded: Set<GroupId>;
   aiEnabled: boolean;
-  anatomyView: 'diagram' | 'table' | 'both';
   measureViews: Set<'size' | 'padding' | 'spacing'>;
   /** Which variants the Tokens section documents. Seeded per component. */
   variantIds: Set<string>;
@@ -38,7 +38,6 @@ export function createComponentSelection(aiEnabled: boolean): ComponentSelection
     sections: defaultSections(),
     expanded: new Set<GroupId>(['usage']),
     aiEnabled,
-    anatomyView: 'diagram',
     measureViews: new Set(['size', 'padding', 'spacing'] as const),
     variantIds: new Set<string>(),
     variantsExpanded: false,
@@ -49,12 +48,6 @@ const MEASURE_CHIPS: { id: 'size' | 'padding' | 'spacing'; label: string }[] = [
   { id: 'size', label: 'Height & width' },
   { id: 'padding', label: 'Inner padding' },
   { id: 'spacing', label: 'Children & spacing' },
-];
-
-const ANATOMY_VIEWS: { id: 'diagram' | 'table' | 'both'; label: string }[] = [
-  { id: 'diagram', label: 'Diagram' },
-  { id: 'table', label: 'Table' },
-  { id: 'both', label: 'Both' },
 ];
 
 const GROUP_ICONS: Record<GroupId, IconName> = {
@@ -76,6 +69,11 @@ const AI_HELP =
 const ATOM_NOTICE =
   'Atom component. It is normally used to build larger components, but you ' +
   'can still export it individually.';
+
+const CHECK_GLYPH =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+  'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M20 6L9 17l-5-5"/></svg>';
 
 function esc(value: string): string {
   return value
@@ -107,21 +105,18 @@ function checkboxRow(option: {
     ? '<span class="sl-badge" data-tone="accent">AI</span>'
     : '';
   const note = option.note
-    ? `<span class="sl-type-support"> · ${esc(option.note)}</span>`
+    ? `<span class="sl-section-option-note"> · ${esc(option.note)}</span>`
     : '';
   return (
-    `<div class="sl-section-row${option.disabled ? ' is-disabled' : ''}">` +
-    '<label class="sl-choice">' +
+    `<div class="sl-section-row${option.selected ? ' is-selected' : ''}` +
+    `${option.disabled ? ' is-disabled' : ''}">` +
+    '<label class="sl-choice sl-section-choice">' +
     `<input class="sl-choice-input" type="checkbox" data-section="${esc(option.id)}"` +
     `${option.selected ? ' checked' : ''}${option.disabled ? ' disabled' : ''} />` +
-    '<span class="sl-checkbox-box" aria-hidden="true">' +
-    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
-    'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M20 6L9 17l-5-5"/></svg>' +
-    '</span>' +
+    `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
     `<span class="sl-choice-copy"><strong>${esc(option.label)}</strong>${note}</span>` +
-    '</label>' +
     badge +
+    '</label>' +
     '</div>'
   );
 }
@@ -147,22 +142,19 @@ function chipMarkup(chip: VariantChip): string {
  */
 function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelection): string {
   if (facts.variants.length === 0) return '';
-  const tokensOn = selection.sections.has('tokens');
+  const variantIds = facts.variants.map((variant) => variant.nodeId);
+  const bulk = variantBulkState(selection.variantIds, variantIds);
   const rows = facts.variants
     .map((variant) => {
       const checked = selection.variantIds.has(variant.nodeId);
       const accessibleName = variant.chips.map((chip) => chip.title).join(', ');
       return (
-        '<div class="sl-section-row">' +
-        '<label class="sl-choice">' +
+        `<div class="sl-section-row sl-variant-row${checked ? ' is-selected' : ''}">` +
+        '<label class="sl-choice sl-section-choice">' +
         `<input class="sl-choice-input" type="checkbox" data-variant="${esc(variant.nodeId)}"` +
         ` aria-label="${esc(accessibleName)}"` +
-        `${checked ? ' checked' : ''}${tokensOn ? '' : ' disabled'} />` +
-        '<span class="sl-checkbox-box" aria-hidden="true">' +
-        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
-        'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
-        '<path d="M20 6L9 17l-5-5"/></svg>' +
-        '</span>' +
+        `${checked ? ' checked' : ''} />` +
+        `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
         `<span class="sl-choice-copy sl-chip-group">${variant.chips.map(chipMarkup).join('')}</span>` +
         '</label>' +
         '</div>'
@@ -170,58 +162,67 @@ function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelectio
     })
     .join('');
 
-  const hint = tokensOn
-    ? esc(variantCountLabel(
-        facts.variants.filter((variant) => selection.variantIds.has(variant.nodeId)).length,
-        facts.variants.length,
-      ))
-    : 'Turn on Tokens used to apply';
+  const hint = esc(variantCountLabel(
+    facts.variants.filter((variant) => selection.variantIds.has(variant.nodeId)).length,
+    facts.variants.length,
+  ));
+  const bulkLabel = bulk.checked ? 'Clear all variants' : 'Select all variants';
 
   return (
-    '<div class="sl-section-details">' +
     '<div class="sl-disclosure sl-variant-picker">' +
+    '<div class="sl-variant-picker-header">' +
+    `<label class="sl-bulk-checkbox" title="${bulkLabel}">` +
+    `<input class="sl-choice-input" type="checkbox" data-variants-bulk ` +
+    `aria-label="${bulkLabel}"${bulk.checked ? ' checked' : ''}` +
+    `${bulk.mixed ? ' data-mixed="true" aria-checked="mixed"' : ''} />` +
+    `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
+    '</label>' +
     '<button class="sl-disclosure-trigger" type="button" data-variants ' +
     `aria-expanded="${selection.variantsExpanded}" aria-controls="sl-variant-list">` +
     '<span class="sl-section-group-title">Variants to document</span>' +
-    `<span class="sl-section-count">${hint}</span>` +
+    `<span class="sl-section-count" data-variant-count>${hint}</span>` +
     `<span data-chevron aria-hidden="true">${icon('chevronDown', 16)}</span>` +
     '</button>' +
+    '</div>' +
     `<div class="sl-disclosure-panel" id="sl-variant-list"` +
     `${selection.variantsExpanded ? '' : ' hidden'}>` +
     `<div><div class="sl-section-rows">${rows}</div></div>` +
-    '</div>' +
     '</div>' +
     '</div>'
   );
 }
 
-/** Anatomy's view picker and the measurement chips, shown under their rows. */
+/** Measurement and token settings, shown under their rows. */
 function detailsFor(
   sectionId: string,
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): string {
-  if (sectionId === 'anatomy') {
-    const buttons = ANATOMY_VIEWS.map(
-      (v) =>
-        `<button type="button" role="radio" data-anatomy="${v.id}" ` +
-        `aria-checked="${selection.anatomyView === v.id}">${v.label}</button>`,
+  if (sectionId === 'measurements') {
+    const chips = MEASURE_CHIPS.map(
+      (c) => {
+        const selected = selection.measureViews.has(c.id);
+        const onlySelected = selected && selection.measureViews.size === 1;
+        return (
+          `<button class="sl-chip sl-option-chip" type="button" data-measure="${c.id}" ` +
+          `aria-pressed="${selected}"${onlySelected ? ' aria-disabled="true" ' +
+          'title="At least one measurement view is required"' : ''}>` +
+          `<span class="sl-option-check" aria-hidden="true">${icon('check', 13)}</span>` +
+          `${esc(c.label)}</button>`
+        );
+      },
     ).join('');
     return (
       '<div class="sl-section-details">' +
-      `<div class="sl-segmented" role="radiogroup" aria-label="Show anatomy as">${buttons}</div>` +
+      '<span class="sl-section-option-label">Diagrams to include</span>' +
+      `<div class="sl-chip-group">${chips}</div>` +
       '</div>'
     );
   }
-  if (sectionId === 'measurements') {
-    const chips = MEASURE_CHIPS.map(
-      (c) =>
-        `<button class="sl-chip" type="button" data-measure="${c.id}" ` +
-        `aria-pressed="${selection.measureViews.has(c.id)}">${esc(c.label)}</button>`,
-    ).join('');
-    return `<div class="sl-section-details"><div class="sl-chip-group">${chips}</div></div>`;
+  if (sectionId === 'tokens') {
+    const picker = variantPickerMarkup(facts, selection);
+    return picker ? `<div class="sl-section-details">${picker}</div>` : '';
   }
-  if (sectionId === 'tokens') return variantPickerMarkup(facts, selection);
   return '';
 }
 
@@ -233,9 +234,7 @@ function groupMarkup(
   const panelId = `sl-group-${group.id}`;
   const rows = group.options
     .map((option) => {
-      const details = option.selected || option.id === 'tokens'
-        ? detailsFor(option.id, selection, facts)
-        : '';
+      const details = option.selected ? detailsFor(option.id, selection, facts) : '';
       return checkboxRow({
         ...option,
         label: DISPLAY_LABELS[option.id as SectionId] ?? option.label,
@@ -243,10 +242,19 @@ function groupMarkup(
     })
     .join('');
   const allIncluded = group.total > 0 && group.included === group.total;
+  const mixed = group.included > 0 && !allIncluded;
   const bulkLabel = allIncluded ? 'Clear all' : 'Select all';
   return (
     '<div class="sl-disclosure sl-section-group">' +
     `<div class="sl-section-group-header" data-expanded="${group.expanded}">` +
+    `<label class="sl-bulk-checkbox" title="${bulkLabel} ${esc(group.label)} sections">` +
+    `<input class="sl-choice-input" type="checkbox" data-group-bulk="${group.id}" ` +
+      `aria-label="${bulkLabel} ${esc(group.label)} sections"` +
+      `${allIncluded ? ' checked' : ''}` +
+      `${mixed ? ' data-mixed="true" aria-checked="mixed"' : ''}` +
+      `${group.total === 0 ? ' disabled' : ''} />` +
+    `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
+    '</label>' +
     `<button class="sl-disclosure-trigger" type="button" data-group="${group.id}" ` +
       `aria-expanded="${group.expanded}" aria-controls="${panelId}">` +
       `<span class="sl-section-group-title">${icon(GROUP_ICONS[group.id], 17)}` +
@@ -254,9 +262,6 @@ function groupMarkup(
       `<span class="sl-section-count">${includedLabel(group)}</span>` +
       `<span data-chevron aria-hidden="true">${icon('chevronDown', 16)}</span>` +
       '</button>' +
-    `<button class="sl-section-group-bulk" type="button" data-group-bulk="${group.id}" ` +
-      `aria-label="${bulkLabel} ${esc(group.label)} sections"` +
-      `${group.total === 0 ? ' disabled' : ''}>${bulkLabel}</button>` +
     '</div>' +
     `<div class="sl-disclosure-panel" id="${panelId}"${group.expanded ? '' : ' hidden'}>` +
     `<div><div class="sl-section-rows">${rows}</div></div>` +
@@ -381,6 +386,11 @@ export function renderComponentScreen(
   refs.pageHeader.innerHTML = componentHeaderMarkup(state);
   refs.pageHeader.hidden = state.kind === 'empty';
   refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts);
+  for (const input of refs.scroll.querySelectorAll<HTMLInputElement>(
+    '.sl-choice-input[data-mixed="true"]',
+  )) {
+    input.indeterminate = true;
+  }
   refs.footer.innerHTML = componentFooterMarkup(state);
   refs.footer.hidden = state.kind === 'empty';
 }

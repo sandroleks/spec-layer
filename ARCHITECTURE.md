@@ -8,10 +8,13 @@ Spec Layer is an npm-workspaces monorepo with four runtime areas: the Markdown f
 Figma node
   → plugin serializer
   → IntermediateSpec
-  → deterministic Markdown renderer
-  → download, ZIP export, or local docs API
-  → Markdown content directory
-  → Next.js renderer and editor
+  ├─→ deterministic canvas documentation + connected Library entry
+  ├─→ Markdown/sidecar download
+  └─→ optional AI-writing proxy → Anthropic
+
+Downloaded Markdown
+  → legacy local docs app
+  → filesystem content tree
 ```
 
 The Figma plugin owns Figma API access. `@spec-layer/extractor` receives plain JSON and has no dependency on the Figma runtime, which keeps extraction testable with fixtures. `@spec-layer/format` owns frontmatter validation and serialization. The web app owns local persistence, inbox review, navigation, editing, optional guideline generation, and previews.
@@ -42,7 +45,11 @@ AI-written group descriptions are the one deliberate exception to "rendered impl
 
 ### `@spec-layer/plugin`
 
-Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It supports selected-component extraction, Markdown download, token-authenticated delivery to the docs app, and bulk ZIP export. The docs endpoint and token are stored in Figma `clientStorage`.
+Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It
+supports selected-component extraction, canvas documentation, Markdown/sidecar
+download, Foundation documents, connected-document maintenance, frame themes,
+and license management. vNext is the default UI; the previous tabbed UI is a
+temporary rollback build only.
 
 A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
 
@@ -68,7 +75,21 @@ Foundation Markdown does not exist yet, so the library row for a foundation doc 
 
 ### `md-ds`
 
-The Next.js App Router app renders a filesystem content tree and exposes local APIs for import, inbox actions, AI guideline filling, editing, navigation, settings, search, and Figma previews. Files remain the source of truth; refreshes read current content rather than requiring a publishing step.
+The legacy Next.js App Router app renders a filesystem content tree and exposes
+local APIs for import, inbox actions, AI guideline filling, editing, navigation,
+settings, search, and Figma previews. It is no longer connected directly to the
+plugin. Files remain the source of truth; refreshes read current content rather
+than requiring a publishing step.
+
+### `@spec-layer/proxy`
+
+The Cloudflare Worker owns the Anthropic credential, AI-writing quotas, and
+Lemon Squeezy license validation. Prose requests are restricted to the shipped
+model, prompts, message shapes, output limits, and base64 image formats; remote
+image URLs and caller-defined Anthropic options are rejected. Durable Objects
+serialize quota updates per hashed identity. Per-isolate IP throttles blunt
+simple abuse, while deployment-level rate rules remain the production
+backstop.
 
 ## Storage
 
@@ -118,4 +139,8 @@ AI guideline filling writes only Definition, Accessibility, and Do's & Don'ts. B
 
 ## Verification
 
-The root `npm run check` command runs lint, TypeScript checks, unit tests, the production web build, and the plugin build. GitHub Actions runs the same stages plus `npm audit --omit=dev` on pushes to `main` and pull requests.
+The root `npm run check` command runs lint, TypeScript checks, unit tests, the
+legacy web build, and both the default vNext and rollback plugin builds. GitHub
+Actions adds coverage thresholds and audits the full production dependency
+tree. `npm run audit:active` and `npm run audit:legacy` remain available when a
+future advisory needs to be traced to its owning runtime.

@@ -11,16 +11,26 @@ import {
   type FoundationSpec, type FoundationSelection, type FoundationMode,
   type FoundationGroupBrief, type FoundationValue,
 } from '@spec-layer/extractor';
+import { collectionIconKind, type FoundationIconKind } from '../foundationIcon';
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/**
+ * Which row icon a collection gets. Derived in foundationIcon.ts because My
+ * Library's foundation rows must answer this the same way from a stored scope
+ * on the main thread; re-deriving it here is how the two lists would drift.
+ */
+export { collectionIconKind };
+export type { FoundationIconKind };
 
 export interface FoundationSummaryCollection {
   id: string;
   name: string;
   variableCount: number;
   modes: FoundationMode[];
+  iconKind: FoundationIconKind;
 }
 
 export interface FoundationSummary {
@@ -42,6 +52,7 @@ export function summarize(spec: FoundationSpec): FoundationSummary {
       name: c.name,
       variableCount: c.variables.length,
       modes: c.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
+      iconKind: collectionIconKind(c),
     })),
   };
 }

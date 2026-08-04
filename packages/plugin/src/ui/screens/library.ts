@@ -6,7 +6,7 @@
  * each row are the only authority for which overflow actions are shown.
  */
 
-import { icon } from '../shell/icons';
+import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import type {
   LibraryFilter,
@@ -225,6 +225,36 @@ function menuMarkup(
   );
 }
 
+/**
+ * A foundation row wears the same glyph the Foundations picker gave the source
+ * it was generated from — a swatch for a color collection, a ruler for a
+ * dimension one, `typography` for text styles — so the two lists describe the
+ * same thing the same way. One shared `layoutGrid` for all of them said only
+ * "not a component", which the Library's own grouping already says. `puzzle`
+ * keeps its existing "this is a component" meaning.
+ */
+function rowIcon(row: LibraryRowPresentation): IconName {
+  if (row.kind !== 'foundation') return 'puzzle';
+  return FOUNDATION_ICON[row.foundationIcon ?? 'mixed'];
+}
+
+const FOUNDATION_TITLE_PREFIX = 'Foundations · ';
+
+/**
+ * The main thread always prefixes a foundation row's label with
+ * "Foundations · " (see messages.ts) so it reads unambiguously wherever it
+ * appears alone — the global search results, for one. Inside this list the
+ * new foundation icon already says that, so repeating it in the row's own
+ * bold title is pure noise stacked on an already-long name. The full label
+ * stays intact everywhere else (aria-label, search) — only the visible title
+ * here is shortened, and it remains a substring of those, per WCAG 2.5.3.
+ */
+function rowTitle(row: LibraryRowPresentation): string {
+  return row.kind === 'foundation' && row.label.startsWith(FOUNDATION_TITLE_PREFIX)
+    ? row.label.slice(FOUNDATION_TITLE_PREFIX.length)
+    : row.label;
+}
+
 function libraryRowMarkup(
   row: LibraryRowPresentation,
   menuDocId: string | null,
@@ -243,20 +273,22 @@ function libraryRowMarkup(
       '</button>'
     )
     : statusMarkup(row.status);
+  const sourceIcon = icon(rowIcon(row), 17);
+  const title = esc(rowTitle(row));
   const jump = row.canOpenFrame
     ? (
       '<button class="sl-library-jump" type="button" ' +
       `data-library-open-frame="${esc(row.docId)}" aria-label="Open ${esc(row.label)} in Figma">` +
-      `<span class="sl-library-source-icon">${icon('puzzle', 17)}</span>` +
+      `<span class="sl-library-source-icon">${sourceIcon}</span>` +
       '<span class="sl-library-identity">' +
-      `<strong>${esc(row.label)}</strong><small>${esc(row.sourceLabel)}</small>` +
+      `<strong>${title}</strong>` +
       '</span></button>'
     )
     : (
       '<div class="sl-library-jump is-static">' +
-      `<span class="sl-library-source-icon">${icon('puzzle', 17)}</span>` +
+      `<span class="sl-library-source-icon">${sourceIcon}</span>` +
       '<span class="sl-library-identity">' +
-      `<strong>${esc(row.label)}</strong><small>${esc(row.sourceLabel)}</small>` +
+      `<strong>${title}</strong>` +
       '</span></div>'
     );
 
@@ -314,10 +346,10 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   ];
 
   const filterMarkup =
-    '<div class="sl-library-filters" role="tablist" aria-label="Library filters">' +
+    '<div class="sl-library-filters" role="group" aria-label="Library filters">' +
     filters.map(({ id, label, count }) => (
       `<button class="${model.filter === id ? 'is-selected' : ''}" type="button" ` +
-      `role="tab" data-library-filter="${id}" aria-selected="${model.filter === id}">` +
+      `data-library-filter="${id}" aria-pressed="${model.filter === id}">` +
       `<span>${label}</span><small>${count}</small></button>`
     )).join('') +
     '</div>';
@@ -341,13 +373,20 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     model.updatingDocId,
   );
   const refreshLabel = model.refreshing ? 'Refreshing…' : 'Refresh library';
-  const batchLabel = model.updatingAll
-    ? 'Updating…'
+  /**
+   * The batch button carries the glyph for what it will actually do, not one
+   * blanket `refresh`. Sitting next to "Refresh library" — which is already a
+   * refresh — a second refresh arrow on a disabled "Up to date" made the two
+   * buttons read as the same control twice. Only the states that really do
+   * update keep the arrows.
+   */
+  const batch = model.updatingAll
+    ? { label: 'Updating…', glyph: 'refresh' as const }
     : model.checksIncomplete
-      ? 'Refresh to retry'
+      ? { label: 'Refresh to retry', glyph: 'alertCircle' as const }
     : model.counts.updates > 0
-      ? `Update all ${model.counts.updates}`
-      : 'Up to date';
+      ? { label: `Update all ${model.counts.updates}`, glyph: 'refresh' as const }
+      : { label: 'Up to date', glyph: 'check' as const };
   const progress = model.progress
     ? `<div class="sl-footer-progress">${progressMarkup(model.progress)}</div>`
     : '';
@@ -359,7 +398,7 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     `${icon('refresh', 16)}<span>${refreshLabel}</span></button>` +
     '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
     `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
-    `${icon('refresh', 16)}<span>${batchLabel}</span></button>` +
+    `${icon(batch.glyph, 16)}<span>${batch.label}</span></button>` +
     '</div>'
   );
 }

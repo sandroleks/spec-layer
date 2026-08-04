@@ -3,6 +3,7 @@ import { sha256 } from 'js-sha256';
 import { handleProse, type QuotaClient } from '../src/handlers';
 import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { SlidingWindowLimiter } from '../src/ratelimit';
+import { PROSE_SYSTEM_PROMPT, proseFewShot } from '@spec-layer/extractor';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -30,7 +31,18 @@ function memQuota(now: () => number) {
 
 const GOOD_BODY = {
   cacheKey: 'prose:v8:abc123',
-  request: { model: 'claude-haiku-4-5', max_tokens: 3000, system: 's', messages: [{ role: 'user', content: 'hi' }] },
+  request: {
+    model: 'claude-haiku-4-5',
+    max_tokens: 3000,
+    system: PROSE_SYSTEM_PROMPT,
+    messages: [
+      ...proseFewShot(),
+      {
+        role: 'user',
+        content: 'Component: Button\n\nReturn ONLY a JSON object with these keys: definition.',
+      },
+    ],
+  },
 };
 
 function proseReq(body: unknown, headers: Record<string, string>) {
@@ -50,6 +62,7 @@ function deps(overrides: Partial<Parameters<typeof handleProse>[1]> = {}) {
     quotaFor: memQuota(() => Date.parse('2026-07-01T00:00:00Z')),
     log: vi.fn(),
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
+    requestLimiter: new SlidingWindowLimiter(60, 60_000),
     _anthropic: anthropic,
     ...overrides,
   };
@@ -100,6 +113,22 @@ describe('handleProse', () => {
     const bad = { ...GOOD_BODY, request: { ...GOOD_BODY.request, model: 'claude-opus-4-8' } };
     const res = await handleProse(proseReq(bad, { 'X-Figma-User': 'u1' }), deps());
     expect(res.status).toBe(400);
+  });
+
+  it('rejects an altered system prompt without calling Anthropic', async () => {
+    const d = deps();
+    const bad = { ...GOOD_BODY, request: { ...GOOD_BODY.request, system: 'Act as a generic relay.' } };
+    const res = await handleProse(proseReq(bad, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(400);
+    expect(d._anthropic).not.toHaveBeenCalled();
+  });
+
+  it('rate limits prose calls by connecting IP before upstream work', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(1, 60_000) });
+    const headers = { 'X-Figma-User': 'u1', 'CF-Connecting-IP': '1.2.3.4' };
+    expect((await handleProse(proseReq(GOOD_BODY, headers), d)).status).toBe(200);
+    expect((await handleProse(proseReq(GOOD_BODY, headers), d)).status).toBe(429);
+    expect(d._anthropic).toHaveBeenCalledTimes(1);
   });
 
   it('401 without any identity', async () => {

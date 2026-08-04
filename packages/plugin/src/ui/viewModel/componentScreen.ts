@@ -40,16 +40,14 @@ export function sectionGroups(
   unavailable: ReadonlySet<SectionId> = new Set<SectionId>(),
 ): SectionGroupView[] {
   return GROUPS.map(({ id, label }) => {
-    const options: SectionOption[] = ALL_SECTIONS.filter((s) => s.group === id).map((s) => {
-      const blocked = unavailable.has(s.id);
-      return {
+    const options: SectionOption[] = ALL_SECTIONS
+      .filter((s) => s.group === id && !unavailable.has(s.id))
+      .map((s) => ({
         id: s.id,
         label: s.label,
         aiCapable: s.ai && aiEnabled,
-        selected: selected.has(s.id) && !blocked,
-        ...(blocked ? { disabled: true, note: 'none detected' } : {}),
-      };
-    });
+        selected: selected.has(s.id),
+      }));
     return {
       id,
       // GROUPS types its labels as plain strings, but its three values are
@@ -57,9 +55,7 @@ export function sectionGroups(
       label: label as SectionGroupView['label'],
       expanded: expanded.has(id),
       included: options.filter((o) => o.selected).length,
-      // Disabled rows remain visible for explanation, but they are not choices
-      // and therefore do not belong in the selectable total or bulk action.
-      total: options.filter((option) => !option.disabled).length,
+      total: options.length,
       options,
     };
   });
@@ -90,6 +86,30 @@ export function unavailableSections(facts: ComponentFacts): Set<SectionId> {
 /** `{selected} of {total} selected`, for the variant picker's header. */
 export function variantCountLabel(selected: number, total: number): string {
   return total === 0 ? '' : `${selected} of ${total} selected`;
+}
+
+/** Checkbox state for a bulk variant control. */
+export function variantBulkState(
+  selected: ReadonlySet<string>,
+  variantIds: readonly string[],
+): { checked: boolean; mixed: boolean } {
+  const included = variantIds.filter((id) => selected.has(id)).length;
+  return {
+    checked: variantIds.length > 0 && included === variantIds.length,
+    mixed: included > 0 && included < variantIds.length,
+  };
+}
+
+/** Select or clear every variant without replacing the selection set. */
+export function applyVariantBulk(
+  selected: Set<string>,
+  variantIds: readonly string[],
+  on: boolean,
+): void {
+  for (const id of variantIds) {
+    if (on) selected.add(id);
+    else selected.delete(id);
+  }
 }
 
 /**

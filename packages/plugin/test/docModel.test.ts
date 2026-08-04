@@ -138,7 +138,7 @@ describe('buildDocModel', () => {
     }
   });
 
-  it('anatomy block carries depth, per-part tokens, and the view option', () => {
+  it('anatomy block carries depth and tokens and always uses the diagram view', () => {
     const specA = {
       ...spec,
       anatomyComponentId: 'c:1',
@@ -148,7 +148,7 @@ describe('buildDocModel', () => {
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'both' });
     const block = model.sections[0];
     if (block.kind !== 'anatomy') throw new Error('expected anatomy');
-    expect(block.view).toBe('both');
+    expect(block.view).toBe('diagram');
     expect(block.parts[0].depth).toBe(0);
     expect(block.parts[0].tokens).toContain('color/label');
   });

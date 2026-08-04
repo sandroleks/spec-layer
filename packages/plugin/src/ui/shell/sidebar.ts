@@ -8,6 +8,7 @@
  */
 
 import { navigation, type NavigationItem, type PluginView } from '../viewModel/contracts';
+import { LINKEDIN_URL, SITE_URL } from '../proxy';
 import { icon, type IconName } from './icons';
 
 export interface RailBlock {
@@ -72,15 +73,10 @@ export function sidebarMarkup(
     '<div class="sl-sidebar-spacer"></div>' +
     '<span class="sl-sidebar-separator" aria-hidden="true"></span>' +
     '<div class="sl-sidebar-group">' +
-    `<a class="sl-icon-button" id="rail-site" href="#" target="_blank" rel="noopener" ` +
+    `<a class="sl-icon-button" id="rail-site" href="${SITE_URL}" target="_blank" rel="noopener" ` +
     `aria-label="${SITE_LABEL}">${icon('world')}</a>` +
-    `<a class="sl-icon-button" id="rail-linkedin" href="#" target="_blank" rel="noopener" ` +
+    `<a class="sl-icon-button" id="rail-linkedin" href="${LINKEDIN_URL}" target="_blank" rel="noopener" ` +
     `aria-label="${LINKEDIN_LABEL}">${icon('brandLinkedin')}</a>` +
-    '<div class="sl-sidebar-item" data-tooltip-trigger>' +
-    `<button class="sl-icon-button" id="rail-help" type="button" ` +
-    `aria-label="Help & feedback">${icon('helpCircle')}</button>` +
-    '<span class="sl-tooltip" role="tooltip">Help & feedback</span>' +
-    '</div>' +
     '</div>' +
     '</nav>'
   );

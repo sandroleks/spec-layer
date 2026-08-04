@@ -18,79 +18,110 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
+  gap: var(--sl-space-10);
+  padding: 0 var(--sl-space-8);
   background: var(--sl-color-chrome);
   border-bottom: 1px solid var(--sl-color-border);
 }
 
+/*
+ * The header's three controls are unboxed. Three outlined boxes in a 48px bar
+ * out-shouted the screen title underneath them, so the bar separates them with
+ * space and paints a surface only under the pointer, which is what
+ * approved-direction.md asks for everywhere else.
+ *
+ * Each keeps a transparent 1px border rather than dropping the border, so a
+ * hover cannot reflow the row. Keyboard users are covered by the global
+ * :focus-visible ring in components.css, not by a resting outline.
+ */
 .sl-header-search {
   min-width: 40px;
-  max-width: 116px;
   height: var(--sl-control-lg);
-  flex: 0 1 116px;
+  flex: 0 1 auto;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-6);
   color: var(--sl-color-text-muted);
-  background: var(--sl-color-surface-raised);
-  border: 1px solid var(--sl-color-border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--sl-radius-md);
   cursor: pointer;
 }
 
 .sl-header-search:hover {
-  border-color: var(--sl-color-border-strong);
+  color: var(--sl-color-text);
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-header-search > span {
   overflow: hidden;
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sl-shortcut {
-  min-width: 25px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 4px;
-  color: var(--sl-color-text-quiet);
-  background: var(--sl-color-surface);
-  border: 1px solid var(--sl-color-border);
-  border-radius: var(--sl-radius-sm);
-  font-size: 7.5px;
-}
-
 .sl-ai-allowance {
-  width: min(220px, 100%);
   min-width: 0;
   height: var(--sl-control-lg);
-  flex: 0 0 220px;
+  flex: 0 1 auto;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 0 9px 0 6px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-6);
   color: var(--sl-color-text);
-  background: var(--sl-color-surface-raised);
-  border: 1px solid var(--sl-color-border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--sl-radius-md);
   cursor: pointer;
 }
 
 .sl-ai-allowance:hover {
-  border-color: var(--sl-color-border-strong);
+  background: var(--sl-color-surface-hover);
 }
 
+/*
+ * Holds the ring and the Pro check in the same 20px cell, so swapping between
+ * them cannot change the control's column count or its width.
+ */
+.sl-allowance-status {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+/*
+ * A ring is a gauge, and an unlimited plan has no quantity to gauge, so Pro
+ * gets a plain check in the ring's place. Green to agree with the License
+ * page's Active badge, which is the same fact stated twice.
+ */
+.sl-allowance-pro-mark {
+  display: none;
+  color: var(--sl-color-success);
+}
+
+.sl-ai-allowance[data-state="pro"] .sl-allowance-ring {
+  display: none;
+}
+
+.sl-ai-allowance[data-state="pro"] .sl-allowance-pro-mark {
+  display: grid;
+}
+
+/*
+ * 20px, not 28px. At 28px with a 4-unit stroke the ring was the loudest object
+ * on the screen while reporting a number the text beside it already gives. Both
+ * values below are viewBox-space, so the r=10 geometry in header.ts and its
+ * RING_CIRCUMFERENCE are unaffected by the display size.
+ */
 .sl-allowance-ring {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   display: block;
   transform: rotate(-90deg);
 }
@@ -98,56 +129,85 @@
 .sl-allowance-ring [data-track] {
   fill: none;
   stroke: var(--sl-color-border-strong);
-  stroke-width: 4;
+  stroke-width: 3;
 }
 
 .sl-allowance-ring [data-value] {
   fill: none;
   stroke: var(--sl-color-accent);
-  stroke-width: 4;
+  stroke-width: 3;
   stroke-linecap: round;
   transition: stroke-dashoffset var(--sl-motion-slow) var(--sl-ease-out);
 }
 
 .sl-ai-allowance[data-state="low"] [data-value],
 .sl-ai-allowance[data-state="exhausted"] [data-value] {
-  stroke: var(--sl-color-warning);
+  stroke: var(--sl-color-warning-graphic);
 }
 
 .sl-ai-allowance[data-state="unknown"] [data-value] {
   stroke: var(--sl-color-text-quiet);
 }
 
+/*
+ * One line, not two. Two type sizes stacked inside a 48px bar read as a card
+ * that had been dropped into the chrome. Laid out as a row, the label can go
+ * quiet and the number it qualifies can carry the emphasis, which is the
+ * reverse of the stacked version.
+ */
 .sl-allowance-copy {
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: var(--sl-space-4);
   text-align: left;
 }
 
 .sl-allowance-copy > strong {
-  overflow: hidden;
-  color: var(--sl-color-text);
-  font-size: 10.5px;
-  font-weight: var(--sl-font-weight-semibold);
-  line-height: 1.1;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  font-weight: var(--sl-font-weight-medium);
+  line-height: var(--sl-line-height-tight);
   white-space: nowrap;
 }
 
 .sl-allowance-copy > small {
   overflow: hidden;
-  margin-top: 2px;
-  color: var(--sl-color-text-muted);
-  font-size: 8.75px;
-  line-height: 1.1;
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/*
+ * Purely visual: the button carries its own aria-label, so assistive tech never
+ * reaches this text and cannot read the separator as a word.
+ */
+.sl-allowance-copy > small::before {
+  content: "\00b7";
+  margin-right: var(--sl-space-4);
+  color: var(--sl-color-text-quiet);
+}
+
+/*
+ * Pro has no second half to qualify, so allowanceCopy leaves the detail empty
+ * and the row collapses to one string. Without this the separator would still
+ * paint, leaving a stray dot after the label.
+ */
+.sl-allowance-copy > small:empty {
+  display: none;
+}
+
+/* With the detail gone, the label is the whole message and stops being a label. */
+.sl-ai-allowance[data-state="pro"] .sl-allowance-copy > strong {
+  color: var(--sl-color-text);
+}
+
 .sl-allowance-action {
   color: var(--sl-color-accent);
-  font-size: 10px;
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-semibold);
 }
 
@@ -158,7 +218,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 9px 0 7px;
+  padding: var(--sl-space-8) 0 var(--sl-space-8);
   background: var(--sl-color-chrome);
   border-right: 1px solid var(--sl-color-border);
 }
@@ -167,13 +227,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: var(--sl-space-6);
 }
 
 .sl-sidebar-separator {
   width: 28px;
   height: 1px;
-  margin: 7px 0;
+  margin: var(--sl-space-8) 0;
   background: var(--sl-color-border);
 }
 
@@ -204,14 +264,14 @@
   height: 15px;
   display: grid;
   place-items: center;
-  padding: 0 3px;
+  padding: 0 var(--sl-space-4);
   color: var(--sl-color-text-on-accent);
   background: var(--sl-color-accent);
   border: 2px solid var(--sl-color-chrome);
   border-radius: var(--sl-radius-pill);
-  font-size: var(--sl-font-size-2);
+  font-size: var(--sl-font-size-caption);
   font-weight: var(--sl-font-weight-bold);
-  line-height: 1;
+  line-height: var(--sl-line-height-none);
 }
 
 .sl-screen {
@@ -229,8 +289,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--sl-space-3);
-  padding: 11px 13px 8px 14px;
+  gap: var(--sl-space-12);
+  padding: var(--sl-space-10) var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
 }
 
 .sl-page-header-copy {
@@ -239,11 +299,11 @@
 
 .sl-page-header-copy > small {
   display: block;
-  margin-bottom: 3px;
+  margin-bottom: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--sl-tracking-caps);
   text-transform: uppercase;
 }
 
@@ -251,24 +311,24 @@
   margin: 0;
   overflow: hidden;
   color: var(--sl-color-text);
-  font-size: var(--sl-font-size-8);
-  font-weight: 690;
-  line-height: 1.2;
-  letter-spacing: -0.035em;
+  font-size: var(--sl-font-size-display);
+  font-weight: var(--sl-font-weight-bold);
+  line-height: var(--sl-line-height-tight);
+  letter-spacing: var(--sl-tracking-display);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sl-page-header-copy > p {
-  margin: 4px 0 0;
+  margin: var(--sl-space-4) 0 0;
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-screen-scroll {
   min-height: 0;
   overflow-y: auto;
-  padding: 0 14px 22px;
+  padding: 0 var(--sl-space-14) var(--sl-space-20);
   scrollbar-width: thin;
   scrollbar-color: var(--sl-color-border-strong) transparent;
 }
@@ -277,8 +337,8 @@
   min-height: var(--sl-footer-height);
   display: grid;
   align-content: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--sl-space-6);
+  padding: var(--sl-space-8) var(--sl-space-12);
   background: var(--sl-color-chrome);
   border-top: 1px solid var(--sl-color-border);
 }
@@ -288,7 +348,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--sl-space-6);
 }
 
 .sl-footer-actions > .sl-button[data-tone="primary"] {
@@ -297,10 +357,10 @@
 
 .sl-footer-actions > .sl-button {
   height: 30px;
-  gap: 6px;
-  padding-inline: 11px;
+  gap: var(--sl-space-6);
+  padding-inline: var(--sl-space-10);
   border-radius: 6px;
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-footer-progress {
@@ -308,21 +368,22 @@
 }
 
 .sl-footer-progress .sl-work-status {
-  padding: 7px 9px;
+  padding: var(--sl-space-8) var(--sl-space-8);
 }
 
+/*
+ * Only the placement. .sl-icon-button already resolves to a transparent
+ * control with a hover surface and --sl-radius-md, which is what the rail's
+ * buttons use; the boxing this rule used to add was the header's alone.
+ */
 .sl-utility-header > .sl-icon-button {
-  width: var(--sl-control-lg);
-  height: var(--sl-control-lg);
   margin-left: auto;
-  background: var(--sl-color-surface);
-  border-color: var(--sl-color-border);
-  border-radius: 8px;
 }
 
 .sl-component-screen .sl-screen-scroll {
   overflow-x: hidden;
-  padding: 0 0 68px;
+  padding: 0 0 var(--sl-space-16);
+  scroll-padding-block: var(--sl-space-12);
 }
 
 .sl-component-controls {
@@ -337,10 +398,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 31px;
   align-items: center;
-  gap: 9px;
-  margin: 0 12px 8px 14px;
-  padding: 0 10px;
-  background: var(--sl-color-surface-subdued);
+  gap: var(--sl-space-8);
+  margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
+  padding: 0 var(--sl-space-10);
+  background: var(--sl-color-ai-surface);
+  border: 1px solid var(--sl-color-ai-border);
   border-radius: var(--sl-radius-md);
 }
 
@@ -348,12 +410,12 @@
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sl-space-6);
 }
 
 .sl-ai-control-copy > strong {
   color: var(--sl-color-text);
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-semibold);
 }
 
@@ -370,7 +432,7 @@
 .sl-ai-control .sl-switch-track {
   width: 31px;
   height: 18px;
-  padding: 2px;
+  padding: var(--sl-space-2);
   border: 0;
 }
 
@@ -383,38 +445,58 @@
   transform: translateX(13px);
 }
 
-.sl-ai-control[data-enabled="true"] {
-  background: var(--sl-color-surface-selected);
-}
-
 .sl-section-intro {
-  min-height: 34px;
+  min-height: 31px;
   display: flex;
   align-items: center;
   margin: 0;
-  padding: 7px 14px 5px;
-  color: var(--sl-color-text);
-  font-size: 10.5px;
+  padding: var(--sl-space-6) var(--sl-space-14) var(--sl-space-8);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
   font-weight: var(--sl-font-weight-semibold);
+  letter-spacing: var(--sl-tracking-caps);
+  text-transform: uppercase;
 }
 
 .sl-component-screen .sl-section-group {
-  margin: 0 14px;
+  margin: 0 var(--sl-space-12) var(--sl-space-8);
+  overflow: hidden;
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border-muted);
+  border-radius: var(--sl-radius-md);
+  transition:
+    border-color var(--sl-motion-fast) var(--sl-ease-standard),
+    background var(--sl-motion-fast) var(--sl-ease-standard);
+}
+
+.sl-component-screen .sl-section-group:hover {
+  border-color: var(--sl-color-border-hover);
 }
 
 .sl-section-group-header {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
+  gap: 0;
+  min-height: 44px;
+  padding: 0 var(--sl-space-6) 0 var(--sl-space-8);
+  background: var(--sl-color-section-header);
+  transition: background var(--sl-motion-fast) var(--sl-ease-standard);
+}
+
+.sl-section-group-header:hover,
+.sl-section-group-header:focus-within {
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-section-group .sl-disclosure-trigger {
   min-width: 0;
-  min-height: 41px;
+  min-height: 42px;
   grid-template-columns: minmax(0, 1fr) auto 17px;
-  padding: 0 1px;
+  padding: 0 var(--sl-space-2) 0 0;
+  background: transparent;
+  border-radius: 5px;
 }
 
 .sl-section-group-header[data-expanded="true"] + .sl-disclosure-panel {
@@ -422,41 +504,20 @@
   opacity: 1;
 }
 
-.sl-section-group-bulk {
-  min-height: 26px;
-  padding: 0 6px;
-  color: var(--sl-color-text-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  font-size: 9.25px;
-  font-weight: var(--sl-font-weight-medium);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.sl-section-group-bulk:hover,
-.sl-section-group-bulk:focus-visible {
-  color: var(--sl-color-accent);
-  background: var(--sl-color-accent-soft);
-}
-
-.sl-section-group-bulk:focus-visible {
-  outline: 2px solid var(--sl-color-accent);
-  outline-offset: -2px;
-}
-
 .sl-section-group-title {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 10.75px;
-  font-weight: 640;
+  gap: var(--sl-space-8);
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
+  letter-spacing: var(--sl-tracking-tight);
 }
 
 .sl-section-count {
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-medium);
 }
 
 .sl-section-rows {
@@ -464,63 +525,114 @@
 }
 
 .sl-section-row {
-  min-height: 36px;
+  min-height: 41px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 7px;
-  padding: 0 1px;
+  gap: 0;
+  padding: 0;
   border-top: 1px solid var(--sl-color-border-muted);
   border-bottom: 0;
-  border-radius: 5px;
+  border-radius: 0;
   transition:
     color var(--sl-motion-fast) var(--sl-ease-standard),
-    background var(--sl-motion-fast) var(--sl-ease-standard),
-    box-shadow var(--sl-motion-fast) var(--sl-ease-standard);
+    background var(--sl-motion-fast) var(--sl-ease-standard);
 }
 
 .sl-section-row:not(.is-disabled):hover {
-  background: var(--sl-color-surface-subdued);
-  box-shadow: 0 0 0 3px var(--sl-color-surface-subdued);
-}
-
-.sl-section-row:focus-within {
-  background: var(--sl-color-accent-soft);
-  box-shadow: 0 0 0 3px var(--sl-color-accent-soft);
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-section-row .sl-choice {
+  width: 100%;
+  min-height: 40px;
   align-items: center;
-  gap: 7px;
+  gap: var(--sl-space-8);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  /* Child controls begin beneath the category title, not its bulk checkbox. */
+  padding: var(--sl-space-8) var(--sl-space-10) var(--sl-space-8) 40px;
 }
 
 .sl-section-row .sl-choice-copy > strong {
-  font-size: 10.25px;
-  font-weight: var(--sl-font-weight-regular);
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-medium);
+  letter-spacing: var(--sl-tracking-tight);
 }
 
 .sl-section-details {
-  padding: 0 1px 9px 25px;
+  display: grid;
+  gap: var(--sl-space-8);
+  /* 63px aligns detail copy with the child row's label, one step past the
+     40px child indent. Computed alignment, not rhythm: it tracks the control
+     column, so it stays literal rather than snapping to the spacing scale. */
+  padding: var(--sl-space-4) var(--sl-space-10) var(--sl-space-10) 63px;
+  background: var(--sl-color-detail-surface);
+  border-top: 1px solid var(--sl-color-border-muted);
 }
 
-.sl-component-screen .sl-section-row > .sl-badge[data-tone="accent"] {
+.sl-section-option-label {
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-semibold);
+  letter-spacing: var(--sl-tracking-caps);
+  text-transform: uppercase;
+}
+
+/* The " · <note>" that trails an option's name. */
+.sl-section-option-note {
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+}
+
+.sl-component-screen .sl-section-row .sl-badge[data-tone="accent"] {
   min-width: 20px;
   min-height: 0;
   height: 16px;
-  padding: 0 4px;
-  color: #9dccf2;
-  background: rgba(11, 153, 255, 0.09);
-  border: 1px solid rgba(11, 153, 255, 0.25);
+  padding: 0 var(--sl-space-4);
+  color: var(--sl-color-ai-badge-text);
+  background: var(--sl-color-ai-badge-bg);
+  border: 1px solid var(--sl-color-ai-badge-border);
   border-radius: 4px;
-  font-size: 7.75px;
-  font-weight: 680;
-  letter-spacing: 0.02em;
+  font-size: var(--sl-font-size-micro);
+  font-weight: var(--sl-font-weight-semibold);
+  letter-spacing: var(--sl-tracking-caps);
 }
 
 .sl-chip-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sl-space-6);
+}
+
+.sl-option-chip {
+  min-height: 30px;
+  gap: var(--sl-space-6);
+  color: var(--sl-color-text-muted);
+  background: transparent;
+  border-color: var(--sl-color-border-strong);
+}
+
+.sl-option-chip[aria-pressed="true"] {
+  color: var(--sl-color-text);
+  background: var(--sl-color-surface-selected);
+  border-color: var(--sl-color-accent);
+}
+
+.sl-option-chip[aria-disabled="true"] {
+  cursor: default;
+}
+
+.sl-option-check {
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+}
+
+.sl-option-chip[aria-pressed="true"] .sl-option-check {
+  color: var(--sl-color-accent);
+  opacity: 1;
 }
 
 .sl-choice-copy.sl-chip-group {
@@ -529,24 +641,59 @@
 }
 
 .sl-variant-picker {
+  overflow: hidden;
+  background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border-muted);
   border-radius: var(--sl-radius-md);
 }
 
+.sl-variant-picker-header {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  min-height: 42px;
+  padding: 0 var(--sl-space-6) 0 var(--sl-space-8);
+  transition: background var(--sl-motion-fast) var(--sl-ease-standard);
+}
+
+.sl-variant-picker-header:hover,
+.sl-variant-picker-header:focus-within {
+  background: var(--sl-color-surface-hover);
+}
+
 .sl-variant-picker .sl-disclosure-trigger {
-  min-height: 38px;
-  padding-inline: 8px;
+  min-height: 40px;
+  padding: 0 var(--sl-space-2) 0 0;
+  background: transparent;
 }
 
 .sl-variant-picker .sl-section-rows {
-  padding-inline: 8px;
   max-height: 220px;
   overflow-y: auto;
 }
 
+.sl-variant-picker .sl-disclosure-panel:not([hidden]) {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.sl-bulk-checkbox {
+  width: 28px;
+  height: 32px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.sl-bulk-checkbox:hover {
+  background: var(--sl-color-accent-soft);
+}
+
 .sl-library-screen .sl-page-header {
   min-height: 48px;
-  padding: 11px 13px 5px 14px;
+  padding: var(--sl-space-10) var(--sl-space-12) var(--sl-space-6) var(--sl-space-14);
 }
 
 .sl-library-screen .sl-screen-scroll {
@@ -559,9 +706,9 @@
   min-height: 34px;
   display: flex;
   align-items: stretch;
-  gap: 2px;
-  margin: 0 13px 10px 14px;
-  padding: 3px;
+  gap: var(--sl-space-2);
+  margin: 0 var(--sl-space-12) var(--sl-space-10) var(--sl-space-14);
+  padding: var(--sl-space-4);
   background: var(--sl-color-chrome);
   border: 1px solid var(--sl-color-border);
   border-radius: 8px;
@@ -572,13 +719,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 11px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-10);
   color: var(--sl-color-text-muted);
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-medium);
   cursor: pointer;
 }
@@ -594,56 +741,74 @@
   box-shadow: var(--sl-shadow-raised);
 }
 
-.sl-library-filters > button[data-library-filter="updates"].is-selected {
-  color: #dcefff;
-  background: #263643;
-}
-
+/* Updates gets no accent of its own. The count is the signal; painting the
+   tab and its number blue made a "0" look like something to act on. All three
+   tabs now share one selected and one count style. */
 .sl-library-filters small {
   color: var(--sl-color-text-muted);
-  font-size: 9px;
-}
-
-.sl-library-filters [data-library-filter="updates"] small {
-  color: #75c3ff;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-library-list {
-  padding: 0 10px 76px 14px;
+  /* 68px clears the sticky footer so the last row can scroll fully into
+     view. Computed layout, not rhythm: it tracks --sl-footer-height, and it
+     is the same clearance .sl-foundation-list uses for the same footer.
+     No left/right padding — rows run edge-to-edge and carry their own
+     inset (see .sl-library-summary), so hover/border spans the full row
+     width instead of reading as an inset card. */
+  padding: 0 0 68px;
 }
 
 .sl-library-row {
   position: relative;
-  border: 1px solid transparent;
-  border-bottom-color: var(--sl-color-border-muted);
+  /* Bottom hairline only, exactly like .sl-foundation-row. A 1px transparent
+     border on all four sides used to reserve room for the expanded state's
+     accent border, but it also pushed every collapsed row's content 1px right
+     and made the row 1px taller than the foundation row it sits beside — a
+     visible misalignment between two lists that show the same sources. The
+     expanded state is a pulled-in card with its own margins, so it can afford
+     to grow by that 1px when it opens. */
+  border-bottom: 1px solid var(--sl-color-border-muted);
   transition:
     border-color var(--sl-motion-fast) var(--sl-ease-standard),
     background var(--sl-motion-fast) var(--sl-ease-standard);
 }
 
 .sl-library-row:hover {
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-library-row.is-expanded {
-  margin-bottom: 4px;
-  background: #242424;
-  border-color: rgba(11, 153, 255, 0.8);
-  border-radius: var(--sl-radius-md);
-}
-
-body[data-theme="light"] .sl-library-row.is-expanded {
+  /* Expanded is the one state meant to read as a floating card, so it alone
+     gets pulled in from the row's full-bleed edges — matching the old list
+     padding values it replaces (14 left / 10 right) so the details column
+     below still lines up under the identity text. */
+  margin: 0 var(--sl-space-10) var(--sl-space-4) var(--sl-space-14);
   background: var(--sl-color-surface-raised);
-  border-color: var(--sl-color-accent);
+  border: 1px solid var(--sl-color-accent-border-strong);
+  border-radius: var(--sl-radius-md);
 }
 
 .sl-library-summary {
   min-height: 49px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 40px 28px;
+  /* 55px for the timestamp, measured rather than guessed: at 11px this fits
+     every label formatLibraryAge can produce short of four-digit days —
+     "just now" (48px), "59m ago" (50px), "365d ago" (55px). The column was
+     40px, which wrapped all of those onto two lines. It stays a FIXED width,
+     not auto: column 1 absorbs the slack, so a fixed timestamp is what keeps
+     the status column's right edge on one x across every row, and status is
+     the column the eye actually scans down. */
+  grid-template-columns: minmax(0, 1fr) auto 55px 28px;
   align-items: center;
-  gap: 5px;
-  padding: 5px 5px 5px 8px;
+  /* Tighter than the row's other gaps: the identity column is the one thing
+     here competing for width against a fixed-width status/timestamp/menu run,
+     so it gets the space back rather than sharing the standard rhythm. */
+  gap: var(--sl-space-4);
+  /* Horizontal inset lives on the row content itself (matches
+     .sl-foundation-summary's 14px), so collapsed rows stay full-bleed while
+     the checkbox/icon column stays clear of the panel edge. */
+  padding: var(--sl-space-6) var(--sl-space-14);
 }
 
 .sl-library-jump {
@@ -651,7 +816,14 @@ body[data-theme="light"] .sl-library-row.is-expanded {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  gap: var(--sl-space-4);
+  /* No left padding. This used to reserve the foundation row's checkbox column
+     (18px + 4px gap) so the two lists' ICONS shared an x — but a library row
+     has no checkbox, so all that reserved space did was indent the row's first
+     visible element 22px further from the panel edge than the foundation row's,
+     which is the difference the eye actually catches when moving between the
+     two screens. Both lists now start their content at the summary's own 14px
+     inset. */
   padding: 0;
   color: var(--sl-color-text);
   background: transparent;
@@ -667,39 +839,34 @@ body[data-theme="light"] .sl-library-row.is-expanded {
 .sl-library-source-icon {
   display: grid;
   place-items: center;
-  color: var(--sl-color-success);
+  color: var(--sl-color-source-icon);
 }
 
 .sl-library-identity {
   min-width: 0;
 }
 
-.sl-library-identity > strong,
-.sl-library-identity > small {
+/* Single-line by design. The row used to carry a source subtitle under the
+   title, but it either repeated the title outright or pointed at a page the
+   user is already looking at — you don't need a locator in the list you
+   navigated to. The global search palette keeps its subtitle, because there
+   results mix docs and foundations with no surrounding context. */
+.sl-library-identity > strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sl-library-identity > strong {
-  font-size: 11.5px;
-  font-weight: 610;
-}
-
-.sl-library-identity > small {
-  margin-top: 2px;
-  color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-library-status,
 .sl-library-update-disclosure {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sl-space-6);
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   white-space: nowrap;
 }
 
@@ -712,7 +879,7 @@ body[data-theme="light"] .sl-library-row.is-expanded {
 }
 
 .sl-library-status.is-updateAvailable {
-  color: #4fb5ff;
+  color: var(--sl-color-accent);
 }
 
 .sl-library-status.is-inSync {
@@ -734,8 +901,8 @@ body[data-theme="light"] .sl-library-row.is-expanded {
 
 .sl-library-update-disclosure {
   min-width: 0;
-  gap: 3px;
-  padding: 4px;
+  gap: var(--sl-space-4);
+  padding: var(--sl-space-4);
   background: transparent;
   border: 0;
   border-radius: 5px;
@@ -758,8 +925,12 @@ body[data-theme="light"] .sl-library-row.is-expanded {
 
 .sl-library-summary > time {
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   text-align: right;
+  /* A timestamp is a single token — breaking "10h ago" after the number reads
+     as two facts. No ellipsis to go with it: at four-digit days the text bleeds
+     into the 4px column gap, which is cheaper than truncating a real number. */
+  white-space: nowrap;
 }
 
 .sl-library-menu-trigger {
@@ -782,7 +953,9 @@ body[data-theme="light"] .sl-library-row.is-expanded {
 
 .sl-library-details-inner {
   min-height: 0;
-  padding: 0 10px 10px 36px;
+  /* 36px aligns detail copy with the row title, past the source icon.
+     Computed alignment, not rhythm. */
+  padding: 0 var(--sl-space-10) var(--sl-space-10) 36px;
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
@@ -791,39 +964,34 @@ body[data-theme="light"] .sl-library-row.is-expanded {
   display: flex;
   align-items: center;
   margin: 0;
-  padding: 7px 0 6px;
-  font-size: 9.5px;
-  font-weight: 640;
+  padding: var(--sl-space-8) 0 var(--sl-space-6);
+  font-size: var(--sl-font-size-support);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-library-change-list {
   display: grid;
-  gap: 6px;
+  gap: var(--sl-space-6);
 }
 
 .sl-library-change-group,
 .sl-library-change-fallback {
-  padding: 7px 8px;
-  background: #202020;
+  padding: var(--sl-space-8) var(--sl-space-8);
+  background: var(--sl-color-surface-subdued);
   border: 1px solid var(--sl-color-border-muted);
   border-radius: 6px;
 }
 
-body[data-theme="light"] .sl-library-change-group,
-body[data-theme="light"] .sl-library-change-fallback {
-  background: var(--sl-color-surface-subdued);
-}
-
 .sl-library-change-group > strong {
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-library-change-group > ul {
-  margin: 5px 0 0;
-  padding-left: 14px;
+  margin: var(--sl-space-6) 0 0;
+  padding-left: var(--sl-space-14);
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
-  line-height: 1.5;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-library-change-fallback {
@@ -831,12 +999,13 @@ body[data-theme="light"] .sl-library-change-fallback {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: start;
-  gap: 7px;
-  padding: 9px;
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-8);
   color: var(--sl-color-text-muted);
 }
 
 .sl-library-change-fallback > svg {
+  /* Optical: drops the icon onto the first text baseline. Not rhythm. */
   margin-top: 1px;
   color: var(--sl-color-warning);
 }
@@ -848,13 +1017,14 @@ body[data-theme="light"] .sl-library-change-fallback {
 
 .sl-library-change-fallback strong {
   color: var(--sl-color-text);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-library-change-fallback small {
-  margin-top: 3px;
-  font-size: 8.5px;
-  line-height: 1.35;
+  margin-top: var(--sl-space-4);
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-library-menu-scrim {
@@ -872,16 +1042,11 @@ body[data-theme="light"] .sl-library-change-fallback {
   z-index: 20;
   top: 42px;
   right: 4px;
-  padding: 5px;
-  background: #2a2a2a;
-  border: 1px solid #484848;
-  border-radius: 7px;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
-}
-
-body[data-theme="light"] .sl-library-overflow-menu {
+  padding: var(--sl-space-6);
   background: var(--sl-color-surface-raised);
-  border-color: var(--sl-color-border);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+  box-shadow: var(--sl-shadow-menu);
 }
 
 .sl-library-overflow-menu > button {
@@ -889,13 +1054,13 @@ body[data-theme="light"] .sl-library-overflow-menu {
   min-height: 30px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-8);
   color: var(--sl-color-text);
   background: transparent;
   border: 0;
   border-radius: 5px;
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   text-align: left;
   cursor: pointer;
 }
@@ -916,7 +1081,7 @@ body[data-theme="light"] .sl-library-overflow-menu {
 .sl-library-menu-separator {
   height: 1px;
   display: block;
-  margin: 4px;
+  margin: var(--sl-space-4);
   background: var(--sl-color-border);
 }
 
@@ -938,7 +1103,7 @@ body[data-theme="light"] .sl-library-overflow-menu {
   position: absolute;
   inset: 0;
   padding: 0;
-  background: rgba(8, 8, 8, 0.72);
+  background: var(--sl-color-overlay);
   border: 0;
   backdrop-filter: blur(1.5px);
 }
@@ -952,12 +1117,10 @@ body[data-theme="light"] .sl-library-overflow-menu {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #242424;
-  border: 1px solid #4a4a4a;
+  background: var(--sl-color-surface-raised);
+  border: 1px solid var(--sl-color-border-strong);
   border-radius: 10px;
-  box-shadow:
-    0 22px 58px rgba(0, 0, 0, 0.62),
-    0 1px 0 rgba(255, 255, 255, 0.025) inset;
+  box-shadow: var(--sl-shadow-overlay);
   animation: sl-search-dialog-in var(--sl-motion-standard) var(--sl-ease-out) both;
 }
 
@@ -967,14 +1130,14 @@ body[data-theme="light"] .sl-library-overflow-menu {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 13px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-8) 0 var(--sl-space-12);
   color: var(--sl-color-text-muted);
   border-bottom: 1px solid var(--sl-color-border);
 }
 
 .sl-global-search-input > svg {
-  color: #b4b4b4;
+  color: var(--sl-color-text-muted);
 }
 
 .sl-global-search-input > input {
@@ -985,7 +1148,7 @@ body[data-theme="light"] .sl-library-overflow-menu {
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 12px;
+  font-size: var(--sl-font-size-body);
 }
 
 .sl-global-search-input > input::placeholder {
@@ -1010,8 +1173,8 @@ body[data-theme="light"] .sl-library-overflow-menu {
 }
 
 .sl-global-search-clear {
-  padding-inline: 7px;
-  font-size: 9px;
+  padding-inline: var(--sl-space-8);
+  font-size: var(--sl-font-size-caption);
   font-weight: var(--sl-font-weight-semibold);
 }
 
@@ -1022,30 +1185,30 @@ body[data-theme="light"] .sl-library-overflow-menu {
 .sl-global-search-clear:hover,
 .sl-global-search-close:hover {
   color: var(--sl-color-text);
-  background: #303030;
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-global-search-results {
   min-height: 0;
   overflow: auto;
-  padding: 7px;
+  padding: var(--sl-space-8);
   scrollbar-width: thin;
   scrollbar-color: var(--sl-color-border-strong) transparent;
 }
 
 .sl-global-search-results section + section {
-  margin-top: 6px;
-  padding-top: 7px;
+  margin-top: var(--sl-space-6);
+  padding-top: var(--sl-space-8);
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
 .sl-global-search-results h2 {
   margin: 0;
-  padding: 4px 8px 6px;
-  color: #8f8f8f;
-  font-size: 8px;
-  font-weight: 680;
-  letter-spacing: 0.075em;
+  padding: var(--sl-space-4) var(--sl-space-8) var(--sl-space-6);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-micro);
+  font-weight: var(--sl-font-weight-semibold);
+  letter-spacing: var(--sl-tracking-caps-wide);
   text-transform: uppercase;
 }
 
@@ -1055,8 +1218,8 @@ body[data-theme="light"] .sl-library-overflow-menu {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-4) var(--sl-space-8);
   color: var(--sl-color-text);
   background: transparent;
   border: 1px solid transparent;
@@ -1072,8 +1235,8 @@ body[data-theme="light"] .sl-library-overflow-menu {
 .sl-global-search-result:hover,
 .sl-global-search-result.is-active,
 .sl-global-search-result:focus-visible {
-  background: #2e3540;
-  border-color: rgba(86, 165, 232, 0.22);
+  background: var(--sl-color-surface-selected);
+  border-color: var(--sl-color-accent-border);
 }
 
 .sl-global-search-result:focus-visible {
@@ -1090,15 +1253,16 @@ body[data-theme="light"] .sl-library-overflow-menu {
 
 .sl-global-search-result strong {
   color: var(--sl-color-text);
-  font-size: 10.75px;
-  font-weight: 620;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-global-search-result small {
+  /* Optical: drops the icon onto the first text baseline. Not rhythm. */
   margin-top: 1px;
   overflow: hidden;
   color: var(--sl-color-text-muted);
-  font-size: 8.75px;
+  font-size: var(--sl-font-size-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1115,7 +1279,7 @@ body[data-theme="light"] .sl-library-overflow-menu {
 .sl-global-search-result:hover > svg,
 .sl-global-search-result.is-active > svg,
 .sl-global-search-result:focus-visible > svg {
-  color: #86c8ff;
+  color: var(--sl-color-accent);
   opacity: 1;
   transform: translateX(0);
 }
@@ -1125,14 +1289,14 @@ body[data-theme="light"] .sl-library-overflow-menu {
   height: 28px;
   display: grid;
   place-items: center;
-  color: #70b9ff;
-  background: rgba(11, 153, 255, 0.1);
+  color: var(--sl-color-accent);
+  background: var(--sl-color-accent-soft);
   border-radius: 6px;
 }
 
 .sl-global-search-icon.is-source {
-  color: #8bda69;
-  background: rgba(99, 190, 68, 0.1);
+  color: var(--sl-color-success);
+  background: var(--sl-color-success-soft);
 }
 
 .sl-global-search-empty {
@@ -1146,27 +1310,27 @@ body[data-theme="light"] .sl-library-overflow-menu {
 
 .sl-global-search-empty strong {
   max-width: 300px;
-  margin-top: 10px;
+  margin-top: var(--sl-space-10);
   color: var(--sl-color-text);
-  font-size: 11.5px;
+  font-size: var(--sl-font-size-control);
   text-align: center;
 }
 
 .sl-global-search-empty small {
-  margin-top: 4px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: 9px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-global-search-empty button {
   min-height: 28px;
-  margin-top: 12px;
-  padding: 0 10px;
+  margin-top: var(--sl-space-12);
+  padding: 0 var(--sl-space-10);
   color: var(--sl-color-text);
-  background: #303030;
-  border: 1px solid #454545;
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border);
   border-radius: 6px;
-  font-size: 9px;
+  font-size: var(--sl-font-size-caption);
   font-weight: var(--sl-font-weight-semibold);
   cursor: pointer;
 }
@@ -1175,10 +1339,10 @@ body[data-theme="light"] .sl-library-overflow-menu {
   min-height: 41px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-4) var(--sl-space-12);
   color: var(--sl-color-text-muted);
-  font-size: 9px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-global-search-loading > svg {
@@ -1191,18 +1355,18 @@ body[data-theme="light"] .sl-library-overflow-menu {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 13px;
+  gap: var(--sl-space-14);
+  padding: 0 var(--sl-space-12);
   color: var(--sl-color-text-quiet);
-  background: #222;
+  background: var(--sl-color-chrome);
   border-top: 1px solid var(--sl-color-border-muted);
-  font-size: 8px;
+  font-size: var(--sl-font-size-micro);
 }
 
 .sl-global-search-footer > span {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sl-space-4);
   white-space: nowrap;
 }
 
@@ -1211,57 +1375,17 @@ body[data-theme="light"] .sl-library-overflow-menu {
   height: 16px;
   display: inline-grid;
   place-items: center;
-  padding: 0 3px;
-  color: #a8a8a8;
-  background: #2c2c2c;
-  border: 1px solid #424242;
+  padding: 0 var(--sl-space-4);
+  color: var(--sl-color-text-muted);
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border);
   border-radius: 4px;
   font-family: inherit;
-  font-size: 7.5px;
+  font-size: var(--sl-font-size-micro);
 }
 
-body[data-theme="light"] .sl-global-search-panel {
-  background: var(--sl-color-surface-raised);
-  border-color: var(--sl-color-border-strong);
-  box-shadow:
-    0 22px 58px rgba(0, 0, 0, 0.28),
-    0 1px 0 rgba(255, 255, 255, 0.75) inset;
-}
-
-body[data-theme="light"] .sl-global-search-input > svg,
-body[data-theme="light"] .sl-global-search-clear,
-body[data-theme="light"] .sl-global-search-close,
-body[data-theme="light"] .sl-global-search-results h2,
-body[data-theme="light"] .sl-global-search-result small,
-body[data-theme="light"] .sl-global-search-empty small {
-  color: var(--sl-color-text-muted);
-}
-
-body[data-theme="light"] .sl-global-search-result:hover,
-body[data-theme="light"] .sl-global-search-result.is-active,
-body[data-theme="light"] .sl-global-search-result:focus-visible {
-  background: var(--sl-color-surface-selected);
-  border-color: rgba(8, 117, 193, 0.22);
-}
-
-body[data-theme="light"] .sl-global-search-clear:hover,
-body[data-theme="light"] .sl-global-search-close:hover,
-body[data-theme="light"] .sl-global-search-empty button:hover {
-  color: var(--sl-color-text);
-  background: var(--sl-color-surface-subdued);
-}
-
-body[data-theme="light"] .sl-global-search-empty button,
-body[data-theme="light"] .sl-global-search-footer {
-  color: var(--sl-color-text-muted);
-  background: var(--sl-color-surface-subdued);
-  border-color: var(--sl-color-border);
-}
-
-body[data-theme="light"] .sl-global-search-footer kbd {
-  color: var(--sl-color-text-muted);
-  background: var(--sl-color-surface-subdued);
-  border-color: var(--sl-color-border);
+.sl-global-search-empty button:hover {
+  background: var(--sl-color-surface-hover);
 }
 
 @keyframes sl-search-dialog-in {
@@ -1280,36 +1404,36 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 14px;
+  gap: var(--sl-space-12);
+  padding: 0 var(--sl-space-14);
   color: var(--sl-color-text-muted);
-  background: rgba(255, 255, 255, 0.012);
+  background: var(--sl-color-surface-subdued);
   border-top: 1px solid var(--sl-color-border-muted);
   border-bottom: 1px solid var(--sl-color-border-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-foundation-screen .sl-page-header {
   min-height: 48px;
-  padding-bottom: 5px;
+  padding-bottom: var(--sl-space-6);
 }
 
 .sl-foundation-toolbar > span {
   color: var(--sl-color-text-muted);
-  font-weight: 540;
+  font-weight: var(--sl-font-weight-medium);
 }
 
 .sl-foundation-bulk {
   min-height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 7px 0 5px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-8) 0 var(--sl-space-6);
   color: var(--sl-color-text);
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   cursor: pointer;
 }
@@ -1331,26 +1455,34 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-foundation-list {
+  /* Clears the sticky footer; tracks --sl-footer-height, not the scale.
+     No left/right padding here — rows run edge-to-edge and carry their own
+     inset, so the hover/border spans the full row width instead of reading
+     as an inset card. */
   padding-bottom: 68px;
 }
 
 .sl-foundation-row {
-  margin: 0 14px;
   border-bottom: 1px solid var(--sl-color-border-muted);
 }
 
 .sl-foundation-summary {
   width: 100%;
-  min-height: 54px;
+  /* Matches .sl-library-summary's height, icon column, and gap: two
+     near-identical row patterns (checkbox/icon + title/metadata) should read
+     as one system rather than as two independently tuned rows. */
+  min-height: 49px;
   display: grid;
-  grid-template-columns: 18px 21px minmax(0, 1fr);
+  grid-template-columns: 18px 22px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  padding: 5px 1px;
+  gap: var(--sl-space-4);
+  /* Horizontal inset lives on the row itself (matches .sl-foundation-toolbar's
+     14px), so the hover fill runs full-bleed while the content stays clear
+     of the panel edge. */
+  padding: var(--sl-space-6) var(--sl-space-14);
   color: inherit;
   background: transparent;
   border: 0;
-  border-radius: 6px;
   text-align: left;
   cursor: pointer;
 }
@@ -1362,7 +1494,7 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-foundation-source-icon {
   display: grid;
   place-items: center;
-  color: var(--sl-color-success);
+  color: var(--sl-color-source-icon);
 }
 
 .sl-foundation-title {
@@ -1378,18 +1510,18 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-foundation-title > strong {
-  font-size: 11.5px;
-  font-weight: 620;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-foundation-title > small {
-  margin-top: 3px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-foundation-status {
-  margin: 8px 14px 0;
+  margin: var(--sl-space-8) var(--sl-space-14) 0;
 }
 
 .sl-foundation-status .sl-banner[data-tone="success"] {
@@ -1413,12 +1545,14 @@ body[data-theme="light"] .sl-global-search-footer kbd {
  * Settings — generated frame appearance
  * ----------------------------------------------------------------------- */
 
+/* Symmetric gutters. The right side used to be 14 against a 16 left, so every
+   card on Settings and License sat 2px off-center from its own page header. */
 .sl-settings-screen .sl-screen-scroll {
-  padding: 0 14px 22px 16px;
+  padding: 0 var(--sl-space-16) var(--sl-space-20);
 }
 
 .sl-settings-screen .sl-page-header {
-  padding-left: 16px;
+  padding-left: var(--sl-space-16);
 }
 
 .sl-settings-section {
@@ -1426,44 +1560,44 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-frame-theme-section {
-  padding-top: 14px;
+  padding-top: var(--sl-space-14);
 }
 
 .sl-settings-section-heading {
-  margin-bottom: 11px;
+  margin-bottom: var(--sl-space-10);
 }
 
 .sl-settings-section-heading h2 {
-  margin: 0 0 4px;
+  margin: 0 0 var(--sl-space-4);
   color: var(--sl-color-text);
-  font-size: 10.5px;
-  font-weight: 640;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-settings-section-heading p,
 .sl-logo-setting p {
   margin: 0;
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
-  line-height: 1.45;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-theme-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--sl-space-6);
 }
 
 .sl-theme-choice {
   min-width: 0;
   position: relative;
-  padding: 4px;
+  padding: var(--sl-space-4);
   color: var(--sl-color-text-muted);
   background: var(--sl-color-surface-subdued);
   border: 1px solid var(--sl-color-border);
   border-radius: 6px;
-  font-size: 8px;
-  line-height: 1.15;
+  font-size: var(--sl-font-size-micro);
+  line-height: var(--sl-line-height-tight);
   cursor: pointer;
 }
 
@@ -1494,31 +1628,18 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   height: 29px;
   display: grid;
   place-items: center;
-  margin-bottom: 4px;
+  margin-bottom: var(--sl-space-4);
   border-radius: 4px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--sl-font-size-body);
+  font-weight: var(--sl-font-weight-bold);
 }
 
-.sl-theme-preview.default {
-  color: #fff;
-  background: #15233d;
-}
-
+/* Preset swatch colours are set inline from THEME_PRESETS in screens/settings.ts
+   so the preview cannot drift from the frame it previews. Only the type
+   treatment lives here: it stands in for the preset's heading font, which the
+   plugin iframe does not load. */
 .sl-theme-preview.editorial {
-  color: #eee7d9;
-  background: #1f1b16;
   font-family: Georgia, serif;
-}
-
-.sl-theme-preview.tech {
-  color: #fff;
-  background: #1d2940;
-}
-
-.sl-theme-preview.warm {
-  color: #ffeef9;
-  background: #3a1949;
 }
 
 .sl-theme-preview.custom {
@@ -1527,18 +1648,18 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-custom-theme-controls {
-  margin-top: 16px;
-  padding-top: 13px;
+  margin-top: var(--sl-space-16);
+  padding-top: var(--sl-space-12);
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
 .sl-custom-theme-controls h3,
 .sl-logo-setting h3 {
-  margin: 0 0 9px;
+  margin: 0 0 var(--sl-space-8);
   color: var(--sl-color-text-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-bold);
+  letter-spacing: var(--sl-tracking-caps-wide);
   text-transform: uppercase;
 }
 
@@ -1546,11 +1667,11 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-theme-font-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px 8px;
+  gap: var(--sl-space-8) var(--sl-space-8);
 }
 
 .sl-theme-font-grid {
-  margin-top: 11px;
+  margin-top: var(--sl-space-10);
 }
 
 .sl-theme-color-field,
@@ -1561,10 +1682,10 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-theme-color-field > span:first-child,
 .sl-theme-font-grid label > span:first-child {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: var(--sl-space-6);
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
-  line-height: 1.15;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-tight);
 }
 
 .sl-theme-color-input {
@@ -1572,8 +1693,8 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
-  padding: 0 7px 0 4px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-8) 0 var(--sl-space-4);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
   border-radius: 6px;
@@ -1598,11 +1719,11 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   border: 0;
   outline: 0;
   font: inherit;
-  font-size: 9px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-theme-font-grid input {
-  padding: 0 8px;
+  padding: 0 var(--sl-space-8);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
   border-radius: 6px;
@@ -1615,28 +1736,28 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-logo-setting {
-  margin-top: 17px;
-  padding-top: 14px;
+  margin-top: var(--sl-space-16);
+  padding-top: var(--sl-space-14);
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
 .sl-logo-setting h3 {
-  margin-bottom: 5px;
+  margin-bottom: var(--sl-space-6);
 }
 
 .sl-logo-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 9px;
+  gap: var(--sl-space-8);
+  margin-top: var(--sl-space-8);
 }
 
 .sl-logo-actions .sl-button {
   height: 32px;
   min-height: 32px;
-  padding: 0 11px;
-  font-size: 10.5px;
+  padding: 0 var(--sl-space-10);
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-logo-actions .sl-button[data-tone="secondary"] {
@@ -1646,16 +1767,16 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-logo-status {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sl-space-4);
   color: var(--sl-color-success);
-  font-size: 9px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-settings-hint {
-  margin: 7px 0 0;
+  margin: var(--sl-space-8) 0 0;
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
-  line-height: 1.4;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-settings-hint:empty {
@@ -1674,32 +1795,40 @@ body[data-theme="light"] .sl-global-search-footer kbd {
  * License — plan, quota, activation, and device connection
  * ----------------------------------------------------------------------- */
 
+/*
+ * Title-only header, so it uses the 48px bar the other single-line screens use
+ * (.sl-library-screen, .sl-foundation-screen). Left on the 67px base — which is
+ * sized for Settings' title *and* subtitle — the min-height had 26px of dead
+ * space under the h1, putting 38px between the title and the plan card while
+ * every gap below the card is 12-16. Matching those two screens puts the title
+ * 15px above the first block, same as Foundations.
+ */
+.sl-license-screen .sl-page-header {
+  min-height: 48px;
+  padding-bottom: var(--sl-space-6);
+}
+
 .sl-license-screen .sl-screen-scroll {
-  padding-top: 4px;
-  padding-bottom: 18px;
+  padding-bottom: var(--sl-space-16);
 }
 
 .sl-license-plan-card {
-  padding: 13px;
-  background: var(--sl-color-chrome);
+  padding: var(--sl-space-12);
+  background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: 9px;
 }
 
 .sl-license-plan-card.is-pro {
-  background: linear-gradient(
-    145deg,
-    rgba(20, 105, 176, 0.14),
-    var(--sl-color-chrome) 58%
-  );
-  border-color: rgba(40, 158, 255, 0.42);
+  background: var(--sl-color-accent-soft);
+  border-color: var(--sl-color-accent-border);
 }
 
 .sl-license-plan-heading {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--sl-space-8);
 }
 
 .sl-license-plan-heading > span:nth-child(2) {
@@ -1713,17 +1842,21 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-license-plan-heading strong {
   color: var(--sl-color-text);
-  font-size: 11.5px;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
+/*
+ * Wraps rather than truncates. This line is the whole description of the plan
+ * now that Pro's benefits list is gone, so an ellipsis here would hide the only
+ * statement of what the plan does. The heading is centered, so a second line
+ * costs the card nothing.
+ */
 .sl-license-plan-heading small {
-  margin-top: 2px;
-  overflow: hidden;
+  margin-top: var(--sl-space-2);
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-plan-icon {
@@ -1740,19 +1873,19 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   height: 22px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 7px;
+  gap: var(--sl-space-4);
+  padding: 0 var(--sl-space-8);
   color: var(--sl-color-success);
   background: var(--sl-color-success-soft);
   border: 1px solid color-mix(in srgb, var(--sl-color-success) 22%, transparent);
   border-radius: var(--sl-radius-pill);
-  font-size: 8.5px;
-  font-weight: 600;
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-license-usage {
-  margin-top: 11px;
-  padding-top: 11px;
+  margin-top: var(--sl-space-10);
+  padding-top: var(--sl-space-10);
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
@@ -1760,11 +1893,11 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--sl-space-12);
+  margin-bottom: var(--sl-space-8);
   color: var(--sl-color-text-muted);
-  font-size: 9.5px;
-  line-height: 1.2;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-tight);
 }
 
 .sl-license-usage-copy > span:first-child strong,
@@ -1774,14 +1907,15 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-license-usage-copy > span:first-child strong {
   color: var(--sl-color-text);
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 .sl-license-usage-copy > span:first-child small {
-  margin-top: 2px;
+  margin-top: var(--sl-space-2);
   color: var(--sl-color-text-muted);
-  font-size: 9px;
-  line-height: 1.2;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-tight);
 }
 
 .sl-license-usage-track {
@@ -1799,37 +1933,22 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   border-radius: inherit;
 }
 
-.sl-license-pro-benefits {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 13px;
-  padding-top: 11px;
-  border-top: 1px solid rgba(40, 158, 255, 0.17);
-}
-
-.sl-license-pro-benefits span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--sl-color-text-muted);
-  font-size: 8.5px;
-}
-
-.sl-license-pro-benefits svg {
-  flex: 0 0 auto;
-  color: var(--sl-color-accent);
+/* Mirrors the header ring's [data-state="low"|"exhausted"] tint, so the same
+   quota reads the same way in both places. */
+.sl-license-usage-track[data-tone="low"] i,
+.sl-license-usage-track[data-tone="exhausted"] i {
+  background: var(--sl-color-warning-graphic);
 }
 
 .sl-license-unknown-note {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 13px;
-  padding-top: 11px;
+  gap: var(--sl-space-6);
+  margin-top: var(--sl-space-12);
+  padding-top: var(--sl-space-10);
   color: var(--sl-color-text-muted);
   border-top: 1px solid var(--sl-color-border-muted);
-  font-size: 8.5px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-license-unknown-note svg {
@@ -1838,7 +1957,7 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-license-plan-actions {
-  margin-top: 12px;
+  margin-top: var(--sl-space-12);
 }
 
 .sl-license-plan-actions .sl-button,
@@ -1846,9 +1965,9 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-license-support-actions .sl-button {
   height: 31px;
   min-height: 31px;
-  padding: 0 11px;
+  padding: 0 var(--sl-space-10);
   border-radius: 6px;
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-license-screen .sl-button[data-tone="quiet"] {
@@ -1858,8 +1977,8 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-license-account,
 .sl-license-activation-section {
-  margin-top: 16px;
-  padding-top: 15px;
+  margin-top: var(--sl-space-16);
+  padding-top: var(--sl-space-14);
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
@@ -1870,35 +1989,36 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-license-account .sl-settings-section-heading {
-  margin-bottom: 10px;
+  margin-bottom: var(--sl-space-10);
 }
 
 .sl-license-account .sl-settings-section-heading h2 {
-  margin: 0 0 4px;
+  margin: 0 0 var(--sl-space-4);
   color: var(--sl-color-text);
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-license-account .sl-settings-section-heading p {
   margin: 0;
   color: var(--sl-color-text-muted);
-  font-size: 9px;
-  line-height: 1.45;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-license-status-message {
   display: grid;
   grid-template-columns: 17px minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 9px 10px;
+  gap: var(--sl-space-8);
+  margin-bottom: var(--sl-space-10);
+  padding: var(--sl-space-8) var(--sl-space-10);
   background: var(--sl-color-surface-subdued);
   border: 1px solid var(--sl-color-border);
   border-radius: 7px;
 }
 
 .sl-license-status-message > svg {
+  /* Optical: drops the icon onto the first text baseline. Not rhythm. */
   margin-top: 1px;
 }
 
@@ -1909,20 +2029,20 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-license-status-message strong {
   color: var(--sl-color-text);
-  font-size: 9.5px;
-  line-height: 1.35;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-license-status-message small {
-  margin-top: 3px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
-  line-height: 1.45;
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-license-status-message.is-warning {
-  background: rgba(183, 126, 31, 0.08);
-  border-color: rgba(231, 166, 50, 0.28);
+  background: var(--sl-color-warning-soft);
+  border-color: var(--sl-color-warning-border);
 }
 
 .sl-license-status-message.is-warning > svg {
@@ -1930,8 +2050,8 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 }
 
 .sl-license-status-message.is-danger {
-  background: rgba(190, 66, 66, 0.08);
-  border-color: rgba(226, 88, 88, 0.28);
+  background: var(--sl-color-danger-soft);
+  border-color: var(--sl-color-danger-border);
 }
 
 .sl-license-status-message.is-danger > svg {
@@ -1944,7 +2064,7 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-license-status-message.is-success {
   background: var(--sl-color-success-soft);
-  border-color: color-mix(in srgb, var(--sl-color-success) 28%, transparent);
+  border-color: var(--sl-color-success-border);
 }
 
 .sl-license-status-message.is-success > svg {
@@ -1954,7 +2074,7 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-license-activation-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 7px;
+  gap: var(--sl-space-8);
 }
 
 .sl-license-field {
@@ -1962,10 +2082,10 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-8);
   color: var(--sl-color-text-quiet);
-  background: var(--sl-color-surface-subdued);
+  background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: 7px;
 }
@@ -1985,7 +2105,7 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   border: 0;
   outline: 0;
   font: inherit;
-  font-size: 9.5px;
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-license-field input::placeholder {
@@ -2000,9 +2120,9 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   min-width: 78px;
   height: 34px;
   min-height: 34px;
-  padding: 0 11px;
+  padding: 0 var(--sl-space-10);
   border-radius: 6px;
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-license-spinner,
@@ -2022,9 +2142,9 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  background: var(--sl-color-surface-subdued);
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-8) var(--sl-space-8);
+  background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: 7px;
 }
@@ -2046,22 +2166,22 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 
 .sl-connected-license strong {
   color: var(--sl-color-text);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
+  font-size: var(--sl-font-size-support);
+  letter-spacing: var(--sl-tracking-caps);
 }
 
 .sl-connected-license small {
-  margin-top: 3px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-connected-license-status {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sl-space-4);
   color: var(--sl-color-success);
-  font-size: 8.5px;
+  font-size: var(--sl-font-size-caption);
 }
 
 .sl-connected-license-actions,
@@ -2069,8 +2189,8 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 9px;
+  gap: var(--sl-space-6);
+  margin-top: var(--sl-space-8);
 }
 
 .sl-button.is-danger {
@@ -2082,9 +2202,9 @@ body[data-theme="light"] .sl-global-search-footer kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 7px 6px 10px;
-  background: var(--sl-color-surface-subdued);
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-6) var(--sl-space-8) var(--sl-space-6) var(--sl-space-10);
+  background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: 7px;
 }
@@ -2092,32 +2212,25 @@ body[data-theme="light"] .sl-global-search-footer kbd {
 .sl-saved-license-row > span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sl-space-8);
   color: var(--sl-color-text-quiet);
 }
 
 .sl-saved-license-row strong {
   color: var(--sl-color-text);
-  font-size: 9px;
-  letter-spacing: 0.04em;
-}
-
-body[data-theme="light"] .sl-license-plan-card,
-body[data-theme="light"] .sl-license-field,
-body[data-theme="light"] .sl-connected-license,
-body[data-theme="light"] .sl-saved-license-row {
-  background: var(--sl-color-surface-raised);
+  font-size: var(--sl-font-size-caption);
+  letter-spacing: var(--sl-tracking-caps);
 }
 
 .sl-plan-card {
-  padding: 14px;
+  padding: var(--sl-space-14);
 }
 
 .sl-plan-heading {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--sl-space-10);
 }
 
 .sl-plan-copy {
@@ -2128,20 +2241,20 @@ body[data-theme="light"] .sl-saved-license-row {
 
 .sl-plan-copy > strong {
   color: var(--sl-color-text);
-  font-size: var(--sl-font-size-6);
+  font-size: var(--sl-font-size-section);
   font-weight: var(--sl-font-weight-semibold);
   line-height: var(--sl-line-height-tight);
 }
 
 .sl-plan-copy > small {
-  margin-top: 3px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-plan-usage {
-  margin-top: 13px;
-  padding-top: 12px;
+  margin-top: var(--sl-space-12);
+  padding-top: var(--sl-space-12);
   border-top: 1px solid var(--sl-color-border);
 }
 
@@ -2167,7 +2280,7 @@ body[data-theme="light"] .sl-saved-license-row {
   z-index: 80;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: var(--sl-space-16);
   background: var(--sl-color-overlay);
 }
 
@@ -2175,41 +2288,33 @@ body[data-theme="light"] .sl-saved-license-row {
   width: min(360px, 100%);
   max-height: min(560px, calc(100vh - 32px));
   overflow: auto;
-  padding: 14px;
+  padding: var(--sl-space-14);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-lg);
   box-shadow: var(--sl-shadow-overlay);
 }
 
+/*
+ * The header is a flex row, so the grid-template-columns this block used to
+ * declare on it never applied. What actually needs to give under 440px is the
+ * allowance: drop the label and the Upgrade action, because the ring and the
+ * count together still say what is left.
+ */
 @media (max-width: 439px) {
   .sl-utility-header {
-    grid-template-columns: minmax(96px, 1fr) minmax(164px, 1.45fr) auto;
-    gap: 5px;
-    padding-inline: 5px;
+    gap: var(--sl-space-6);
+    padding-inline: var(--sl-space-6);
   }
 
-  .sl-header-search {
-    padding-inline: 8px 6px;
-  }
-
-  .sl-shortcut {
-    display: none;
-  }
-
-  .sl-ai-allowance {
-    grid-template-columns: 22px minmax(0, 1fr);
-    gap: 6px;
-    padding-inline: 6px;
-  }
-
-  .sl-allowance-ring {
-    width: 22px;
-    height: 22px;
-  }
-
+  .sl-allowance-copy > strong,
   .sl-allowance-action {
     display: none;
+  }
+
+  /* The count is the whole message now, so it must not open with a separator. */
+  .sl-allowance-copy > small::before {
+    content: none;
   }
 }
 
@@ -2220,15 +2325,15 @@ body[data-theme="light"] .sl-saved-license-row {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--sl-space-2);
+  gap: var(--sl-space-8);
   min-height: 320px;
-  padding: var(--sl-space-6) var(--sl-space-4);
+  padding: var(--sl-space-32) var(--sl-space-16);
   text-align: center;
 }
 
 .sl-empty-state > strong {
   color: var(--sl-color-text);
-  font-size: var(--sl-font-size-6);
+  font-size: var(--sl-font-size-section);
   font-weight: var(--sl-font-weight-semibold);
 }
 
@@ -2236,7 +2341,7 @@ body[data-theme="light"] .sl-saved-license-row {
   margin: 0;
   max-width: 34ch;
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
   line-height: var(--sl-line-height-body);
 }
 
@@ -2247,7 +2352,7 @@ body[data-theme="light"] .sl-saved-license-row {
 }
 
 .sl-screen-status {
-  margin: var(--sl-space-3) 0 var(--sl-space-2);
+  margin: var(--sl-space-12) 0 var(--sl-space-8);
 }
 
 /* Work in progress — adapted from the original plugin's sparkle loader. */
@@ -2256,8 +2361,8 @@ body[data-theme="light"] .sl-saved-license-row {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-8) var(--sl-space-10);
   color: var(--sl-color-text);
   background: var(--sl-color-surface-subdued);
   border: 1px solid var(--sl-color-border-muted);
@@ -2279,21 +2384,21 @@ body[data-theme="light"] .sl-saved-license-row {
 
 .sl-work-copy {
   display: grid;
-  gap: 5px;
+  gap: var(--sl-space-6);
 }
 
 .sl-work-line {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sl-space-4);
 }
 
 .sl-work-line > strong {
   overflow: hidden;
   color: var(--sl-color-text);
-  font-size: 10.5px;
+  font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-medium);
-  line-height: 1.3;
+  line-height: var(--sl-line-height-control);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2318,7 +2423,7 @@ body[data-theme="light"] .sl-saved-license-row {
 .sl-work-dots {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sl-space-2);
 }
 
 .sl-work-dots > i {
@@ -2342,7 +2447,7 @@ body[data-theme="light"] .sl-saved-license-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--sl-space-8);
 }
 
 .sl-work-progress .sl-progress-track {
@@ -2352,14 +2457,14 @@ body[data-theme="light"] .sl-saved-license-row {
 
 .sl-work-count {
   color: var(--sl-color-text-muted);
-  font-size: 8.5px;
+  font-size: var(--sl-font-size-caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .sl-loading-rows {
   display: grid;
-  padding: 0 14px;
+  padding: 0 var(--sl-space-14);
 }
 
 .sl-loading-row {
@@ -2367,14 +2472,14 @@ body[data-theme="light"] .sl-saved-license-row {
   display: grid;
   grid-template-columns: 21px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: var(--sl-space-8);
   border-bottom: 1px solid var(--sl-color-border-muted);
 }
 
 .sl-loading-row > span {
   min-width: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--sl-space-6);
 }
 
 .sl-loading-icon {

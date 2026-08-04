@@ -10,17 +10,20 @@ npm run build:plugin
 Import `packages/plugin/manifest.json` through Figma desktop's development
 plugin menu. The plugin needs no local server and no account to run.
 
+`npm run build:plugin` builds vNext. Use `npm run build:plugin:legacy` only to
+compare against the temporary rollback UI.
+
 ## Pre-merge pass
 
 Before merging a branch that touched the plugin, walk these in order. Each one
 covers something unit tests cannot reach, roughly highest risk first:
 
-1. **Selected component** (below), on a component set with two variant axes.
+1. **Generate component docs** (below), on a component set with two variant axes.
 2. **Doc frame content**, which is where most rendering regressions show up.
-3. **My Library**, the newest surface and the least covered by tests.
-4. **Quota meter** and **Settings, Pro license**, which need a real proxy round
+3. **Library**, the newest surface and the least covered by tests.
+4. **AI-writing allowance** and **License**, which need a real proxy round
    trip and cannot be faked locally.
-5. **Settings, Frame theme**, then the keyboard and visual checks.
+5. **Settings**, then the keyboard and visual checks.
 
 Two things worth knowing before you start:
 
@@ -41,7 +44,7 @@ plugin: no key is requested, entered, or stored. Free users generate against a
 monthly quota; a Pro **license key** lifts the cap. Requests carry the
 component's structured summary and a rendered image of the selected node.
 
-## Selected component
+## Generate component docs
 
 1. Select a component or component set and run the plugin.
 2. Confirm the component name is shown (and the atom notice appears for
@@ -49,7 +52,7 @@ component's structured summary and a rendered image of the selected node.
 3. Toggle **Write with AI**. On the free plan it enables with no key needed
    (`AI works on the free plan. No key needed.`).
 4. Pick sections (and, for a component set, the variants to document) and
-   **Create frame**. Confirm a `<Name>: Guidelines` frame is placed on the
+   **Create docs**. Confirm a `<Name>: Guidelines` frame is placed on the
    canvas next to the component, and re-running replaces the previous frame in
    place.
 5. **Download** and confirm the ZIP contains a Markdown file starting with YAML
@@ -81,13 +84,13 @@ each section renders rather than silently dropping out:
 6. Confirm unchecking a section removes it from the frame, and that unchecking
    every section in a group drops the whole group heading.
 
-## My Library
+## Library
 
 This tab tracks generated docs and is the newest surface, so give it the most
 attention. Each entry stores its source node id and the content hash at
 generation time.
 
-1. Generate two or three doc frames, then open **My Library**. Confirm every
+1. Generate two or three doc frames, then open **Library**. Confirm every
    doc is listed with its component name and page name, and that the summary
    count matches.
 2. Click an entry and confirm it focuses the doc frame on canvas.
@@ -110,23 +113,20 @@ generation time.
 10. Close and reopen the plugin. Confirm the library survives, since it is
     stored in the document rather than per device.
 
-## Quota meter (free plan)
+## AI-writing allowance (free plan)
 
-1. With AI enabled and no Pro key, confirm the quota meter shows remaining free
-   generations (e.g. `17/20 AI generations left this month`), and the bar fills
-   accordingly.
-2. Confirm the meter offers **Activate license** (routes to Settings, focuses
-   the license key field) and **Upgrade**.
-3. Exhaust the free quota (or simulate it). Confirm the upsell appears
-   (`You've used your free AI generations for July.`) with **Upgrade for
-   unlimited** and **Continue without AI**, and that the default
+1. With AI enabled and no Pro key, confirm the header allowance shows the
+   remaining free uses and the ring fills accordingly.
+2. Confirm the allowance offers **Upgrade** and that License owns activation.
+3. Exhaust the free quota (or simulate it). Confirm the exhausted state offers
+   **Upgrade** and **Continue without AI**, and that the default
    Create/Download row is folded away while the upsell owns the footer.
 4. Confirm **Continue without AI** still creates the frame (without AI prose)
    and restores the default action row.
 
-## Settings — Pro license
+## License
 
-1. In **Settings → Auto Docs & Specs Pro**, paste a Pro **license key** and
+1. On **License**, paste a Pro **license key** and
    **Activate**. Confirm success shows `Pro plan active ✓`, the quota meter
    switches to the Pro state (`Pro plan active`), and the setting persists
    across reopen.
@@ -138,14 +138,14 @@ generation time.
 5. Confirm behavior when the proxy is unreachable: a transient outage is treated
    as a blip (the saved key stays; no false "expired"), not a lapse.
 
-## Settings — Frame theme
+## Settings
 
 1. **Frame theme** presets: pick a preset and confirm the generated Guidelines
    frame reflects it. Selecting **Custom** reveals the color and font controls;
    other presets hide them. The logo control stays visible in every mode.
 2. **Custom colors**: set a header/accent hex (or leave blank for defaults),
    confirm the swatch updates, an invalid hex is rejected with a hint, and
-   **Create frame** reflects the chosen colors. Reset returns to defaults.
+   **Create docs** reflects the chosen colors. Reset returns to defaults.
 3. **Logo**: set a logo node and confirm it appears in the frame; confirm an
    oversized logo is rejected with a hint.
 
@@ -164,6 +164,7 @@ npm test -- packages/plugin/test
 npm run typecheck
 npm run lint
 npm run build:plugin
+npm run build:plugin:legacy
 ```
 
 ## Release note

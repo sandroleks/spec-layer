@@ -192,7 +192,8 @@ and recovery.
 ### Pro plan
 
 - Active badge.
-- Unlimited AI writing.
+- One line stating there is no monthly cap. Not a benefits list, and not the
+  word "unlimited": the per-minute rate limit still applies to Pro.
 - Manage subscription.
 - Connected key summary.
 - Remove key.

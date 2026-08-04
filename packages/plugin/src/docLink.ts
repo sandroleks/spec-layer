@@ -159,7 +159,9 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
     sections: (c.sections ?? []).filter((x): x is SectionId => typeof x === 'string'),
     variantIds: Array.isArray(c.variantIds) ? c.variantIds.filter((x): x is string => typeof x === 'string') : [],
     aiEnabled: c.aiEnabled === true,
-    anatomyView: c.anatomyView === 'diagram' || c.anatomyView === 'table' || c.anatomyView === 'both' ? c.anatomyView : 'both',
+    // Anatomy is intentionally diagram-only. Normalize old table/both links so
+    // every update converges on the current output contract.
+    anatomyView: 'diagram',
     measureViews: Array.isArray(c.measureViews)
       ? c.measureViews.filter((x): x is MeasureView => x === 'size' || x === 'padding' || x === 'spacing')
       : [],

@@ -721,7 +721,9 @@ document.getElementById('linkedin-link')?.addEventListener('click', (e) => {
 });
 
 refs.selectAllBtn.addEventListener('click', () => {
-  const checks = Object.values(refs.sectionChecks);
+  const checks = Object.values(refs.sectionChecks).filter(
+    (check) => !check.closest<HTMLElement>('.sec-row')?.hidden,
+  );
   const allOn = checks.every((c) => c.checked);
   for (const c of checks) {
     if (c.checked === allOn) {
@@ -738,7 +740,9 @@ function sectionsInGroup(groupId: string): HTMLInputElement[] {
   return ALL_SECTIONS
     .filter((s) => s.group === groupId)
     .map((s) => refs.sectionChecks[s.id])
-    .filter(Boolean) as HTMLInputElement[];
+    .filter((check): check is HTMLInputElement =>
+      Boolean(check && !check.closest<HTMLElement>('.sec-row')?.hidden),
+    );
 }
 
 function syncGroup(groupId: string): void {
@@ -762,7 +766,9 @@ function syncAllGroups(): void {
 // on, "Select all" otherwise (including the mixed default). Computed here rather
 // than hardcoded so the first click never does the opposite of its label.
 function syncSelectAllLabel(): void {
-  const checks = Object.values(refs.sectionChecks);
+  const checks = Object.values(refs.sectionChecks).filter(
+    (check) => !check.closest<HTMLElement>('.sec-row')?.hidden,
+  );
   const allOn = checks.length > 0 && checks.every((c) => c.checked);
   refs.selectAllBtn.textContent = allOn ? 'Clear all' : 'Select all';
 }
@@ -816,22 +822,6 @@ refs.variantHint.addEventListener('click', (e) => {
   if (!tokensCheck) return;
   tokensCheck.checked = true;
   renderVariantPicker(refs, state);
-});
-
-// Toggling the Anatomy section shows/hides the diagram/table/both view toggle.
-// Initialize visibility to match the checkbox's default-checked state.
-refs.anatomyView.style.display = refs.sectionChecks['anatomy']?.checked ? 'flex' : 'none';
-refs.sectionChecks['anatomy']?.addEventListener('change', () => {
-  const checked = refs.sectionChecks['anatomy']?.checked ?? false;
-  refs.anatomyView.style.display = checked ? 'flex' : 'none';
-  refs.sectionChecks['anatomy']?.setAttribute('aria-expanded', String(checked));
-});
-
-// Anatomy view radios: reflect the selected mode onto state.
-refs.anatomyView.addEventListener('change', (e) => {
-  const target = e.target as HTMLInputElement;
-  if (target.name !== 'anatomy-view') return;
-  state.anatomyView = target.value as 'diagram' | 'table' | 'both';
 });
 
 // Toggling the Measurements section shows/hides the measure-setup lens row.

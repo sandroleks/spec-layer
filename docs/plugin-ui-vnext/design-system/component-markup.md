@@ -81,7 +81,18 @@ The tooltip uses inverse tokens and does not inherit the page foreground.
 ## AI allowance
 
 Use a real SVG progress ring. `r="10"` produces a circumference of
-approximately `62.832`.
+approximately `62.832`. That geometry is viewBox-space and does not change with
+the ring's rendered size, which is `20px` in the header.
+
+`strong` and `small` render as one baseline-aligned row, not a stack. The
+separator between them is drawn by CSS, so neither element should contain one.
+An empty `small` collapses the row to a single line, which is how the `pro`
+state renders. The control has no resting border or fill; it paints a surface on
+hover only.
+
+The ring and the Pro check share one `.sl-allowance-status` cell so the control
+keeps three grid columns in every state. Both are always in the DOM;
+`[data-state="pro"]` decides which one paints.
 
 ```html
 <button
@@ -90,17 +101,20 @@ approximately `62.832`.
   type="button"
   aria-label="AI writing: 4 of 5 free uses remaining. Open License."
 >
-  <svg class="sl-allowance-ring" viewBox="0 0 26 26" aria-hidden="true">
-    <circle data-track cx="13" cy="13" r="10"></circle>
-    <circle
-      data-value
-      cx="13"
-      cy="13"
-      r="10"
-      stroke-dasharray="62.832"
-      stroke-dashoffset="12.566"
-    ></circle>
-  </svg>
+  <span class="sl-allowance-status">
+    <svg class="sl-allowance-ring" viewBox="0 0 26 26" aria-hidden="true">
+      <circle data-track cx="13" cy="13" r="10"></circle>
+      <circle
+        data-value
+        cx="13"
+        cy="13"
+        r="10"
+        stroke-dasharray="62.832"
+        stroke-dashoffset="12.566"
+      ></circle>
+    </svg>
+    <span class="sl-allowance-pro-mark" aria-hidden="true"><!-- check icon --></span>
+  </span>
   <span class="sl-allowance-copy">
     <strong>AI writing</strong>
     <small>4 of 5 free uses left</small>

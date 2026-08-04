@@ -73,6 +73,33 @@ describe('foundation screen', () => {
     expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL)).not.toContain('disabled');
   });
 
+  /**
+   * requestFoundations() (ui-vnext.ts) only ever fires once per session, so a
+   * variable or collection added after that first load never appears until
+   * this button is clicked — the same gap Library's own refresh button
+   * closes for connected docs.
+   */
+  it('offers a refresh button independent of the create button', () => {
+    const markup = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL);
+    expect(markup).toContain('data-foundation-refresh');
+    expect(markup).toContain('Refresh sources');
+  });
+
+  it('labels and disables the refresh button while a refresh is in flight', () => {
+    const markup = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL, true);
+    expect(markup).toContain('Refreshing…');
+    expect(markup).toMatch(/data-foundation-refresh disabled/);
+    // The create button is untouched by a refresh alone.
+    expect(markup).toContain('id="sl-foundation-create" type="button">');
+  });
+
+  it('disables refresh while busy, the same as create', () => {
+    const markup = foundationFooterMarkup(
+      { kind: 'generating', done: 1, total: 3 }, SPEC, ALL,
+    );
+    expect(markup).toMatch(/data-foundation-refresh disabled/);
+  });
+
   it('shows loading, real progress, and persistent read errors honestly', () => {
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('sl-loading-row');
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).not.toContain('sl-work-status');

@@ -10,17 +10,15 @@ written already: `2026-07-29-plugin-ui-vnext-decoupling.md`.
 
 ## Where we actually are
 
-Landed and verified:
+All five vNext workflows, the shared shell, the command palette, Library
+maintenance, settings, license states, and Foundation generation are landed
+and covered by automated tests. On 2026-07-29, vNext became the default plugin
+build. The previous UI remains available only through `UI_LEGACY=1` as a
+temporary rollback path.
 
-- The design system, embedded only in builds that render the new shell.
-- The shell: rail, utility header, allowance control, theme, dev harness.
-- `Generate component docs`, partially: sections, groups, AI switch, anatomy
-  segmented control, measurement chips, `Create docs`.
-- Phase 1 action decoupling: shared presenters, value-based selections,
-  source actions, and a Foundation host with legacy adapters.
-
-Not landed: four of five screens, and several functions inside the one screen
-that exists. The plugin is not usable on the new UI yet.
+The remaining release gate is a manual Figma acceptance pass against
+`packages/plugin/TESTING.md`. Delete the rollback implementation only after
+that pass succeeds.
 
 ## The blocker that governs the order
 
@@ -73,8 +71,7 @@ mostly a rendering job because of this.
 **Plan: `2026-07-29-plugin-ui-vnext-decoupling.md` (written).**
 
 **Completed 2026-07-29.** The shared action layer is now drivable without the
-legacy DOM, while the default build and legacy adapters preserve existing
-behavior. This gates every phase below.
+legacy DOM, while rollback adapters preserve the previous behavior.
 
 ---
 
@@ -100,7 +97,7 @@ facts without touching the legacy DOM, supports per-variant token selection,
 atom and state guidance, group bulk controls, working downloads, accurate
 reading/download states, and AI fallback warnings. Component operations defer
 selection changes until they finish, preventing an async build from mixing two
-components. The legacy UI remains the default build.
+components.
 
 ---
 
@@ -121,6 +118,8 @@ Cheapest screen, because `foundationState.ts` is already pure.
 
 New: `screens/foundations.ts`, `viewModel/foundationScreen.ts`.
 Depends on: Phase 1 (`onFoundation*` decoupling).
+
+**Completed 2026-07-29.**
 
 ---
 
@@ -147,6 +146,10 @@ Largest screen, and the one with the most honesty requirements.
 New: `screens/library.ts`, `viewModel/libraryRow.ts`, and a menu primitive.
 Depends on: Phase 1 (`runUpdateFromSource`, `runDownloadFromSource`).
 
+**Completed 2026-07-29.** Library uses button-group filter semantics, supports
+row navigation and maintenance actions, exposes the update badge, and includes
+keyboard navigation for its action menu.
+
 ---
 
 ## Phase 5 — Settings
@@ -161,6 +164,8 @@ Depends on: Phase 1 (`runUpdateFromSource`, `runDownloadFromSource`).
 
 New: `screens/settings.ts`. The font picker is reusable but was written against
 legacy markup, so expect to adapt it.
+
+**Completed 2026-07-29.**
 
 ---
 
@@ -181,6 +186,9 @@ combination does not exist yet and is the real work of this phase.
 
 New: `screens/license.ts`, `viewModel/licenseScreen.ts`.
 
+**Completed 2026-07-29.** The screen preserves the distinction between an
+expired license and a saved key whose status cannot currently be verified.
+
 ---
 
 ## Phase 7 — Command palette, accessibility, flag flip
@@ -194,6 +202,10 @@ New: `screens/license.ts`, `viewModel/licenseScreen.ts`.
 
 Depends on: Phase 4, since the palette searches library items.
 
+**Completed in code 2026-07-29.** vNext is the default build. Automated
+keyboard, rendering, and bundle checks pass; the manual Figma pass remains the
+release gate.
+
 ---
 
 ## Phase 8 — Delete the legacy UI
@@ -203,6 +215,10 @@ Depends on: Phase 4, since the palette searches library items.
 - Remove the legacy adapters added in Phase 1 once nothing calls them.
 - Update `packages/plugin/TESTING.md`.
 - Version bump and Community listing assets, handled separately.
+
+**Deferred until the manual Figma acceptance pass.** Use
+`npm run build:plugin:legacy` only for rollback comparison. No new behavior
+belongs in the legacy entry point.
 
 ---
 
@@ -223,13 +239,13 @@ Depends on: Phase 4, since the palette searches library items.
 2. **The Figma bridge is untested end to end.** The harness paints canned
    state; it cannot exercise selection, extraction, or frame creation. Only a
    manual Figma pass proves those.
-3. **Legacy stays shipped until Phase 7.** Every phase must leave the default
-   build on the legacy UI and keep its tests green.
-4. **License needs product decisions**, not just code: twelve states with
-   distinct copy and recovery actions, from a model with four.
+3. **Legacy deletion is intentionally gated.** vNext is the default, but the
+   old entry point stays available until the manual Figma acceptance pass.
+4. **Release configuration is still staging.** The manifest and plugin proxy
+   URL must move together before a public release.
 
 ## Suggested order
 
-Phase 1 gates everything. Then 2 and 3 in either order — both are small and
-build confidence. Phase 4 is the big one. Phase 6 needs a product conversation
-before it can be planned properly. 7 and 8 close it out.
+Run the manual Figma checklist, remove the legacy entry point and adapters,
+then switch the proxy configuration from staging to production as a separate
+release change.

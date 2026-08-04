@@ -6,6 +6,7 @@
  */
 
 import type { LicenseState } from '../viewModel/contracts';
+import { LOW_REMAINING } from '../viewModel/allowance';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 
@@ -34,7 +35,7 @@ const STATUS_MESSAGES: Partial<Record<LicenseState, {
   expired: {
     tone: 'warning',
     title: 'Your Pro subscription has expired',
-    detail: 'You’re on the free plan for now. Renew Pro to restore unlimited access.',
+    detail: 'You’re on the free plan for now. Renew Pro to remove the monthly cap.',
   },
   inactive: {
     tone: 'warning',
@@ -118,21 +119,35 @@ function planCard(model: LicenseScreenModel): string {
   const isUnknown = model.state === 'unknown';
   const safeLimit = Math.max(0, model.limit);
   const safeRemaining = Math.max(0, model.remaining);
-  const fill = safeLimit > 0 ? Math.min(100, (safeRemaining / safeLimit) * 100) : 0;
+  // Mirrors the header's allowanceCopy(): exhausted always reads as a full
+  // amber bar, not an empty gray one, because a "remaining" gauge has nothing
+  // left to show at 0 regardless of what color it would have been. LOW_REMAINING
+  // is the same import the header uses, so this page and the header cannot
+  // drift apart on what "low" means (allowance.test.ts pins that boundary).
+  const isExhausted = safeRemaining <= 0;
+  const isLow = !isExhausted && safeRemaining < LOW_REMAINING;
+  const usageTone = isExhausted ? 'exhausted' : isLow ? 'low' : 'normal';
+  const fill = isExhausted
+    ? 100
+    : safeLimit > 0 ? Math.min(100, (safeRemaining / safeLimit) * 100) : 0;
   const title = isPro ? 'Pro plan' : isUnknown ? 'Pro key saved' : 'Free plan';
+  // Says it once. The card used to read "Unlimited documentation maintenance"
+  // above "Unlimited AI writing" and "Unlimited library maintenance", which is
+  // the same claim three times, and it overstated the plan: Pro has no monthly
+  // cap, but PRO_SOFT_THRESHOLD and the per-minute rate limit still apply, so
+  // "unlimited" is the word voice rule 6 tells us not to use here.
   const detail = isPro
-    ? 'Unlimited documentation maintenance'
+    ? 'No monthly cap on AI writing or library maintenance'
     : isUnknown
       ? 'Verification is temporarily unavailable'
       : 'For lighter AI-assisted documentation';
   const badge = isPro ? 'Active' : isUnknown ? 'Unverified' : 'Current';
 
+  // Pro adds nothing here. The heading already states the plan, the badge
+  // already states that it is active, and the detail already states what that
+  // buys, so a benefits list could only repeat one of the three.
   const body = isPro
-    ? (
-      '<div class="sl-license-pro-benefits">' +
-      `<span>${icon('check', 13)}Unlimited AI writing</span>` +
-      `<span>${icon('check', 13)}Unlimited library maintenance</span></div>`
-    )
+    ? ''
     : isUnknown
       ? (
         '<div class="sl-license-unknown-note">' +
@@ -143,7 +158,7 @@ function planCard(model: LicenseScreenModel): string {
         '<div class="sl-license-usage-copy"><span><strong>AI writing</strong>' +
         `<small>${esc(resetCopy(model.resetsAt))}</small></span>` +
         `<span>${safeRemaining} of ${safeLimit} free uses left</span></div>` +
-        '<span class="sl-license-usage-track" aria-hidden="true">' +
+        `<span class="sl-license-usage-track" data-tone="${usageTone}" aria-hidden="true">` +
         `<i style="width:${fill}%"></i></span></div>`
       );
 

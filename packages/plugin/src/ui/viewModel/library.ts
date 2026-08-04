@@ -1,4 +1,5 @@
 import { resolveStatus } from '../../docLink';
+import type { FoundationIconKind } from '../../foundationIcon';
 import type { LibraryEntry } from '../../messages';
 
 /**
@@ -24,6 +25,12 @@ export type LibraryFilter = 'all' | 'updates' | 'sync';
 export interface LibraryRowModel {
   docId: string;
   kind: LibraryEntry['kind'];
+  /**
+   * Which foundation source glyph this row gets, matching the Foundations
+   * picker row for the same source. `null` on component rows, and `mixed` on a
+   * foundation row from a main thread that could not read its scope.
+   */
+  foundationIcon: FoundationIconKind | null;
   label: string;
   sourceLabel: string;
   sourceNodeId: string;
@@ -150,6 +157,11 @@ export function buildLibraryRow(
   return {
     docId: entry.docId,
     kind: entry.kind,
+    // An entry from an older main thread carries no icon; `mixed` is the same
+    // "claims nothing" fallback the derivation itself uses.
+    foundationIcon: entry.kind === 'foundation'
+      ? entry.foundationIcon ?? 'mixed'
+      : null,
     label: entry.label,
     sourceLabel: entry.sourceLabel,
     sourceNodeId: entry.sourceNodeId,

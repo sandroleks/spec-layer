@@ -53,11 +53,17 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
         ariaLabel: 'AI writing: checking your plan. Open License.',
       };
 
+    // The one state with no quantity to report, so it reports the plan instead
+    // and the header hides the ring. `Pro plan active` is the reference string
+    // in docs/plugin-voice-and-copy.md; the old "Unlimited uses" also overstated
+    // things, since PRO_SOFT_THRESHOLD and the per-minute rate limit both still
+    // apply to Pro. The empty detail is load-bearing: the header collapses the
+    // copy row to one line on it.
     case 'pro':
       return {
-        tone: 'pro', title: TITLE, detail: 'Unlimited uses',
+        tone: 'pro', title: 'Pro plan active', detail: '',
         showUpgrade: false, fillPct: 100,
-        ariaLabel: 'AI writing: Pro plan, unlimited uses. Open License.',
+        ariaLabel: 'AI writing: Pro plan active. Open License.',
       };
 
     case 'unknown':
@@ -73,7 +79,14 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
       if (remaining <= 0) {
         return {
           tone: 'exhausted', title: TITLE, detail: 'No free uses left',
-          showUpgrade: true, fillPct: 0,
+          showUpgrade: true,
+          // A full ring, not an empty one: at 0 remaining a "remaining" gauge
+          // has nothing to show regardless of stroke color, so the amber tone
+          // on [data-state="exhausted"] would render but never be visible.
+          // proxy.ts's legacy quotaMeterModel already got this right (100 at
+          // `empty`) — this mirrors it so the vNext ring shows the same
+          // brimming-amber urgency the legacy meter always has.
+          fillPct: 100,
           ariaLabel: 'AI writing: no free uses left. Open License.',
         };
       }

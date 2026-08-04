@@ -1,4 +1,9 @@
 import { sha256 } from 'js-sha256';
+import {
+  FOUNDATION_SYSTEM_PROMPT,
+  PROSE_SYSTEM_PROMPT,
+  proseFewShot,
+} from '@spec-layer/extractor';
 import { identityFromHeaders } from './identity';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
@@ -25,6 +30,7 @@ export interface HandlerDeps {
   quotaFor(identityId: string): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
   licenseLimiter: SlidingWindowLimiter;
+  requestLimiter: SlidingWindowLimiter;
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -40,9 +46,57 @@ function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
   };
 }
 
+interface ProseRequest {
+  model?: unknown;
+  max_tokens?: unknown;
+  system?: unknown;
+  messages?: unknown;
+}
+
 interface ProseBody {
   cacheKey?: unknown;
-  request?: { model?: unknown; max_tokens?: unknown; messages?: unknown };
+  request?: ProseRequest;
+}
+
+const MAX_PROXY_BODY_CHARS = 7_000_000;
+const MAX_IMAGE_BASE64_CHARS = 6_500_000;
+const MAX_PROMPT_CHARS = 100_000;
+const BODY_FIELDS = new Set(['cacheKey', 'request']);
+const REQUEST_FIELDS = new Set(['model', 'max_tokens', 'system', 'messages']);
+
+function hasOnlyFields(value: Record<string, unknown>, fields: Set<string>): boolean {
+  return Object.keys(value).every((key) => fields.has(key));
+}
+
+function componentPrompt(content: unknown): string | null {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content) || content.length !== 2) return null;
+  const [image, text] = content;
+  if (!image || typeof image !== 'object' || Array.isArray(image)) return null;
+  if (!text || typeof text !== 'object' || Array.isArray(text)) return null;
+
+  const imageBlock = image as Record<string, unknown>;
+  const textBlock = text as Record<string, unknown>;
+  if (!hasOnlyFields(imageBlock, new Set(['type', 'source']))) return null;
+  if (!hasOnlyFields(textBlock, new Set(['type', 'text']))) return null;
+  if (imageBlock.type !== 'image' || textBlock.type !== 'text' || typeof textBlock.text !== 'string') {
+    return null;
+  }
+
+  const source = imageBlock.source;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+  const sourceRecord = source as Record<string, unknown>;
+  if (!hasOnlyFields(sourceRecord, new Set(['type', 'media_type', 'data']))) return null;
+  if (
+    sourceRecord.type !== 'base64' ||
+    !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(String(sourceRecord.media_type)) ||
+    typeof sourceRecord.data !== 'string' ||
+    sourceRecord.data.length === 0 ||
+    sourceRecord.data.length > MAX_IMAGE_BASE64_CHARS
+  ) {
+    return null;
+  }
+  return textBlock.text;
 }
 
 /**
@@ -52,22 +106,91 @@ interface ProseBody {
  * a guess at them. The cacheKey prefix in particular is a contract a client
  * cannot discover by reading its own code.
  */
-export function validateProseBody(body: ProseBody): string | null {
-  if (typeof body.cacheKey !== 'string' || !/^prose:v\d+:/.test(body.cacheKey)) return 'bad cacheKey';
-  const r = body.request;
-  if (!r || typeof r !== 'object') return 'missing request';
+export function validateProseBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid body';
+  const record = body as Record<string, unknown>;
+  if (!hasOnlyFields(record, BODY_FIELDS)) return 'unexpected body field';
+  const typed = body as ProseBody;
+  if (typeof typed.cacheKey !== 'string' || !/^prose:v\d+:/.test(typed.cacheKey)) return 'bad cacheKey';
+  const r = typed.request;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return 'missing request';
+  if (!hasOnlyFields(r as Record<string, unknown>, REQUEST_FIELDS)) return 'unexpected request field';
   if (r.model !== 'claude-haiku-4-5') return 'model not allowed';
-  if (typeof r.max_tokens !== 'number' || r.max_tokens > 3000) return 'max_tokens too large';
+  if (!Number.isInteger(r.max_tokens) || (r.max_tokens as number) <= 0 || (r.max_tokens as number) > 3000) {
+    return 'invalid max_tokens';
+  }
   if (!Array.isArray(r.messages)) return 'missing messages';
+
+  const isGroups = typed.cacheKey.includes(':groups:');
+  if (isGroups) {
+    if (r.system !== FOUNDATION_SYSTEM_PROMPT) return 'system not allowed';
+    if (r.max_tokens !== 1200) return 'max_tokens not allowed';
+    if (r.messages.length !== 1) return 'invalid messages';
+    const message = r.messages[0] as Record<string, unknown> | null;
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      Array.isArray(message) ||
+      !hasOnlyFields(message, new Set(['role', 'content'])) ||
+      message.role !== 'user' ||
+      typeof message.content !== 'string' ||
+      message.content.length > MAX_PROMPT_CHARS ||
+      !message.content.startsWith('Collection: ') ||
+      !message.content.includes('\nGroups to describe:\n') ||
+      !message.content.includes('\nReturn JSON: ')
+    ) {
+      return 'invalid messages';
+    }
+    return null;
+  }
+
+  if (r.system !== PROSE_SYSTEM_PROMPT) return 'system not allowed';
+  if (r.max_tokens !== 3000) return 'max_tokens not allowed';
+  if (r.messages.length !== 3) return 'invalid messages';
+  const [expectedUser, expectedAssistant] = proseFewShot();
+  const [user, assistant, final] = r.messages as Array<Record<string, unknown> | null>;
+  if (
+    !user ||
+    !assistant ||
+    !final ||
+    !hasOnlyFields(user, new Set(['role', 'content'])) ||
+    !hasOnlyFields(assistant, new Set(['role', 'content'])) ||
+    !hasOnlyFields(final, new Set(['role', 'content'])) ||
+    user.role !== expectedUser.role ||
+    user.content !== expectedUser.content ||
+    assistant.role !== expectedAssistant.role ||
+    assistant.content !== expectedAssistant.content ||
+    final.role !== 'user'
+  ) {
+    return 'invalid messages';
+  }
+  const prompt = componentPrompt(final.content);
+  if (
+    !prompt ||
+    prompt.length > MAX_PROMPT_CHARS ||
+    !prompt.startsWith('Component: ') ||
+    !prompt.includes('\nReturn ONLY a JSON object with these keys: ')
+  ) {
+    return 'invalid messages';
+  }
   return null;
 }
 
 export async function handleProse(req: Request, deps: HandlerDeps): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.requestLimiter.allow(`prose:${ip}`, deps.now())) {
+    return json(429, { error: 'rate_limited' });
+  }
   const identity = identityFromHeaders(req.headers, deps.salt);
   if (!identity) return json(401, { error: 'unauthenticated' });
 
+  const declaredLength = Number(req.headers.get('content-length') ?? 0);
+  if (declaredLength > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
+  let rawBody: string;
+  try { rawBody = await req.text(); } catch { return json(400, { error: 'invalid body' }); }
+  if (rawBody.length > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
   let body: ProseBody;
-  try { body = (await req.json()) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
+  try { body = JSON.parse(rawBody) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
   const invalid = validateProseBody(body);
   if (invalid) return json(400, { error: invalid });
   const cacheKey = body.cacheKey as string;
@@ -137,6 +260,10 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
 }
 
 export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.requestLimiter.allow(`quota:${ip}`, deps.now())) {
+    return json(429, { error: 'rate_limited' });
+  }
   const identity = identityFromHeaders(req.headers, deps.salt);
   if (!identity) return json(401, { error: 'unauthenticated' });
   let tier: Tier = 'free';

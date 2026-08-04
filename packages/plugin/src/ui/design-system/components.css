@@ -15,7 +15,7 @@ body {
   color: var(--sl-color-text);
   background: var(--sl-color-canvas);
   font-family: var(--sl-font-family);
-  font-size: var(--sl-font-size-5);
+  font-size: var(--sl-font-size-body);
   font-weight: var(--sl-font-weight-regular);
   line-height: var(--sl-line-height-body);
   text-rendering: optimizeLegibility;
@@ -45,6 +45,8 @@ button {
   display: none !important;
 }
 
+/* The standard visually-hidden clip. Every value here is part of that recipe,
+   not spacing: do not route the 1px or the -1px through the spacing scale. */
 .sl-sr-only {
   position: absolute;
   width: 1px;
@@ -62,38 +64,11 @@ button {
   outline-offset: 2px;
 }
 
-.sl-type-title {
-  font-size: var(--sl-font-size-7);
-  font-weight: var(--sl-font-weight-bold);
-  line-height: var(--sl-line-height-tight);
-}
 
-.sl-type-section {
-  font-size: var(--sl-font-size-6);
-  font-weight: var(--sl-font-weight-semibold);
-  line-height: var(--sl-line-height-tight);
-}
 
-.sl-type-body {
-  font-size: var(--sl-font-size-5);
-  font-weight: var(--sl-font-weight-regular);
-}
 
-.sl-type-control {
-  font-size: var(--sl-font-size-4);
-  font-weight: var(--sl-font-weight-medium);
-  line-height: var(--sl-line-height-control);
-}
 
-.sl-type-support {
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-3);
-}
 
-.sl-type-micro {
-  color: var(--sl-color-text-quiet);
-  font-size: var(--sl-font-size-2);
-}
 
 .sl-button {
   min-width: 0;
@@ -101,15 +76,15 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-12);
   color: var(--sl-color-text);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--sl-radius-md);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-medium);
-  line-height: 1;
+  line-height: var(--sl-line-height-none);
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -122,14 +97,14 @@ button {
 
 .sl-button[data-size="small"] {
   height: var(--sl-control-sm);
-  padding-inline: 9px;
-  font-size: var(--sl-font-size-3);
+  padding-inline: var(--sl-space-8);
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-button[data-size="large"] {
   height: var(--sl-control-lg);
-  padding-inline: 14px;
-  font-size: var(--sl-font-size-5);
+  padding-inline: var(--sl-space-14);
+  font-size: var(--sl-font-size-body);
 }
 
 .sl-button[data-tone="primary"] {
@@ -235,18 +210,22 @@ button {
 
 .sl-choice {
   min-width: 0;
+  position: relative;
   display: inline-grid;
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: start;
-  gap: 9px;
+  gap: var(--sl-space-8);
   cursor: pointer;
 }
 
 .sl-choice-input,
 .sl-switch-input {
   position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
   width: 1px;
   height: 1px;
+  transform: translateY(-50%);
   opacity: 0;
   pointer-events: none;
 }
@@ -268,6 +247,10 @@ button {
 
 .sl-checkbox-box {
   border-radius: var(--sl-radius-sm);
+}
+
+.sl-checkbox-box > svg {
+  grid-area: 1 / 1;
 }
 
 .sl-radio-box {
@@ -292,6 +275,19 @@ button {
 .sl-choice-input[data-mixed="true"] + .sl-checkbox-box {
   background: var(--sl-color-accent);
   border-color: var(--sl-color-accent);
+}
+
+.sl-choice-input[data-mixed="true"] + .sl-checkbox-box > svg {
+  visibility: hidden;
+}
+
+.sl-choice-input[data-mixed="true"] + .sl-checkbox-box::after {
+  grid-area: 1 / 1;
+  width: 8px;
+  height: 2px;
+  background: var(--sl-color-text-on-accent);
+  border-radius: 1px;
+  content: "";
 }
 
 .sl-choice-input:checked + .sl-radio-box {
@@ -324,24 +320,25 @@ button {
 
 .sl-choice-copy > strong {
   color: var(--sl-color-text);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-medium);
   line-height: var(--sl-line-height-control);
 }
 
 .sl-choice-copy > small {
-  margin-top: 3px;
+  margin-top: var(--sl-space-4);
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   line-height: var(--sl-line-height-body);
 }
 
 .sl-switch-control {
   min-height: var(--sl-control-md);
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sl-space-3);
+  gap: var(--sl-space-12);
   cursor: pointer;
 }
 
@@ -352,7 +349,7 @@ button {
      width and the height above, collapsing the switch to its thumb. */
   display: inline-block;
   flex: 0 0 auto;
-  padding: 2px;
+  padding: var(--sl-space-2);
   background: var(--sl-color-border-strong);
   border: 1px solid var(--sl-color-border-strong);
   border-radius: var(--sl-radius-pill);
@@ -365,9 +362,9 @@ button {
   width: 12px;
   height: 12px;
   display: block;
-  background: #ffffff;
+  background: var(--sl-color-control-thumb);
   border-radius: 50%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--sl-shadow-control-thumb);
   transition: transform var(--sl-motion-standard) var(--sl-ease-out);
 }
 
@@ -385,13 +382,13 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 9px;
+  gap: var(--sl-space-6);
+  padding: 0 var(--sl-space-8);
   color: var(--sl-color-text-muted);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-md);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   cursor: pointer;
 }
@@ -415,7 +412,7 @@ button {
 /* Variant values reuse the chip shape as read-only labels, not controls. */
 .sl-variant-chip {
   min-height: 22px;
-  padding: 0 7px;
+  padding: 0 var(--sl-space-8);
   cursor: default;
 }
 
@@ -431,14 +428,14 @@ button {
 
 /* Keep an enum value attributed to its axis while letting the value lead. */
 .sl-chip-axis {
-  margin-right: 4px;
+  margin-right: var(--sl-space-4);
   color: var(--sl-color-text-muted);
 }
 
 .sl-segmented {
   min-height: var(--sl-control-sm);
   display: inline-flex;
-  padding: 2px;
+  padding: var(--sl-space-2);
   background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-md);
@@ -447,12 +444,12 @@ button {
 .sl-segmented > button {
   min-width: 0;
   height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--sl-space-10);
   color: var(--sl-color-text-muted);
   background: transparent;
   border: 0;
   border-radius: 5px;
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   cursor: pointer;
 }
@@ -472,12 +469,12 @@ button {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sl-space-6);
 }
 
 .sl-field-label {
   color: var(--sl-color-text);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
 }
 
@@ -487,8 +484,8 @@ button {
   min-height: var(--sl-control-md);
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-10);
   color: var(--sl-color-text-muted);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
@@ -514,7 +511,7 @@ button {
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-input-wrap input::placeholder {
@@ -523,7 +520,7 @@ button {
 
 .sl-field-help {
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
 }
 
 .sl-field[data-invalid="true"] .sl-input-wrap {
@@ -538,15 +535,15 @@ button {
   min-height: 18px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 6px;
+  gap: var(--sl-space-4);
+  padding: 0 var(--sl-space-6);
   color: var(--sl-color-text-muted);
   background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-pill);
-  font-size: var(--sl-font-size-2);
+  font-size: var(--sl-font-size-caption);
   font-weight: var(--sl-font-weight-semibold);
-  line-height: 1;
+  line-height: var(--sl-line-height-none);
   white-space: nowrap;
 }
 
@@ -577,9 +574,9 @@ button {
 .sl-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sl-space-6);
   color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   white-space: nowrap;
 }
@@ -620,13 +617,13 @@ button {
   min-height: 38px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 9px 10px;
+  gap: var(--sl-space-8);
+  padding: var(--sl-space-8) var(--sl-space-10);
   color: var(--sl-color-text);
   background: var(--sl-color-surface);
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-md);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
 }
 
 .sl-banner[data-tone="success"] {
@@ -648,13 +645,13 @@ button {
   position: absolute;
   z-index: 50;
   max-width: 240px;
-  padding: 6px 8px;
+  padding: var(--sl-space-6) var(--sl-space-8);
   color: var(--sl-color-tooltip-text);
   background: var(--sl-color-tooltip-bg);
   border: 1px solid var(--sl-color-tooltip-border);
   border-radius: var(--sl-radius-sm);
   box-shadow: var(--sl-shadow-menu);
-  font-size: var(--sl-font-size-3);
+  font-size: var(--sl-font-size-support);
   line-height: var(--sl-line-height-body);
   pointer-events: none;
   opacity: 0;
@@ -673,7 +670,7 @@ button {
 
 .sl-menu {
   min-width: 174px;
-  padding: 4px;
+  padding: var(--sl-space-4);
   color: var(--sl-color-text);
   background: var(--sl-color-surface-raised);
   border: 1px solid var(--sl-color-border);
@@ -686,13 +683,13 @@ button {
   min-height: 30px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 9px;
+  gap: var(--sl-space-8);
+  padding: 0 var(--sl-space-8);
   color: var(--sl-color-text);
   background: transparent;
   border: 0;
   border-radius: var(--sl-radius-sm);
-  font-size: var(--sl-font-size-4);
+  font-size: var(--sl-font-size-control);
   text-align: left;
   cursor: pointer;
 }
@@ -708,7 +705,7 @@ button {
 
 .sl-menu-separator {
   height: 1px;
-  margin: 4px;
+  margin: var(--sl-space-4);
   background: var(--sl-color-border-muted);
 }
 
@@ -723,7 +720,7 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto 16px;
   align-items: center;
-  gap: 8px;
+  gap: var(--sl-space-8);
   padding: 0;
   color: var(--sl-color-text);
   background: transparent;

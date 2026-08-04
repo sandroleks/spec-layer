@@ -3,6 +3,7 @@ import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig, FoundationConfig } from './docLink';
+import type { FoundationIconKind } from './foundationIcon';
 
 /** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
  *  or to save the spec as a bare .md (Download). The main thread echoes it back
@@ -30,6 +31,12 @@ export interface LibraryEntry {
    *  Component rows resolve drift separately via requestDrift. Absent when the
    *  live extraction failed, in which case the row must not read as drifted. */
   currentContentHash?: string;
+  /** Foundation rows only: which source glyph the row gets, so a Library row
+   *  and the Foundations picker row for the same source look the same. Only the
+   *  main thread can answer it — the doc's scope lives in its pluginData — so it
+   *  travels with the entry rather than being re-derived in the UI. Absent on
+   *  component rows. */
+  foundationIcon?: FoundationIconKind;
 }
 
 export type MainToUi =

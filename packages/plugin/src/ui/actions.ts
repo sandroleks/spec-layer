@@ -71,8 +71,6 @@ export interface UiState {
   brandTheme: BrandTheme;
   // Captured logo (base64 PNG), or null if none set.
   logoBase64: string | null;
-  // How the anatomy section renders: numbered diagram, tabular list, or both.
-  anatomyView: 'diagram' | 'table' | 'both';
   // Which measurement lenses the Measure section renders (each as its own
   // focused mini-diagram). Empty falls back to all three in the model.
   measureViews: MeasureView[];
@@ -98,7 +96,6 @@ export function createState(): UiState {
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
-    anatomyView: 'diagram',
     measureViews: ['size', 'padding', 'spacing'],
   };
 }
@@ -440,13 +437,13 @@ async function assembleDocFor(
     state.generatedProse,
     selected,
     variantIds,
-    { anatomyView: state.anatomyView, measureViews: state.measureViews },
+    { measureViews: state.measureViews },
   );
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
     aiEnabled: state.aiEnabled,
-    anatomyView: state.anatomyView,
+    anatomyView: 'diagram',
     measureViews: state.measureViews,
   };
   return { model, config };
@@ -623,7 +620,6 @@ export async function updateFromSource(
 
     const variantIds = new Set<string>(src.config.variantIds);
     const model = buildDocModel(spec, prose, selected, variantIds, {
-      anatomyView: src.config.anatomyView,
       measureViews: src.config.measureViews,
     });
     send({
@@ -691,7 +687,6 @@ export async function downloadFromSource(
 
     const variantIds = new Set<string>(src.config.variantIds);
     const model = buildDocModel(spec, prose, selected, variantIds, {
-      anatomyView: src.config.anatomyView,
       measureViews: src.config.measureViews,
     });
 

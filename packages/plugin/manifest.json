@@ -11,7 +11,7 @@
     "allowedDomains": [
       "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ],
-    "reasoning": "AI guideline text is generated through the Spec Layer proxy service, which enforces free-tier quotas and Pro licenses. No user API keys are required or stored; requests carry only the component's structured summary.",
+    "reasoning": "AI guideline text is generated through the Spec Layer proxy service, which enforces free-tier quotas and Pro licenses. No user API keys are required or stored. AI requests include a structured component summary and a rendered image of the selected component.",
     "devAllowedDomains": [
       "https://spec-layer-proxy.spec-layer-test.workers.dev"
     ]

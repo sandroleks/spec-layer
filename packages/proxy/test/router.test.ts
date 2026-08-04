@@ -36,6 +36,7 @@ const baseDeps = () => ({
   quotaFor: memQuota(() => Date.parse('2026-07-01T00:00:00Z')),
   log: vi.fn(),
   licenseLimiter: new SlidingWindowLimiter(20, 60_000),
+  requestLimiter: new SlidingWindowLimiter(60, 60_000),
 });
 
 describe('route', () => {

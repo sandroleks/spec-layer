@@ -3,6 +3,7 @@ import { QuotaEngine, type ReserveResult, type QuotaSnapshot, type Tier } from '
 import { SlidingWindowLimiter } from './ratelimit';
 
 const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
+const requestLimiter = new SlidingWindowLimiter(60, 60_000);
 
 export interface Env {
   LICENSE_CACHE: KVNamespace;
@@ -49,7 +50,7 @@ function doQuotaClient(ns: DurableObjectNamespace, identityId: string): QuotaCli
   };
 }
 
-export default {
+const worker = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const deps: HandlerDeps = {
       salt: env.FIGMA_ID_SALT,
@@ -60,7 +61,10 @@ export default {
       quotaFor: (id) => doQuotaClient(env.QUOTA, id),
       log: (event, fields) => console.log(JSON.stringify({ event, ...fields })),
       licenseLimiter,
+      requestLimiter,
     };
     return route(req, deps);
   },
 };
+
+export default worker;

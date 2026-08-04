@@ -332,10 +332,9 @@ function buildSection(
           type: a.type,
           description: descByName.get(a.name.trim().toLowerCase()),
         }));
-        const view = options?.anatomyView ?? 'diagram';
         return {
           id, heading: label, kind: 'anatomy',
-          componentId: spec.anatomyComponentId, parts, view,
+          componentId: spec.anatomyComponentId, parts, view: 'diagram',
           summary: prose?.anatomySummary ?? null,
         };
       }

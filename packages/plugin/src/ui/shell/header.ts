@@ -33,19 +33,26 @@ export function headerMarkup(): string {
   return (
     '<header class="sl-utility-header">' +
 
+    // No shortcut chip. The Cmd/Ctrl+K binding in ui-vnext.ts is unaffected;
+    // only the badge is gone.
     `<button class="sl-header-search" id="${HEADER_IDS.search}" type="button" ` +
     'aria-label="Open quick search">' +
     `${icon('search', 15)}<span>Search</span>` +
-    '<kbd class="sl-shortcut" aria-hidden="true">&#8984;K</kbd>' +
     '</button>' +
 
     `<button class="sl-ai-allowance" id="${HEADER_IDS.allowance}" type="button" ` +
     'data-state="loading" aria-label="AI writing: checking your plan. Open License.">' +
+    // The ring and the Pro check share one cell so the control keeps three
+    // grid columns. Both are always present and CSS picks by [data-state],
+    // which keeps renderAllowance a repaint rather than a rebuild.
+    '<span class="sl-allowance-status">' +
     '<svg class="sl-allowance-ring" viewBox="0 0 26 26" aria-hidden="true">' +
     '<circle data-track cx="13" cy="13" r="10"></circle>' +
     `<circle data-value cx="13" cy="13" r="10" stroke-dasharray="${RING_CIRCUMFERENCE}" ` +
     `stroke-dashoffset="${RING_CIRCUMFERENCE}"></circle>` +
     '</svg>' +
+    `<span class="sl-allowance-pro-mark" aria-hidden="true">${icon('check', 15)}</span>` +
+    '</span>' +
     '<span class="sl-allowance-copy"><strong>AI writing</strong>' +
     '<small>Checking your plan</small></span>' +
     '<span class="sl-allowance-action" hidden>Upgrade</span>' +

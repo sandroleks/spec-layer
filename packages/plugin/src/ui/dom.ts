@@ -22,7 +22,7 @@
  * values and keep the non-Figma/test render legible.
  */
 
-import { ALL_SECTIONS, GROUPS, type SectionId } from './docModel';
+import { ALL_SECTIONS, GROUPS } from './docModel';
 
 // Sections that start unchecked. Defined in viewModel/componentScreen so the
 // legacy UI and the vNext screen cannot drift into different defaults.
@@ -758,12 +758,6 @@ const TEMPLATE = `
     .sec-row:hover { background: var(--figma-color-bg-secondary); }
     .sec-row label { cursor: pointer; flex: 1; }
     #section-list.ai-dim .ai-badge { opacity: 0.4; }
-    /* Muted note appended to a section label (e.g. "· none detected"). */
-    .sec-note { color: var(--figma-color-text-secondary); font-weight: 400; margin-left: 4px; }
-    /* Disabled section checkboxes (e.g. States with nothing to detect) read as
-       muted rather than a normal interactive row. */
-    .sec-row input:disabled { opacity: 0.4; cursor: default; }
-    .sec-row input:disabled + label { opacity: 0.55; cursor: default; }
 
     /* ---- Section groups (Usage / Specifications / Accessibility) ---- */
     .sec-groupbox { border: 1px solid var(--figma-color-border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
@@ -783,39 +777,8 @@ const TEMPLATE = `
     .sec-grouphead input.group-check:indeterminate::after { content: ""; position: absolute; left: 3px; top: 6px; width: 7px; border-top: 2px solid var(--figma-color-text-onbrand); }
     .sec-grouphead input.group-check:focus-visible { outline: 2px solid var(--figma-color-bg-brand); outline-offset: 1px; }
 
-    /* ---- Anatomy view toggle (segmented radio row) ----
-       Nests inside its .sec-group beneath the Anatomy checkbox row: indent
-       past the checkbox + a hairline left rule keeps the disclosure quiet, so
-       visual weight stays on the section names, not a boxed sub-panel. */
-    .anatomy-view {
-      display: flex; align-items: center; gap: 10px;
-      margin: 2px 0 6px 27px; padding-left: 10px;
-      border-left: 1px solid var(--figma-color-border);
-      font-size: 11px; color: var(--figma-color-text-secondary);
-    }
-    .anatomy-view-label { flex: 0 0 auto; }
-    .anatomy-view label {
-      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
-    }
-    .anatomy-view input[type="radio"] {
-      appearance: none; -webkit-appearance: none; margin: 0;
-      width: 12px; height: 12px; flex: 0 0 auto; position: relative; cursor: pointer;
-      border: 1.5px solid var(--figma-color-border); border-radius: 50%;
-      background: var(--figma-color-bg);
-    }
-    .anatomy-view input[type="radio"]:checked {
-      border-color: var(--figma-color-bg-brand);
-    }
-    .anatomy-view input[type="radio"]:checked::after {
-      content: ""; position: absolute; inset: 2px; border-radius: 50%;
-      background: var(--figma-color-bg-brand);
-    }
-
     /* ---- Measure setup (lens checkboxes) ----
-       Same quiet inline row as the anatomy-view toggle, but with checkboxes:
-       each lens (size/padding/spacing) renders as its own focused mini-diagram.
-       Reuses the .anatomy-view layout; the boxes borrow the .sec-row checkbox
-       look, sized down to match the compact row. */
+       Each lens (size/padding/spacing) renders as its own focused mini-diagram. */
     .measure-setup {
       display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
       margin: 2px 0 6px 27px; padding-left: 10px;
@@ -1069,16 +1032,6 @@ const TEMPLATE = `
           <button class="link-btn" id="select-all-btn" type="button">Clear all</button>
         </div>
         <div id="section-list"></div>
-
-        <!-- Anatomy view toggle: how the Anatomy section renders. Only relevant
-             (and shown) while the Anatomy section is checked; visibility is
-             wired in ui.ts alongside the sec-anatomy checkbox. -->
-        <div class="anatomy-view" id="anatomy-view" style="display:none">
-          <span class="anatomy-view-label">Anatomy as</span>
-          <label><input type="radio" name="anatomy-view" value="diagram" checked> Diagram</label>
-          <label><input type="radio" name="anatomy-view" value="table"> Table</label>
-          <label><input type="radio" name="anatomy-view" value="both"> Both</label>
-        </div>
 
         <!-- Measure setup: which measurement lenses to render. Each checked lens
              becomes its own focused mini-diagram in a wrapping row. Only relevant
@@ -1384,7 +1337,6 @@ export interface Refs {
   groupCounts: Record<string, HTMLElement>;
   groupContainers: Record<string, HTMLElement>;
   selectAllBtn: HTMLButtonElement;
-  anatomyView: HTMLElement;
   measureSetup: HTMLElement;
   // Variant picker (per-variant tokens)
   variantPicker: HTMLDivElement;
@@ -1546,20 +1498,14 @@ export function mount(): Refs {
     sectionChecks[section.id] = byId<HTMLInputElement>(`sec-${section.id}`);
   }
 
-  // Relocate the pre-existing anatomy/measure option panels (still defined in
-  // TEMPLATE, outside #section-list) into their section's group, directly
+  // Relocate the pre-existing measurement option panel (still defined in
+  // TEMPLATE, outside #section-list) into its section's group, directly
   // beneath the row — appendChild moves the existing node rather than cloning
   // it, so ids/listeners attached later still resolve to the same elements.
   // Also wire up the disclosure a11y pairing (checkbox <-> options panel) here,
   // once, rather than duplicating it at every toggle site in ui.ts.
-  const anatomyView = byId<HTMLElement>('anatomy-view');
   const measureSetup = byId<HTMLElement>('measure-setup');
-  sectionChecks['anatomy']?.closest('.sec-group')?.appendChild(anatomyView);
   sectionChecks['measurements']?.closest('.sec-group')?.appendChild(measureSetup);
-  if (sectionChecks['anatomy']) {
-    sectionChecks['anatomy'].setAttribute('aria-controls', 'anatomy-view');
-    sectionChecks['anatomy'].setAttribute('aria-expanded', String(sectionChecks['anatomy'].checked));
-  }
   if (sectionChecks['measurements']) {
     sectionChecks['measurements'].setAttribute('aria-controls', 'measure-setup');
     sectionChecks['measurements'].setAttribute('aria-expanded', String(sectionChecks['measurements'].checked));
@@ -1698,7 +1644,6 @@ export function mount(): Refs {
     groupCounts,
     groupContainers,
     selectAllBtn: byId<HTMLButtonElement>('select-all-btn'),
-    anatomyView: byId<HTMLElement>('anatomy-view'),
     measureSetup: byId<HTMLElement>('measure-setup'),
     variantPicker: byId<HTMLDivElement>('variant-picker'),
     variantToggle: byId<HTMLButtonElement>('variant-toggle'),

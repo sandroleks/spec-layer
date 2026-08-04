@@ -22,6 +22,12 @@ export default defineConfig([
     "**/node_modules/**",
     "**/*.tsbuildinfo",
     ".worktrees/**",
+    ".claude/worktrees/**",
+    // Vendored, minified browser libraries. Their upstream source is linted
+    // by its own project; treating minified expressions as repository warnings
+    // made our lint gate noisy without finding issues in code we maintain.
+    "apps/landing/lenis.min.js",
+    "apps/landing/motion.js",
     // A verbatim archive of the prototype the plugin UI redesign was approved
     // from. It is a visual reference, not source: nothing here ships, and it
     // is deliberately preserved as it was written rather than corrected.

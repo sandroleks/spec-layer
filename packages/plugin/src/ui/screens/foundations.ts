@@ -17,7 +17,7 @@ import {
   summarize,
   textStyleMeta,
 } from '../foundationState';
-import { icon } from '../shell/icons';
+import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { loadingRowsMarkup, progressMarkup } from './progress';
 
@@ -67,6 +67,7 @@ function sourceRow(options: {
   name: string;
   meta: string;
   checked: boolean;
+  iconName: IconName;
   textStyles?: boolean;
 }): string {
   const action = options.checked ? 'Remove' : 'Include';
@@ -76,7 +77,7 @@ function sourceRow(options: {
     `${options.textStyles ? ' data-text-styles="true"' : ''} aria-pressed="${options.checked}" ` +
     `aria-label="${action} ${esc(options.name)} ${options.checked ? 'from' : 'in'} docs">` +
     checkbox(options.checked) +
-    `<span class="sl-foundation-source-icon">${icon('puzzle', 17)}</span>` +
+    `<span class="sl-foundation-source-icon">${icon(options.iconName, 17)}</span>` +
     '<span class="sl-foundation-title">' +
     `<strong>${esc(options.name)}</strong><small>${esc(options.meta)}</small>` +
     '</span></button></article>'
@@ -122,6 +123,7 @@ export function foundationScrollMarkup(
       name: collection.name,
       meta: collectionMeta(collection, frames.collections[collection.id] ?? 0),
       checked: picked,
+      iconName: FOUNDATION_ICON[collection.iconKind],
     });
   });
   if (summary.textStyleCount > 0) {
@@ -130,6 +132,7 @@ export function foundationScrollMarkup(
       name: 'Text styles',
       meta: textStyleMeta(summary.textStyleCount, frames.textStyles),
       checked: selection.textStyles,
+      iconName: FOUNDATION_ICON.typography,
       textStyles: true,
     }));
   }
@@ -150,6 +153,7 @@ export function foundationFooterMarkup(
   state: FoundationScreenState,
   spec: FoundationSpec | null,
   selection: FoundationSelection,
+  refreshing = false,
 ): string {
   const busy = state.kind === 'loading' || state.kind === 'generating';
   const frames = spec ? frameCount(spec, selection) : 0;
@@ -159,12 +163,16 @@ export function foundationFooterMarkup(
       ? createButtonLabel(frames)
       : 'Select sources to continue';
   const progress = footerProgressMarkup(state);
+  const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh sources';
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
+    '<button class="sl-button sl-foundation-refresh" data-tone="secondary" ' +
+    `type="button" data-foundation-refresh${busy || refreshing ? ' disabled' : ''}>` +
+    `${icon('refresh', 16)}<span>${refreshLabel}</span></button>` +
     '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
     `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
-    `${esc(label)}</button>` +
+    `${icon('layoutGrid', 15)}${esc(label)}</button>` +
     '</div>'
   );
 }
@@ -174,11 +182,12 @@ export function renderFoundationScreen(
   state: FoundationScreenState,
   spec: FoundationSpec | null,
   selection: FoundationSelection,
+  refreshing = false,
 ): void {
   refs.screen.className = 'sl-screen sl-foundation-screen';
   refs.pageHeader.innerHTML = foundationHeaderMarkup();
   refs.pageHeader.hidden = false;
   refs.scroll.innerHTML = foundationScrollMarkup(state, spec, selection);
-  refs.footer.innerHTML = foundationFooterMarkup(state, spec, selection);
+  refs.footer.innerHTML = foundationFooterMarkup(state, spec, selection, refreshing);
   refs.footer.hidden = false;
 }

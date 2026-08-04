@@ -186,7 +186,9 @@ async function postCompletion(
     if (!res.ok) throw new Error(`Claude API error ${res.status}`);
   }
 
-  const data = await res.json();
+  const data = await res.json() as {
+    content?: Array<{ text?: unknown }>;
+  };
   const raw = data?.content?.[0]?.text;
   if (typeof raw !== 'string') {
     throw new Error(`Unexpected Claude API response shape: ${JSON.stringify(data).slice(0, 200)}`);

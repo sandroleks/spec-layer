@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateProseBody } from '../src/handlers';
 import {
-  groupProseRequest, groupCacheKey, proseCacheKey,
+  groupProseRequest, groupCacheKey, proseCacheKey, PROSE_SYSTEM_PROMPT, proseFewShot,
   type FoundationGroupBrief,
 } from '@spec-layer/extractor';
 import type { IntermediateSpec } from '@spec-layer/extractor';
@@ -37,7 +37,18 @@ describe('/v1/prose accepts what the client sends', () => {
     const spec = { name: 'Button' } as unknown as IntermediateSpec;
     expect(validateProseBody({
       cacheKey: proseCacheKey(spec),
-      request: { model: 'claude-haiku-4-5', max_tokens: 3000, messages: [] },
+      request: {
+        model: 'claude-haiku-4-5',
+        max_tokens: 3000,
+        system: PROSE_SYSTEM_PROMPT,
+        messages: [
+          ...proseFewShot(),
+          {
+            role: 'user',
+            content: 'Component: Button\n\nReturn ONLY a JSON object with these keys: definition.',
+          },
+        ],
+      },
     })).toBeNull();
   });
 
@@ -65,5 +76,33 @@ describe('/v1/prose accepts what the client sends', () => {
   it('uses the only model the proxy allows', () => {
     const payload = groupProseRequest({ collectionName: 'Semantic', groups: briefs });
     expect(payload.request.model).toBe('claude-haiku-4-5');
+  });
+
+  it('rejects caller-controlled Anthropic options and remote image URLs', () => {
+    const base = {
+      cacheKey: 'prose:v8:component',
+      request: {
+        model: 'claude-haiku-4-5',
+        max_tokens: 3000,
+        system: PROSE_SYSTEM_PROMPT,
+        messages: [
+          ...proseFewShot(),
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'url', url: 'https://example.test/image.png' } },
+              {
+                type: 'text',
+                text: 'Component: Button\n\nReturn ONLY a JSON object with these keys: definition.',
+              },
+            ],
+          },
+        ],
+        temperature: 1,
+      },
+    };
+    expect(validateProseBody(base)).toBe('unexpected request field');
+    const { temperature: _, ...request } = base.request;
+    expect(validateProseBody({ ...base, request })).toBe('invalid messages');
   });
 });

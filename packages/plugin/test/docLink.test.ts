@@ -33,9 +33,16 @@ describe('docLink data', () => {
       sections: ['definition', 'anatomy'], // non-string dropped
       variantIds: [],                       // missing → default
       aiEnabled: false,                     // missing → default
-      anatomyView: 'both',                  // invalid → default
+      anatomyView: 'diagram',               // all links normalize to diagram
       measureViews: [],                     // missing → default
     });
+  });
+  it('normalizes legacy anatomy table/both links to diagram', () => {
+    const raw = JSON.stringify({
+      ...DATA,
+      config: { ...DATA.config, anatomyView: 'both' },
+    });
+    expect((parseDocLink(raw) as ComponentDocLink).config.anatomyView).toBe('diagram');
   });
   it('drops invalid measureViews entries but keeps valid ones', () => {
     const raw = JSON.stringify({

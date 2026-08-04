@@ -59,8 +59,11 @@ import {
 } from './viewModel/search';
 import {
   applyGroupBulk,
+  applyVariantBulk,
   sectionGroups,
   unavailableSections,
+  variantBulkState,
+  variantCountLabel,
 } from './viewModel/componentScreen';
 
 /**
@@ -143,6 +146,28 @@ const FACTS: Record<string, ComponentFacts> = {
     ],
     defaultVariantIds: new Set(['1:1']),
   },
+  manyVariants: {
+    ...NO_FACTS,
+    hasStates: true,
+    variants: Array.from({ length: 36 }, (_, index) => ({
+      nodeId: `many:${index + 1}`,
+      chips: [
+        {
+          text: ['Small', 'Medium', 'Large'][index % 3],
+          axis: 'Size',
+          tone: 'value' as const,
+          title: `Size: ${['Small', 'Medium', 'Large'][index % 3]}`,
+        },
+        {
+          text: ['Default', 'Hover', 'Pressed', 'Disabled'][index % 4],
+          axis: 'State',
+          tone: 'value' as const,
+          title: `State: ${['Default', 'Hover', 'Pressed', 'Disabled'][index % 4]}`,
+        },
+      ],
+    })),
+    defaultVariantIds: new Set(['many:1']),
+  },
 };
 
 if (view === 'component') {
@@ -157,14 +182,72 @@ if (view === 'component') {
   const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
   selection.variantIds = new Set(facts.defaultVariantIds);
   const renderComponentFixture = () => renderComponentScreen(refs, screen, selection, facts);
+  const repaintComponentFixture = (selector?: string) => {
+    const scrollTop = refs.scroll.scrollTop;
+    renderComponentFixture();
+    refs.scroll.scrollTop = scrollTop;
+    if (selector) {
+      document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
+    }
+  };
+  const syncVariantFixture = () => {
+    const inputs = [
+      ...refs.scroll.querySelectorAll<HTMLInputElement>('[data-variant]'),
+    ];
+    for (const input of inputs) {
+      const selected = Boolean(
+        input.dataset.variant && selection.variantIds.has(input.dataset.variant),
+      );
+      input.checked = selected;
+      input.closest('.sl-section-row')?.classList.toggle('is-selected', selected);
+    }
+    const selectedCount = inputs.filter((input) => input.checked).length;
+    const count = refs.scroll.querySelector<HTMLElement>('[data-variant-count]');
+    if (count) count.textContent = variantCountLabel(selectedCount, inputs.length);
+    const bulk = refs.scroll.querySelector<HTMLInputElement>('[data-variants-bulk]');
+    if (bulk) {
+      const state = variantBulkState(
+        selection.variantIds,
+        inputs.flatMap((input) => input.dataset.variant ? [input.dataset.variant] : []),
+      );
+      bulk.checked = state.checked;
+      bulk.indeterminate = state.mixed;
+      bulk.dataset.mixed = String(state.mixed);
+      bulk.setAttribute('aria-checked', state.mixed ? 'mixed' : String(state.checked));
+    }
+  };
   renderComponentFixture();
 
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const bulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
-    if (bulk?.dataset.groupBulk) {
-      const groupId = bulk.dataset.groupBulk as GroupId;
+    const group = target.closest<HTMLButtonElement>('[data-group]');
+    if (group?.dataset.group) {
+      const groupId = group.dataset.group as GroupId;
+      if (selection.expanded.has(groupId)) selection.expanded.delete(groupId);
+      else selection.expanded.add(groupId);
+      repaintComponentFixture(`[data-group="${groupId}"]`);
+      return;
+    }
+    if (target.closest('[data-variants]')) {
+      selection.variantsExpanded = !selection.variantsExpanded;
+      repaintComponentFixture('[data-variants]');
+      return;
+    }
+    const measure = target.closest<HTMLButtonElement>('[data-measure]');
+    if (measure?.dataset.measure && measure.getAttribute('aria-disabled') !== 'true') {
+      const id = measure.dataset.measure as 'size' | 'padding' | 'spacing';
+      if (selection.measureViews.has(id)) selection.measureViews.delete(id);
+      else selection.measureViews.add(id);
+      repaintComponentFixture(`[data-measure="${id}"]`);
+    }
+  });
+
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const groupId = input.dataset.groupBulk as GroupId | undefined;
+    if (groupId) {
       const unavailable = unavailableSections(facts);
       const groupState = sectionGroups(
         selection.sections,
@@ -179,28 +262,34 @@ if (view === 'component') {
         groupState.included < groupState.total,
         unavailable,
       );
-      renderComponentFixture();
-      document.querySelector<HTMLButtonElement>(`[data-group-bulk="${groupId}"]`)?.focus();
+      repaintComponentFixture(`[data-group-bulk="${groupId}"]`);
       return;
     }
-    const group = target.closest<HTMLButtonElement>('[data-group]');
-    if (group?.dataset.group) {
-      const groupId = group.dataset.group as GroupId;
-      if (selection.expanded.has(groupId)) selection.expanded.delete(groupId);
-      else selection.expanded.add(groupId);
-      renderComponentFixture();
-      document.querySelector<HTMLButtonElement>(`[data-group="${groupId}"]`)?.focus();
+    if (input.hasAttribute('data-variants-bulk')) {
+      const ids = facts.variants.map((variant) => variant.nodeId);
+      const state = variantBulkState(selection.variantIds, ids);
+      applyVariantBulk(selection.variantIds, ids, !state.checked);
+      syncVariantFixture();
+      input.focus({ preventScroll: true });
+      return;
     }
-  });
-
-  document.addEventListener('change', (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || !input.dataset.section) return;
+    if (input.dataset.variant) {
+      if (input.checked) selection.variantIds.add(input.dataset.variant);
+      else selection.variantIds.delete(input.dataset.variant);
+      syncVariantFixture();
+      input.focus({ preventScroll: true });
+      return;
+    }
+    if (input.id === 'sl-ai-toggle') {
+      selection.aiEnabled = input.checked;
+      repaintComponentFixture('#sl-ai-toggle');
+      return;
+    }
+    if (!input.dataset.section) return;
     const sectionId = input.dataset.section as SectionId;
     if (input.checked) selection.sections.add(sectionId);
     else selection.sections.delete(sectionId);
-    renderComponentFixture();
-    document.querySelector<HTMLInputElement>(`[data-section="${sectionId}"]`)?.focus();
+    repaintComponentFixture(`[data-section="${sectionId}"]`);
   });
 }
 
@@ -296,7 +385,8 @@ if (view === 'foundations') {
         textStyles: false,
       }
     : FOUNDATION_SELECTION;
-  renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+  const refreshing = param('refreshing', '0') === '1';
+  renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
 
   document.addEventListener('click', (event) => {
     const target = event.target;
@@ -306,7 +396,7 @@ if (view === 'foundations') {
       const all = foundationSelection.collections.length === FOUNDATION_SPEC.collections.length
         && foundationSelection.textStyles;
       foundationSelection = all ? clearAll() : selectAll(FOUNDATION_SPEC);
-      renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+      renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
       return;
     }
 
@@ -321,7 +411,7 @@ if (view === 'foundations') {
           source.dataset.foundationSource,
           checked,
         );
-    renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection);
+    renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
   });
 }
 
@@ -351,16 +441,23 @@ if (view === 'library') {
     label: name,
     componentName: name,
     pageName: name.startsWith('Foundations') ? 'Foundations' : 'Documentation',
+    // Page-only for components, collection name for foundations — the shape
+    // main.ts actually sends (see its sourceLabel comment).
     sourceLabel: name.startsWith('Foundations')
       ? name.replace('Foundations · ', '')
-      : `Components · ${name}`,
+      : 'Components',
     generatedAt: now - (index + 1) * 3_600_000,
     sourceNodeId: name.startsWith('Foundations') ? '' : `source-${index + 1}`,
     sourceExists: true,
     selfEdited: index === 6,
     storedContentHash: `stored-${index + 1}`,
     ...(name.startsWith('Foundations')
-      ? { currentContentHash: `stored-${index + 1}` }
+      ? {
+        currentContentHash: `stored-${index + 1}`,
+        foundationIcon: name.endsWith('Typography')
+          ? ('typography' as const)
+          : ('color' as const),
+      }
       : {}),
   }));
   const drift = new Map<string, LibraryDriftState>(
@@ -624,8 +721,8 @@ if (view === 'license') {
     state: licenseState,
     licenseKey: stored ? fixtureKey : '',
     input: fixtureKey,
-    remaining: 4,
-    limit: 10,
+    remaining: Number(param('remaining', '4')),
+    limit: Number(param('limit', '10')),
     resetsAt: '2026-08-01T00:00:00Z',
   };
   const renderLicenseFixture = () => {
@@ -710,16 +807,19 @@ if (view === 'license') {
   });
 }
 
+// sourceLabel is the source's page (or a foundation's collection), never the
+// doc name — that's the row title. Mixed pages here on purpose: the palette's
+// subtitle only earns its place when it locates something.
 const SEARCH_DOCUMENTS: SearchDocument[] = [
-  { docId: 'buttonText', label: 'buttonText', sourceLabel: 'Components · Button / Text' },
-  { docId: 'inputField', label: 'inputField', sourceLabel: 'Components · Input / Field' },
-  { docId: 'radio', label: 'radio', sourceLabel: 'Components · Input / Radio' },
-  { docId: 'checkbox', label: 'checkbox', sourceLabel: 'Components · Input / Checkbox' },
-  { docId: 'buttonIcon', label: 'buttonIcon', sourceLabel: 'Components · Button / Icon' },
-  { docId: 'buttonPrimary', label: 'buttonPrimary', sourceLabel: 'Components · Button / Primary' },
-  { docId: 'buttonSegmented', label: 'buttonSegmented', sourceLabel: 'Components · Button / Segmented' },
-  { docId: 'mappedColors', label: 'Mapped Colors', sourceLabel: 'Foundations · Mapped Colors' },
-  { docId: 'typography', label: 'Foundation · typography', sourceLabel: 'Foundations · Typography' },
+  { docId: 'buttonText', label: 'buttonText', sourceLabel: 'Components' },
+  { docId: 'inputField', label: 'inputField', sourceLabel: 'Components' },
+  { docId: 'radio', label: 'radio', sourceLabel: 'Forms' },
+  { docId: 'checkbox', label: 'checkbox', sourceLabel: 'Forms' },
+  { docId: 'buttonIcon', label: 'buttonIcon', sourceLabel: 'Components' },
+  { docId: 'buttonPrimary', label: 'buttonPrimary', sourceLabel: 'Components' },
+  { docId: 'buttonSegmented', label: 'buttonSegmented', sourceLabel: 'Components' },
+  { docId: 'mappedColors', label: 'Mapped Colors', sourceLabel: 'Mapped Colors' },
+  { docId: 'typography', label: 'Foundation · typography', sourceLabel: 'Text styles' },
 ];
 let harnessSearchOpen = param('search', 'closed') === 'open';
 let harnessSearchQuery = param('query', '');

@@ -11,6 +11,7 @@ import {
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow,
 } from '@spec-layer/extractor';
+import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
@@ -467,6 +468,15 @@ figma.ui.onmessage = async (raw: unknown) => {
         const bytes = await (node as SceneNode & { exportAsync: (s: ExportSettings) => Promise<Uint8Array> })
           .exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } });
         const base64 = figma.base64Encode(bytes);
+        // Anthropic accepts images up to 5 MB. Leave headroom for JSON and
+        // message transport; the UI treats this as a text-only fallback.
+        if (base64.length > 6_500_000) {
+          figma.ui.postMessage({
+            type: 'componentImageError',
+            message: 'Component image is too large; continuing without it',
+          } as MainToUi);
+          break;
+        }
         figma.ui.postMessage({ type: 'componentImage', base64, mediaType: 'image/png' } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -658,6 +668,9 @@ figma.ui.onmessage = async (raw: unknown) => {
             selfEdited,
             storedContentHash: data.contentHash,
             currentContentHash,
+            // Read from the retargeted scope, so a renamed collection keeps the
+            // icon its variables earn rather than falling back to `mixed`.
+            foundationIcon: scopeIconKind(live, scope),
           });
           continue;
         }
@@ -673,9 +686,13 @@ figma.ui.onmessage = async (raw: unknown) => {
           label: name,
           componentName: name,
           pageName: page?.name ?? '',
-          sourceLabel: sourcePage?.name
-            ? `${sourcePage.name} · ${name}`
-            : name,
+          // The source's page, and only that. This used to concatenate the doc
+          // name onto it, which made every consumer render the name twice — once
+          // as the row title, once inside its own subtitle ("buttonText" over
+          // "Components · buttonText"). A locator is only worth showing when it
+          // says something the title doesn't. Falls back to the name when the
+          // source node is gone and there's no page left to point at.
+          sourceLabel: sourcePage?.name || name,
           generatedAt: data.generatedAt,
           sourceNodeId: data.sourceNodeId,
           sourceExists,

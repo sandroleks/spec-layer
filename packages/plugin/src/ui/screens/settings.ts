@@ -32,14 +32,29 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function themeChoice(name: string, selected: boolean, custom = false): string {
+/**
+ * The swatch previews the generated frame's header band, so its colours must
+ * come from the preset itself rather than a copy in CSS — a copy drifts, and a
+ * preview that shows a colour the frame will not use is worse than no preview.
+ * White matches `onHeader` in frameKit.ts, which every preset shares.
+ */
+function themeChoice(
+  name: string,
+  selected: boolean,
+  custom = false,
+  theme?: BrandTheme,
+): string {
   const slug = name.toLowerCase();
   const preview = custom ? icon('adjustments', 16) : 'Ag';
+  // Custom has no preset to preview, so it keeps the neutral token surface.
+  const swatch = custom || !theme
+    ? ''
+    : ` style="background:${esc(resolveTheme(theme).headerBg)};color:#ffffff"`;
   return (
     `<button type="button" class="sl-theme-choice${selected ? ' is-selected' : ''}" ` +
     `data-theme-preset="${custom ? '__custom__' : esc(name)}" aria-pressed="${selected}" ` +
     `aria-label="${esc(name)} frame theme">` +
-    `<span class="sl-theme-preview ${slug}">${preview}</span>` +
+    `<span class="sl-theme-preview ${slug}"${swatch}>${preview}</span>` +
     `<span>${esc(name)}</span>` +
     `${selected ? `<span class="sl-theme-choice-check">${icon('check', 10)}</span>` : ''}` +
     '</button>'
@@ -115,7 +130,12 @@ export function settingsScrollMarkup(state: SettingsScreenState): string {
     '<p>Choose a theme for generated documentation frames.</p></div>' +
     '<div class="sl-theme-grid" role="group" aria-label="Frame theme">' +
     THEME_PRESETS.map((item) =>
-      themeChoice(item.name, !state.customMode && preset === item.name),
+      themeChoice(
+        item.name,
+        !state.customMode && preset === item.name,
+        false,
+        item.theme,
+      ),
     ).join('') +
     themeChoice('Custom', state.customMode, true) +
     '</div>' +

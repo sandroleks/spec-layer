@@ -1,91 +1,299 @@
 # Plugin UI vNext — Design QA
 
-## Comparison target
+## Component documentation settings
 
-- Source visual truth: `/var/folders/5y/xjxr2sfx789g4dvc14fmgks80000gn/T/codex-clipboard-7aa0234f-32b3-4419-8c2a-f612cd292192.png`
-- Normalized source: `docs/plugin-ui-vnext/component-screen-reference-normalized-qa.png`
-- Rendered implementation: `docs/plugin-ui-vnext/component-screen-production-final-qa.png`
-- Side-by-side evidence: `docs/plugin-ui-vnext/component-screen-final-comparison-qa.png`
-- Local implementation: `http://127.0.0.1:4189/ui-harness.html?view=component&state=ready&facts=states&expand=a11y&allowance=normal&theme=dark`
-- State: selected `buttonPrimary`, dark theme, AI writing on, Usage and Specifications collapsed, Accessibility expanded, ready to create.
+### Comparison target
 
-## Normalization
+> **Evidence note.** This screen was reviewed against session-local screenshots
+> (8 source references, 8 rendered captures, and 9 side-by-side comparisons:
+> full-view, focused, Usage mixed-state, anatomy and empty-states,
+> section-hierarchy, light-theme, two light-theme workflow contact sheets, and a
+> previous-implementation light comparison). Those files lived in a temp
+> directory and are gone. The findings and verdicts below are the surviving
+> record. The harness URL reproduces the state if a re-shoot is needed. Later
+> screens in this document reference committed images under
+> `docs/plugin-ui-vnext/prototype/` instead — prefer that for future QA.
 
-- Source pixels: 974 × 1378.
-- The source contains a 2× 480 × 680 plugin capture plus surrounding window pixels. It was cropped to the 960 × 1360 plugin region and downsampled to 480 × 680.
-- Implementation pixels: 480 × 680.
+- Local implementation:
+  `http://127.0.0.1:4173/ui-harness.html?view=component&facts=none&expand=usage,specs&theme=light`
+- State: selected `buttonPrimary`, light theme, Usage and Specifications
+  expanded, with Usage at `3 of 4 included`, matching the final
+  previous-implementation light comparison. The detected-states verification
+  uses the same component state with `facts=states`. Earlier focused checks
+  cover Tokens with 1 of 36 selected variants and Usage with only Related
+  components selected.
+
+The supplied screenshots are problem-state references rather than a pixel-perfect
+redesign target. The review therefore compares the requested interaction and
+hierarchy changes while preserving the product's existing graphite/blue design
+language. Host chrome and expanded-content differences are not treated as drift.
+
+### Normalization
+
+- Source pixels and density: 974 × 1442, 732 × 144, 828 × 120, and
+  828 × 488 at 144 DPI. Later sources are 824 × 986, 828 × 464, and
+  972 × 1356. The previous-implementation light reference is 968 × 1328.
+- The sources are 2× captures and were normalized to 487 × 721, 366 × 72,
+  414 × 60, 414 × 244, 412 × 493, 414 × 232, and 486 × 680 for
+  comparison.
+- Implementation pixels: 480 × 680. The final browser reported device pixel
+  ratio 2, while the screenshot API emitted a CSS-sized 1× raster.
+- The latest implementation capture is 1280 × 720; its 440 × 720 component
+  panel crop is placed beside the normalized latest source.
+- The previous-implementation light reference was normalized to 480 × 659 and
+  placed beside a 480 × 680 implementation crop. The 21px height difference is
+  source-window chrome and is not scored as product drift.
 - CSS viewport: 480 × 680.
-- Effective density used for comparison: 1 CSS pixel to 1 output pixel after source normalization.
-- The remaining two-pixel right-edge difference belongs to the source window frame/crop, not the plugin layout.
+- The focused comparison uses native implementation crops alongside the
+  normalized problem-state crops; no density mismatch is scored as a defect.
 
-## Full-view comparison evidence
+### Full-view and focused comparison evidence
 
-The final side-by-side comparison preserves both screens at their original 480 × 680 comparison size. The selected-component eyebrow, 20px component title, AI card, section intro, 14px group inset, 41px group headers, 36px rows, outlined AI badges, navigation rail, 56px footer, and 30px primary action now align with the source composition. The implementation has no horizontal overflow (`clientWidth` and `scrollWidth` are both 428px; `overflow-x` is `hidden`) and produced no browser console errors.
+The full comparison shows that the old undifferentiated list and clipped footer
+have been replaced with distinct category cards, a clear section intro, full-row
+selection blocks, and an intact footer. The focused comparison shows the new
+parent-controlled measurement settings and the expanded, internally scrollable
+variant picker with its mixed bulk checkbox and visible variant rows.
+The Usage comparison confirms that checked, unchecked, and keyboard-focused rows
+all remain transparent while the indeterminate mark stays centered in the
+category checkbox.
+The latest comparison confirms that Anatomy is now a single selection row with
+no display-mode control and that a component with no detected states does not
+show an empty or disabled States row. A separate detected-states capture confirms
+that States returns as a normal selectable row when data exists.
+The section-hierarchy comparison shows each child checkbox moved beneath the
+category icon and each child label aligned beneath the category title. The
+category checkbox remains at the card edge, creating a clear parent/child step
+without changing row height or the card's full-width click target.
+The final light-theme comparison uses the older implementation as visual truth.
+It confirms a white canvas and child-row field, softly gray category headers and
+AI card, neutral AI badges, restrained dividers, and blue confined to controls
+and actionable states. The final workflow contact sheet confirms those neutral
+roles across Component, Foundations, Library, License, and Search while the dark
+theme remains unchanged.
+No separate light-theme focused crop was needed: the paired 486/480px native
+frames keep card boundaries, badges, checkboxes, and nested surfaces legible.
 
-No separate focused crop was needed: the equal-density side-by-side artifact retains every source and implementation pixel, and the header, controls, row labels, badges, and footer remain legible at 1:1. Those regions were also reviewed individually while measuring their computed boxes.
+Both implementation screenshots retain the 480 × 680 plugin viewport. The
+variant list scrolls independently inside a 220px viewport while the Create docs
+action remains reachable. The rendered page produced no browser warnings or
+errors.
 
-## Required fidelity surfaces
+### Required fidelity surfaces
 
-- Fonts and typography: Inter/system fallback stack matches; component title is 20px/690 with source letter spacing; header utility, eyebrow, group, count, row, badge, and CTA sizes were restored to the prototype values. No unintended wraps or truncation are visible.
-- Spacing and layout rhythm: the double horizontal inset and 24px row indentation are removed. Header is 67px, AI control is 402 × 44 at x=66, footer is 56px, and CTA is 118 × 30. Group and row rhythm matches the reference.
-- Colors and visual tokens: canvas, chrome, border, muted text, selected surface, accent blue, checkbox, and badge treatments use the existing production tokens and visibly match the source.
-- Image and asset fidelity: there are no raster illustrations or product images in this screen. Visible icons use the shared Tabler-style source paths; no placeholder assets are present.
-- Copy and content: selected-component labels and sentence casing match. The local allowance fixture says “8 of 10” instead of the screenshot’s “4 of 5,” and the library badge is data-dependent; these do not change layout and are expected runtime-content differences.
+- Fonts and typography: existing Inter/system tokens are preserved. Category
+  titles, counts, row titles, option labels, and variant chips now form a clear
+  hierarchy without unintended truncation.
+- Spacing and layout rhythm: categories are separated as full-width cards;
+  headers and rows have larger, consistent hit areas; child rows use a 40px
+  inline inset and nested settings align at 63px; the footer no longer clips
+  content.
+- Colors and visual tokens: selection is communicated by the checkbox rather
+  than persistent blue row fills. Light mode now uses `#ffffff` canvas,
+  chrome, child rows, and nested detail surfaces; `#f7f7f7` category headers
+  and AI surfaces; neutral `#e2e2e2` / `#eeeeee` borders; and neutral AI badge
+  roles. Accent, status, control, shadow, overlay, menu, search, and Library
+  states resolve through shared `--sl-*` roles with no component-specific
+  light override block.
+- Image and asset fidelity: this settings screen contains no raster product
+  imagery. Check, chevron, section, and action icons use the shared Tabler-style
+  icon source; no placeholder imagery or custom CSS illustration is present.
+- Copy and content: `Sections to include`, `Diagrams to include`, and
+  `Variants to document` describe the selection hierarchy directly. Anatomy no
+  longer exposes redundant display-mode copy.
+- Accessibility and interaction: rows are native labelled checkboxes, category
+  and variant bulk controls expose checked/mixed state, disclosure buttons retain
+  expanded state, and measurement controls expose pressed/required state.
 
-## Comparison history
+### Primary interactions tested
 
-### Iteration 0 — blocked
+- Clicking a visible variant row changed the count from 1 to 2 while the settings
+  scroll remained 504.5, a zero-pixel jump.
+- Selecting all variants changed the checked count to 36 of 36 and cleared the
+  mixed state.
+- Clicking the right side of the Measurements row toggled its checkbox and
+  removed all three subordinate controls.
+- Measurement options could be independently removed; the last active option
+  remained pressed and gained `aria-disabled="true"`.
+- Category hover, mixed bulk state, individual row selection, variant-list
+  internal scrolling, and parent-controlled nested settings were inspected.
+- The exact 1-of-4 Usage state rendered all four row backgrounds transparent.
+  The mixed checkbox resolved to one 14px grid row, with both check and
+  indeterminate glyphs occupying grid area `1 / 1`.
+- With `facts=none`, Specifications rendered `4 of 4 included`, no States row,
+  and no Anatomy subsettings. With `facts=states`, it rendered `5 of 5 included`
+  and a normal selected States row.
+- Document-model and saved-link tests confirmed Anatomy normalizes to `diagram`
+  even when an older configuration requests `table` or `both`.
+- Usage, Specifications, and Accessibility were expanded in the browser. Their
+  child labels all began at x=128 and category title/icon groups at x=103.
+  Every child row remained 41px high with equal client and scroll widths, so no
+  label wrapping or horizontal overflow was introduced.
+- Light-mode Component, Foundations, expanded Library, free License, and open
+  Search states were rendered and inspected. Theme switching was checked
+  against the dark Component screen.
+- Computed light values matched the semantic map: canvas/chrome/rows `#ffffff`,
+  category and AI surfaces `#f7f7f7`, AI badge text `#737373` on white with an
+  `#e1e1e1` border, and unchecked controls using the neutral `#8a8a8a`
+  strong-border role.
+- Browser console warnings/errors: none.
 
-- [P1] Content had nested horizontal padding: the AI card started around 28px into the main panel and section rows added another 24px.
-- [P1] Selected-component hierarchy drifted: eyebrow and 20px title were missing.
-- [P1] Group anatomy drifted: semantic icons were absent and visible Select/Clear controls displaced counts and chevrons.
-- [P1] AI control anatomy was reversed: the toggle sat beside the label while help was pushed to the far edge.
-- [P2] Accessibility defaulted to 1 of 3 instead of 3 of 3.
-- [P2] AI badges were filled pills instead of compact outlined rectangles.
-- [P2] Footer action was 34px high and iconless; horizontal overflow exposed a bottom scrollbar.
+### Comparison history
 
-Fixes: restored the archived component-screen structure and exact spacing values, made Related components the only default-off section, removed visible group bulk controls, added semantic group/footer icons, restored sentence casing, hid x-overflow, and aligned shell/header/footer/sidebar proportions.
+#### Iteration 0 — blocked
 
-### Iteration 1 — blocked
+- [P1] The variant header reported expanded, but the list stayed visually
+  collapsed because the generic adjacent-sibling disclosure selector no longer
+  matched the wrapped header.
 
-Evidence: `docs/plugin-ui-vnext/component-screen-production-qa.png`
+Fix: added a variant-specific visible-panel rule keyed to the panel's `hidden`
+state. Post-fix evidence is the final expanded variant screenshot.
 
-- [P2] Bottom rail lacked Help & feedback and therefore sat too low relative to the source.
-- [P2] Dark mode showed the moon/current-theme icon instead of the source’s sun/switch-target icon.
-- [P2] Header search and allowance copy retained larger generic type sizes.
+#### Iteration 1 — blocked
 
-Fixes: restored the bottom utility divider and Help item, made the theme icon represent the destination theme, and applied the prototype’s header utility type sizes.
+- [P1] A real pointer click on a variant moved the outer plugin shell from
+  scroll position 0 to 438.5. The 1px hidden checkbox was absolutely positioned
+  without a row-local containing block, so focus scrolled the hidden shell.
 
-### Iteration 2 — passed
+Fix: anchored choice, bulk, and switch inputs to position-relative visible
+controls. The post-fix pointer test kept shell 0, settings 405.5, and variant-list
+scroll 0 while the selection changed.
 
-Evidence: `docs/plugin-ui-vnext/component-screen-final-comparison-qa.png`
+#### Iteration 2 — passed
 
-Post-fix evidence shows no actionable P0, P1, or P2 mismatch. Residual runtime-copy and host-frame differences are expected and do not affect component layout.
+Evidence: final full and focused comparison images listed above.
 
-## Findings
+No actionable P0, P1, or P2 findings remain.
+
+#### Iteration 3 — blocked
+
+- [P2] Checked rows and the focused unchecked row used persistent blue fills,
+  obscuring the simpler checkbox-based selection model.
+- [P2] The indeterminate bar occupied a separate implicit grid row from the
+  hidden check glyph, placing it against the checkbox edge.
+
+Fix: removed selected and focus-within row fills, retained neutral pointer hover,
+and placed the check and mixed glyphs in the same centered grid cell.
+
+#### Iteration 4 — passed
+
+No actionable P0, P1, or P2 findings remain.
+
+#### Iteration 5 — blocked
+
+- [P2] Specifications showed a disabled `States · none detected` row even though
+  there was no actionable content.
+- [P2] Anatomy exposed Diagram/Table/Both subsettings even though the product
+  should consistently generate the diagram.
+
+Fix: omitted unavailable sections from the screen model, removed Anatomy
+subsettings from the renderer and interaction harness, and normalized Anatomy to
+`diagram` in document creation, update, download, and saved-link parsing.
+
+#### Iteration 6 — passed
+
+No actionable P0, P1, or P2 findings remain. The no-states and detected-states
+browser snapshots confirm the conditional row behavior.
+
+#### Iteration 7 — blocked
+
+- [P2] Child section checkboxes started at or before the category checkbox, and
+  their labels started left of the category title, flattening the hierarchy.
+
+Fix: increased child-row inline padding from 10px to 40px and moved nested
+section-details padding from 33px to 63px, preserving alignment between each
+child label and its subordinate settings.
+
+#### Iteration 8 — passed
+
+No actionable P0, P1, or P2 findings remain. All three category groups preserve
+41px rows, readable labels, and zero horizontal overflow.
+
+#### Iteration 9 — blocked
+
+- [P2] Canvas, chrome, section cards, nested surfaces, and footer used adjacent
+  neutral grays, flattening the light-theme hierarchy.
+- [P2] AI badges, Library update states, menus, global Search, status panels,
+  overlays, and switch thumbs still contained theme-specific color literals or
+  selector-specific light overrides instead of semantic roles.
+- [P2] The unchecked-control border resolved to `#b8c3ce` on white, only 1.79:1,
+  making unchecked checkboxes unnecessarily faint.
+
+Fix: rebuilt the light palette around white chrome/cards and a cool near-white
+canvas, added shared accent/status/control token roles, migrated themed
+components to those roles, removed all component-specific light selectors, and
+strengthened the light strong-border token to `#8796a5`.
+
+#### Iteration 10 — passed
+
+No actionable P0, P1, or P2 findings remain. The multi-workflow contact sheet
+and dark-theme regression capture use the same semantic token graph and show no
+broken or unthemed surfaces.
+
+#### Iteration 11 — blocked
+
+- [P2] The connected light-theme token graph was still too cool and blue-gray.
+  The canvas, subdued surfaces, borders, typography, and AI badges made gray the
+  atmosphere of the screen instead of using it sparingly to define hierarchy.
+- [P2] Category headers and child rows did not recreate the older
+  implementation's clear gray-header/white-body grouping.
+
+Fix: preserved the semantic token architecture but remapped the light roles to
+neutral white canvas and rows, soft-gray group headers and AI card, neutral
+typography and dividers, and neutral AI badge roles. Added dedicated semantic
+roles for category headers, detail surfaces, AI surfaces/borders, badge styling,
+and restrained hover borders.
+
+#### Iteration 12 — passed
+
+No actionable P0, P1, or P2 findings remain. The paired comparison visibly
+restores the older implementation's bright, calm hierarchy without reintroducing
+obsolete Anatomy controls, empty States rows, or text-link bulk actions. The
+neutral workflow contact sheet and dark-theme regression capture show no broken
+or unthemed surfaces.
+
+### Findings
 
 No actionable P0/P1/P2 findings remain.
 
-## Open questions
+### Residual test gap
 
-- Help & feedback is intentionally visual-only in this phase because the approved selected-component layout includes it but the production help destination is not yet implemented.
+- The production Figma iframe was not launched in this pass. The same built UI,
+  viewport, selection handlers, and host-independent scrolling were exercised in
+  the repository's browser harness.
 
-## Implementation checklist
+### Implementation checklist
 
-- [x] Match selected-component header hierarchy.
-- [x] Remove nested horizontal padding and row indentation.
-- [x] Restore AI control anatomy and switch sizing.
-- [x] Restore group icons, counts, chevrons, and section defaults.
-- [x] Match row typography, dividers, badges, and casing.
-- [x] Match header, rail, footer, and CTA geometry.
-- [x] Eliminate horizontal overflow.
-- [x] Verify at 480 × 680 with same theme and expanded state.
-- [x] Check browser console errors.
+- [x] Eliminate variant-selection screen jumps.
+- [x] Add mixed-state Select all for variants.
+- [x] Move group bulk selection to a left-side checkbox.
+- [x] Make section and variant rows full-width click targets.
+- [x] Add category and row hover/focus states.
+- [x] Show nested settings only while their parent section is selected.
+- [x] Clarify and enforce measurement-option selection.
+- [x] Improve hierarchy, padding, grouping, and internal scrolling.
+- [x] Remove persistent row selection/focus fills.
+- [x] Center and verify the indeterminate checkbox mark.
+- [x] Omit States when the extractor detects none.
+- [x] Remove Anatomy display-mode subsettings.
+- [x] Always generate Anatomy as a diagram, including older saved documents.
+- [x] Indent subsection controls beneath their category title.
+- [x] Keep nested settings aligned with their owning subsection.
+- [x] Replace the gray-heavy light palette with white hierarchical surfaces.
+- [x] Restore the older light implementation's neutral gray-header/white-body
+  visual hierarchy.
+- [x] Connect themed components to shared accent, status, border, and control roles.
+- [x] Remove selector-specific light-theme component overrides.
+- [x] Verify Component, Foundations, Library, License, Search, and dark regression.
+- [x] Verify dark-theme rendering at 480 × 680.
+- [x] Verify browser interactions, console, lint, types, tests, and build.
 
-## Follow-up polish
+### Follow-up polish
 
-- [P3] Add the live Library count to the new shell when the host exposes that data.
-- [P3] Wire Help & feedback when that workflow is implemented.
+- [P3] Run one short in-Figma host pass to confirm the Figma iframe preserves
+  the same wheel and focus behavior.
+
+final result: passed
 
 ---
 

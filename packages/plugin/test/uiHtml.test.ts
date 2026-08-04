@@ -33,9 +33,9 @@ describe('dist/ui.html', () => {
   let vnext = '';
 
   beforeAll(() => {
-    build();
+    build({ UI_LEGACY: '1' });
     legacy = readFileSync(uiHtml, 'utf-8');
-    build({ UI_VNEXT: '1' });
+    build();
     vnext = readFileSync(uiHtml, 'utf-8');
   });
 
@@ -45,16 +45,22 @@ describe('dist/ui.html', () => {
    * restyles the UI users actually run. The flag is off by default and the CSS
    * has to be off with it.
    */
-  it('keeps the design system out of a default build', () => {
+  it('keeps the design system out of an explicit legacy build', () => {
     expect(legacy).not.toContain('--sl-color-canvas');
     expect(legacy).not.toContain('.sl-plugin-shell');
   });
 
-  it('still builds the legacy UI by default', () => {
+  it('still builds the legacy UI behind the rollback flag', () => {
     expect(legacy).toContain('tab-panel-selected');
   });
 
-  it('embeds the layers in cascade order under the flag: tokens, components, patterns', () => {
+  it('does not ship Anatomy display-mode controls in either UI', () => {
+    expect(legacy).not.toContain('id="anatomy-view"');
+    expect(legacy).not.toContain('name="anatomy-view"');
+    expect(vnext).not.toContain('data-anatomy=');
+  });
+
+  it('embeds the layers in cascade order by default: tokens, components, patterns', () => {
     const tokens = vnext.indexOf('--sl-plugin-width');
     const components = vnext.indexOf('.sl-button');
     const patterns = vnext.indexOf('.sl-plugin-shell');
@@ -64,14 +70,83 @@ describe('dist/ui.html', () => {
     expect(vnext).toContain('--sl-color-canvas');
   });
 
-  it('still embeds the UI bundle under the flag', () => {
+  it('embeds the vNext UI bundle by default', () => {
     expect(vnext).toContain('<script>');
     expect(vnext).toContain('sl-plugin-shell');
   });
 
   /** Two entry points, two bundles: neither build can carry the other's UI. */
-  it('does not ship the legacy UI inside the flagged build', () => {
+  it('does not ship the legacy UI inside the default build', () => {
     expect(vnext).not.toContain('tab-panel-selected');
+  });
+
+  it('ships working external utility destinations in the vNext build', () => {
+    expect(vnext).toContain('https://spec-layer.com/');
+    expect(vnext).toContain('https://www.linkedin.com/in/alexkurchev/');
+    expect(vnext).not.toContain('id=\\"rail-site\\" href=\\"#\\"');
+  });
+
+  it('lets vNext AI writing fall back immediately when image export fails', () => {
+    expect(vnext).toContain('componentImageError');
+    expect(vnext).toContain('resolveComponentImage(null)');
+  });
+
+  it('anchors hidden choice inputs to their visible controls to prevent focus scroll jumps', () => {
+    expect(vnext).toMatch(
+      /\.sl-choice\s*\{[^}]*position:\s*relative;[^}]*\}/,
+    );
+    expect(vnext).toMatch(
+      /\.sl-choice-input,\s*\.sl-switch-input\s*\{[^}]*top:\s*50%;[^}]*\}/,
+    );
+  });
+
+  it('visually expands the wrapped variant disclosure panel', () => {
+    expect(vnext).toContain(
+      '.sl-variant-picker .sl-disclosure-panel:not([hidden])',
+    );
+  });
+
+  it('keeps selected and focused rows neutral instead of filling them blue', () => {
+    expect(vnext).not.toContain('.sl-section-row.is-selected');
+    expect(vnext).not.toContain('.sl-section-row:focus-within');
+  });
+
+  // The indent is what this guards: child rows align to the control column, and
+  // details align a step further in. Those two left values are computed
+  // alignment, not rhythm, so they stay literal px while the block's other
+  // sides come from the spacing scale. Asserting the left value only keeps the
+  // test on the invariant that matters instead of the whole shorthand.
+  it('indents child sections beneath their category title', () => {
+    expect(vnext).toMatch(
+      /\.sl-section-row \.sl-choice\s*\{[^}]*padding:[^;]*\s40px;/,
+    );
+    expect(vnext).toMatch(/\.sl-section-details\s*\{[^}]*padding:[^;]*\s63px;/);
+  });
+
+  it('drives light-theme surfaces and component states through semantic roles', () => {
+    expect(vnext).toMatch(
+      /body\[data-theme="light"\]\s*\{[^}]*--sl-color-canvas:\s*#ffffff;[^}]*--sl-color-chrome:\s*#ffffff;[^}]*--sl-color-surface:\s*#ffffff;/,
+    );
+    expect(vnext).toContain('--sl-color-accent-border');
+    expect(vnext).toContain('--sl-color-control-thumb');
+    expect(vnext).toContain('--sl-color-section-header: #f7f7f7');
+    expect(vnext).toContain('--sl-color-ai-badge-text: #737373');
+    expect(vnext).not.toMatch(/body\[data-theme="light"\]\s+\.sl-/);
+    expect(vnext).toMatch(
+      /\.sl-component-screen \.sl-section-row \.sl-badge\[data-tone="accent"\]\s*\{[^}]*color:\s*var\(--sl-color-ai-badge-text\);[^}]*background:\s*var\(--sl-color-ai-badge-bg\);[^}]*border:\s*1px solid var\(--sl-color-ai-badge-border\);/,
+    );
+    expect(vnext).toMatch(
+      /\.sl-switch-thumb\s*\{[^}]*background:\s*var\(--sl-color-control-thumb\);[^}]*box-shadow:\s*var\(--sl-shadow-control-thumb\);/,
+    );
+  });
+
+  it('centers the indeterminate mark in the checkbox grid', () => {
+    expect(vnext).toMatch(
+      /\.sl-checkbox-box\s*>\s*svg\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
+    );
+    expect(vnext).toMatch(
+      /\.sl-choice-input\[data-mixed="true"\]\s*\+\s*\.sl-checkbox-box::after\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
+    );
   });
 });
 

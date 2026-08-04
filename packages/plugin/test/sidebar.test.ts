@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { navigation } from '../src/ui/viewModel/contracts';
+import { LINKEDIN_URL, SITE_URL } from '../src/ui/proxy';
 import { railBlocks, railIcon, sidebarMarkup } from '../src/ui/shell/sidebar';
 
 describe('railBlocks', () => {
@@ -59,13 +60,16 @@ describe('sidebarMarkup', () => {
     expect(separators).toHaveLength(3);
   });
 
-  it('keeps Help & feedback in the bottom utility group', () => {
-    expect(sidebarMarkup('component', {})).toContain('aria-label="Help & feedback"');
+  it('does not expose the deferred Help action as an inert control', () => {
+    expect(sidebarMarkup('component', {})).not.toContain('Help & feedback');
   });
 
   it('puts the utility links at the bottom, below the spacer', () => {
     const html = sidebarMarkup('component', {});
     expect(html.indexOf('sl-sidebar-spacer')).toBeLessThan(html.indexOf('Spec Layer website'));
     expect(html).toContain('Spec Layer on LinkedIn');
+    expect(html).toContain(`href="${SITE_URL}"`);
+    expect(html).toContain(`href="${LINKEDIN_URL}"`);
+    expect(html).not.toContain('href="#"');
   });
 });

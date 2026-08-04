@@ -84,14 +84,27 @@ describe('allowanceCopy', () => {
     expect(copy.tone).toBe('exhausted');
     expect(copy.detail).toBe('No free uses left');
     expect(copy.showUpgrade).toBe(true);
-    expect(copy.fillPct).toBe(0);
+    // Full, not empty: a 0%-filled ring can't show its warning stroke color —
+    // there's no arc length for it to color. 100% makes the amber ring the
+    // header already sets for `exhausted` actually visible.
+    expect(copy.fillPct).toBe(100);
   });
 
   it('shows pro without a count or an upgrade', () => {
     const copy = allowanceCopy({ kind: 'pro' });
     expect(copy.tone).toBe('pro');
-    expect(copy.detail).toBe('Unlimited uses');
+    expect(copy.title).toBe('Pro plan active');
+    // Empty, not a phrase: the header collapses its two-part copy row to a
+    // single line on an empty detail, and Pro has no count to qualify.
+    expect(copy.detail).toBe('');
     expect(copy.showUpgrade).toBe(false);
+  });
+
+  it('never claims Pro is unlimited, since the rate limit still applies', () => {
+    for (const state of [{ kind: 'pro' } as const]) {
+      const { title, detail, ariaLabel } = allowanceCopy(state);
+      expect(`${title} ${detail} ${ariaLabel}`.toLowerCase()).not.toContain('unlimited');
+    }
   });
 
   it('passes an unknown plan through without demoting it', () => {
@@ -116,7 +129,10 @@ describe('allowanceCopy', () => {
   });
 
   it('handles a zero limit without dividing by zero', () => {
+    // remaining<=0 short-circuits to the exhausted branch before the
+    // limit-based fillPct calculation runs, so this never divides by zero —
+    // and reads as exhausted (fillPct 100), which is accurate: 0 of 0 is out.
     const copy = allowanceCopy({ kind: 'free', remaining: 0, limit: 0, resetsAt: '' });
-    expect(copy.fillPct).toBe(0);
+    expect(copy.fillPct).toBe(100);
   });
 });

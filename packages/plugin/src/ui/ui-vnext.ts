@@ -40,9 +40,12 @@ import { renderLibraryScreen } from './screens/library';
 import { globalSearchMarkup } from './screens/search';
 import {
   applyGroupBulk,
+  applyVariantBulk,
   componentDocSelection,
   sectionGroups,
   unavailableSections,
+  variantBulkState,
+  variantCountLabel,
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
@@ -87,7 +90,7 @@ import {
   updateFromSource,
   type BuildPresenter,
 } from './actions';
-import { generateGroupDescriptions } from './ai';
+import { generateGroupDescriptions, resolveComponentImage } from './ai';
 import { hasColorGroups } from './foundationState';
 import {
   CHECKOUT_URL,
@@ -116,6 +119,7 @@ const operation = createOperationGate();
 type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
 let deferredSelection: SelectionMessage | null = null;
 let foundationRequested = false;
+let foundationRefreshing = false;
 let foundationAiNote = '';
 let settingsCustomMode = false;
 let settingsColorError = '';
@@ -255,6 +259,7 @@ function paint(): void {
         foundationScreen,
         currentFoundationSpec(),
         currentFoundationSelection(),
+        foundationRefreshing,
       );
       return;
     case 'settings':
@@ -508,6 +513,22 @@ function requestFoundations(): void {
   if (foundationRequested) return;
   foundationRequested = true;
   foundationScreen = { kind: 'loading' };
+  paint();
+  send({ type: 'requestFoundation' });
+}
+
+/**
+ * requestFoundations() only ever fires once per session (its own guard
+ * above) — a variable or collection added after that first load never
+ * appears until the plugin is closed and reopened. This is the manual
+ * re-fetch, wired to the footer's "Refresh sources" button the same way
+ * refreshLibrary() backs Library's "Refresh library": it re-sends
+ * requestFoundation without resetting the screen to a loading skeleton, so
+ * the current list stays visible (and usable) while the button spins.
+ */
+function refreshFoundations(): void {
+  foundationRequested = true;
+  foundationRefreshing = true;
   paint();
   send({ type: 'requestFoundation' });
 }
@@ -883,8 +904,63 @@ function toggle<T>(set: Set<T>, value: T): void {
 }
 
 function paintAndFocus(selector: string): void {
+  const scrollTop = refs.scroll.scrollTop;
   paint();
-  document.querySelector<HTMLElement>(selector)?.focus();
+  refs.scroll.scrollTop = scrollTop;
+  document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
+}
+
+function syncVariantPicker(): void {
+  const inputs = [
+    ...refs.scroll.querySelectorAll<HTMLInputElement>('[data-variant]'),
+  ];
+  for (const input of inputs) {
+    const selected = Boolean(input.dataset.variant && selection.variantIds.has(input.dataset.variant));
+    input.checked = selected;
+    input.closest('.sl-section-row')?.classList.toggle('is-selected', selected);
+  }
+
+  const count = refs.scroll.querySelector<HTMLElement>('[data-variant-count]');
+  if (count) {
+    count.textContent = variantCountLabel(
+      inputs.filter((input) => input.checked).length,
+      inputs.length,
+    );
+  }
+
+  const bulk = refs.scroll.querySelector<HTMLInputElement>('[data-variants-bulk]');
+  if (bulk) {
+    const state = variantBulkState(
+      selection.variantIds,
+      inputs.flatMap((input) => input.dataset.variant ? [input.dataset.variant] : []),
+    );
+    bulk.checked = state.checked;
+    bulk.indeterminate = state.mixed;
+    bulk.dataset.mixed = String(state.mixed);
+    bulk.setAttribute('aria-checked', state.mixed ? 'mixed' : String(state.checked));
+    const label = state.checked ? 'Clear all variants' : 'Select all variants';
+    bulk.setAttribute('aria-label', label);
+    bulk.closest<HTMLLabelElement>('.sl-bulk-checkbox')?.setAttribute('title', label);
+  }
+}
+
+function syncMeasurementOptions(): void {
+  const only = selection.measureViews.size === 1
+    ? [...selection.measureViews][0]
+    : null;
+  for (const button of refs.scroll.querySelectorAll<HTMLButtonElement>('[data-measure]')) {
+    const id = button.dataset.measure as 'size' | 'padding' | 'spacing' | undefined;
+    if (!id) continue;
+    const selected = selection.measureViews.has(id);
+    button.setAttribute('aria-pressed', String(selected));
+    if (selected && only === id) {
+      button.setAttribute('aria-disabled', 'true');
+      button.title = 'At least one measurement view is required';
+    } else {
+      button.removeAttribute('aria-disabled');
+      button.removeAttribute('title');
+    }
+  }
 }
 
 function completeOperation(): void {
@@ -1120,27 +1196,6 @@ document.addEventListener('click', (event) => {
   // owns shared UiState.
   if (operation.active) return;
 
-  const groupBulk = target.closest<HTMLButtonElement>('[data-group-bulk]');
-  if (groupBulk?.dataset.groupBulk) {
-    const groupId = groupBulk.dataset.groupBulk as GroupId;
-    const unavailable = unavailableSections(facts);
-    const groupState = sectionGroups(
-      selection.sections,
-      selection.expanded,
-      selection.aiEnabled,
-      unavailable,
-    ).find((item) => item.id === groupId);
-    if (!groupState) return;
-    applyGroupBulk(
-      selection.sections,
-      groupId,
-      groupState.included < groupState.total,
-      unavailable,
-    );
-    paintAndFocus(`[data-group-bulk="${groupId}"]`);
-    return;
-  }
-
   const group = target.closest<HTMLButtonElement>('[data-group]');
   if (group?.dataset.group) {
     const groupId = group.dataset.group as GroupId;
@@ -1155,24 +1210,15 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  const anatomy = target.closest<HTMLButtonElement>('[data-anatomy]');
-  if (anatomy?.dataset.anatomy) {
-    selection.anatomyView = anatomy.dataset.anatomy as ComponentSelection['anatomyView'];
-    state.anatomyView = selection.anatomyView;
-    paintAndFocus(`[data-anatomy="${selection.anatomyView}"]`);
-    return;
-  }
-
   const measure = target.closest<HTMLButtonElement>('[data-measure]');
   if (measure?.dataset.measure) {
     const id = measure.dataset.measure as 'size' | 'padding' | 'spacing';
-    // Never let the last chip off: an empty set falls back to all three in the
-    // model, which would contradict what the UI is showing.
-    if (!(selection.measureViews.size === 1 && selection.measureViews.has(id))) {
-      toggle(selection.measureViews, id);
-      state.measureViews = [...selection.measureViews];
-    }
-    paintAndFocus(`[data-measure="${id}"]`);
+    // Measurements is an included section, so at least one diagram must stay
+    // selected. The final option declares that constraint before it is clicked.
+    if (measure.getAttribute('aria-disabled') === 'true') return;
+    toggle(selection.measureViews, id);
+    state.measureViews = [...selection.measureViews];
+    syncMeasurementOptions();
     return;
   }
 
@@ -1182,6 +1228,11 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.closest('#sl-create')) build();
+
+  if (target.closest('[data-foundation-refresh]')) {
+    if (!operation.active) refreshFoundations();
+    return;
+  }
 
   if (target.closest('[data-foundation-bulk]')) {
     onFoundationToggleAll();
@@ -1275,7 +1326,37 @@ document.addEventListener('change', (event) => {
   if (variantId) {
     if (input.checked) selection.variantIds.add(variantId);
     else selection.variantIds.delete(variantId);
-    paintAndFocus(`[data-variant="${variantId}"]`);
+    syncVariantPicker();
+    input.focus({ preventScroll: true });
+    return;
+  }
+
+  if (input.hasAttribute('data-variants-bulk')) {
+    const variantIds = facts.variants.map((variant) => variant.nodeId);
+    const bulk = variantBulkState(selection.variantIds, variantIds);
+    applyVariantBulk(selection.variantIds, variantIds, !bulk.checked);
+    syncVariantPicker();
+    input.focus({ preventScroll: true });
+    return;
+  }
+
+  const groupId = input.dataset.groupBulk as GroupId | undefined;
+  if (groupId) {
+    const unavailable = unavailableSections(facts);
+    const groupState = sectionGroups(
+      selection.sections,
+      selection.expanded,
+      selection.aiEnabled,
+      unavailable,
+    ).find((item) => item.id === groupId);
+    if (!groupState) return;
+    applyGroupBulk(
+      selection.sections,
+      groupId,
+      groupState.included < groupState.total,
+      unavailable,
+    );
+    paintAndFocus(`[data-group-bulk="${groupId}"]`);
     return;
   }
 
@@ -1389,9 +1470,28 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
-  if (event.key === 'Escape' && libraryMenuDocId) {
-    event.preventDefault();
-    closeLibraryMenu(true);
+  if (libraryMenuDocId) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeLibraryMenu(true);
+      return;
+    }
+
+    if (
+      event.key === 'ArrowDown' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'Home' ||
+      event.key === 'End'
+    ) {
+      const menu = refs.root.querySelector<HTMLElement>('.sl-library-overflow-menu');
+      const items = menu
+        ? [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])')]
+        : [];
+      if (items.length === 0) return;
+      event.preventDefault();
+      const current = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+      items[nextSearchIndex(current, event.key, items.length)]?.focus();
+    }
   }
 });
 
@@ -1568,14 +1668,25 @@ window.onmessage = (event: MessageEvent): void => {
       paint();
       return;
 
+    case 'componentImage':
+      resolveComponentImage({ base64: msg.base64, mediaType: msg.mediaType });
+      return;
+
+    case 'componentImageError':
+      // Fail open: AI writing continues from the structured component summary.
+      resolveComponentImage(null);
+      return;
+
     case 'foundation':
       onFoundationMessage(msg.dump);
       foundationScreen = { kind: 'ready' };
+      foundationRefreshing = false;
       paint();
       return;
 
     case 'foundationError':
       foundationRequested = false;
+      foundationRefreshing = false;
       foundationScreen = { kind: 'error', message: msg.message };
       paint();
       return;

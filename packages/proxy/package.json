@@ -5,11 +5,11 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@spec-layer/extractor": "*",
     "js-sha256": "^0.11.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260701.0",
-    "wrangler": "^4.0.0",
-    "@spec-layer/extractor": "*"
+    "wrangler": "^4.0.0"
   }
 }

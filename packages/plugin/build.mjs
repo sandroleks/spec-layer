@@ -14,10 +14,9 @@ mkdirSync(dist, { recursive: true });
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 
-// The vNext UI is opt-in until every screen has landed. `UI_VNEXT=1 node
-// build.mjs` produces the new shell; a plain build produces the legacy tabbed
-// UI, so both can be loaded in Figma and compared on the same file.
-const uiVNext = process.env.UI_VNEXT === '1';
+// vNext is the production entry point. Keep the old UI behind an explicit
+// rollback flag until the manual Figma acceptance pass is complete.
+const uiLegacy = process.env.UI_LEGACY === '1';
 const define = {
   __PLUGIN_VERSION__: JSON.stringify(pkg.version),
 };
@@ -44,7 +43,7 @@ console.log('Built dist/main.js');
 //   If the entry exists: bundle it and embed in a minimal HTML document.
 //   Otherwise: write a placeholder HTML so the manifest reference is valid.
 // ---------------------------------------------------------------------------
-const uiEntry = resolve(__dirname, uiVNext ? 'src/ui/ui-vnext.ts' : 'src/ui/ui.ts');
+const uiEntry = resolve(__dirname, uiLegacy ? 'src/ui/ui.ts' : 'src/ui/ui-vnext.ts');
 
 // The design system is embedded from disk rather than imported through the
 // TypeScript graph, so src/ui/design-system/*.css stays the single source and
@@ -61,7 +60,7 @@ const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
   .join('\n');
 
 /** Empty unless this build's ui.html is the vNext shell. */
-const uiHtmlCss = uiVNext ? designSystemCss : '';
+const uiHtmlCss = uiLegacy ? '' : designSystemCss;
 
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
@@ -86,7 +85,7 @@ if (existsSync(uiEntry)) {
 </body>
 </html>`;
   writeFileSync(resolve(dist, 'ui.html'), html, 'utf-8');
-  console.log(`Built dist/ui.html (from ${uiVNext ? 'src/ui/ui-vnext.ts' : 'src/ui/ui.ts'})`);
+  console.log(`Built dist/ui.html (from ${uiLegacy ? 'src/ui/ui.ts' : 'src/ui/ui-vnext.ts'})`);
 } else {
   const placeholder = `<!DOCTYPE html>
 <html lang="en">
