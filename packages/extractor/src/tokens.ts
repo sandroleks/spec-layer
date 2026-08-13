@@ -194,6 +194,19 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
 // Rule minimization
 // ---------------------------------------------------------------------------
 
+/**
+ * Marks "this part/property does not exist in this variant". Backfilled into
+ * every grid so absence participates in difference-detection like any other
+ * value. Never escapes extractTokens: sentinel rules are dropped when the
+ * public shape is built.
+ *
+ * The SOH prefix makes it unspellable as a Figma variable name. It deliberately
+ * avoids the NUL that joins composite keys in this file (`${part}\0${property}`
+ * and `tokens.join('\0')`), so the sentinel can never be mistaken for a
+ * multi-token cell.
+ */
+const ABSENT = 'ABSENT';
+
 /** One observed data point: in the variant identified by `combo`, the part/property carries `tokens`. */
 interface Cell {
   combo: Record<string, string>;
@@ -268,6 +281,21 @@ export function extractTokens(root: SerializedNode): TokenRule[] {
       cells.push({ combo, tokens: [...tokens].sort() });
     }
   });
+
+  // Presence is a JOINT property of a variant's full combo, not a marginal one
+  // per axis: a part can be absent at (X=1,Y=p) while X still spans {1,2} and Y
+  // still spans {p,q} across the cells that DO exist. relevantAxes' per-axis
+  // presence test cannot see that, so both conditions get dropped and the rule
+  // claims a binding on a variant with no such part. Backfilling an explicit
+  // ABSENT cell for every missing combo turns absence into just another token
+  // value, which the difference-detection below already handles correctly.
+  // Cells hold combo objects by reference from `combos`, so identity works here.
+  for (const cells of cellsByPartProp.values()) {
+    const present = new Set(cells.map((c) => c.combo));
+    for (const combo of combos) {
+      if (!present.has(combo)) cells.push({ combo, tokens: [ABSENT] });
+    }
+  }
 
   // --- Minimize each (part, property) grid into rules -----------------------
   const tokensKey = (c: Cell) => c.tokens.join('\0');
@@ -439,7 +467,10 @@ export function extractTokens(root: SerializedNode): TokenRule[] {
         const ka = ruleSortKey(a), kb = ruleSortKey(b);
         return ka < kb ? -1 : ka > kb ? 1 : 0;
       });
-      for (const r of rules) out.push(toTokenRule(part, prop, r));
+      for (const r of rules) {
+        if (r.token === ABSENT) continue;
+        out.push(toTokenRule(part, prop, r));
+      }
     }
   }
   return out;
