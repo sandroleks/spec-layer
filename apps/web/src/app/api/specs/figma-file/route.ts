@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { parseFrontmatter, serializeFrontmatter } from "@spec-layer/format";
-import type { IntermediateSpec } from "@spec-layer/extractor";
 import { getContentDir } from "@/lib/config";
 import { authorizeApiRequest, corsHeaders, isSafeSlug } from "@/lib/specApi";
+import { updateStoredSpec } from "@/lib/specWriter";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +28,6 @@ function parseFileKey(input: string): string | null {
   if (urlMatch) return urlMatch[1];
   if (/^[A-Za-z0-9]{10,}$/.test(trimmed)) return trimmed;
   return null;
-}
-
-function sidecarPath(contentDir: string, slug: string[]): string {
-  return path.join(contentDir, ".spec-data", ...slug) + ".json";
 }
 
 /**
@@ -90,17 +86,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Update JSON sidecar when present
-  const sidecar = sidecarPath(contentDir, body.slug);
-  if (fs.existsSync(sidecar)) {
-    try {
-      const spec = JSON.parse(fs.readFileSync(sidecar, "utf-8")) as IntermediateSpec;
+  // Update JSON sidecar when present. updateStoredSpec is a no-op (returns
+  // false) when there is no sidecar for this slug, and preserves whatever
+  // version envelope (or lack of one) the sidecar already carries — see the
+  // helper's doc comment for why that matters.
+  try {
+    updateStoredSpec(body.slug, (spec) => {
       spec.figmaFile = fileKey;
-      fs.writeFileSync(sidecar, JSON.stringify(spec, null, 2), "utf-8");
-    } catch {
-      // Sidecar update is best-effort — the markdown is the source of truth
-      // for the page, so we don't fail the request on this.
-    }
+    });
+  } catch {
+    // Sidecar update is best-effort — the markdown is the source of truth
+    // for the page, so we don't fail the request on this.
   }
 
   return NextResponse.json({ ok: true, fileKey }, { headers });

@@ -155,3 +155,46 @@ export function readStoredSpecEnvelope(slug: string[]): StoredSpec | null {
 export function readStoredSpec(slug: string[]): IntermediateSpec | null {
   return readStoredSpecEnvelope(slug)?.spec ?? null;
 }
+
+/**
+ * Update a stored spec sidecar in place, preserving whatever version it
+ * already carries. `mutate` receives the live spec object and edits it
+ * directly; the envelope (or lack of one) around it is handled here.
+ *
+ * This exists so callers that need to tweak one field on a stored extraction
+ * (e.g. attaching a Figma file key after the plugin import) never hand-roll
+ * the sidecar shape themselves. That has already gone wrong once: a caller
+ * did `JSON.parse(...) as IntermediateSpec` on what is now an envelope and
+ * wrote a stray top-level `figmaFile` next to `{ spec_version, spec }`
+ * instead of touching the real one inside it — and because the parse result
+ * is untyped `any`, the `as` cast made that invisible to tsc. Route all
+ * sidecar writes through here instead of re-deriving the envelope shape at
+ * each call site.
+ *
+ * A sidecar with no stored version (a legacy pre-envelope sidecar) is written
+ * back in that same bare shape, not wrapped in a fresh envelope. Stamping it
+ * with the current SPEC_VERSION — even though only this one field changed —
+ * would tell every future reader (in particular the 409 guard in
+ * regenerate/route.ts, which trusts `specVersion` to decide whether it is
+ * safe to re-render) that a current extractor produced this spec. That is
+ * exactly the lie the envelope was introduced to prevent.
+ *
+ * Returns false when there is no sidecar for this slug to update.
+ */
+export function updateStoredSpec(
+  slug: string[],
+  mutate: (spec: IntermediateSpec) => void,
+): boolean {
+  const stored = readStoredSpecEnvelope(slug);
+  if (!stored) return false;
+
+  mutate(stored.spec);
+
+  const filePath = getSpecDataPath(slug);
+  const onDisk: SpecSidecar | IntermediateSpec =
+    stored.specVersion === null
+      ? stored.spec
+      : { spec_version: stored.specVersion, spec: stored.spec };
+  fs.writeFileSync(filePath, JSON.stringify(onDisk, null, 2), "utf-8");
+  return true;
+}

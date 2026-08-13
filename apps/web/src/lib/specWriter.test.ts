@@ -9,6 +9,7 @@ import {
   readStoredSpec,
   readStoredSpecEnvelope,
   slugify,
+  updateStoredSpec,
   writeInboxMarkdown,
   writeInboxSpec,
 } from "./specWriter";
@@ -156,5 +157,55 @@ describe("readStoredSpec", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "broken.json"), "{ not json", "utf-8");
     expect(readStoredSpec(["_inbox", "broken"])).toBeNull();
+  });
+});
+
+describe("updateStoredSpec", () => {
+  it("mutates the spec and preserves the version envelope it already had", () => {
+    const { slug } = writeInboxSpec("Button", "# Button\n", { spec: fakeSpec });
+    const ok = updateStoredSpec(["_inbox", slug], (spec) => {
+      spec.figmaFile = "new-file-key";
+    });
+    expect(ok).toBe(true);
+
+    const sidecar = path.join(contentDir, ".spec-data", "_inbox", `${slug}.json`);
+    const onDisk = JSON.parse(fs.readFileSync(sidecar, "utf-8"));
+    expect(onDisk).toEqual({
+      spec_version: SPEC_VERSION,
+      spec: { ...fakeSpec, figmaFile: "new-file-key" },
+    });
+    // The whole point: reading it back through the normal helper sees the edit.
+    expect(readStoredSpec(["_inbox", slug])).toEqual({
+      ...fakeSpec,
+      figmaFile: "new-file-key",
+    });
+  });
+
+  it("keeps a legacy bare sidecar bare instead of stamping it with the current version", () => {
+    // Every sidecar written before the envelope existed looks like this. A
+    // one-field edit must not upgrade it to a current-looking envelope: that
+    // would tell regenerate/route.ts's 409 guard a modern extractor produced
+    // it, which is the exact lie the envelope exists to prevent.
+    const dir = path.join(contentDir, ".spec-data", "_inbox");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "legacy.json"), JSON.stringify(fakeSpec), "utf-8");
+
+    const ok = updateStoredSpec(["_inbox", "legacy"], (spec) => {
+      spec.figmaFile = "new-file-key";
+    });
+    expect(ok).toBe(true);
+
+    const sidecar = path.join(dir, "legacy.json");
+    const onDisk = JSON.parse(fs.readFileSync(sidecar, "utf-8"));
+    // Still a bare spec, not { spec_version, spec }.
+    expect(onDisk).toEqual({ ...fakeSpec, figmaFile: "new-file-key" });
+    expect(readStoredSpecEnvelope(["_inbox", "legacy"])?.specVersion).toBeNull();
+  });
+
+  it("returns false and touches nothing when there is no sidecar for this slug", () => {
+    const ok = updateStoredSpec(["_inbox", "missing"], (spec) => {
+      spec.figmaFile = "new-file-key";
+    });
+    expect(ok).toBe(false);
   });
 });
