@@ -71,6 +71,12 @@ export function formatConditions(conditions: Record<string, string[]>): string {
 // Per-node binding normalization (Figma property names → CSS-like, structural collapses)
 // ---------------------------------------------------------------------------
 
+/**
+ * Figma binding property -> CSS-like name used in the spec. Anything absent
+ * passes through unchanged, which is correct for names that are already CSS
+ * (`opacity`, `width`, `height`) and wrong for anything else, so new Figma
+ * binding targets belong here rather than leaking a camelCase name into docs.
+ */
 const SIMPLE_PROPERTY_MAP: Record<string, string> = {
   fills: 'fill',
   strokes: 'border',
@@ -82,6 +88,17 @@ const SIMPLE_PROPERTY_MAP: Record<string, string> = {
   fontStyle: 'font-style',
   lineHeight: 'line-height',
   letterSpacing: 'letter-spacing',
+  strokeWeight: 'border-width',
+  strokeTopWeight: 'border-top-width',
+  strokeRightWeight: 'border-right-width',
+  strokeBottomWeight: 'border-bottom-width',
+  strokeLeftWeight: 'border-left-width',
+  effects: 'box-shadow',
+  counterAxisSpacing: 'row-gap',
+  maxWidth: 'max-width',
+  minWidth: 'min-width',
+  maxHeight: 'max-height',
+  minHeight: 'min-height',
 };
 
 const RADIUS_PROPS = ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'];

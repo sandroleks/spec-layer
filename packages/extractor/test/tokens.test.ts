@@ -525,3 +525,20 @@ describe('duplicate parsed combos', () => {
     expect(containerFills).toHaveLength(1);
   });
 });
+
+describe('property name normalization', () => {
+  it('maps stroke, effect, opacity and size properties to CSS-like names', () => {
+    const set: SerializedNode = {
+      id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
+      bindings: [
+        { property: 'strokeWeight', token: 'border/width/thin' },
+        { property: 'effects', token: 'shadow/sm' },
+        { property: 'opacity', token: 'opacity/muted' },
+        { property: 'width', token: 'size/track' },
+        { property: 'height', token: 'size/thumb' },
+      ],
+    };
+    const props = extractTokens(set).map((r) => r.property);
+    expect(props).toEqual(['border-width', 'box-shadow', 'opacity', 'width', 'height']);
+  });
+});
