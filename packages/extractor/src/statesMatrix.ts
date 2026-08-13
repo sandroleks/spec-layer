@@ -19,10 +19,31 @@ export interface StateMatrixInfo {
   axis: string | null;
 }
 
-/** Conventional lifecycle order; unrecognized states trail in axis order. */
+/**
+ * Conventional lifecycle order; unrecognized states trail in axis order.
+ *
+ * `hover`/`focus` are the two concepts in this vocabulary that designers
+ * plausibly name either as the bare noun ("Hover", "Focus") or as the
+ * adjectival participle ("Hovered", "Focused") — both spellings describe the
+ * same ongoing pointer/keyboard condition, so both must resolve to the same
+ * rank. `focused` already had its participle listed; `hovered` did not,
+ * which meant a `Hovered` value fell through to the unrecognized bucket and
+ * sorted after every recognized state (including "Disabled") instead of
+ * next to "Hover" — sorting a hover state after a disabled state matches no
+ * real interaction lifecycle. `hovered` is added directly after `hover`.
+ *
+ * This does NOT extend to `pressed`/`selected`/`filled`/`disabled`/
+ * `checked`/`visited`: those are the *result* of a verb (press, select,
+ * fill, disable, check, visit) rather than a state a designer would name in
+ * its bare infinitive form, so only the participle belongs in the
+ * vocabulary. Adding a base entry for those would recognize values
+ * ("Press", "Select", …) that describe an action, not a persisted state —
+ * see the doc comment on `stateBaseName` for why blanket suffix-stripping
+ * to derive them automatically is explicitly avoided.
+ */
 const STATE_ORDER = [
-  'default', 'enabled', 'rest', 'hover', 'focus', 'focused', 'active',
-  'pressed', 'selected', 'filled', 'disabled', 'error', 'danger',
+  'default', 'enabled', 'rest', 'hover', 'hovered', 'focus', 'focused',
+  'active', 'pressed', 'selected', 'filled', 'disabled', 'error', 'danger',
   'warning', 'success', 'loading', 'empty', 'checked', 'invalid',
   'readonly', 'visited',
 ];

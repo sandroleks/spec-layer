@@ -51,5 +51,10 @@ export function extractVariants(root: SerializedNode): VariantAxis[] {
 export function extractStates(root: SerializedNode): string[] {
   const info = detectStateMatrix(extractVariants(root));
   if (!info) return ['Default'];
-  return info.columns.map((c) => c.label);
+  const labels = info.columns.map((c) => c.label);
+  // Guard, not expected to be reachable from real Figma data: a VARIANT
+  // property always has at least one option, so a detected enum state axis
+  // always yields at least one column. Kept anyway so extractStates never
+  // silently narrows its documented ['Default'] fallback contract to [].
+  return labels.length ? labels : ['Default'];
 }
