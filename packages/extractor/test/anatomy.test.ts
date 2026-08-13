@@ -63,6 +63,29 @@ describe('extractAnatomy — single-wrapper descent (bug 2)', () => {
   });
 });
 
+describe('extractAnatomy — collision at nested depth', () => {
+  it('numbers a same-named part independently at each nesting depth', () => {
+    // Top-level "label" and the "label" nested inside "meta" must not collide
+    // with each other: siblingPartNames numbers within ONE parent's children
+    // at a time (addParts calls it fresh per recursive call), so a name
+    // repeating at a different depth stays unnumbered at each level.
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      children: [
+        { id: 'a', name: 'label', type: 'TEXT', visible: true },
+        {
+          id: 'b', name: 'meta', type: 'FRAME', visible: true,
+          children: [{ id: 'c', name: 'label', type: 'TEXT', visible: true }],
+        },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.depth])).toEqual([
+      ['label', 0], ['meta', 0], ['label', 1],
+    ]);
+  });
+});
+
 describe('extractAnatomy — bounded depth-first walk (Task 7)', () => {
   it('walks up to 3 levels, depth-first, recording depth', () => {
     const root: SerializedNode = {

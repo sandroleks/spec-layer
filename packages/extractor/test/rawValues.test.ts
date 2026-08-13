@@ -42,6 +42,27 @@ describe('extractRawValues', () => {
     ]);
   });
 
+  it('does not leak raw values from inside a hidden wrapper (regression, Finding 1)', () => {
+    // A hidden FRAME containing a visible child with an unbound fill. Before
+    // walkParts was called with skipInvisible=true, walkParts recursed into
+    // the hidden wrapper's children unconditionally (only this file's own
+    // `if (n.visible === false) return` skipped the wrapper's OWN push), so
+    // the visible descendant was reached and its raw value leaked out even
+    // though its ancestor is hidden and would never render.
+    const root: SerializedNode = {
+      ...base, id: '1', name: 'Card', type: 'COMPONENT',
+      children: [
+        {
+          ...base, id: 'H', name: 'hidden-wrapper', type: 'FRAME', visible: false,
+          children: [
+            { ...base, id: 'V', name: 'visible-child', type: 'FRAME', unboundFill: 'red' },
+          ],
+        },
+      ],
+    };
+    expect(extractRawValues(root)).toEqual([]);
+  });
+
   it('reads only the default (first) variant of a set', () => {
     const root: SerializedNode = {
       ...base, id: '0', name: 'Set', type: 'COMPONENT_SET',

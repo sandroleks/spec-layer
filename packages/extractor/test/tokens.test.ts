@@ -416,6 +416,50 @@ describe('same-named siblings', () => {
   });
 });
 
+describe('same-named siblings — hidden collision', () => {
+  it('does not let a hidden sibling free up its numbering slot for the visible one', () => {
+    // First "icon" is hidden, second is visible. Numbering must still run over
+    // ALL children (including hidden ones): if it only counted visible
+    // children, the visible trailing icon would shift down to plain "icon"
+    // whenever its hidden sibling happened to be hidden in this variant but
+    // visible in another — silently renaming the same part across variants.
+    const set: SerializedNode = {
+      id: 'root', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: { Style: { type: 'VARIANT', variantOptions: ['Filled'] } },
+      children: [{
+        id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
+        children: [
+          { id: 'a', name: 'icon', type: 'FRAME', visible: false, bindings: [{ property: 'fills', token: 'tok/hidden' }] },
+          { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [{ property: 'fills', token: 'tok/text' }] },
+          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/trailing' }] },
+        ],
+      }],
+    };
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    expect(byPart).toContain('icon (2)=tok/trailing');
+    expect(byPart).not.toContain('icon=tok/trailing');
+  });
+
+  it('numbers a three-way collision monotonically: icon, icon (2), icon (3)', () => {
+    const set: SerializedNode = {
+      id: 'root', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: { Style: { type: 'VARIANT', variantOptions: ['Filled'] } },
+      children: [{
+        id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
+        children: [
+          { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/1' }] },
+          { id: 'b', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/2' }] },
+          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/3' }] },
+        ],
+      }],
+    };
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    expect(byPart).toContain('icon=tok/1');
+    expect(byPart).toContain('icon (2)=tok/2');
+    expect(byPart).toContain('icon (3)=tok/3');
+  });
+});
+
 describe('duplicate parsed combos', () => {
   it('does not union conflicting token sets when two variants parse alike', () => {
     // Both names parse to { Size: 'S' } — the duplicate axis makes the second

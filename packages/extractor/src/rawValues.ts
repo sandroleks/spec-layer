@@ -28,10 +28,18 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
   };
 
   const def = defaultVariant(root);
-  // Called without skipInvisible: the body below already returns early on
-  // hidden nodes, so behavior here must not change from the pre-walkParts walk.
+  // skipInvisible=true: pruning has to happen IN THE WALKER, not in this
+  // callback. walkParts recurses into every node's children unconditionally
+  // once it has decided to visit that node — a callback-level
+  // `if (n.visible === false) return` only stops that one node from pushing a
+  // value, it cannot stop walkParts from descending into the hidden node's
+  // children. So a hidden wrapper's visible descendants would still get
+  // visited and leak raw values that were never reachable in the pre-walkParts
+  // version of this file (whose private `walk` returned before recursing,
+  // pruning the whole hidden subtree). Passing skipInvisible=true here
+  // reproduces that exact semantics, because walkParts checks visibility
+  // BEFORE calling visit and before recursing into children.
   walkParts(def, root.type === 'COMPONENT_SET' ? 'Container' : cleanPartName(def.name), (n, part) => {
-    if (n.visible === false) return;
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
 
     if (n.unboundFill) push(part, 'fill', n.unboundFill);
@@ -62,6 +70,6 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
         push(part, 'border-radius', String(l.cornerRadius));
       }
     }
-  });
+  }, true);
   return out;
 }
