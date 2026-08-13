@@ -32,10 +32,14 @@ describe('specContentHash', () => {
     const spec = extract(NODE, { figmaFile: 'FILEKEY' });
     const withFindings = {
       ...spec,
-      contrast: [{
-        part: 'Label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
-        backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
-      }],
+      contrast: {
+        evaluated: 1,
+        skipped: 2,
+        findings: [{
+          part: 'Label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
+          backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
+        }],
+      },
     };
     expect(specContentHash(withFindings as typeof spec)).toBe(specContentHash(spec));
   });

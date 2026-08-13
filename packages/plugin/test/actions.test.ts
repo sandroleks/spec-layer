@@ -45,7 +45,7 @@ function specStub(name = 'Button'): IntermediateSpec {
     gaps: [],
     layout: [],
     rawValues: [],
-    contrast: [],
+    contrast: { evaluated: 0, skipped: 0, findings: [] },
   };
 }
 

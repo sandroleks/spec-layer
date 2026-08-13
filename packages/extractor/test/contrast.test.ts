@@ -55,6 +55,16 @@ describe('requiredRatio', () => {
     expect(requiredRatio(14, 700)).toBe(4.5);
     expect(requiredRatio(undefined, undefined)).toBe(4.5);
   });
+
+  // The cases above pin each boundary only from ABOVE, so widening a boundary
+  // downward (>= 24 becoming >= 20, or the bold rule becoming >= 16 at weight
+  // >= 600) leaves every one of them green while silently relaxing AA for real
+  // text. These pin the same boundaries from just below.
+  it('is 4.5 just below every large-text boundary', () => {
+    expect(requiredRatio(23, 400)).toBe(4.5);   // just under the 24px cutoff
+    expect(requiredRatio(18, 700)).toBe(4.5);   // bold, but under 18.66px
+    expect(requiredRatio(18.66, 600)).toBe(4.5); // big enough, but under weight 700
+  });
 });
 
 const foundation = (vars: Record<string, string>): FoundationSpec => ({
@@ -71,7 +81,7 @@ const foundation = (vars: Record<string, string>): FoundationSpec => ({
 const baseSpec = (over: Partial<IntermediateSpec>): IntermediateSpec => ({
   name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: 'n',
   anatomy: [], anatomyComponentId: 'n', props: [], variants: [], variantInstances: [],
-  states: [], tokens: [], related: [], gaps: [], layout: [], rawValues: [], contrast: [],
+  states: [], tokens: [], related: [], gaps: [], layout: [], rawValues: [], contrast: { evaluated: 0, skipped: 0, findings: [] },
   ...over,
 });
 
@@ -100,18 +110,22 @@ describe('checkContrast', () => {
 
   it('flags text below AA against its nearest painted ancestor', () => {
     const f = foundation({ 'surface/default': '#ffffff', 'text/faint': '#bbbbbb' });
-    const findings: ContrastFinding[] = checkContrast(spec, f);
+    const report = checkContrast(spec, f);
+    const findings: ContrastFinding[] = report.findings;
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
       part: 'label', backgroundPart: 'Container',
       foreground: '#bbbbbb', background: '#ffffff', required: 4.5,
     });
     expect(findings[0].ratio).toBeLessThan(4.5);
+    // A failing pair is still a MEASURED pair: it counts as evaluated, not skipped.
+    expect(report.evaluated).toBe(1);
+    expect(report.skipped).toBe(0);
   });
 
-  it('reports nothing when the pair passes AA', () => {
+  it('counts a passing pair as evaluated rather than reporting nothing at all', () => {
     const f = foundation({ 'surface/default': '#ffffff', 'text/faint': '#595959' });
-    expect(checkContrast(spec, f)).toEqual([]);
+    expect(checkContrast(spec, f)).toEqual({ evaluated: 1, skipped: 0, findings: [] });
   });
 
   it('skips disabled variants, which WCAG exempts', () => {
@@ -120,11 +134,74 @@ describe('checkContrast', () => {
       variantInstances: [{ nodeId: 'v0', name: 'State=Disabled', values: { State: 'Disabled' } }],
     });
     const f = foundation({ 'surface/default': '#ffffff', 'text/faint': '#bbbbbb' });
-    expect(checkContrast(disabled, f)).toEqual([]);
+    // Nothing was measured and nothing is claimed: an exempt variant is not a
+    // pass, so `evaluated` stays 0.
+    expect(checkContrast(disabled, f)).toEqual({ evaluated: 0, skipped: 0, findings: [] });
   });
 
-  it('reports nothing when the foundation cannot resolve a colour', () => {
-    expect(checkContrast(spec, foundation({}))).toEqual([]);
+  it('counts an unresolvable colour as skipped, never as a pass', () => {
+    expect(checkContrast(spec, foundation({}))).toEqual({ evaluated: 0, skipped: 1, findings: [] });
+  });
+
+  it('counts a text part with no fill rule at all as skipped', () => {
+    // The overwhelmingly common real case: the label's colour is hardcoded, so
+    // extractTokens emits no fill rule for it and extractGaps reports it as a
+    // hardcoded colour. Claiming AA here would contradict our own gap report.
+    const hardcoded = baseSpec({
+      ...spec,
+      tokens: [{ part: 'Container', property: 'fill', conditions: {}, token: 'surface/default' }],
+    });
+    expect(checkContrast(hardcoded, foundation({ 'surface/default': '#ffffff' })))
+      .toEqual({ evaluated: 0, skipped: 1, findings: [] });
+  });
+
+  it('skips a part whose name is not unique in the anatomy', () => {
+    // header > label and footer > label are two parts with one name. Every
+    // lookup in checkContrast is by that flat name, so the first matching rule
+    // wins and either verdict would be a coin toss.
+    const collided = baseSpec({
+      anatomy: [
+        { id: 'c', name: 'Container', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'h', name: 'header', type: 'FRAME', nested: false, depth: 1 },
+        { id: 'h1', name: 'label', type: 'TEXT', nested: false, depth: 2 },
+        { id: 'f', name: 'footer', type: 'FRAME', nested: false, depth: 1 },
+        { id: 'f1', name: 'label', type: 'TEXT', nested: false, depth: 2 },
+      ],
+      variantInstances: [{ nodeId: 'v0', name: 'Style=Filled', values: { Style: 'Filled' } }],
+      tokens: [
+        { part: 'Container', property: 'fill', conditions: {}, token: 'surface/default' },
+        { part: 'label', property: 'fill', conditions: {}, token: 'text/aaa' },
+        { part: 'label', property: 'fill', conditions: {}, token: 'text/zzz' },
+      ],
+    });
+    // text/zzz on white is 1.36:1, a blatant failure; text/aaa passes. Which
+    // one first-match-wins picks is arbitrary, so neither verdict is reported.
+    // Both labels are counted: they are two parts on the frame, and the reason
+    // neither can be checked is precisely that they cannot be told apart.
+    const f = foundation({ 'surface/default': '#ffffff', 'text/aaa': '#000000', 'text/zzz': '#dddddd' });
+    expect(checkContrast(collided, f)).toEqual({ evaluated: 0, skipped: 2, findings: [] });
+  });
+
+  it('skips a translucent background rather than assuming a white page behind it', () => {
+    const translucent: FoundationSpec = {
+      fileKey: 'f', extractedAt: '', textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Core', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Light' }],
+        variables: [
+          {
+            name: 'surface/default', group: 'g', resolvedType: 'COLOR', description: '', codeSyntax: {},
+            valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 0.5 } },
+          },
+          {
+            name: 'text/faint', group: 'g', resolvedType: 'COLOR', description: '', codeSyntax: {},
+            valuesByMode: { m1: { kind: 'color', hex: '#bbbbbb', alpha: 1 } },
+          },
+        ],
+      }],
+    };
+    // Compositing over an assumed white page would report 1.9:1 as a finding,
+    // but on a dark page the real ratio is different. Unknown, so unchecked.
+    expect(checkContrast(spec, translucent)).toEqual({ evaluated: 0, skipped: 1, findings: [] });
   });
 
   // Anatomy is depth-first pre-order, not a tree of pointers: the entry
@@ -158,8 +235,9 @@ describe('checkContrast', () => {
     const f = foundation({ 'surface/red': '#ff0000', 'text/faint': '#bbbbbb' });
     // No ancestor of label resolves to a colour (SiblingB has no fill, and
     // there is no depth-0 'Container' part in this fixture), so no finding
-    // should be emitted — least of all one blaming SiblingA's red.
-    expect(checkContrast(hole, f)).toEqual([]);
+    // should be emitted — least of all one blaming SiblingA's red. The pair is
+    // unchecked, so it counts as skipped rather than passing.
+    expect(checkContrast(hole, f)).toEqual({ evaluated: 0, skipped: 1, findings: [] });
   });
 
   it('uses the large-text threshold when the part carries bold 24px metrics', () => {
@@ -176,6 +254,6 @@ describe('checkContrast', () => {
     });
     // 3.5:1 fails AA for normal text but passes for large text.
     const f = foundation({ 'surface/default': '#ffffff', 'text/faint': '#949494' });
-    expect(checkContrast(spec, f)).toEqual([]);
+    expect(checkContrast(spec, f)).toEqual({ evaluated: 1, skipped: 0, findings: [] });
   });
 });

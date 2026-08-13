@@ -192,6 +192,21 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
 const AI_PLACEHOLDER = '_To be written._';
 
 /**
+ * Why a text part went unchecked, in one line shared by both honest-empty
+ * states so they can never drift into saying different things.
+ *
+ * It names the cause the user can act on (a hardcoded text or background colour,
+ * or one that lives in a library this file does not resolve) and it ends by
+ * handing the check back to them, because an unchecked pair is exactly the pair
+ * nobody has verified.
+ */
+const CONTRAST_UNCHECKED_REASON =
+  'Contrast needs text and background colours bound to variables this file can resolve. Check those pairs by hand.';
+
+/** "1 part", "3 parts" — a count that reads correctly at one. */
+const count = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+/**
  * Merge raw (unbound) rows into the resolved token rows so each raw row sits
  * inside its matching part group. Each raw row is inserted after the last
  * existing row of the same part; raw rows whose part has no token rows are
@@ -296,17 +311,36 @@ function buildSection(
     }
 
     case 'contrast': {
-      if (!spec.contrast.length) {
-        // An empty table is ambiguous: it reads as "not checked". Say it passed.
-        return { id, heading: label, kind: 'bullets', items: [makeBullet('All text pairs meet WCAG AA.')] };
+      const { findings, evaluated, skipped } = spec.contrast;
+      if (findings.length) {
+        return {
+          id, heading: label, kind: 'table',
+          columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
+          rows: findings.map((c) => [
+            c.part, c.backgroundPart, c.foreground, c.background, `${c.ratio}:1`, `${c.required}:1`,
+          ]),
+        };
       }
-      return {
-        id, heading: label, kind: 'table',
-        columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
-        rows: spec.contrast.map((c) => [
-          c.part, c.backgroundPart, c.foreground, c.background, `${c.ratio}:1`, `${c.required}:1`,
-        ]),
-      };
+      // No findings has two completely different meanings, and a design team
+      // reads this section as an audit result, so the two must never share one
+      // line. "Checked N pairs, all pass" is a claim the reader can check
+      // against the component. "Nothing could be checked" is a gap, not a pass.
+      if (evaluated === 0) {
+        return {
+          id, heading: label, kind: 'bullets',
+          items: [
+            makeBullet('No text and background pairs could be checked, so this is not a pass.'),
+            makeBullet(CONTRAST_UNCHECKED_REASON),
+          ],
+        };
+      }
+      const items = [makeBullet(`Checked ${count(evaluated, 'text and background pair')}. All meet WCAG AA.`)];
+      if (skipped > 0) {
+        items.push(makeBullet(
+          `${count(skipped, 'part')} could not be checked, so this is not a full pass. ${CONTRAST_UNCHECKED_REASON}`,
+        ));
+      }
+      return { id, heading: label, kind: 'bullets', items };
     }
 
     case 'dosDonts': {

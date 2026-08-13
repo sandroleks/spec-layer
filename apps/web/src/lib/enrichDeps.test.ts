@@ -18,7 +18,7 @@ function spec(figmaFile: string, figmaNode: string): IntermediateSpec {
     related: [],
     gaps: [],
     rawValues: [],
-    contrast: [],
+    contrast: { evaluated: 0, skipped: 0, findings: [] },
   };
 }
 

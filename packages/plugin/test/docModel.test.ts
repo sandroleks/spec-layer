@@ -667,8 +667,17 @@ describe('contrast section', () => {
     backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
   };
 
+  const contrastBullets = (contrast: unknown): string[] => {
+    const s = { ...spec, contrast } as unknown as IntermediateSpec;
+    const block = buildDocModel(s, null, new Set(['contrast'])).sections.find((b) => b.id === 'contrast');
+    expect(block).toMatchObject({ heading: 'Contrast', kind: 'bullets' });
+    return block?.kind === 'bullets' ? block.items.map((i) => i.text) : [];
+  };
+
   it('renders one row per finding', () => {
-    const specWithFinding = { ...spec, contrast: [finding] } as unknown as IntermediateSpec;
+    const specWithFinding = {
+      ...spec, contrast: { evaluated: 3, skipped: 0, findings: [finding] },
+    } as unknown as IntermediateSpec;
     const model = buildDocModel(specWithFinding, null, new Set(['contrast']));
     const block = model.sections.find((s) => s.id === 'contrast');
     expect(block).toMatchObject({ heading: 'Contrast', kind: 'table' });
@@ -678,15 +687,41 @@ describe('contrast section', () => {
     });
   });
 
-  it('states that everything passed when there are no findings', () => {
-    const specNoFindings = { ...spec, contrast: [] } as unknown as IntermediateSpec;
-    const model = buildDocModel(specNoFindings, null, new Set(['contrast']));
-    const block = model.sections.find((s) => s.id === 'contrast');
-    // A silent empty table reads as "not checked" rather than "checked and clean".
-    expect(block).toMatchObject({ kind: 'bullets' });
-    if (block?.kind === 'bullets') {
-      expect(block.items.map((i) => i.text)).toEqual(['All text pairs meet WCAG AA.']);
-    }
+  // Three distinct states, because "no findings" has two opposite meanings and
+  // this is the one output on the frame a design team reads as an audit result.
+  it('states the count it checked when pairs were measured and all passed', () => {
+    expect(contrastBullets({ evaluated: 4, skipped: 0, findings: [] }))
+      .toEqual(['Checked 4 text and background pairs. All meet WCAG AA.']);
+  });
+
+  it('reads correctly at a count of one', () => {
+    expect(contrastBullets({ evaluated: 1, skipped: 0, findings: [] }))
+      .toEqual(['Checked 1 text and background pair. All meet WCAG AA.']);
+  });
+
+  it('does not claim a full pass when some parts could not be checked', () => {
+    const items = contrastBullets({ evaluated: 2, skipped: 1, findings: [] });
+    expect(items[0]).toBe('Checked 2 text and background pairs. All meet WCAG AA.');
+    expect(items[1]).toContain('1 part could not be checked, so this is not a full pass.');
+    expect(items[1]).toContain('bound to variables this file can resolve');
+  });
+
+  it('says nothing was checked instead of claiming a pass when nothing was measured', () => {
+    const items = contrastBullets({ evaluated: 0, skipped: 2, findings: [] });
+    expect(items[0]).toBe('No text and background pairs could be checked, so this is not a pass.');
+    expect(items[1]).toContain('Check those pairs by hand.');
+    // The old copy claimed compliance in exactly this state, which is what a
+    // hardcoded text colour (or no foundation at all) produces.
+    expect(items.join(' ')).not.toContain('All meet WCAG AA');
+  });
+
+  it('never uses an em dash or an en dash in contrast copy', () => {
+    const all = [
+      ...contrastBullets({ evaluated: 4, skipped: 0, findings: [] }),
+      ...contrastBullets({ evaluated: 2, skipped: 1, findings: [] }),
+      ...contrastBullets({ evaluated: 0, skipped: 2, findings: [] }),
+    ].join(' ');
+    expect(all).not.toMatch(/[—–]/);
   });
 
   it('is a non-AI section in the a11y group, so it costs no prose keys', () => {

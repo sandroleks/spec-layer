@@ -4,7 +4,9 @@ import { extractProps, extractVariants, extractStates, type ComponentProp, type 
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
-import { checkContrast, type ContrastFinding } from './contrast';
+import {
+  checkContrast, collectTextMetrics, emptyContrastReport, type ContrastReport,
+} from './contrast';
 import type { FoundationSpec } from './foundation';
 
 /**
@@ -39,10 +41,11 @@ export interface IntermediateSpec {
   gaps: Gap[];
   layout: LayoutSummary[];
   rawValues: RawValue[];
-  /** WCAG AA findings. Excluded from specContentHash and never rendered into
-   *  Markdown, matching rawValues: the drift path calls extract() with no
-   *  foundation, so a hashed value here would read as permanent drift. */
-  contrast: ContrastFinding[];
+  /** WCAG AA findings, plus how much was actually measured. Excluded from
+   *  specContentHash and never rendered into Markdown, matching rawValues: the
+   *  drift path calls extract() with no foundation, so a hashed value here would
+   *  read as permanent drift. */
+  contrast: ContrastReport;
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -78,10 +81,19 @@ export function extract(
     gaps: extractGaps(root),
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
-    contrast: [],
+    contrast: emptyContrastReport(),
   };
   // Contrast needs resolved colour values, which only the foundation carries.
-  // Callers without one (the library drift check) get an empty list, which is
-  // safe because contrast sits outside specContentHash.
-  return meta.foundation ? { ...spec, contrast: checkContrast(spec, meta.foundation) } : spec;
+  // Callers without one (the library drift check) get a report that measured
+  // nothing, which is safe because contrast sits outside specContentHash — and
+  // which the renderer states plainly rather than dressing up as a pass.
+  //
+  // Text metrics come from the same shared axis model, so the AA threshold is
+  // picked from the variant being measured rather than from the default variant.
+  return meta.foundation
+    ? {
+        ...spec,
+        contrast: checkContrast(spec, meta.foundation, collectTextMetrics(root, model)),
+      }
+    : spec;
 }
