@@ -86,7 +86,11 @@ export type UiToMain =
   | { type: 'captureLogo' }
   | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; config: DocConfig }
+  /** `specVersion` is the extractor format (`SPEC_VERSION`) that produced
+   *  `contentHash`, stamped onto the persisted doc link so a later drift
+   *  check can tell "content changed" apart from "extractor changed". Always
+   *  sent: every UI build knows its own SPEC_VERSION. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; specVersion: string; config: DocConfig }
   | { type: 'requestLibrary' }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }

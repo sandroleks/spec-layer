@@ -11,6 +11,7 @@ import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
 } from '@spec-layer/extractor';
+import { SPEC_VERSION } from '@spec-layer/format';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
@@ -372,6 +373,7 @@ export async function createDocFrame(
       model: built.model,
       nodeId: state.currentNode!.id,
       contentHash: specContentHash(state.currentSpec!),
+      specVersion: SPEC_VERSION,
       config: built.config,
     });
   } catch (err) {
@@ -627,6 +629,7 @@ export async function updateFromSource(
       model,
       nodeId: src.node.id,
       contentHash: specContentHash(spec),
+      specVersion: SPEC_VERSION,
       config: src.config,
     });
     // Loader stops on docFrameDone/docFrameError (ui.ts).

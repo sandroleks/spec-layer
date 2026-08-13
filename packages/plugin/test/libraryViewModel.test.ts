@@ -194,26 +194,40 @@ describe('buildLibraryModel filters and counts', () => {
     entry({ docId: 'edited', label: 'Input', sourceLabel: 'Components · Input', selfEdited: true }),
     entry({ docId: 'missing', label: 'Radio', sourceLabel: 'Components · Radio', sourceExists: false }),
     entry({ docId: 'failed', label: 'Colors', sourceLabel: 'Foundations · Colors' }),
+    // A pre-0.2 doc: its row must read distinctly as "Rebuild needed" (never
+    // "Update available"), but should still count and filter as an update in
+    // the aggregate. See buildLibraryModel's `needsAction` helper.
+    entry({ docId: 'stale', label: 'Toggle', sourceLabel: 'Components · Toggle' }),
   ];
   const drift = new Map<string, LibraryDriftState>([
     ['update', 'drifted'],
     ['sync', 'inSync'],
     ['edited', 'inSync'],
     ['failed', 'unavailable'],
+    ['stale', 'staleVersion'],
   ]);
 
   it('counts only proven source updates and proven in-sync rows', () => {
     const model = buildLibraryModel(entries, { drift, now: NOW });
-    expect(model.counts).toEqual({ all: 5, updates: 1, inSync: 1 });
-    expect(model.rows).toHaveLength(5);
+    expect(model.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
+    expect(model.rows).toHaveLength(6);
+  });
+
+  it('counts a rebuild-needed row toward updates while keeping its own status distinct', () => {
+    const model = buildLibraryModel(entries, { drift, now: NOW });
+    const stale = model.rows.find((row) => row.docId === 'stale');
+    expect(stale?.status).toBe('rebuildNeeded');
   });
 
   it('applies updates and in-sync filters without changing their counts', () => {
     const updates = buildLibraryModel(entries, {
       drift, filter: 'updates', now: NOW,
     });
-    expect(updates.rows.map((row) => row.docId)).toEqual(['update']);
-    expect(updates.counts).toEqual({ all: 5, updates: 1, inSync: 1 });
+    // Both the hash-drifted row and the rebuild-needed row surface under
+    // "Updates": a user relying on the filter to find rows that need action
+    // must not miss the ones that need a rebuild rather than a hash-based update.
+    expect(updates.rows.map((row) => row.docId).sort()).toEqual(['stale', 'update']);
+    expect(updates.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
 
     const sync = buildLibraryModel(entries, {
       drift, filter: 'sync', now: NOW,

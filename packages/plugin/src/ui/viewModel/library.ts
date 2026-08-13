@@ -196,15 +196,24 @@ export function buildLibraryModel(
 ): LibraryModel {
   const filter = options.filter ?? 'all';
   const allRows = entries.map((entry) => buildLibraryRow(entry, options));
+  // 'rebuildNeeded' counts alongside 'updateAvailable': both mean "this row
+  // needs action from the badge/filter's point of view", they just differ in
+  // WHY (content drift vs. a stale extractor format). Keeping them as
+  // distinct LibraryRowStatus values means a row's own copy still says
+  // "Rebuild needed", never "Update available". Only this aggregate view
+  // treats them the same, per the controller's call that the badge/filter
+  // exclusion was an oversight, not an intended distinction.
+  const needsAction = (row: LibraryRowModel) =>
+    row.status === 'updateAvailable' || row.status === 'rebuildNeeded';
   const counts: LibraryCounts = {
     all: allRows.length,
-    updates: allRows.filter((row) => row.status === 'updateAvailable').length,
+    updates: allRows.filter(needsAction).length,
     inSync: allRows.filter((row) => row.status === 'inSync').length,
   };
 
   const query = options.query?.trim().toLocaleLowerCase() ?? '';
   const rows = allRows.filter((row) => {
-    if (filter === 'updates' && row.status !== 'updateAvailable') return false;
+    if (filter === 'updates' && !needsAction(row)) return false;
     if (filter === 'sync' && row.status !== 'inSync') return false;
     if (!query) return true;
     return `${row.label}\n${row.sourceLabel}`.toLocaleLowerCase().includes(query);

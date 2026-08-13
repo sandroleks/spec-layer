@@ -552,6 +552,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           config: msg.config,
           generatedAt: Date.now(),
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
+          // Stamped so a future drift check can tell "extractor changed" apart
+          // from "content changed" (see docLink.ts's ComponentDocLink.specVersion).
+          // Absent only on blobs written before this field existed.
+          specVersion: msg.specVersion,
         };
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
 
