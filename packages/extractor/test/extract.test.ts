@@ -93,7 +93,7 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
     }
   });
 
-  it('extractTokens accepts a precomputed axis model and agrees with computing its own', () => {
+  it('extractTokens conditions follow the axis model it is PASSED, not one it recomputes', () => {
     const set: SerializedNode = {
       id: 'root', name: 'C', type: 'COMPONENT_SET', visible: true, key: 'k',
       propertyDefinitions: { Size: { type: 'VARIANT', variantOptions: ['S', 'M'] } },
@@ -102,6 +102,29 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
         { id: 'v1', name: 'Size=M', type: 'COMPONENT', visible: true, bindings: [{ property: 'fills', token: 'tok/b' }] },
       ],
     };
+
+    // Left to itself, extractTokens parses these names into a real `Size` axis.
+    expect(extractTokens(set).map((r) => r.conditions)).toEqual([{ Size: ['S'] }, { Size: ['M'] }]);
+
+    // Now hand it the OTHER model variantAxisModel can produce: the `Variant`
+    // pseudo-axis fallback, which fires for real whenever any sibling name is
+    // not axis=value shaped. Asserting the passed model wins is the only way
+    // this test can fail when the parameter is ignored. Comparing against
+    // `extractTokens(set)` (the expression the default branch computes
+    // internally) is a tautology: it passes even if the parameter is dropped
+    // entirely, which breaks the agreement with toVariantInstances that the
+    // shared model exists to guarantee.
+    const collapsed = {
+      variants: set.children!,
+      combos: [{ Variant: 'Size=S' }, { Variant: 'Size=M' }],
+    };
+    expect(extractTokens(set, collapsed)).toEqual([
+      { part: 'Container', property: 'fill', conditions: { Variant: ['Size=S'] }, token: 'tok/a' },
+      { part: 'Container', property: 'fill', conditions: { Variant: ['Size=M'] }, token: 'tok/b' },
+    ]);
+
+    // And the shared-model path still agrees with the default when the model
+    // handed in IS the one variantAxisModel computes.
     expect(extractTokens(set, variantAxisModel(set))).toEqual(extractTokens(set));
   });
 });
