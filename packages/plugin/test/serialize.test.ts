@@ -232,3 +232,44 @@ describe('mainComponentRef', () => {
     expect(ref).toEqual({ name: 'Icon', key: 'iconkey' });
   });
 });
+
+describe('text metrics and fill alpha', () => {
+  const resolver = { variableName: async () => null, styleName: async () => null, mainComponent: async () => null };
+
+  it('records font size and weight for a TEXT node', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'label', type: 'TEXT',
+      fontSize: 18.66, fontName: { family: 'Inter', style: 'Bold' },
+    } as never, resolver);
+    expect(n.text).toEqual({ fontSize: 18.66, fontWeight: 700 });
+  });
+
+  it('maps a regular style to weight 400', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'label', type: 'TEXT',
+      fontSize: 14, fontName: { family: 'Inter', style: 'Regular' },
+    } as never, resolver);
+    expect(n.text).toEqual({ fontSize: 14, fontWeight: 400 });
+  });
+
+  it('omits text metrics on a non-TEXT node', async () => {
+    const n = await serializeNode({ id: '1', name: 'box', type: 'FRAME' } as never, resolver);
+    expect(n.text).toBeUndefined();
+  });
+
+  it('records the alpha of a hardcoded fill', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'box', type: 'FRAME',
+      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.38 }],
+    } as never, resolver);
+    expect(n.unboundFillAlpha).toBe(0.38);
+  });
+
+  it('omits alpha when the fill is fully opaque', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'box', type: 'FRAME',
+      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }],
+    } as never, resolver);
+    expect(n.unboundFillAlpha).toBeUndefined();
+  });
+});

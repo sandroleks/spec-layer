@@ -30,14 +30,19 @@ interface RawNode {
   type: string;
   visible?: boolean;
   key?: string;
-  fills?: Array<{ type: string; color?: { r: number; g: number; b: number } }>;
+  fills?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }>;
   fillStyleId?: string;
-  strokes?: Array<{ type: string; color?: { r: number; g: number; b: number } }>;
+  strokes?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }>;
   strokeStyleId?: string;
   effects?: Array<{ type: string }>;
   opacity?: number;
   textStyleId?: string | symbol;
   effectStyleId?: string | symbol;
+  // Figma returns figma.mixed (a symbol) for these when a TEXT node's range
+  // isn't uniform. Typing the symbol keeps callers from smuggling it through
+  // as a bogus number/object — every read site must check `typeof` first.
+  fontSize?: number | symbol;
+  fontName?: { family: string; style: string } | symbol;
   layoutMode?: string;
   paddingTop?: number;
   paddingRight?: number;
@@ -52,6 +57,22 @@ interface RawNode {
     variantOptions?: string[];
   }>;
   children?: RawNode[];
+}
+
+/**
+ * Figma exposes weight as a style NAME, not a number. Map the common ladder;
+ * anything unrecognized falls back to 400, which yields the stricter AA
+ * threshold and so cannot produce a false pass.
+ */
+const WEIGHTS: Record<string, number> = {
+  thin: 100, hairline: 100, extralight: 200, ultralight: 200, light: 300,
+  regular: 400, normal: 400, book: 400, medium: 500, semibold: 600, demibold: 600,
+  bold: 700, extrabold: 800, ultrabold: 800, black: 900, heavy: 900,
+};
+
+function fontWeightOf(style: string): number {
+  const key = style.toLowerCase().replace(/\s|-|italic|oblique/g, '');
+  return WEIGHTS[key] ?? 400;
 }
 
 export async function serializeNode(node: RawNode, resolver: NodeResolver): Promise<SerializedNode> {
@@ -118,6 +139,30 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
 
   const opacity = typeof node.opacity === 'number' && node.opacity !== 1 ? node.opacity : undefined;
 
+  // The alpha of the hardcoded fill above (paint-level), distinct from node-level
+  // `opacity`: both can be set at once and they mean different things — this one
+  // is what contrast compositing (blend) needs to know what colour is actually seen.
+  const unboundFillAlpha =
+    solidFill && typeof solidFill.opacity === 'number' && solidFill.opacity !== 1
+      ? solidFill.opacity
+      : undefined;
+
+  // --- Text metrics (TEXT nodes only) ---
+  // `fontSize`/`fontName` come back as figma.mixed (a symbol) when a TEXT node's
+  // range isn't uniform; the typeof checks below keep that symbol from slipping
+  // through as a bogus number or object.
+  let text: { fontSize?: number; fontWeight?: number } | undefined;
+  if (node.type === 'TEXT') {
+    const size = typeof node.fontSize === 'number' ? node.fontSize : undefined;
+    const name = node.fontName;
+    const weight = name && typeof name === 'object' && 'style' in name
+      ? fontWeightOf((name as { style: string }).style)
+      : undefined;
+    if (size !== undefined || weight !== undefined) {
+      text = { ...(size !== undefined ? { fontSize: size } : {}), ...(weight !== undefined ? { fontWeight: weight } : {}) };
+    }
+  }
+
   // --- componentPropertyDefinitions ---
   let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
   try {
@@ -179,6 +224,8 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(opacity !== undefined ? { opacity } : {}),
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),
+    ...(text ? { text } : {}),
+    ...(unboundFillAlpha !== undefined ? { unboundFillAlpha } : {}),
     ...(children ? { children } : {}),
   };
 

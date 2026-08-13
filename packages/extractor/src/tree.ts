@@ -29,6 +29,10 @@ export interface SerializedNode {
   key?: string;
   /** Auto-layout/shape values for this node, when present. */
   layout?: LayoutInfo;
+  /** TEXT nodes only: the metrics WCAG needs to pick a contrast threshold. */
+  text?: { fontSize?: number; fontWeight?: number };
+  /** Alpha of the hardcoded fill in `unboundFill`, when it is not 1. */
+  unboundFillAlpha?: number;
 }
 
 export interface PropertyDefinition {
