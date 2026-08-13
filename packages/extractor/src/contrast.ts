@@ -200,7 +200,7 @@ export function checkContrast(spec: IntermediateSpec, foundation: FoundationSpec
 
       const background = blend(bg.hex, bg.alpha, '#ffffff');
       const foreground = blend(fg.hex, fg.alpha, background);
-      const required = requiredRatio(undefined, undefined);
+      const required = requiredRatio(textPart.text?.fontSize, textPart.text?.fontWeight);
       const ratio = Math.round(contrastRatio(foreground, background) * 100) / 100;
       if (ratio >= required) continue;
 

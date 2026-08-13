@@ -161,4 +161,21 @@ describe('checkContrast', () => {
     // should be emitted — least of all one blaming SiblingA's red.
     expect(checkContrast(hole, f)).toEqual([]);
   });
+
+  it('uses the large-text threshold when the part carries bold 24px metrics', () => {
+    const spec = baseSpec({
+      anatomy: [
+        { id: 'c', name: 'Container', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'l', name: 'label', type: 'TEXT', nested: false, depth: 1, text: { fontSize: 24, fontWeight: 700 } },
+      ],
+      variantInstances: [{ nodeId: 'v0', name: 'Style=Filled', values: { Style: 'Filled' } }],
+      tokens: [
+        { part: 'Container', property: 'fill', conditions: {}, token: 'surface/default' },
+        { part: 'label', property: 'fill', conditions: {}, token: 'text/faint' },
+      ],
+    });
+    // 3.5:1 fails AA for normal text but passes for large text.
+    const f = foundation({ 'surface/default': '#ffffff', 'text/faint': '#949494' });
+    expect(checkContrast(spec, f)).toEqual([]);
+  });
 });

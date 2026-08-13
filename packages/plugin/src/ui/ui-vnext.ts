@@ -89,6 +89,7 @@ import {
   downloadDoc,
   onFoundationChange,
   onFoundationMessage,
+  onSelectionFoundation,
   onFoundationToggleAll,
   send,
   setAiEnabled,
@@ -1822,6 +1823,11 @@ function applySelection(msg: SelectionMessage): void {
   state.pendingAiNote = '';
   facts = node ? componentFacts(null, node.name) : NO_FACTS;
   selection.variantIds.clear();
+  // Update the shared foundation BEFORE the deferred extraction below reads
+  // it, so this selection's own extract() sees it rather than lagging one
+  // selection behind. Absent when the main thread has no dump yet (or
+  // building one failed) — extraction still proceeds, just without contrast.
+  if (msg.foundation) onSelectionFoundation(msg.foundation);
   if (!node) {
     screen = { kind: 'empty' };
     paint();

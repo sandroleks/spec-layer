@@ -9,7 +9,7 @@ import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
-  type FoundationVariableRow,
+  type FoundationVariableRow, type SerializedFoundation,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
@@ -135,6 +135,35 @@ const foundationReader: FoundationReader = {
 };
 
 // ---------------------------------------------------------------------------
+// Foundation dump, cached for the session — the file's variables/styles feed
+// contrast on every selection, but they change far less often than the
+// selection itself, so re-serializing the whole file (every collection, every
+// variable, every text style) on each click would be wasteful.
+//
+// Staleness: if a user edits a variable and then re-selects a component
+// without visiting the Foundations tab, they get contrast computed against
+// the stale cached colour. That is accepted here as a fair trade for not
+// re-walking the file on every click; a plugin has no cheap, precise "did a
+// variable value change" signal (figma.on('documentchange') fires on any
+// document edit, including irrelevant ones, so keying invalidation off it
+// would either over-invalidate — defeating the cache — or need per-change
+// filtering that is its own project). The cache lives only for the session:
+// closing and reopening the plugin always re-fetches. The Foundations tab's
+// own fetch (`requestFoundation`, below) refreshes this same cache — both the
+// tab's initial load and its "Refresh sources" button — so a user who
+// suspects staleness has an existing, discoverable way to clear it without
+// this task inventing a second refresh affordance.
+// ---------------------------------------------------------------------------
+let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
+
+async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
+  if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
+  const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+  foundationCache = { fileKey, dump };
+  return dump;
+}
+
+// ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
 // ---------------------------------------------------------------------------
 function findComponent(
@@ -184,11 +213,26 @@ async function postSelection(): Promise<void> {
     return;
   }
 
+  // Best-effort: a foundation failure (or simply none this file has ever
+  // needed) must never block the selection. Contrast is a bonus on top of a
+  // successful extraction, not a prerequisite for it, so an unresolved
+  // foundation here just means the 'selection' message omits the field and
+  // extract() falls back to its no-foundation, contrast-free path.
+  let foundation: SerializedFoundation | undefined;
+  try {
+    foundation = await foundationFor(resolved.fileKey);
+  } catch {
+    foundation = undefined;
+  }
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const node = await serializeNode(component as any, resolver);
     if (seq !== selectionSeq) return; // a newer selection superseded this one
-    const msg: MainToUi = { type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source };
+    const msg: MainToUi = {
+      type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
+      ...(foundation ? { foundation } : {}),
+    };
     figma.ui.postMessage(msg);
   } catch {
     // Serialization failed: show the empty state rather than leaving the panel
@@ -718,6 +762,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         const dump = await serializeFoundation(
           foundationReader, fileKey, new Date().toISOString(),
         );
+        // This is the Foundations tab's own fetch — both its first load and
+        // its "Refresh sources" button — so it is also the one place a user
+        // can force a fresh read. Updating the selection-side cache here
+        // (rather than only handing the dump to this reply) means that
+        // refresh benefits the NEXT selection's contrast too, instead of
+        // leaving foundationFor() serving a dump this same click just proved
+        // stale.
+        foundationCache = { fileKey, dump };
         figma.ui.postMessage({ type: 'foundation', dump } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

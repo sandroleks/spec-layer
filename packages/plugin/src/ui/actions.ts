@@ -118,7 +118,10 @@ export function renderOne(
   fileKey: string,
 ): { name: string; markdown: string; spec: IntermediateSpec; extractedAt: string } {
   const extractedAt = new Date().toISOString();
-  const spec = extract(node, { figmaFile: fileKey });
+  const spec = extract(node, {
+    figmaFile: fileKey,
+    ...(foundationSpec ? { foundation: foundationSpec } : {}),
+  });
   const markdown = renderSpec(spec, { prose: null, extractedAt });
   return { name: spec.name, markdown, spec, extractedAt };
 }
@@ -600,7 +603,10 @@ export async function updateFromSource(
   ui.clear();
   ui.startProgress(['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
-    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const spec = extract(src.node, {
+      figmaFile: src.fileKey,
+      ...(foundationSpec ? { foundation: foundationSpec } : {}),
+    });
     const selected = new Set<SectionId>(src.config.sections);
 
     let prose = null as Awaited<ReturnType<typeof generateProse>>;
@@ -668,7 +674,10 @@ export async function downloadFromSource(
   ui.clear();
   ui.startProgress(['Reading the component', 'Composing sections', 'Saving the markdown']);
   try {
-    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const spec = extract(src.node, {
+      figmaFile: src.fileKey,
+      ...(foundationSpec ? { foundation: foundationSpec } : {}),
+    });
     const selected = new Set<SectionId>(src.config.sections);
 
     let prose = null as Awaited<ReturnType<typeof generateProse>>;
@@ -813,6 +822,22 @@ export function onFoundationMessage(dump: SerializedFoundation): void {
   foundationSpec = buildFoundation(dump);
   foundationSelection = defaultSelection(foundationSpec);
   foundationHost.repaint();
+}
+
+/**
+ * Set from the 'selection' message's optional `foundation` dump (Task 15),
+ * so the Selected-component path gets contrast without the user ever having
+ * opened the Foundations tab. Deliberately does NOT touch `foundationSelection`
+ * or repaint `foundationHost`: unlike `onFoundationMessage` above, this fires
+ * on every selection change, and resetting the Foundations tab's own checkbox
+ * selection (or repainting a tab the user isn't looking at) on every click
+ * elsewhere in the panel would be a visible regression for that tab. Both
+ * setters write the same module-level `foundationSpec`, which is exactly the
+ * point: the Selected-component and Foundations tabs share one parsed
+ * instance rather than each fetching (and parsing) their own.
+ */
+export function onSelectionFoundation(dump: SerializedFoundation): void {
+  foundationSpec = buildFoundation(dump);
 }
 
 /**

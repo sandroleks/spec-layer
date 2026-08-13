@@ -7,6 +7,8 @@ export interface AnatomyPart {
   depth: number;
   /** Main-component name when nested. */
   component?: string;
+  /** TEXT parts only: metrics the contrast check needs to pick a threshold. */
+  text?: { fontSize?: number; fontWeight?: number };
 }
 export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; componentId: string }
 
@@ -93,6 +95,7 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
       parts.push({
         id: child.id, name: names.get(child)!, type: child.type, nested, depth,
         ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
+        ...(child.text ? { text: child.text } : {}),
       });
       if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
         addParts(child.children, depth + 1);

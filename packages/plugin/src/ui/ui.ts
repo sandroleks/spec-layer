@@ -28,6 +28,7 @@ import {
   setAiEnabled,
   setBrandTheme,
   onFoundationMessage,
+  onSelectionFoundation,
   onFoundationCheckboxChange,
   onFoundationToggleAll,
   currentGroupBriefs,
@@ -999,6 +1000,11 @@ window.onmessage = (event: MessageEvent) => {
 
   switch (msg.type) {
     case 'selection': {
+      // Update the shared foundation BEFORE runAutoExtract below reads it, so
+      // this selection's own extraction sees it. Absent when main has no dump
+      // yet (or building one failed) — extraction still proceeds, just
+      // without contrast.
+      if (msg.foundation) onSelectionFoundation(msg.foundation);
       state.currentNode = msg.node;
       // msg.fileKey is the file key computed by main; embedded in the spec.
       state.currentFileKey = msg.fileKey;

@@ -4,7 +4,8 @@ import { extractProps, extractVariants, extractStates, type ComponentProp, type 
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
-import type { ContrastFinding } from './contrast';
+import { checkContrast, type ContrastFinding } from './contrast';
+import type { FoundationSpec } from './foundation';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -48,7 +49,10 @@ function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
   return model.variants.map((v, i) => ({ nodeId: v.id, name: v.name, values: model.combos[i] }));
 }
 
-export function extract(root: SerializedNode, meta: { figmaFile: string }): IntermediateSpec {
+export function extract(
+  root: SerializedNode,
+  meta: { figmaFile: string; foundation?: FoundationSpec },
+): IntermediateSpec {
   const { parts, related, componentId } = extractAnatomy(root);
   // Built once and threaded into both extractTokens and toVariantInstances.
   // This isn't just avoiding duplicate work: variantAxisModel's fallback (every
@@ -58,7 +62,7 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
   // longer match them. One shared model makes that agreement structural instead
   // of relying on both call sites happening to compute the same thing.
   const model = variantAxisModel(root);
-  return {
+  const spec: IntermediateSpec = {
     name: root.name,
     figmaKey: root.key ?? '',
     figmaFile: meta.figmaFile,
@@ -74,10 +78,10 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
     gaps: extractGaps(root),
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
-    // Populated by the caller once a FoundationSpec is available (Task 15).
-    // checkContrast needs the file's resolved colour variables, which extract()
-    // itself has no access to, so the field starts empty here rather than
-    // this function reaching out for a foundation it was never given.
     contrast: [],
   };
+  // Contrast needs resolved colour values, which only the foundation carries.
+  // Callers without one (the library drift check) get an empty list, which is
+  // safe because contrast sits outside specContentHash.
+  return meta.foundation ? { ...spec, contrast: checkContrast(spec, meta.foundation) } : spec;
 }
