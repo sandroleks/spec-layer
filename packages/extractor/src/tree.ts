@@ -13,6 +13,16 @@ export interface SerializedNode {
   hasUnboundPaint?: boolean;
   /** `#rrggbb` of the first hardcoded SOLID fill (set only when hasUnboundPaint). */
   unboundFill?: string;
+  /** True when a stroke paint is hardcoded (no variable/style). */
+  hasUnboundStroke?: boolean;
+  /** `#rrggbb` of the first hardcoded SOLID stroke (set only when hasUnboundStroke). */
+  unboundStroke?: string;
+  /** True when a GRADIENT_* or IMAGE fill carries no style. */
+  hasUnboundGradient?: boolean;
+  /** True when the node has effects but no effect style and no bound effect. */
+  hasUnboundEffect?: boolean;
+  /** Node opacity when it is not 1 (hand-set or bound). */
+  opacity?: number;
   /** For INSTANCE nodes: the main component's name and key. */
   mainComponent?: { name: string; key: string };
   /** Stable component key (COMPONENT/COMPONENT_SET only). */

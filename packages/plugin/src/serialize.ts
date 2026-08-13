@@ -32,7 +32,10 @@ interface RawNode {
   key?: string;
   fills?: Array<{ type: string; color?: { r: number; g: number; b: number } }>;
   fillStyleId?: string;
+  strokes?: Array<{ type: string; color?: { r: number; g: number; b: number } }>;
   strokeStyleId?: string;
+  effects?: Array<{ type: string }>;
+  opacity?: number;
   textStyleId?: string | symbol;
   effectStyleId?: string | symbol;
   layoutMode?: string;
@@ -86,19 +89,34 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     if (token) bindings.push({ property: 'effects', token });
   }
 
-  // --- hasUnboundPaint ---
-  const hasSolid = Array.isArray(node.fills) && node.fills.some(f => f.type === 'SOLID');
-  const fillsBound = 'fills' in bv;
-  const hasStyleId = Boolean(node.fillStyleId);
-  const hasUnboundPaint = hasSolid && !fillsBound && !hasStyleId ? true : undefined;
-  let unboundFill: string | undefined;
-  if (hasUnboundPaint) {
-    const solid = (node.fills ?? []).find((f) => f.type === 'SOLID' && f.color);
-    if (solid?.color) {
-      const to2 = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
-      unboundFill = `#${to2(solid.color.r)}${to2(solid.color.g)}${to2(solid.color.b)}`;
-    }
-  }
+  // --- Unbound paints, effects and opacity ---
+  const to2 = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
+  const hex = (c: { r: number; g: number; b: number }) => `#${to2(c.r)}${to2(c.g)}${to2(c.b)}`;
+
+  const fills = node.fills ?? [];
+  const hasSolidFill = fills.some((f) => f.type === 'SOLID');
+  const fillsBound = 'fills' in bv || Boolean(node.fillStyleId);
+  const hasUnboundPaint = hasSolidFill && !fillsBound ? true : undefined;
+  const solidFill = hasUnboundPaint ? fills.find((f) => f.type === 'SOLID' && f.color) : undefined;
+  const unboundFill = solidFill?.color ? hex(solidFill.color) : undefined;
+
+  // Gradients and images can't bind to a colour variable, only to a style, so a
+  // style id is the only thing that makes them intentional.
+  const hasGradient = fills.some((f) => f.type.startsWith('GRADIENT_') || f.type === 'IMAGE');
+  const hasUnboundGradient = hasGradient && !node.fillStyleId ? true : undefined;
+
+  const strokes = node.strokes ?? [];
+  const hasSolidStroke = strokes.some((s) => s.type === 'SOLID');
+  const strokesBound = 'strokes' in bv || Boolean(node.strokeStyleId);
+  const hasUnboundStroke = hasSolidStroke && !strokesBound ? true : undefined;
+  const solidStroke = hasUnboundStroke ? strokes.find((s) => s.type === 'SOLID' && s.color) : undefined;
+  const unboundStroke = solidStroke?.color ? hex(solidStroke.color) : undefined;
+
+  const hasEffects = (node.effects ?? []).length > 0;
+  const effectsBound = 'effects' in bv || (typeof node.effectStyleId === 'string' && Boolean(node.effectStyleId));
+  const hasUnboundEffect = hasEffects && !effectsBound ? true : undefined;
+
+  const opacity = typeof node.opacity === 'number' && node.opacity !== 1 ? node.opacity : undefined;
 
   // --- componentPropertyDefinitions ---
   let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
@@ -154,6 +172,11 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(bindings.length > 0 ? { bindings } : {}),
     ...(hasUnboundPaint ? { hasUnboundPaint } : {}),
     ...(unboundFill ? { unboundFill } : {}),
+    ...(hasUnboundStroke ? { hasUnboundStroke } : {}),
+    ...(unboundStroke ? { unboundStroke } : {}),
+    ...(hasUnboundGradient ? { hasUnboundGradient } : {}),
+    ...(hasUnboundEffect ? { hasUnboundEffect } : {}),
+    ...(opacity !== undefined ? { opacity } : {}),
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),
     ...(children ? { children } : {}),

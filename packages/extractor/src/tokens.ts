@@ -489,6 +489,18 @@ export function extractGaps(root: SerializedNode): Gap[] {
     if (n.hasUnboundPaint) {
       pushGap(part, 'hardcoded color (no variable or style)');
     }
+    if (n.hasUnboundStroke) {
+      pushGap(part, 'hardcoded stroke colour (no variable or style)');
+    }
+    if (n.hasUnboundGradient) {
+      pushGap(part, 'hardcoded gradient or image fill (no style)');
+    }
+    if (n.hasUnboundEffect) {
+      pushGap(part, 'hardcoded shadow or blur (no effect style)');
+    }
+    if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
+      pushGap(part, `hardcoded opacity (${n.opacity})`);
+    }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
       pushGap(part, 'no text style or typography variable');
     }

@@ -393,6 +393,41 @@ describe('extractGaps', () => {
   });
 });
 
+describe('extractGaps coverage', () => {
+  const comp = (extra: Partial<SerializedNode>): SerializedNode => ({
+    id: 'v0', name: 'Button', type: 'COMPONENT', visible: true, ...extra,
+  });
+
+  it('reports a hardcoded stroke colour', () => {
+    const gaps = extractGaps(comp({ hasUnboundStroke: true }));
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke colour (no variable or style)' });
+  });
+
+  it('reports a hardcoded gradient or image fill', () => {
+    const gaps = extractGaps(comp({ hasUnboundGradient: true }));
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded gradient or image fill (no style)' });
+  });
+
+  it('reports an unbound effect', () => {
+    const gaps = extractGaps(comp({ hasUnboundEffect: true }));
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded shadow or blur (no effect style)' });
+  });
+
+  it('reports a hand-set opacity', () => {
+    const gaps = extractGaps(comp({ opacity: 0.5 }));
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded opacity (0.5)' });
+  });
+
+  it('does not report opacity when it is fully opaque', () => {
+    expect(extractGaps(comp({ opacity: 1 }))).toEqual([]);
+  });
+
+  it('does not report opacity when it is bound to a variable', () => {
+    const gaps = extractGaps(comp({ opacity: 0.5, bindings: [{ property: 'opacity', token: 'a/b' }] }));
+    expect(gaps).toEqual([]);
+  });
+});
+
 describe('same-named siblings', () => {
   const set: SerializedNode = {
     id: 'root', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',

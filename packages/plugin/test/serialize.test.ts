@@ -117,6 +117,45 @@ describe('serializeNode', () => {
   });
 });
 
+describe('unbound paint detection', () => {
+  const resolver = { variableName: async () => null, styleName: async () => null, mainComponent: async () => null };
+
+  it('flags a hardcoded stroke and records its hex', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      strokes: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
+    } as never, resolver);
+    expect(n.hasUnboundStroke).toBe(true);
+    expect(n.unboundStroke).toBe('#ff0000');
+  });
+
+  it('does not flag a stroke bound to a variable', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      strokes: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
+      boundVariables: { strokes: [{ id: 'V:1' }] },
+    } as never, { ...resolver, variableName: async () => 'border/default' });
+    expect(n.hasUnboundStroke).toBeUndefined();
+  });
+
+  it('flags a gradient fill with no style', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME', fills: [{ type: 'GRADIENT_LINEAR' }],
+    } as never, resolver);
+    expect(n.hasUnboundGradient).toBe(true);
+  });
+
+  it('records a non-default opacity', async () => {
+    const n = await serializeNode({ id: '1', name: 'Box', type: 'FRAME', opacity: 0.5 } as never, resolver);
+    expect(n.opacity).toBe(0.5);
+  });
+
+  it('omits opacity when fully opaque', async () => {
+    const n = await serializeNode({ id: '1', name: 'Box', type: 'FRAME', opacity: 1 } as never, resolver);
+    expect(n.opacity).toBeUndefined();
+  });
+});
+
 describe('mainComponentRef', () => {
   it('prefers the parent component set name/key for a variant main component', () => {
     const ref = mainComponentRef({
