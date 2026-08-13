@@ -1,5 +1,6 @@
 import type { SerializedNode } from './tree';
 import { detectStateMatrix } from './statesMatrix';
+import { cleanPropName } from './naming';
 
 export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap';
 
@@ -22,12 +23,9 @@ const KIND_MAP: Record<string, PropKind> = {
   INSTANCE_SWAP: 'instanceSwap',
 };
 
-/** Figma encodes non-variant prop names as "Name#nodeId:n" — strip the suffix. */
-const cleanName = (raw: string) => raw.split('#')[0];
-
 export function extractProps(root: SerializedNode): ComponentProp[] {
   return Object.entries(root.propertyDefinitions ?? {}).map(([raw, def]) => ({
-    name: cleanName(raw),
+    name: cleanPropName(raw),
     kind: KIND_MAP[def.type],
     ...(def.variantOptions !== undefined ? { options: def.variantOptions } : {}),
     default: def.defaultValue,

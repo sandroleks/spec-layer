@@ -16,6 +16,16 @@ export function parseVariantName(name: string): Record<string, string> | null {
 export const cleanPartName = (name: string) => name.replace(/#+\s*$/, '').trim();
 
 /**
+ * Component PROPERTY names carry a "#nodeId:n" suffix ("Label#123:4"); take the
+ * part before the first hash.
+ *
+ * Deliberately different from cleanPartName, which strips only a TRAILING hash
+ * from LAYER names. They handle different Figma artifacts and merging them
+ * would mangle a layer legitimately called "icon#2".
+ */
+export const cleanPropName = (raw: string) => raw.split('#')[0];
+
+/**
  * Assign each child a part name unique among its SIBLINGS: the first keeps the
  * clean name, later same-named siblings get " (2)", " (3)". Numbering runs over
  * ALL children including hidden ones, so a part keeps the same name in a variant

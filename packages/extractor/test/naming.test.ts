@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseVariantName, cleanPartName } from '../src/naming';
+import { parseVariantName, cleanPartName, cleanPropName } from '../src/naming';
 
 describe('parseVariantName', () => {
   it('parses a well-formed combo', () => {
@@ -19,6 +19,19 @@ describe('cleanPartName', () => {
     expect(cleanPartName('icon ##  ')).toBe('icon');
   });
   it('leaves an interior hash alone', () => {
+    expect(cleanPartName('icon#2')).toBe('icon#2');
+  });
+});
+
+describe('cleanPropName', () => {
+  it('drops the #nodeId:n suffix Figma appends to property names', () => {
+    expect(cleanPropName('Label#123:4')).toBe('Label');
+  });
+  it('leaves a plain variant prop alone', () => {
+    expect(cleanPropName('Size')).toBe('Size');
+  });
+  it('differs from cleanPartName, which only strips a TRAILING hash', () => {
+    expect(cleanPropName('icon#2')).toBe('icon');
     expect(cleanPartName('icon#2')).toBe('icon#2');
   });
 });
