@@ -2300,7 +2300,9 @@ In `checkContrast` in `packages/extractor/src/contrast.ts`, replace the `require
       const required = requiredRatio(textPart.text?.fontSize, textPart.text?.fontWeight);
 ```
 
-- [ ] **Step 5: Exclude contrast from the hash**
+- [x] **Step 5: Exclude contrast from the hash** — MOVED INTO TASK 14 (amended 2026-08-13)
+
+This step was originally scheduled here, on the assumption that Task 14 returning `contrast: []` would leave `specContentHash` stable. That assumption was wrong: `specContentHash` destructures out only `rawValues` and spreads `...rest`, so ANY new key on `IntermediateSpec` changes the canonical JSON and moves the hash regardless of its value. Leaving the exclusion until Task 15 would have left the branch red for a whole task, breaking the per-task green-gate invariant. Task 14 now lands the field and the exclusion together. The step text below is retained for the record; it is already done by the time this task runs.
 
 In `packages/extractor/src/hash.ts`, extend the destructure and update the comment:
 
