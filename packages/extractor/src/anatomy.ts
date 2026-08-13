@@ -1,4 +1,5 @@
 import type { SerializedNode } from './tree';
+import { parseVariantName } from './naming';
 
 export interface AnatomyPart {
   id: string; name: string; type: string; nested: boolean;
@@ -11,9 +12,31 @@ export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; compon
 
 const MAX_DEPTH = 3;
 
-/** Default variant = first child of a COMPONENT_SET; a bare COMPONENT is its own default. */
+/**
+ * The variant Figma treats as the default: the one whose combo matches every
+ * VARIANT property's declared `defaultValue`. Child order is NOT the default
+ * (a designer can reorder variants freely), so falling back to children[0]
+ * would silently document a different variant than the one Figma shows.
+ * Falls back to the first COMPONENT child when nothing is declared or the
+ * declared combo matches no existing variant.
+ */
 export function defaultVariant(root: SerializedNode): SerializedNode {
-  return root.type === 'COMPONENT_SET' && root.children?.length ? root.children[0] : root;
+  if (root.type !== 'COMPONENT_SET' || !root.children?.length) return root;
+  const variants = root.children.filter((c) => c.type === 'COMPONENT');
+  if (!variants.length) return root.children[0];
+
+  const declared = Object.entries(root.propertyDefinitions ?? {})
+    .filter(([, d]) => d.type === 'VARIANT' && typeof d.defaultValue === 'string')
+    .map(([axis, d]) => [axis, d.defaultValue as string] as const);
+
+  if (declared.length) {
+    const match = variants.find((v) => {
+      const combo = parseVariantName(v.name);
+      return combo != null && declared.every(([axis, value]) => combo[axis] === value);
+    });
+    if (match) return match;
+  }
+  return variants[0];
 }
 
 /**

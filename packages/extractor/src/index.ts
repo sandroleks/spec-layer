@@ -1,6 +1,7 @@
 export * from './tree';
 export * from './anatomy';
 export * from './props';
+export * from './naming';
 export * from './tokens';
 export * from './layout';
 export * from './rawValues';

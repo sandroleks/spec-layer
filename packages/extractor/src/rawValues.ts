@@ -1,6 +1,6 @@
 import type { SerializedNode } from './tree';
 import { defaultVariant } from './anatomy';
-import { cleanPartName } from './tokens';
+import { cleanPartName } from './naming';
 
 export interface RawValue { part: string; property: string; value: string }
 

@@ -124,3 +124,42 @@ describe('extractAnatomy — empty-wrapper guard (I-1)', () => {
     expect(extractAnatomy(emptyWrapperNode).parts.map((p) => p.name)).toEqual(['EmptyWrapper']);
   });
 });
+
+describe('defaultVariant', () => {
+  const variant = (id: string, name: string, partName: string): SerializedNode => ({
+    id, name, type: 'COMPONENT', visible: true,
+    children: [{ id: `${id}-c`, name: partName, type: 'FRAME', visible: true }],
+  });
+
+  it('picks the variant Figma declares as default, not the first child', () => {
+    const set: SerializedNode = {
+      id: 'r', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: {
+        Style: { type: 'VARIANT', variantOptions: ['Filled', 'Ghost'], defaultValue: 'Ghost' },
+      },
+      children: [variant('v0', 'Style=Filled', 'FilledPart'), variant('v1', 'Style=Ghost', 'GhostPart')],
+    };
+    expect(defaultVariant(set).name).toBe('Style=Ghost');
+    expect(extractAnatomy(set).parts.map((p) => p.name)).toEqual(['GhostPart']);
+  });
+
+  it('falls back to the first COMPONENT child when no default is declared', () => {
+    const set: SerializedNode = {
+      id: 'r', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: { Style: { type: 'VARIANT', variantOptions: ['Filled', 'Ghost'] } },
+      children: [variant('v0', 'Style=Filled', 'FilledPart'), variant('v1', 'Style=Ghost', 'GhostPart')],
+    };
+    expect(defaultVariant(set).name).toBe('Style=Filled');
+  });
+
+  it('falls back to the first child when the declared default matches nothing', () => {
+    const set: SerializedNode = {
+      id: 'r', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: {
+        Style: { type: 'VARIANT', variantOptions: ['Filled'], defaultValue: 'Vanished' },
+      },
+      children: [variant('v0', 'Style=Filled', 'FilledPart')],
+    };
+    expect(defaultVariant(set).name).toBe('Style=Filled');
+  });
+});

@@ -1,5 +1,6 @@
 import type { SerializedNode, TokenRef } from './tree';
 import { defaultVariant } from './anatomy';
+import { parseVariantName, cleanPartName } from './naming';
 
 /**
  * A minimized token rule: `token` applies to `part.property` whenever every
@@ -30,20 +31,6 @@ function walk(
   visit(node);
   node.children?.forEach((c) => walk(c, visit, skipInvisible));
 }
-
-/** Parse "Style=Filled, State=Enabled" into { Style: 'Filled', State: 'Enabled' }; null if any segment is not Axis=Value. */
-export function parseVariantName(name: string): Record<string, string> | null {
-  const out: Record<string, string> = {};
-  for (const segment of name.split(',')) {
-    const [axis, ...rest] = segment.split('=');
-    if (!rest.length) return null;
-    out[axis.trim()] = rest.join('=').trim();
-  }
-  return out;
-}
-
-/** Layer names carry Figma prop-binding artifacts like "icon-primary#" — strip them. */
-export const cleanPartName = (name: string) => name.replace(/#+\s*$/, '').trim();
 
 /** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {
