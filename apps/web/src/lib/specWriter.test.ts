@@ -3,9 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { IntermediateSpec } from "@spec-layer/extractor";
+import { SPEC_VERSION } from "@spec-layer/format";
 import {
   getInboxDir,
   readStoredSpec,
+  readStoredSpecEnvelope,
   slugify,
   writeInboxMarkdown,
   writeInboxSpec,
@@ -86,11 +88,21 @@ describe("writeInboxSpec", () => {
     expect(fs.existsSync(inboxFile("button-2"))).toBe(false);
   });
 
-  it("persists a .spec-data sidecar when a spec is provided", () => {
+  it("persists a .spec-data sidecar stamped with the format version that wrote it", () => {
     const result = writeInboxSpec("Button", "# Button\n", { spec: fakeSpec });
     const sidecar = path.join(contentDir, ".spec-data", "_inbox", `${result.slug}.json`);
     expect(fs.existsSync(sidecar)).toBe(true);
-    expect(JSON.parse(fs.readFileSync(sidecar, "utf-8"))).toEqual(fakeSpec);
+    // The version sits in an envelope AROUND the spec: an extra key inside it
+    // would move specContentHash and the prose cache key.
+    expect(JSON.parse(fs.readFileSync(sidecar, "utf-8")))
+      .toEqual({ spec_version: SPEC_VERSION, spec: fakeSpec });
+  });
+
+  it("records an importer-supplied version instead of this build's", () => {
+    // A zip can carry docs an older plugin exported; the sidecar has to say so.
+    const result = writeInboxSpec("Button", "# Button\n", { spec: fakeSpec, specVersion: "0.1" });
+    const sidecar = path.join(contentDir, ".spec-data", "_inbox", `${result.slug}.json`);
+    expect(JSON.parse(fs.readFileSync(sidecar, "utf-8")).spec_version).toBe("0.1");
   });
 
   it("writes no sidecar when no spec is provided", () => {
@@ -117,6 +129,22 @@ describe("readStoredSpec", () => {
   it("round-trips a persisted spec", () => {
     const { slug } = writeInboxSpec("Button", "# Button\n", { spec: fakeSpec });
     expect(readStoredSpec(["_inbox", slug])).toEqual(fakeSpec);
+  });
+
+  it("reports the version a sidecar was written with", () => {
+    const { slug } = writeInboxSpec("Button", "# Button\n", { spec: fakeSpec });
+    expect(readStoredSpecEnvelope(["_inbox", slug]))
+      .toEqual({ spec: fakeSpec, specVersion: SPEC_VERSION });
+  });
+
+  it("reads a legacy bare-spec sidecar and reports no version for it", () => {
+    // Every sidecar written before the envelope existed looks like this. It
+    // still renders, but callers that would re-stamp it can now tell.
+    const dir = path.join(contentDir, ".spec-data", "_inbox");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "legacy.json"), JSON.stringify(fakeSpec), "utf-8");
+    expect(readStoredSpec(["_inbox", "legacy"])).toEqual(fakeSpec);
+    expect(readStoredSpecEnvelope(["_inbox", "legacy"])?.specVersion).toBeNull();
   });
 
   it("returns null when no sidecar exists", () => {

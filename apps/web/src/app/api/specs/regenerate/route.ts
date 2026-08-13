@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { draftProse, renderSpec } from "@spec-layer/extractor";
 import { getContentDir } from "@/lib/config";
 import { createSpecCache } from "@/lib/specCache";
-import { readStoredSpec } from "@/lib/specWriter";
+import { readStoredSpecEnvelope } from "@/lib/specWriter";
+import { SPEC_VERSION } from "@spec-layer/format";
 import { authorizeApiRequest, corsHeaders, isSafeSlug } from "@/lib/specApi";
 import { getAnthropicKey } from "@/lib/settings";
 
@@ -39,10 +40,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Spec file not found" }, { status: 400, headers });
   }
 
-  const storedSpec = readStoredSpec(body.slug);
-  if (!storedSpec) {
+  const stored = readStoredSpecEnvelope(body.slug);
+  if (!stored) {
     return NextResponse.json(
       { error: "no stored extraction for this spec; re-import from the plugin" },
+      { status: 409, headers },
+    );
+  }
+  const storedSpec = stored.spec;
+
+  // renderSpec hard-writes the CURRENT SPEC_VERSION and a fresh content hash, so
+  // re-rendering an older extraction stamps 0.1-era output as if this extractor
+  // had produced it: merged same-named sibling parts, the old State-only state
+  // detection, and token rules from the minimizer that fabricated bindings. The
+  // document then looks current and nothing will ever prompt a rebuild for it,
+  // which is precisely what the version field exists to prevent.
+  //
+  // The token-shape guard below cannot catch this: `conditions` predates the 0.2
+  // extractor, so every pre-0.2 sidecar sails straight through it.
+  if (stored.specVersion !== SPEC_VERSION) {
+    return NextResponse.json(
+      {
+        error:
+          `stored extraction was produced by spec version ${stored.specVersion ?? "0.1"}, ` +
+          `not ${SPEC_VERSION}; re-import from the plugin`,
+      },
       { status: 409, headers },
     );
   }

@@ -3,6 +3,7 @@ import { authorizeApiRequest, corsHeaders } from "@/lib/specApi";
 import { writeInboxMarkdown, writeInboxSpec } from "@/lib/specWriter";
 import { selectSpecArchiveEntries, unzipWithLimits } from "@/lib/zipImport";
 import { assertContentLength, PayloadTooLargeError } from "@/lib/requestLimits";
+import { parseMarkdown } from "@spec-layer/format";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,29 @@ const MAX_ZIP_BYTES = 10 * 1024 * 1024;
 
 export function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(req) });
+}
+
+/**
+ * The format version the imported markdown says produced it.
+ *
+ * A zip can carry documents exported by an older plugin, and the sidecar has to
+ * record the version that actually produced the extraction rather than the
+ * version of the app doing the import. Stamping our own would make a 0.1
+ * extraction look current, and the regenerate route would then happily re-render
+ * it under a 0.2 stamp. Falls back to undefined (meaning "assume this build's
+ * version") when the frontmatter cannot be read at all.
+ */
+function declaredSpecVersion(markdown: string): string | undefined {
+  try {
+    // parseMarkdown, not parseFrontmatter: this is the same lenient read the
+    // importer already used to accept the file, and a document that declares
+    // its version while failing some other frontmatter rule is still telling
+    // the truth about which extractor wrote it.
+    const declared = parseMarkdown(markdown).data.spec_version;
+    return typeof declared === "string" ? declared : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -134,7 +158,7 @@ export async function POST(req: NextRequest) {
   for (const { name, markdown, spec } of files) {
     try {
       const written = spec
-        ? writeInboxSpec(name, markdown, { spec })
+        ? writeInboxSpec(name, markdown, { spec, specVersion: declaredSpecVersion(markdown) })
         : writeInboxMarkdown(name, markdown);
       slugs.push(written.slug);
       imported++;
