@@ -72,6 +72,7 @@ function validSpec(name = "Button"): IntermediateSpec {
     gaps: [],
     layout: [],
     rawValues: [],
+    contrast: [],
   };
 }
 

@@ -4,6 +4,7 @@ import { extractProps, extractVariants, extractStates, type ComponentProp, type 
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
+import type { ContrastFinding } from './contrast';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -37,6 +38,10 @@ export interface IntermediateSpec {
   gaps: Gap[];
   layout: LayoutSummary[];
   rawValues: RawValue[];
+  /** WCAG AA findings. Excluded from specContentHash and never rendered into
+   *  Markdown, matching rawValues: the drift path calls extract() with no
+   *  foundation, so a hashed value here would read as permanent drift. */
+  contrast: ContrastFinding[];
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -69,5 +74,10 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
     gaps: extractGaps(root),
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
+    // Populated by the caller once a FoundationSpec is available (Task 15).
+    // checkContrast needs the file's resolved colour variables, which extract()
+    // itself has no access to, so the field starts empty here rather than
+    // this function reaching out for a foundation it was never given.
+    contrast: [],
   };
 }

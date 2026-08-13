@@ -48,7 +48,7 @@ describe('renderSpec', () => {
     const spec: IntermediateSpec = {
       name: 'Chip', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
       anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
-      tokens: [], related: ['Padding=Square, Scale=1x'], gaps: [], layout: [], rawValues: [],
+      tokens: [], related: ['Padding=Square, Scale=1x'], gaps: [], layout: [], rawValues: [], contrast: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
     expect(md).toContain('- [Padding=Square, Scale=1x](./padding-square-scale-1x.md)');
@@ -59,7 +59,7 @@ describe('renderSpec', () => {
     const spec: IntermediateSpec = {
       name: 'Test', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
       anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
-      tokens: [], related: ['=Edge,'], gaps: [], layout: [], rawValues: [],
+      tokens: [], related: ['=Edge,'], gaps: [], layout: [], rawValues: [], contrast: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
     expect(md).toContain('- [=Edge,](./edge.md)');
@@ -69,7 +69,7 @@ describe('renderSpec', () => {
     const spec: IntermediateSpec = {
       name: 'Empty', figmaKey: 'k', figmaFile: 'F', figmaNode: 'n',
       anatomy: [], anatomyComponentId: '', props: [], variants: [], variantInstances: [], states: ['Default'],
-      tokens: [], related: [], gaps: [], layout: [], rawValues: [],
+      tokens: [], related: [], gaps: [], layout: [], rawValues: [], contrast: [],
     };
     const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
     expect(md).toContain('## Tokens used\n\n_None._');

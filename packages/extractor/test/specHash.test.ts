@@ -27,4 +27,16 @@ describe('specContentHash', () => {
     // It is a 64-char hex SHA-256.
     expect(h1).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('ignores contrast findings, which depend on the foundation not the component', () => {
+    const spec = extract(NODE, { figmaFile: 'FILEKEY' });
+    const withFindings = {
+      ...spec,
+      contrast: [{
+        part: 'Label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
+        backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
+      }],
+    };
+    expect(specContentHash(withFindings as typeof spec)).toBe(specContentHash(spec));
+  });
 });
