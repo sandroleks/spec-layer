@@ -1,4 +1,5 @@
 import type { SerializedNode } from './tree';
+import { detectStateMatrix } from './statesMatrix';
 
 export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap';
 
@@ -39,8 +40,16 @@ export function extractVariants(root: SerializedNode): VariantAxis[] {
     .map((p) => ({ prop: p.name, values: p.options ?? [] }));
 }
 
+/**
+ * The component's states, using the SAME detection the States matrix uses.
+ * An earlier version matched only a prop literally named "state", so a
+ * `Status=[Enabled,Hover,Disabled]` component reported ["Default"] in the spec
+ * while the matrix rendered three columns for the same component.
+ * Flag-encoded states ("Default" plus one column per boolean) come back in
+ * column order; "Default" is the synthesized base column.
+ */
 export function extractStates(root: SerializedNode): string[] {
-  const normalized = (s: string) => s.trim().toLowerCase();
-  const axis = extractVariants(root).find((v) => normalized(v.prop) === 'state' || normalized(v.prop) === 'states');
-  return axis?.values.length ? axis.values : ['Default'];
+  const info = detectStateMatrix(extractVariants(root));
+  if (!info) return ['Default'];
+  return info.columns.map((c) => c.label);
 }

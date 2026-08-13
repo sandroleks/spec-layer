@@ -5,7 +5,7 @@ component:
   figma_key: m3-button
   figma_file: FILE1
   figma_node: 1:100
-content_hash: d445791b4151e4bfa53b61e535851d2aa5a8a4fbf0276251a2049ee9798194e7
+content_hash: f6bbb91081019d9541273af04a5f4714d678655060319099d4858abe224604e4
 extracted_at: 2026-06-10T00:00:00.000Z
 ---
 
@@ -33,8 +33,8 @@ _To be written._
 ## States
 
 - Enabled
-- Hovered
 - Disabled
+- Hovered
 
 ## Tokens used
 

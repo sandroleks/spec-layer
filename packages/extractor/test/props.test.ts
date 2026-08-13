@@ -22,7 +22,11 @@ describe('props/variants/states', () => {
   });
 
   it('derives states from a variant axis named State (case-insensitive)', () => {
-    expect(extractStates(root)).toEqual(['Enabled', 'Hovered', 'Disabled']);
+    // Order now comes from detectStateMatrix's conventional lifecycle ranking
+    // (STATE_ORDER in statesMatrix.ts), not axis declaration order. "Hovered"
+    // isn't in that vocabulary (only "hover" is), so it trails "Disabled",
+    // which is.
+    expect(extractStates(root)).toEqual(['Enabled', 'Disabled', 'Hovered']);
   });
 
   it('falls back to ["Default"] when no state axis exists', () => {
@@ -32,5 +36,31 @@ describe('props/variants/states', () => {
 
   it('recognises plural axis name "States" (bug 1)', () => {
     expect(extractStates(chip as SerializedNode)).toEqual(['Default', 'Hover', 'Focus', 'Press']);
+  });
+});
+
+describe('extractStates agrees with the states matrix', () => {
+  const setWith = (prop: string, values: string[]): SerializedNode => ({
+    id: 'r', name: 'Chip', type: 'COMPONENT_SET', visible: true, key: 'k',
+    propertyDefinitions: { [prop]: { type: 'VARIANT', variantOptions: values } },
+    children: [{ id: 'v0', name: `${prop}=${values[0]}`, type: 'COMPONENT', visible: true }],
+  });
+
+  it('recognizes a Status axis', () => {
+    expect(extractStates(setWith('Status', ['Enabled', 'Hover', 'Disabled'])))
+      .toEqual(['Enabled', 'Hover', 'Disabled']);
+  });
+
+  it('recognizes a differently-named axis whose values are state words', () => {
+    expect(extractStates(setWith('Interaction', ['Rest', 'Hover', 'Pressed'])))
+      .toEqual(['Rest', 'Hover', 'Pressed']);
+  });
+
+  it('still handles a plain State axis', () => {
+    expect(extractStates(setWith('State', ['Default', 'Hover']))).toEqual(['Default', 'Hover']);
+  });
+
+  it('falls back to Default when no axis is state-like', () => {
+    expect(extractStates(setWith('Size', ['S', 'M']))).toEqual(['Default']);
   });
 });

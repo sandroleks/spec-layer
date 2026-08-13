@@ -29,7 +29,10 @@ describe('extract', () => {
     expect(spec.name).toBe(root.name);
     expect(spec.anatomy.length).toBeGreaterThan(0);
     expect(spec.props.length).toBe(4);
-    expect(spec.states).toEqual(['Enabled', 'Hovered', 'Disabled']);
+    // Order comes from detectStateMatrix's lifecycle ranking, not axis
+    // declaration order: "Hovered" isn't in the STATE_ORDER vocabulary (only
+    // "hover" is), so it trails "Disabled", which is.
+    expect(spec.states).toEqual(['Enabled', 'Disabled', 'Hovered']);
     expect(spec.tokens.length).toBeGreaterThan(0);
     expect(spec.gaps.length).toBe(4);
     expect(spec.layout).toEqual([

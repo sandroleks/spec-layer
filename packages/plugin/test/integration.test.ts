@@ -44,7 +44,10 @@ describe('full pipeline: serialize → extract → render → parse', () => {
 
     const spec = extract(node, { figmaFile: 'FILEKEY' });
     expect(spec.props.length).toBe(2);
-    expect(spec.states).toEqual(['Enabled', 'Hovered', 'Disabled']);
+    // Order comes from detectStateMatrix's lifecycle ranking, not axis
+    // declaration order: "Hovered" isn't in the STATE_ORDER vocabulary (only
+    // "hover" is), so it trails "Disabled", which is.
+    expect(spec.states).toEqual(['Enabled', 'Disabled', 'Hovered']);
     expect(spec.related).toEqual(['Icon']);
     expect(spec.variantInstances).toEqual([
       {
