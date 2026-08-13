@@ -34,7 +34,7 @@ The package barrel in `src/index.ts` exports:
 
 `parseFrontmatter` requires:
 
-- `spec_version` equal to `"0.1"`;
+- `spec_version` in the readable set (`"0.1"` or the current `"0.2"`; `SPEC_VERSION` is what writers emit);
 - an optional `status` from `draft`, `approved`, or `deprecated`;
 - component name, Figma component key, file key, and node ID;
 - a content hash.

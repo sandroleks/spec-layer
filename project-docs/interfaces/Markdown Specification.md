@@ -13,7 +13,7 @@ source: spec/SPEC.md
 
 # Markdown specification
 
-The normative contract is `spec/SPEC.md`, titled **Spec Layer Format v0.1**. This note is an architectural summary; update the normative file first when changing the format.
+The normative contract is `spec/SPEC.md`, titled **Spec Layer Format v0.2**. Writers emit `spec_version: "0.2"`; `"0.1"` files stay readable. This note is an architectural summary; update the normative file first when changing the format.
 
 ## File shape
 
@@ -30,7 +30,7 @@ Recommended filename: `<ComponentName>.md`.
 Required:
 
 ```yaml
-spec_version: "0.1"
+spec_version: "0.2"
 component:
   name: Button
   figma_key: stable-component-key
@@ -82,7 +82,7 @@ Color tables can pivot by state and a dominant variant axis, split boolean modif
 
 ## Related formats in the plugin
 
-The active plugin's configurable canvas/download model contains more section types than the strict v0.1 document:
+The active plugin's configurable canvas/download model contains more section types than the strict document format:
 
 - overview and variants summary;
 - measurements;

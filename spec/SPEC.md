@@ -1,4 +1,4 @@
-# Spec Layer Format v0.1
+# Spec Layer Format v0.2
 
 > **A portable contract between design and code.**
 
@@ -27,7 +27,7 @@ The YAML frontmatter encodes component identity and spec lifecycle. Every field 
 
 | Field | Type | Required | Purpose |
 |---|---|---|---|
-| `spec_version` | string literal `"0.1"` | Yes | Format version (semver; v0.x may introduce breaking changes between minor versions). |
+| `spec_version` | string literal `"0.2"` (`"0.1"` still readable) | Yes | Format version (semver; v0.x may introduce breaking changes between minor versions). Writers emit `"0.2"`; readers MUST also accept `"0.1"` files, which stay valid and readable. |
 | `status` | enum: `draft` \| `approved` \| `deprecated` | No | Optional lifecycle label. Omit it entirely if you don't track lifecycle state; when present it renders as a badge. There is no enforced approval workflow. |
 | `component.name` | string | Yes | Human-readable component name (e.g. `Button`). |
 | `component.figma_key` | string | Yes | Stable Figma component key (survives renames and file moves). |
@@ -41,7 +41,7 @@ The YAML frontmatter encodes component identity and spec lifecycle. Every field 
 
 ```yaml
 ---
-spec_version: "0.1"
+spec_version: "0.2"
 component:
   name: Button
   figma_key: abc123def456abc123def456abc123de
@@ -403,6 +403,8 @@ When an extractor cannot resolve some data — for example, a paint is a hardcod
 
 `spec_version` follows [Semantic Versioning](https://semver.org). During the v0.x series, minor-version increments may introduce breaking changes to the format (section shapes, frontmatter fields, canonical headings). A breaking change will increment the minor version (e.g. `0.1` → `0.2`). The format will stabilise at v1.0 once the extractor, renderer, and parser implementations are mature.
 
+The current version is `0.2`. It was cut when a round of extractor correctness fixes (same-named sibling parts disambiguated, state detection unified, token-rule minimization corrected) changed `content_hash` for reasons unrelated to any design change, so tools can tell "this doc predates those fixes, rebuild it" from "this component drifted". `0.1` files remain valid and readable; a `0.1` document is not an error, it is an older extraction.
+
 Tools MUST reject spec files whose `spec_version` major version they do not recognise, and SHOULD warn when processing a minor version newer than they were built against.
 
 ---
@@ -412,7 +414,7 @@ Tools MUST reject spec files whose `spec_version` major version they do not reco
 A conformant Spec Layer file:
 
 - Has valid YAML frontmatter with all required fields present and correctly typed.
-- Uses `spec_version: "0.1"`.
+- Uses `spec_version: "0.2"` when freshly written. `"0.1"` files stay conformant and readable; only writers are required to emit the current version.
 - If `status` is present, it is one of `draft`, `approved`, or `deprecated`; `status` may be omitted entirely.
 - Contains exactly the 10 canonical sections in the order defined in §4, with verbatim headings.
 - Uses `content_hash: "0000...0000"` (64 zeros) only when the spec was hand-authored without an extractor run.
