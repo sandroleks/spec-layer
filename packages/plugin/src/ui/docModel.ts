@@ -7,7 +7,7 @@ import {
 export type SectionId =
   | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
   | 'states' | 'tokens' | 'interactions'
-  | 'contentConsiderations' | 'accessibility' | 'dosDonts' | 'related';
+  | 'contentConsiderations' | 'accessibility' | 'contrast' | 'dosDonts' | 'related';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
 
@@ -22,6 +22,7 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'interactions',          label: 'Interactions',           ai: true,  group: 'a11y'  },
   { id: 'contentConsiderations', label: 'Content Considerations', ai: true,  group: 'a11y'  },
   { id: 'accessibility', label: 'Semantics & Focus', ai: true, group: 'a11y' },
+  { id: 'contrast',      label: 'Contrast',      ai: false, group: 'a11y' },
   { id: 'dosDonts',      label: "Do's & Don'ts", ai: true,  group: 'usage' },
   { id: 'related',       label: 'Related components', ai: false, group: 'usage' },
 ];
@@ -292,6 +293,20 @@ function buildSection(
 
     case 'contentConsiderations': {
       return { id, heading: label, kind: 'prose', text: prose?.contentConsiderations ?? AI_PLACEHOLDER };
+    }
+
+    case 'contrast': {
+      if (!spec.contrast.length) {
+        // An empty table is ambiguous: it reads as "not checked". Say it passed.
+        return { id, heading: label, kind: 'bullets', items: [makeBullet('All text pairs meet WCAG AA.')] };
+      }
+      return {
+        id, heading: label, kind: 'table',
+        columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
+        rows: spec.contrast.map((c) => [
+          c.part, c.backgroundPart, c.foreground, c.background, `${c.ratio}:1`, `${c.required}:1`,
+        ]),
+      };
     }
 
     case 'dosDonts': {

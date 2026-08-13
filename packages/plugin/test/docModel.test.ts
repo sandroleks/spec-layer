@@ -66,9 +66,9 @@ describe('buildDocModel', () => {
     if (inter?.kind === 'prose') expect(inter.text).toContain('### Mouse');
   });
 
-  it('orders the a11y group Interactions -> Content -> Accessibility (no Design Considerations)', () => {
+  it('orders the a11y group Interactions -> Content -> Accessibility -> Contrast (no Design Considerations)', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
-    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
+    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility', 'contrast']);
   });
 
   it('maps checked sections to prose keys', () => {
@@ -658,6 +658,42 @@ describe('groupSections', () => {
   it('labels the accessibility section "Semantics & Focus" so it does not duplicate the group heading', () => {
     const section = ALL_SECTIONS.find((s) => s.id === 'accessibility');
     expect(section?.label).toBe('Semantics & Focus');
+  });
+});
+
+describe('contrast section', () => {
+  const finding = {
+    part: 'label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
+    backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
+  };
+
+  it('renders one row per finding', () => {
+    const specWithFinding = { ...spec, contrast: [finding] } as unknown as IntermediateSpec;
+    const model = buildDocModel(specWithFinding, null, new Set(['contrast']));
+    const block = model.sections.find((s) => s.id === 'contrast');
+    expect(block).toMatchObject({ heading: 'Contrast', kind: 'table' });
+    expect(block).toMatchObject({
+      columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
+      rows: [['label', 'Container', '#bbbbbb', '#ffffff', '1.9:1', '4.5:1']],
+    });
+  });
+
+  it('states that everything passed when there are no findings', () => {
+    const specNoFindings = { ...spec, contrast: [] } as unknown as IntermediateSpec;
+    const model = buildDocModel(specNoFindings, null, new Set(['contrast']));
+    const block = model.sections.find((s) => s.id === 'contrast');
+    // A silent empty table reads as "not checked" rather than "checked and clean".
+    expect(block).toMatchObject({ kind: 'bullets' });
+    if (block?.kind === 'bullets') {
+      expect(block.items.map((i) => i.text)).toEqual(['All text pairs meet WCAG AA.']);
+    }
+  });
+
+  it('is a non-AI section in the a11y group, so it costs no prose keys', () => {
+    expect(ALL_SECTIONS.find((s) => s.id === 'contrast')).toEqual({
+      id: 'contrast', label: 'Contrast', ai: false, group: 'a11y',
+    });
+    expect([...proseKeysForSections(new Set(['contrast']))]).toEqual([]);
   });
 });
 
