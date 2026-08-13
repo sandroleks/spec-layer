@@ -48,6 +48,10 @@ describe('resolveLibraryRowStatus', () => {
     expect(resolveLibraryRowStatus(entry({ selfEdited: true }), 'unavailable'))
       .toBe('edited');
   });
+
+  it('maps a stale-version drift to a rebuild rather than a hash-based update', () => {
+    expect(resolveLibraryRowStatus(entry(), 'staleVersion')).toBe('rebuildNeeded');
+  });
 });
 
 describe('libraryDriftForEntry', () => {

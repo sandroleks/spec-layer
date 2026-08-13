@@ -1,7 +1,7 @@
 import type { IntermediateSpec } from './extract';
 import { specContentHash } from './hash';
 import type { TokenRule } from './tokens';
-import { serializeFrontmatter, type SpecFrontmatter } from '@spec-layer/format';
+import { serializeFrontmatter, SPEC_VERSION, type SpecFrontmatter } from '@spec-layer/format';
 import type { ProseDrafts } from './prose/prompt';
 import {
   categorize, pivotColorPart, flatPartTable, flatGlobalTable, fixedTable,
@@ -130,7 +130,7 @@ export function renderSpec(
   // {id,name,type,nested} shape so canvas-only additions (rawValues, deeper
   // anatomy) never flip content_hash for existing committed specs.
   const fm: SpecFrontmatter = {
-    spec_version: '0.1',
+    spec_version: SPEC_VERSION,
     // Status is optional: omitted unless the caller explicitly supplies one.
     ...(opts.status ? { status: opts.status } : {}),
     component: { name: spec.name, figma_key: spec.figmaKey, figma_file: spec.figmaFile, figma_node: spec.figmaNode },

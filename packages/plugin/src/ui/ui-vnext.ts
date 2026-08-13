@@ -10,6 +10,7 @@
  */
 
 import { extract, ProseProxyError, specContentHash } from '@spec-layer/extractor';
+import { SPEC_VERSION } from '@spec-layer/format';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -147,6 +148,10 @@ let licenseInput = '';
 let libraryEntries: LibraryEntry[] = [];
 const libraryDrift = new Map<string, LibraryDriftState>();
 const libraryBaseline = new Map<string, string>();
+// docId → the specVersion stamped on its doc link (undefined on pre-0.2
+// blobs). Checked before comparing hashes, since a hash comparison against a
+// doc built by an older extractor is meaningless.
+const librarySpecVersion = new Map<string, string | undefined>();
 let libraryFilter: LibraryFilter = 'all';
 let libraryExpandedDocId: string | null = null;
 let libraryMenuDocId: string | null = null;
@@ -647,6 +652,7 @@ function refreshLibrary(): void {
 function startLibraryDriftChecks(): void {
   libraryDrift.clear();
   libraryBaseline.clear();
+  librarySpecVersion.clear();
   for (const entry of libraryEntries) {
     if (!entry.sourceExists) continue;
     if (entry.kind === 'foundation') {
@@ -662,6 +668,7 @@ function startLibraryDriftChecks(): void {
     }
     libraryDrift.set(entry.docId, 'pending');
     libraryBaseline.set(entry.docId, entry.storedContentHash);
+    librarySpecVersion.set(entry.docId, entry.specVersion);
     send({
       type: 'requestDrift',
       docId: entry.docId,
@@ -2054,14 +2061,20 @@ window.onmessage = (event: MessageEvent): void => {
     case 'driftSource': {
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
-      try {
-        const spec = extract(msg.node, { figmaFile: msg.fileKey });
-        libraryDrift.set(
-          msg.docId,
-          specContentHash(spec) === baseline ? 'inSync' : 'drifted',
-        );
-      } catch {
-        libraryDrift.set(msg.docId, 'unavailable');
+      // A pre-0.2 doc was produced by an extractor whose hash projection differs,
+      // so comparing hashes would report drift for the wrong reason.
+      if (librarySpecVersion.get(msg.docId) !== SPEC_VERSION) {
+        libraryDrift.set(msg.docId, 'staleVersion');
+      } else {
+        try {
+          const spec = extract(msg.node, { figmaFile: msg.fileKey });
+          libraryDrift.set(
+            msg.docId,
+            specContentHash(spec) === baseline ? 'inSync' : 'drifted',
+          );
+        } catch {
+          libraryDrift.set(msg.docId, 'unavailable');
+        }
       }
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
@@ -2153,6 +2166,7 @@ window.onmessage = (event: MessageEvent): void => {
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
+      librarySpecVersion.delete(msg.docId);
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
       syncLibraryBadge();

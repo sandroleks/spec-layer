@@ -1,5 +1,5 @@
 ---
-spec_version: "0.1"
+spec_version: "0.2"
 component:
   name: Button
   figma_key: m3-button

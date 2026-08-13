@@ -698,6 +698,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           sourceExists,
           selfEdited,
           storedContentHash: data.contentHash,
+          specVersion: data.specVersion,
         });
       }
       // Self-heal: keep only ids that resolved to a real, still-linked doc.

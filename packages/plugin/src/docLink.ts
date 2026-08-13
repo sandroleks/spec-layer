@@ -35,6 +35,9 @@ export interface ComponentDocLink {
   config: DocConfig;
   generatedAt: number;
   pluginVersion: string;
+  /** Extractor format that produced this doc. Absent on every blob written
+   *  before 0.2; treated as stale so the doc is rebuilt once. */
+  specVersion?: string;
 }
 
 export interface FoundationConfig {

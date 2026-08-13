@@ -10,12 +10,14 @@ export type LibraryDriftState =
   | 'pending'
   | 'inSync'
   | 'drifted'
+  | 'staleVersion'
   | 'unavailable';
 
 export type LibraryRowStatus =
   | 'pending'
   | 'inSync'
   | 'updateAvailable'
+  | 'rebuildNeeded'
   | 'edited'
   | 'orphaned'
   | 'unavailable';
@@ -114,6 +116,10 @@ export function resolveLibraryRowStatus(
   if (!entry.sourceExists) return 'orphaned';
   if (drift === 'pending') return 'pending';
   if (drift === 'unavailable') return entry.selfEdited ? 'edited' : 'unavailable';
+  // A pre-0.2 doc's hash was produced by a different projection, so its drift
+  // is meaningless as content drift: read it as "rebuild needed" rather than
+  // routing it through the drifted/inSync hash comparison below.
+  if (drift === 'staleVersion') return 'rebuildNeeded';
 
   return resolveStatus({
     sourceExists: true,

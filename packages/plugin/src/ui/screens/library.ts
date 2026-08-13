@@ -62,6 +62,7 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
   pending: 'Checking…',
   inSync: 'In sync',
   updateAvailable: 'Update available',
+  rebuildNeeded: 'Rebuild needed',
   edited: 'Manually edited',
   orphaned: 'Source missing',
   unavailable: 'Check unavailable',

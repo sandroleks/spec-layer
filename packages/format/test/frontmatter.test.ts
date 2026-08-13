@@ -27,8 +27,18 @@ describe('frontmatter', () => {
     expect(() => parseFrontmatter(md)).toThrow(/status/i);
   });
 
+  it('accepts a 0.1 file written before the bump', () => {
+    const md = serializeFrontmatter({ ...fm, spec_version: '0.1' }, 'body');
+    expect(parseFrontmatter(md).frontmatter.spec_version).toBe('0.1');
+  });
+
+  it('accepts a 0.2 file', () => {
+    const md = serializeFrontmatter({ ...fm, spec_version: '0.2' }, 'body');
+    expect(parseFrontmatter(md).frontmatter.spec_version).toBe('0.2');
+  });
+
   it('rejects an unsupported spec_version', () => {
-    const md = serializeFrontmatter({ ...fm, spec_version: '0.2' as never }, '');
+    const md = serializeFrontmatter({ ...fm, spec_version: '9.9' as never }, '');
     expect(() => parseFrontmatter(md)).toThrow(/spec_version/i);
   });
 

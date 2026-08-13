@@ -27,6 +27,10 @@ export interface LibraryEntry {
   sourceExists: boolean;
   selfEdited: boolean;
   storedContentHash: string;
+  /** Component rows only: the extractor format that produced this doc, copied
+   *  from its doc link. Absent on every blob written before spec_version 0.2,
+   *  which the UI treats as stale rather than comparing hashes against it. */
+  specVersion?: string;
   /** Foundation rows only: the live hash for this scope, for drift comparison.
    *  Component rows resolve drift separately via requestDrift. Absent when the
    *  live extraction failed, in which case the row must not read as drifted. */
