@@ -2405,41 +2405,154 @@ In `packages/plugin/src/ui/actions.ts:120`, and at lines 601 and 668, pass the b
 
 `foundationSpec` is the module-level `FoundationSpec | null` already declared at `actions.ts:720`; set it from the `selection` message's `foundation` via the existing `buildFoundation` call so both entry points share one instance.
 
-- [ ] **Step 10: Merge findings into the canvas gaps list**
-
-In `packages/plugin/src/docFrame.ts`, where the gaps section is built, append contrast findings as gap rows. Copy uses plain peer tone and no em dashes:
-
-```ts
-  const contrastRows = spec.contrast.map((c) => ({
-    part: c.part,
-    issue: `contrast ${c.ratio}:1 against ${c.backgroundPart}, below AA ${c.required}:1`,
-  }));
-```
-
-Render `[...spec.gaps, ...contrastRows]` in place of `spec.gaps`. Do **not** touch `render.ts`: Markdown stays hash-covered, and contrast is not in the hash.
-
-- [ ] **Step 11: Run everything**
+- [ ] **Step 10: Run everything**
 
 ```bash
 npx vitest run && npm run check:ci
 ```
 
-- [ ] **Step 12: Manual verification in Figma**
+Contrast is computed and on `IntermediateSpec` but not yet rendered anywhere. Task 16 adds the section that surfaces it. Do **not** touch `render.ts`: its Markdown is hash-covered and contrast is not in the hash.
 
-Open a real library file, select a component set with a muted text style, and confirm: the doc frame's gaps section lists a contrast row with a plausible ratio, the Library tab does not mark every doc as drifted, and a pre-0.2 doc reads "Rebuild needed". Record the result in `docs/manual-tests/` following the existing file convention.
-
-- [ ] **Step 13: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add packages/extractor/src packages/extractor/test packages/plugin/src docs/manual-tests
-git commit -m "feat: surface WCAG AA contrast findings on the component doc frame"
+git add packages/extractor/src packages/extractor/test packages/plugin/src
+git commit -m "feat: compute WCAG AA contrast findings during extraction"
+```
+
+---
+
+### Task 16: Surface contrast as a non-AI section in the Accessibility group
+
+Findings need a home. The `a11y` group already holds three sections (`interactions`, `contentConsiderations`, `accessibility`), all AI-prose driven; a deterministic fourth fits beside them.
+
+This lands on the **doc-model** Markdown path (`modelToMarkdown`) and the canvas frame, neither of which carries frontmatter or a hash. `renderSpec` is the only hashed path and stays untouched, so the constraint that the hashed Markdown body must be hash-covered is preserved.
+
+A `kind: 'table'` block needs no new rendering code: `packages/plugin/src/docFrame.ts` renders unknown kinds through its final `else` via `buildTable(section.columns, section.rows)`, and `packages/plugin/src/ui/modelMarkdown.ts:93` already has a `case 'table'`. The section checkbox appears automatically because `packages/plugin/src/ui/actions.ts:388` iterates `ALL_SECTIONS`, and `packages/plugin/src/docLink.ts:159` filters stored section ids generically.
+
+**Files:**
+- Modify: `packages/plugin/src/ui/docModel.ts`
+- Test: `packages/plugin/test/docModel.test.ts`
+
+**Interfaces:**
+- Consumes: `IntermediateSpec.contrast: ContrastFinding[]` from Task 14.
+- Produces: `SectionId` gains `'contrast'`; `ALL_SECTIONS` gains `{ id: 'contrast', label: 'Contrast', ai: false, group: 'a11y' }`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `packages/plugin/test/docModel.test.ts`, matching how the existing tests in that file build a spec and call `buildDocModel`:
+
+```ts
+describe('contrast section', () => {
+  const finding = {
+    part: 'label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
+    backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
+  };
+
+  it('renders one row per finding', () => {
+    const spec = { ...baseSpec, contrast: [finding] };
+    const model = buildDocModel(spec, null, new Set(['contrast']));
+    const block = model.sections.find((s) => s.id === 'contrast');
+    expect(block).toMatchObject({ heading: 'Contrast', kind: 'table' });
+    expect(block).toMatchObject({
+      columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
+      rows: [['label', 'Container', '#bbbbbb', '#ffffff', '1.9:1', '4.5:1']],
+    });
+  });
+
+  it('states that everything passed when there are no findings', () => {
+    const spec = { ...baseSpec, contrast: [] };
+    const model = buildDocModel(spec, null, new Set(['contrast']));
+    const block = model.sections.find((s) => s.id === 'contrast');
+    // A silent empty table reads as "not checked" rather than "checked and clean".
+    expect(block).toMatchObject({ kind: 'bullets' });
+    expect(block).toMatchObject({ items: [{ text: 'All text pairs meet WCAG AA.' }] });
+  });
+
+  it('is a non-AI section in the a11y group, so it costs no prose keys', () => {
+    expect(ALL_SECTIONS.find((s) => s.id === 'contrast')).toEqual({
+      id: 'contrast', label: 'Contrast', ai: false, group: 'a11y',
+    });
+    expect(proseKeysForSections(new Set(['contrast']))).toEqual([]);
+  });
+});
+```
+
+Check the file's existing `makeBullet` shape before asserting on `items`: if bullets carry more than `text`, match only the `text` field.
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+npx vitest run packages/plugin/test/docModel.test.ts -t 'contrast section'
+```
+
+Expected: FAIL, `'contrast'` is not a valid `SectionId`.
+
+- [ ] **Step 3: Add the section id and registry entry**
+
+In `packages/plugin/src/ui/docModel.ts`, extend the union:
+
+```ts
+export type SectionId =
+  | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
+  | 'states' | 'tokens' | 'interactions'
+  | 'contentConsiderations' | 'accessibility' | 'contrast' | 'dosDonts' | 'related';
+```
+
+and add to `ALL_SECTIONS`, directly after the `accessibility` entry so it renders inside the Accessibility group:
+
+```ts
+  { id: 'contrast',      label: 'Contrast',      ai: false, group: 'a11y'  },
+```
+
+Add no `PROSE_KEYS_BY_SECTION` entry: the section is deterministic and must cost zero AI output tokens.
+
+- [ ] **Step 4: Build the block**
+
+In `buildSection`, add a case beside the other non-AI sections:
+
+```ts
+    case 'contrast': {
+      if (!spec.contrast.length) {
+        // An empty table is ambiguous: it reads as "not checked". Say it passed.
+        return { id, heading: label, kind: 'bullets', items: [makeBullet('All text pairs meet WCAG AA.')] };
+      }
+      return {
+        id, heading: label, kind: 'table',
+        columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
+        rows: spec.contrast.map((c) => [
+          c.part, c.backgroundPart, c.foreground, c.background, `${c.ratio}:1`, `${c.required}:1`,
+        ]),
+      };
+    }
+```
+
+- [ ] **Step 5: Run the test and the full suite**
+
+```bash
+npx vitest run && npm run check:ci
+```
+
+Expected: the three new tests pass. If a test asserts an exact `ALL_SECTIONS` length or an exhaustive `SectionId` list, update it to include `contrast`; that is the intended change.
+
+- [ ] **Step 6: Manual verification in Figma**
+
+Open a real library file and confirm all four of these: the Contrast checkbox appears under Accessibility in the section picker; a component with muted text produces a Contrast table with a plausible ratio; a component with only compliant text shows the "All text pairs meet WCAG AA." line; and the Library tab does not mark every doc as drifted, while a pre-0.2 doc reads "Rebuild needed". Record the result in `docs/manual-tests/` following the existing file convention.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/plugin/src/ui/docModel.ts packages/plugin/test/docModel.test.ts docs/manual-tests
+git commit -m "feat(plugin): surface WCAG AA contrast findings in the Accessibility group"
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** Phase 1 → Tasks 1-4 (minimizer fabrication, conflict backstop, default variant, version bump). Phase 2 → Tasks 5-7 (sibling names, state unification, gap coverage). Phase 3 → Tasks 8-11 (property map, name cleaners, zero handling, axis-model reuse). Phase 4 contrast → Tasks 12-15. Every finding from the review has a task.
+**Spec coverage.** Phase 1 → Tasks 1-4 (minimizer fabrication, conflict backstop, default variant, version bump). Phase 2 → Tasks 5-7 (sibling names, state unification, gap coverage). Phase 3 → Tasks 8-11 (property map, name cleaners, zero handling, axis-model reuse). Phase 4 contrast → Tasks 12-16. Every finding from the review has a task.
+
+**Amended 2026-08-13, before execution.** Task 15 originally ended by merging contrast findings into a canvas gaps section in `docFrame.ts`. No such section exists: `spec.gaps` renders in exactly one place, `renderSpec` at `render.ts:163`, which is the hash-covered Markdown and therefore the one place contrast must not go. Task 15 now ends at computing the findings, and new Task 16 surfaces them as a non-AI `contrast` section in the existing `a11y` group, on the unhashed doc-model and canvas paths.
 
 **Known deferrals, deliberate and stated:** per-mode contrast (light against dark) is out of scope in Task 14 and documented in the code comment; non-text contrast (WCAG 1.4.11) was declined during scoping; the O(n²) subsumption filter noted in the review is left alone because no measured component set makes it hot, and Task 1's backfill grows each grid to the full combo count, which is worth re-measuring on a large set before optimizing.
 
