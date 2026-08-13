@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extract } from '../src/extract';
 import { contentHash } from '../src/hash';
 import { resolveTokensForVariant } from '../src/resolve';
+import { extractTokens, variantAxisModel } from '../src/tokens';
 import button from './fixtures/button.json';
 import type { SerializedNode } from '../src/tree';
 
@@ -49,7 +50,7 @@ describe('extract', () => {
   });
 });
 
-// B1: extractTokens and extractVariantInstances must share one axis model, so
+// B1: extractTokens and toVariantInstances must share one axis model, so
 // every variantInstance's `values` can resolve the rules extractTokens emits.
 describe('axis model consistency between tokens and variantInstances (B1)', () => {
   const ownFill = (spec: ReturnType<typeof extract>, name: string, token: string) => {
@@ -90,5 +91,17 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
       expect(Object.keys(inst.values).sort()).toEqual(['State', 'Style']);
       expect(resolveTokensForVariant(spec.tokens, inst.values).length).toBeGreaterThan(0);
     }
+  });
+
+  it('extractTokens accepts a precomputed axis model and agrees with computing its own', () => {
+    const set: SerializedNode = {
+      id: 'root', name: 'C', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: { Size: { type: 'VARIANT', variantOptions: ['S', 'M'] } },
+      children: [
+        { id: 'v0', name: 'Size=S', type: 'COMPONENT', visible: true, bindings: [{ property: 'fills', token: 'tok/a' }] },
+        { id: 'v1', name: 'Size=M', type: 'COMPONENT', visible: true, bindings: [{ property: 'fills', token: 'tok/b' }] },
+      ],
+    };
+    expect(extractTokens(set, variantAxisModel(set))).toEqual(extractTokens(set));
   });
 });

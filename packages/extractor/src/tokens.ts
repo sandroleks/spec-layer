@@ -33,7 +33,8 @@ export interface VariantAxisModel {
  * shaped (or the axis key-sets disagree across variants), EVERY variant falls
  * back to a single pseudo-axis "Variant" whose value is the raw variant name.
  *
- * Both extractTokens and extractVariantInstances consume this model, so the
+ * Both extractTokens and toVariantInstances (in extract.ts) consume this same
+ * model — extract() computes it once and passes it to both — so the
  * conditions on emitted token rules always agree with the `values` recorded on
  * variant instances (and resolveTokensForVariant can match them).
  */
@@ -226,10 +227,13 @@ interface DraftRule {
   values: Map<string, Set<string>>;
 }
 
-export function extractTokens(root: SerializedNode): TokenRule[] {
+export function extractTokens(root: SerializedNode, model?: VariantAxisModel): TokenRule[] {
   const isInSet = root.type === 'COMPONENT_SET';
-  // Shared with extractVariantInstances — see variantAxisModel.
-  const { variants, combos } = variantAxisModel(root);
+  // Shared with toVariantInstances — see variantAxisModel's comment for why this
+  // isn't just a perf optimization: extract() passes one model to both so the
+  // conditions on emitted rules structurally agree with the `values` recorded
+  // on variant instances, which resolveTokensForVariant relies on to match them.
+  const { variants, combos } = model ?? variantAxisModel(root);
   if (!variants.length) return [];
 
   const axisOrder: string[] = [];

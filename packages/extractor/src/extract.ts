@@ -1,7 +1,7 @@
 import type { SerializedNode } from './tree';
 import { extractAnatomy, type AnatomyPart } from './anatomy';
 import { extractProps, extractVariants, extractStates, type ComponentProp, type VariantAxis } from './props';
-import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap } from './tokens';
+import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
 
@@ -39,13 +39,20 @@ export interface IntermediateSpec {
   rawValues: RawValue[];
 }
 
-function extractVariantInstances(root: SerializedNode): VariantInstance[] {
-  const { variants, combos } = variantAxisModel(root);
-  return variants.map((v, i) => ({ nodeId: v.id, name: v.name, values: combos[i] }));
+function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
+  return model.variants.map((v, i) => ({ nodeId: v.id, name: v.name, values: model.combos[i] }));
 }
 
 export function extract(root: SerializedNode, meta: { figmaFile: string }): IntermediateSpec {
   const { parts, related, componentId } = extractAnatomy(root);
+  // Built once and threaded into both extractTokens and toVariantInstances.
+  // This isn't just avoiding duplicate work: variantAxisModel's fallback (every
+  // variant collapsing to a Variant pseudo-axis) must fire identically for both
+  // consumers, or the conditions on emitted token rules stop agreeing with the
+  // `values` recorded on variant instances, and resolveTokensForVariant can no
+  // longer match them. One shared model makes that agreement structural instead
+  // of relying on both call sites happening to compute the same thing.
+  const model = variantAxisModel(root);
   return {
     name: root.name,
     figmaKey: root.key ?? '',
@@ -55,9 +62,9 @@ export function extract(root: SerializedNode, meta: { figmaFile: string }): Inte
     anatomyComponentId: componentId,
     props: extractProps(root),
     variants: extractVariants(root),
-    variantInstances: extractVariantInstances(root),
+    variantInstances: toVariantInstances(model),
     states: extractStates(root),
-    tokens: extractTokens(root),
+    tokens: extractTokens(root, model),
     related,
     gaps: extractGaps(root),
     layout: extractLayout(root),
