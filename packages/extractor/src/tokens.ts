@@ -490,7 +490,7 @@ export function extractGaps(root: SerializedNode): Gap[] {
       pushGap(part, 'hardcoded color (no variable or style)');
     }
     if (n.hasUnboundStroke) {
-      pushGap(part, 'hardcoded stroke colour (no variable or style)');
+      pushGap(part, 'hardcoded stroke color (no variable or style)');
     }
     if (n.hasUnboundGradient) {
       pushGap(part, 'hardcoded gradient or image fill (no style)');

@@ -138,11 +138,66 @@ describe('unbound paint detection', () => {
     expect(n.hasUnboundStroke).toBeUndefined();
   });
 
+  it('does not flag a stroke bound to a style id', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      strokes: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
+      strokeStyleId: 'S:border,1:1',
+    } as never, { ...resolver, styleName: async () => 'border/default' });
+    expect(n.hasUnboundStroke).toBeUndefined();
+  });
+
   it('flags a gradient fill with no style', async () => {
     const n = await serializeNode({
       id: '1', name: 'Box', type: 'FRAME', fills: [{ type: 'GRADIENT_LINEAR' }],
     } as never, resolver);
     expect(n.hasUnboundGradient).toBe(true);
+  });
+
+  it('does not flag a gradient fill bound to a style id', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      fills: [{ type: 'GRADIENT_LINEAR' }],
+      fillStyleId: 'S:fill,1:1',
+    } as never, { ...resolver, styleName: async () => 'gradient/brand' });
+    expect(n.hasUnboundGradient).toBeUndefined();
+  });
+
+  it('flags a node with effects and no style or variable', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME', effects: [{ type: 'DROP_SHADOW' }],
+    } as never, resolver);
+    expect(n.hasUnboundEffect).toBe(true);
+  });
+
+  it('does not flag effects bound to a variable', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      effects: [{ type: 'DROP_SHADOW' }],
+      boundVariables: { effects: [{ id: 'V:1' }] },
+    } as never, { ...resolver, variableName: async () => 'elevation/level1' });
+    expect(n.hasUnboundEffect).toBeUndefined();
+  });
+
+  it('does not flag effects bound to a string effect style id', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      effects: [{ type: 'DROP_SHADOW' }],
+      effectStyleId: 'S:fx,1:1',
+    } as never, { ...resolver, styleName: async () => 'md.sys.elevation.level1' });
+    expect(n.hasUnboundEffect).toBeUndefined();
+  });
+
+  it('still flags effects when effectStyleId is the mixed symbol (not a real style)', async () => {
+    // Figma sets effectStyleId to the figma.mixed symbol when a node's effects
+    // come from children with different styles. A truthiness check on that
+    // symbol would wrongly read as "has a style" — it must not suppress the gap.
+    const n = await serializeNode({
+      id: '1', name: 'Box', type: 'FRAME',
+      effects: [{ type: 'DROP_SHADOW' }],
+      effectStyleId: Symbol('figma.mixed'),
+    } as never, resolver);
+    expect(n.hasUnboundEffect).toBe(true);
   });
 
   it('records a non-default opacity', async () => {

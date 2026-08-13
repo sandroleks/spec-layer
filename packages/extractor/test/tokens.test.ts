@@ -398,9 +398,9 @@ describe('extractGaps coverage', () => {
     id: 'v0', name: 'Button', type: 'COMPONENT', visible: true, ...extra,
   });
 
-  it('reports a hardcoded stroke colour', () => {
+  it('reports a hardcoded stroke color', () => {
     const gaps = extractGaps(comp({ hasUnboundStroke: true }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke colour (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
   });
 
   it('reports a hardcoded gradient or image fill', () => {
@@ -425,6 +425,15 @@ describe('extractGaps coverage', () => {
   it('does not report opacity when it is bound to a variable', () => {
     const gaps = extractGaps(comp({ opacity: 0.5, bindings: [{ property: 'opacity', token: 'a/b' }] }));
     expect(gaps).toEqual([]);
+  });
+
+  it('reports both a hardcoded fill and a hardcoded stroke on the same part', () => {
+    // pushGap dedupes on (part, issue), not on part alone — two distinct issues
+    // on one part must not collapse into one gap.
+    const gaps = extractGaps(comp({ hasUnboundPaint: true, hasUnboundStroke: true }));
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toHaveLength(2);
   });
 });
 
