@@ -340,13 +340,28 @@ export function extractTokens(root: SerializedNode): TokenRule[] {
     return false;
   };
 
-  const buildRules = (cells: Cell[]): DraftRule[] => {
+  const buildRules = (cellsIn: Cell[]): DraftRule[] => {
+    let cells = cellsIn;
     let relevant = relevantAxes(cells);
     // Sparse grids can hide pairwise differences (no two variants differ in just
     // one axis) — repair by adding axes until the projection is unambiguous.
     for (const axis of axisOrder) {
       if (!hasConflict(cells, relevant)) break;
       if (!relevant.includes(axis)) relevant = axisOrder.filter((a) => relevant.includes(a) || a === axis);
+    }
+
+    // Backstop. If a conflict survives adding every axis, two variants parse to
+    // the SAME combo (hand-edited variant names do this). Unioning their token
+    // sets below would invent a binding no variant carries, so fall back to
+    // fully-specific conditions and keep only the first cell per combo.
+    if (hasConflict(cells, relevant)) {
+      relevant = [...axisOrder];
+      const byCombo = new Map<string, Cell>();
+      for (const c of cells) {
+        const k = projKey(c.combo, axisOrder);
+        if (!byCombo.has(k)) byCombo.set(k, c);
+      }
+      cells = [...byCombo.values()];
     }
 
     // Project cells onto the relevant axes.

@@ -392,3 +392,25 @@ describe('extractGaps', () => {
     expect(gaps).not.toContainEqual(expect.objectContaining({ issue: expect.stringContaining('cornerRadius') }));
   });
 });
+
+describe('duplicate parsed combos', () => {
+  it('does not union conflicting token sets when two variants parse alike', () => {
+    // Both names parse to { Size: 'S' } — the duplicate axis makes the second
+    // key win, so these two distinct COMPONENT nodes collide in the axis model.
+    const set: SerializedNode = {
+      id: 'root', name: 'C', type: 'COMPONENT_SET', visible: true, key: 'k',
+      propertyDefinitions: { Size: { type: 'VARIANT', variantOptions: ['S'] } },
+      children: [
+        { id: 'v0', name: 'Size=S', type: 'COMPONENT', visible: true,
+          bindings: [{ property: 'fills', token: 'tok/a' }] },
+        { id: 'v1', name: 'Size=M, Size=S', type: 'COMPONENT', visible: true,
+          bindings: [{ property: 'fills', token: 'tok/b' }] },
+      ],
+    };
+    const rules = extractTokens(set);
+    const containerFills = rules.filter((r) => r.part === 'Container' && r.property === 'fill');
+    // Exactly one rule survives. Emitting BOTH would tell the reader that one
+    // variant carries two different fills at once, which no variant does.
+    expect(containerFills).toHaveLength(1);
+  });
+});
