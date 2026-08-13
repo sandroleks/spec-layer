@@ -1,6 +1,6 @@
 import type { SerializedNode } from './tree';
 import { defaultVariant } from './anatomy';
-import { cleanPartName } from './naming';
+import { cleanPartName, walkParts } from './naming';
 
 export interface RawValue { part: string; property: string; value: string }
 
@@ -27,11 +27,11 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
     out.push({ part, property, value });
   };
 
-  const isInSet = root.type === 'COMPONENT_SET';
   const def = defaultVariant(root);
-  const walk = (n: SerializedNode): void => {
+  // Called without skipInvisible: the body below already returns early on
+  // hidden nodes, so behavior here must not change from the pre-walkParts walk.
+  walkParts(def, root.type === 'COMPONENT_SET' ? 'Container' : cleanPartName(def.name), (n, part) => {
     if (n.visible === false) return;
-    const part = isInSet && n === def ? 'Container' : cleanPartName(n.name);
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
 
     if (n.unboundFill) push(part, 'fill', n.unboundFill);
@@ -62,8 +62,6 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
         push(part, 'border-radius', String(l.cornerRadius));
       }
     }
-    n.children?.forEach(walk);
-  };
-  walk(def);
+  });
   return out;
 }

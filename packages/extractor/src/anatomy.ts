@@ -1,5 +1,5 @@
 import type { SerializedNode } from './tree';
-import { parseVariantName } from './naming';
+import { parseVariantName, siblingPartNames } from './naming';
 
 export interface AnatomyPart {
   id: string; name: string; type: string; nested: boolean;
@@ -73,12 +73,10 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
     children = (children[0].children ?? []).filter((c) => c.visible);
   }
 
-  // Anatomy is a list of MEANINGFUL parts: a leading and trailing icon wrapper
-  // both named "iconWrapper" only carry one anatomy entry's worth of information.
-  // Dedup by name (keep first occurrence) so the list reads cleanly. Dedup is
-  // SIBLING-scoped (a fresh Set per parent) so identically-named parts at
-  // different nesting levels (e.g. a "label" inside a nested "meta" part) are
-  // not silently dropped just because a top-level part shares the name.
+  // Same-named siblings (a leading and a trailing "icon") are numbered rather
+  // than deduped: they are two real parts with two real node ids and, often,
+  // two different token bindings. An earlier version dropped the second, which
+  // hid it from anatomy while tokens.ts silently merged both onto one part.
   //
   // The walk is depth-first and bounded (MAX_DEPTH): parts push in
   // (parent, then its children, then next sibling) order, matching how a
@@ -86,22 +84,21 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   // stop the walk — an instance's internals belong to its own spec — but the
   // instance's main-component name is still recorded (both as a `related`
   // atom and on the part itself) at whatever depth it's found.
-  const addParts = (nodes: SerializedNode[], depth: number, seenNames: Set<string>): void => {
+  const addParts = (nodes: SerializedNode[], depth: number): void => {
+    const names = siblingPartNames(nodes);
     for (const child of nodes) {
       if (!child.visible) continue;
       const nested = child.type === 'INSTANCE';
       if (nested && child.mainComponent) related.add(child.mainComponent.name);
-      if (seenNames.has(child.name)) continue;
-      seenNames.add(child.name);
       parts.push({
-        id: child.id, name: child.name, type: child.type, nested, depth,
+        id: child.id, name: names.get(child)!, type: child.type, nested, depth,
         ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
       });
       if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
-        addParts(child.children, depth + 1, new Set<string>());
+        addParts(child.children, depth + 1);
       }
     }
   };
-  addParts(children, 0, new Set<string>());
+  addParts(children, 0);
   return { parts, related: [...related], componentId: defaultVariant(root).id };
 }

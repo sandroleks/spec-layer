@@ -36,15 +36,30 @@ describe('extractAnatomy — single-wrapper descent (bug 2)', () => {
     expect(chipResult.parts.map((p) => p.name)).not.toContain('Contents');
   });
 
-  // Anatomy is a list of meaningful parts: a leading and trailing icon both
-  // named "icon" deliver one anatomy entry's worth of information. Duplicates
-  // by name collapse (first occurrence kept) so the list reads cleanly.
-  it('lists the parts inside the wrapper frame, deduped by name', () => {
-    expect(chipResult.parts.map((p) => p.name)).toEqual(['icon', 'Label']);
+  // A leading and a trailing icon both named "icon" are two real parts with
+  // two real node ids (and, in this fixture, distinct bindings once resolved
+  // through tokens.ts) — they are numbered rather than collapsed.
+  it('lists both same-named icon instances, numbered rather than deduped', () => {
+    expect(chipResult.parts.map((p) => p.name)).toEqual(['icon', 'Label', 'icon (2)']);
   });
 
   it('collects related atoms from inside the wrapper', () => {
     expect(chipResult.related).toEqual(['Icon']);
+  });
+
+  it('lists both same-named siblings instead of dropping the second', () => {
+    const set: SerializedNode = {
+      id: 'root', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+      children: [{
+        id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
+        children: [
+          { id: 'a', name: 'icon', type: 'FRAME', visible: true },
+          { id: 'b', name: 'label', type: 'TEXT', visible: true },
+          { id: 'c', name: 'icon', type: 'FRAME', visible: true },
+        ],
+      }],
+    };
+    expect(extractAnatomy(set).parts.map((p) => p.name)).toEqual(['icon', 'label', 'icon (2)']);
   });
 });
 

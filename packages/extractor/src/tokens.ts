@@ -1,6 +1,6 @@
 import type { SerializedNode, TokenRef } from './tree';
 import { defaultVariant } from './anatomy';
-import { parseVariantName, cleanPartName } from './naming';
+import { parseVariantName, cleanPartName, walkParts } from './naming';
 
 /**
  * A minimized token rule: `token` applies to `part.property` whenever every
@@ -18,19 +18,6 @@ export interface TokenRule {
 }
 
 export interface Gap { part: string; issue: string }
-
-function walk(
-  node: SerializedNode,
-  visit: (n: SerializedNode) => void,
-  skipInvisible = false,
-): void {
-  // Token extraction skips hidden subtrees so presence-driven conditioning
-  // works for the common Figma pattern of a layer hidden-but-present in some
-  // variants. Gap detection deliberately keeps them (skipInvisible stays false).
-  if (skipInvisible && node.visible === false) return;
-  visit(node);
-  node.children?.forEach((c) => walk(c, visit, skipInvisible));
-}
 
 /** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {
@@ -244,8 +231,7 @@ export function extractTokens(root: SerializedNode): TokenRule[] {
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
     const variantTokens = new Map<string, Set<string>>(); // "part\0prop" -> tokens
-    walk(variant, (n) => {
-      const part = isInSet && n === variant ? 'Container' : cleanPartName(n.name);
+    walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part) => {
       for (const { property, token } of normalizeBindings(n.bindings ?? [])) {
         const key = `${part}\0${property}`;
         let set = variantTokens.get(key);
@@ -498,8 +484,7 @@ export function extractGaps(root: SerializedNode): Gap[] {
   };
   const isInSet = root.type === 'COMPONENT_SET';
   const def = defaultVariant(root);
-  walk(def, (n) => {
-    const part = isInSet && n === def ? 'Container' : cleanPartName(n.name);
+  walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
     if (n.hasUnboundPaint) {
       pushGap(part, 'hardcoded color (no variable or style)');

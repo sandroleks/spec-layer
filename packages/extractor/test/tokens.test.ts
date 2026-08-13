@@ -393,6 +393,29 @@ describe('extractGaps', () => {
   });
 });
 
+describe('same-named siblings', () => {
+  const set: SerializedNode = {
+    id: 'root', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k',
+    propertyDefinitions: { Style: { type: 'VARIANT', variantOptions: ['Filled'] } },
+    children: [{
+      id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
+      children: [
+        { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/leading' }] },
+        { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [{ property: 'fills', token: 'tok/text' }] },
+        { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/trailing' }] },
+      ],
+    }],
+  };
+
+  it('keeps two same-named siblings as distinct parts', () => {
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    expect(byPart).toContain('icon=tok/leading');
+    expect(byPart).toContain('icon (2)=tok/trailing');
+    // The bug: both landed on `icon`, producing two unconditioned rules for one part.
+    expect(byPart.filter((p) => p.startsWith('icon='))).toHaveLength(1);
+  });
+});
+
 describe('duplicate parsed combos', () => {
   it('does not union conflicting token sets when two variants parse alike', () => {
     // Both names parse to { Size: 'S' } — the duplicate axis makes the second
