@@ -76,6 +76,24 @@ export function formatConditions(conditions: Record<string, string[]>): string {
  * passes through unchanged, which is correct for names that are already CSS
  * (`opacity`, `width`, `height`) and wrong for anything else, so new Figma
  * binding targets belong here rather than leaking a camelCase name into docs.
+ *
+ * A name earns a place in this table only when the Figma property maps
+ * UNAMBIGUOUSLY to one CSS property, with no further information needed to
+ * pick it. Two properties that look like they qualify do not, and must stay
+ * out:
+ * - `effects`: a binding here can carry a drop/inner shadow OR a layer/
+ *   background blur. Shadows are `box-shadow`; blurs need `filter: blur()`,
+ *   which is a different property entirely. This table is a static string
+ *   map with no access to the effect's actual type, so it cannot tell which
+ *   one it is looking at, and mislabeling a blur as `box-shadow` tells a
+ *   developer to implement the wrong thing.
+ * - `counterAxisSpacing`: this is the gap on the axis perpendicular to
+ *   `itemSpacing`, which is `row-gap` for a HORIZONTAL auto-layout but
+ *   `column-gap` for a VERTICAL one. The answer depends on the node's
+ *   `layoutMode`, which this table cannot see (and which isn't even
+ *   captured on the serialized node today).
+ * Passing these two through as their raw Figma names is less polished but
+ * never actively wrong, unlike guessing.
  */
 const SIMPLE_PROPERTY_MAP: Record<string, string> = {
   fills: 'fill',
@@ -93,8 +111,6 @@ const SIMPLE_PROPERTY_MAP: Record<string, string> = {
   strokeRightWeight: 'border-right-width',
   strokeBottomWeight: 'border-bottom-width',
   strokeLeftWeight: 'border-left-width',
-  effects: 'box-shadow',
-  counterAxisSpacing: 'row-gap',
   maxWidth: 'max-width',
   minWidth: 'min-width',
   maxHeight: 'max-height',

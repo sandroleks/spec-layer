@@ -527,7 +527,7 @@ describe('duplicate parsed combos', () => {
 });
 
 describe('property name normalization', () => {
-  it('maps stroke, effect, opacity and size properties to CSS-like names', () => {
+  it('maps stroke and size properties to CSS-like names, passing others through unchanged', () => {
     const set: SerializedNode = {
       id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
       bindings: [
@@ -539,6 +539,15 @@ describe('property name normalization', () => {
       ],
     };
     const props = extractTokens(set).map((r) => r.property);
-    expect(props).toEqual(['border-width', 'box-shadow', 'opacity', 'width', 'height']);
+    expect(props).toEqual(['border-width', 'effects', 'opacity', 'width', 'height']);
+  });
+
+  it('passes counterAxisSpacing through unchanged, since the correct CSS name depends on layoutMode', () => {
+    const set: SerializedNode = {
+      id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
+      bindings: [{ property: 'counterAxisSpacing', token: 'space/sm' }],
+    };
+    const props = extractTokens(set).map((r) => r.property);
+    expect(props).toEqual(['counterAxisSpacing']);
   });
 });
