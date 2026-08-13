@@ -89,6 +89,26 @@ export const ICON_PATHS = {
     '<path d="M4 8h4v4H4z"/><path d="M6 4v4"/><path d="M6 12v8"/>' +
     '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
     '<path d="M16 5h4v4h-4z"/><path d="M18 4v1"/><path d="M18 9v11"/>',
+  /**
+   * The footer primaries, as a pair. Both are the same page outline as
+   * `fileDescription` so "make docs" and "bring docs up to date" read as one
+   * family of action on one object, and neither borrows the circular arrows
+   * that mean "re-read, writes nothing" (see the icon contract in
+   * design-system/components.css).
+   *
+   * `fileDescription` itself is not reusable here: it draws the finished
+   * document rather than the act, and it is the sidebar's glyph for the
+   * component screen, so a footer wearing it repeated the tab the user is
+   * already looking at. The plus and the check are what make these acts.
+   */
+  filePlus:
+    '<path d="M14 3v4a1 1 0 0 0 1 1h4"/>' +
+    '<path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>' +
+    '<path d="M12 12v5"/><path d="M9.5 14.5h5"/>',
+  fileCheck:
+    '<path d="M14 3v4a1 1 0 0 0 1 1h4"/>' +
+    '<path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>' +
+    '<path d="M9.5 14.5l2 2l3.5-4"/>',
   check: '<path d="M5 12l5 5l10-10"/>',
   bolt: '<path d="M13 3l-9 10h7l-1 8l9-11h-7l1-7"/>',
   externalLink:

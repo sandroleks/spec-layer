@@ -4,6 +4,7 @@ import {
   buildLibraryModel,
   buildLibraryRow,
   formatLibraryAge,
+  libraryBadgeVisible,
   libraryDriftForEntry,
   resolveLibraryRowStatus,
   type LibraryDriftState,
@@ -223,5 +224,55 @@ describe('buildLibraryModel filters and counts', () => {
       now: NOW,
     });
     expect(model.rows.map((row) => row.docId)).toEqual(['sync']);
+  });
+});
+
+/**
+ * The reported bug: the rail badge showed 1, jumped to 3 once checks finished,
+ * and disappeared entirely while the Library reloaded. The count is not a fact
+ * mid-pass, so the badge is a dot driven by this instead.
+ */
+describe('libraryBadgeVisible', () => {
+  it('shows as soon as one update is known, without waiting for the pass', () => {
+    expect(libraryBadgeVisible({ updates: 1, checking: true, previous: false })).toBe(true);
+  });
+
+  it('holds the previous answer while anything is still being checked', () => {
+    // The reload: every result cleared, so updates reads 0 for a moment.
+    expect(libraryBadgeVisible({ updates: 0, checking: true, previous: true })).toBe(true);
+    expect(libraryBadgeVisible({ updates: 0, checking: true, previous: false })).toBe(false);
+  });
+
+  it('clears only when a finished pass found nothing', () => {
+    expect(libraryBadgeVisible({ updates: 0, checking: false, previous: true })).toBe(false);
+    expect(libraryBadgeVisible({ updates: 0, checking: false, previous: false })).toBe(false);
+  });
+
+  it('never flickers across a full reload of a library that has updates', () => {
+    // Replays one refresh: settled, cleared to pending, then checks landing.
+    let shown = libraryBadgeVisible({ updates: 3, checking: false, previous: false });
+    expect(shown).toBe(true);
+    const pass = [
+      { updates: 0, checking: true },  // refresh starts, drift cleared
+      { updates: 0, checking: true },  // entries back, all rows pending
+      { updates: 1, checking: true },  // first check lands
+      { updates: 2, checking: true },
+      { updates: 3, checking: false }, // pass complete
+    ];
+    for (const step of pass) {
+      shown = libraryBadgeVisible({ ...step, previous: shown });
+      expect(shown, JSON.stringify(step)).toBe(true);
+    }
+  });
+
+  it('does clear once the user updates everything', () => {
+    let shown = true;
+    for (const step of [
+      { updates: 0, checking: true },   // re-check after the batch update
+      { updates: 0, checking: false },  // settled: nothing left to update
+    ]) {
+      shown = libraryBadgeVisible({ ...step, previous: shown });
+    }
+    expect(shown).toBe(false);
   });
 });

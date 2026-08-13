@@ -19,8 +19,8 @@ import {
 } from '@spec-layer/extractor';
 import { quotaMeterModel, upsellText, resolveLicenseView, licenseStatusCopy } from './proxy';
 import {
-  canGenerate, allSelected, framesPerSource, frameCount, hasColorGroups,
-  fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
+  canGenerate, allSelected, framesPerSource, hasColorGroups,
+  fileSummary, collectionMeta, textStyleMeta, FOUNDATION_CREATE_LABEL,
   type FoundationSummary,
 } from './foundationState';
 
@@ -561,9 +561,9 @@ export function renderFoundationPanel(
     }, box));
   }
 
-  // Naming the count is the only place the user learns that a large collection
-  // splits, so a two-row selection can produce five frames.
-  refs.foundationCreate.textContent = createButtonLabel(frameCount(spec, selection));
+  // One label for the action, no frame count. The per-row "+ N frames" meta is
+  // what teaches that a large collection splits; see FOUNDATION_CREATE_LABEL.
+  refs.foundationCreate.textContent = FOUNDATION_CREATE_LABEL;
 
   // Disabled while a generation is in flight, regardless of what repaints in
   // the meantime (e.g. a checkbox toggle) — otherwise the button re-enables

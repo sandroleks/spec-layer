@@ -332,20 +332,28 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
   if (state.kind === 'empty') return '';
   const busy = state.kind === 'reading' || state.kind === 'building';
   const progress = componentStatusMarkup(state);
+  // Both busy labels take the ellipsis. "Creating docs" without one read as a
+  // second, differently-worded action rather than the same button working.
   const createLabel = state.kind === 'building'
-    ? state.action === 'download' ? 'Downloading…' : 'Creating docs'
+    ? state.action === 'download' ? 'Downloading…' : 'Creating docs…'
     : 'Create docs';
   const download =
     state.kind === 'success'
       ? '<button class="sl-button" data-tone="secondary" id="sl-download" type="button">' +
-        `${icon('download', 15)}Download</button>`
+        `${icon('download', 15)}<span>Download</span></button>`
       : '';
+  // Both footer buttons carry a glyph, and this one keeps `filePlus` through
+  // every state. Per the icon contract in design-system/components.css: one
+  // button, one glyph. The old `fileDescription` was dropped because it drew
+  // the finished document rather than the act and duplicated the sidebar's
+  // glyph for this very screen, not because the slot should stay empty.
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
     download +
     `<button class="sl-button" data-tone="primary" id="sl-create" type="button"` +
-    `${busy ? ' disabled' : ''}>${icon('fileDescription', 15)}${createLabel}</button>` +
+    `${busy ? ' disabled' : ''}>${icon('filePlus', 15)}` +
+    `<span>${createLabel}</span></button>` +
     '</div>'
   );
 }
@@ -382,7 +390,15 @@ export function renderComponentScreen(
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): void {
-  refs.screen.classList.add('sl-component-screen');
+  // Replace, never add. Every other screen assigns the full class here, and this
+  // one adding to it meant the previous screen's class stayed on the element:
+  // coming back from Settings or License left `sl-settings-screen` alongside
+  // `sl-component-screen`, and since the two `.sl-screen-scroll` padding rules
+  // have equal specificity, the one later in the stylesheet won. The component
+  // screen silently picked up Settings' 16px horizontal padding and header
+  // indent. Going to Library or Foundations appeared to fix it only because
+  // their padding is 0, the same as this screen's.
+  refs.screen.className = 'sl-screen sl-component-screen';
   refs.pageHeader.innerHTML = componentHeaderMarkup(state);
   refs.pageHeader.hidden = state.kind === 'empty';
   refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts);

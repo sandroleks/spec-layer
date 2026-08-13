@@ -256,22 +256,21 @@
   transform: translate(0, -50%);
 }
 
+/*
+ * A dot, at one fixed size. It used to be a pill holding a live count, so it
+ * changed width as the number grew (1 to 2 to 3 as source checks landed) and
+ * nudged the icon it sits on. Nothing about it is typographic now: no padding
+ * for digits, no min-width, no font.
+ */
 .sl-sidebar-badge {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 15px;
-  height: 15px;
-  display: grid;
-  place-items: center;
-  padding: 0 var(--sl-space-4);
-  color: var(--sl-color-text-on-accent);
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
   background: var(--sl-color-accent);
   border: 2px solid var(--sl-color-chrome);
   border-radius: var(--sl-radius-pill);
-  font-size: var(--sl-font-size-caption);
-  font-weight: var(--sl-font-weight-bold);
-  line-height: var(--sl-line-height-none);
 }
 
 .sl-screen {
@@ -341,18 +340,25 @@
   padding: var(--sl-space-8) var(--sl-space-12);
   background: var(--sl-color-chrome);
   border-top: 1px solid var(--sl-color-border);
+  /* Containing block for .sl-footer-progress, which floats above this band
+     rather than sitting in the grid. See that rule. */
+  position: relative;
 }
 
+/*
+ * Every footer button hugs its label and the row sits right. No `flex` and no
+ * `min-width` on any of them: the foundations primary used to take `flex: 1`
+ * and stretch across the footer while the same slot on the other two screens
+ * hugged, and a 118px floor here padded short labels out to a width they had
+ * not earned. Labels are stable enough to hug now that no primary counts
+ * anything (see docs/plugin-voice-and-copy.md, "Footer actions").
+ */
 .sl-footer-actions {
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--sl-space-6);
-}
-
-.sl-footer-actions > .sl-button[data-tone="primary"] {
-  min-width: 118px;
 }
 
 .sl-footer-actions > .sl-button {
@@ -363,8 +369,29 @@
   font-size: var(--sl-font-size-control);
 }
 
+/*
+ * Floats above the footer instead of taking a row inside it.
+ *
+ * As a grid row this changed the footer's own height the moment any work
+ * started: on the Library a refresh took it from 56px to 106px, which shrank
+ * the scroll viewport by the same 50px, reflowed the whole list, and moved both
+ * buttons out from under the cursor. Nothing about starting a refresh should
+ * relayout the screen behind it.
+ *
+ * So the footer stays a fixed band whatever is happening, and this sits over
+ * the last of the list as a floating status card, which .sl-work-status already
+ * looks like (its own surface, border and radius). The list carries bottom
+ * clearance for the footer, so at the end of a scroll it usually covers nothing
+ * at all. It needs no z-index: it comes after .sl-screen-scroll in the DOM, so
+ * it paints above the rows while staying under the Library's overflow menu and
+ * scrim, which are positioned with z-index of their own.
+ */
 .sl-footer-progress {
   min-width: 0;
+  position: absolute;
+  left: var(--sl-space-12);
+  right: var(--sl-space-12);
+  bottom: calc(100% + var(--sl-space-6));
 }
 
 .sl-footer-progress .sl-work-status {
@@ -765,9 +792,9 @@
      border on all four sides used to reserve room for the expanded state's
      accent border, but it also pushed every collapsed row's content 1px right
      and made the row 1px taller than the foundation row it sits beside — a
-     visible misalignment between two lists that show the same sources. The
-     expanded state is a pulled-in card with its own margins, so it can afford
-     to grow by that 1px when it opens. */
+     visible misalignment between two lists that show the same sources. Nothing
+     needs reserving now: the expanded state has no border of its own, so every
+     row keeps this same geometry open or closed. */
   border-bottom: 1px solid var(--sl-color-border-muted);
   transition:
     border-color var(--sl-motion-fast) var(--sl-ease-standard),
@@ -778,15 +805,26 @@
   background: var(--sl-color-surface-hover);
 }
 
-.sl-library-row.is-expanded {
-  /* Expanded is the one state meant to read as a floating card, so it alone
-     gets pulled in from the row's full-bleed edges — matching the old list
-     padding values it replaces (14 left / 10 right) so the details column
-     below still lines up under the identity text. */
-  margin: 0 var(--sl-space-10) var(--sl-space-4) var(--sl-space-14);
-  background: var(--sl-color-surface-raised);
-  border: 1px solid var(--sl-color-accent-border-strong);
-  border-radius: var(--sl-radius-md);
+/* An open row is still a row — there is deliberately no `.is-expanded` box
+   here. It used to pull itself in with margins and float on a raised surface
+   behind a rounded accent border, which cost three things: the list lost its
+   single left edge, one row read as a different KIND of object than its
+   neighbours, and a strong accent border is the treatment :focus-visible uses,
+   so an open disclosure looked selected. Expanded now only adds height. What
+   says "open" is the rotated chevron and the Changes section itself, which is
+   what the user just clicked to see.
+
+   Hover is the one thing the old card fill was silently doing: an equal
+   specificity background beat .sl-library-row:hover, so an open row had no
+   hover at all. Rather than let the fill now flash across the full detail
+   block, the hover band stays on the summary — the part that is actually the
+   row's control. The details below are content, not a target. */
+.sl-library-row.is-expanded:hover {
+  background: none;
+}
+
+.sl-library-row.is-expanded:hover .sl-library-summary {
+  background: var(--sl-color-surface-hover);
 }
 
 .sl-library-summary {
@@ -953,9 +991,15 @@
 
 .sl-library-details-inner {
   min-height: 0;
-  /* 36px aligns detail copy with the row title, past the source icon.
-     Computed alignment, not rhythm. */
-  padding: 0 var(--sl-space-10) var(--sl-space-10) 36px;
+  /* The row's own inset, the same 14px .sl-library-summary uses, so the details
+     sit on the one left edge the whole list shares. This used to be 36px on the
+     left and 10px on the right — an indent hung under the row title, past the
+     source icon, and lopsided in a panel this narrow. That alignment only made
+     sense while the expanded state was an inset card; on a full-bleed row it
+     just pushed the change blocks off the list's edge. */
+  padding: 0 var(--sl-space-14) var(--sl-space-10);
+  /* Full-bleed divider: padding does not move a border-top, so this spans the
+     row exactly like the hairlines between rows, and shares their token. */
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
@@ -1040,6 +1084,10 @@
   width: 194px;
   position: absolute;
   z-index: 20;
+  /* Opens below the summary band. This is the preferred position only:
+     .sl-screen-scroll clips absolutely positioned descendants, so
+     placeOpenRowMenu() in screens/library.ts overrides `top` inline when the
+     menu would not fit below the row — keep the two in step. */
   top: 42px;
   right: 4px;
   padding: var(--sl-space-6);
@@ -1087,10 +1135,6 @@
 
 .sl-library-screen .sl-empty-state {
   min-height: 260px;
-}
-
-.sl-library-screen .sl-footer-actions > .sl-button:first-child {
-  margin-left: auto;
 }
 
 .sl-global-search-layer {
@@ -1532,10 +1576,6 @@
   display: none;
 }
 
-.sl-foundation-create {
-  flex: 1;
-}
-
 .sl-foundation-screen .sl-screen-scroll {
   padding: 0;
   overflow-x: hidden;
@@ -1700,12 +1740,44 @@
   border-radius: 6px;
 }
 
-.sl-theme-color-input i {
+/*
+ * The swatch is a native <input type="color">, stripped back to the inert <i>
+ * it replaces so the field looks unchanged and only its behaviour is new. The
+ * two selectors below are the only way to reach the rendered swatch, and the
+ * generic `.sl-theme-color-input input` rule further down would otherwise
+ * stretch this to the full field width (this one is more specific, so it wins
+ * regardless of order).
+ */
+.sl-theme-color-input input[type="color"] {
+  /* Explicit placement: the hex field is first in the DOM so it stays the
+     label's control (see colorField), so the columns cannot be left to
+     source order. */
+  grid-column: 1;
+  grid-row: 1;
   width: 22px;
   height: 22px;
   display: block;
+  padding: 0;
+  background: transparent;
   border: 1px solid color-mix(in srgb, var(--sl-color-text) 16%, transparent);
   border-radius: 5px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.sl-theme-color-input input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.sl-theme-color-input input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 4px;
+}
+
+.sl-theme-color-input > input[data-theme-field] {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .sl-theme-color-input input,
@@ -1733,6 +1805,95 @@
 .sl-theme-font-grid input:focus-visible {
   border-color: var(--sl-color-accent);
   box-shadow: 0 0 0 1px var(--sl-color-accent);
+}
+
+/* --------------------------------------------------------------------------
+ * Font picker — a combobox, not a plain text field
+ *
+ * The vNext Settings migration shipped these two fields as bare inputs, so the
+ * only way to set a font was to type a family name exactly and hope; the host's
+ * font list was fetched and then used for nothing but a warning after the fact.
+ * The list is an overlay in the shell root (see fontMenuMarkup) because this
+ * panel scrolls and would clip a child, so everything here is either the field
+ * or the fixed layer.
+ * ----------------------------------------------------------------------- */
+
+.sl-font-input {
+  position: relative;
+  display: block;
+}
+
+.sl-theme-font-grid .sl-font-input input {
+  /* Room for the chevron, so a long family name never runs under it. */
+  padding-right: var(--sl-space-20);
+}
+
+.sl-font-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--sl-space-20);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--sl-color-text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.sl-font-toggle:hover {
+  color: var(--sl-color-text);
+}
+
+.sl-font-menu {
+  /* Fixed, and placed by computeMenuPlacement in viewport coordinates: it has
+     to escape the scrolling panel and flip above the input near the bottom
+     edge. `top`/`bottom`/`left`/`width`/`max-height` are all set inline.
+     Above the sticky footer (z 10) and the row menus (20), below the global
+     search palette (40), which is modal and closes this on the way in. */
+  position: fixed;
+  z-index: 30;
+  overflow-y: auto;
+  padding: var(--sl-space-4);
+  background: var(--sl-color-surface-raised);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 7px;
+  box-shadow: var(--sl-shadow-menu);
+  scrollbar-width: thin;
+  scrollbar-color: var(--sl-color-border-strong) transparent;
+}
+
+.sl-font-option {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sl-space-8);
+  border-radius: 5px;
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-support);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sl-font-option:hover,
+.sl-font-option.is-active {
+  background: var(--sl-color-surface-hover);
+}
+
+.sl-font-option.is-default {
+  color: var(--sl-color-text-muted);
+}
+
+.sl-font-menu-note {
+  margin: 0;
+  padding: var(--sl-space-6) var(--sl-space-8);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-logo-setting {

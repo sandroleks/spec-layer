@@ -274,13 +274,17 @@ export function textStyleMeta(count: number, frames: number): string {
 }
 
 /**
- * The create button's label. Naming the count is the only place the user learns
- * that a build produces more frames than rows they ticked.
+ * The create button's label. See docs/plugin-voice-and-copy.md ("Footer
+ * actions") for why this names the action rather than counting frames.
+ *
+ * It used to be `createButtonLabel(frames)` → "Create 8 frames", defended on
+ * the grounds that the count was the only place the user learns a build
+ * produces more frames than rows they ticked. It is not: collectionMeta and
+ * textStyleMeta above already append "+ N frames" to any row that splits, and
+ * the toolbar reports "N of M included". A frame is also the wrong noun — the
+ * user came for docs, and frames are how this screen happens to store them.
  */
-export function createButtonLabel(frames: number): string {
-  if (frames <= 0) return 'Create foundation frames';
-  return frames === 1 ? 'Create 1 frame' : `Create ${frames} frames`;
-}
+export const FOUNDATION_CREATE_LABEL = 'Create docs';
 
 // ---------------------------------------------------------------------------
 // AI group descriptions

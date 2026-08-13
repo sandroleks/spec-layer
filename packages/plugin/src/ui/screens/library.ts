@@ -119,6 +119,7 @@ interface MenuItem {
   glyph:
     | 'adjustments'
     | 'refresh'
+    | 'fileCheck'
     | 'externalLink'
     | 'puzzle'
     | 'download'
@@ -139,7 +140,10 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
     maintenance.push({
       action: 'update',
       label: 'Update documentation',
-      glyph: 'refresh',
+      // Same glyph as the footer's "Update all docs": one act, one glyph,
+      // whether it runs on this row or on every drifted doc. It wore `refresh`
+      // here, which is the re-check that writes nothing.
+      glyph: 'fileCheck',
     });
   }
 
@@ -374,19 +378,28 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   );
   const refreshLabel = model.refreshing ? 'Refreshing…' : 'Refresh library';
   /**
-   * The batch button carries the glyph for what it will actually do, not one
-   * blanket `refresh`. Sitting next to "Refresh library" — which is already a
-   * refresh — a second refresh arrow on a disabled "Up to date" made the two
-   * buttons read as the same control twice. Only the states that really do
-   * update keep the arrows.
+   * Label only. The glyph is fixed at `fileCheck` below and does not vary with
+   * state, which is the whole of the bug this used to have: it picked
+   * `refresh`, then `alertCircle`, then `check` as the state changed, so one
+   * slot showed an action, then a warning, then a status. It also could not
+   * take the circular arrows it wanted, because those mean "re-reads, writes
+   * nothing" and belong to the "Refresh library" beside it. The failed checks
+   * the old `alertCircle` reported are already visible per row as "Check
+   * unavailable". See the icon contract in design-system/components.css.
+   *
+   * "Update all docs", not "Update all 3": see docs/plugin-voice-and-copy.md
+   * ("Footer actions"). It names the same object the create buttons do, and
+   * "all" is what separates it from a row's own "Update documentation" — the
+   * count is already on the Updates filter beside it, and a label that changes
+   * width as rows drift in and out made the button jump.
    */
-  const batch = model.updatingAll
-    ? { label: 'Updating…', glyph: 'refresh' as const }
+  const batchLabel = model.updatingAll
+    ? 'Updating…'
     : model.checksIncomplete
-      ? { label: 'Refresh to retry', glyph: 'alertCircle' as const }
+      ? 'Refresh to retry'
     : model.counts.updates > 0
-      ? { label: `Update all ${model.counts.updates}`, glyph: 'refresh' as const }
-      : { label: 'Up to date', glyph: 'check' as const };
+      ? 'Update all docs'
+      : 'Up to date';
   const progress = model.progress
     ? `<div class="sl-footer-progress">${progressMarkup(model.progress)}</div>`
     : '';
@@ -395,12 +408,79 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     '<div class="sl-footer-actions">' +
     '<button class="sl-button sl-library-refresh" data-tone="secondary" ' +
     `type="button" data-library-refresh${busy ? ' disabled' : ''}>` +
-    `${icon('refresh', 16)}<span>${refreshLabel}</span></button>` +
+    `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
     '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
     `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
-    `${icon(batch.glyph, 16)}<span>${batch.label}</span></button>` +
+    `${icon('fileCheck', 15)}<span>${batchLabel}</span></button>` +
     '</div>'
   );
+}
+
+/** Row-relative offsets the CSS opens the menu at, mirrored to open upward. */
+const MENU_BELOW_TOP = 42;
+const MENU_ABOVE_BOTTOM = 7;
+/** Breathing room kept between the menu and the scroll viewport's edges. */
+const MENU_EDGE_GAP = 8;
+
+export interface RowMenuMetrics {
+  /** Viewport y of the row the menu belongs to. */
+  rowTop: number;
+  /** The scroll viewport's own top and bottom, in the same coordinates. */
+  viewTop: number;
+  viewBottom: number;
+  /** Measured menu height — it varies with the row's capability flags. */
+  height: number;
+}
+
+/**
+ * Row-relative `top` for an open row menu, or null to keep the CSS default.
+ *
+ * Pure so the clamping can be tested without a layout engine; see
+ * placeOpenRowMenu for why this is needed at all.
+ */
+export function rowMenuTop(metrics: RowMenuMetrics): number | null {
+  const { rowTop, viewTop, viewBottom, height } = metrics;
+  // Every bound is row-relative, matching the `top` this returns.
+  const lowest = viewBottom - MENU_EDGE_GAP - height - rowTop;
+  if (MENU_BELOW_TOP <= lowest) return null; // Fits below, so don't intervene.
+
+  const highest = viewTop + MENU_EDGE_GAP - rowTop;
+  const above = MENU_ABOVE_BOTTOM - height;
+  // A menu taller than the viewport cannot satisfy both bounds; top-align it so
+  // its first items stay reachable rather than clipping them off the top.
+  return Math.round(Math.min(Math.max(above, highest), Math.max(lowest, highest)));
+}
+
+/**
+ * Keeps an open row menu inside the scroll viewport.
+ *
+ * The menu is absolutely positioned inside `.sl-screen-scroll`, which is an
+ * `overflow-y: auto` clipping context with the sticky footer sitting opaque
+ * just below it. Opening downward at a fixed offset is therefore fine for most
+ * rows and clipped mid-menu further down the list — the taller the row's menu,
+ * the higher up that starts, and the last row loses its destructive actions
+ * entirely.
+ *
+ * So this measures once and flips the menu above the row when it does not fit
+ * below. Measuring once is enough: the host closes the menu on scroll, so an
+ * open menu never has to track anything. Row index cannot stand in for the
+ * measurement — whether there is room below depends on scroll position and on
+ * how many actions the row's capability flags produced, and a short list has
+ * room under its last row.
+ */
+function placeOpenRowMenu(refs: ShellRefs): void {
+  const menu = refs.scroll.querySelector<HTMLElement>('.sl-library-overflow-menu');
+  const row = menu?.closest<HTMLElement>('.sl-library-row');
+  if (!menu || !row) return;
+
+  const view = refs.scroll.getBoundingClientRect();
+  const top = rowMenuTop({
+    rowTop: row.getBoundingClientRect().top,
+    viewTop: view.top,
+    viewBottom: view.bottom,
+    height: menu.offsetHeight,
+  });
+  if (top !== null) menu.style.top = `${top}px`;
 }
 
 export function renderLibraryScreen(
@@ -417,4 +497,8 @@ export function renderLibraryScreen(
   refs.scroll.scrollTop = scrollTop;
   refs.footer.innerHTML = libraryFooterMarkup(model);
   refs.footer.hidden = false;
+  // After the scroll restore above: the menu's room depends on where the row
+  // actually sits, and both entry points render through here, so the dev
+  // harness cannot drift from the plugin on this.
+  placeOpenRowMenu(refs);
 }

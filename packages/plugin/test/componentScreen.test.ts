@@ -22,6 +22,8 @@ import {
   createComponentSelection,
 } from '../src/ui/screens/component';
 import { NO_FACTS, type ComponentFacts } from '../src/ui/viewModel/componentFacts';
+import { ICON_PATHS } from '../src/ui/shell/icons';
+import type { ComponentScreenState } from '../src/ui/viewModel/contracts';
 
 const ALL_GROUPS = new Set(['usage', 'specs', 'a11y'] as const);
 const READY = { kind: 'ready', componentName: 'Button' } as const;
@@ -359,12 +361,42 @@ describe('component screen markup', () => {
       .toContain('id="sl-create" type="button" disabled');
   });
 
-  it('renders the selected-component eyebrow and footer icons', () => {
+  it('renders the selected-component eyebrow and follows the icon contract', () => {
     const header = componentHeaderMarkup(READY);
     const footer = componentFooterMarkup(READY);
     expect(header).toContain('Selected component');
     expect(footer).toContain('id="sl-create"');
-    expect(footer).toContain('<svg');
+    // One button, one glyph. "Create docs" carries `filePlus` — the act, not
+    // the finished document its old `fileDescription` drew (which was also the
+    // sidebar's icon for this screen).
+    expect(footer.match(/<svg/g)).toHaveLength(1);
+    expect(footer).toContain(ICON_PATHS.filePlus);
+    expect(footer).not.toContain(ICON_PATHS.fileDescription);
+
+    // Every footer button is drawn, so success shows two: Download + create.
+    const withDownload = componentFooterMarkup({
+      kind: 'success',
+      componentName: 'Button',
+      replaced: false,
+    });
+    expect(withDownload).toContain('id="sl-download"');
+    expect(withDownload.match(/<svg/g)).toHaveLength(2);
+    expect(withDownload).toContain(ICON_PATHS.download);
+  });
+
+  it('keeps the create glyph through busy and blocked states', () => {
+    // The glyph names the act, so it does not change with the button's state.
+    // The Library primary used to swap `refresh`/`alertCircle`/`check` as its
+    // state changed, which is the bug the one-button-one-glyph rule prevents.
+    for (const state of [
+      READY,
+      { kind: 'reading', componentName: 'Button' },
+      { kind: 'building', componentName: 'Button', action: 'create' },
+      { kind: 'building', componentName: 'Button', action: 'download' },
+      { kind: 'error', componentName: 'Button', message: 'nope' },
+    ] as ComponentScreenState[]) {
+      expect(componentFooterMarkup(state)).toContain(ICON_PATHS.filePlus);
+    }
   });
 
   it('locks component settings while reading or building', () => {
@@ -391,6 +423,18 @@ describe('component screen markup', () => {
     expect(footer).toContain('Downloading…');
     expect(footer).toContain('Saving the markdown');
     expect(footer).toContain('sl-footer-progress');
+  });
+
+  it('marks both busy labels with an ellipsis, not just the download', () => {
+    // "Creating docs" without one read as a second, differently-worded action
+    // rather than the same button working. See docs/plugin-voice-and-copy.md.
+    expect(componentFooterMarkup({
+      kind: 'building',
+      componentName: 'Button',
+      action: 'create',
+    })).toContain('<span>Creating docs…</span>');
+    expect(componentFooterMarkup({ kind: 'ready', componentName: 'Button' }))
+      .toContain('<span>Create docs</span>');
   });
 
   it('keeps a successful build downloadable without rendering a plugin toast', () => {

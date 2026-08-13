@@ -11,7 +11,7 @@ import {
   allSelected,
   canGenerate,
   collectionMeta,
-  createButtonLabel,
+  FOUNDATION_CREATE_LABEL,
   frameCount,
   framesPerSource,
   summarize,
@@ -157,22 +157,45 @@ export function foundationFooterMarkup(
 ): string {
   const busy = state.kind === 'loading' || state.kind === 'generating';
   const frames = spec ? frameCount(spec, selection) : 0;
+  /**
+   * "Select sources to continue" is an instruction, so it may only appear when
+   * the user can actually follow it: sources are listed and none are ticked.
+   *
+   * It used to be the label for every `frames === 0`, which is a different
+   * question — "nothing to build" has several causes and only one of them is
+   * the user's to fix. On page load it asked for a selection while the list was
+   * still skeleton rows and the progress line said "Reading this file"; in a
+   * file with no variables or text styles it asked forever, next to an empty
+   * state explaining there is nothing to select; and after a failed read it
+   * pointed at the wrong remedy, which is "Refresh sources" beside it.
+   *
+   * Everywhere else the button names its act and is simply disabled, the same
+   * way the component screen's "Create docs" sits disabled while extraction
+   * reads. The reason is already on screen in each case: the progress line, the
+   * empty state, or the error banner.
+   */
+  const nothingTicked = state.kind === 'ready' && Boolean(spec) && frames === 0;
   const label = state.kind === 'generating'
-    ? 'Creating frames…'
-    : frames > 0
-      ? createButtonLabel(frames)
-      : 'Select sources to continue';
+    ? 'Creating docs…'
+    : nothingTicked
+      ? 'Select sources to continue'
+      : FOUNDATION_CREATE_LABEL;
   const progress = footerProgressMarkup(state);
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh sources';
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
+    // Per the icon contract in design-system/components.css: one button, one
+    // glyph, held through every state. `filePlus` is the same glyph the
+    // component screen's create button wears, because this is the same act on
+    // the same object. Its old `layoutGrid` drew frames rather than the making
+    // of them and was also the sidebar's glyph for this screen.
     '<button class="sl-button sl-foundation-refresh" data-tone="secondary" ' +
     `type="button" data-foundation-refresh${busy || refreshing ? ' disabled' : ''}>` +
-    `${icon('refresh', 16)}<span>${refreshLabel}</span></button>` +
+    `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
     '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
     `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
-    `${icon('layoutGrid', 15)}${esc(label)}</button>` +
+    `${icon('filePlus', 15)}<span>${esc(label)}</span></button>` +
     '</div>'
   );
 }

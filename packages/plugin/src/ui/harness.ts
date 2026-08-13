@@ -481,7 +481,9 @@ if (view === 'library') {
       expandedDocId,
       now,
     });
-    setRailBadge(refs.sidebar, 'library', model.counts.updates);
+    // Boolean, not a count. The plugin also holds it steady while checks
+    // resolve; this fixture has no in-flight checks to hold it across.
+    setRailBadge(refs.sidebar, 'library', model.counts.updates > 0);
     renderLibraryScreen(refs, {
       ...model,
       menuDocId,

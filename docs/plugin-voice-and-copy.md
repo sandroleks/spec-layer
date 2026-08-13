@@ -30,6 +30,41 @@ honest, and specific. Never like a marketer.
 8. **Name things the way the user thinks of them,** not the internal name
    (their "file", "component", "purchase email" — not "node", "clientStorage").
 
+## Footer actions
+
+Three screens end in a footer with the same two slots, so the three had drifted
+into naming three different things: an output ("Create docs"), an internal
+storage unit ("Create 8 frames"), and a batch scope ("Update all 3").
+
+1. **The primary names its action and the object the user came for.** That
+   object is **docs** on every screen that makes them. Not "frames" (how the
+   foundations screen happens to store a doc), not "documentation" (longer, and
+   the footer has no room to spare).
+2. **No counts in a button.** The count belongs where the screen already
+   reports it: the foundations toolbar says "8 of 12 included" and each row that
+   splits says "+ N frames"; the Library's Updates filter says how many drifted.
+   A label that counts also changes width as the user ticks rows, so the button
+   moves under the cursor.
+3. **Scope goes in the label only where two of these actions could collide.**
+   "Update all docs" in the Library footer against "Update documentation" in a
+   row's own menu: one is every drifted doc, the other is this one. Both stay
+   separate buttons.
+4. **Busy is the present participle plus an ellipsis** — "Creating docs…",
+   "Updating…", "Refreshing…". Same button working, not a new action.
+5. **A blocked primary may state why instead of naming the action** ("Up to
+   date", "Select sources to continue"). It is disabled, so it is not offering
+   an action to name. This is also why it carries no icon: see the icon
+   contract in `design-system/components.css`.
+
+| Screen | Secondary | Primary |
+| --- | --- | --- |
+| Selected component | `Download` | `Create docs` |
+| Foundations | `Refresh sources` | `Create docs` |
+| Library | `Refresh library` | `Update all docs` |
+
+Glyphs are a separate contract (one button, one glyph, held through every
+state); see `docs/plugin-ui-vnext/design-system/README.md`.
+
 ## Reference strings (current, on-voice)
 
 - Free meter: `17/20 AI generations left this month`

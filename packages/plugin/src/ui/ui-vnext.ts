@@ -34,7 +34,14 @@ import {
   type ComponentSelection,
 } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
-import { renderSettingsScreen } from './screens/settings';
+import {
+  fontMenuMarkup,
+  renderSettingsScreen,
+  type ColorField,
+  type FontField,
+} from './screens/settings';
+import { computeMenuPlacement } from './fontPicker';
+import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
 import { renderLibraryScreen } from './screens/library';
 import { globalSearchMarkup } from './screens/search';
@@ -49,6 +56,7 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
+  libraryBadgeVisible,
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
@@ -127,6 +135,12 @@ let settingsFontWarning = '';
 let settingsLogoError = '';
 let settingsFonts: string[] = [];
 let settingsFontsRequested = false;
+/**
+ * The open font list, or null. `query` is what has been typed since it opened,
+ * kept separate from the field's committed value so opening the list shows every
+ * family rather than pre-filtering down to the one already chosen.
+ */
+let fontMenu: { field: FontField; query: string; activeIndex: number } | null = null;
 let settingsCustomDraft: BrandTheme | null = null;
 let licenseScreenState: LicenseState = 'checking';
 let licenseInput = '';
@@ -270,7 +284,9 @@ function paint(): void {
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
+        fontMenuField: fontMenu?.field ?? null,
       });
+      renderFontMenu();
       return;
     case 'library':
       {
@@ -337,6 +353,7 @@ function navigateToView(
   options: { refreshLibrary?: boolean } = {},
 ): void {
   view = next;
+  closeFontMenu();
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
   if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
@@ -597,8 +614,25 @@ function currentLibraryModel() {
   });
 }
 
+/**
+ * The badge's last settled answer.
+ *
+ * Source checks resolve one doc at a time and a refresh clears them all first,
+ * so `counts.updates` is not a fact until a pass finishes: read straight, it
+ * takes the badge away at the start of every reload and then counts back up.
+ * This holds the answer across that gap.
+ */
+let libraryHasUpdates = false;
+
 function syncLibraryBadge(): void {
-  setRailBadge(refs.sidebar, 'library', currentLibraryModel().counts.updates);
+  const model = currentLibraryModel();
+  libraryHasUpdates = libraryBadgeVisible({
+    updates: model.counts.updates,
+    checking: libraryRefreshing ||
+      model.allRows.some((row) => row.status === 'pending'),
+    previous: libraryHasUpdates,
+  });
+  setRailBadge(refs.sidebar, 'library', libraryHasUpdates);
 }
 
 function refreshLibrary(): void {
@@ -799,9 +833,165 @@ function renderGlobalSearch(focusInput = false): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Font picker
+//
+// The list is an overlay in the shell root, rendered and positioned here while
+// screens/settings.ts owns its markup. It follows the global search palette
+// below rather than fontPicker.ts's createFontPicker: that one binds listeners
+// to its input and menu, which works against the legacy UI's static template
+// but not here, where every paint replaces the screen's DOM. The one piece
+// worth sharing is computeMenuPlacement, which is pure.
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies a colour chosen from a swatch's native picker.
+ *
+ * Deliberately never repaints. The picker is anchored to the very element a
+ * paint would replace, and `input` fires continuously while dragging, so a
+ * repaint per event would tear the picker out from under the pointer. Nothing
+ * needs one either: the swatch renders its own value and the only other views of
+ * this colour are the hex field and the error hint, both updated here by hand.
+ * State is committed, so the next natural paint agrees.
+ *
+ * `commit` separates the drag from the release: persisting on every `input`
+ * would write clientStorage on the host once per pointer move.
+ */
+function applySwatchColor(field: ColorField, raw: string, commit: boolean): void {
+  const parsed = parseBrandHex(raw);
+  if (!parsed) return; // A native picker cannot produce this, but it is free.
+  const hex = document.querySelector<HTMLInputElement>(`[data-theme-field="${field}"]`);
+  if (hex) hex.value = parsed;
+  if (settingsColorError) {
+    settingsColorError = '';
+    const hint = document.querySelector<HTMLElement>('[data-settings-color-hint]');
+    if (hint) hint.textContent = '';
+  }
+  if (!commit) return;
+  setBrandTheme(state, { ...state.brandTheme, [field]: parsed });
+  settingsCustomDraft = { ...state.brandTheme };
+}
+
+/** The rows the open list shows: the default row, then the filtered families. */
+function fontMenuValues(): string[] {
+  if (!fontMenu) return [];
+  return ['', ...filterFamilies(settingsFonts, fontMenu.query)];
+}
+
+function fontInput(field: FontField): HTMLInputElement | null {
+  return refs.root.querySelector<HTMLInputElement>(`[data-theme-font="${field}"]`);
+}
+
+function renderFontMenu(): void {
+  const existing = refs.root.querySelector<HTMLElement>('[data-font-menu]');
+  if (!fontMenu || view !== 'settings') {
+    existing?.remove();
+    return;
+  }
+  const markup = fontMenuMarkup({
+    field: fontMenu.field,
+    families: fontMenuValues().slice(1),
+    activeIndex: fontMenu.activeIndex,
+    loaded: settingsFonts.length > 0,
+  });
+  if (existing) existing.outerHTML = markup;
+  else refs.root.insertAdjacentHTML('beforeend', markup);
+  positionFontMenu();
+  syncFontActiveRow();
+}
+
+function positionFontMenu(): void {
+  const input = fontMenu && fontInput(fontMenu.field);
+  const menu = refs.root.querySelector<HTMLElement>('.sl-font-menu');
+  if (!input || !menu) return;
+  const placement = computeMenuPlacement(
+    input.getBoundingClientRect(),
+    window.innerHeight,
+  );
+  menu.style.left = `${placement.left}px`;
+  menu.style.width = `${placement.width}px`;
+  menu.style.maxHeight = `${placement.maxHeight}px`;
+  if (placement.openUp) {
+    menu.style.top = 'auto';
+    menu.style.bottom = `${placement.bottom}px`;
+  } else {
+    menu.style.bottom = 'auto';
+    menu.style.top = `${placement.top}px`;
+  }
+}
+
+/** Moves the highlight without re-rendering, so typing keeps its caret. */
+function syncFontActiveRow(): void {
+  if (!fontMenu) return;
+  const rows = refs.root.querySelectorAll<HTMLElement>('[data-font-index]');
+  for (const row of rows) {
+    const active = Number(row.dataset.fontIndex) === fontMenu.activeIndex;
+    row.classList.toggle('is-active', active);
+    row.setAttribute('aria-selected', String(active));
+    if (active) row.scrollIntoView({ block: 'nearest' });
+  }
+  const input = fontInput(fontMenu.field);
+  if (input) {
+    input.setAttribute('aria-activedescendant', `sl-font-option-${fontMenu.activeIndex}`);
+  }
+}
+
+function openFontMenu(field: FontField): void {
+  // Opening on the committed value would filter the list down to that one
+  // family, leaving no way to reach another. An empty query lists everything.
+  const committed = fontInput(field)?.value.trim() ?? '';
+  const index = committed
+    ? Math.max(0, filterFamilies(settingsFonts, '').indexOf(committed) + 1)
+    : 0;
+  fontMenu = { field, query: '', activeIndex: index };
+  renderFontMenu();
+  const input = fontInput(field);
+  if (input) input.setAttribute('aria-expanded', 'true');
+}
+
+function closeFontMenu(restoreFocus = false): void {
+  if (!fontMenu) return;
+  const field = fontMenu.field;
+  fontMenu = null;
+  refs.root.querySelector('[data-font-menu]')?.remove();
+  const input = fontInput(field);
+  if (input) {
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+    if (restoreFocus) input.focus({ preventScroll: true });
+  }
+}
+
+/** Applies a font choice. '' clears the field back to the default. */
+function commitFont(field: FontField, value: string): void {
+  const next = value.trim();
+  setBrandTheme(state, { ...state.brandTheme, [field]: next || null });
+  settingsCustomDraft = { ...state.brandTheme };
+  settingsFontWarning = fontFallbackWarning(next);
+  closeFontMenu();
+  paintAndFocus(`[data-theme-font="${field}"]`);
+}
+
+/**
+ * A family the host did not list will silently fall back to Inter in the frame,
+ * so free-typed text still commits but says so. Only meaningful once the list
+ * has arrived: before that, nothing can be checked against it.
+ */
+function fontFallbackWarning(value: string): string {
+  const unknown =
+    value !== '' &&
+    value !== 'Inter' &&
+    settingsFonts.length > 0 &&
+    !settingsFonts.includes(value);
+  return unknown
+    ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
+    : '';
+}
+
 function openGlobalSearch(): void {
   if (searchOpen) return;
   if (libraryMenuDocId) closeLibraryMenu();
+  closeFontMenu();
   searchRestoreTarget = refs.searchButton;
   searchOpen = true;
   searchQuery = '';
@@ -1156,6 +1346,36 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // Font list. Picking a row commits; the chevron toggles; clicking the input
+  // opens but never closes, so a click to place the caret does not dismiss it.
+  const fontOption = target.closest<HTMLElement>('[data-font-value]');
+  if (fontOption && fontMenu) {
+    commitFont(fontMenu.field, fontOption.dataset.fontValue ?? '');
+    return;
+  }
+
+  const fontToggle = target.closest<HTMLElement>('[data-font-toggle]');
+  if (fontToggle) {
+    const field = fontToggle.dataset.fontToggle as FontField;
+    if (fontMenu?.field === field) closeFontMenu(true);
+    else {
+      fontInput(field)?.focus({ preventScroll: true });
+      openFontMenu(field);
+    }
+    return;
+  }
+
+  const fontOwnInput = target.closest<HTMLElement>('[data-theme-font]');
+  if (fontOwnInput) {
+    const field = fontOwnInput.dataset.themeFont as FontField;
+    if (fontMenu?.field !== field) openFontMenu(field);
+    return;
+  }
+
+  // Anything else outside the open list dismisses it, then falls through so the
+  // click still does whatever it was for.
+  if (fontMenu) closeFontMenu();
+
   if (target.closest('[data-theme-preset="__custom__"]')) {
     settingsColorError = '';
     settingsFontWarning = '';
@@ -1267,12 +1487,15 @@ document.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement | null;
   if (!input || operation.active) return;
 
-  const colorField = input.dataset.themeField as
-    | 'headerBg'
-    | 'accent'
-    | 'bodyText'
-    | 'tableHeadBg'
-    | undefined;
+  // A swatch's picker closing is the commit. Still no repaint: some engines fire
+  // `change` while the picker is open, and it is the picker's own element.
+  const pickedSwatch = input.dataset.themeSwatch as ColorField | undefined;
+  if (pickedSwatch) {
+    applySwatchColor(pickedSwatch, input.value, true);
+    return;
+  }
+
+  const colorField = input.dataset.themeField as ColorField | undefined;
   if (colorField) {
     const raw = input.value.trim();
     const parsed = raw ? parseBrandHex(raw) : null;
@@ -1297,21 +1520,9 @@ document.addEventListener('change', (event) => {
     | 'bodyFont'
     | undefined;
   if (fontField) {
-    const value = input.value.trim();
-    setBrandTheme(state, {
-      ...state.brandTheme,
-      [fontField]: value || null,
-    });
-    settingsCustomDraft = { ...state.brandTheme };
-    const unknown =
-      value !== '' &&
-      value !== 'Inter' &&
-      settingsFonts.length > 0 &&
-      !settingsFonts.includes(value);
-    settingsFontWarning = unknown
-      ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
-      : '';
-    paintAndFocus(`[data-theme-font="${fontField}"]`);
+    // Free-typed text commits here on blur or Enter, the same path a picked row
+    // takes. commitFont owns the fallback warning so both agree.
+    commitFont(fontField, input.value);
     return;
   }
 
@@ -1394,14 +1605,34 @@ document.addEventListener('input', (event) => {
     }
     return;
   }
-  const colorField = input.dataset.themeField as
-    | 'headerBg'
-    | 'accent'
-    | 'bodyText'
-    | 'tableHeadBg'
-    | undefined;
+  // Dragging in a swatch's picker: mirror it into the hex field live, but do
+  // not persist until the picker closes (see applySwatchColor).
+  const draggedSwatch = input.dataset.themeSwatch as ColorField | undefined;
+  if (draggedSwatch) {
+    applySwatchColor(draggedSwatch, input.value, false);
+    return;
+  }
+
+  // Typing filters the list rather than waiting for a commit on blur, which is
+  // what a searchable field is for. Only the menu subtree re-renders, so the
+  // caret stays where it is; the value itself still commits on change/Enter.
+  const typedFont = input.dataset.themeFont as FontField | undefined;
+  if (typedFont) {
+    if (!fontMenu || fontMenu.field !== typedFont) {
+      fontMenu = { field: typedFont, query: input.value, activeIndex: 0 };
+    } else {
+      fontMenu.query = input.value;
+      fontMenu.activeIndex = 0;
+    }
+    renderFontMenu();
+    return;
+  }
+
+  const colorField = input.dataset.themeField as ColorField | undefined;
   if (!colorField) return;
 
+  // Typing a valid hex repaints, which is what carries the new value back into
+  // the swatch beside it. Safe here: no picker is open while the field is typed.
   const parsed = parseBrandHex(input.value);
   if (!parsed) {
     settingsColorError = 'Enter a 6-digit hex color, e.g. #0d2436.';
@@ -1470,6 +1701,49 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
+  // Font field. ArrowDown opens a closed list, so the whole control is reachable
+  // without a pointer. Enter takes the highlighted family; with nothing
+  // highlighted it falls through to the field's own change, which commits the
+  // typed text so an unlisted family stays possible.
+  if (event.target instanceof HTMLInputElement && event.target.dataset.themeFont) {
+    const field = event.target.dataset.themeFont as FontField;
+    if (event.key === 'Escape' && fontMenu) {
+      event.preventDefault();
+      closeFontMenu(true);
+      return;
+    }
+    if (event.key === 'ArrowDown' && !fontMenu) {
+      event.preventDefault();
+      openFontMenu(field);
+      return;
+    }
+    if (
+      fontMenu &&
+      (event.key === 'ArrowDown' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'Home' ||
+        event.key === 'End')
+    ) {
+      event.preventDefault();
+      fontMenu.activeIndex = nextSearchIndex(
+        fontMenu.activeIndex,
+        event.key,
+        fontMenuValues().length,
+      );
+      syncFontActiveRow();
+      return;
+    }
+    if (event.key === 'Enter' && fontMenu) {
+      const values = fontMenuValues();
+      if (fontMenu.activeIndex < values.length) {
+        event.preventDefault();
+        commitFont(field, values[fontMenu.activeIndex]);
+        return;
+      }
+    }
+    if (event.key === 'Tab' && fontMenu) closeFontMenu();
+  }
+
   if (libraryMenuDocId) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1511,6 +1785,10 @@ document.addEventListener('focusin', (event) => {
 });
 
 refs.scroll.addEventListener('scroll', () => {
+  // The font list is position: fixed against the input's viewport rect, so it
+  // has to follow the panel rather than be dismissed by it: the field stays
+  // visible while scrolling, unlike a row menu whose own row scrolls away.
+  if (fontMenu) positionFontMenu();
   if (!libraryMenuDocId) return;
   libraryMenuDocId = null;
   libraryMenuRestore = null;
@@ -1649,6 +1927,14 @@ window.onmessage = (event: MessageEvent): void => {
 
     case 'fontList':
       settingsFonts = msg.families;
+      // The list is fetched on the first visit to Settings, so it usually
+      // arrives while the user is already looking at the fields. Re-render the
+      // open menu (it may have been showing the "no fonts" fallback) and
+      // re-check any value typed before the list existed.
+      settingsFontWarning = fontFallbackWarning(
+        fontMenu ? fontInput(fontMenu.field)?.value.trim() ?? '' : '',
+      );
+      if (fontMenu) renderFontMenu();
       return;
 
     case 'logoCaptured':

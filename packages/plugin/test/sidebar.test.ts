@@ -49,9 +49,22 @@ describe('sidebarMarkup', () => {
     }
   });
 
-  it('renders a badge only when there is a count', () => {
+  it('renders an attention dot, never a count', () => {
+    // It used to print counts.updates, a number the UI only learns one doc at a
+    // time: it climbed 1, 2, 3 as source checks landed and vanished at the start
+    // of every reload. "Something needs attention" is the whole message.
     expect(sidebarMarkup('component', {})).not.toContain('sl-sidebar-badge');
-    expect(sidebarMarkup('component', { library: 3 })).toContain('>3<');
+    const badged = sidebarMarkup('component', { library: true });
+    expect(badged).toContain('<span class="sl-sidebar-badge" aria-hidden="true"></span>');
+    expect(badged).not.toMatch(/sl-sidebar-badge[^>]*>\s*\d/);
+  });
+
+  it('puts the badge state on the accessible name, since a dot has no text', () => {
+    const badged = sidebarMarkup('component', { library: true });
+    expect(badged).toContain('aria-label="Library, updates available"');
+    // Only the badged view is renamed; the others keep their plain label.
+    expect(badged).toContain('aria-label="Generate component docs"');
+    expect(sidebarMarkup('component', {})).toContain('aria-label="Library"');
   });
 
   it('separates the workflow groups and bottom utilities', () => {

@@ -147,7 +147,6 @@
   --sl-color-accent-text: #9dccf2;
   --sl-color-accent-soft: rgba(11, 153, 255, 0.14);
   --sl-color-accent-border: rgba(11, 153, 255, 0.25);
-  --sl-color-accent-border-strong: rgba(11, 153, 255, 0.8);
   --sl-color-focus: #62b8ff;
   --sl-color-ai-badge-text: var(--sl-color-accent-text);
   --sl-color-ai-badge-bg: var(--sl-color-accent-soft);
@@ -221,7 +220,6 @@ body[data-theme="light"] {
   --sl-color-accent-text: #0969a8;
   --sl-color-accent-soft: #eef7ff;
   --sl-color-accent-border: #b9ddf5;
-  --sl-color-accent-border-strong: #0875c1;
   --sl-color-focus: #0875c1;
   --sl-color-ai-badge-text: #737373;
   --sl-color-ai-badge-bg: #ffffff;

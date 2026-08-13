@@ -70,6 +70,47 @@ button {
 
 
 
+/*
+ * Icons in buttons — ONE BUTTON, ONE GLYPH, naming the act the button performs
+ * and never changing with the button's state.
+ *
+ * This is the rule that was actually missing. The failure it fixes was never
+ * "primaries have icons": it was one slot holding three different CATEGORIES
+ * as its state changed. The Library's primary picked `refresh` while idle,
+ * `alertCircle` when checks had failed, and `check` when there was nothing to
+ * do — an action, then a warning, then a status, in one button. Removing the
+ * glyph made that slot honest but left every footer half-drawn: one button
+ * with a pictogram beside one without.
+ *
+ * - Every footer action carries a glyph, in every state. A busy or disabled
+ *   button is still the same button, so "Creating docs…", "Up to date" and
+ *   "Select sources to continue" keep the glyph of the act they belong to.
+ *   State belongs in the label and in the progress line, not in the glyph.
+ * - The two footer primaries are a family: `filePlus` for making docs (the
+ *   component and Foundations screens) and `fileCheck` for bringing them up to
+ *   date (the Library). Same page outline, so they read as one act on one
+ *   object; the plus and the check are what make them acts. Neither reuses
+ *   `fileDescription` or `layoutGrid`, which draw the finished OUTPUT and are
+ *   also the sidebar's glyphs for those very screens, so a footer wearing one
+ *   repeated the tab the user is already looking at.
+ * - Conventional pictograms keep their meaning exactly: `refresh` (circular
+ *   arrows) is "re-read, writes nothing", `download` is "arrow to tray",
+ *   `externalLink` is "arrow out of a box".
+ * - Tie-break: when two buttons in one row would claim the same pictogram, it
+ *   goes to the one it matches exactly. Circular arrows are "Refresh library",
+ *   not the "Update all docs" beside it — which is why update needed a glyph
+ *   of its own rather than a second pair of arrows. Two identical glyphs in
+ *   one row read as the same button twice.
+ * - This says nothing about tone. It is a property of the ACT, not of the
+ *   button: a primary "Download" would keep its arrow.
+ * - Outside this rule: a SPINNER reports work in flight rather than naming an
+ *   act. The license Activate button spins its glyph while checking (see the
+ *   animation rule further down) because that form has no progress line. All
+ *   three footers have one, so their busy buttons keep their static glyph.
+ *
+ * Separately, and not part of the principle: leading glyphs in buttons are
+ * 15px. They were mixed 15 and 16 within a single row.
+ */
 .sl-button {
   min-width: 0;
   height: var(--sl-control-md);

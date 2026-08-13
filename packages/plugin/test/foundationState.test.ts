@@ -6,7 +6,7 @@ import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   emptyStateLines, canGenerate,
   frameCount, framesPerSource, selectAll, clearAll, allSelected,
-  fileSummary, collectionMeta, textStyleMeta, createButtonLabel,
+  fileSummary, collectionMeta, textStyleMeta, FOUNDATION_CREATE_LABEL,
   collectionIconKind,
 } from '../src/ui/foundationState';
 
@@ -386,14 +386,26 @@ describe('panel copy', () => {
     expect(textStyleMeta(200, 2)).toBe('200 styles · + 2 frames');
   });
 
-  it('names the frame count on the button, singular included', () => {
-    expect(createButtonLabel(5)).toBe('Create 5 frames');
-    expect(createButtonLabel(1)).toBe('Create 1 frame');
+  it('names the action on the button and counts nothing', () => {
+    // Was "Create 5 frames". A frame is how this screen stores a doc, not what
+    // the user asked for, and the count made one of three identical footer
+    // slots name a different kind of thing. See docs/plugin-voice-and-copy.md.
+    expect(FOUNDATION_CREATE_LABEL).toBe('Create docs');
+    expect(FOUNDATION_CREATE_LABEL).not.toMatch(/\d/);
+    expect(FOUNDATION_CREATE_LABEL).not.toContain('frame');
   });
 
-  it('falls back to a neutral button label when nothing is selected', () => {
-    // The disabled button still has to read as a sentence, not "Create 0 frames".
-    expect(createButtonLabel(0)).toBe('Create foundation frames');
+  it('still teaches per row that a large source splits into extra frames', () => {
+    // What the button count used to be defended as the only source of. It was
+    // never the only one, which is why dropping it costs nothing.
+    const c = {
+      id: 'x', name: 'P', variableCount: 40,
+      modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const,
+    };
+    expect(collectionMeta(c, 3)).toContain('+ 3 frames');
+    expect(textStyleMeta(200, 2)).toContain('+ 2 frames');
+    // ...and says nothing when the obvious single frame is all it produces.
+    expect(collectionMeta(c, 1)).not.toContain('frame');
   });
 
   it('contains no em dash anywhere in the panel copy', () => {
@@ -403,8 +415,7 @@ describe('panel copy', () => {
       fileSummary(summarize(spec)),
       collectionMeta(c, 3),
       textStyleMeta(4, 2),
-      createButtonLabel(3),
-      createButtonLabel(0),
+      FOUNDATION_CREATE_LABEL,
     ];
     for (const s of strings) expect(s).not.toContain('—');
   });

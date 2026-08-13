@@ -15,6 +15,9 @@ import {
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 
+export type FontField = 'headingFont' | 'bodyFont';
+export type ColorField = 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg';
+
 export interface SettingsScreenState {
   theme: BrandTheme;
   customMode: boolean;
@@ -22,6 +25,79 @@ export interface SettingsScreenState {
   logoError?: string;
   colorError?: string;
   fontWarning?: string;
+  /** Which font field has its list open, if any. */
+  fontMenuField?: FontField | null;
+}
+
+/** The "Default (Inter)" row's value: clearing the field back to the default. */
+export const FONT_DEFAULT_VALUE = '';
+export const FONT_DEFAULT_LABEL = 'Default (Inter)';
+
+export interface FontMenuPresentation {
+  field: FontField;
+  /** Families to list, already filtered by the query. */
+  families: readonly string[];
+  /** Index into the rendered rows, where 0 is always the default row. */
+  activeIndex: number;
+  /** True once the host has listed fonts. False renders the honest fallback. */
+  loaded: boolean;
+}
+
+/**
+ * The font list, as an overlay rather than a child of the field.
+ *
+ * It renders into the shell root next to the global search palette, for the
+ * same two reasons: the settings panel scrolls with `overflow`, which clips an
+ * absolutely positioned child, and the list has to be free to flip above the
+ * input when it is near the bottom of a short panel. ui-vnext.ts positions it
+ * in viewport coordinates with computeMenuPlacement from fontPicker.ts.
+ */
+export function fontMenuMarkup(model: FontMenuPresentation): string {
+  const rows = [
+    `<div class="sl-font-option is-default" role="option" id="sl-font-option-0" ` +
+    `data-font-index="0" data-font-value="" ` +
+    `aria-selected="${model.activeIndex === 0}">${FONT_DEFAULT_LABEL}</div>`,
+    ...model.families.map((family, index) => {
+      const row = index + 1;
+      return (
+        `<div class="sl-font-option" role="option" id="sl-font-option-${row}" ` +
+        `data-font-index="${row}" data-font-value="${esc(family)}" ` +
+        `aria-selected="${model.activeIndex === row}">${esc(family)}</div>`
+      );
+    }),
+  ];
+  const empty = !model.loaded
+    ? '<p class="sl-font-menu-note">Figma did not list any fonts. Type a family name instead.</p>'
+    : model.families.length === 0
+      ? '<p class="sl-font-menu-note">No font matches that name.</p>'
+      : '';
+
+  // No scrim. A combobox should not block the rest of the panel, and a scrim
+  // covering the field turns "click the input to place the caret" into a close,
+  // whose focus restore then reopens the list. ui-vnext.ts closes it on an
+  // outside click instead.
+  return (
+    '<div class="sl-font-menu" role="listbox" aria-label="Fonts" data-font-menu ' +
+    `data-font-menu-field="${model.field}">` +
+    rows.join('') +
+    empty +
+    '</div>'
+  );
+}
+
+function fontField(field: FontField, label: string, value: string, open: boolean): string {
+  return (
+    '<label><span>' + label + '</span>' +
+    '<span class="sl-font-input">' +
+    `<input data-theme-font="${field}" aria-label="${label}" value="${esc(value)}" ` +
+    `role="combobox" aria-expanded="${open}" aria-autocomplete="list" ` +
+    'aria-controls="sl-font-menu" autocomplete="off" spellcheck="false">' +
+    // tabindex -1: the input already opens the list on focus, so this is a
+    // pointer affordance only and must not add a second tab stop per field.
+    `<button class="sl-font-toggle" type="button" tabindex="-1" data-font-toggle="${field}" ` +
+    `aria-label="Browse fonts for ${label}">${icon('chevronDown', 13)}</button>` +
+    '</span></label>'
+  );
 }
 
 function esc(value: string): string {
@@ -61,17 +137,37 @@ function themeChoice(
   );
 }
 
-function colorField(
-  field: 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg',
-  label: string,
-  value: string,
-): string {
+/**
+ * The swatch is the picker.
+ *
+ * It used to be an inert `<i>` that only previewed the hex beside it, so a
+ * colour could be chosen exactly one way: by knowing its hex and typing it. A
+ * native `type="color"` input is the whole feature, with the OS picker and no
+ * custom eyedropper/wheel to build or maintain, and it keeps the field looking
+ * like the swatch it replaces (see the CSS, which strips its default chrome).
+ *
+ * `value` must be a spec-valid lowercase `#rrggbb` or the control silently
+ * sanitizes it to #000000 and the field would read as black. Everything here
+ * comes through resolveTheme or parseBrandHex, both of which lowercase, so this
+ * holds; it is the reason parseBrandHex's `.toLowerCase()` matters beyond tidiness.
+ */
+function colorField(field: ColorField, label: string, value: string): string {
   return (
     `<label class="sl-theme-color-field"><span>${esc(label)}</span>` +
     '<span class="sl-theme-color-input">' +
-    `<i style="background:${esc(value)}" aria-hidden="true"></i>` +
+    // The hex field comes FIRST in the DOM and the CSS puts the swatch back in
+    // column one. A label's control is its first labelable descendant, and an
+    // <input type="color"> is labelable where the inert <i> was not, so leading
+    // with the swatch quietly turned "click the field's label to type a hex"
+    // into "click the label to open the OS picker".
     `<input data-theme-field="${field}" aria-label="${esc(label)} color" ` +
-    `value="${esc(value)}" spellcheck="false"></span></label>`
+    `value="${esc(value)}" spellcheck="false">` +
+    // tabindex -1 for the same reason as the font chevron: the hex field is the
+    // labelled, keyboard-complete way in, so this is a pointer affordance and
+    // must not add a second tab stop to all four fields.
+    `<input type="color" data-theme-swatch="${field}" tabindex="-1" ` +
+    `aria-label="Pick ${esc(label)} color" value="${esc(value)}">` +
+    '</span></label>'
   );
 }
 
@@ -88,10 +184,10 @@ function customControls(state: SettingsScreenState): string {
     colorField('tableHeadBg', 'Table header', resolved.tableHeadBg) +
     '</div>' +
     '<div class="sl-theme-font-grid">' +
-    '<label><span>Heading font</span>' +
-    `<input data-theme-font="headingFont" aria-label="Heading font" value="${esc(resolved.headingFont)}"></label>` +
-    '<label><span>Body font</span>' +
-    `<input data-theme-font="bodyFont" aria-label="Body font" value="${esc(resolved.bodyFont)}"></label>` +
+    fontField('headingFont', 'Heading font', resolved.headingFont,
+      state.fontMenuField === 'headingFont') +
+    fontField('bodyFont', 'Body font', resolved.bodyFont,
+      state.fontMenuField === 'bodyFont') +
     '</div>' +
     `<p class="sl-settings-hint" data-settings-color-hint data-tone="danger">${esc(state.colorError ?? '')}</p>` +
     `<p class="sl-settings-hint" data-settings-font-hint data-tone="warning">${esc(state.fontWarning ?? '')}</p>` +

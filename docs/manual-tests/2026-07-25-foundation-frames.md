@@ -34,7 +34,8 @@ host: its theme variables, its panel width, and its timing.
       Why this is here: the message used to be written and then erased by the repaint that immediately followed, so a successful build reported nothing at all.
       Screenshot:
 
-- [ ] **Frame counts are honest.** The button reads `Create N frames` and matches the number of Sections that actually appear on the canvas. A collection past 150 variables shows `splits into N frames` on its row, and that N matches the parts it produces.
+- [ ] **Frame counts are honest.** The button no longer counts: it reads `Create docs`. The counts that remain must match what lands on the canvas. The toolbar's `N of M included` and the per-row `+ N frames` on a collection past 150 variables together predict the number of Sections that actually appear.
+      Why this is here: the count used to live on the button, and was defended as the only place the user learns that one ticked row can produce several frames. The rows say it too, which is why the button stopped saying it.
       Screenshot:
 
 - [ ] **Mode pills.** On a collection with more than four modes, the modes render as pills, four checked. Unchecking one and checking another swaps them. Unchecking the collection greys every pill out.

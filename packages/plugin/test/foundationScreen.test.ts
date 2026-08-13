@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { FoundationSpec, FoundationSelection } from '@spec-layer/extractor';
+import { ICON_PATHS } from '../src/ui/shell/icons';
+import type { FoundationScreenState } from '../src/ui/viewModel/contracts';
 import {
   foundationFooterMarkup,
   foundationHeaderMarkup,
@@ -83,6 +86,83 @@ describe('foundation screen', () => {
     const markup = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL);
     expect(markup).toContain('data-foundation-refresh');
     expect(markup).toContain('Refresh sources');
+  });
+
+  it('names the action, not the frames it happens to produce', () => {
+    // Was "Create 8 frames", which made this one of three identical footer
+    // slots name a different kind of thing (an internal storage unit) than the
+    // component screen's "Create docs". The frame count lives on the rows that
+    // split and in the toolbar. See docs/plugin-voice-and-copy.md.
+    const ready = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL);
+    expect(ready).toContain('<span>Create docs</span>');
+    expect(ready).not.toMatch(/Create \d+ frames?/);
+    expect(
+      foundationFooterMarkup({ kind: 'generating', done: 1, total: 3 }, SPEC, ALL),
+    ).toContain('Creating docs…');
+    // A blocked primary states why instead of naming an action it cannot offer.
+    const none: FoundationSelection = { collections: [], textStyles: false };
+    expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, none))
+      .toContain('Select sources to continue');
+  });
+
+  it('asks for a selection only where the user can act on the request', () => {
+    const none: FoundationSelection = { collections: [], textStyles: false };
+    const ask = 'Select sources to continue';
+    const label = (m: string) =>
+      /<span>(.*?)<\/span>/.exec(m.split('id="sl-foundation-create"')[1] ?? '')?.[1];
+
+    // The one state where it is true: sources are listed and none are ticked.
+    expect(label(foundationFooterMarkup({ kind: 'ready' }, SPEC, none))).toBe(ask);
+
+    // Every other "nothing to build" has a different cause, and the reason is
+    // already on screen: the progress line, the empty state, the error banner.
+    // Asking for a selection here was impossible to act on.
+    const wrongToAsk: Array<[string, FoundationScreenState, FoundationSpec | null]> = [
+      ['page load, list is still skeletons', { kind: 'loading' }, null],
+      ['file has no variables or text styles', { kind: 'ready' }, null],
+      ['read failed, remedy is Refresh sources', { kind: 'error', message: 'x' }, null],
+    ];
+    for (const [why, state, spec] of wrongToAsk) {
+      const markup = foundationFooterMarkup(state, spec, none);
+      expect(label(markup), why).toBe('Create docs');
+      // ...and still blocked, so naming the act is not an empty offer.
+      expect(markup.split('id="sl-foundation-create"')[1].slice(0, 60)).toContain('disabled');
+    }
+  });
+
+  it('does not stretch the create button across the footer', () => {
+    // It carried `flex: 1` while the same slot on the other two screens hugged.
+    // The class is now only a JS/test hook, so nothing may re-add a fill.
+    const css = readFileSync(
+      new URL('../src/ui/design-system/patterns.css', import.meta.url),
+      'utf-8',
+    );
+    expect(css).not.toMatch(/\.sl-foundation-create\s*\{[^}]*flex/);
+    expect(css).not.toMatch(/\.sl-footer-actions[^{]*\{[^}]*min-width:\s*\d+px/);
+  });
+
+  it('draws both footer buttons in every state, per the icon contract', () => {
+    // One button, one glyph, held through busy and blocked alike. The create
+    // button's old `layoutGrid` drew the frames rather than the making of them
+    // and was also the sidebar's icon for this screen, which is why it needed
+    // replacing rather than removing.
+    const none: FoundationSelection = { collections: [], textStyles: false };
+    for (const state of [
+      foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL),
+      foundationFooterMarkup({ kind: 'ready' }, SPEC, none),
+      foundationFooterMarkup({ kind: 'generating', done: 1, total: 3 }, SPEC, ALL),
+      foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL, true),
+    ]) {
+      expect(state.match(/<svg/g) ?? []).toHaveLength(2);
+      // Refresh keeps the circular arrows; create wears the same `filePlus`
+      // the component screen's create button does.
+      expect(state).toContain(ICON_PATHS.refresh);
+      // Split on the id, not the bare name: the class carries it too, so
+      // splitting on `sl-foundation-create` lands between the two attributes
+      // in a segment that could never hold an svg either way.
+      expect(state.split('id="sl-foundation-create"')[1]).toContain(ICON_PATHS.filePlus);
+      expect(state).not.toContain(ICON_PATHS.layoutGrid);
+    }
   });
 
   it('labels and disables the refresh button while a refresh is in flight', () => {

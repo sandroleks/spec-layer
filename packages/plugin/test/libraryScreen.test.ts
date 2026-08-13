@@ -1,10 +1,13 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { FoundationSelection, FoundationSpec } from '@spec-layer/extractor';
 import { foundationScrollMarkup } from '../src/ui/screens/foundations';
+import { ICON_PATHS } from '../src/ui/shell/icons';
 import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
   libraryScrollMarkup,
+  rowMenuTop,
   type LibraryRowPresentation,
   type LibraryScreenPresentation,
 } from '../src/ui/screens/library';
@@ -209,7 +212,10 @@ describe('library screen presentation', () => {
   it('renders state-aware footer actions and locks them during work', () => {
     const idle = libraryFooterMarkup(model());
     expect(idle).toContain('Refresh library');
-    expect(idle).toContain('Update all 1');
+    // Names the object, not the count. The count is on the Updates filter, and
+    // "all" is what separates this from a row's own "Update documentation".
+    expect(idle).toContain('Update all docs');
+    expect(idle).not.toMatch(/Update all \d/);
     expect(idle).not.toContain('data-library-update-all disabled');
 
     const refreshing = libraryFooterMarkup(model({ refreshing: true }));
@@ -228,10 +234,26 @@ describe('library screen presentation', () => {
     }));
     expect(current).toContain('Up to date');
     expect(current).toContain('data-library-update-all disabled');
-    // "Up to date" is not a refresh, and sitting beside "Refresh library" a
-    // second refresh arrow read as the same button twice.
-    expect(refreshArrows(current)).toBe(1);
-    expect(refreshArrows(idle)).toBe(2);
+    // Per the icon contract's tie-break: circular arrows mean "re-reads,
+    // writes nothing", so they belong to "Refresh library" and not to the
+    // "Update all docs" beside it, whatever state that one is in. Two identical
+    // glyphs in one row read as the same button twice, which is why update got
+    // `fileCheck` of its own rather than a second pair of arrows.
+    const states = [
+      idle,
+      current,
+      libraryFooterMarkup(model({ updatingAll: true })),
+      libraryFooterMarkup(model({ checksIncomplete: true })),
+      libraryFooterMarkup(model({ refreshing: true })),
+    ];
+    for (const state of states) {
+      expect(refreshArrows(state)).toBe(1);
+      // One button, one glyph: the primary is drawn in every state, always the
+      // same one. It used to swap refresh/alertCircle/check as the state moved.
+      expect(state.split('sl-library-update-all')[1]).toContain(ICON_PATHS.fileCheck);
+      expect(state).not.toContain(ICON_PATHS.alertCircle);
+      expect(state.match(/<svg/g)).toHaveLength(2);
+    }
   });
 
   it('renders useful loading and empty states', () => {
@@ -375,5 +397,84 @@ describe('component vs foundation row differentiation', () => {
     }));
     const identity = /<span class="sl-library-identity">(.*?)<\/span>/s.exec(markup)?.[1];
     expect(identity).toBe('<strong>buttonText</strong>');
+  });
+});
+
+/**
+ * The row menu lives inside .sl-screen-scroll, which clips it, with the sticky
+ * footer opaque below. rowMenuTop decides where an open menu goes; these cover
+ * the arithmetic without a layout engine. A 528px viewport at 96..624 is the
+ * real plugin panel measured in the dev harness.
+ */
+describe('rowMenuTop', () => {
+  const VIEW = { viewTop: 96, viewBottom: 624 };
+  const BELOW_TOP = 42;
+  const EDGE = 8;
+
+  it('does not intervene when the menu fits below the row', () => {
+    expect(rowMenuTop({ ...VIEW, rowTop: 144, height: 243 })).toBeNull();
+  });
+
+  it('flips a menu above the row when it would overflow the viewport', () => {
+    // Below would end at 506 + 42 + 153 = 701, past the 624 boundary.
+    const top = rowMenuTop({ ...VIEW, rowTop: 506, height: 153 });
+    expect(top).toBe(7 - 153);
+    // Row-relative, so the menu's viewport bottom clears the footer.
+    expect(506 + (top as number) + 153).toBeLessThanOrEqual(624);
+  });
+
+  it('keeps the flipped menu inside the top of the viewport', () => {
+    // The squeeze: a 7-action menu on a row too low to open below (it would
+    // end at 335 + 42 + 243 = 620, past 624 - 8) but too high to mirror
+    // cleanly (that puts its top at 335 + 7 - 243 = 99, above 96 + 8).
+    const top = rowMenuTop({ ...VIEW, rowTop: 335, height: 243 });
+    expect(335 + (top as number)).toBe(VIEW.viewTop + EDGE);
+    expect(335 + (top as number) + 243).toBeLessThanOrEqual(VIEW.viewBottom);
+  });
+
+  it('never leaves the menu clipped at both ends when it fits at all', () => {
+    for (const rowTop of [100, 200, 300, 400, 500, 600]) {
+      for (const height of [93, 153, 213, 243]) {
+        const top = rowMenuTop({ ...VIEW, rowTop, height });
+        const menuTop = rowTop + (top ?? BELOW_TOP);
+        expect(menuTop).toBeGreaterThanOrEqual(VIEW.viewTop);
+        expect(menuTop + height).toBeLessThanOrEqual(VIEW.viewBottom);
+      }
+    }
+  });
+
+  it('top-aligns rather than hiding the first items when nothing fits', () => {
+    // Menu taller than the viewport itself: neither bound can be satisfied.
+    const top = rowMenuTop({ ...VIEW, rowTop: 300, height: 900 });
+    expect(300 + (top as number)).toBe(VIEW.viewTop + EDGE);
+  });
+});
+
+describe('footer work status', () => {
+  const css = readFileSync(
+    new URL('../src/ui/design-system/patterns.css', import.meta.url),
+    'utf-8',
+  );
+  const rule = (selector: string) =>
+    new RegExp(`\\n\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+  it('floats the progress instead of adding a row to the footer', () => {
+    // Measured before this: starting a Library refresh took the footer from
+    // 56px to 106px, so the scroll viewport lost 50px, the whole list reflowed
+    // and both buttons moved out from under the cursor. Starting work must not
+    // relayout the screen behind it, so the progress leaves the grid.
+    const progress = rule('.sl-footer-progress');
+    expect(progress).toMatch(/position:\s*absolute/);
+    expect(progress).toMatch(/bottom:\s*calc\(100%/);
+    // ...anchored to the footer, or `absolute` would escape to the whole shell.
+    expect(rule('.sl-screen-footer')).toMatch(/position:\s*relative/);
+  });
+
+  it('keeps the footer a fixed band, so it cannot grow a second row', () => {
+    const footer = rule('.sl-screen-footer');
+    expect(footer).toMatch(/min-height:\s*var\(--sl-footer-height\)/);
+    // The list's bottom clearance is what keeps the floating card off the last
+    // row at the end of a scroll; it tracks the same footer height.
+    expect(rule('.sl-library-list')).toMatch(/padding:\s*0 0 68px/);
   });
 });
