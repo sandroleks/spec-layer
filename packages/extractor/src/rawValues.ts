@@ -63,10 +63,13 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
           }
         }
       }
-      if (l.itemSpacing !== undefined && !bound.has('itemSpacing')) {
+      // Zero is the default for both, so a zero row tells the reader nothing.
+      // Matches the `> 0` guard the padding branch above already uses.
+      if (l.itemSpacing !== undefined && l.itemSpacing > 0 && !bound.has('itemSpacing')) {
         push(part, 'gap', String(l.itemSpacing));
       }
-      if (l.cornerRadius !== undefined && ![...RADIUS_BINDINGS].some((p) => bound.has(p))) {
+      if (l.cornerRadius !== undefined && l.cornerRadius > 0
+          && ![...RADIUS_BINDINGS].some((p) => bound.has(p))) {
         push(part, 'border-radius', String(l.cornerRadius));
       }
     }

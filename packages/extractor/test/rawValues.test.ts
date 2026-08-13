@@ -75,4 +75,20 @@ describe('extractRawValues', () => {
       { part: 'Container', property: 'gap', value: '8' },
     ]);
   });
+
+  it('omits zero gap and zero radius rows', () => {
+    const node: SerializedNode = {
+      id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
+      layout: { mode: 'HORIZONTAL', itemSpacing: 0, cornerRadius: 0 },
+    };
+    expect(extractRawValues(node)).toEqual([]);
+  });
+
+  it('still reports a non-zero gap', () => {
+    const node: SerializedNode = {
+      id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
+      layout: { mode: 'HORIZONTAL', itemSpacing: 8 },
+    };
+    expect(extractRawValues(node)).toContainEqual({ part: 'Box', property: 'gap', value: '8' });
+  });
 });
