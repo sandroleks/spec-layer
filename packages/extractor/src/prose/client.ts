@@ -30,6 +30,26 @@ import {
 export const PROSE_PROMPT_VERSION = 'v8';
 
 /**
+ * The part of a spec a prose draft actually depends on.
+ *
+ * `contrast` and `rawValues` are excluded, and `contrast` is the one that costs
+ * real money: it is derived from the file's FOUNDATION, not from the component,
+ * so keying on it means editing any colour variable invalidates every cached
+ * draft in the file and re-bills a quota-metered generation for prose that would
+ * have come out identical. Neither field reaches buildProsePrompt (it reads
+ * name, anatomy, props, variants, states, tokens, layout and related), so
+ * dropping them cannot make the key blind to an input the model actually sees.
+ *
+ * Deliberately NOT specContentHash: that projection also flattens anatomy to its
+ * depth-0 legacy shape, and nested anatomy parts do reach the prompt, so reusing
+ * it here would serve a stale draft after a real change to the component.
+ */
+function proseInputHash(spec: IntermediateSpec): string {
+  const { contrast: _contrast, rawValues: _rawValues, ...rest } = spec;
+  return contentHash(rest);
+}
+
+/**
  * The cache key for a prose draft. Centralised so the writer (`draftProse`) and
  * every reader (e.g. the detail page's pristine-draft check) stay in lockstep —
  * a key built two different ways is a silent cache miss.
@@ -43,7 +63,7 @@ export function proseCacheKey(
   const keySig = opts.keys && opts.keys.length
     ? `:keys=${[...opts.keys].sort().join(',')}`
     : '';
-  return `prose:${PROSE_PROMPT_VERSION}:${contentHash(spec)}${opts.image ? ':img' : ''}${keySig}`;
+  return `prose:${PROSE_PROMPT_VERSION}:${proseInputHash(spec)}${opts.image ? ':img' : ''}${keySig}`;
 }
 
 export interface CacheStore {

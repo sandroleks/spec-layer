@@ -59,6 +59,31 @@ describe('draftProse base64 image', () => {
     expect(proseCacheKey(spec, { keys: ['interactions', 'definition'] }))
       .toEqual(proseCacheKey(spec, { keys: ['definition', 'interactions'] }));
   });
+
+  // Contrast is derived from the file's foundation, not from the component, and
+  // neither it nor rawValues reaches the prompt. Keying on them would mean that
+  // editing one colour variable orphans every cached draft in the file and
+  // re-bills a metered generation for identical prose.
+  it('ignores contrast and rawValues, which the prompt never sees', () => {
+    const base = proseCacheKey(spec);
+    const withContrast = {
+      ...spec,
+      contrast: {
+        evaluated: 3, skipped: 1,
+        findings: [{
+          part: 'label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
+          backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
+        }],
+      },
+      rawValues: [{ part: 'label', property: 'color', value: '#bbbbbb' }],
+    } as unknown as IntermediateSpec;
+    expect(proseCacheKey(withContrast)).toEqual(base);
+  });
+
+  it('still changes when something the prompt reads changes', () => {
+    const renamed = { ...spec, name: 'Chip' } as unknown as IntermediateSpec;
+    expect(proseCacheKey(renamed)).not.toEqual(proseCacheKey(spec));
+  });
 });
 
 // --- Task 2: proxy mode ------------------------------------------------------
