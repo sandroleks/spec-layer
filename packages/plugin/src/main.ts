@@ -221,7 +221,12 @@ async function postSelection(): Promise<void> {
   let foundation: SerializedFoundation | undefined;
   try {
     foundation = await foundationFor(resolved.fileKey);
-  } catch {
+  } catch (err) {
+    // Still non-fatal, but no longer invisible. A persistent failure here is the
+    // difference between "this file has no contrast findings" and "contrast
+    // never ran", and with a bare catch the only symptom was a Contrast section
+    // that always reported nothing, with nothing anywhere to explain it.
+    console.warn('[Spec Layer] foundation unavailable, contrast will not be checked:', err);
     foundation = undefined;
   }
 

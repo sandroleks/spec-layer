@@ -270,6 +270,16 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     const variantTokens = new Map<string, Set<string>>(); // "part\0prop" -> tokens
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part) => {
       for (const { property, token } of normalizeBindings(n.bindings ?? [])) {
+        // CAUTION: `part` is unique only among SIBLINGS. siblingPartNames
+        // (naming.ts) numbers duplicates within ONE parent's children, so two
+        // nodes with the same cleaned name in DIFFERENT subtrees ("header >
+        // label" and "footer > label") produce the same flat key here and merge
+        // into one cell, which can emit two contradictory unconditioned rules
+        // for what a reader sees as one part. Every consumer that looks a part
+        // up by name (contrast.ts, the doc model's per-part token lists) inherits
+        // that ambiguity. The real fix is path-qualified part identity, which is
+        // a change to naming.ts, anatomy.ts and this file at once; until then,
+        // do not assume this key identifies one node.
         const key = `${part}\0${property}`;
         let set = variantTokens.get(key);
         if (!set) variantTokens.set(key, (set = new Set()));
@@ -536,7 +546,12 @@ export function extractGaps(root: SerializedNode): Gap[] {
       pushGap(part, 'hardcoded shadow or blur (no effect style)');
     }
     if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
-      pushGap(part, `hardcoded opacity (${n.opacity})`);
+      // Rounded here as well as in serialize.ts, because this string is inside
+      // specContentHash and the extractor also runs over node JSON that did not
+      // come from this repo's serializer (an uploaded dump, an older plugin
+      // build). Figma's float32 opacity would otherwise print 30% as
+      // 0.30000001192092896, both on the page and in the drift baseline.
+      pushGap(part, `hardcoded opacity (${Math.round(n.opacity * 10000) / 10000})`);
     }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
       pushGap(part, 'no text style or typography variable');

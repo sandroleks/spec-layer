@@ -257,19 +257,27 @@ describe('text metrics and fill alpha', () => {
     expect(n.text).toBeUndefined();
   });
 
-  it('records the alpha of a hardcoded fill', async () => {
+  // Figma stores opacity as a float32, so 0.3 round-trips as
+  // 0.30000001192092896. extractGaps writes this number straight into a gap
+  // string that specContentHash covers, so an unrounded value is both float
+  // noise on the page and noise in the drift baseline. 0.5 (the only value the
+  // suite used to carry) is one of the few exactly-representable fractions, so
+  // it could never catch this.
+  it('rounds a float32 opacity to something a person would recognize', async () => {
     const n = await serializeNode({
-      id: '1', name: 'box', type: 'FRAME',
-      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.38 }],
+      id: '1', name: 'box', type: 'FRAME', opacity: 0.30000001192092896,
     } as never, resolver);
-    expect(n.unboundFillAlpha).toBe(0.38);
+    expect(n.opacity).toBe(0.3);
   });
 
-  it('omits alpha when the fill is fully opaque', async () => {
-    const n = await serializeNode({
-      id: '1', name: 'box', type: 'FRAME',
-      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }],
+  it('leaves an already-clean opacity alone and omits a fully opaque one', async () => {
+    const dimmed = await serializeNode({
+      id: '1', name: 'box', type: 'FRAME', opacity: 0.5,
     } as never, resolver);
-    expect(n.unboundFillAlpha).toBeUndefined();
+    expect(dimmed.opacity).toBe(0.5);
+    const opaque = await serializeNode({
+      id: '2', name: 'box', type: 'FRAME', opacity: 1,
+    } as never, resolver);
+    expect(opaque.opacity).toBeUndefined();
   });
 });

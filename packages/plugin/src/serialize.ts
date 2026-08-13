@@ -137,15 +137,14 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const effectsBound = 'effects' in bv || (typeof node.effectStyleId === 'string' && Boolean(node.effectStyleId));
   const hasUnboundEffect = hasEffects && !effectsBound ? true : undefined;
 
-  const opacity = typeof node.opacity === 'number' && node.opacity !== 1 ? node.opacity : undefined;
-
-  // The alpha of the hardcoded fill above (paint-level), distinct from node-level
-  // `opacity`: both can be set at once and they mean different things — this one
-  // is what contrast compositing (blend) needs to know what colour is actually seen.
-  const unboundFillAlpha =
-    solidFill && typeof solidFill.opacity === 'number' && solidFill.opacity !== 1
-      ? solidFill.opacity
-      : undefined;
+  // Figma's opacity is float32-backed, so 30% comes back as 0.30000001192092896.
+  // That value is written verbatim into a gap string ("hardcoded opacity (...)")
+  // which IS covered by specContentHash, so leaving it unrounded puts float noise
+  // in front of the reader and in the drift baseline. Four decimals is well past
+  // anything Figma's own percent field can express.
+  const opacity = typeof node.opacity === 'number' && node.opacity !== 1
+    ? Math.round(node.opacity * 10000) / 10000
+    : undefined;
 
   // --- Text metrics (TEXT nodes only) ---
   // `fontSize`/`fontName` come back as figma.mixed (a symbol) when a TEXT node's
@@ -225,7 +224,6 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),
     ...(text ? { text } : {}),
-    ...(unboundFillAlpha !== undefined ? { unboundFillAlpha } : {}),
     ...(children ? { children } : {}),
   };
 
