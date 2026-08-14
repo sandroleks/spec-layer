@@ -35,8 +35,14 @@ export interface ComponentDocLink {
   config: DocConfig;
   generatedAt: number;
   pluginVersion: string;
-  /** Extractor format that produced this doc. Absent on every blob written
-   *  before 0.2; treated as stale so the doc is rebuilt once. */
+  /** `EXTRACTOR_VERSION` that produced this doc. Absent on every blob written
+   *  before it existed; treated as stale so the doc is rebuilt once. */
+  extractorVersion?: string;
+  /** Legacy name for the same idea, written while the Markdown `SPEC_VERSION`
+   *  was still the version authority. Read so old docs parse; never written.
+   *  Its values ('0.1'/'0.2') never equal an EXTRACTOR_VERSION, so any doc
+   *  carrying only this reads as rebuild-required, which is correct: it was
+   *  built by an extractor predating the current one. */
   specVersion?: string;
 }
 
@@ -169,7 +175,16 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
       ? c.measureViews.filter((x): x is MeasureView => x === 'size' || x === 'padding' || x === 'spacing')
       : [],
   };
-  return { ...(j as ComponentDocLink), config };
+  // Normalize the legacy `specVersion` forward so every consumer reads one
+  // field. A pre-rename doc carries '0.1'/'0.2', which never equals an
+  // EXTRACTOR_VERSION, so it correctly reads as rebuild-required rather than
+  // being compared by hash against output a different extractor produced.
+  const extractorVersion = j.extractorVersion ?? j.specVersion;
+  return {
+    ...(j as ComponentDocLink),
+    config,
+    ...(extractorVersion === undefined ? {} : { extractorVersion }),
+  };
 }
 
 function parseScope(raw: unknown): FoundationScope | null {

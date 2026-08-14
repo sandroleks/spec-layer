@@ -31,9 +31,7 @@ import {
   createState,
   ensureExtracted,
   renderOne,
-  runDownload,
   runUpdateFromSource,
-  runDownloadFromSource,
   setAiEnabled,
   setBrandTheme,
   type UiState,
@@ -95,19 +93,15 @@ function refsStub(): Refs {
 }
 
 let sent: unknown[];
-let clicked: number;
-
-// downloadBytes needs URL.createObjectURL and document.createElement, neither of
-// which exists in the node environment. Patch the two methods onto the real URL
-// rather than replacing the global: vitest itself constructs URLs, so swapping
-// the class out leaves the worker unable to shut down.
+// Patch URL's two object-URL methods onto the real URL rather than replacing
+// the global: vitest itself constructs URLs, so swapping the class out leaves
+// the worker unable to shut down.
 const g = globalThis as Record<string, unknown>;
 const realURL = g.URL as { createObjectURL?: unknown; revokeObjectURL?: unknown };
 const hadDocument = 'document' in g;
 
 beforeEach(() => {
   sent = [];
-  clicked = 0;
   vi.clearAllMocks();
   vi.stubGlobal('parent', {
     postMessage: (m: { pluginMessage: unknown }) => { sent.push(m.pluginMessage); },
@@ -115,7 +109,7 @@ beforeEach(() => {
   realURL.createObjectURL = () => 'blob:x';
   realURL.revokeObjectURL = () => {};
   g.document = {
-    createElement: () => ({ href: '', download: '', click: () => { clicked += 1; } }),
+    createElement: () => ({ href: '', download: '', click: () => {} }),
   };
 });
 
@@ -135,7 +129,6 @@ describe('renderOne', () => {
     const out = renderOne(buttonNode(), 'FILE1');
     expect(out.name).toBe('Button');
     expect(out.spec.figmaFile).toBe('FILE1');
-    expect(out.markdown).toContain('Button');
     expect(Number.isNaN(Date.parse(out.extractedAt))).toBe(false);
   });
 });
@@ -147,45 +140,18 @@ describe('ensureExtracted', () => {
     state.currentFileKey = 'FILE1';
     expect(ensureExtracted(state)).toBe(true);
     expect(state.currentSpec?.name).toBe('Button');
-    expect(state.renderedMd).not.toBe('');
   });
 
   it('reuses an existing spec instead of re-extracting', () => {
     const state = createState();
     state.currentNode = buttonNode();
     state.currentSpec = { name: 'Cached' } as unknown as UiState['currentSpec'];
-    state.renderedMd = 'cached-md';
     expect(ensureExtracted(state)).toBe(true);
     expect(state.currentSpec?.name).toBe('Cached');
-    expect(state.renderedMd).toBe('cached-md');
   });
 
   it('reports failure when nothing is selected', () => {
     expect(ensureExtracted(createState())).toBe(false);
-  });
-});
-
-describe('runDownload legacy adapter', () => {
-  it('reads the legacy section controls and restores its Download button', async () => {
-    const downloadBtn = { disabled: false };
-    const refs = {
-      sectionChecks: { configuration: { checked: true } },
-      variantList: { querySelectorAll: () => [] },
-      downloadBtn,
-      loader: {},
-      loaderText: {},
-    } as unknown as Refs;
-    const state = createState();
-    state.currentNode = buttonNode();
-    state.currentFileKey = 'FILE1';
-
-    await runDownload(refs, state);
-
-    expect(clicked).toBe(1);
-    expect(downloadBtn.disabled).toBe(false);
-    expect(clearBanners).toHaveBeenCalledOnce();
-    expect(startLoader).toHaveBeenCalledOnce();
-    expect(stopLoader).toHaveBeenCalledOnce();
   });
 });
 
@@ -317,48 +283,5 @@ describe('runUpdateFromSource', () => {
     expect(vi.mocked(showBanner).mock.calls[0][1]).toBe('error');
     expect(String(vi.mocked(showBanner).mock.calls[0][2])).toContain('Update failed');
     expect(sent.some((m) => (m as { type: string }).type === 'renderDocFrame')).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// runDownloadFromSource
-// ---------------------------------------------------------------------------
-
-describe('runDownloadFromSource', () => {
-  it('builds markdown and triggers a download without dispatching a frame', async () => {
-    await runDownloadFromSource(refsStub(), createState(), source());
-    expect(clicked).toBe(1);
-    expect(stopLoader).toHaveBeenCalled();
-    expect(sent.some((m) => (m as { type: string }).type === 'renderDocFrame')).toBe(false);
-    expect(showBanner).not.toHaveBeenCalled();
-  });
-
-  it('skips prose when the stored config had AI off', async () => {
-    const state = createState();
-    state.licenseKey = 'LK';
-    await runDownloadFromSource(refsStub(), state, source());
-    expect(generateProse).not.toHaveBeenCalled();
-    expect(clicked).toBe(1);
-  });
-
-  it('downloads with placeholders when prose generation fails', async () => {
-    const state = createState();
-    state.figmaUserId = 'user-1';
-    vi.mocked(generateProse).mockRejectedValue(new Error('offline'));
-    await runDownloadFromSource(
-      refsStub(),
-      state,
-      source({ config: docConfig({ aiEnabled: true, sections: ['definition'] }) }),
-    );
-    expect(clicked).toBe(1);
-    expect(showBanner).not.toHaveBeenCalled();
-  });
-
-  it('reports a banner and downloads nothing when extraction throws', async () => {
-    const bad = { ...source(), node: null as unknown as SerializedNode };
-    await runDownloadFromSource(refsStub(), createState(), bad);
-    expect(clicked).toBe(0);
-    expect(stopLoader).toHaveBeenCalled();
-    expect(String(vi.mocked(showBanner).mock.calls[0][2])).toContain('Download failed');
   });
 });

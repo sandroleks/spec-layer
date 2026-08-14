@@ -6,20 +6,19 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, renderSpec, ProseProxyError, specContentHash, buildFoundation } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
 } from '@spec-layer/extractor';
-import { SPEC_VERSION } from '@spec-layer/format';
+import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
-import { nextStatus, resetToIdle, toKebab, type UiPhase } from './state';
+import { nextStatus, resetToIdle, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
-import { modelToMarkdown } from './modelMarkdown';
 import type { Refs } from './dom';
 import {
   defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
@@ -43,7 +42,6 @@ export interface UiState {
   currentFileKey: string;
   currentSpec: IntermediateSpec | null;
   currentExtractedAt: string;
-  renderedMd: string;
   // Proxy-routed AI flow: a pro license key (mirrored to clientStorage via
   // main) and/or the Figma user id (free-tier identity), the global "Write
   // with AI" preference, and the most recent generated prose drafts used to
@@ -84,7 +82,6 @@ export function createState(): UiState {
     currentFileKey: '',
     currentSpec: null,
     currentExtractedAt: '',
-    renderedMd: '',
     licenseKey: null,
     licenseInstanceId: null,
     licenseActive: null,
@@ -110,20 +107,19 @@ export function send(msg: UiToMain): void {
 }
 
 // ---------------------------------------------------------------------------
-// renderOne — shared extraction helper (used by runExtract and runExportAll).
+// renderOne — shared extraction helper used by the extract paths.
 // ---------------------------------------------------------------------------
 
 export function renderOne(
   node: SerializedNode,
   fileKey: string,
-): { name: string; markdown: string; spec: IntermediateSpec; extractedAt: string } {
+): { name: string; spec: IntermediateSpec; extractedAt: string } {
   const extractedAt = new Date().toISOString();
   const spec = extract(node, {
     figmaFile: fileKey,
     ...(foundationSpec ? { foundation: foundationSpec } : {}),
   });
-  const markdown = renderSpec(spec, { prose: null, extractedAt });
-  return { name: spec.name, markdown, spec, extractedAt };
+  return { name: spec.name, spec, extractedAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,8 +134,7 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
   state.phase = nextStatus(state.phase, 'selected');
   renderPhase(refs, state);
 
-  const { name, markdown, spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
-  state.renderedMd = markdown;
+  const { name, spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
   state.currentSpec = spec;
   state.currentExtractedAt = extractedAt;
 
@@ -150,7 +145,7 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Implicit extraction — make the legacy Download/Send and the new AI/frame
+// Implicit extraction — make the AI and frame
 // actions work without a visible Extract button. If a spec is already present it
 // is reused; otherwise we extract the current node on demand.
 // ---------------------------------------------------------------------------
@@ -158,15 +153,14 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
 export function ensureExtracted(state: UiState): boolean {
   if (state.currentSpec) return true;
   if (!state.currentNode) return false;
-  const { spec, markdown, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
+  const { spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
   state.currentSpec = spec;
-  state.renderedMd = markdown;
   state.currentExtractedAt = extractedAt;
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// Auto-extract on selection — keeps the spec always-ready so Export/Download and
+// Auto-extract on selection — keeps the spec always-ready so the AI actions and
 // the frame never block on a missing spec. The (synchronous) extract is deferred
 // one frame so the panel paints identity + sections first; a "Reading…" chip
 // shows meanwhile and clears when the spec is ready.
@@ -376,7 +370,7 @@ export async function createDocFrame(
       model: built.model,
       nodeId: state.currentNode!.id,
       contentHash: specContentHash(state.currentSpec!),
-      specVersion: SPEC_VERSION,
+      extractorVersion: EXTRACTOR_VERSION,
       config: built.config,
     });
   } catch (err) {
@@ -494,89 +488,6 @@ export function setBrandTheme(state: UiState, value: BrandTheme): void {
   send({ type: 'setBrandTheme', value });
 }
 
-function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {
-  // Copy into a plain ArrayBuffer to satisfy Blob constructor typings for
-  // byte sources whose buffer may be an ArrayBufferLike (e.g. SharedArrayBuffer).
-  const buffer: ArrayBuffer = bytes.buffer instanceof ArrayBuffer
-    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-    : new Uint8Array(bytes).buffer as ArrayBuffer;
-  const blob = new Blob([buffer], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ---------------------------------------------------------------------------
-// Download — saves the rendered spec as a bare markdown file, so it drops
-// straight into an AI tool. Local Blob; no docs endpoint and no network.
-// ---------------------------------------------------------------------------
-
-/** Filename for a downloaded single-component spec: "<slug>.spec.md".
- *  Mirrors the export slug rules: kebab-case, trim dashes, fall back to
- *  "component" when the name reduces to nothing. */
-export function specMarkdownFilename(spec: IntermediateSpec, fallbackName = 'component'): string {
-  const name = spec.name || fallbackName;
-  const slug = toKebab(name).replace(/^-+|-+$/g, '') || 'component';
-  return `${slug}.spec.md`;
-}
-
-export async function downloadDoc(
-  state: UiState,
-  selection: DocSelection,
-  ui: BuildPresenter,
-): Promise<void> {
-  ui.clear();
-
-  if (!ensureExtracted(state)) {
-    ui.error('Select a component first.');
-    return;
-  }
-
-  // Same prep as Create frame (AI prose + section/variant selection), so the
-  // downloaded markdown matches the frame. Disable the button and narrate while
-  // any generation runs.
-  ui.setBusy(true);
-  ui.startProgress(generatingMessages(willGenerateProseFor(state, selection.sections)));
-
-  try {
-    const built = await assembleDocFor(state, selection);
-    if (!built) {
-      ui.error('Select at least one section.');
-      ui.stopProgress();
-      ui.setBusy(false);
-      return;
-    }
-
-    const markdown = modelToMarkdown(built.model);
-    const filename = specMarkdownFilename(state.currentSpec!, state.currentNode?.name ?? 'component');
-    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
-
-    ui.stopProgress();
-    ui.setBusy(false);
-    // Surface any AI note (quota exhausted, lapsed key, generation error) the
-    // same way the frame does via its success banner.
-    if (state.pendingAiNote) {
-      ui.error(state.pendingAiNote);
-      state.pendingAiNote = '';
-    } else {
-      ui.info(`Downloaded ${filename}.`);
-    }
-  } catch (err) {
-    ui.stopProgress();
-    const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Download failed: ${msg}`);
-    ui.setBusy(false);
-  }
-}
-
-/** Legacy adapter: reads the old controls and drives its banner and loader. */
-export function runDownload(refs: Refs, state: UiState): Promise<void> {
-  return downloadDoc(state, selectionFromRefs(refs), refsPresenter(refs, refs.downloadBtn));
-}
-
 // ---------------------------------------------------------------------------
 // Update from source (My Library) — regenerate a doc in place using its stored
 // config, WITHOUT touching the Selected-component tab's live state. Extraction
@@ -635,7 +546,7 @@ export async function updateFromSource(
       model,
       nodeId: src.node.id,
       contentHash: specContentHash(spec),
-      specVersion: SPEC_VERSION,
+      extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
     });
     // Loader stops on docFrameDone/docFrameError (ui.ts).
@@ -655,71 +566,6 @@ export function runUpdateFromSource(
   src: DocSource,
 ): Promise<boolean> {
   return updateFromSource(state, src, refsPresenter(refs, refs.createFrameBtn));
-}
-
-// ---------------------------------------------------------------------------
-// Download from source (My Library) — save a library doc's spec as a bare .md,
-// WITHOUT touching the Selected-component tab's live state. Re-extracts the
-// source and rebuilds the SAME model Update would, then encodes it to markdown
-// and downloads it instead of rendering a frame. Prose runs only when the
-// stored config had AI on, and hits generateProse's in-session cache when the
-// doc's prose was already generated this session (no quota on a cache hit).
-// The .md reflects the source, not any manual canvas edits.
-// ---------------------------------------------------------------------------
-export async function downloadFromSource(
-  state: UiState,
-  src: DocSource,
-  ui: BuildPresenter,
-): Promise<void> {
-  ui.clear();
-  ui.startProgress(['Reading the component', 'Composing sections', 'Saving the markdown']);
-  try {
-    const spec = extract(src.node, {
-      figmaFile: src.fileKey,
-      ...(foundationSpec ? { foundation: foundationSpec } : {}),
-    });
-    const selected = new Set<SectionId>(src.config.sections);
-
-    let prose = null as Awaited<ReturnType<typeof generateProse>>;
-    const requested = proseKeysForSections(selected);
-    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
-      try {
-        prose = await generateProse(
-          spec,
-          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
-          src.node.id,
-          requested,
-          (q) => { state.quota = q; },
-        );
-      } catch {
-        // AI is best-effort garnish: fall through to placeholders on any failure.
-        prose = null;
-      }
-    }
-
-    const variantIds = new Set<string>(src.config.variantIds);
-    const model = buildDocModel(spec, prose, selected, variantIds, {
-      measureViews: src.config.measureViews,
-    });
-
-    const markdown = modelToMarkdown(model);
-    const filename = specMarkdownFilename(spec, src.node.name || 'component');
-    downloadBytes(new TextEncoder().encode(markdown), filename, 'text/markdown');
-    ui.stopProgress();
-  } catch (err) {
-    ui.stopProgress();
-    const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Download failed: ${msg}`);
-  }
-}
-
-/** Legacy adapter for a Library row download. */
-export function runDownloadFromSource(
-  refs: Refs,
-  state: UiState,
-  src: DocSource,
-): Promise<void> {
-  return downloadFromSource(state, src, refsPresenter(refs, refs.downloadBtn));
 }
 
 // ---------------------------------------------------------------------------

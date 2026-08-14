@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPEC_VERSION } from '@spec-layer/format';
+import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
@@ -17,7 +17,7 @@ describe('docLink data', () => {
   it('round-trips DocLinkData', () => {
     expect(parseDocLink(serializeDocLink(DATA))).toEqual(DATA);
   });
-  it('round-trips specVersion, so a freshly generated doc reads its own SPEC_VERSION back', () => {
+  it('round-trips extractorVersion, so a freshly generated doc reads its own EXTRACTOR_VERSION back', () => {
     // Regression guard: the main thread must stamp specVersion onto every
     // ComponentDocLink it persists (main.ts's renderDocFrame handler), or a
     // doc generated today reads back with no specVersion at all and shows
@@ -25,9 +25,9 @@ describe('docLink data', () => {
     // (see the specVersion doc comment on ComponentDocLink above). This
     // exercises the same serialize -> pluginData string -> parse round trip
     // the plugin actually performs, not just the type-level field.
-    const fresh: DocLinkData = { ...DATA, specVersion: SPEC_VERSION };
+    const fresh: DocLinkData = { ...DATA, extractorVersion: EXTRACTOR_VERSION };
     const parsed = parseDocLink(serializeDocLink(fresh)) as ComponentDocLink;
-    expect(parsed.specVersion).toBe(SPEC_VERSION);
+    expect(parsed.extractorVersion).toBe(EXTRACTOR_VERSION);
   });
   it('parseDocLink returns null on garbage / wrong shape / empty', () => {
     expect(parseDocLink('')).toBeNull();

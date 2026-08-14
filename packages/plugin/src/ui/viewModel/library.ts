@@ -41,7 +41,6 @@ export interface LibraryRowModel {
   expanded: boolean;
   canOpenFrame: boolean;
   canOpenSource: boolean;
-  canDownload: boolean;
   canReconnect: boolean;
   canUpdate: boolean;
   canDetach: boolean;
@@ -177,7 +176,6 @@ export function buildLibraryRow(
       && status === 'updateAvailable',
     canOpenFrame: true,
     canOpenSource: componentSourceAvailable,
-    canDownload: componentSourceAvailable,
     // There is no reconnect command in the current main-thread protocol.
     canReconnect: false,
     canUpdate: entry.sourceExists

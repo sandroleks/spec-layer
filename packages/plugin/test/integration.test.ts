@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serializeNode, type NodeResolver } from '../src/serialize';
-import { extract, renderSpec } from '@spec-layer/extractor';
-import { parseFrontmatter } from '@spec-layer/format';
+import { extract } from '@spec-layer/extractor';
 
 // A mock Figma COMPONENT_SET node (button) with one variant child containing
 // a container (bound fill), a label, and an instance (nested component).
@@ -58,31 +57,28 @@ describe('full pipeline: serialize → extract → render → parse', () => {
       },
     ]);
 
-    const draftMd = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
-    const draftParsed = parseFrontmatter(draftMd);
-    expect(draftParsed.frontmatter.status).toBeUndefined();
-    expect(draftMd).not.toContain('Draft — AI-suggested, not yet approved.');
-    // Single-variant mock: container/label fills are unconditioned, so they
-    // collapse into the Fixed table.
-    expect(draftMd).toContain('#### Fixed');
-    expect(draftMd).toContain('| container | fill | `md.sys.color.primary` |');
+    // Single-variant mock: the container fill is unconditioned, so the rule
+    // carries the resolved variable name straight through.
+    expect(spec.tokens).toContainEqual(
+      expect.objectContaining({ part: 'container', property: 'fill', token: 'md.sys.color.primary' }),
+    );
   });
 
-  it('degraded mode (no prose) still yields an exportable, parseable spec', async () => {
+  it('degraded mode (no prose) still yields a complete spec', async () => {
     const node = await serializeNode(mockButtonSet as never, resolver);
     const spec = extract(node, { figmaFile: 'F' });
-    const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
-    expect(() => parseFrontmatter(md)).not.toThrow();
+    expect(spec.name).toBe('Button');
+    expect(spec.anatomy.length).toBeGreaterThan(0);
   });
 
-  it('typography styles and layout flow through serialize → extract → render', async () => {
+  it('typography styles and layout flow through serialize → extract', async () => {
     const node = await serializeNode(mockButtonSet as never, resolver);
     const spec = extract(node, { figmaFile: 'FILEKEY' });
-    const md = renderSpec(spec, { prose: null, extractedAt: '2026-06-10T00:00:00.000Z' });
 
-    expect(md).toContain('### Typography');
-    expect(md).toContain('| label | typography | — | `md.sys.typescale.label-large` |');
-    expect(md).toContain('- **container**: hardcoded itemSpacing (8px)');
+    expect(spec.tokens).toContainEqual(
+      expect.objectContaining({ part: 'label', property: 'typography', token: 'md.sys.typescale.label-large' }),
+    );
+    expect(spec.gaps).toContainEqual({ part: 'container', issue: 'hardcoded itemSpacing (8px)' });
     expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8' });
   });
 });

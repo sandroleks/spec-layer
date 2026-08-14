@@ -9,8 +9,7 @@
  * workflows stay explicitly unavailable until their production mapping lands.
  */
 
-import { extract, ProseProxyError, specContentHash } from '@spec-layer/extractor';
-import { SPEC_VERSION } from '@spec-layer/format';
+import { extract, ProseProxyError, specContentHash, EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -85,8 +84,6 @@ import {
   currentFoundationSelection,
   currentFoundationSpec,
   currentGroupBriefs,
-  downloadFromSource,
-  downloadDoc,
   onFoundationChange,
   onFoundationMessage,
   onSelectionFoundation,
@@ -149,10 +146,10 @@ let licenseInput = '';
 let libraryEntries: LibraryEntry[] = [];
 const libraryDrift = new Map<string, LibraryDriftState>();
 const libraryBaseline = new Map<string, string>();
-// docId → the specVersion stamped on its doc link (undefined on pre-0.2
-// blobs). Checked before comparing hashes, since a hash comparison against a
-// doc built by an older extractor is meaningless.
-const librarySpecVersion = new Map<string, string | undefined>();
+// docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
+// written before the field existed). Checked before comparing hashes, since a
+// hash comparison against a doc built by an older extractor is meaningless.
+const libraryExtractorVersion = new Map<string, string | undefined>();
 let libraryFilter: LibraryFilter = 'all';
 let libraryExpandedDocId: string | null = null;
 let libraryMenuDocId: string | null = null;
@@ -171,11 +168,7 @@ type LibraryUpdateOperation = {
   batch: boolean;
   confirmedOverwrite: Set<string>;
 };
-type LibraryDownloadOperation = {
-  kind: 'download';
-  currentDocId: string;
-};
-let libraryOperation: LibraryUpdateOperation | LibraryDownloadOperation | null = null;
+let libraryOperation: LibraryUpdateOperation | null = null;
 let searchOpen = false;
 let searchQuery = '';
 let searchActiveIndex = 0;
@@ -236,7 +229,7 @@ function stopComponentProgress(): void {
 
 function startComponentProgress(
   messages: string[],
-  action: 'create' | 'download',
+  action: 'create',
 ): void {
   stopComponentProgress();
   const phases = messages.length ? messages : ['Working'];
@@ -311,11 +304,7 @@ function paint(): void {
               current: update.completed,
               total: update.total,
             }
-          : libraryOperation?.kind === 'download'
-            ? {
-                label: 'Preparing documentation',
-              }
-            : libraryRefreshing || pendingChecks
+          : libraryRefreshing || pendingChecks
               ? {
                   label: libraryEntries.length === 0 ? 'Reading Library' : 'Checking source changes',
                   ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
@@ -328,11 +317,7 @@ function paint(): void {
           refreshing: libraryRefreshing || pendingChecks,
           checksIncomplete: failedChecks,
           updatingAll: Boolean(update?.batch),
-          updatingDocId: update?.currentDocId ?? (
-            libraryOperation?.kind === 'download'
-              ? libraryOperation.currentDocId
-              : null
-          ),
+          updatingDocId: update?.currentDocId ?? null,
           progress,
         });
       }
@@ -478,7 +463,7 @@ async function removeCurrentLicense(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Reports a build through the screen's own status row and footer button. */
-function presenter(action: 'create' | 'download'): BuildPresenter {
+function presenter(action: 'create'): BuildPresenter {
   return {
     clear: () => {
       if (screen.kind === 'error' || screen.kind === 'success') {
@@ -653,7 +638,7 @@ function refreshLibrary(): void {
 function startLibraryDriftChecks(): void {
   libraryDrift.clear();
   libraryBaseline.clear();
-  librarySpecVersion.clear();
+  libraryExtractorVersion.clear();
   for (const entry of libraryEntries) {
     if (!entry.sourceExists) continue;
     if (entry.kind === 'foundation') {
@@ -669,7 +654,7 @@ function startLibraryDriftChecks(): void {
     }
     libraryDrift.set(entry.docId, 'pending');
     libraryBaseline.set(entry.docId, entry.storedContentHash);
-    librarySpecVersion.set(entry.docId, entry.specVersion);
+    libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
     send({
       type: 'requestDrift',
       docId: entry.docId,
@@ -778,15 +763,6 @@ function startLibraryUpdates(docIds: string[], batch: boolean): void {
     confirmedOverwrite: new Set(edited),
   };
   dispatchNextLibraryUpdate();
-}
-
-function startLibraryDownload(docId: string): void {
-  const entry = libraryEntry(docId);
-  if (!entry || entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
-  if (!beginOperation(operation)) return;
-  libraryOperation = { kind: 'download', currentDocId: docId };
-  paint();
-  send({ type: 'requestDocSource', docId, intent: 'download' });
 }
 
 function completeCurrentLibraryUpdate(): void {
@@ -1303,9 +1279,6 @@ document.addEventListener('click', (event) => {
           send({ type: 'focusNode', nodeId: entry.sourceNodeId });
         }
         return;
-      case 'download':
-        startLibraryDownload(docId);
-        return;
       case 'detach':
         if (
           !operation.active &&
@@ -1450,11 +1423,6 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  if (target.closest('#sl-download')) {
-    if (!beginOperation(operation)) return;
-    void downloadDoc(state, docSelection(), presenter('download')).finally(completeOperation);
-    return;
-  }
   if (target.closest('#sl-create')) build();
 
   if (target.closest('[data-foundation-refresh]')) {
@@ -1817,7 +1785,6 @@ function applySelection(msg: SelectionMessage): void {
   state.currentFileKey = msg.fileKey;
   state.currentSpec = null;
   state.currentExtractedAt = '';
-  state.renderedMd = '';
   state.generatedProse = null;
   state.generatedProseKeys = null;
   state.pendingAiNote = '';
@@ -2067,9 +2034,9 @@ window.onmessage = (event: MessageEvent): void => {
     case 'driftSource': {
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
-      // A pre-0.2 doc was produced by an extractor whose hash projection differs,
-      // so comparing hashes would report drift for the wrong reason.
-      if (librarySpecVersion.get(msg.docId) !== SPEC_VERSION) {
+      // A doc from an older extractor has a different hash projection, so
+      // comparing hashes would report drift for the wrong reason.
+      if (libraryExtractorVersion.get(msg.docId) !== EXTRACTOR_VERSION) {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
@@ -2105,33 +2072,6 @@ window.onmessage = (event: MessageEvent): void => {
         fileKey: msg.fileKey,
         config: msg.config,
       };
-      if (active.kind === 'download') {
-        let failed = false;
-        void downloadFromSource(state, src, libraryPresenter((message) => {
-          failed = true;
-          nativeNotify(message, { error: true, timeout: 5000 });
-        })).then(() => {
-          if (
-            failed ||
-            libraryOperation?.kind !== 'download' ||
-            libraryOperation.currentDocId !== msg.docId
-          ) {
-            if (failed && libraryOperation?.kind === 'download') {
-              libraryOperation = null;
-              completeOperation();
-              if (view === 'library') paint();
-            }
-            return;
-          }
-          nativeNotify(`Downloaded ${msg.node.name || 'component'} documentation.`);
-          libraryOperation = null;
-          completeOperation();
-          if (view === 'library') paint();
-          void refreshQuota();
-        });
-        return;
-      }
-
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
         if (!window.confirm('You edited this frame by hand. Updating replaces those edits.')) {
           finishLibraryOperation('Update canceled because the frame has newer manual edits.');
@@ -2172,7 +2112,7 @@ window.onmessage = (event: MessageEvent): void => {
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
-      librarySpecVersion.delete(msg.docId);
+      libraryExtractorVersion.delete(msg.docId);
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
       syncLibraryBadge();

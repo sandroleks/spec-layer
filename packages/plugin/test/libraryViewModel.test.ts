@@ -109,7 +109,6 @@ describe('buildLibraryRow capabilities', () => {
       expanded: true,
       canOpenFrame: true,
       canOpenSource: true,
-      canDownload: true,
       canReconnect: false,
       canUpdate: true,
       canDetach: true,
@@ -145,7 +144,6 @@ describe('buildLibraryRow capabilities', () => {
       status: 'orphaned',
       canOpenFrame: true,
       canOpenSource: false,
-      canDownload: false,
       canReconnect: false,
       canUpdate: false,
       canDetach: true,
@@ -172,7 +170,6 @@ describe('buildLibraryRow capabilities', () => {
     expect(row.status).toBe('updateAvailable');
     expect(row.canUpdate).toBe(true);
     expect(row.canOpenSource).toBe(false);
-    expect(row.canDownload).toBe(false);
   });
 
   it('offers edited rows an overwrite update but expands only source drift', () => {

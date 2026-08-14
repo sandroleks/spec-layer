@@ -1273,8 +1273,6 @@ const TEMPLATE = `
       </div>
     </div>
     <div class="actions" id="primary-actions">
-      <button class="btn btn-secondary" id="download-btn" type="button"
-              data-tooltip="Saves the spec as markdown. Drop it into Claude, Cursor, or any AI tool.">Download</button>
       <button class="btn btn-primary" id="create-frame-btn">Create frame</button>
     </div>
   </div>
@@ -1361,7 +1359,6 @@ export interface Refs {
   upsellUpgradeBtn: HTMLButtonElement;
   upsellContinueBtn: HTMLButtonElement;
   // Download action
-  downloadBtn: HTMLButtonElement;
   // AI settings (Settings tab)
   licenseKeyInput: HTMLInputElement;
   licenseActivateBtn: HTMLButtonElement;
@@ -1663,7 +1660,6 @@ export function mount(): Refs {
     upsellText: byId<HTMLElement>('upsell-text'),
     upsellUpgradeBtn: byId<HTMLButtonElement>('upsell-upgrade-btn'),
     upsellContinueBtn: byId<HTMLButtonElement>('upsell-continue-btn'),
-    downloadBtn: byId<HTMLButtonElement>('download-btn'),
     licenseKeyInput: byId<HTMLInputElement>('license-key-input'),
     licenseActivateBtn: byId<HTMLButtonElement>('license-activate-btn'),
     licenseStatus: byId<HTMLElement>('license-status'),

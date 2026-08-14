@@ -8,7 +8,7 @@ export * from './rawValues';
 export * from './extract';
 export * from './foundation';
 export * from './hash';
-export * from './render';
+export * from './version';
 export * from './resolve';
 export * from './statesMatrix';
 export * from './contrast';

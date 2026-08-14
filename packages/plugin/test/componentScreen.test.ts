@@ -373,15 +373,15 @@ describe('component screen markup', () => {
     expect(footer).toContain(ICON_PATHS.filePlus);
     expect(footer).not.toContain(ICON_PATHS.fileDescription);
 
-    // Every footer button is drawn, so success shows two: Download + create.
-    const withDownload = componentFooterMarkup({
+    // Success draws the same single create button: the footer has one action
+    // now that Markdown download is retired.
+    const onSuccess = componentFooterMarkup({
       kind: 'success',
       componentName: 'Button',
       replaced: false,
     });
-    expect(withDownload).toContain('id="sl-download"');
-    expect(withDownload.match(/<svg/g)).toHaveLength(2);
-    expect(withDownload).toContain(ICON_PATHS.download);
+    expect(onSuccess.match(/<svg/g)).toHaveLength(1);
+    expect(onSuccess).toContain(ICON_PATHS.filePlus);
   });
 
   it('keeps the create glyph through busy and blocked states', () => {
@@ -392,7 +392,6 @@ describe('component screen markup', () => {
       READY,
       { kind: 'reading', componentName: 'Button' },
       { kind: 'building', componentName: 'Button', action: 'create' },
-      { kind: 'building', componentName: 'Button', action: 'download' },
       { kind: 'error', componentName: 'Button', message: 'nope' },
     ] as ComponentScreenState[]) {
       expect(componentFooterMarkup(state)).toContain(ICON_PATHS.filePlus);
@@ -413,19 +412,19 @@ describe('component screen markup', () => {
     )).toContain('disabled aria-busy="true"');
   });
 
-  it('names slow download work accurately', () => {
+  it('surfaces the build phase alongside the busy label', () => {
     const footer = componentFooterMarkup({
       kind: 'building',
       componentName: 'Button',
-      action: 'download',
-      phase: 'Saving the markdown',
+      action: 'create',
+      phase: 'Composing sections',
     });
-    expect(footer).toContain('Downloading…');
-    expect(footer).toContain('Saving the markdown');
+    expect(footer).toContain('Creating docs…');
+    expect(footer).toContain('Composing sections');
     expect(footer).toContain('sl-footer-progress');
   });
 
-  it('marks both busy labels with an ellipsis, not just the download', () => {
+  it('marks the busy label with an ellipsis', () => {
     // "Creating docs" without one read as a second, differently-worded action
     // rather than the same button working. See docs/plugin-voice-and-copy.md.
     expect(componentFooterMarkup({
@@ -437,7 +436,7 @@ describe('component screen markup', () => {
       .toContain('<span>Create docs</span>');
   });
 
-  it('keeps a successful build downloadable without rendering a plugin toast', () => {
+  it('keeps a successful build actionable without rendering a plugin toast', () => {
     const state = {
       kind: 'success',
       componentName: 'Button',
@@ -446,7 +445,7 @@ describe('component screen markup', () => {
       warning: true,
     } as const;
     expect(componentStatusMarkup(state)).toBe('');
-    expect(componentFooterMarkup(state)).toContain('id="sl-download"');
+    expect(componentFooterMarkup(state)).toContain('id="sl-create"');
   });
 
   it('reuses the original progress treatment for reading and build phases', () => {

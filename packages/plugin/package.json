@@ -5,7 +5,6 @@
   "type": "module",
   "dependencies": {
     "@spec-layer/extractor": "*",
-    "@spec-layer/format": "*",
     "fflate": "^0.8.2"
   },
   "devDependencies": {

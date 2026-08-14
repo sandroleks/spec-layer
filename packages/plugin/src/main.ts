@@ -602,9 +602,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           generatedAt: Date.now(),
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           // Stamped so a future drift check can tell "extractor changed" apart
-          // from "content changed" (see docLink.ts's ComponentDocLink.specVersion).
+          // from "content changed" (see docLink.ts's ComponentDocLink.extractorVersion).
           // Absent only on blobs written before this field existed.
-          specVersion: msg.specVersion,
+          extractorVersion: msg.extractorVersion,
         };
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
 
@@ -751,7 +751,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           sourceExists,
           selfEdited,
           storedContentHash: data.contentHash,
-          specVersion: data.specVersion,
+          extractorVersion: data.extractorVersion,
         });
       }
       // Self-heal: keep only ids that resolved to a real, still-linked doc.

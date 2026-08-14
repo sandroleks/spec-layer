@@ -16,24 +16,21 @@
     "node": ">=20.9.0"
   },
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "packages/*"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc -p packages/format/tsconfig.json --noEmit && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "build": "npm run build -w md-ds",
     "build:plugin": "node packages/plugin/build.mjs",
-    "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs",
     "build:plugin:vnext": "node packages/plugin/build.mjs",
     "audit:production": "npm audit --omit=dev",
-    "audit:active": "npm audit --omit=dev --workspace @spec-layer/format --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
-    "audit:legacy": "npm audit --omit=dev --workspace md-ds",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run build:plugin:legacy && npm run build:plugin:vnext",
-    "check:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production"
+    "audit:active": "npm audit --omit=dev --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build:plugin:legacy && npm run build:plugin:vnext",
+    "check:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production",
+    "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs"
   },
   "overrides": {
     "brace-expansion": "^5.0.8",

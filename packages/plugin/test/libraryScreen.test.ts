@@ -29,7 +29,6 @@ function row(
     expanded: false,
     canOpenFrame: true,
     canOpenSource: true,
-    canDownload: true,
     canReconnect: false,
     canUpdate: status === 'updateAvailable',
     canDetach: true,
@@ -50,7 +49,6 @@ const ROWS: LibraryRowPresentation[] = [
   row('buttonEdited', 'edited'),
   row('buttonMissing', 'orphaned', {
     canOpenSource: false,
-    canDownload: false,
     canUpdate: false,
   }),
 ];
@@ -180,7 +178,6 @@ describe('library screen presentation', () => {
         row('mappedColors', 'orphaned', {
           canOpenFrame: true,
           canOpenSource: false,
-          canDownload: false,
           canReconnect: false,
           canUpdate: false,
           canDetach: false,
@@ -191,7 +188,6 @@ describe('library screen presentation', () => {
         row('mappedColors', 'orphaned', {
           canOpenFrame: true,
           canOpenSource: false,
-          canDownload: false,
           canReconnect: false,
           canUpdate: false,
           canDetach: false,

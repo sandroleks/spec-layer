@@ -19,11 +19,9 @@ import {
   createState,
   send,
   runExtract,
-  runDownload,
   runCreateDocFrame,
   runAutoExtract,
   runUpdateFromSource,
-  runDownloadFromSource,
   setLicenseKey,
   setAiEnabled,
   setBrandTheme,
@@ -238,7 +236,6 @@ const libBaseline = new Map<string, string>();
 let libMenuDocId: string | null = null;
 // The docId a .md download is in flight for (null = none). Blocks a second
 // Download from stacking; cleared when the docSource reply resolves or errors.
-let downloadingDocId: string | null = null;
 
 function refreshLibrary(): void {
   closeRowMenu();
@@ -336,15 +333,6 @@ function runRowAction(act: string, docId: string): void {
       } else {
         send({ type: 'requestDocSource', docId, intent: 'update' });
       }
-      break;
-    }
-    case 'download': {
-      // Download re-extracts the source (like Update) but writes a .md instead
-      // of rebuilding the frame. It never mutates the canvas, so no confirm and
-      // no create-frame lock — just guard against stacking downloads.
-      if (downloadingDocId) return;
-      downloadingDocId = docId;
-      send({ type: 'requestDocSource', docId, intent: 'download' });
       break;
     }
     case 'detach':
@@ -583,15 +571,6 @@ refs.upsellContinueBtn.addEventListener('click', () => {
   void runCreateWithoutAi();
 });
 
-// ---------------------------------------------------------------------------
-// Download (local .md — same doc as the frame)
-// ---------------------------------------------------------------------------
-
-refs.downloadBtn.addEventListener('click', () => {
-  // Download may generate prose (same prep as Create frame), so refresh the
-  // quota meter/upsell when it settles, like the other AI-touching actions.
-  runDownload(refs, state).finally(() => renderQuota(refs, state));
-});
 refs.licenseActivateBtn.addEventListener('click', async () => {
   const key = refs.licenseKeyInput.value.trim();
   if (!key || refs.licenseActivateBtn.disabled) return;
@@ -1011,7 +990,6 @@ window.onmessage = (event: MessageEvent) => {
       state.currentSpec = null;
       state.currentExtractedAt = '';
       state.phase = 'idle';
-      state.renderedMd = '';
       // Clear AI prose too: it belongs to the previous component. Without this,
       // generating prose for A then selecting B would pair B's spec with A's prose.
       state.generatedProse = null;
@@ -1229,14 +1207,9 @@ window.onmessage = (event: MessageEvent) => {
       const src: { docId: string; node: typeof msg.node; fileKey: string; config: DocConfig } = {
         docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
       };
-      if (msg.intent === 'download') {
-        void runDownloadFromSource(refs, state, src)
-          .finally(() => { downloadingDocId = null; renderQuota(refs, state); });
-      } else {
-        void runUpdateFromSource(refs, state, src)
-          .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })
-          .finally(() => renderQuota(refs, state));
-      }
+      void runUpdateFromSource(refs, state, src)
+        .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })
+        .finally(() => renderQuota(refs, state));
       break;
     }
 
@@ -1247,7 +1220,6 @@ window.onmessage = (event: MessageEvent) => {
       // Foundations tab's bulk run holds the shared lock, this error belongs to
       // a request that never got it, so releasing would hand a second build a
       // lock the first one is still using. Leave it to setFoundationGenerating.
-      downloadingDocId = null;
       if (!isFoundationGenerating()) refs.createFrameBtn.disabled = false;
       showBanner(refs, 'error', msg.message);
       break;

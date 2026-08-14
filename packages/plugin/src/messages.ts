@@ -8,7 +8,7 @@ import type { FoundationIconKind } from './foundationIcon';
 /** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
  *  or to save the spec as a bare .md (Download). The main thread echoes it back
  *  on `docSource` so the UI dispatches to the right handler. */
-export type DocSourceIntent = 'update' | 'download';
+export type DocSourceIntent = 'update';
 
 export interface LibraryEntry {
   docId: string;
@@ -27,10 +27,10 @@ export interface LibraryEntry {
   sourceExists: boolean;
   selfEdited: boolean;
   storedContentHash: string;
-  /** Component rows only: the extractor format that produced this doc, copied
-   *  from its doc link. Absent on every blob written before spec_version 0.2,
+  /** Component rows only: the EXTRACTOR_VERSION that produced this doc, copied
+   *  from its doc link. Absent on every blob written before the field existed,
    *  which the UI treats as stale rather than comparing hashes against it. */
-  specVersion?: string;
+  extractorVersion?: string;
   /** Foundation rows only: the live hash for this scope, for drift comparison.
    *  Component rows resolve drift separately via requestDrift. Absent when the
    *  live extraction failed, in which case the row must not read as drifted. */
@@ -90,11 +90,11 @@ export type UiToMain =
   | { type: 'captureLogo' }
   | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
-  /** `specVersion` is the extractor format (`SPEC_VERSION`) that produced
-   *  `contentHash`, stamped onto the persisted doc link so a later drift
-   *  check can tell "content changed" apart from "extractor changed". Always
-   *  sent: every UI build knows its own SPEC_VERSION. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; specVersion: string; config: DocConfig }
+  /** `extractorVersion` is the EXTRACTOR_VERSION that produced `contentHash`,
+   *  stamped onto the persisted doc link so a later drift check can tell
+   *  "content changed" apart from "extractor changed". Always sent: every UI
+   *  build knows its own EXTRACTOR_VERSION. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig }
   | { type: 'requestLibrary' }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }

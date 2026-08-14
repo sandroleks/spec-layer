@@ -57,7 +57,6 @@ export interface LibraryRowView {
   expanded: boolean;
   canOpenFrame: boolean;
   canOpenSource: boolean;
-  canDownload: boolean;
   canReconnect: boolean;
   canUpdate: boolean;
   canDetach: boolean;

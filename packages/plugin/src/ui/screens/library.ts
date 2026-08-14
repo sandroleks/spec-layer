@@ -113,7 +113,6 @@ interface MenuItem {
     | 'update'
     | 'open-frame'
     | 'open-source'
-    | 'download'
     | 'reconnect'
     | 'detach'
     | 'remove';
@@ -161,13 +160,6 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
       action: 'open-source',
       label: 'View source component',
       glyph: 'puzzle',
-    });
-  }
-  if (row.canDownload) {
-    navigation.push({
-      action: 'download',
-      label: 'Download documentation',
-      glyph: 'download',
     });
   }
   if (row.canReconnect) {

@@ -335,13 +335,8 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
   // Both busy labels take the ellipsis. "Creating docs" without one read as a
   // second, differently-worded action rather than the same button working.
   const createLabel = state.kind === 'building'
-    ? state.action === 'download' ? 'Downloading…' : 'Creating docs…'
+    ? 'Creating docs…'
     : 'Create docs';
-  const download =
-    state.kind === 'success'
-      ? '<button class="sl-button" data-tone="secondary" id="sl-download" type="button">' +
-        `${icon('download', 15)}<span>Download</span></button>`
-      : '';
   // Both footer buttons carry a glyph, and this one keeps `filePlus` through
   // every state. Per the icon contract in design-system/components.css: one
   // button, one glyph. The old `fileDescription` was dropped because it drew
@@ -350,7 +345,6 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
-    download +
     `<button class="sl-button" data-tone="primary" id="sl-create" type="button"` +
     `${busy ? ' disabled' : ''}>${icon('filePlus', 15)}` +
     `<span>${createLabel}</span></button>` +
