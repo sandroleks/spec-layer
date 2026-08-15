@@ -14,6 +14,7 @@ import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
+import { resolveTokensForVariant, type ResolvedToken } from './resolve';
 
 /** Brief schema version. Bumped when the brief's shape or field meanings
  *  change, independently of EXTRACTOR_VERSION. */
@@ -81,10 +82,8 @@ export function foundationBrief(foundation: FoundationSpec, generatedAt: string)
 export interface ComponentBriefOptions {
   generatedAt: string;
   /** Resolves token names to concrete values. Absent on the drift path, which
-   *  calls extract() without one; bindings then omit `value` rather than
-   *  implying the token has none. Unused until Task 7 wires token bindings
-   *  into this brief; kept on the options shape now so callers don't need to
-   *  change their call site when that lands. */
+   *  calls extract() without one; bindings then omit `value` (and `code`)
+   *  rather than implying the token has none. */
   foundation?: FoundationSpec;
   /** Guidelines read from storage. Never generated here. */
   prose?: ProseDrafts | null;
@@ -175,11 +174,111 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
   return Object.values(result).some((v) => v !== undefined) ? result : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Token bindings — resolved per variant, factored into base + by_variant
+// ---------------------------------------------------------------------------
+
+/** Stable identity for a resolved binding, used to intersect across variants.
+ *  U+0000 cannot occur inside a Figma layer, property, or variable name, so
+ *  two different bindings can never collide into the same key. */
+function bindingKey(t: ResolvedToken): string {
+  return `${t.part} ${t.property} ${t.token}`;
+}
+
 /**
- * The public component brief: everything about one component except its
- * token bindings (Task 7 adds those). `spec` is the extractor's internal
- * IntermediateSpec; this is a PROJECTION of it, not a dump — see the file
- * header.
+ * Look a token name up in the foundation, at its OWNING COLLECTION's default
+ * mode. Mirrors the lookup resolveTokenColor performs in contrast.ts: walk
+ * every collection's variables for a name match, then read that collection's
+ * own defaultModeId (not some fixed mode) since the token can live in any
+ * collection.
+ *
+ * Returns an empty object — not nulls — when there is no foundation or the
+ * token isn't found, so `binding` below can spread the result straight into
+ * the output and have `value`/`code` come out `undefined` (which the YAML
+ * emitter omits) rather than a `null` that would misstate "resolved to
+ * nothing" as "no such value".
+ */
+function lookupToken(
+  foundation: FoundationSpec | undefined,
+  token: string,
+): { value?: YamlValue; code?: YamlValue } {
+  if (!foundation) return {};
+  for (const collection of foundation.collections) {
+    for (const variable of collection.variables) {
+      if (variable.name !== token) continue;
+      const raw = variable.valuesByMode[collection.defaultModeId];
+      const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
+      return {
+        value: raw ? valueOf(raw) : undefined,
+        code: code as YamlValue,
+      };
+    }
+  }
+  return {};
+}
+
+function bindingOf(t: ResolvedToken, foundation: FoundationSpec | undefined): YamlValue {
+  return { part: t.part, property: t.property, token: t.token, ...lookupToken(foundation, t.token) };
+}
+
+/**
+ * Resolve `spec.tokens` per variant (via resolveTokensForVariant) and factor
+ * out what's common to EVERY variant into `base`, leaving only the deltas in
+ * `by_variant`. Emitting the minimized `conditions` verbatim would force the
+ * reader to evaluate a boolean expression to answer "what does this variant
+ * bind"; resolving per variant then factoring gives that answer directly
+ * without repeating near-identical binding lists 60 times over.
+ *
+ * Deliberately intersects the RESOLVED bindings across variants rather than
+ * checking `conditions === {}`: after the minimizer runs, a rule's conditions
+ * can happen to cover every declared value of an axis, which makes it
+ * universal in effect while its `conditions` object is still non-empty. Only
+ * the resolved intersection catches that; testing for empty conditions would
+ * wrongly leave such a rule duplicated across every by_variant entry.
+ */
+function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined): YamlValue {
+  const perVariant = spec.variantInstances.map((v) => ({
+    when: v.values,
+    resolved: resolveTokensForVariant(spec.tokens, v.values),
+  }));
+
+  // No variant instances means there is nothing to intersect ACROSS: every
+  // rule is unconditional relative to this (empty) variant set, so it all
+  // lands in base and by_variant is correctly empty.
+  if (perVariant.length === 0) {
+    return {
+      base: spec.tokens.map((t) => bindingOf({ part: t.part, property: t.property, token: t.token }, foundation)),
+      by_variant: [],
+    };
+  }
+
+  // A binding is `base` only when it is present, identically, on EVERY
+  // variant — the intersection of each variant's resolved binding-key set.
+  let common = new Set(perVariant[0].resolved.map(bindingKey));
+  for (const v of perVariant.slice(1)) {
+    const here = new Set(v.resolved.map(bindingKey));
+    common = new Set([...common].filter((k) => here.has(k)));
+  }
+
+  const baseTokens = perVariant[0].resolved.filter((t) => common.has(bindingKey(t)));
+
+  return {
+    base: baseTokens.map((t) => bindingOf(t, foundation)),
+    // Every variant instance gets its own entry, even when it carries zero
+    // differing bindings: factoring removes DUPLICATION, never a VARIANT.
+    by_variant: perVariant.map((v) => ({
+      when: v.when,
+      bindings: v.resolved
+        .filter((t) => !common.has(bindingKey(t)))
+        .map((t) => bindingOf(t, foundation)),
+    })),
+  };
+}
+
+/**
+ * The public component brief: everything about one component, including its
+ * token bindings. `spec` is the extractor's internal IntermediateSpec; this
+ * is a PROJECTION of it, not a dump — see the file header.
  */
 export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
   return {
@@ -207,6 +306,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     layout: spec.layout.length > 0
       ? spec.layout.map((l) => ({ part: l.part, summary: l.summary }))
       : undefined,
+    tokens: tokensOf(spec, opts.foundation),
     unbound: spec.gaps.length > 0
       ? spec.gaps.map((g) => ({ part: g.part, issue: g.issue }))
       : undefined,

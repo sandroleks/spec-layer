@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { load } from 'js-yaml';
 import { foundationBrief, componentBrief } from '../src/brief';
+import type { ComponentBriefOptions } from '../src/brief';
 import { toYaml } from '../src/yaml';
 import type { FoundationSpec } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
@@ -335,5 +336,133 @@ describe('componentBrief', () => {
     const spec: IntermediateSpec = { ...SPEC, anatomy: [] };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
     expect(y.anatomy).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// componentBrief tokens
+// ---------------------------------------------------------------------------
+
+/** A resolved binding as it appears in the brief. Typed rather than `any` so
+ *  a shape drift fails at compile time, matching the convention above. */
+interface Binding {
+  part: string;
+  property: string;
+  token: string;
+  value?: string | number | boolean | Record<string, unknown>;
+  code?: Record<string, string>;
+}
+
+interface VariantBindings {
+  when: Record<string, string>;
+  bindings: Binding[];
+}
+
+interface ParsedTokenBrief extends ParsedComponentBrief {
+  tokens: { base: Binding[]; by_variant: VariantBindings[] };
+}
+
+const TOKEN_SPEC: IntermediateSpec = {
+  ...SPEC,
+  tokens: [
+    // Unconditioned: applies to every variant, so it belongs in base.
+    { part: 'container', property: 'border-radius', conditions: {}, token: 'radius/md' },
+    // Conditioned per state: belongs in by_variant.
+    { part: 'container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
+    { part: 'container', property: 'fill', conditions: { State: ['Hovered'] }, token: 'color/bg/brand-hover' },
+  ],
+};
+
+const tokenBrief = (over: Partial<ComponentBriefOptions> = {}): ParsedTokenBrief =>
+  load(toYaml(componentBrief(TOKEN_SPEC, { generatedAt: AT, ...over }))) as ParsedTokenBrief;
+
+describe('componentBrief tokens', () => {
+  it('factors bindings common to every variant into base', () => {
+    expect(tokenBrief().tokens.base).toEqual([
+      { part: 'container', property: 'border-radius', token: 'radius/md' },
+    ]);
+  });
+
+  it('emits only the differing bindings per variant', () => {
+    expect(tokenBrief().tokens.by_variant).toEqual([
+      { when: { Style: 'Filled', State: 'Enabled' },
+        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand' }] },
+      { when: { Style: 'Filled', State: 'Hovered' },
+        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand-hover' }] },
+    ]);
+  });
+
+  it('never repeats a base binding inside by_variant', () => {
+    const y = tokenBrief();
+    for (const v of y.tokens.by_variant) {
+      expect(v.bindings.some((b) => b.property === 'border-radius')).toBe(false);
+    }
+  });
+
+  it('every `when` names a declared axis and a declared value', () => {
+    const y = tokenBrief();
+    const declared = new Map((y.axes ?? []).map((a) => [a.prop, a.values]));
+    for (const v of y.tokens.by_variant) {
+      for (const [axis, value] of Object.entries(v.when)) {
+        expect(declared.has(axis)).toBe(true);
+        expect(declared.get(axis)).toContain(value);
+      }
+    }
+  });
+
+  it('resolves token values through the foundation when one is supplied', () => {
+    const y = tokenBrief({ foundation: FOUNDATION });
+    const enabled = y.tokens.by_variant.find((v) => v.when.State === 'Enabled');
+    // color/bg/brand resolves at the collection's default mode (Light).
+    expect(enabled?.bindings[0].value).toBe('#2563EB');
+  });
+
+  it('omits value entirely when no foundation is supplied', () => {
+    const y = tokenBrief();
+    expect('value' in y.tokens.by_variant[0].bindings[0]).toBe(false);
+  });
+
+  it('emits code when the resolved variable has codeSyntax', () => {
+    const y = tokenBrief({ foundation: FOUNDATION });
+    const enabled = y.tokens.by_variant.find((v) => v.when.State === 'Enabled');
+    expect(enabled?.bindings[0].code).toEqual({ WEB: '--color-bg-brand' });
+  });
+
+  it('emits an empty by_variant rather than omitting tokens when there are no variants', () => {
+    const single: IntermediateSpec = { ...TOKEN_SPEC, variantInstances: [], variants: [] };
+    const y = load(toYaml(componentBrief(single, { generatedAt: AT }))) as ParsedTokenBrief;
+    expect(y.tokens.by_variant).toEqual([]);
+    expect(y.tokens.base.length).toBe(3);
+  });
+
+  it('keeps a wide variant set small by factoring, not by truncating', () => {
+    const axes = [
+      { prop: 'Style', values: ['A', 'B', 'C', 'D'] },
+      { prop: 'Size', values: ['S', 'M', 'L'] },
+      { prop: 'State', values: ['Default', 'Hover', 'Disabled', 'Focus', 'Pressed'] },
+    ];
+    const instances: IntermediateSpec['variantInstances'] = [];
+    for (const s of axes[0].values) {
+      for (const z of axes[1].values) {
+        for (const t of axes[2].values) {
+          instances.push({ nodeId: `${s}${z}${t}`, name: `${s}/${z}/${t}`, values: { Style: s, Size: z, State: t } });
+        }
+      }
+    }
+    const wide: IntermediateSpec = {
+      ...SPEC, variants: axes, variantInstances: instances,
+      tokens: [
+        { part: 'container', property: 'border-radius', conditions: {}, token: 'radius/md' },
+        { part: 'label', property: 'typography', conditions: {}, token: 'type/label' },
+        { part: 'container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/bg/hover' },
+      ],
+    };
+    const y = load(toYaml(componentBrief(wide, { generatedAt: AT }))) as ParsedTokenBrief;
+    expect(instances.length).toBe(60);
+    // Every variant is still present: factoring must not drop any.
+    expect(y.tokens.by_variant.length).toBe(60);
+    expect(y.tokens.base.length).toBe(2);
+    // The 12 Hover variants carry a binding; the other 48 carry none.
+    expect(y.tokens.by_variant.filter((v) => v.bindings.length > 0).length).toBe(12);
   });
 });
