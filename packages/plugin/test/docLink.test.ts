@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, type ProseDrafts } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
   isFoundationLink, foundationScopeKey, retargetScope,
+  DOC_PROSE_KEY, serializeProse, parseProse, PROSE_BUDGET_BYTES,
   type DocLinkData, type FoundationDocLink, type ComponentDocLink,
 } from '../src/docLink';
 
@@ -247,5 +248,41 @@ describe('retargetScope', () => {
   it('never touches a text-styles scope', () => {
     const text = { target: 'textStyles' as const, group: 'Heading' };
     expect(retargetScope(text, [{ id: 'a', name: 'Heading' }])).toBe(text);
+  });
+});
+
+const PROSE: ProseDrafts = {
+  definition: 'A button triggers an action.',
+  accessibility: 'Always give it an accessible name.',
+  dos: ['Use sentence case.'],
+  donts: ['Do not nest buttons.'],
+  interactions: 'Hover raises the surface.',
+};
+
+describe('prose storage', () => {
+  it('uses a key distinct from the doc link, so the library scan never reads it', () => {
+    expect(DOC_PROSE_KEY).not.toBe('specLayerDoc');
+  });
+
+  it('round-trips every populated field', () => {
+    expect(parseProse(serializeProse(PROSE))).toEqual(PROSE);
+  });
+
+  it('returns null for absent or unparseable data rather than throwing', () => {
+    expect(parseProse('')).toBeNull();
+    expect(parseProse('not json')).toBeNull();
+    expect(parseProse('[]')).toBeNull();
+  });
+
+  it('drops a payload over budget rather than writing a truncated document', () => {
+    const huge: ProseDrafts = { ...PROSE, definition: 'x'.repeat(PROSE_BUDGET_BYTES + 1) };
+    expect(serializeProse(huge)).toBe('');
+  });
+
+  it('omits absent optional keys instead of writing empty strings', () => {
+    const minimal: ProseDrafts = { definition: 'D', accessibility: 'A', dos: [], donts: [] };
+    const parsed = parseProse(serializeProse(minimal));
+    expect(parsed).toEqual(minimal);
+    expect(parsed && 'interactions' in parsed).toBe(false);
   });
 });

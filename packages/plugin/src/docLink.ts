@@ -7,13 +7,71 @@
  * calls into these helpers, keeping the logic unit-testable (mirrors the
  * extractor-purity boundary).
  */
-import { contentHash, type FoundationScope } from '@spec-layer/extractor';
+import { contentHash, type FoundationScope, type ProseDrafts } from '@spec-layer/extractor';
 import type { SectionId, MeasureView } from './ui/docModel';
 
 /** pluginData key on each generated Section. */
 export const DOC_LINK_KEY = 'specLayerDoc';
 /** pluginData key on figma.root holding the registry index. */
 export const DOC_REGISTRY_KEY = 'specLayerDocs';
+
+/**
+ * Generated guidelines for a component doc, stored beside its link rather than
+ * inside it.
+ *
+ * The library scan parses every documented Section's DOC_LINK_KEY on every
+ * refresh. Prose is kilobytes of text that no library row displays, so putting
+ * it in that blob would make a hot path pay for data it never reads. A separate
+ * key is read only when Copy actually needs it.
+ */
+export const DOC_PROSE_KEY = 'specLayerProse';
+
+/**
+ * Ceiling on a serialized prose blob. Figma caps plugin data at 100 kB per
+ * node and the doc link shares that budget, so this sits well below it.
+ * A payload over budget is dropped whole: half a guideline set presented as
+ * complete is worse than none, and the brief already states when guidelines
+ * are absent.
+ */
+export const PROSE_BUDGET_BYTES = 64 * 1024;
+
+const PROSE_STRING_KEYS = [
+  'definition', 'accessibility', 'interactions',
+  'variantsSummary', 'anatomySummary', 'designConsiderations', 'contentConsiderations',
+] as const;
+
+export function serializeProse(p: ProseDrafts): string {
+  const out = JSON.stringify(p);
+  // Figma stores plugin data as UTF-8; measure encoded length, not UTF-16 units.
+  return new TextEncoder().encode(out).length > PROSE_BUDGET_BYTES ? '' : out;
+}
+
+export function parseProse(raw: string): ProseDrafts | null {
+  if (!raw) return null;
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return null; }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  const o = j as Record<string, unknown>;
+  if (typeof o.definition !== 'string' || typeof o.accessibility !== 'string') return null;
+
+  const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
+  const out: ProseDrafts = {
+    definition: o.definition,
+    accessibility: o.accessibility,
+    dos: strings(o.dos),
+    donts: strings(o.donts),
+  };
+  for (const k of PROSE_STRING_KEYS) {
+    if (k === 'definition' || k === 'accessibility') continue;
+    if (typeof o[k] === 'string') (out as unknown as Record<string, unknown>)[k] = o[k];
+  }
+  if (Array.isArray(o.anatomyParts)) {
+    (out as unknown as Record<string, unknown>).anatomyParts = o.anatomyParts;
+  }
+  return out;
+}
 
 /** Everything needed to faithfully regenerate a doc on Update. */
 export interface DocConfig {
