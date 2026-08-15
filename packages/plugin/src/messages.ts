@@ -1,4 +1,4 @@
-import type { SerializedNode, SerializedFoundation, FoundationSelection } from '@spec-layer/extractor';
+import type { SerializedNode, SerializedFoundation, FoundationSelection, ProseDrafts } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
@@ -77,7 +77,8 @@ export type MainToUi =
    *  not on its own in-flight flag, or a bulk reply arriving while a row Update
    *  is pending gets read as that row's. */
   | { type: 'foundationDone'; created: number; replaced: number; docId?: string }
-  | { type: 'foundationFrameError'; message: string; created: number };
+  | { type: 'foundationFrameError'; message: string; created: number }
+  | { type: 'docProse'; docId: string; prose: ProseDrafts | null };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -94,7 +95,11 @@ export type UiToMain =
    *  stamped onto the persisted doc link so a later drift check can tell
    *  "content changed" apart from "extractor changed". Always sent: every UI
    *  build knows its own EXTRACTOR_VERSION. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig }
+  /** `prose` is the generated guidelines this build used, stored beside the doc
+   *  link so a later Copy can include them without paying to regenerate. Absent
+   *  when the build ran without AI. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseDrafts }
+  | { type: 'requestDocProse'; docId: string }
   | { type: 'requestLibrary' }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }

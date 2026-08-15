@@ -17,9 +17,10 @@ import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import {
-  DOC_LINK_KEY, DOC_REGISTRY_KEY,
+  DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
+  serializeProse, parseProse,
   type DocLinkData, type FoundationDocLink, type DocRegistry,
 } from './docLink';
 
@@ -607,6 +608,11 @@ figma.ui.onmessage = async (raw: unknown) => {
           extractorVersion: msg.extractorVersion,
         };
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+        // Written in the same commit as the link, after the Section build
+        // succeeded, so a failed build never leaves guidelines describing a
+        // document that does not exist. An over-budget payload serializes to
+        // '' and simply stores nothing.
+        section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(msg.prose) : '');
 
         // Point of no return: replace the old doc with the new one. After this,
         // `section` IS the doc and must survive any later (cosmetic) failure.
@@ -1132,6 +1138,19 @@ figma.ui.onmessage = async (raw: unknown) => {
       } catch {
         figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
       }
+      break;
+    }
+
+    case 'requestDocProse': {
+      // Same lookup as requestDocSource below: resolve the Section by id and
+      // treat anything else (missing, wrong type) as "no prose".
+      const docNode = await figma.getNodeByIdAsync(msg.docId);
+      const section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
+      figma.ui.postMessage({
+        type: 'docProse',
+        docId: msg.docId,
+        prose: section ? parseProse(section.getPluginData(DOC_PROSE_KEY)) : null,
+      } as MainToUi);
       break;
     }
 

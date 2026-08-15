@@ -372,6 +372,7 @@ export async function createDocFrame(
       contentHash: specContentHash(state.currentSpec!),
       extractorVersion: EXTRACTOR_VERSION,
       config: built.config,
+      ...(state.generatedProse ? { prose: state.generatedProse } : {}),
     });
   } catch (err) {
     ui.stopProgress();
@@ -548,6 +549,7 @@ export async function updateFromSource(
       contentHash: specContentHash(spec),
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
+      ...(prose ? { prose } : {}),
     });
     // Loader stops on docFrameDone/docFrameError (ui.ts).
     return true;
