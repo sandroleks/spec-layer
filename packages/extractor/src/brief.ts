@@ -182,7 +182,7 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
  *  U+0000 cannot occur inside a Figma layer, property, or variable name, so
  *  two different bindings can never collide into the same key. */
 function bindingKey(t: ResolvedToken): string {
-  return `${t.part} ${t.property} ${t.token}`;
+  return `${t.part}\0${t.property}\0${t.token}`;
 }
 
 /**
@@ -222,6 +222,31 @@ function bindingOf(t: ResolvedToken, foundation: FoundationSpec | undefined): Ya
 }
 
 /**
+ * De-duplicate resolved bindings by `bindingKey`, keeping first-seen order.
+ *
+ * `resolveTokensForVariant` does not dedupe, and two DISTINCT `TokenRule`
+ * entries can resolve to the identical (part, property, token) for the same
+ * variant: tokens.ts documents that a part name is only unique among
+ * siblings, so two nodes in different subtrees that clean to the same part
+ * name (e.g. two unrelated "label" parts) can each independently minimize
+ * into their own rule, and those two rules can easily share a token. Without
+ * this, such a pair would be emitted twice — once in `base` if the binding is
+ * common to every variant, or twice inside one variant's own `bindings` list
+ * otherwise — which would misreport one binding as two.
+ */
+function dedupeByKey(tokens: ResolvedToken[]): ResolvedToken[] {
+  const seen = new Set<string>();
+  const out: ResolvedToken[] = [];
+  for (const t of tokens) {
+    const key = bindingKey(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+/**
  * Resolve `spec.tokens` per variant (via resolveTokensForVariant) and factor
  * out what's common to EVERY variant into `base`, leaving only the deltas in
  * `by_variant`. Emitting the minimized `conditions` verbatim would force the
@@ -239,15 +264,19 @@ function bindingOf(t: ResolvedToken, foundation: FoundationSpec | undefined): Ya
 function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined): YamlValue {
   const perVariant = spec.variantInstances.map((v) => ({
     when: v.values,
-    resolved: resolveTokensForVariant(spec.tokens, v.values),
+    // Deduped here, once, so every downstream consumer (the intersection,
+    // `base`, and each variant's own `bindings`) sees an already-unique list
+    // rather than each having to filter the same duplicates out separately.
+    resolved: dedupeByKey(resolveTokensForVariant(spec.tokens, v.values)),
   }));
 
   // No variant instances means there is nothing to intersect ACROSS: every
   // rule is unconditional relative to this (empty) variant set, so it all
   // lands in base and by_variant is correctly empty.
   if (perVariant.length === 0) {
+    const rules = dedupeByKey(spec.tokens.map((t) => ({ part: t.part, property: t.property, token: t.token })));
     return {
-      base: spec.tokens.map((t) => bindingOf({ part: t.part, property: t.property, token: t.token }, foundation)),
+      base: rules.map((t) => bindingOf(t, foundation)),
       by_variant: [],
     };
   }

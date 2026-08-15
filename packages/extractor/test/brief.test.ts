@@ -465,4 +465,50 @@ describe('componentBrief tokens', () => {
     // The 12 Hover variants carry a binding; the other 48 carry none.
     expect(y.tokens.by_variant.filter((v) => v.bindings.length > 0).length).toBe(12);
   });
+
+  it('collapses two distinct rules that resolve to the same binding on every variant, in base', () => {
+    // Two TokenRule entries with different conditions can still resolve to the
+    // identical (part, property, token) for a given variant -- tokens.ts notes
+    // this happens for real when sibling subtrees share a cleaned part name.
+    // Both rules below match every SPEC variant instance (both have Style=Filled;
+    // one rule is unconditioned, the other only restates that same axis), so the
+    // binding is common to every variant and must appear in base exactly once,
+    // not twice.
+    const spec: IntermediateSpec = {
+      ...SPEC,
+      tokens: [
+        { part: 'container', property: 'fill', conditions: {}, token: 'color/bg/brand' },
+        { part: 'container', property: 'fill', conditions: { Style: ['Filled'] }, token: 'color/bg/brand' },
+      ],
+    };
+    const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;
+    expect(y.tokens.base).toEqual([
+      { part: 'container', property: 'fill', token: 'color/bg/brand' },
+    ]);
+    expect(y.tokens.by_variant).toEqual([
+      { when: { Style: 'Filled', State: 'Enabled' }, bindings: [] },
+      { when: { Style: 'Filled', State: 'Hovered' }, bindings: [] },
+    ]);
+  });
+
+  it('collapses two distinct rules that resolve to the same binding on one variant, in by_variant', () => {
+    // Same duplication shape as above, but both rules are conditioned on
+    // State=Enabled, so the binding is NOT common to every variant (the
+    // Hovered variant carries neither rule) and lands in by_variant instead.
+    // The Enabled entry must still list the binding once, not twice.
+    const spec: IntermediateSpec = {
+      ...SPEC,
+      tokens: [
+        { part: 'container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
+        { part: 'container', property: 'fill', conditions: { Style: ['Filled'], State: ['Enabled'] }, token: 'color/bg/brand' },
+      ],
+    };
+    const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;
+    expect(y.tokens.base).toEqual([]);
+    expect(y.tokens.by_variant).toEqual([
+      { when: { Style: 'Filled', State: 'Enabled' },
+        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand' }] },
+      { when: { Style: 'Filled', State: 'Hovered' }, bindings: [] },
+    ]);
+  });
 });
