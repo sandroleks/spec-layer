@@ -230,6 +230,54 @@ describe('componentBrief', () => {
     expect('guidelines' in brief({ prose: null })).toBe(false);
   });
 
+  it('omits guidelines entirely when a stored ProseDrafts is truthy but every field is empty', () => {
+    const y = brief({ prose: { definition: '', accessibility: '', dos: [], donts: [] } });
+    expect('guidelines' in y).toBe(false);
+  });
+
+  it('treats an empty-string optional prose field as absent, not as a blank value', () => {
+    const y = brief({
+      prose: {
+        definition: 'A button.',
+        accessibility: 'Name it.',
+        dos: ['Do'],
+        donts: ['Do not'],
+        interactions: '',
+      },
+    });
+    expect(y.guidelines).toEqual({
+      definition: 'A button.', accessibility: 'Name it.', dos: ['Do'], donts: ['Do not'],
+    });
+    expect(y.guidelines && 'interactions' in y.guidelines).toBe(false);
+  });
+
+  it('still emits every guideline field when all of them carry real content', () => {
+    const y = brief({
+      prose: {
+        definition: 'A button.',
+        accessibility: 'Name it.',
+        dos: ['Do'],
+        donts: ['Do not'],
+        interactions: 'Press it.',
+        variantsSummary: 'Style varies.',
+        anatomySummary: 'One container.',
+        designConsiderations: 'Keep contrast high.',
+        contentConsiderations: 'Keep labels short.',
+      },
+    });
+    expect(y.guidelines).toEqual({
+      definition: 'A button.',
+      accessibility: 'Name it.',
+      dos: ['Do'],
+      donts: ['Do not'],
+      interactions: 'Press it.',
+      variants_summary: 'Style varies.',
+      anatomy_summary: 'One container.',
+      design_considerations: 'Keep contrast high.',
+      content_considerations: 'Keep labels short.',
+    });
+  });
+
   it('nests anatomy correctly when depth jumps back by more than one level', () => {
     const spec: IntermediateSpec = {
       ...SPEC,

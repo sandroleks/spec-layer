@@ -141,21 +141,38 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
   return roots.map(stripEmptyChildren);
 }
 
-/** Guidelines read from storage, passed through verbatim. Renamed to the
- *  brief's snake_case convention; nothing here is generated. */
+/**
+ * Guidelines read from storage, passed through verbatim. Renamed to the
+ * brief's snake_case convention; nothing here is generated.
+ *
+ * Every field applies the same empty-string-means-absent guard (`|| undefined`
+ * for strings, a length check for the two string arrays) so a field that
+ * `parseProseResponse` resolved to `''` (permitted for any non-required key,
+ * see prose/prompt.ts) reads as missing rather than as a present-but-blank
+ * value.
+ *
+ * Absence of the whole block is decided on the BUILT RESULT, not on whether
+ * `prose` itself is truthy: a stored ProseDrafts can be a real object with
+ * every field empty (parseProseResponse returns exactly that shape when only
+ * optional sections were requested and the model omitted them), and that
+ * object is truthy. Deciding on the result means such a case collapses to no
+ * `guidelines` key at all, matching every other optional block in this brief,
+ * rather than leaking a `guidelines: {}` line.
+ */
 function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefined {
   if (!prose) return undefined;
-  return {
+  const result: Record<string, YamlValue | undefined> = {
     definition: prose.definition || undefined,
     accessibility: prose.accessibility || undefined,
-    interactions: prose.interactions,
-    variants_summary: prose.variantsSummary,
-    anatomy_summary: prose.anatomySummary,
-    design_considerations: prose.designConsiderations,
-    content_considerations: prose.contentConsiderations,
+    interactions: prose.interactions || undefined,
+    variants_summary: prose.variantsSummary || undefined,
+    anatomy_summary: prose.anatomySummary || undefined,
+    design_considerations: prose.designConsiderations || undefined,
+    content_considerations: prose.contentConsiderations || undefined,
     dos: prose.dos.length > 0 ? prose.dos : undefined,
     donts: prose.donts.length > 0 ? prose.donts : undefined,
   };
+  return Object.values(result).some((v) => v !== undefined) ? result : undefined;
 }
 
 /**
