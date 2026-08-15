@@ -114,6 +114,7 @@ interface MenuItem {
     | 'open-frame'
     | 'open-source'
     | 'reconnect'
+    | 'copy'
     | 'detach'
     | 'remove';
   glyph:
@@ -123,6 +124,7 @@ interface MenuItem {
     | 'externalLink'
     | 'puzzle'
     | 'download'
+    | 'copy'
     | 'alertCircle';
   danger?: boolean;
 }
@@ -160,6 +162,13 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
       action: 'open-source',
       label: 'View source component',
       glyph: 'puzzle',
+    });
+  }
+  if (row.canCopy) {
+    navigation.push({
+      action: 'copy',
+      label: 'Copy for AI',
+      glyph: 'copy',
     });
   }
   if (row.canReconnect) {

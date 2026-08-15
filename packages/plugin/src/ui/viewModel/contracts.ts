@@ -61,6 +61,10 @@ export interface LibraryRowView {
   canUpdate: boolean;
   canDetach: boolean;
   canRemove: boolean;
+  /** A COMPONENT row whose source still exists. Copy never mutates anything —
+   *  no canvas node, no pluginData, no AI quota — so it stays available even
+   *  when the doc itself needs an update. */
+  canCopy: boolean;
   /**
    * null means content-hash drift is known, but a reliable detailed comparison
    * is unavailable. Render the honest fallback instead of inventing changes.

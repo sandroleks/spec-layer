@@ -10,6 +10,7 @@
  */
 
 import { extract, ProseProxyError, specContentHash, EXTRACTOR_VERSION } from '@spec-layer/extractor';
+import type { ProseDrafts } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -79,6 +80,7 @@ import {
 } from './viewModel/operationGate';
 import {
   autoExtract,
+  copyBriefFromSource,
   createDocFrame,
   createState,
   currentFoundationSelection,
@@ -168,7 +170,18 @@ type LibraryUpdateOperation = {
   batch: boolean;
   confirmedOverwrite: Set<string>;
 };
-let libraryOperation: LibraryUpdateOperation | null = null;
+/**
+ * Copy for AI. Unlike an update, this never writes anything, so it carries no
+ * queue/batch bookkeeping — just the one row it is reading, and the prose it
+ * fetched first (requestDocProse) before asking for the source
+ * (requestDocSource). `prose` is undefined until that first reply lands.
+ */
+type LibraryCopyOperation = {
+  kind: 'copy';
+  currentDocId: string;
+  prose?: ProseDrafts | null;
+};
+let libraryOperation: LibraryUpdateOperation | LibraryCopyOperation | null = null;
 let searchOpen = false;
 let searchQuery = '';
 let searchActiveIndex = 0;
@@ -695,6 +708,24 @@ function libraryEntry(docId: string): LibraryEntry | undefined {
   return libraryEntries.find((entry) => entry.docId === docId);
 }
 
+/**
+ * Reports a Copy through Figma's native notification surface, same as any
+ * other Library action. Unlike libraryPresenter, error() notifies directly
+ * rather than routing through a caller-owned callback: Copy has no
+ * "dispatched vs. not" distinction to resolve afterward, so there is nothing
+ * for a callback to decide.
+ */
+function copyPresenter(): BuildPresenter {
+  return {
+    clear: () => {},
+    error: (message) => nativeNotify(message, { error: true, timeout: 5000 }),
+    info: (message) => nativeNotify(message),
+    setBusy: () => {},
+    startProgress: () => {},
+    stopProgress: () => {},
+  };
+}
+
 function finishLibraryOperation(error = ''): void {
   const active = libraryOperation;
   if (!active) return;
@@ -771,6 +802,24 @@ function completeCurrentLibraryUpdate(): void {
   active.completed += 1;
   active.currentDocId = null;
   dispatchNextLibraryUpdate();
+}
+
+/**
+ * Copy for AI. The brief needs both the stored prose and the doc's source, so
+ * this asks for prose first (cheap: a single pluginData read) and only sends
+ * requestDocSource once the docProse reply lands and is stashed on the
+ * operation. The docSource handler below reads that prose back off, builds
+ * the brief, and clears the operation on every exit — success, a copy
+ * failure, or the source no longer being available (docSourceError).
+ */
+function startLibraryCopy(docId: string): void {
+  const entry = libraryEntry(docId);
+  if (!entry || entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
+  if (!beginOperation(operation)) return;
+  libraryOperation = { kind: 'copy', currentDocId: docId };
+  paint();
+  // Prose first: the brief needs it, and it is a cheap pluginData read.
+  send({ type: 'requestDocProse', docId });
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,6 +1327,9 @@ document.addEventListener('click', (event) => {
         if (entry?.sourceNodeId) {
           send({ type: 'focusNode', nodeId: entry.sourceNodeId });
         }
+        return;
+      case 'copy':
+        startLibraryCopy(docId);
         return;
       case 'detach':
         if (
@@ -2063,6 +2115,18 @@ window.onmessage = (event: MessageEvent): void => {
       if (view === 'library') paint();
       return;
 
+    case 'docProse': {
+      const active = libraryOperation;
+      if (!active || active.kind !== 'copy' || active.currentDocId !== msg.docId) return;
+      active.prose = msg.prose;
+      // DocSourceIntent has only ever had one value. The main thread never
+      // branches on it — it only echoes it back on `docSource` — so 'update'
+      // is sent here too; the docSource handler below tells Copy apart from
+      // Update by `libraryOperation.kind`, not by this field.
+      send({ type: 'requestDocSource', docId: msg.docId, intent: 'update' });
+      return;
+    }
+
     case 'docSource': {
       const active = libraryOperation;
       if (!active || active.currentDocId !== msg.docId) return;
@@ -2072,6 +2136,18 @@ window.onmessage = (event: MessageEvent): void => {
         fileKey: msg.fileKey,
         config: msg.config,
       };
+      if (active.kind === 'copy') {
+        // Copy never asks about hand edits (msg.selfEdited) and never runs
+        // updateFromSource: it only reads the source, builds the brief, and
+        // clears the operation, whatever the outcome.
+        const prose = active.prose ?? null;
+        void copyBriefFromSource(state, src, prose, copyPresenter()).finally(() => {
+          libraryOperation = null;
+          completeOperation();
+          if (view === 'library') paint();
+        });
+        return;
+      }
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
         if (!window.confirm('You edited this frame by hand. Updating replaces those edits.')) {
           finishLibraryOperation('Update canceled because the frame has newer manual edits.');

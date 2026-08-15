@@ -6,7 +6,7 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, toYaml } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
@@ -31,6 +31,7 @@ import {
   startLoader,
   stopLoader,
 } from './render';
+import { copyText, renderManualCopyModal } from './clipboard';
 
 // ---------------------------------------------------------------------------
 // State
@@ -568,6 +569,47 @@ export function runUpdateFromSource(
   src: DocSource,
 ): Promise<boolean> {
   return updateFromSource(state, src, refsPresenter(refs, refs.createFrameBtn));
+}
+
+// ---------------------------------------------------------------------------
+// Copy for AI (My Library) — put a YAML brief on the clipboard.
+//
+// Deliberately unlike the doc-building actions: it re-extracts the source the
+// way Update does, but it never generates prose, never touches quota, and
+// never mutates the canvas or any stored metadata. Guidelines come from the
+// caller, which read them from DOC_PROSE_KEY.
+// ---------------------------------------------------------------------------
+export async function copyBriefFromSource(
+  state: UiState,
+  src: DocSource,
+  prose: ProseDrafts | null,
+  ui: BuildPresenter,
+): Promise<void> {
+  ui.clear();
+  try {
+    const spec = extract(src.node, {
+      figmaFile: src.fileKey,
+      ...(foundationSpec ? { foundation: foundationSpec } : {}),
+    });
+    const yaml = toYaml(componentBrief(spec, {
+      generatedAt: new Date().toISOString(),
+      ...(foundationSpec ? { foundation: foundationSpec } : {}),
+      prose,
+    }));
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml);
+      return;
+    }
+    const lines = yaml.split('\n').length;
+    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
+    const noProse = prose ? '' : ' This document was made before guidelines were saved, so it has none.';
+    ui.info(`Copied.${size}${missing}${noProse}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ui.error(`Could not read that component. Nothing was copied. ${msg}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

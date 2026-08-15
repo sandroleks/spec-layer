@@ -125,6 +125,10 @@ export const ICON_PATHS = {
     '<path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/>',
   x: '<path d="M6 6l12 12"/><path d="M18 6l-12 12"/>',
   chevronRight: '<path d="M9 6l6 6l-6 6"/>',
+  /** Copy a brief to the clipboard. */
+  copy:
+    '<rect x="8" y="8" width="12" height="12" rx="2"/>' +
+    '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

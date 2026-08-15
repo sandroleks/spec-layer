@@ -45,6 +45,10 @@ export interface LibraryRowModel {
   canUpdate: boolean;
   canDetach: boolean;
   canRemove: boolean;
+  /** A COMPONENT row whose source still exists — the same condition the
+   *  removed Download action used. Copy never mutates anything, so it does
+   *  not depend on drift/self-edit status the way canUpdate does. */
+  canCopy: boolean;
   /**
    * The current protocol establishes hash drift, not a reliable itemized diff.
    * `null` tells the screen to render its honest "Source changed" fallback.
@@ -184,6 +188,7 @@ export function buildLibraryRow(
       && status !== 'orphaned',
     canDetach: true,
     canRemove: true,
+    canCopy: componentSourceAvailable,
     changeGroups: null,
   };
 }

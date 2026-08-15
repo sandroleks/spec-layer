@@ -33,6 +33,7 @@ function row(
     canUpdate: status === 'updateAvailable',
     canDetach: true,
     canRemove: true,
+    canCopy: false,
     changeGroups: null,
     ...overrides,
   };
@@ -203,6 +204,33 @@ describe('library screen presentation', () => {
     expect(markup).not.toContain('Reconnect');
     expect(markup).not.toContain('Update documentation');
     expect(markup).not.toContain('Review detected changes');
+  });
+
+  it('offers Copy for AI on a component row whose source still exists', () => {
+    const copyRow = row('buttonCopy', 'inSync', { canCopy: true });
+    const markup = libraryScrollMarkup(model({
+      allRows: [copyRow],
+      rows: [copyRow],
+      counts: { all: 1, updates: 0, inSync: 1 },
+      menuDocId: 'buttonCopy',
+    }));
+    expect(markup).toContain('data-library-action="copy"');
+    expect(markup).toContain('Copy for AI');
+  });
+
+  it('hides Copy for AI when the source is gone', () => {
+    const orphanedRow = row('buttonMissing', 'orphaned', {
+      canCopy: false,
+      canOpenSource: false,
+      canUpdate: false,
+    });
+    const markup = libraryScrollMarkup(model({
+      allRows: [orphanedRow],
+      rows: [orphanedRow],
+      counts: { all: 1, updates: 0, inSync: 0 },
+      menuDocId: 'buttonMissing',
+    }));
+    expect(markup).not.toContain('data-library-action="copy"');
   });
 
   it('renders state-aware footer actions and locks them during work', () => {
