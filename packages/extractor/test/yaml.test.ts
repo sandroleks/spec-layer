@@ -125,4 +125,51 @@ describe('toYaml', () => {
     };
     expect(roundTrip(v)).toEqual(v);
   });
+
+  // --- Fix round 1: defects found by empirically running the emitter's
+  // output against the installed js-yaml. Each test below reproduces the
+  // exact failure the reviewer reported before the fix. ---
+
+  it('escapes C0 control characters other than \\n \\r \\t (defect 1)', () => {
+    // BEL and NUL alone: needsQuote had no reason to quote, so the raw byte
+    // was embedded and load() threw "the stream contains non-printable characters".
+    const v = { a: 'x\x07y', b: 'x\x00y' };
+    expect(roundTrip(v)).toEqual(v);
+    // Quoting triggered for an unrelated reason (trailing space) still has to
+    // escape the control char, not just wrap it in quotes.
+    const v2 = { a: 'x\x07 ' };
+    expect(roundTrip(v2)).toEqual(v2);
+    // Vertical tab and ESC, to cover more than one control char per the brief.
+    const v3 = { a: 'x\x0by', b: 'x\x1by' };
+    expect(roundTrip(v3)).toEqual(v3);
+  });
+
+  it('quotes a lone \\r instead of emitting it as a plain scalar (defect 2)', () => {
+    const v = { a: 'line1\rline2' };
+    expect(roundTrip(v)).toEqual(v);
+  });
+
+  it('quotes a key containing a newline instead of splitting it across lines (defect 3)', () => {
+    const v = { 'a\nb': 'x' };
+    expect(roundTrip(v)).toEqual(v);
+    const v2 = { 'a\rb': 'x' };
+    expect(roundTrip(v2)).toEqual(v2);
+  });
+
+  it('falls back to double-quoted for CRLF content instead of losing the \\r bytes (defect 4)', () => {
+    const v = { a: 'line1\r\nline2' };
+    expect(roundTrip(v)).toEqual(v);
+  });
+
+  it('quotes YAML 1.1 special floats in all their spellings, as strings (defect 5)', () => {
+    const v = {
+      a: '.inf', b: '+.inf', c: '-.inf', d: '.Inf', e: '.INF',
+      f: '.nan', g: '.NaN', h: '.NAN', i: '+.nan', j: '-.nan',
+    };
+    const rt = roundTrip(v) as Record<string, unknown>;
+    for (const k of Object.keys(v)) {
+      expect(typeof rt[k]).toBe('string');
+    }
+    expect(rt).toEqual(v);
+  });
 });

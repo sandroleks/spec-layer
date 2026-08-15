@@ -31,7 +31,17 @@ export type YamlValue =
  */
 const RESERVED_WORD = /^(y|n|yes|no|true|false|on|off|null|~)$/i;
 const NUMERIC = /^[-+]?(\d[\d_]*(\.\d*)?([eE][-+]?\d+)?|\.\d+|0[xob][0-9a-fA-F_]+)$/;
+/**
+ * The YAML 1.1 special floats, unsigned or signed, in any case:
+ * `.inf`, `.Inf`, `.INF`, `-.inf`, `+.inf`, `.nan`, `.NaN`, `.NAN`, etc.
+ * Needs its own pattern rather than relying on LEADING_INDICATOR: that class
+ * catches a leading `-` but not `+`, so "+.inf" would otherwise slip through
+ * unquoted and round-trip as `null`.
+ */
+const SPECIAL_FLOAT = /^[-+]?\.(inf|nan)$/i;
 const LEADING_INDICATOR = /^[-?:,[\]{}#&*!|>'"%@`]/;
+/** Any C0 control character: NUL through US (0x00-0x1F), including \n, \r, \t. */
+const CONTROL_CHAR = /[\x00-\x1f]/;
 
 function needsQuote(s: string): boolean {
   if (s === '') return true;
@@ -40,18 +50,31 @@ function needsQuote(s: string): boolean {
   if (s.includes(': ') || s.endsWith(':')) return true;
   if (s.includes(' #')) return true;
   if (RESERVED_WORD.test(s)) return true;
+  if (SPECIAL_FLOAT.test(s)) return true;
   if (NUMERIC.test(s)) return true;
+  if (CONTROL_CHAR.test(s)) return true;
   return false;
 }
 
-/** Double-quoted style, which needs only these three escapes plus control chars. */
+/** \uXXXX escape for a control character with no short mnemonic. */
+function unicodeEscape(ch: string): string {
+  return '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
+}
+
+/**
+ * Double-quoted style. `\\`, `"`, and the three control chars with standard
+ * short escapes come first; every other C0 control character (NUL, BEL, VT,
+ * ESC, etc.) is escaped as `\uXXXX` -- the raw byte is otherwise embedded
+ * unchanged and js-yaml refuses to parse it ("non-printable characters").
+ */
 function doubleQuote(s: string): string {
   const body = s
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
+    .replace(/\t/g, '\\t')
+    .replace(/[\x00-\x1f]/g, (ch) => unicodeEscape(ch));
   return `"${body}"`;
 }
 
@@ -67,10 +90,16 @@ function inlineScalar(s: string): string {
  * True when a value can be written on the same line as its "key:" or "- "
  * (a scalar, or an empty collection rendered as "[]"/"{}"). False for
  * non-empty arrays/maps and for multi-line strings that need a block form.
+ *
+ * A string containing `\r` is always inline, even if it also contains `\n`:
+ * a YAML literal block scalar has no way to represent a bare `\r` or a
+ * `\r\n` pair, so such strings fall back to the double-quoted inline form
+ * (via needsQuote's control-character check) instead of silently losing the
+ * `\r` bytes to a literal block scalar.
  */
 function isInline(value: YamlValue): boolean {
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return true;
-  if (typeof value === 'string') return !value.includes('\n');
+  if (typeof value === 'string') return value.includes('\r') || !value.includes('\n');
   if (Array.isArray(value)) return value.length === 0;
   return Object.values(value).filter((v) => v !== undefined).length === 0;
 }
@@ -89,10 +118,14 @@ function inlineText(value: YamlValue): string {
 }
 
 /**
- * A multi-line string as a YAML block scalar. Literal style (`|`) preserves
- * line breaks exactly, but it can never represent trailing whitespace on a
- * line -- parsers strip it -- so scalarLines() falls back to double-quoted
- * (an inline value) before this is ever called for such strings.
+ * A multi-line string as a YAML block scalar. Only called for strings that
+ * contain `\n` and no `\r` -- isInline() routes anything containing `\r` to
+ * the double-quoted inline form instead, since a literal block scalar has no
+ * way to represent a bare `\r` or `\r\n` pair (js-yaml silently drops the
+ * `\r` bytes on load rather than erroring, which is worse than a crash).
+ * Trailing whitespace on an interior line, by contrast, round-trips through
+ * a literal block scalar without any special-casing -- verified against
+ * js-yaml directly -- so no fallback is needed for that case.
  *
  * Chomping indicator is picked from the number of trailing newlines in `s`:
  * `|-` (strip) for zero, `|+` (keep) for one or more. The brief's sketch used
