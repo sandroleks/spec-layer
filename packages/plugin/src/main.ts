@@ -1142,10 +1142,17 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestDocProse': {
-      // Same lookup as requestDocSource below: resolve the Section by id and
-      // treat anything else (missing, wrong type) as "no prose".
-      const docNode = await figma.getNodeByIdAsync(msg.docId);
-      const section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
+      // Same lookup as requestDocSource below, including its error handling:
+      // under "dynamic-page" access, getNodeByIdAsync can REJECT (not just
+      // resolve null) for a page the plugin hasn't loaded. This handler is a
+      // bare async function with no surrounding try/catch, so an unguarded
+      // rejection here would propagate out of onmessage and the UI would never
+      // get a reply. Treat a reject the same as "not found": no prose.
+      let section: SectionNode | null = null;
+      try {
+        const docNode = await figma.getNodeByIdAsync(msg.docId);
+        section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
+      } catch { section = null; }
       figma.ui.postMessage({
         type: 'docProse',
         docId: msg.docId,
