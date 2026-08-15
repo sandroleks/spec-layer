@@ -141,7 +141,7 @@ describe('foundation screen', () => {
     expect(css).not.toMatch(/\.sl-footer-actions[^{]*\{[^}]*min-width:\s*\d+px/);
   });
 
-  it('draws both footer buttons in every state, per the icon contract', () => {
+  it('draws all three footer buttons in every state, per the icon contract', () => {
     // One button, one glyph, held through busy and blocked alike. The create
     // button's old `layoutGrid` drew the frames rather than the making of them
     // and was also the sidebar's icon for this screen, which is why it needed
@@ -153,16 +153,25 @@ describe('foundation screen', () => {
       foundationFooterMarkup({ kind: 'generating', done: 1, total: 3 }, SPEC, ALL),
       foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL, true),
     ]) {
-      expect(state.match(/<svg/g) ?? []).toHaveLength(2);
+      expect(state.match(/<svg/g) ?? []).toHaveLength(3);
       // Refresh keeps the circular arrows; create wears the same `filePlus`
-      // the component screen's create button does.
+      // the component screen's create button does; Copy for AI wears `copy`.
       expect(state).toContain(ICON_PATHS.refresh);
+      expect(state).toContain(ICON_PATHS.copy);
       // Split on the id, not the bare name: the class carries it too, so
       // splitting on `sl-foundation-create` lands between the two attributes
       // in a segment that could never hold an svg either way.
       expect(state.split('id="sl-foundation-create"')[1]).toContain(ICON_PATHS.filePlus);
       expect(state).not.toContain(ICON_PATHS.layoutGrid);
     }
+  });
+
+  it('only offers Copy for AI once a foundation has been read', () => {
+    expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL)).toContain('id="sl-copy-foundation"');
+    expect(foundationFooterMarkup({ kind: 'loading' }, null, ALL))
+      .not.toContain('id="sl-copy-foundation"');
+    expect(foundationFooterMarkup({ kind: 'ready' }, null, ALL))
+      .not.toContain('id="sl-copy-foundation"');
   });
 
   it('labels and disables the refresh button while a refresh is in flight', () => {

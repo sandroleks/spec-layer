@@ -6,7 +6,7 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, toYaml } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, foundationBrief, toYaml } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
@@ -657,6 +657,37 @@ export function setFoundationHost(host: FoundationHost): void {
 /** The parsed file, for a UI that renders its own foundation rows. */
 export function currentFoundationSpec(): FoundationSpec | null {
   return foundationSpec;
+}
+
+/**
+ * Copy the whole file's foundation as a YAML brief.
+ *
+ * Deliberately ignores the scope selection that foundation DOCUMENT generation
+ * respects: the brief exists to give an agent a complete token vocabulary, and
+ * a partial one produces exactly the invented token names the brief is meant
+ * to prevent.
+ */
+export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
+  ui.clear();
+  const spec = currentFoundationSpec();
+  if (!spec) {
+    ui.error('Read the foundations first, then copy.');
+    return;
+  }
+  try {
+    const yaml = toYaml(foundationBrief(spec, new Date().toISOString()));
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml);
+      return;
+    }
+    const lines = yaml.split('\n').length;
+    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    ui.info(`Copied.${size}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
+  }
 }
 
 /** Set by ui.ts around the renderFoundation round-trip: true on click, false on

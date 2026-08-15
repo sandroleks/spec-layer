@@ -182,6 +182,12 @@ export function foundationFooterMarkup(
       : FOUNDATION_CREATE_LABEL;
   const progress = footerProgressMarkup(state);
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh sources';
+  // Shown once a file has been read, so an agent can grab the whole token
+  // vocabulary without waiting on (or being limited by) a source selection.
+  const copy = spec
+    ? '<button class="sl-button" data-tone="secondary" id="sl-copy-foundation" type="button">' +
+      `${icon('copy', 15)}<span>Copy for AI</span></button>`
+    : '';
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
@@ -193,6 +199,7 @@ export function foundationFooterMarkup(
     '<button class="sl-button sl-foundation-refresh" data-tone="secondary" ' +
     `type="button" data-foundation-refresh${busy || refreshing ? ' disabled' : ''}>` +
     `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
+    copy +
     '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
     `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
     `${icon('filePlus', 15)}<span>${esc(label)}</span></button>` +

@@ -81,6 +81,7 @@ import {
 import {
   autoExtract,
   copyBriefFromSource,
+  copyFoundationBrief,
   createDocFrame,
   createState,
   currentFoundationSelection,
@@ -1503,6 +1504,11 @@ document.addEventListener('click', (event) => {
     paintAndFocus(
       `[data-foundation-source="${foundationSource.dataset.foundationSource}"]`,
     );
+    return;
+  }
+
+  if (target.closest('#sl-copy-foundation')) {
+    void copyFoundationBrief(presenter('create'));
     return;
   }
 
