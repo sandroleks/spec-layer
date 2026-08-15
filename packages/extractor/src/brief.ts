@@ -11,6 +11,9 @@
 import type { FoundationSpec, FoundationValue, FoundationVariable } from './foundation';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
+import type { IntermediateSpec } from './extract';
+import type { AnatomyPart } from './anatomy';
+import type { ProseDrafts } from './prose/prompt';
 
 /** Brief schema version. Bumped when the brief's shape or field meanings
  *  change, independently of EXTRACTOR_VERSION. */
@@ -72,5 +75,142 @@ export function foundationBrief(foundation: FoundationSpec, generatedAt: string)
       line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
       letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
     })),
+  };
+}
+
+export interface ComponentBriefOptions {
+  generatedAt: string;
+  /** Resolves token names to concrete values. Absent on the drift path, which
+   *  calls extract() without one; bindings then omit `value` rather than
+   *  implying the token has none. Unused until Task 7 wires token bindings
+   *  into this brief; kept on the options shape now so callers don't need to
+   *  change their call site when that lands. */
+  foundation?: FoundationSpec;
+  /** Guidelines read from storage. Never generated here. */
+  prose?: ProseDrafts | null;
+}
+
+/** One node of the anatomy tree while it is still being built: `children`
+ *  always exists (possibly empty) so the stack-building loop below never has
+ *  to special-case "does this node have a children array yet". `stripEmpty`
+ *  turns it into the public shape, where an empty `children` becomes an
+ *  absent key rather than `[]`. */
+interface AnatomyBuildNode {
+  part: string;
+  type: string;
+  component?: string;
+  children: AnatomyBuildNode[];
+}
+
+function stripEmptyChildren(n: AnatomyBuildNode): YamlValue {
+  return {
+    part: n.part,
+    type: n.type,
+    component: n.component,
+    children: n.children.length > 0 ? n.children.map(stripEmptyChildren) : undefined,
+  };
+}
+
+/**
+ * Rebuild the depth-encoded flat anatomy list (see AnatomyPart.depth) as a
+ * tree: a part at depth N+1 becomes a child of the most recently seen part at
+ * depth N. A straightforward single-pass build with an explicit ancestor
+ * stack, rather than the non-enumerable-property sketch this replaced — a
+ * stack keyed on each frame's own depth (not the stack's length) is what
+ * makes depth jumps, a non-zero first depth, and same-depth siblings all fall
+ * out correctly without special-casing any of them:
+ * - Popping while the top frame's depth >= the incoming depth handles both a
+ *   same-depth sibling (pop the previous sibling, attach to its parent) and a
+ *   multi-level jump back (pop every frame deeper than or equal to the new
+ *   depth in one pass).
+ * - A first part whose depth isn't 0 simply starts with an empty stack, so it
+ *   becomes a root like any part with no valid ancestor on the stack.
+ * - A childless node's `children` array stays empty and is stripped by
+ *   stripEmptyChildren, so it never emits a `children: []` key.
+ */
+function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
+  const roots: AnatomyBuildNode[] = [];
+  const stack: { depth: number; node: AnatomyBuildNode }[] = [];
+  for (const p of parts) {
+    const node: AnatomyBuildNode = { part: p.name, type: p.type, component: p.component, children: [] };
+    while (stack.length > 0 && stack[stack.length - 1].depth >= p.depth) stack.pop();
+    if (stack.length === 0) roots.push(node);
+    else stack[stack.length - 1].node.children.push(node);
+    stack.push({ depth: p.depth, node });
+  }
+  return roots.map(stripEmptyChildren);
+}
+
+/** Guidelines read from storage, passed through verbatim. Renamed to the
+ *  brief's snake_case convention; nothing here is generated. */
+function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefined {
+  if (!prose) return undefined;
+  return {
+    definition: prose.definition || undefined,
+    accessibility: prose.accessibility || undefined,
+    interactions: prose.interactions,
+    variants_summary: prose.variantsSummary,
+    anatomy_summary: prose.anatomySummary,
+    design_considerations: prose.designConsiderations,
+    content_considerations: prose.contentConsiderations,
+    dos: prose.dos.length > 0 ? prose.dos : undefined,
+    donts: prose.donts.length > 0 ? prose.donts : undefined,
+  };
+}
+
+/**
+ * The public component brief: everything about one component except its
+ * token bindings (Task 7 adds those). `spec` is the extractor's internal
+ * IntermediateSpec; this is a PROJECTION of it, not a dump — see the file
+ * header.
+ */
+export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
+  return {
+    spec_layer: envelope('component', opts.generatedAt),
+    source: {
+      file: spec.figmaFile,
+      node: spec.figmaNode,
+      component_key: spec.figmaKey || undefined,
+    },
+    component: {
+      name: spec.name,
+      related: spec.related.length > 0 ? spec.related : undefined,
+    },
+    api: spec.props.map((p) => ({
+      name: p.name,
+      kind: p.kind,
+      options: p.options,
+      default: p.default,
+    })),
+    axes: spec.variants.length > 0
+      ? spec.variants.map((v) => ({ prop: v.prop, values: v.values }))
+      : undefined,
+    states: spec.states.length > 0 ? spec.states : undefined,
+    anatomy: nestAnatomy(spec.anatomy),
+    layout: spec.layout.length > 0
+      ? spec.layout.map((l) => ({ part: l.part, summary: l.summary }))
+      : undefined,
+    unbound: spec.gaps.length > 0
+      ? spec.gaps.map((g) => ({ part: g.part, issue: g.issue }))
+      : undefined,
+    // Emitted unconditionally, even when findings is empty: `measured` and
+    // `skipped` are what distinguish "checked and clean" from "could not
+    // check anything", so omitting the block on empty findings would erase
+    // that distinction. `evaluated` is renamed to `measured` for readers of
+    // the brief, consistently with every other field here.
+    contrast: {
+      measured: spec.contrast.evaluated,
+      skipped: spec.contrast.skipped,
+      findings: spec.contrast.findings.map((f) => ({
+        part: f.part,
+        variant: f.variant,
+        foreground: f.foreground,
+        background: f.background,
+        background_part: f.backgroundPart,
+        ratio: f.ratio,
+        required: f.required,
+      })),
+    },
+    guidelines: guidelinesOf(opts.prose),
   };
 }
