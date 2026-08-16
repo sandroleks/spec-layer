@@ -267,8 +267,12 @@ runs.
 Constraints:
 
 - Figma caps plugin data at 100 kB per node. `ProseDrafts` is a few kB in
-  practice. The writer truncates and records a diagnostic rather than throwing
-  if a document somehow exceeds a 64 kB budget.
+  practice. If a document somehow exceeds a 64 kB budget, the writer drops the
+  payload whole rather than throwing or writing a truncated document: half a
+  guideline set presented as complete is worse than none, and the brief
+  already states plainly when guidelines are absent. The drop is recorded with
+  a `console.warn` naming the byte size and the budget, so it stays a rare,
+  observable event rather than a silent one.
 - Prose is written in the same commit as the doc link, after the Section build
   succeeds, so a failed build never leaves prose describing a document that
   does not exist.

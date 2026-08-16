@@ -62,8 +62,15 @@ export async function copyText(text: string): Promise<CopyTier> {
 /**
  * Tier 3. Renders the payload in a pre-selected textarea so the user can copy
  * it with the keyboard. Returns a disposer the caller uses to dismiss it.
+ *
+ * `notice` carries the same honesty caveats the toast path already computes
+ * (missing token values, missing guidelines, payload size) — a tier-3 user
+ * gets a payload that can be just as incomplete as a tier-1/2 one, and this
+ * is the only place left to tell them. Rendered via textContent, not
+ * interpolated into the innerHTML template, so the notice can never be
+ * mistaken for markup.
  */
-export function renderManualCopyModal(text: string): () => void {
+export function renderManualCopyModal(text: string, notice?: string): () => void {
   const host = document.createElement('div');
   host.className = 'sl-copy-fallback';
   host.innerHTML =
@@ -72,7 +79,14 @@ export function renderManualCopyModal(text: string): () => void {
     '<textarea readonly rows="12"></textarea>' +
     '<button type="button" data-copy-fallback-close>Close</button>' +
     '</div>';
+  const panel = host.querySelector('.sl-copy-fallback-panel') as HTMLDivElement;
   const ta = host.querySelector('textarea') as HTMLTextAreaElement;
+  if (notice) {
+    const p = document.createElement('p');
+    p.className = 'sl-copy-fallback-notice';
+    p.textContent = notice;
+    panel.insertBefore(p, ta);
+  }
   ta.value = text;
   const dispose = () => { if (host.parentNode) document.body.removeChild(host); };
   (host.querySelector('[data-copy-fallback-close]') as HTMLButtonElement)

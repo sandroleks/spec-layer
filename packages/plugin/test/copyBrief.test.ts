@@ -3,9 +3,10 @@ import { load } from 'js-yaml';
 import type { DocSource } from '../src/ui/actions';
 
 const copyText = vi.fn();
+const renderManualCopyModal = vi.fn((_t: string, _notice?: string) => () => {});
 vi.mock('../src/ui/clipboard', () => ({
   copyText: (t: string) => copyText(t),
-  renderManualCopyModal: () => () => {},
+  renderManualCopyModal: (t: string, notice?: string) => renderManualCopyModal(t, notice),
 }));
 
 const { copyBriefFromSource, createState } = await import('../src/ui/actions');
@@ -38,6 +39,7 @@ const SRC: DocSource = {
 
 beforeEach(() => {
   copyText.mockReset().mockResolvedValue('async');
+  renderManualCopyModal.mockReset();
   vi.stubGlobal('parent', { postMessage: () => {} });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -71,6 +73,26 @@ describe('copyBriefFromSource', () => {
     await copyBriefFromSource(createState(), broken, null, ui);
     expect(copyText).not.toHaveBeenCalled();
     expect(ui.error).toHaveBeenCalled();
+  });
+
+  it('carries the honesty caveats into the tier-3 modal, not just the toast', async () => {
+    copyText.mockResolvedValue('manual');
+    await copyBriefFromSource(createState(), SRC, null, presenter());
+    expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
+    const [, notice] = renderManualCopyModal.mock.calls[0];
+    expect(notice).toContain('Token values are missing because foundations have not been read yet.');
+    expect(notice).toContain('This document was made before guidelines were saved, so it has none.');
+  });
+
+  it('omits the modal caveat entirely when nothing is missing', async () => {
+    copyText.mockResolvedValue('manual');
+    await copyBriefFromSource(createState(), SRC,
+      { definition: 'A button.', accessibility: 'Name it.', dos: [], donts: [] }, presenter());
+    // foundationSpec is still unset in this test file's module state, so the
+    // "token values missing" caveat is unavoidable here; assert only that a
+    // present prose stops contributing its own half of the caveat.
+    const [, notice] = renderManualCopyModal.mock.calls[0];
+    expect(notice).not.toContain('made before guidelines were saved');
   });
 
   it('never posts a canvas-mutating message', async () => {

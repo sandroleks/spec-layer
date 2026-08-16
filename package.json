@@ -28,8 +28,9 @@
     "build:plugin:vnext": "node packages/plugin/build.mjs",
     "audit:production": "npm audit --omit=dev",
     "audit:active": "npm audit --omit=dev --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build:plugin:legacy && npm run build:plugin:vnext",
-    "check:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production",
+    "check:nul": "node scripts/check-nul-bytes.mjs",
+    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin:legacy && npm run build:plugin:vnext",
+    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production",
     "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs"
   },
   "overrides": {
@@ -44,6 +45,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.12",
+    "happy-dom": "^20.11.2",
     "js-yaml": "^5.3.0",
     "next": "^16.2.12",
     "react": "^19.2.7",

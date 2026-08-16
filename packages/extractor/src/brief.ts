@@ -41,10 +41,17 @@ function valueOf(v: FoundationValue): YamlValue {
   }
 }
 
-function tokenOf(variable: FoundationVariable, modeName: (id: string) => string): YamlValue {
+function tokenOf(variable: FoundationVariable, modeName: (id: string) => string | undefined): YamlValue {
   const values: Record<string, YamlValue> = {};
   for (const [modeId, value] of Object.entries(variable.valuesByMode)) {
-    values[modeName(modeId)] = valueOf(value);
+    // A modeId with no entry in collection.modes is stale (its mode was
+    // deleted after this value was recorded). Drop the column rather than
+    // keying it by the raw Figma modeId: this payload's rule is that internal
+    // ids stay inside, matching how unitContent() in foundation.ts drops a
+    // stale mode id instead of producing a blank or id-keyed column.
+    const name = modeName(modeId);
+    if (name === undefined) continue;
+    values[name] = valueOf(value);
   }
   const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
   return {
@@ -62,7 +69,14 @@ export function foundationBrief(foundation: FoundationSpec, generatedAt: string)
     source: { file: foundation.fileKey },
     collections: foundation.collections.map((c) => {
       const byId = new Map(c.modes.map((m) => [m.modeId, m.name]));
-      const modeName = (id: string) => byId.get(id) ?? id;
+      // Same staleness class as unitContent() in foundation.ts: a mode can be
+      // deleted after a value or a defaultModeId referencing it was recorded.
+      // Falling back to the raw modeId would leak a Figma-internal id into a
+      // payload whose stated rule is that ids stay inside, so an unresolved
+      // id resolves to undefined instead — dropped from `values` in tokenOf,
+      // and omitted from `default_mode` here (the YAML emitter drops
+      // undefined-valued keys), narrowing the brief rather than misreporting it.
+      const modeName = (id: string): string | undefined => byId.get(id);
       return {
         name: c.name,
         modes: c.modes.map((m) => m.name),

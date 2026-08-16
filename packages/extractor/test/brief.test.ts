@@ -103,6 +103,41 @@ describe('foundationBrief', () => {
   it('is deterministic', () => {
     expect(toYaml(foundationBrief(FOUNDATION, AT))).toBe(toYaml(foundationBrief(FOUNDATION, AT)));
   });
+
+  it('drops a value keyed by a mode no longer in collection.modes instead of leaking the raw modeId', () => {
+    const stale: FoundationSpec = {
+      ...FOUNDATION,
+      collections: [{
+        ...FOUNDATION.collections[0],
+        variables: [{
+          name: 'color/bg/brand', group: 'color', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: {
+            m1: { kind: 'color', hex: '#2563EB', alpha: 1 },
+            // 'm9' has no entry in collection.modes: its mode was deleted
+            // after this value was recorded.
+            m9: { kind: 'color', hex: '#000000', alpha: 1 },
+          },
+        }],
+      }],
+    };
+    const y = parseBrief(foundationBrief(stale, AT));
+    const values = y.collections[0].tokens[0].values as Record<string, unknown>;
+    expect(values).toEqual({ Light: '#2563EB' });
+    expect(Object.values(values)).not.toContain('m9');
+    expect(JSON.stringify(y)).not.toContain('m9');
+  });
+
+  it('omits default_mode rather than emitting a raw modeId when the default mode was deleted', () => {
+    const stale: FoundationSpec = {
+      ...FOUNDATION,
+      collections: [{ ...FOUNDATION.collections[0], defaultModeId: 'm9' }],
+    };
+    const y = parseBrief(foundationBrief(stale, AT)) as unknown as
+      { collections: Record<string, unknown>[] };
+    expect('default_mode' in y.collections[0]).toBe(false);
+    expect(JSON.stringify(y)).not.toContain('m9');
+  });
 });
 
 // ---------------------------------------------------------------------------

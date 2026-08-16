@@ -3,9 +3,10 @@ import { load } from 'js-yaml';
 import type { SerializedFoundation } from '@spec-layer/extractor';
 
 const copyText = vi.fn();
+const renderManualCopyModal = vi.fn((_t: string, _notice?: string) => () => {});
 vi.mock('../src/ui/clipboard', () => ({
   copyText: (t: string) => copyText(t),
-  renderManualCopyModal: () => () => {},
+  renderManualCopyModal: (t: string, notice?: string) => renderManualCopyModal(t, notice),
 }));
 
 const { copyFoundationBrief, onFoundationMessage } = await import('../src/ui/actions');
@@ -42,6 +43,7 @@ const DUMP: SerializedFoundation = {
 
 beforeEach(() => {
   copyText.mockReset().mockResolvedValue('async');
+  renderManualCopyModal.mockReset();
   vi.stubGlobal('parent', { postMessage: () => {} });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -60,5 +62,32 @@ describe('copyFoundationBrief', () => {
     const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
     expect(y.spec_layer.kind).toBe('foundation');
     expect(y.collections[0].tokens[0].name).toBe('color/bg/brand');
+  });
+
+  it('renders no caveat in the tier-3 modal for a small payload', async () => {
+    onFoundationMessage(DUMP);
+    copyText.mockResolvedValue('manual');
+    await copyFoundationBrief(presenter());
+    expect(renderManualCopyModal).toHaveBeenCalledWith(expect.any(String), undefined);
+  });
+
+  it('carries the same size caveat into the tier-3 modal as the toast reports', async () => {
+    const bigDump: SerializedFoundation = {
+      ...DUMP,
+      collections: [{
+        id: 'C1', name: 'Color', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Light' }],
+        variables: Array.from({ length: 300 }, (_, i) => ({
+          id: `V${i}`, name: `color/bg/brand-${i}`, resolvedType: 'COLOR' as const, description: '',
+          codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
+        })),
+      }],
+    };
+    onFoundationMessage(bigDump);
+    copyText.mockResolvedValue('manual');
+    await copyFoundationBrief(presenter());
+    expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
+    const [, notice] = renderManualCopyModal.mock.calls[0];
+    expect(notice).toMatch(/lines, which is large for some chat windows\.$/);
   });
 });

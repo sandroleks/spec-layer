@@ -43,7 +43,16 @@ const PROSE_STRING_KEYS = [
 export function serializeProse(p: ProseDrafts): string {
   const out = JSON.stringify(p);
   // Figma stores plugin data as UTF-8; measure encoded length, not UTF-16 units.
-  return new TextEncoder().encode(out).length > PROSE_BUDGET_BYTES ? '' : out;
+  const bytes = new TextEncoder().encode(out).length;
+  if (bytes > PROSE_BUDGET_BYTES) {
+    // Dropped whole, not truncated: half a guideline set presented as complete
+    // is worse than none. But a silent drop makes a later Copy claim "made
+    // before guidelines were saved", which is false — they existed and were
+    // generated. Logging is the only record that this happened.
+    console.warn(`[Spec Layer] prose dropped: ${bytes} bytes exceeds the ${PROSE_BUDGET_BYTES}-byte budget`);
+    return '';
+  }
+  return out;
 }
 
 export function parseProse(raw: string): ProseDrafts | null {

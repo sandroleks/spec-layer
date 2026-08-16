@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EXTRACTOR_VERSION, type ProseDrafts } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
@@ -277,6 +277,30 @@ describe('prose storage', () => {
   it('drops a payload over budget rather than writing a truncated document', () => {
     const huge: ProseDrafts = { ...PROSE, definition: 'x'.repeat(PROSE_BUDGET_BYTES + 1) };
     expect(serializeProse(huge)).toBe('');
+  });
+
+  it('logs the drop instead of dropping silently, naming the size and the budget', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const huge: ProseDrafts = { ...PROSE, definition: 'x'.repeat(PROSE_BUDGET_BYTES + 1) };
+      serializeProse(huge);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [message] = warn.mock.calls[0];
+      expect(message).toContain(String(PROSE_BUDGET_BYTES));
+      expect(message).toMatch(/\d+ bytes/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not log anything for a payload within budget', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      serializeProse(PROSE);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('omits absent optional keys instead of writing empty strings', () => {

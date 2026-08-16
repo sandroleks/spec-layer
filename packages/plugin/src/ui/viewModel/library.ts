@@ -47,7 +47,11 @@ export interface LibraryRowModel {
   canRemove: boolean;
   /** A COMPONENT row whose source still exists — the same condition the
    *  removed Download action used. Copy never mutates anything, so it does
-   *  not depend on drift/self-edit status the way canUpdate does. */
+   *  not depend on drift/self-edit status the way canUpdate does, EXCEPT for
+   *  `unavailable`: that status means the drift check itself failed against
+   *  this source, and Copy re-extracts that same source, so it would very
+   *  likely fail too. `updateAvailable`/`edited` stay copyable, since Copy
+   *  reading the live (drifted) source is exactly the point for those rows. */
   canCopy: boolean;
   /**
    * The current protocol establishes hash drift, not a reliable itemized diff.
@@ -188,7 +192,7 @@ export function buildLibraryRow(
       && status !== 'orphaned',
     canDetach: true,
     canRemove: true,
-    canCopy: componentSourceAvailable,
+    canCopy: componentSourceAvailable && status !== 'unavailable',
     changeGroups: null,
   };
 }

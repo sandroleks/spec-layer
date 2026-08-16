@@ -182,6 +182,37 @@ describe('buildLibraryRow capabilities', () => {
     expect(row.canUpdate).toBe(true);
     expect(row.expanded).toBe(false);
   });
+
+  it('blocks Copy once the drift check has already failed against this source', () => {
+    const row = buildLibraryRow(entry(), {
+      drift: new Map([['doc-1', 'unavailable']]),
+      now: NOW,
+    });
+    expect(row.status).toBe('unavailable');
+    expect(row.canCopy).toBe(false);
+  });
+
+  it('still offers Copy for a drifted or hand-edited row, since Copy reads the live source', () => {
+    const drifted = buildLibraryRow(entry(), {
+      drift: new Map([['doc-1', 'drifted']]),
+      now: NOW,
+    });
+    expect(drifted.status).toBe('updateAvailable');
+    expect(drifted.canCopy).toBe(true);
+
+    const edited = buildLibraryRow(entry({ selfEdited: true }), {
+      drift: new Map([['doc-1', 'inSync']]),
+      now: NOW,
+    });
+    expect(edited.status).toBe('edited');
+    expect(edited.canCopy).toBe(true);
+  });
+
+  it('never offers Copy once the source is gone, regardless of drift', () => {
+    const row = buildLibraryRow(entry({ sourceExists: false }), { now: NOW });
+    expect(row.status).toBe('orphaned');
+    expect(row.canCopy).toBe(false);
+  });
 });
 
 describe('buildLibraryModel filters and counts', () => {

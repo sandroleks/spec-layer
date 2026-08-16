@@ -596,15 +596,16 @@ export async function copyBriefFromSource(
       ...(foundationSpec ? { foundation: foundationSpec } : {}),
       prose,
     }));
-    const tier = await copyText(yaml);
-    if (tier === 'manual') {
-      renderManualCopyModal(yaml);
-      return;
-    }
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
     const noProse = prose ? '' : ' This document was made before guidelines were saved, so it has none.';
+    const caveat = `${size}${missing}${noProse}`.trim();
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml, caveat || undefined);
+      return;
+    }
     ui.info(`Copied.${size}${missing}${noProse}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -676,13 +677,13 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
   }
   try {
     const yaml = toYaml(foundationBrief(spec, new Date().toISOString()));
-    const tier = await copyText(yaml);
-    if (tier === 'manual') {
-      renderManualCopyModal(yaml);
-      return;
-    }
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml, size.trim() || undefined);
+      return;
+    }
     ui.info(`Copied.${size}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
