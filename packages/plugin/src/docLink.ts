@@ -40,10 +40,49 @@ const PROSE_STRING_KEYS = [
   'variantsSummary', 'anatomySummary', 'designConsiderations', 'contentConsiderations',
 ] as const;
 
+/**
+ * UTF-8 byte length of a string, computed without `TextEncoder`.
+ *
+ * `TextEncoder` is a browser/Node global. The plugin's MAIN THREAD runs in
+ * Figma's sandbox, a bare JS realm carrying the `figma` API and the ECMAScript
+ * built-ins and nothing else, so `new TextEncoder()` throws there. This module
+ * is imported by main.ts, so everything in it has to hold to that floor.
+ *
+ * Node does provide `TextEncoder`, which is why the original version passed
+ * every test and still failed the moment it ran in Figma. The tests now delete
+ * the global to reproduce the sandbox.
+ *
+ * Counting rules are UTF-8's own: 1 byte below U+0080, 2 below U+0800, 4 for a
+ * well-formed surrogate pair, otherwise 3. A lone surrogate is counted as 3
+ * because an encoder replaces it with U+FFFD, which is itself 3 bytes.
+ */
+function utf8ByteLength(s: string): number {
+  let bytes = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const code = s.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const low = s.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        bytes += 4;
+        i += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
 export function serializeProse(p: ProseDrafts): string {
   const out = JSON.stringify(p);
   // Figma stores plugin data as UTF-8; measure encoded length, not UTF-16 units.
-  const bytes = new TextEncoder().encode(out).length;
+  const bytes = utf8ByteLength(out);
   if (bytes > PROSE_BUDGET_BYTES) {
     // Dropped whole, not truncated: half a guideline set presented as complete
     // is worse than none. But a silent drop makes a later Copy claim "made

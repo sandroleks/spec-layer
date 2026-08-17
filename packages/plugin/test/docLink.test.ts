@@ -293,6 +293,43 @@ describe('prose storage', () => {
     }
   });
 
+  it('works in a realm with no TextEncoder, which is the Figma main thread', () => {
+    // serializeProse is called ONLY from main.ts, which runs in Figma's plugin
+    // sandbox: a bare JS realm with the figma API and no browser globals. Node
+    // provides TextEncoder, so every other test in this file exercises the
+    // function in a realm it never actually ships to. Deleting the global is
+    // the only way a Node test can reproduce the sandbox.
+    const g = globalThis as Record<string, unknown>;
+    const saved = g.TextEncoder;
+    delete g.TextEncoder;
+    try {
+      expect(() => serializeProse(PROSE)).not.toThrow();
+      expect(parseProse(serializeProse(PROSE))).toEqual(PROSE);
+    } finally {
+      g.TextEncoder = saved;
+    }
+  });
+
+  it('counts UTF-8 bytes, not UTF-16 units, for multi-byte and astral text', () => {
+    // The budget is a BYTE budget because Figma stores pluginData as UTF-8.
+    // Measuring string length instead would let a payload of emoji or CJK sail
+    // past a limit it actually exceeds by up to 4x.
+    const g = globalThis as Record<string, unknown>;
+    const saved = g.TextEncoder;
+    delete g.TextEncoder;
+    try {
+      // Each rocket is 4 UTF-8 bytes but only 2 UTF-16 units, so a string of
+      // them sized to just clear the budget in bytes must be dropped.
+      const rockets = '\u{1F680}'.repeat(Math.ceil(PROSE_BUDGET_BYTES / 4) + 10);
+      expect(serializeProse({ ...PROSE, definition: rockets })).toBe('');
+      // A 3-byte-per-char CJK string just under budget must survive.
+      const cjk = '\u4e2d'.repeat(Math.floor(PROSE_BUDGET_BYTES / 3) - 200);
+      expect(serializeProse({ ...PROSE, definition: cjk })).not.toBe('');
+    } finally {
+      g.TextEncoder = saved;
+    }
+  });
+
   it('does not log anything for a payload within budget', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
