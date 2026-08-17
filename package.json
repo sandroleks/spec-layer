@@ -29,9 +29,10 @@
     "audit:production": "npm audit --omit=dev",
     "audit:active": "npm audit --omit=dev --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
     "check:nul": "node scripts/check-nul-bytes.mjs",
-    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin:legacy && npm run build:plugin:vnext",
-    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run audit:production",
-    "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs"
+    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run check:sandbox",
+    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin:legacy && npm run build:plugin:vnext && npm run check:sandbox && npm run audit:production",
+    "build:plugin:legacy": "UI_LEGACY=1 node packages/plugin/build.mjs",
+    "check:sandbox": "node scripts/check-main-sandbox.mjs"
   },
   "overrides": {
     "brace-expansion": "^5.0.8",
