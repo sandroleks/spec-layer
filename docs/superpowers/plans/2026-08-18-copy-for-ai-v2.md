@@ -996,7 +996,8 @@ Expected: FAIL, `foundationBrief` takes a string as its second argument.
 - [ ] **Step 3: Change the signature and add the block**
 
 Keep the existing `collections` and `text_styles` mapping expressions exactly as they
-are; copy them across verbatim. Only the signature and the new block change.
+are; copy them across verbatim. Only the signature and the new block change. The two
+angle-bracket markers below are instructions to copy code, NOT literals to type.
 
 ```ts
 export interface FoundationBriefOptions {
@@ -1027,8 +1028,13 @@ export function foundationBrief(
   return {
     spec_layer: envelope('foundation', opts.generatedAt),
     source: { file_key: foundation.fileKey || undefined },
-    collections: /* existing expression, unchanged */ undefined as never,
-    text_styles: /* existing expression, unchanged */ undefined as never,
+    // KEEP THE TWO EXISTING EXPRESSIONS EXACTLY AS THEY ARE. Do not retype them
+    // and do not substitute a placeholder: `collections` maps every collection
+    // through tokenOf() with its stale-mode guard, and `text_styles` maps every
+    // text style. Copy both from the current implementation verbatim. This task
+    // changes the signature and adds `guidelines`, nothing else.
+    collections: <the existing collections expression, copied verbatim>,
+    text_styles: <the existing text_styles expression, copied verbatim>,
     guidelines: Object.keys(descriptions).length > 0
       ? { origin: 'generated', group_descriptions: descriptions }
       : undefined,
