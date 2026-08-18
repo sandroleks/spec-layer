@@ -123,7 +123,7 @@ describe('includedLabel', () => {
 describe('sectionIdsInGroup', () => {
   it('returns the group members and nothing else', () => {
     expect(sectionIdsInGroup('a11y').sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'contrast', 'interactions'].sort(),
+      ['accessibility', 'contentConsiderations', 'interactions'].sort(),
     );
   });
 });
@@ -171,7 +171,7 @@ describe('applyGroupBulk', () => {
     const sections = new Set<SectionId>();
     applyGroupBulk(sections, 'a11y', true, new Set());
     expect([...sections].sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'contrast', 'interactions'].sort(),
+      ['accessibility', 'contentConsiderations', 'interactions'].sort(),
     );
   });
 

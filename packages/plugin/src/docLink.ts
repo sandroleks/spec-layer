@@ -8,7 +8,7 @@
  * extractor-purity boundary).
  */
 import { contentHash, type FoundationScope, type ProseDrafts } from '@spec-layer/extractor';
-import type { SectionId, MeasureView } from './ui/docModel';
+import { KNOWN_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
 
 /** pluginData key on each generated Section. */
 export const DOC_LINK_KEY = 'specLayerDoc';
@@ -271,7 +271,8 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
 
   const c = j.config as Partial<DocConfig>;
   const config: DocConfig = {
-    sections: (c.sections ?? []).filter((x): x is SectionId => typeof x === 'string'),
+    sections: (c.sections ?? []).filter((x): x is SectionId =>
+      typeof x === 'string' && KNOWN_SECTION_IDS.has(x)),
     variantIds: Array.isArray(c.variantIds) ? c.variantIds.filter((x): x is string => typeof x === 'string') : [],
     aiEnabled: c.aiEnabled === true,
     // Anatomy is intentionally diagram-only. Normalize old table/both links so

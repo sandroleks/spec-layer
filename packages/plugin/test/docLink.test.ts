@@ -65,6 +65,17 @@ describe('docLink data', () => {
     });
     expect((parseDocLink(raw) as ComponentDocLink).config.measureViews).toEqual(['size', 'spacing']);
   });
+  it('drops a stored section id that no longer exists', () => {
+    const blob = JSON.stringify({
+      v: 1, kind: 'component', sourceNodeId: '1:2', contentHash: 'h', selfHash: 's',
+      generatedAt: 0, pluginVersion: '2.0.0',
+      config: { sections: ['definition', 'contrast', 'tokens'], variantIds: [], aiEnabled: false,
+                anatomyView: 'diagram', measureViews: [] },
+    });
+    const parsed = parseDocLink(blob);
+    expect(parsed).not.toBeNull();
+    expect((parsed as ComponentDocLink).config.sections).toEqual(['definition', 'tokens']);
+  });
 });
 
 describe('registry', () => {

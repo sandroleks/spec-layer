@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
+import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
 import type { IntermediateSpec } from '@spec-layer/extractor';
 
 const spec = {
@@ -66,9 +66,9 @@ describe('buildDocModel', () => {
     if (inter?.kind === 'prose') expect(inter.text).toContain('### Mouse');
   });
 
-  it('orders the a11y group Interactions -> Content -> Accessibility -> Contrast (no Design Considerations)', () => {
+  it('orders the a11y group Interactions -> Content -> Accessibility (no Design Considerations)', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
-    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility', 'contrast']);
+    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
   });
 
   it('maps checked sections to prose keys', () => {
@@ -661,74 +661,16 @@ describe('groupSections', () => {
   });
 });
 
-describe('contrast section', () => {
-  const finding = {
-    part: 'label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
-    backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
-  };
-
-  const contrastBullets = (contrast: unknown): string[] => {
-    const s = { ...spec, contrast } as unknown as IntermediateSpec;
-    const block = buildDocModel(s, null, new Set(['contrast'])).sections.find((b) => b.id === 'contrast');
-    expect(block).toMatchObject({ heading: 'Contrast', kind: 'bullets' });
-    return block?.kind === 'bullets' ? block.items.map((i) => i.text) : [];
-  };
-
-  it('renders one row per finding', () => {
-    const specWithFinding = {
-      ...spec, contrast: { evaluated: 3, skipped: 0, findings: [finding] },
-    } as unknown as IntermediateSpec;
-    const model = buildDocModel(specWithFinding, null, new Set(['contrast']));
-    const block = model.sections.find((s) => s.id === 'contrast');
-    expect(block).toMatchObject({ heading: 'Contrast', kind: 'table' });
-    expect(block).toMatchObject({
-      columns: ['Part', 'Against', 'Foreground', 'Background', 'Ratio', 'Required'],
-      rows: [['label', 'Container', '#bbbbbb', '#ffffff', '1.9:1', '4.5:1']],
-    });
+describe('contrast is not a component section', () => {
+  it('is absent from ALL_SECTIONS', () => {
+    expect(ALL_SECTIONS.map((s) => s.id)).not.toContain('contrast');
   });
-
-  // Three distinct states, because "no findings" has two opposite meanings and
-  // this is the one output on the frame a design team reads as an audit result.
-  it('states the count it checked when pairs were measured and all passed', () => {
-    expect(contrastBullets({ evaluated: 4, skipped: 0, findings: [] }))
-      .toEqual(['Checked 4 text and background pairs. All meet WCAG AA.']);
+  it('is absent from the known id set', () => {
+    expect(KNOWN_SECTION_IDS.has('contrast')).toBe(false);
   });
-
-  it('reads correctly at a count of one', () => {
-    expect(contrastBullets({ evaluated: 1, skipped: 0, findings: [] }))
-      .toEqual(['Checked 1 text and background pair. All meet WCAG AA.']);
-  });
-
-  it('does not claim a full pass when some parts could not be checked', () => {
-    const items = contrastBullets({ evaluated: 2, skipped: 1, findings: [] });
-    expect(items[0]).toBe('Checked 2 text and background pairs. All meet WCAG AA.');
-    expect(items[1]).toContain('1 part could not be checked, so this is not a full pass.');
-    expect(items[1]).toContain('bound to variables this file can resolve');
-  });
-
-  it('says nothing was checked instead of claiming a pass when nothing was measured', () => {
-    const items = contrastBullets({ evaluated: 0, skipped: 2, findings: [] });
-    expect(items[0]).toBe('No text and background pairs could be checked, so this is not a pass.');
-    expect(items[1]).toContain('Check those pairs by hand.');
-    // The old copy claimed compliance in exactly this state, which is what a
-    // hardcoded text colour (or no foundation at all) produces.
-    expect(items.join(' ')).not.toContain('All meet WCAG AA');
-  });
-
-  it('never uses an em dash or an en dash in contrast copy', () => {
-    const all = [
-      ...contrastBullets({ evaluated: 4, skipped: 0, findings: [] }),
-      ...contrastBullets({ evaluated: 2, skipped: 1, findings: [] }),
-      ...contrastBullets({ evaluated: 0, skipped: 2, findings: [] }),
-    ].join(' ');
-    expect(all).not.toMatch(/[—–]/);
-  });
-
-  it('is a non-AI section in the a11y group, so it costs no prose keys', () => {
-    expect(ALL_SECTIONS.find((s) => s.id === 'contrast')).toEqual({
-      id: 'contrast', label: 'Contrast', ai: false, group: 'a11y',
-    });
-    expect([...proseKeysForSections(new Set(['contrast']))]).toEqual([]);
+  it('still offers the other three a11y sections', () => {
+    const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
+    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
   });
 });
 
