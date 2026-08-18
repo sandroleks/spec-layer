@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { extract } from '../src/extract';
 import { contentHash } from '../src/hash';
@@ -127,4 +128,12 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
     // handed in IS the one variantAxisModel computes.
     expect(extractTokens(set, variantAxisModel(set))).toEqual(extractTokens(set));
   });
+});
+
+it('carries no contrast field', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const spec = extract(node, { figmaFile: 'FILE1' });
+  // `tsc` catches this at the type level, but a stored spec deserialized from
+  // pluginData is plain JSON with no type, so the runtime shape matters too.
+  expect('contrast' in spec).toBe(false);
 });

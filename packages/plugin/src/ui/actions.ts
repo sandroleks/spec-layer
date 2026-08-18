@@ -116,10 +116,7 @@ export function renderOne(
   fileKey: string,
 ): { name: string; spec: IntermediateSpec; extractedAt: string } {
   const extractedAt = new Date().toISOString();
-  const spec = extract(node, {
-    figmaFile: fileKey,
-    ...(foundationSpec ? { foundation: foundationSpec } : {}),
-  });
+  const spec = extract(node, { figmaFile: fileKey });
   return { name: spec.name, spec, extractedAt };
 }
 
@@ -516,10 +513,7 @@ export async function updateFromSource(
   ui.clear();
   ui.startProgress(['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
-    const spec = extract(src.node, {
-      figmaFile: src.fileKey,
-      ...(foundationSpec ? { foundation: foundationSpec } : {}),
-    });
+    const spec = extract(src.node, { figmaFile: src.fileKey });
     const selected = new Set<SectionId>(src.config.sections);
 
     let prose = null as Awaited<ReturnType<typeof generateProse>>;
@@ -587,10 +581,7 @@ export async function copyBriefFromSource(
 ): Promise<void> {
   ui.clear();
   try {
-    const spec = extract(src.node, {
-      figmaFile: src.fileKey,
-      ...(foundationSpec ? { foundation: foundationSpec } : {}),
-    });
+    const spec = extract(src.node, { figmaFile: src.fileKey });
     const yaml = toYaml(componentBrief(spec, {
       generatedAt: new Date().toISOString(),
       ...(foundationSpec ? { foundation: foundationSpec } : {}),

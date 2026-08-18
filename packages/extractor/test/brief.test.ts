@@ -163,7 +163,6 @@ interface ParsedComponentBrief {
   anatomy: AnatomyNode[];
   layout?: Array<{ part: string; summary: string }>;
   unbound?: Array<{ part: string; issue: string }>;
-  contrast: { measured: number; skipped: number; findings: unknown[] };
   guidelines?: {
     definition?: string;
     accessibility?: string;
@@ -204,7 +203,6 @@ const SPEC: IntermediateSpec = {
   gaps: [{ part: 'container', issue: 'hardcoded itemSpacing (8px)' }],
   layout: [{ part: 'container', summary: 'horizontal, gap 8' }],
   rawValues: [],
-  contrast: { evaluated: 4, skipped: 1, findings: [] },
 };
 
 const brief = (over: Partial<Parameters<typeof componentBrief>[1]> = {}): ParsedComponentBrief =>
@@ -248,10 +246,6 @@ describe('componentBrief', () => {
 
   it('emits gaps as unbound', () => {
     expect(brief().unbound).toEqual([{ part: 'container', issue: 'hardcoded itemSpacing (8px)' }]);
-  });
-
-  it('reports measured and skipped counts so an empty findings list is readable', () => {
-    expect(brief().contrast).toEqual({ measured: 4, skipped: 1, findings: [] });
   });
 
   it('includes stored guidelines verbatim', () => {

@@ -60,24 +60,16 @@ describe('draftProse base64 image', () => {
       .toEqual(proseCacheKey(spec, { keys: ['definition', 'interactions'] }));
   });
 
-  // Contrast is derived from the file's foundation, not from the component, and
-  // neither it nor rawValues reaches the prompt. Keying on them would mean that
-  // editing one colour variable orphans every cached draft in the file and
-  // re-bills a metered generation for identical prose.
-  it('ignores contrast and rawValues, which the prompt never sees', () => {
+  // rawValues is presentation-only and never reaches the prompt. Keying on it
+  // would mean that a value now rendered differently orphans every cached
+  // draft and re-bills a metered generation for identical prose.
+  it('ignores rawValues, which the prompt never sees', () => {
     const base = proseCacheKey(spec);
-    const withContrast = {
+    const withRaw = {
       ...spec,
-      contrast: {
-        evaluated: 3, skipped: 1,
-        findings: [{
-          part: 'label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
-          backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
-        }],
-      },
       rawValues: [{ part: 'label', property: 'color', value: '#bbbbbb' }],
     } as unknown as IntermediateSpec;
-    expect(proseCacheKey(withContrast)).toEqual(base);
+    expect(proseCacheKey(withRaw)).toEqual(base);
   });
 
   it('still changes when something the prompt reads changes', () => {

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { specContentHash, extract } from '../src/index';
 import type { SerializedNode } from '../src/index';
@@ -27,20 +28,16 @@ describe('specContentHash', () => {
     // It is a 64-char hex SHA-256.
     expect(h1).toMatch(/^[0-9a-f]{64}$/);
   });
+});
 
-  it('ignores contrast findings, which depend on the foundation not the component', () => {
-    const spec = extract(NODE, { figmaFile: 'FILEKEY' });
-    const withFindings = {
-      ...spec,
-      contrast: {
-        evaluated: 1,
-        skipped: 2,
-        findings: [{
-          part: 'Label', variant: 'Style=Filled', foreground: '#bbbbbb', background: '#ffffff',
-          backgroundPart: 'Container', ratio: 1.9, required: 4.5 as const,
-        }],
-      },
-    };
-    expect(specContentHash(withFindings as typeof spec)).toBe(specContentHash(spec));
-  });
+/** Measured on 2026-08-19 against v1, before contrast left IntermediateSpec.
+ *  Every component doc on canvas stores a baseline computed this way, so a change
+ *  to this constant means every one of them reports drift. Only a task that says
+ *  it re-cuts the baseline may change it. */
+const BUTTON_HASH_V1 = 'd445791b4151e4bfa53b61e535851d2aa5a8a4fbf0276251a2049ee9798194e7';
+
+it('is unchanged by removing the contrast field', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const spec = extract(node, { figmaFile: 'FILE1' });
+  expect(specContentHash(spec)).toBe(BUTTON_HASH_V1);
 });

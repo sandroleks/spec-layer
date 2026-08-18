@@ -20,26 +20,14 @@ function canonical(value: unknown): string {
 export const contentHash = (value: unknown): string => sha256(canonical(value));
 
 /**
- * The drift baseline hash. Computed over a projection that excludes rawValues
- * and contrast, and reduces anatomy to the legacy depth-0 {id,name,type,
- * nested} shape, so canvas-only 2.0 additions never flip the hash for existing
- * committed specs. This is the single source of truth for content_hash; both
- * the Markdown frontmatter and on-canvas drift detection call it.
- *
- * `contrast` is excluded for two reasons, and the second is the one that
- * actually matters:
- * - It's presentation-only, like rawValues — nothing in this hash is meant to
- *   change just because a value is now rendered differently.
- * - The library drift check calls extract() with no FoundationSpec, so
- *   `contrast` is always `[]` on that path. checkContrast only runs where a
- *   foundation IS available. If this hash included `contrast`, every doc
- *   would read as permanently drifted the instant a foundation-derived
- *   finding showed up on the path that has one, because the drift path's own
- *   baseline could never reproduce it — there's no foundation there to find
- *   it with.
+ * The drift baseline hash. Computed over a projection that excludes rawValues,
+ * and reduces anatomy to the legacy depth-0 {id,name,type,nested} shape, so
+ * canvas-only 2.0 additions never flip the hash for existing committed specs.
+ * This is the single source of truth for content_hash; both the Markdown
+ * frontmatter and on-canvas drift detection call it.
  */
 export function specContentHash(spec: IntermediateSpec): string {
-  const { rawValues: _rawValues, contrast: _contrast, ...rest } = spec;
+  const { rawValues: _rawValues, ...rest } = spec;
   const hashable = {
     ...rest,
     anatomy: spec.anatomy

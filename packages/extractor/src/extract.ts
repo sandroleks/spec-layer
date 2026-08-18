@@ -4,10 +4,6 @@ import { extractProps, extractVariants, extractStates, type ComponentProp, type 
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
-import {
-  checkContrast, collectTextMetrics, emptyContrastReport, type ContrastReport,
-} from './contrast';
-import type { FoundationSpec } from './foundation';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -41,11 +37,6 @@ export interface IntermediateSpec {
   gaps: Gap[];
   layout: LayoutSummary[];
   rawValues: RawValue[];
-  /** WCAG AA findings, plus how much was actually measured. Excluded from
-   *  specContentHash and never rendered into Markdown, matching rawValues: the
-   *  drift path calls extract() with no foundation, so a hashed value here would
-   *  read as permanent drift. */
-  contrast: ContrastReport;
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -54,7 +45,7 @@ function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
 
 export function extract(
   root: SerializedNode,
-  meta: { figmaFile: string; foundation?: FoundationSpec },
+  meta: { figmaFile: string },
 ): IntermediateSpec {
   const { parts, related, componentId } = extractAnatomy(root);
   // Built once and threaded into both extractTokens and toVariantInstances.
@@ -65,7 +56,7 @@ export function extract(
   // longer match them. One shared model makes that agreement structural instead
   // of relying on both call sites happening to compute the same thing.
   const model = variantAxisModel(root);
-  const spec: IntermediateSpec = {
+  return {
     name: root.name,
     figmaKey: root.key ?? '',
     figmaFile: meta.figmaFile,
@@ -81,19 +72,5 @@ export function extract(
     gaps: extractGaps(root),
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
-    contrast: emptyContrastReport(),
   };
-  // Contrast needs resolved colour values, which only the foundation carries.
-  // Callers without one (the library drift check) get a report that measured
-  // nothing, which is safe because contrast sits outside specContentHash — and
-  // which the renderer states plainly rather than dressing up as a pass.
-  //
-  // Text metrics come from the same shared axis model, so the AA threshold is
-  // picked from the variant being measured rather than from the default variant.
-  return meta.foundation
-    ? {
-        ...spec,
-        contrast: checkContrast(spec, meta.foundation, collectTextMetrics(root, model)),
-      }
-    : spec;
 }

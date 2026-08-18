@@ -353,24 +353,6 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     unbound: spec.gaps.length > 0
       ? spec.gaps.map((g) => ({ part: g.part, issue: g.issue }))
       : undefined,
-    // Emitted unconditionally, even when findings is empty: `measured` and
-    // `skipped` are what distinguish "checked and clean" from "could not
-    // check anything", so omitting the block on empty findings would erase
-    // that distinction. `evaluated` is renamed to `measured` for readers of
-    // the brief, consistently with every other field here.
-    contrast: {
-      measured: spec.contrast.evaluated,
-      skipped: spec.contrast.skipped,
-      findings: spec.contrast.findings.map((f) => ({
-        part: f.part,
-        variant: f.variant,
-        foreground: f.foreground,
-        background: f.background,
-        background_part: f.backgroundPart,
-        ratio: f.ratio,
-        required: f.required,
-      })),
-    },
     guidelines: guidelinesOf(opts.prose),
   };
 }
