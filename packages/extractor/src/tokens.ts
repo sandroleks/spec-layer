@@ -264,42 +264,46 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   }
 
   // --- Collect the observation grid ----------------------------------------
-  const cellsByPartProp = new Map<string, Cell[]>();
-  const partOrder: string[] = [];
-  const propOrder = new Map<string, string[]>();
-  // Path identity recorded per (part, property) key. `part` is unique only
+  // Grouped by (path, property), NOT (part, property). `part` is unique only
   // among SIBLINGS (siblingPartNames numbers duplicates within ONE parent's
   // children), so two nodes with the same cleaned name in DIFFERENT subtrees
-  // ("header > label" and "footer > label") still share a flat key here and
-  // merge into one cell. `path`, threaded from walkParts, is the real,
-  // unambiguous identity for each part; it rides alongside `part` on every
-  // emitted rule so a consumer can join a rule back to the exact anatomy node
-  // it came from instead of matching on the collision-prone leaf name.
-  const pathByKey = new Map<string, string>();
+  // ("header > label" and "footer > label") would still share a flat `part`
+  // key. `path`, threaded from walkParts, is the real, unambiguous identity —
+  // grouping on it is what keeps those two nodes as two separate rules, each
+  // carrying its own correct path, instead of merging their bindings into one
+  // cell and stamping a single (and for one of them, wrong) path onto both.
+  const cellsByPathProp = new Map<string, Cell[]>();
+  const pathOrder: string[] = [];
+  const propOrder = new Map<string, string[]>();
+  // Leaf part name for display, recorded per path. Every visit of a given
+  // path names the same node, so this is never overwritten with a different
+  // value the way a `part`-keyed map would be.
+  const partByPath = new Map<string, string>();
 
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
-    const variantTokens = new Map<string, Set<string>>(); // "part\0prop" -> tokens
+    const variantTokens = new Map<string, Set<string>>(); // "path\0prop" -> tokens
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
       for (const { property, token } of normalizeBindings(n.bindings ?? [])) {
-        const key = `${part}\0${property}`;
-        pathByKey.set(key, path);
+        const key = `${path}\0${property}`;
+        partByPath.set(path, part);
         let set = variantTokens.get(key);
         if (!set) variantTokens.set(key, (set = new Set()));
         set.add(token);
       }
     }, true);
     for (const [key, tokens] of variantTokens) {
-      let cells = cellsByPartProp.get(key);
+      let cells = cellsByPathProp.get(key);
       if (!cells) {
-        cellsByPartProp.set(key, (cells = []));
-        const part = key.slice(0, key.indexOf('\0'));
-        const prop = key.slice(key.indexOf('\0') + 1);
-        if (!propOrder.has(part)) {
-          partOrder.push(part);
-          propOrder.set(part, []);
+        cellsByPathProp.set(key, (cells = []));
+        const nul = key.indexOf('\0');
+        const path = key.slice(0, nul);
+        const prop = key.slice(nul + 1);
+        if (!propOrder.has(path)) {
+          pathOrder.push(path);
+          propOrder.set(path, []);
         }
-        propOrder.get(part)!.push(prop);
+        propOrder.get(path)!.push(prop);
       }
       cells.push({ combo, tokens: [...tokens].sort() });
     }
@@ -313,7 +317,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   // ABSENT cell for every missing combo turns absence into just another token
   // value, which the difference-detection below already handles correctly.
   // Cells hold combo objects by reference from `combos`, so identity works here.
-  for (const cells of cellsByPartProp.values()) {
+  for (const cells of cellsByPathProp.values()) {
     const present = new Set(cells.map((c) => c.combo));
     for (const combo of combos) {
       if (!present.has(combo)) cells.push({ combo, tokens: [ABSENT] });
@@ -469,14 +473,14 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
 
   // --- Finalize: canonical ordering, public shape ----------------------------
   const defaultCombo = combos[0];
-  const toTokenRule = (part: string, property: string, r: DraftRule): TokenRule => {
+  const toTokenRule = (path: string, property: string, r: DraftRule): TokenRule => {
     const conditions: Record<string, string[]> = {};
     for (const axis of axisOrder) {
       const vs = r.values.get(axis);
       if (!vs) continue;
       conditions[axis] = axisValues.get(axis)!.filter((v) => vs.has(v));
     }
-    return { part, path: pathByKey.get(`${part}\0${property}`)!, property, conditions, token: r.token };
+    return { part: partByPath.get(path)!, path, property, conditions, token: r.token };
   };
 
   const ruleSortKey = (r: DraftRule): string => {
@@ -497,9 +501,9 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   };
 
   const out: TokenRule[] = [];
-  for (const part of partOrder) {
-    for (const prop of propOrder.get(part)!) {
-      const cells = cellsByPartProp.get(`${part}\0${prop}`)!;
+  for (const path of pathOrder) {
+    for (const prop of propOrder.get(path)!) {
+      const cells = cellsByPathProp.get(`${path}\0${prop}`)!;
       const rules = buildRules(cells);
       rules.sort((a, b) => {
         const ka = ruleSortKey(a), kb = ruleSortKey(b);
@@ -507,7 +511,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       });
       for (const r of rules) {
         if (r.token === ABSENT) continue;
-        out.push(toTokenRule(part, prop, r));
+        out.push(toTokenRule(path, prop, r));
       }
     }
   }
@@ -527,7 +531,11 @@ export function extractGaps(root: SerializedNode): Gap[] {
   const out: Gap[] = [];
   const seenGaps = new Set<string>();
   const pushGap = (part: string, path: string, issue: string) => {
-    const key = `${part}\0${issue}`;
+    // Keyed on path, not part: `part` is unique only among siblings, so two
+    // nodes with the same cleaned leaf name in different subtrees ("header >
+    // label" and "footer > label") would otherwise share a key and the
+    // second node's gap would silently never get pushed at all.
+    const key = `${path}\0${issue}`;
     if (seenGaps.has(key)) return;
     seenGaps.add(key);
     out.push({ part, path, issue });

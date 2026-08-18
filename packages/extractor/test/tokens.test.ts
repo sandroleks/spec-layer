@@ -428,11 +428,37 @@ describe('extractGaps coverage', () => {
   });
 
   it('reports both a hardcoded fill and a hardcoded stroke on the same part', () => {
-    // pushGap dedupes on (part, issue), not on part alone — two distinct issues
+    // pushGap dedupes on (path, issue), not on part alone — two distinct issues
     // on one part must not collapse into one gap.
     const gaps = extractGaps(comp({ hasUnboundPaint: true, hasUnboundStroke: true }));
     expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded color (no variable or style)' });
     expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toHaveLength(2);
+  });
+
+  // Regression (code review, Task 3): pushGap's dedupe key was `${part}\0${issue}`,
+  // so two nodes in DIFFERENT subtrees with the same cleaned leaf name ("header
+  // > label" and "footer > label") shared a key. Unlike the tokens.ts defect,
+  // this didn't corrupt a path — dedup runs BEFORE the push, so the second
+  // node's gap was silently dropped rather than merged. Keying on (path, issue)
+  // fixes both: two gaps are reported, each with its own correct path.
+  it('reports the same issue on two same-named parts in different subtrees as two gaps', () => {
+    const root: SerializedNode = {
+      id: 'root', name: 'Root', type: 'COMPONENT', visible: true,
+      children: [
+        { id: 'h', name: 'header', type: 'FRAME', visible: true,
+          children: [{ id: 'hl', name: 'label', type: 'RECTANGLE', visible: true, hasUnboundPaint: true }] },
+        { id: 'f', name: 'footer', type: 'FRAME', visible: true,
+          children: [{ id: 'fl', name: 'label', type: 'RECTANGLE', visible: true, hasUnboundPaint: true }] },
+      ],
+    };
+    const gaps = extractGaps(root);
+    expect(gaps).toContainEqual(
+      { part: 'label', path: 'Root/header/label', issue: 'hardcoded color (no variable or style)' },
+    );
+    expect(gaps).toContainEqual(
+      { part: 'label', path: 'Root/footer/label', issue: 'hardcoded color (no variable or style)' },
+    );
     expect(gaps).toHaveLength(2);
   });
 });
@@ -549,5 +575,51 @@ describe('property name normalization', () => {
     };
     const props = extractTokens(set).map((r) => r.property);
     expect(props).toEqual(['counterAxisSpacing']);
+  });
+});
+
+// Regression (code review, Task 3): grouping by `part` alone let two nodes in
+// DIFFERENT subtrees with the same cleaned leaf name ("header > label" and
+// "footer > label") merge into one cell, and `pathByKey`'s plain `Map.set`
+// left whichever node the walk visited last (footer) stamped as the `path`
+// on BOTH resulting rules — so the rule carrying `color.header.label` ended
+// up asserting `path: 'Root/footer/label'`, a location that node never had.
+// Grouping on (path, property) instead keeps the two subtrees as two
+// separate rules, each correctly reporting its own path.
+describe('cross-subtree name collision (path grouping)', () => {
+  it('keeps two same-named parts in different subtrees as two rules, each with its own correct path', () => {
+    const root: SerializedNode = {
+      id: 'root', name: 'Root', type: 'COMPONENT', visible: true,
+      children: [
+        {
+          id: 'h', name: 'header', type: 'FRAME', visible: true,
+          children: [
+            { id: 'hl', name: 'label', type: 'TEXT', visible: true,
+              bindings: [{ property: 'fills', token: 'color.header.label' }] },
+          ],
+        },
+        {
+          id: 'f', name: 'footer', type: 'FRAME', visible: true,
+          children: [
+            { id: 'fl', name: 'label', type: 'TEXT', visible: true,
+              bindings: [{ property: 'fills', token: 'color.footer.label' }] },
+          ],
+        },
+      ],
+    };
+    const tokens = extractTokens(root);
+    expect(tokens).toHaveLength(2);
+
+    const header = tokens.find((t) => t.token === 'color.header.label');
+    const footer = tokens.find((t) => t.token === 'color.footer.label');
+    expect(header).toEqual(
+      { part: 'label', path: 'Root/header/label', property: 'fill', conditions: {}, token: 'color.header.label' },
+    );
+    expect(footer).toEqual(
+      { part: 'label', path: 'Root/footer/label', property: 'fill', conditions: {}, token: 'color.footer.label' },
+    );
+    // The defect under review: both rules reporting the SAME (wrong-for-one)
+    // path is exactly what must not happen.
+    expect(header!.path).not.toBe(footer!.path);
   });
 });
