@@ -276,8 +276,8 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
         // label" and "footer > label") produce the same flat key here and merge
         // into one cell, which can emit two contradictory unconditioned rules
         // for what a reader sees as one part. Every consumer that looks a part
-        // up by name (contrast.ts, the doc model's per-part token lists) inherits
-        // that ambiguity. The real fix is path-qualified part identity, which is
+        // up by name (the doc model's per-part token lists) inherits that
+        // ambiguity. The real fix is path-qualified part identity, which is
         // a change to naming.ts, anatomy.ts and this file at once; until then,
         // do not assume this key identifies one node.
         const key = `${part}\0${property}`;

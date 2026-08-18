@@ -979,10 +979,13 @@ window.onmessage = (event: MessageEvent) => {
 
   switch (msg.type) {
     case 'selection': {
-      // Update the shared foundation BEFORE runAutoExtract below reads it, so
-      // this selection's own extraction sees it. Absent when main has no dump
-      // yet (or building one failed) — extraction still proceeds, just
-      // without contrast.
+      // Update the shared foundation as soon as this selection's dump
+      // arrives, so a later action for this component (Copy for AI, Update)
+      // reads the current selection's foundation rather than one left over
+      // from the previous selection. Absent when main has no dump yet (or
+      // building one failed) — extraction still proceeds, and the brief's
+      // token bindings simply omit resolved values until a foundation dump
+      // arrives.
       if (msg.foundation) onSelectionFoundation(msg.foundation);
       state.currentNode = msg.node;
       // msg.fileKey is the file key computed by main; embedded in the spec.

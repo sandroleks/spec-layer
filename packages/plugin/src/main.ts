@@ -137,15 +137,16 @@ const foundationReader: FoundationReader = {
 
 // ---------------------------------------------------------------------------
 // Foundation dump, cached for the session — the file's variables/styles feed
-// contrast on every selection, but they change far less often than the
-// selection itself, so re-serializing the whole file (every collection, every
-// variable, every text style) on each click would be wasteful.
+// token-value resolution in the component brief on every selection, but they
+// change far less often than the selection itself, so re-serializing the
+// whole file (every collection, every variable, every text style) on each
+// click would be wasteful.
 //
 // Staleness: if a user edits a variable and then re-selects a component
-// without visiting the Foundations tab, they get contrast computed against
-// the stale cached colour. That is accepted here as a fair trade for not
-// re-walking the file on every click; a plugin has no cheap, precise "did a
-// variable value change" signal (figma.on('documentchange') fires on any
+// without visiting the Foundations tab, the brief resolves token values
+// against the stale cached value. That is accepted here as a fair trade for
+// not re-walking the file on every click; a plugin has no cheap, precise "did
+// a variable value change" signal (figma.on('documentchange') fires on any
 // document edit, including irrelevant ones, so keying invalidation off it
 // would either over-invalidate — defeating the cache — or need per-change
 // filtering that is its own project). The cache lives only for the session:
@@ -215,19 +216,21 @@ async function postSelection(): Promise<void> {
   }
 
   // Best-effort: a foundation failure (or simply none this file has ever
-  // needed) must never block the selection. Contrast is a bonus on top of a
-  // successful extraction, not a prerequisite for it, so an unresolved
-  // foundation here just means the 'selection' message omits the field and
-  // extract() falls back to its no-foundation, contrast-free path.
+  // needed) must never block the selection. Resolving token values into the
+  // component brief is a bonus on top of a successful extraction, not a
+  // prerequisite for it, so an unresolved foundation here just means the
+  // 'selection' message omits the field and the brief's token bindings omit
+  // `value` (and `code`) instead, the same as the drift path already does.
   let foundation: SerializedFoundation | undefined;
   try {
     foundation = await foundationFor(resolved.fileKey);
   } catch (err) {
-    // Still non-fatal, but no longer invisible. A persistent failure here is the
-    // difference between "this file has no contrast findings" and "contrast
-    // never ran", and with a bare catch the only symptom was a Contrast section
-    // that always reported nothing, with nothing anywhere to explain it.
-    console.warn('[Spec Layer] foundation unavailable, contrast will not be checked:', err);
+    // Still non-fatal, but no longer invisible. A persistent failure here is
+    // the difference between "token values are missing because no foundation
+    // has ever been fetched" (already shown in the brief's own caveat text)
+    // and "a fetch was attempted for this selection and failed", and with a
+    // bare catch the only symptom of the second was silence.
+    console.warn('[Spec Layer] foundation unavailable, token values will be missing from the component brief:', err);
     foundation = undefined;
   }
 
@@ -777,9 +780,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // its "Refresh sources" button — so it is also the one place a user
         // can force a fresh read. Updating the selection-side cache here
         // (rather than only handing the dump to this reply) means that
-        // refresh benefits the NEXT selection's contrast too, instead of
-        // leaving foundationFor() serving a dump this same click just proved
-        // stale.
+        // refresh benefits the NEXT selection's token-value resolution too,
+        // instead of leaving foundationFor() serving a dump this same click
+        // just proved stale.
         foundationCache = { fileKey, dump };
         figma.ui.postMessage({ type: 'foundation', dump } as MainToUi);
       } catch (err) {

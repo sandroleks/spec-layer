@@ -29,7 +29,8 @@ export interface SerializedNode {
   key?: string;
   /** Auto-layout/shape values for this node, when present. */
   layout?: LayoutInfo;
-  /** TEXT nodes only: the metrics WCAG needs to pick a contrast threshold. */
+  /** TEXT nodes only: font size/weight, kept for a future WCAG contrast
+   *  threshold lookup (see contrast.ts's requiredRatio). No current reader. */
   text?: { fontSize?: number; fontWeight?: number };
 }
 

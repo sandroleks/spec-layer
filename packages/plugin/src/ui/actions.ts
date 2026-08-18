@@ -738,16 +738,17 @@ export function onFoundationMessage(dump: SerializedFoundation): void {
 }
 
 /**
- * Set from the 'selection' message's optional `foundation` dump (Task 15),
- * so the Selected-component path gets contrast without the user ever having
- * opened the Foundations tab. Deliberately does NOT touch `foundationSelection`
- * or repaint `foundationHost`: unlike `onFoundationMessage` above, this fires
- * on every selection change, and resetting the Foundations tab's own checkbox
- * selection (or repainting a tab the user isn't looking at) on every click
- * elsewhere in the panel would be a visible regression for that tab. Both
- * setters write the same module-level `foundationSpec`, which is exactly the
- * point: the Selected-component and Foundations tabs share one parsed
- * instance rather than each fetching (and parsing) their own.
+ * Set from the 'selection' message's optional `foundation` dump, so the
+ * Selected-component path (Copy for AI's brief) can resolve token values
+ * without the user ever having opened the Foundations tab. Deliberately does
+ * NOT touch `foundationSelection` or repaint `foundationHost`: unlike
+ * `onFoundationMessage` above, this fires on every selection change, and
+ * resetting the Foundations tab's own checkbox selection (or repainting a tab
+ * the user isn't looking at) on every click elsewhere in the panel would be a
+ * visible regression for that tab. Both setters write the same module-level
+ * `foundationSpec`, which is exactly the point: the Selected-component and
+ * Foundations tabs share one parsed instance rather than each fetching (and
+ * parsing) their own.
  */
 export function onSelectionFoundation(dump: SerializedFoundation): void {
   foundationSpec = buildFoundation(dump);

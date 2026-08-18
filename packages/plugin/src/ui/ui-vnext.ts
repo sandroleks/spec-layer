@@ -1848,10 +1848,12 @@ function applySelection(msg: SelectionMessage): void {
   state.pendingAiNote = '';
   facts = node ? componentFacts(null, node.name) : NO_FACTS;
   selection.variantIds.clear();
-  // Update the shared foundation BEFORE the deferred extraction below reads
-  // it, so this selection's own extract() sees it rather than lagging one
-  // selection behind. Absent when the main thread has no dump yet (or
-  // building one failed) — extraction still proceeds, just without contrast.
+  // Update the shared foundation as soon as this selection's dump arrives, so
+  // a later action for this component (Copy for AI, Update) reads the
+  // current selection's foundation rather than one left over from the
+  // previous selection. Absent when the main thread has no dump yet (or
+  // building one failed) — extraction still proceeds, and the brief's token
+  // bindings simply omit resolved values until a foundation dump arrives.
   if (msg.foundation) onSelectionFoundation(msg.foundation);
   if (!node) {
     screen = { kind: 'empty' };

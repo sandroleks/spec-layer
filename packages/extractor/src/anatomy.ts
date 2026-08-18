@@ -7,7 +7,8 @@ export interface AnatomyPart {
   depth: number;
   /** Main-component name when nested. */
   component?: string;
-  /** TEXT parts only: metrics the contrast check needs to pick a threshold. */
+  /** TEXT parts only: font size/weight, kept for a future WCAG contrast
+   *  threshold lookup (see contrast.ts's requiredRatio). No current reader. */
   text?: { fontSize?: number; fontWeight?: number };
 }
 export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; componentId: string }

@@ -47,7 +47,8 @@ export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource;
       /** The file's variables/styles, best-effort — absent when the dump
        *  failed to build or hasn't been fetched yet, in which case the
-       *  selection still works, just without contrast findings. */
+       *  selection still works, and the component brief's token bindings
+       *  simply omit resolved values until a foundation dump arrives. */
       foundation?: SerializedFoundation }
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
   | { type: 'userInfo'; userId: string | null }
