@@ -44,20 +44,40 @@ export function siblingPartNames(children: SerializedNode[]): Map<SerializedNode
 }
 
 /**
- * Depth-first walk that hands each node its disambiguated part name. Replaces
- * per-call `cleanPartName(n.name)`, which merged same-named siblings into one
- * part. `skipInvisible` prunes hidden subtrees (token extraction wants that so
- * presence-driven conditioning works; gap detection does not).
+ * Join a parent path and a child part name into a path identity.
+ *
+ * A layer name can itself contain a slash, which would make a joined path
+ * ambiguous: "Container/icon/left" could be a layer called "icon/left" inside
+ * Container, or a layer "left" inside a layer "icon". Escaping the literal at
+ * construction keeps the identity a single readable string, which it has to be if
+ * a reader is to match a token binding against an anatomy entry by eye.
+ */
+export function joinPath(parentPath: string, part: string): string {
+  const escaped = part.replace(/\//g, '\\/');
+  return parentPath ? `${parentPath}/${escaped}` : escaped;
+}
+
+/**
+ * Depth-first walk that hands each node its disambiguated part name and its
+ * path identity: the sibling-disambiguated names from the component root down
+ * to this node, joined with `/`. Replaces per-call `cleanPartName(n.name)`,
+ * which merged same-named siblings into one part. `skipInvisible` prunes
+ * hidden subtrees (token extraction wants that so presence-driven conditioning
+ * works; gap detection does not).
  */
 export function walkParts(
   root: SerializedNode,
   rootName: string,
-  visit: (n: SerializedNode, part: string) => void,
+  visit: (n: SerializedNode, part: string, path: string) => void,
   skipInvisible = false,
+  parentPath = '',
 ): void {
   if (skipInvisible && root.visible === false) return;
-  visit(root, rootName);
+  const path = joinPath(parentPath, rootName);
+  visit(root, rootName, path);
   const kids = root.children ?? [];
   const names = siblingPartNames(kids);
-  for (const child of kids) walkParts(child, names.get(child)!, visit, skipInvisible);
+  for (const child of kids) {
+    walkParts(child, names.get(child)!, visit, skipInvisible, path);
+  }
 }

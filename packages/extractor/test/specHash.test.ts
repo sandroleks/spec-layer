@@ -41,3 +41,10 @@ it('is unchanged by removing the contrast field', () => {
   const spec = extract(node, { figmaFile: 'FILE1' });
   expect(specContentHash(spec)).toBe(BUTTON_HASH_V1);
 });
+
+it('is unchanged by adding paths to tokens and gaps', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const spec = extract(node, { figmaFile: 'FILE1' });
+  expect(spec.tokens[0].path).toBeTruthy();            // the field exists
+  expect(specContentHash(spec)).toBe(BUTTON_HASH_V1);  // and does not enter the hash
+});

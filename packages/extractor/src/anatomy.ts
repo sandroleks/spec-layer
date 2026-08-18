@@ -1,8 +1,13 @@
 import type { SerializedNode } from './tree';
-import { parseVariantName, siblingPartNames } from './naming';
+import { parseVariantName, siblingPartNames, cleanPartName, joinPath } from './naming';
 
 export interface AnatomyPart {
   id: string; name: string; type: string; nested: boolean;
+  /** Path identity from the component root, the same identity `walkParts`
+   *  produces for tokens.ts and gaps.ts. Anatomy is a bounded (MAX_DEPTH),
+   *  instance-stopping view of the same namespace, so a token path can be
+   *  deeper than any anatomy path reaches — that's expected, not a mismatch. */
+  path: string;
   /** 0 = direct part; deeper levels indent in the legend/table. */
   depth: number;
   /** Main-component name when nested. */
@@ -62,18 +67,34 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   const parts: AnatomyPart[] = [];
   const related = new Set<string>();
 
+  // The path namespace anatomy shares with tokens.ts/gaps.ts: both start a
+  // walk from the same root name (walkParts' `rootName` argument there).
+  const isInSet = root.type === 'COMPONENT_SET';
+  const def = defaultVariant(root);
+  const rootPath = isInSet ? 'Container' : cleanPartName(def.name);
+
   // Resolve which children to list as anatomy parts, descending through any
   // sole FRAME/GROUP container so we surface real parts instead of a wrapper.
   // Guard: only descend when the sole FRAME/GROUP child itself has at least one
   // visible child — otherwise we would surface an empty parts list instead of
   // the wrapper, which is a silent failure.
-  let children = (defaultVariant(root).children ?? []).filter((c) => c.visible);
+  //
+  // The skipped wrapper still occupies a level in the shared path namespace
+  // (walkParts never skips it), so its name is folded into `parentPath` as we
+  // descend, keeping a nested part's path identical to what tokens.ts/gaps.ts
+  // would produce for the same node.
+  let siblingSet = def.children ?? [];
+  let children = siblingSet.filter((c) => c.visible);
+  let parentPath = rootPath;
   while (
     children.length === 1 &&
     (children[0].type === 'FRAME' || children[0].type === 'GROUP') &&
     (children[0].children ?? []).filter((c) => c.visible).length > 0
   ) {
-    children = (children[0].children ?? []).filter((c) => c.visible);
+    const names = siblingPartNames(siblingSet);
+    parentPath = joinPath(parentPath, names.get(children[0])!);
+    siblingSet = children[0].children ?? [];
+    children = siblingSet.filter((c) => c.visible);
   }
 
   // Same-named siblings (a leading and a trailing "icon") are numbered rather
@@ -87,22 +108,23 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   // stop the walk — an instance's internals belong to its own spec — but the
   // instance's main-component name is still recorded (both as a `related`
   // atom and on the part itself) at whatever depth it's found.
-  const addParts = (nodes: SerializedNode[], depth: number): void => {
+  const addParts = (nodes: SerializedNode[], depth: number, parentPath: string): void => {
     const names = siblingPartNames(nodes);
     for (const child of nodes) {
       if (!child.visible) continue;
       const nested = child.type === 'INSTANCE';
       if (nested && child.mainComponent) related.add(child.mainComponent.name);
+      const path = joinPath(parentPath, names.get(child)!);
       parts.push({
-        id: child.id, name: names.get(child)!, type: child.type, nested, depth,
+        id: child.id, name: names.get(child)!, type: child.type, nested, depth, path,
         ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
         ...(child.text ? { text: child.text } : {}),
       });
       if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
-        addParts(child.children, depth + 1);
+        addParts(child.children, depth + 1, path);
       }
     }
   };
-  addParts(children, 0);
-  return { parts, related: [...related], componentId: defaultVariant(root).id };
+  addParts(children, 0, parentPath);
+  return { parts, related: [...related], componentId: def.id };
 }

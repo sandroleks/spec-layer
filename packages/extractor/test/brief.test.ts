@@ -180,9 +180,9 @@ const SPEC: IntermediateSpec = {
   name: 'Button', figmaKey: 'm3-button', figmaFile: 'abc123', figmaNode: '1:100',
   anatomyComponentId: '1:101',
   anatomy: [
-    { id: 'p0', name: 'container', type: 'FRAME', nested: false, depth: 0 },
-    { id: 'p1', name: 'icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' },
-    { id: 'p2', name: 'label', type: 'TEXT', nested: false, depth: 1 },
+    { id: 'p0', name: 'container', path: 'Container/container', type: 'FRAME', nested: false, depth: 0 },
+    { id: 'p1', name: 'icon', path: 'Container/icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' },
+    { id: 'p2', name: 'label', path: 'Container/label', type: 'TEXT', nested: false, depth: 1 },
   ],
   props: [
     { name: 'label', kind: 'text', default: 'Button' },
@@ -200,7 +200,7 @@ const SPEC: IntermediateSpec = {
   states: ['Enabled', 'Hovered'],
   tokens: [],
   related: ['Icon'],
-  gaps: [{ part: 'container', issue: 'hardcoded itemSpacing (8px)' }],
+  gaps: [{ part: 'container', path: 'Container/container', issue: 'hardcoded itemSpacing (8px)' }],
   layout: [{ part: 'container', summary: 'horizontal, gap 8' }],
   rawValues: [],
 };
@@ -312,10 +312,10 @@ describe('componentBrief', () => {
     const spec: IntermediateSpec = {
       ...SPEC,
       anatomy: [
-        { id: 'a', name: 'a', type: 'FRAME', nested: false, depth: 0 },
-        { id: 'b', name: 'b', type: 'FRAME', nested: false, depth: 1 },
-        { id: 'c', name: 'c', type: 'FRAME', nested: false, depth: 2 },
-        { id: 'd', name: 'd', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'a', name: 'a', path: 'Container/a', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'b', name: 'b', path: 'Container/b', type: 'FRAME', nested: false, depth: 1 },
+        { id: 'c', name: 'c', path: 'Container/c', type: 'FRAME', nested: false, depth: 2 },
+        { id: 'd', name: 'd', path: 'Container/d', type: 'FRAME', nested: false, depth: 0 },
       ],
     };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
@@ -329,8 +329,8 @@ describe('componentBrief', () => {
     const spec: IntermediateSpec = {
       ...SPEC,
       anatomy: [
-        { id: 'a', name: 'a', type: 'FRAME', nested: false, depth: 2 },
-        { id: 'b', name: 'b', type: 'FRAME', nested: false, depth: 3 },
+        { id: 'a', name: 'a', path: 'Container/a', type: 'FRAME', nested: false, depth: 2 },
+        { id: 'b', name: 'b', path: 'Container/b', type: 'FRAME', nested: false, depth: 3 },
       ],
     };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
@@ -343,9 +343,9 @@ describe('componentBrief', () => {
     const spec: IntermediateSpec = {
       ...SPEC,
       anatomy: [
-        { id: 'a', name: 'a', type: 'FRAME', nested: false, depth: 0 },
-        { id: 'b', name: 'b', type: 'FRAME', nested: false, depth: 1 },
-        { id: 'c', name: 'c', type: 'FRAME', nested: false, depth: 1 },
+        { id: 'a', name: 'a', path: 'Container/a', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'b', name: 'b', path: 'Container/b', type: 'FRAME', nested: false, depth: 1 },
+        { id: 'c', name: 'c', path: 'Container/c', type: 'FRAME', nested: false, depth: 1 },
       ],
     };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
@@ -355,7 +355,7 @@ describe('componentBrief', () => {
   });
 
   it('gives a single childless part no children key', () => {
-    const spec: IntermediateSpec = { ...SPEC, anatomy: [{ id: 'a', name: 'a', type: 'FRAME', nested: false, depth: 0 }] };
+    const spec: IntermediateSpec = { ...SPEC, anatomy: [{ id: 'a', name: 'a', path: 'Container/a', type: 'FRAME', nested: false, depth: 0 }] };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
     expect(y.anatomy).toEqual([{ part: 'a', type: 'FRAME' }]);
     expect('children' in y.anatomy[0]).toBe(false);
@@ -395,10 +395,10 @@ const TOKEN_SPEC: IntermediateSpec = {
   ...SPEC,
   tokens: [
     // Unconditioned: applies to every variant, so it belongs in base.
-    { part: 'container', property: 'border-radius', conditions: {}, token: 'radius/md' },
+    { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'radius/md' },
     // Conditioned per state: belongs in by_variant.
-    { part: 'container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
-    { part: 'container', property: 'fill', conditions: { State: ['Hovered'] }, token: 'color/bg/brand-hover' },
+    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
+    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hovered'] }, token: 'color/bg/brand-hover' },
   ],
 };
 
@@ -481,9 +481,9 @@ describe('componentBrief tokens', () => {
     const wide: IntermediateSpec = {
       ...SPEC, variants: axes, variantInstances: instances,
       tokens: [
-        { part: 'container', property: 'border-radius', conditions: {}, token: 'radius/md' },
-        { part: 'label', property: 'typography', conditions: {}, token: 'type/label' },
-        { part: 'container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/bg/hover' },
+        { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'radius/md' },
+        { part: 'label', path: 'Container/label', property: 'typography', conditions: {}, token: 'type/label' },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/bg/hover' },
       ],
     };
     const y = load(toYaml(componentBrief(wide, { generatedAt: AT }))) as ParsedTokenBrief;
@@ -506,8 +506,8 @@ describe('componentBrief tokens', () => {
     const spec: IntermediateSpec = {
       ...SPEC,
       tokens: [
-        { part: 'container', property: 'fill', conditions: {}, token: 'color/bg/brand' },
-        { part: 'container', property: 'fill', conditions: { Style: ['Filled'] }, token: 'color/bg/brand' },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: {}, token: 'color/bg/brand' },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: { Style: ['Filled'] }, token: 'color/bg/brand' },
       ],
     };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;
@@ -528,8 +528,8 @@ describe('componentBrief tokens', () => {
     const spec: IntermediateSpec = {
       ...SPEC,
       tokens: [
-        { part: 'container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
-        { part: 'container', property: 'fill', conditions: { Style: ['Filled'], State: ['Enabled'] }, token: 'color/bg/brand' },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: { Style: ['Filled'], State: ['Enabled'] }, token: 'color/bg/brand' },
       ],
     };
     const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;

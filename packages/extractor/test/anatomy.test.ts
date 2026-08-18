@@ -126,7 +126,7 @@ describe('extractAnatomy — bounded depth-first walk (Task 7)', () => {
     };
     const { parts } = extractAnatomy(root);
     expect(parts).toEqual([
-      { id: '2', name: 'icon', type: 'INSTANCE', nested: true, depth: 0, component: 'Icon/Search' },
+      { id: '2', name: 'icon', path: 'Field/icon', type: 'INSTANCE', nested: true, depth: 0, component: 'Icon/Search' },
     ]);
   });
 });

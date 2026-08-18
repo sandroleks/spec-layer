@@ -33,6 +33,14 @@ export function specContentHash(spec: IntermediateSpec): string {
     anatomy: spec.anatomy
       .filter((p) => p.depth === 0)
       .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
+    // `path` is a new identity for data already hashed under `part`, so it must
+    // not enter the hash: every committed doc compares against a baseline
+    // computed without it, and including it would flip all of them to "update
+    // available" for a change that alters no rendered output. Same reasoning, and
+    // same shape, as the anatomy reduction above.
+    tokens: spec.tokens.map(({ part, property, conditions, token }) =>
+      ({ part, property, conditions, token })),
+    gaps: spec.gaps.map(({ part, issue }) => ({ part, issue })),
   };
   return contentHash(hashable);
 }

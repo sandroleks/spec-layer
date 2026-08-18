@@ -31,7 +31,7 @@ function makeSet(
 describe('extractTokens — rule minimization', () => {
   it('emits unconditioned rules for tokens shared by every variant', () => {
     expect(extractTokens(root)).toContainEqual(
-      { part: 'container', property: 'border-radius', conditions: {}, token: 'md.sys.shape.corner.full' },
+      { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'md.sys.shape.corner.full' },
     );
   });
 
@@ -39,10 +39,10 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(root);
     // label fill depends only on Style — State must not appear in the conditions
     expect(tokens).toContainEqual(
-      { part: 'label', property: 'fill', conditions: { Style: ['Filled'] }, token: 'md.sys.color.on-primary' },
+      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Filled'] }, token: 'md.sys.color.on-primary' },
     );
     expect(tokens).toContainEqual(
-      { part: 'label', property: 'fill', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.primary' },
+      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.primary' },
     );
   });
 
@@ -50,7 +50,7 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(root);
     expect(tokens).toContainEqual(
       {
-        part: 'container', property: 'fill',
+        part: 'container', path: 'Container/container', property: 'fill',
         conditions: { Style: ['Filled'], State: ['Enabled'] },
         token: 'md.sys.color.primary',
       },
@@ -59,7 +59,7 @@ describe('extractTokens — rule minimization', () => {
     // Style condition is non-restrictive and dropped.
     expect(tokens).toContainEqual(
       {
-        part: 'container', property: 'fill',
+        part: 'container', path: 'Container/container', property: 'fill',
         conditions: { State: ['Hovered'] },
         token: 'md.sys.color.primary-hover',
       },
@@ -69,7 +69,7 @@ describe('extractTokens — rule minimization', () => {
   it('drops non-restrictive axes on a sparse grid (Outlined exists only as Enabled)', () => {
     const tokens = extractTokens(root);
     expect(tokens).toContainEqual(
-      { part: 'container', property: 'border', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.outline' },
+      { part: 'container', path: 'Container/container', property: 'border', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.outline' },
     );
   });
 
@@ -82,8 +82,8 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toEqual([
-      { part: 'Label', property: 'typography', conditions: { Size: ['S'] }, token: 'Action/S' },
-      { part: 'Label', property: 'typography', conditions: { Size: ['L'] }, token: 'Action/L' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['S'] }, token: 'Action/S' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['L'] }, token: 'Action/L' },
     ]);
   });
 
@@ -97,13 +97,13 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color/disabled' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color/disabled' },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { State: ['Default'], Disabled: ['false'] }, token: 'color/base' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Default'], Disabled: ['false'] }, token: 'color/base' },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { State: ['Hover'], Disabled: ['false'] }, token: 'color/hover' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Hover'], Disabled: ['false'] }, token: 'color/hover' },
     );
   });
 
@@ -118,13 +118,13 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(set);
     // y applies to all existing A=2 variants — B is non-restrictive and dropped
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { A: ['2'] }, token: 'color/y' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['2'] }, token: 'color/y' },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { B: ['2'] }, token: 'color/z' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { B: ['2'] }, token: 'color/z' },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { A: ['1'], B: ['1'] }, token: 'color/x' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['1'], B: ['1'] }, token: 'color/x' },
     );
     expect(tokens).toHaveLength(3);
   });
@@ -139,7 +139,7 @@ describe('extractTokens — rule minimization', () => {
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
+      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
     ]);
   });
 
@@ -158,7 +158,7 @@ describe('extractTokens — rule minimization', () => {
       { name: 'State=Focus', parts: [focusRect(true)] },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
+      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
     ]);
   });
 
@@ -178,8 +178,8 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     // overlay is present everywhere → unconditioned; base only on A=One
-    expect(tokens).toContainEqual({ part: 'bg', property: 'fill', conditions: {}, token: 'color/overlay' });
-    expect(tokens).toContainEqual({ part: 'bg', property: 'fill', conditions: { A: ['One'] }, token: 'color/base' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: {}, token: 'color/overlay' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['One'] }, token: 'color/base' });
   });
 
   it('merges sibling axis values that share a token', () => {
@@ -191,7 +191,7 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
     );
   });
 
@@ -206,7 +206,7 @@ describe('extractTokens — rule minimization', () => {
       { Type: { type: 'VARIANT', defaultValue: 'Primary', variantOptions: ['Primary', 'Secondary', 'Tertiary'] } },
     );
     expect(extractTokens(set)).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
     );
   });
 
@@ -214,7 +214,7 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(chip as SerializedNode);
     const iconFills = tokens.filter((t) => t.part === 'icon' && t.property === 'fill');
     expect(iconFills).toEqual([
-      { part: 'icon', property: 'fill', conditions: {}, token: 'Text Color/Body/Primary' },
+      { part: 'icon', path: 'Container/Contents/icon', property: 'fill', conditions: {}, token: 'Text Color/Body/Primary' },
     ]);
   });
 
@@ -231,8 +231,8 @@ describe('extractTokens — rule minimization', () => {
       },
     ]);
     const tokens = extractTokens(set);
-    expect(tokens).toContainEqual({ part: 'bg', property: 'padding-x', conditions: {}, token: 'size-12' });
-    expect(tokens).toContainEqual({ part: 'bg', property: 'padding-y', conditions: {}, token: 'size-4' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-x', conditions: {}, token: 'size-12' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-y', conditions: {}, token: 'size-4' });
   });
 
   it('collapses all four equal paddings into a single padding rule', () => {
@@ -248,7 +248,7 @@ describe('extractTokens — rule minimization', () => {
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'bg', property: 'padding', conditions: {}, token: 'size-8' },
+      { part: 'bg', path: 'Container/bg', property: 'padding', conditions: {}, token: 'size-8' },
     ]);
   });
 
@@ -264,7 +264,7 @@ describe('extractTokens — rule minimization', () => {
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Label', property: 'typography', conditions: {}, token: 'Action/M' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: {}, token: 'Action/M' },
     ]);
   });
 
@@ -276,7 +276,7 @@ describe('extractTokens — rule minimization', () => {
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'icon-primary', property: 'fill', conditions: {}, token: 'color/icon' },
+      { part: 'icon-primary', path: 'Container/icon-primary', property: 'fill', conditions: {}, token: 'color/icon' },
     ]);
   });
 
@@ -288,10 +288,10 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { Variant: ['Plain'] }, token: 'color/base' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Plain'] }, token: 'color/base' },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', property: 'fill', conditions: { Variant: ['Fancy Variant'] }, token: 'color/fancy' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Fancy Variant'] }, token: 'color/fancy' },
     );
   });
 
@@ -340,12 +340,12 @@ describe('extractTokens — rule minimization', () => {
     const fills = tokens.filter((t) => t.part === 'bg');
     for (const f of fills) expect(f.conditions).not.toHaveProperty('Size');
     expect(fills).toContainEqual({
-      part: 'bg', property: 'fill',
+      part: 'bg', path: 'Container/bg', property: 'fill',
       conditions: { Type: ['Primary'], Disabled: ['true'] },
       token: 'bg/primary-disabled',
     });
     expect(fills).toContainEqual({
-      part: 'bg', property: 'fill',
+      part: 'bg', path: 'Container/bg', property: 'fill',
       conditions: { Type: ['Secondary', 'Tertiary'], State: ['Hover'], Danger: ['true'] },
       token: 'bg/danger-secondary-Hover',
     });
@@ -374,20 +374,20 @@ describe('formatConditions', () => {
 describe('extractGaps', () => {
   it('reports unbound paints as gaps, including on invisible layers', () => {
     expect(extractGaps(root)).toContainEqual(
-      { part: 'debug-overlay', issue: 'hardcoded color (no variable or style)' },
+      { part: 'debug-overlay', path: 'Container/debug-overlay', issue: 'hardcoded color (no variable or style)' },
     );
   });
 
   it('flags TEXT parts with no text style or typography variable', () => {
     expect(extractGaps(root)).toContainEqual(
-      { part: 'label', issue: 'no text style or typography variable' },
+      { part: 'label', path: 'Container/label', issue: 'no text style or typography variable' },
     );
   });
 
   it('flags hardcoded layout values not bound to variables', () => {
     const gaps = extractGaps(root);
-    expect(gaps).toContainEqual({ part: 'container', issue: 'hardcoded itemSpacing (8px)' });
-    expect(gaps).toContainEqual({ part: 'container', issue: 'hardcoded padding' });
+    expect(gaps).toContainEqual({ part: 'container', path: 'Container/container', issue: 'hardcoded itemSpacing (8px)' });
+    expect(gaps).toContainEqual({ part: 'container', path: 'Container/container', issue: 'hardcoded padding' });
     // cornerRadius IS bound on container → must NOT be flagged
     expect(gaps).not.toContainEqual(expect.objectContaining({ issue: expect.stringContaining('cornerRadius') }));
   });
@@ -400,22 +400,22 @@ describe('extractGaps coverage', () => {
 
   it('reports a hardcoded stroke color', () => {
     const gaps = extractGaps(comp({ hasUnboundStroke: true }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
   });
 
   it('reports a hardcoded gradient or image fill', () => {
     const gaps = extractGaps(comp({ hasUnboundGradient: true }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded gradient or image fill (no style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded gradient or image fill (no style)' });
   });
 
   it('reports an unbound effect', () => {
     const gaps = extractGaps(comp({ hasUnboundEffect: true }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded shadow or blur (no effect style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded shadow or blur (no effect style)' });
   });
 
   it('reports a hand-set opacity', () => {
     const gaps = extractGaps(comp({ opacity: 0.5 }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded opacity (0.5)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded opacity (0.5)' });
   });
 
   it('does not report opacity when it is fully opaque', () => {
@@ -431,8 +431,8 @@ describe('extractGaps coverage', () => {
     // pushGap dedupes on (part, issue), not on part alone — two distinct issues
     // on one part must not collapse into one gap.
     const gaps = extractGaps(comp({ hasUnboundPaint: true, hasUnboundStroke: true }));
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded color (no variable or style)' });
-    expect(gaps).toContainEqual({ part: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
     expect(gaps).toHaveLength(2);
   });
 });

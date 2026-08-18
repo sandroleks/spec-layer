@@ -3,14 +3,14 @@ import { resolveTokensForVariant } from '../src/resolve';
 import type { TokenRule } from '../src/tokens';
 
 const rules: TokenRule[] = [
-  { part: 'Container', property: 'border-radius', conditions: {}, token: 'shape.full' },
-  { part: 'Container', property: 'fill', conditions: { Type: ['Primary'] }, token: 'color.primary' },
-  { part: 'Container', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color.surface' },
+  { part: 'Container', path: 'Container', property: 'border-radius', conditions: {}, token: 'shape.full' },
+  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Primary'] }, token: 'color.primary' },
+  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color.surface' },
   {
-    part: 'Container', property: 'fill',
+    part: 'Container', path: 'Container', property: 'fill',
     conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'color.primary-hover',
   },
-  { part: 'Label', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color.disabled' },
+  { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color.disabled' },
 ];
 
 describe('resolveTokensForVariant', () => {

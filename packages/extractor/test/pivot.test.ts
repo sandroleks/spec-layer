@@ -33,8 +33,8 @@ describe('categorize', () => {
 
 describe('axis predicates', () => {
   it('isUnconditioned', () => {
-    expect(isUnconditioned({ part: 'p', property: 'fill', conditions: {}, token: 't' })).toBe(true);
-    expect(isUnconditioned({ part: 'p', property: 'fill', conditions: { Type: ['A'] }, token: 't' })).toBe(false);
+    expect(isUnconditioned({ part: 'p', path: 'Container/p', property: 'fill', conditions: {}, token: 't' })).toBe(true);
+    expect(isUnconditioned({ part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['A'] }, token: 't' })).toBe(false);
   });
 
   it('isModifierAxis recognizes true/false pairs', () => {
@@ -63,10 +63,10 @@ describe('pivotColorPart', () => {
 
   it('pivots State as rows and Type as columns', () => {
     const rules: TokenRule[] = [
-      { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Default'] }, token: 'action' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'hover' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec' },
-      { part: 'Container', property: 'border', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec-border' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Primary'], State: ['Default'] }, token: 'action' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'hover' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec' },
+      { part: 'Container', path: 'Container/Container', property: 'border', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec-border' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     expect(md).toContain('| Property | State | Primary | Secondary | Tertiary |');
@@ -77,8 +77,8 @@ describe('pivotColorPart', () => {
 
   it('renders a compact flat table for parts at or below the threshold', () => {
     const rules: TokenRule[] = [
-      { part: 'Focus', property: 'border', conditions: { State: ['Hover'] }, token: 'a' },
-      { part: 'Focus', property: 'border', conditions: { State: ['Press'] }, token: 'b' },
+      { part: 'Focus', path: 'Container/Focus', property: 'border', conditions: { State: ['Hover'] }, token: 'a' },
+      { part: 'Focus', path: 'Container/Focus', property: 'border', conditions: { State: ['Press'] }, token: 'b' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     expect(md).toContain('| Property | Condition | Token |');
@@ -88,10 +88,10 @@ describe('pivotColorPart', () => {
 
   it('drops the State column when no rule conditions on State', () => {
     const rules: TokenRule[] = [
-      { part: 'Label', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
-      { part: 'Label', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
-      { part: 'Label', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 't' },
-      { part: 'Label', property: 'border', conditions: { Type: ['Secondary'] }, token: 'b' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 't' },
+      { part: 'Label', path: 'Container/Label', property: 'border', conditions: { Type: ['Secondary'] }, token: 'b' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     expect(md).toContain('| Property | Primary | Secondary | Tertiary |');
@@ -101,10 +101,10 @@ describe('pivotColorPart', () => {
 
   it('emits a single Token column when no column axis is used', () => {
     const rules: TokenRule[] = [
-      { part: 'icon', property: 'fill', conditions: { State: ['Default'] }, token: 'd' },
-      { part: 'icon', property: 'fill', conditions: { State: ['Hover'] }, token: 'h' },
-      { part: 'icon', property: 'fill', conditions: { State: ['Press'] }, token: 'pr' },
-      { part: 'icon', property: 'border', conditions: { State: ['Default'] }, token: 'bd' },
+      { part: 'icon', path: 'Container/icon', property: 'fill', conditions: { State: ['Default'] }, token: 'd' },
+      { part: 'icon', path: 'Container/icon', property: 'fill', conditions: { State: ['Hover'] }, token: 'h' },
+      { part: 'icon', path: 'Container/icon', property: 'fill', conditions: { State: ['Press'] }, token: 'pr' },
+      { part: 'icon', path: 'Container/icon', property: 'border', conditions: { State: ['Default'] }, token: 'bd' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     expect(md).toContain('| Property | State | Token |');
@@ -113,10 +113,10 @@ describe('pivotColorPart', () => {
 
   it('splits boolean (modifier) axes into base + "When X = v" sub-tables', () => {
     const rules: TokenRule[] = [
-      { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['false'] }, token: 'action' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['false'] }, token: 'sec' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['true'] }, token: 'danger' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['true'] }, token: 'sec-danger' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['false'] }, token: 'action' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['false'] }, token: 'sec' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['true'] }, token: 'danger' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['true'] }, token: 'sec-danger' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     expect(md).toContain('| fill | `action` | `sec` | — |');
@@ -126,10 +126,10 @@ describe('pivotColorPart', () => {
 
   it('emits no double blank line before a "When" sub-table title', () => {
     const rules: TokenRule[] = [
-      { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['false'] }, token: 'action' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['false'] }, token: 'sec' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['true'] }, token: 'danger' },
-      { part: 'Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['true'] }, token: 'sec-danger' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['false'] }, token: 'action' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['false'] }, token: 'sec' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Primary'], Danger: ['true'] }, token: 'danger' },
+      { part: 'Container', path: 'Container/Container', property: 'fill', conditions: { Type: ['Secondary'], Danger: ['true'] }, token: 'sec-danger' },
     ];
     const out = pivotColorPart(rules, variants, defaults)!;
     expect(out.join('\n')).not.toContain('\n\n\n');
@@ -142,10 +142,10 @@ describe('pivotColorPart', () => {
       { prop: 'State', values: ['Default', 'Focus'] },
     ];
     const rules: TokenRule[] = [
-      { part: 'Label', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
-      { part: 'Label', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
-      { part: 'Label', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 't' },
-      { part: 'Label', property: 'fill', conditions: { Size: ['L'], Type: ['Secondary'], State: ['Focus'] }, token: 'big-focus' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 't' },
+      { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Size: ['L'], Type: ['Secondary'], State: ['Focus'] }, token: 'big-focus' },
     ];
     const md = pivotColorPart(rules, variantsE, { Type: 'Primary', Size: 'S', State: 'Default' })!.join('\n');
     // Type wins the column axis (3 rules vs Size's 1); the Size rule is an exception.
@@ -164,10 +164,10 @@ describe('pivotColorPart', () => {
       { prop: 'Disabled', values: ['false', 'true'] },
     ];
     const rules: TokenRule[] = [
-      { part: 'bg', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
-      { part: 'bg', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
-      { part: 'bg', property: 'fill', conditions: { Selected: ['true'] }, token: 'sel' },
-      { part: 'bg', property: 'fill', conditions: { Selected: ['true'], Disabled: ['true'] }, token: 'sel-dis' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Primary'] }, token: 'p' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary'] }, token: 's' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Selected: ['true'] }, token: 'sel' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Selected: ['true'], Disabled: ['true'] }, token: 'sel-dis' },
     ];
     const md = pivotColorPart(rules, variantsM, { Type: 'Primary', Selected: 'false', Disabled: 'false' })!.join('\n');
     expect(md).toContain('**Exceptions**');
@@ -182,10 +182,10 @@ describe('pivotColorPart', () => {
       { prop: 'State', values: ['X', 'Y'] },
     ];
     const rules: TokenRule[] = [
-      { part: 'p', property: 'fill', conditions: { Type: ['A'] }, token: 't1' },
-      { part: 'p', property: 'fill', conditions: { State: ['X'] }, token: 't2' },
-      { part: 'p', property: 'fill', conditions: { Type: ['B'], State: ['X'] }, token: 't3' },
-      { part: 'p', property: 'fill', conditions: { Type: ['B'], State: ['Y'] }, token: 't4' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['A'] }, token: 't1' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { State: ['X'] }, token: 't2' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['B'], State: ['X'] }, token: 't3' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['B'], State: ['Y'] }, token: 't4' },
     ];
     const md = pivotColorPart(rules, variantsC, { Type: 'A', State: 'X' })!.join('\n');
     // (X, A): t1 (Type=A) and t2 (State=X) both score 1 -> both shown.
@@ -196,10 +196,10 @@ describe('pivotColorPart', () => {
 
   it('prefers the more specific rule (more conditioned axes) at a cell', () => {
     const rules: TokenRule[] = [
-      { part: 'p', property: 'fill', conditions: { State: ['Hover'] }, token: 'general' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'specific' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Tertiary'], State: ['Press'] }, token: 'ter' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { State: ['Hover'] }, token: 'general' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'specific' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Secondary'], State: ['Default'] }, token: 'sec' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Tertiary'], State: ['Press'] }, token: 'ter' },
     ];
     const md = pivotColorPart(rules, variants, defaults)!.join('\n');
     // Primary/Hover -> specific (2 axes); Secondary/Tertiary at Hover -> general (1 axis).
@@ -208,10 +208,10 @@ describe('pivotColorPart', () => {
 
   it('returns null when a rule conditions on an axis missing from variants', () => {
     const rules: TokenRule[] = [
-      { part: 'p', property: 'fill', conditions: { Ghost: ['x'] }, token: 't' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Primary'] }, token: 'a' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Secondary'] }, token: 'b' },
-      { part: 'p', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 'c' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Ghost: ['x'] }, token: 't' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Primary'] }, token: 'a' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Secondary'] }, token: 'b' },
+      { part: 'p', path: 'Container/p', property: 'fill', conditions: { Type: ['Tertiary'] }, token: 'c' },
     ];
     expect(pivotColorPart(rules, variants, defaults)).toBeNull();
   });
@@ -224,8 +224,8 @@ describe('pivotColorPart', () => {
 describe('flat + fixed table helpers', () => {
   it('flatPartTable renders Property | Condition | Token rows', () => {
     const rules: TokenRule[] = [
-      { part: 'Container', property: 'border-radius', conditions: {}, token: 'rounded' },
-      { part: 'Container', property: 'padding-x', conditions: { Size: ['S'] }, token: 'pad-s' },
+      { part: 'Container', path: 'Container/Container', property: 'border-radius', conditions: {}, token: 'rounded' },
+      { part: 'Container', path: 'Container/Container', property: 'padding-x', conditions: { Size: ['S'] }, token: 'pad-s' },
     ];
     const md = flatPartTable(rules).join('\n');
     expect(md).toContain('| Property | Condition | Token |');
@@ -235,7 +235,7 @@ describe('flat + fixed table helpers', () => {
 
   it('flatGlobalTable adds a Part column', () => {
     const rules: TokenRule[] = [
-      { part: 'Label', property: 'typography', conditions: { Size: ['M'] }, token: 'body-m' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['M'] }, token: 'body-m' },
     ];
     const md = flatGlobalTable(rules).join('\n');
     expect(md).toContain('| Part | Property | Condition | Token |');
@@ -244,8 +244,8 @@ describe('flat + fixed table helpers', () => {
 
   it('fixedTable lists part, property, token for unconditioned bindings', () => {
     const md = fixedTable([
-      { part: 'icon-primary', rule: { part: 'icon-primary', property: 'fill', conditions: {}, token: 'Navy' } },
-      { part: 'icon-secondary', rule: { part: 'icon-secondary', property: 'fill', conditions: {}, token: 'Navy' } },
+      { part: 'icon-primary', rule: { part: 'icon-primary', path: 'Container/icon-primary', property: 'fill', conditions: {}, token: 'Navy' } },
+      { part: 'icon-secondary', rule: { part: 'icon-secondary', path: 'Container/icon-secondary', property: 'fill', conditions: {}, token: 'Navy' } },
     ]).join('\n');
     expect(md).toContain('| Part | Property | Token |');
     expect(md).toContain('| icon-primary | fill | `Navy` |');

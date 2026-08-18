@@ -120,8 +120,8 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
       combos: [{ Variant: 'Size=S' }, { Variant: 'Size=M' }],
     };
     expect(extractTokens(set, collapsed)).toEqual([
-      { part: 'Container', property: 'fill', conditions: { Variant: ['Size=S'] }, token: 'tok/a' },
-      { part: 'Container', property: 'fill', conditions: { Variant: ['Size=M'] }, token: 'tok/b' },
+      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=S'] }, token: 'tok/a' },
+      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=M'] }, token: 'tok/b' },
     ]);
 
     // And the shared-model path still agrees with the default when the model

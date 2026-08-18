@@ -1,6 +1,6 @@
 import type { SerializedNode, TokenRef } from './tree';
 import { defaultVariant } from './anatomy';
-import { parseVariantName, cleanPartName, walkParts } from './naming';
+import { parseVariantName, cleanPartName, walkParts, joinPath } from './naming';
 
 /**
  * A minimized token rule: `token` applies to `part.property` whenever every
@@ -11,13 +11,16 @@ import { parseVariantName, cleanPartName, walkParts } from './naming';
  */
 export interface TokenRule {
   part: string;
+  /** Path identity from the component root. The join key every consumer uses;
+   *  `part` is the leaf name and is for display only. */
+  path: string;
   property: string;
   /** axis -> matching values, axes in variant-name order, values in axis order. */
   conditions: Record<string, string[]>;
   token: string;
 }
 
-export interface Gap { part: string; issue: string }
+export interface Gap { part: string; path: string; issue: string }
 
 /** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {
@@ -264,23 +267,23 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   const cellsByPartProp = new Map<string, Cell[]>();
   const partOrder: string[] = [];
   const propOrder = new Map<string, string[]>();
+  // Path identity recorded per (part, property) key. `part` is unique only
+  // among SIBLINGS (siblingPartNames numbers duplicates within ONE parent's
+  // children), so two nodes with the same cleaned name in DIFFERENT subtrees
+  // ("header > label" and "footer > label") still share a flat key here and
+  // merge into one cell. `path`, threaded from walkParts, is the real,
+  // unambiguous identity for each part; it rides alongside `part` on every
+  // emitted rule so a consumer can join a rule back to the exact anatomy node
+  // it came from instead of matching on the collision-prone leaf name.
+  const pathByKey = new Map<string, string>();
 
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
     const variantTokens = new Map<string, Set<string>>(); // "part\0prop" -> tokens
-    walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part) => {
+    walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
       for (const { property, token } of normalizeBindings(n.bindings ?? [])) {
-        // CAUTION: `part` is unique only among SIBLINGS. siblingPartNames
-        // (naming.ts) numbers duplicates within ONE parent's children, so two
-        // nodes with the same cleaned name in DIFFERENT subtrees ("header >
-        // label" and "footer > label") produce the same flat key here and merge
-        // into one cell, which can emit two contradictory unconditioned rules
-        // for what a reader sees as one part. Every consumer that looks a part
-        // up by name (the doc model's per-part token lists) inherits that
-        // ambiguity. The real fix is path-qualified part identity, which is
-        // a change to naming.ts, anatomy.ts and this file at once; until then,
-        // do not assume this key identifies one node.
         const key = `${part}\0${property}`;
+        pathByKey.set(key, path);
         let set = variantTokens.get(key);
         if (!set) variantTokens.set(key, (set = new Set()));
         set.add(token);
@@ -473,7 +476,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       if (!vs) continue;
       conditions[axis] = axisValues.get(axis)!.filter((v) => vs.has(v));
     }
-    return { part, property, conditions, token: r.token };
+    return { part, path: pathByKey.get(`${part}\0${property}`)!, property, conditions, token: r.token };
   };
 
   const ruleSortKey = (r: DraftRule): string => {
@@ -523,27 +526,27 @@ const PADDING_PROPS = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLe
 export function extractGaps(root: SerializedNode): Gap[] {
   const out: Gap[] = [];
   const seenGaps = new Set<string>();
-  const pushGap = (part: string, issue: string) => {
+  const pushGap = (part: string, path: string, issue: string) => {
     const key = `${part}\0${issue}`;
     if (seenGaps.has(key)) return;
     seenGaps.add(key);
-    out.push({ part, issue });
+    out.push({ part, path, issue });
   };
   const isInSet = root.type === 'COMPONENT_SET';
   const def = defaultVariant(root);
-  walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part) => {
+  walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part, path) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
     if (n.hasUnboundPaint) {
-      pushGap(part, 'hardcoded color (no variable or style)');
+      pushGap(part, path, 'hardcoded color (no variable or style)');
     }
     if (n.hasUnboundStroke) {
-      pushGap(part, 'hardcoded stroke color (no variable or style)');
+      pushGap(part, path, 'hardcoded stroke color (no variable or style)');
     }
     if (n.hasUnboundGradient) {
-      pushGap(part, 'hardcoded gradient or image fill (no style)');
+      pushGap(part, path, 'hardcoded gradient or image fill (no style)');
     }
     if (n.hasUnboundEffect) {
-      pushGap(part, 'hardcoded shadow or blur (no effect style)');
+      pushGap(part, path, 'hardcoded shadow or blur (no effect style)');
     }
     if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
       // Rounded here as well as in serialize.ts, because this string is inside
@@ -551,22 +554,22 @@ export function extractGaps(root: SerializedNode): Gap[] {
       // come from this repo's serializer (an uploaded dump, an older plugin
       // build). Figma's float32 opacity would otherwise print 30% as
       // 0.30000001192092896, both on the page and in the drift baseline.
-      pushGap(part, `hardcoded opacity (${Math.round(n.opacity * 10000) / 10000})`);
+      pushGap(part, path, `hardcoded opacity (${Math.round(n.opacity * 10000) / 10000})`);
     }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
-      pushGap(part, 'no text style or typography variable');
+      pushGap(part, path, 'no text style or typography variable');
     }
     const l = n.layout;
     if (!l) return;
     if (l.itemSpacing !== undefined && !bound.has('itemSpacing')) {
-      pushGap(part, `hardcoded itemSpacing (${l.itemSpacing}px)`);
+      pushGap(part, path, `hardcoded itemSpacing (${l.itemSpacing}px)`);
     }
     if (l.cornerRadius !== undefined && !bound.has('cornerRadius') && !bound.has('topLeftRadius')) {
-      pushGap(part, `hardcoded cornerRadius (${l.cornerRadius}px)`);
+      pushGap(part, path, `hardcoded cornerRadius (${l.cornerRadius}px)`);
     }
     const pads = [l.paddingTop, l.paddingRight, l.paddingBottom, l.paddingLeft];
     if (pads.some((p) => p !== undefined) && !PADDING_PROPS.some((p) => bound.has(p))) {
-      pushGap(part, 'hardcoded padding');
+      pushGap(part, path, 'hardcoded padding');
     }
   });
   return out;
