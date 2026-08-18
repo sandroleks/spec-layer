@@ -1504,9 +1504,11 @@ number.
 
 **Files:**
 - Create: `packages/extractor/src/validate.ts`
+- Modify: `packages/extractor/src/layout.ts` (carry the numbers, not only the sentence)
+- Modify: `packages/extractor/src/hash.ts` (project `layout` so the new field cannot move the hash)
 - Modify: `packages/extractor/src/statesMatrix.ts` (export `isStateLike`)
 - Modify: `packages/extractor/src/brief.ts` (add the block), `packages/extractor/src/index.ts`
-- Test: `packages/extractor/test/validate.test.ts`
+- Test: `packages/extractor/test/validate.test.ts`, `packages/extractor/test/layout.test.ts`, `packages/extractor/test/specHash.test.ts`
 
 **Interfaces:**
 - Consumes: `TokenRule.path`, `Gap.property` and `GapIssue` (Task 7), `lookupToken`'s `mode` (Task 8), `spec.layout`.
@@ -1562,7 +1564,8 @@ describe('validate', () => {
     const spec = { ...base(),
       tokens: [{ part: 'Container', path: 'Container', property: 'border-radius',
                  conditions: {}, token: 'rd-sm' }],
-      layout: [{ part: 'Container', summary: 'horizontal, radius 4' }] };
+      layout: [{ part: 'Container', summary: 'horizontal, radius 4',
+                 values: { radius: 4 } }] };
     const f = validate(spec as never, new Map([['rd-sm', 8]]));
     const hit = f.find((x) => x.id === 'geometry-token-mismatch')!;
     expect(hit.message).toContain('4');
@@ -1612,14 +1615,76 @@ Run: `npx vitest run packages/extractor/test/validate.test.ts`
 
 Expected: FAIL, cannot resolve `../src/validate`.
 
-- [ ] **Step 3: Export `isStateLike`**
+- [ ] **Step 3: Carry the layout numbers alongside the sentence**
+
+`fmt()` in `packages/extractor/src/layout.ts` already has every number in hand and
+throws them away into a string. Keep the string, which frames render, and also return
+the numbers:
+
+```ts
+export interface LayoutValues { radius?: number; gap?: number }
+export interface LayoutSummary { part: string; summary: string; values: LayoutValues }
+```
+
+In `extractLayout`, build both from the same `LayoutInfo`, so the sentence and the
+numbers cannot disagree:
+
+```ts
+function valuesOf(l: LayoutInfo): LayoutValues {
+  return {
+    ...(l.cornerRadius !== undefined ? { radius: l.cornerRadius } : {}),
+    ...(l.itemSpacing !== undefined ? { gap: l.itemSpacing } : {}),
+  };
+}
+```
+
+```ts
+      const summary = fmt(n.layout);
+      if (summary) out.push({ part: n.name, summary, values: valuesOf(n.layout) });
+```
+
+Add to `packages/extractor/test/layout.test.ts`:
+
+```ts
+it('carries the numbers it renders into the sentence', () => {
+  const out = extractLayout(nodeWithLayout({ mode: 'HORIZONTAL', itemSpacing: 8, cornerRadius: 4 }));
+  expect(out[0].summary).toContain('radius 4');
+  expect(out[0].values).toEqual({ radius: 4, gap: 8 });
+});
+
+it('omits a value the node does not declare', () => {
+  const out = extractLayout(nodeWithLayout({ mode: 'HORIZONTAL', itemSpacing: 8 }));
+  expect(out[0].values).toEqual({ gap: 8 });
+});
+```
+
+Use whatever node-building helper `layout.test.ts` already has rather than adding a
+second one.
+
+- [ ] **Step 4: Keep the new field out of the hash**
+
+`spec.layout` is hashed, so adding `values` would flip every committed doc's baseline
+for data already hashed under `summary`. Project it, exactly as `anatomy`, `tokens` and
+`gaps` already are:
+
+```ts
+    layout: spec.layout.map(({ part, summary }) => ({ part, summary })),
+```
+
+Then confirm nothing moved:
+
+Run: `npx vitest run packages/extractor/test/specHash.test.ts`
+
+Expected: PASS, still equal to `BUTTON_HASH_V2`.
+
+- [ ] **Step 5: Export `isStateLike`**
 
 In `packages/extractor/src/statesMatrix.ts`, add `export` to the existing `isStateLike`
 function. `detectStateMatrix` uses `variants.find(isStateLike)`, which silently takes the
 first match when several axes qualify; exporting it lets the finding be exact rather than a
 reimplemented approximation that could disagree with the matrix the frames render.
 
-- [ ] **Step 4: Write the implementation**
+- [ ] **Step 6: Write the implementation**
 
 Create `packages/extractor/src/validate.ts`:
 
@@ -1635,6 +1700,7 @@ Create `packages/extractor/src/validate.ts`:
  * emitted at all.
  */
 import type { IntermediateSpec } from './extract';
+import type { LayoutSummary } from './layout';
 import { isStateLike } from './statesMatrix';
 
 export type FindingId =
@@ -1656,13 +1722,18 @@ export interface Finding {
 /** State words that appearing in a TOKEN name implies a state-specific value. */
 const STATE_WORDS = ['disabled', 'hover', 'focus', 'press', 'pressed', 'loading', 'selected'];
 
-/** Numbers a layout summary states, keyed by the property they describe. */
-function geometryOf(summary: string): { property: string; value: number }[] {
+/**
+ * The geometry a layout entry states, as property name plus number.
+ *
+ * Reads `values`, the structured numbers extractLayout now carries. An earlier
+ * draft regex-parsed `summary` ("horizontal, radius 4") instead, which is the same
+ * mistake v1 made with typography: round-tripping a number through a display
+ * string, so the parse breaks silently the day the sentence is reworded.
+ */
+function geometryOf(l: LayoutSummary): { property: string; value: number }[] {
   const out: { property: string; value: number }[] = [];
-  const radius = /radius (\d+(?:\.\d+)?)/.exec(summary);
-  if (radius) out.push({ property: 'border-radius', value: Number(radius[1]) });
-  const gap = /gap (\d+(?:\.\d+)?)/.exec(summary);
-  if (gap) out.push({ property: 'gap', value: Number(gap[1]) });
+  if (l.values.radius !== undefined) out.push({ property: 'border-radius', value: l.values.radius });
+  if (l.values.gap !== undefined) out.push({ property: 'gap', value: l.values.gap });
   return out;
 }
 
@@ -1691,7 +1762,7 @@ export function validate(
 
   // 2. A rendered number disagreeing with its bound token's resolved value.
   for (const l of spec.layout) {
-    for (const { property, value } of geometryOf(l.summary)) {
+    for (const { property, value } of geometryOf(l)) {
       const rule = spec.tokens.find((t) => t.part === l.part && t.property === property);
       if (!rule) continue;
       const target = resolved.get(rule.token);
@@ -1750,7 +1821,7 @@ export function validate(
 }
 ```
 
-- [ ] **Step 5: Wire it into the brief**
+- [ ] **Step 7: Wire it into the brief**
 
 In `componentBrief`, build the resolved-number map from the same `lookupToken` results the
 bindings use, then add the block:
@@ -1774,13 +1845,13 @@ bindings use, then add the block:
 
 Export `validate`, `Finding` and `FindingId` from `packages/extractor/src/index.ts`.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `npx vitest run packages/extractor/test/validate.test.ts packages/extractor/test/brief.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 7: Confirm it catches the two real findings in the fixture**
+- [ ] **Step 9: Confirm it catches the two real findings in the fixture**
 
 ```bash
 npx tsx -e "const {readFileSync}=require('fs');const {extract,componentBrief}=require('./packages/extractor/src/index.ts');const n=JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json','utf8'));console.log(JSON.stringify((componentBrief(extract(n,{figmaFile:'F'}),{generatedAt:'T'})).validation,null,1));"
@@ -1791,7 +1862,7 @@ Expected: findings present. On a fixture carrying the real Button data this shou
 `color/surface/primary/disabled`. If the fixture does not carry that binding, note it in the
 commit rather than claiming coverage the fixture does not have.
 
-- [ ] **Step 8: Run the full suite and commit**
+- [ ] **Step 10: Run the full suite and commit**
 
 Run: `npm test && npx tsc -p tsconfig.base.json --noEmit`
 
@@ -1919,7 +1990,7 @@ Create `packages/extractor/test/briefGolden.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { extract, componentBrief, toYaml } from '../src/index';
 
 const button = () =>
@@ -1954,16 +2025,17 @@ const GOLDEN = 'packages/extractor/test/fixtures/button-brief.yaml';
 
 describe('component brief golden file', () => {
   it('matches the reviewed payload byte for byte', () => {
-    const yaml = toYaml(componentBrief(extract(button(), { figmaFile: 'FILE1' }),
-      { generatedAt: '2026-08-18T00:00:00.000Z' }));
     // A field-by-field test cannot catch a whole document reading badly: a wrong
     // block order, a duplicated section, a key that should have been omitted. The
     // golden file is reviewed once by a human and then diffed, so any later change
     // to the payload has to be looked at rather than merely compiling.
-    if (!existsSync(GOLDEN)) {
-      writeFileSync(GOLDEN, yaml);
-      throw new Error(`Wrote ${GOLDEN}. Read it, confirm it is correct, then re-run.`);
-    }
+    //
+    // This test only ever ASSERTS. The fixture is written by the generation step in
+    // this task, not by the test: a test that writes its own expectation cannot
+    // fail the first time it runs, which is exactly when it should.
+    expect(existsSync(GOLDEN)).toBe(true);
+    const yaml = toYaml(componentBrief(extract(button(), { figmaFile: 'FILE1' }),
+      { generatedAt: '2026-08-18T00:00:00.000Z' }));
     expect(yaml).toBe(readFileSync(GOLDEN, 'utf8'));
   });
 });
@@ -1971,9 +2043,17 @@ describe('component brief golden file', () => {
 
 - [ ] **Step 4: Generate the golden file and read it**
 
-Run: `npx vitest run packages/extractor/test/briefGolden.test.ts`
+Generate it with the same inputs the test uses, so the two cannot drift:
 
-Expected: FAIL on the first run, having written the file. Now actually read
+```bash
+npx tsx -e "const {readFileSync,writeFileSync}=require('fs');const {extract,componentBrief,toYaml}=require('./packages/extractor/src/index.ts');const n=JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json','utf8'));writeFileSync('packages/extractor/test/fixtures/button-brief.yaml',toYaml(componentBrief(extract(n,{figmaFile:'FILE1'}),{generatedAt:'2026-08-18T00:00:00.000Z'})));" && wc -l packages/extractor/test/fixtures/button-brief.yaml
+```
+
+Run the test to confirm it now passes:
+
+`npx vitest run packages/extractor/test/briefGolden.test.ts`
+
+Then actually read
 `packages/extractor/test/fixtures/button-brief.yaml` end to end and check:
 
 - `source` carries a real key and name, and no `unknown`.
@@ -1986,8 +2066,8 @@ Expected: FAIL on the first run, having written the file. Now actually read
 - `guidelines` is the only block containing generated prose.
 - There is no `contrast` block.
 
-Fix anything wrong at its source, delete the golden file, and regenerate. Do not hand-edit
-it: a golden file edited to match a bug documents the bug.
+Fix anything wrong at its source, then re-run the generation command above. Do not
+hand-edit the file: a golden file edited to match a bug documents the bug.
 
 - [ ] **Step 5: Add the generated-content boundary scan**
 
@@ -2038,7 +2118,7 @@ must not be counted:
   return Object.values(fields).some((v) => v !== undefined) ? result : undefined;
 ```
 
-Delete and regenerate the golden file, and read the diff.
+Re-run the generation command, and read the diff before committing it.
 
 - [ ] **Step 8: Run the full suite and commit**
 
