@@ -161,6 +161,7 @@ interface ParsedComponentBrief {
     variants?: Record<string, { options: string[]; default?: string | boolean }>;
     states?: string[];
     booleans?: Record<string, { default?: string | boolean }>;
+    slots?: Record<string, { type: string; default?: string | boolean; options?: string[] }>;
   };
   anatomy: AnatomyNode[];
   layout?: Array<{ part: string; summary: string }>;
@@ -220,13 +221,16 @@ describe('componentBrief', () => {
   // Rewritten from the v1 flat-array `api` shape: SPEC's declared props are
   // 'label' (text), 'Style' (variant) and 'disabled' (boolean). 'disabled'
   // isn't a variant axis here (it's not in spec.variants), so it isn't a
-  // state flag and lands in `booleans`; 'label' is a text prop, which this
-  // block does not carry (see apiOf's doc comment).
-  it('splits the API into variants, states and booleans', () => {
+  // state flag and lands in `booleans`; 'label' is a text prop, so it lands
+  // in `slots` -- this is the concrete regression the coordinator flagged:
+  // an earlier version of apiOf named 'text'/'instanceSwap' explicitly
+  // rather than by exclusion, and silently dropped 'label' here.
+  it('splits the API into variants, states, booleans and slots', () => {
     expect(brief().api).toEqual({
       variants: { Style: { options: ['Filled', 'Outlined'], default: 'Filled' } },
       states: ['Enabled', 'Hovered'],
       booleans: { disabled: { default: false } },
+      slots: { label: { type: 'text', default: 'Button' } },
     });
   });
 
@@ -323,6 +327,94 @@ describe('componentBrief', () => {
     expect(Object.keys(brief.api.variants)).toEqual(['size']);
     expect(brief.api.states).toEqual(['disabled']);
     expect('booleans' in brief.api).toBe(false);
+  });
+
+  // A fourth group, added after review caught that `apiOf` originally
+  // covered only variant and boolean kinds: a `text` prop (a component's
+  // label slot) and an `instanceSwap` prop (its icon slot) fell through
+  // entirely, dropping both fixtures' `Label` prop from the brief.
+
+  it('puts a text prop in slots, carrying its kind and default', () => {
+    const spec = { ...baseSpec(), variants: [],
+      props: [{ name: 'Label', kind: 'text' as const, default: 'Button' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.api.slots).toEqual({ Label: { type: 'text', default: 'Button' } });
+  });
+
+  it('puts an instanceSwap prop in slots', () => {
+    const spec = { ...baseSpec(), variants: [],
+      props: [{ name: 'icon', kind: 'instanceSwap' as const }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(Object.keys(brief.api.slots)).toEqual(['icon']);
+    expect(brief.api.slots.icon.type).toBe('instanceSwap');
+  });
+
+  it('omits slots when the component has no such props', () => {
+    const spec = { ...baseSpec(), variants: [{ prop: 'size', values: ['Large', 'Small'] }],
+      props: [{ name: 'size', kind: 'variant' as const,
+                options: ['Large', 'Small'], default: 'Large' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect('slots' in brief.api).toBe(false);
+  });
+
+  // The assertion that would have caught the dropped `Label` prop in the
+  // first place: every declared prop and every variant axis must be claimed
+  // by exactly one of the four groups -- not zero (dropped), not two or more
+  // (double-counted).
+  it('accounts for every prop and variant axis in exactly one group', () => {
+    const spec = {
+      ...baseSpec(),
+      variants: [
+        { prop: 'type', values: ['Primary', 'Outline', 'Ghost'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+        { prop: 'hover', values: ['False', 'True'] },
+        { prop: 'disabled', values: ['False', 'True'] },
+      ],
+      props: [
+        { name: 'type', kind: 'variant' as const,
+          options: ['Primary', 'Outline', 'Ghost'], default: 'Primary' },
+        { name: 'size', kind: 'variant' as const, options: ['Large', 'Small'], default: 'Large' },
+        { name: 'hover', kind: 'variant' as const, options: ['False', 'True'], default: 'False' },
+        { name: 'disabled', kind: 'variant' as const, options: ['False', 'True'], default: 'False' },
+        { name: 'iconLeft', kind: 'boolean' as const, default: true },
+        { name: 'Label', kind: 'text' as const, default: 'Button' },
+        { name: 'icon', kind: 'instanceSwap' as const },
+      ],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+
+    const expectedNames = new Set<string>([
+      ...spec.variants.map((v) => v.prop),
+      ...spec.props.map((p) => p.name),
+    ]);
+
+    const groups: Record<string, Set<string>> = {
+      variants: new Set(Object.keys(brief.api.variants ?? {})),
+      states: new Set(brief.api.states ?? []),
+      booleans: new Set(Object.keys(brief.api.booleans ?? {})),
+      slots: new Set(Object.keys(brief.api.slots ?? {})),
+    };
+
+    // Nothing dropped: every declared prop and every variant axis is
+    // claimed by at least one group.
+    const claimed = new Set<string>();
+    for (const set of Object.values(groups)) for (const name of set) claimed.add(name);
+    expect([...claimed].sort()).toEqual([...expectedNames].sort());
+
+    // Nothing double-counted: exactly one group claims each name.
+    for (const name of expectedNames) {
+      const memberships = Object.entries(groups)
+        .filter(([, set]) => set.has(name)).map(([g]) => g);
+      expect(memberships).toHaveLength(1);
+    }
+
+    // Spot-check which group each landed in, so a future change to the
+    // grouping rules fails here with a clear diff, not only in the generic
+    // claimed/double-count assertions above.
+    expect(groups.variants).toEqual(new Set(['type', 'size']));
+    expect(groups.states).toEqual(new Set(['hover', 'disabled']));
+    expect(groups.booleans).toEqual(new Set(['iconLeft']));
+    expect(groups.slots).toEqual(new Set(['Label', 'icon']));
   });
 
   it('emits gaps as unbound', () => {

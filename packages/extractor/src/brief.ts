@@ -292,7 +292,7 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
 
 /**
  * The component's API, with configurable variants separated from interaction
- * states.
+ * states, boolean content toggles, and content/icon slots.
  *
  * v1 emitted this three times over: `api` as a flat prop list, `axes` as the
  * same props again, and `states` as a third view. Worse, `axes` listed each
@@ -303,12 +303,20 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
  * The split is not a judgement call: `stateAxisProps` already computes
  * exactly which variant props the States matrix consumes, and the canvas
  * frames have relied on it for both the Variants and the States sections.
- * Every prop lands in exactly one of the three groups below (or is absent
- * from all of them, for a text/instanceSwap prop, which this block does not
- * carry): a variant axis is either a state flag (→ `states`, via
- * `stateAxisProps`) or a configurable variant (→ `variants`); a boolean prop
- * is a state flag only when it is ALSO a variant axis that `stateAxisProps`
- * claimed, otherwise it is a genuine content toggle (→ `booleans`).
+ * Every prop lands in exactly one of the four groups below: a variant axis is
+ * either a state flag (→ `states`, via `stateAxisProps`) or a configurable
+ * variant (→ `variants`); a boolean prop is a state flag only when it is
+ * ALSO a variant axis that `stateAxisProps` claimed, otherwise it is a
+ * genuine content toggle (→ `booleans`); everything else -- `text` and
+ * `instanceSwap` today -- is a content/icon slot (→ `slots`).
+ *
+ * `slots` is defined by exclusion (neither `variant` nor `boolean`), not by
+ * naming `text`/`instanceSwap` explicitly: an earlier version of this
+ * function did name them explicitly and silently dropped both from the
+ * brief (both `button.json` and `chip.json` declare a `text` prop named
+ * `Label` that vanished as a result). Defining the fourth group by exclusion
+ * means a future fifth `PropKind` surfaces here too, instead of vanishing
+ * the same way.
  */
 function apiOf(spec: IntermediateSpec): YamlValue | undefined {
   const stateProps = stateAxisProps(spec.variants);
@@ -322,9 +330,17 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
   }
 
   const booleans: Record<string, YamlValue> = {};
+  const slots: Record<string, YamlValue> = {};
   for (const p of spec.props) {
-    if (p.kind !== 'boolean' || stateProps.has(p.name)) continue;
-    booleans[p.name] = { default: p.default };
+    if (stateProps.has(p.name)) continue;
+    if (p.kind === 'variant') continue; // handled via spec.variants above
+    if (p.kind === 'boolean') {
+      booleans[p.name] = { default: p.default };
+    } else {
+      // Everything that isn't a variant or a boolean -- by exclusion, not by
+      // naming 'text'/'instanceSwap' -- is a content/icon slot.
+      slots[p.name] = { type: p.kind, default: p.default, options: p.options };
+    }
   }
 
   // 'Default' is the matrix's own baseline column, not a state the component has.
@@ -341,6 +357,7 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
   if (Object.keys(variants).length > 0) result.variants = variants;
   if (states.length > 0) result.states = states;
   if (Object.keys(booleans).length > 0) result.booleans = booleans;
+  if (Object.keys(slots).length > 0) result.slots = slots;
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
