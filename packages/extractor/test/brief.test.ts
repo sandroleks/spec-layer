@@ -110,6 +110,15 @@ interface BriefShape {
   unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
   guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
   collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
+  typography?: Record<string, {
+    unresolved?: string;
+    source_name?: string;
+    font_family?: string;
+    font_style?: string;
+    font_size?: number;
+    line_height?: { unit: string; value?: number };
+    letter_spacing?: { unit: string; value: number };
+  }>;
 }
 
 describe('foundationBrief', () => {
@@ -1023,6 +1032,89 @@ describe('componentBrief tokens', () => {
     // Three rules produce three bindings, no matter how many variant
     // instances they'd have resolved against under v1.
     expect(y.tokens.bindings).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// componentBrief typography -- resolving a bound text style to real metrics
+// ---------------------------------------------------------------------------
+//
+// v1 emitted only the style's display string ("Button/L : 14px Medium"), with
+// no value and no code: a consumer could not generate CSS from that string,
+// and requiredRatio could not pick a WCAG threshold without a real size and
+// weight. These tests cover resolving the bound style against
+// FoundationSpec.textStyles, recording (not dropping) a style the foundation
+// dump doesn't carry, and omitting the whole block when nothing is bound.
+
+describe('componentBrief typography', () => {
+  it('resolves a bound text style to real metrics', () => {
+    const foundation: FoundationSpec = {
+      fileKey: 'F', extractedAt: 'T', collections: [],
+      textStyles: [{
+        name: 'Button/L : 14px Medium', group: 'Button', description: '',
+        fontFamily: 'Inter', fontStyle: 'Medium', fontSize: 14,
+        lineHeight: { unit: 'PIXELS', value: 20 },
+        letterSpacing: { unit: 'PIXELS', value: 0 },
+        paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL',
+        textDecoration: 'NONE', boundVariables: {},
+      }],
+    };
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
+      part: 'Label', path: 'Container/Label', property: 'typography',
+      conditions: { size: ['Large'] }, token: 'Button/L : 14px Medium' }] };
+    const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
+    expect(b.typography?.['Button/L : 14px Medium']).toEqual({
+      source_name: 'Button/L : 14px Medium',
+      font_family: 'Inter', font_style: 'Medium', font_size: 14,
+      line_height: { unit: 'PIXELS', value: 20 },
+      letter_spacing: { unit: 'PIXELS', value: 0 },
+    });
+  });
+
+  it('omits the block when no style is bound', () => {
+    const b = componentBrief(baseSpec(), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('typography' in b).toBe(false);
+  });
+
+  it('records a bound style the foundation cannot resolve rather than dropping it', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
+      part: 'Label', path: 'Container/Label', property: 'typography',
+      conditions: {}, token: 'Missing/Style' }] };
+    const foundation: FoundationSpec =
+      { fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [] };
+    const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
+    // A style bound in the file but absent from this dump is unresolved, not
+    // absent. Dropping it would make the brief claim the label has no
+    // typography at all.
+    expect(b.typography?.['Missing/Style']).toEqual({ unresolved: 'not in this file' });
+  });
+
+  it('records an AUTO line height truthfully, with no fabricated value', () => {
+    const foundation: FoundationSpec = {
+      fileKey: 'F', extractedAt: 'T', collections: [],
+      textStyles: [{
+        name: 'Heading/Auto', group: 'Heading', description: '',
+        fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32,
+        lineHeight: { unit: 'AUTO' },
+        letterSpacing: { unit: 'PERCENT', value: 0 },
+        paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL',
+        textDecoration: 'NONE', boundVariables: {},
+      }],
+    };
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
+      part: 'Label', path: 'Container/Label', property: 'typography',
+      conditions: {}, token: 'Heading/Auto' }] };
+    const raw = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
+    const entry = raw.typography?.['Heading/Auto'];
+    // Truthful: no numeric value is invented for AUTO, and the raw object
+    // (pre-YAML) genuinely lacks the key rather than holding it undefined.
+    expect(entry?.line_height?.unit).toBe('AUTO');
+    expect(entry?.line_height && 'value' in entry.line_height).toBe(false);
+
+    // The YAML round trip must not resurrect a fabricated 0 or null either.
+    const y = load(toYaml(componentBrief(spec, { generatedAt: 'T', foundation }))) as
+      { typography: Record<string, { line_height: { unit: string; value?: number } }> };
+    expect(y.typography['Heading/Auto'].line_height).toEqual({ unit: 'AUTO' });
   });
 });
 

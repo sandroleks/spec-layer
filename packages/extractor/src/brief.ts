@@ -444,6 +444,61 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
 }
 
 /**
+ * Every text style this component binds, resolved to the metrics an
+ * implementation needs.
+ *
+ * v1 emitted only the display string, which made typography the one binding
+ * shape that carried no value and no code: a consumer could not generate CSS
+ * from "Button/L : 14px Medium", and requiredRatio could not pick a WCAG
+ * threshold without a size and a weight.
+ *
+ * `source_name` keeps the raw Figma style name, stray double spaces
+ * included, because that string is what a designer searches for in the
+ * file — it is never normalised.
+ *
+ * `line_height.value` is added conditionally, not assigned `undefined`:
+ * `lineHeight.unit` can be `AUTO` with no numeric value at all (the style
+ * inherits the renderer's default line height from the font), and a
+ * fabricated 0 or a silently-dropped-by-YAML `undefined` would both misstate
+ * that as a real, measured value. Leaving the key off entirely is the
+ * truthful reading: "this style does not specify a line height", which is
+ * exactly what AUTO means.
+ */
+function typographyOf(
+  spec: IntermediateSpec,
+  foundation: FoundationSpec | undefined,
+): YamlValue | undefined {
+  const names = new Set(
+    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.token));
+  if (names.size === 0) return undefined;
+
+  const out: Record<string, YamlValue> = {};
+  for (const name of names) {
+    const style = foundation?.textStyles.find((s) => s.name === name);
+    if (!style) {
+      // Bound in the file but absent from this dump: a published library
+      // style, or a foundation read that did not cover it. Unresolved, never
+      // absent -- dropping it would make the brief claim the label has no
+      // typography at all.
+      out[name] = { unresolved: 'not in this file' };
+      continue;
+    }
+    out[name] = {
+      source_name: style.name,
+      font_family: style.fontFamily,
+      font_style: style.fontStyle,
+      font_size: style.fontSize,
+      line_height: {
+        unit: style.lineHeight.unit,
+        ...(style.lineHeight.value !== undefined ? { value: style.lineHeight.value } : {}),
+      },
+      letter_spacing: { unit: style.letterSpacing.unit, value: style.letterSpacing.value },
+    };
+  }
+  return out;
+}
+
+/**
  * The public component brief: everything about one component, including its
  * token bindings. `spec` is the extractor's internal IntermediateSpec; this
  * is a PROJECTION of it, not a dump — see the file header.
@@ -468,6 +523,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       path: g.path, property: g.property, issue: g.issue,
       ...(g.value !== undefined ? { value: g.value } : {}),
     }));
+  const typography = typographyOf(spec, opts.foundation);
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
@@ -489,6 +545,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     // survived reconciliation, rather than assigning `unbound: undefined` —
     // `{ key: undefined }` still leaves `'unbound' in brief` true.
     ...(unbound.length > 0 ? { unbound } : {}),
+    ...(typography !== undefined ? { typography } : {}),
     guidelines: guidelinesOf(opts.prose),
   };
 }
