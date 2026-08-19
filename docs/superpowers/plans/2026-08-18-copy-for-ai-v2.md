@@ -44,7 +44,7 @@ Removing the broken per-component contrast still happens at Task 1, so the misle
      but the same task's tests often assert `'key' in obj` on the RAW object, where the key
      is present with value `undefined`. Build such objects with conditional key adds
      (`...(v !== undefined ? { key: v } : {})`) so the raw object matches what the tests
-     and the emitted YAML both claim. This has already bitten Tasks 4, 6 and 7.
+     and the emitted YAML both claim. This has already bitten Tasks 4 and 6.
   2. **A group defined by an allow-list silently drops what it does not list.** Prefer
      defining a bucket by exclusion, so a value the author did not anticipate surfaces
      rather than vanishing. `api.slots` exists because a three-group allow-list dropped
