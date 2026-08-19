@@ -173,3 +173,57 @@ describe('toYaml', () => {
     expect(rt).toEqual(v);
   });
 });
+
+describe('flow style for short scalar collections', () => {
+  it('renders a short all-scalar sequence inline', () => {
+    expect(toYaml({ values: ['Primary', 'Outline', 'Ghost'] }))
+      .toBe('values: [Primary, Outline, Ghost]\n');
+  });
+
+  it('renders a short all-scalar map inline', () => {
+    expect(toYaml({ size: { value: 8, unit: 'px' } }))
+      .toBe('size: { value: 8, unit: px }\n');
+  });
+
+  it('renders a map of short sequences inline at both levels', () => {
+    expect(toYaml({ when: { type: ['Primary'], size: ['Large'] } }))
+      .toBe('when: { type: [Primary], size: [Large] }\n');
+  });
+
+  it('stays block when any member is itself a collection that is not short', () => {
+    const long = Array.from({ length: 12 }, (_, i) => `value-number-${i}`);
+    const out = toYaml({ options: long });
+    expect(out).toContain('\n  - value-number-0');
+    expect(out).not.toContain('[value-number-0');
+  });
+
+  it('stays block when the rendered flow form would exceed the width budget', () => {
+    const out = toYaml({ note: { a: 'x'.repeat(60), b: 'y'.repeat(60) } });
+    expect(out).toContain('\n  a: ');
+    expect(out).not.toContain('{ a: ');
+  });
+
+  it('stays block for a string that cannot be inline', () => {
+    // A multi-line string is already handled by the block scalar path and must
+    // not be dragged into a flow collection.
+    const out = toYaml({ wrap: { text: 'line one\nline two' } });
+    expect(out).not.toContain('{ text:');
+  });
+
+  it('quotes inside flow style exactly as it does in block style', () => {
+    // A value needing quotes must still get them, and a comma or brace in a
+    // scalar must not be able to break out of the flow collection.
+    expect(toYaml({ a: ['yes', 'no'] })).toBe('a: ["yes", "no"]\n');
+    expect(toYaml({ a: ['x, y'] })).toBe('a: ["x, y"]\n');
+    expect(toYaml({ a: ['{ z }'] })).toBe('a: ["{ z }"]\n');
+  });
+
+  it('renders an empty collection as it did before', () => {
+    expect(toYaml({ a: [], b: {} })).toBe('a: []\nb: {}\n');
+  });
+
+  it('round-trips a nested flow map through js-yaml', () => {
+    const value = { bindings: [{ path: 'Container', when: { type: ['Primary'] } }] };
+    expect(load(toYaml(value))).toEqual(value);
+  });
+});

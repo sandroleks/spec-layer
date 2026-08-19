@@ -7,7 +7,10 @@
  * parse this emitter's output with js-yaml (a dev dependency) to prove the
  * escaping is right, which is where a hand-rolled emitter actually fails.
  *
- * Emits YAML 1.2 block style only: no flow maps, no anchors, no tags.
+ * Emits YAML 1.2. Block style by default; short, scalar-only collections render
+ * in flow style (see flowText) because the brief is read in a chat window and a
+ * two-fact condition costing five lines is the difference between a payload that
+ * pastes and one that does not.
  *
  * Implementation note: every internal helper below returns fully-formed,
  * already-indented lines (an array of strings, one per output line) rather
@@ -117,6 +120,89 @@ function inlineText(value: YamlValue): string {
   return '{}';
 }
 
+/** Width budget for a flow collection, measured on the rendered text excluding
+ *  indentation. Past this, block style is more readable than a long line, which is
+ *  the only reason flow style is worth having. */
+const FLOW_MAX = 72;
+
+/**
+ * A collection is flow-eligible when every member is an inline scalar, or is itself
+ * a flow-eligible collection. Nesting is allowed because `when: { type: [Primary] }`
+ * is exactly that shape and is the case this exists for.
+ *
+ * Depth is bounded: two levels is enough for every shape the brief emits, and an
+ * unbounded rule would let a deeply nested object collapse into an unreadable line.
+ */
+function flowEligible(value: YamlValue, depth = 0): boolean {
+  if (isInline(value)) return true;
+  // A non-inline string is a multi-line string (isInline already covers every
+  // string that could be written as a scalar). It belongs to the block-scalar
+  // path, never flow. Without this check, `Object.values()` below would be
+  // called on a string primitive, which coerces it to an array of its
+  // individual characters -- each one an "eligible" one-char scalar -- and
+  // silently misjudge a multi-line string as a flow-eligible collection.
+  if (typeof value === 'string') return false;
+  if (depth >= 2) return false;
+  if (Array.isArray(value)) return value.every((m) => flowEligible(m, depth + 1));
+  if (value === null || typeof value !== 'object') {
+    // Unreachable given the checks above (isInline already excludes null,
+    // booleans and numbers), but narrows `value` to a plain object for
+    // Object.values below without an unsafe cast -- same shape as the
+    // equivalent guard in blockLines().
+    throw new Error(`yaml: flowEligible() called on a non-collection value: ${JSON.stringify(value)}`);
+  }
+  const members = Object.values(value).filter((v) => v !== undefined);
+  if (members.length === 0) return true;
+  return members.every((m) => flowEligible(m as YamlValue, depth + 1));
+}
+
+/**
+ * A comma separates flow members and `{}`/`[]` close a flow map/sequence, so a
+ * scalar carrying one of those characters would end its collection early if
+ * written unquoted -- something block style never has to worry about, since it
+ * has no such terminators. `needsQuote` alone therefore isn't a wide enough net
+ * inside a flow collection.
+ */
+const FLOW_UNSAFE = /[,{}[\]]/;
+
+/**
+ * Decide whether a scalar needs quoting when written inside a flow collection,
+ * then hand the actual escaping to the existing `doubleQuote`/`inlineText` so
+ * the two styles never diverge on how a quoted value is produced -- only on
+ * when quoting is triggered.
+ */
+function flowScalar(value: YamlValue): string {
+  if (typeof value !== 'string') return inlineText(value);
+  return needsQuote(value) || FLOW_UNSAFE.test(value) ? doubleQuote(value) : value;
+}
+
+/** Render a flow-eligible collection. Scalars go through flowScalar (which itself
+ *  defers to doubleQuote for escaping), so the quoting rules are extended for
+ *  flow's extra terminators without duplicating how a quoted value is produced. */
+function flowText(value: YamlValue): string {
+  if (isInline(value)) return flowScalar(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => flowText(v)).join(', ')}]`;
+  }
+  if (value === null || typeof value !== 'object') {
+    // Unreachable: flowText is only ever called on a value that flowEligible
+    // already accepted, and that rules out everything but null/array/object --
+    // null and every scalar are inline and handled above. Kept, like the
+    // matching guard in flowEligible, to narrow for Object.entries below.
+    throw new Error(`yaml: flowText() called on a non-collection value: ${JSON.stringify(value)}`);
+  }
+  const entries = Object.entries(value).filter(([, v]) => v !== undefined);
+  return `{ ${entries.map(([k, v]) => `${flowScalar(k)}: ${flowText(v as YamlValue)}`).join(', ')} }`;
+}
+
+/** Flow style only when it is eligible AND the result actually fits. */
+function asFlow(value: YamlValue): string | null {
+  if (isInline(value)) return null;
+  if (!flowEligible(value)) return null;
+  const text = flowText(value);
+  return text.length <= FLOW_MAX ? text : null;
+}
+
 /**
  * A multi-line string as a YAML block scalar. Only called for strings that
  * contain `\n` and no `\r` -- isInline() routes anything containing `\r` to
@@ -157,6 +243,10 @@ function emitMapEntry(key: string, value: YamlValue, indent: number): string[] {
   if (isInline(value)) {
     return [`${pad}${k}: ${inlineText(value)}`];
   }
+  const flow = asFlow(value);
+  if (flow !== null) {
+    return [`${pad}${k}: ${flow}`];
+  }
   if (typeof value === 'string') {
     const [indicator, ...lines] = blockScalarLines(value, indent + 2);
     return [`${pad}${k}: ${indicator}`, ...lines];
@@ -169,6 +259,10 @@ function emitListItem(value: YamlValue, indent: number): string[] {
   const pad = ' '.repeat(indent);
   if (isInline(value)) {
     return [`${pad}- ${inlineText(value)}`];
+  }
+  const flow = asFlow(value);
+  if (flow !== null) {
+    return [`${pad}- ${flow}`];
   }
   if (typeof value === 'string') {
     const [indicator, ...lines] = blockScalarLines(value, indent + 2);

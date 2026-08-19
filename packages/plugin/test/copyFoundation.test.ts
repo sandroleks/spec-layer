@@ -77,7 +77,11 @@ describe('copyFoundationBrief', () => {
       collections: [{
         id: 'C1', name: 'Color', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Light' }],
-        variables: Array.from({ length: 300 }, (_, i) => ({
+        // Each variable now renders as a single flow-style line (task 5), so the
+        // line count needed to cross the 800-line "large payload" threshold in
+        // ui/actions.ts is roughly 1-per-variable rather than the ~4-5 it used to
+        // take in block style. 900 keeps this comfortably over the threshold.
+        variables: Array.from({ length: 900 }, (_, i) => ({
           id: `V${i}`, name: `color/bg/brand-${i}`, resolvedType: 'COLOR' as const, description: '',
           codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
         })),
