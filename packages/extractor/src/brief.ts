@@ -127,8 +127,8 @@ export function foundationBrief(
 export interface ComponentBriefOptions {
   generatedAt: string;
   /** Resolves token names to concrete values. Absent on the drift path, which
-   *  calls extract() without one; bindings then omit `value` (and `code`)
-   *  rather than implying the token has none. */
+   *  calls extract() without one; bindings then omit `resolved`, `mode` (and
+   *  `code`) rather than implying the token has none. */
   foundation?: FoundationSpec;
   /** Guidelines read from storage. Never generated here. */
   prose?: ProseDrafts | null;
@@ -245,26 +245,69 @@ function ruleKey(t: TokenRule): string {
  * own defaultModeId (not some fixed mode) since the token can live in any
  * collection.
  *
+ * Naming the mode is not decoration. `layout` reports the geometry a frame
+ * actually renders, under whatever mode is applied on canvas; this reads the
+ * owning collection's DEFAULT mode. On a themed file those can differ, and an
+ * earlier version of this brief emitted both numbers with nothing saying they
+ * were read under different conditions -- the sample Button claimed radius 4
+ * in `layout` and rd-sm resolving to 8 in `tokens`, at the same time, with no
+ * way for a reader to know why.
+ *
+ * The shape is flat -- `alias`/`resolved`/`code`/`mode` as siblings -- rather
+ * than nesting `valueOf`'s own alias/scalar split inside a `value` key, since
+ * that extra level carried no information: an alias already returns
+ * `{ alias, resolved }` from `valueOf`, and every other kind is a bare value
+ * that just needs a name (`resolved`) to sit under next to `mode` and `code`.
+ * A raw value of `kind: 'alias'` is special-cased here rather than routed
+ * through `valueOf` for that branch, specifically so `resolved` lands as its
+ * OWN sibling key instead of nested a second time under a `value.resolved`
+ * that no longer exists.
+ *
  * Returns an empty object — not nulls — when there is no foundation or the
  * token isn't found, so `binding` below can spread the result straight into
- * the output and have `value`/`code` come out `undefined` (which the YAML
- * emitter omits) rather than a `null` that would misstate "resolved to
- * nothing" as "no such value".
+ * the output and have every field come out simply absent rather than a
+ * `null` that would misstate "resolved to nothing" as "no such value".
+ *
+ * Every optional field is added conditionally (`...(cond ? { k: v } : {})`)
+ * rather than written as `{ k: v }` with `v` possibly `undefined`. Both forms
+ * emit identically once run through the YAML emitter, which drops
+ * `undefined`-valued keys -- but a caller that inspects the raw object
+ * (`'mode' in used`, as a test below does for a deleted mode) sees a
+ * genuinely-missing key only with the conditional form, since
+ * `{ mode: undefined }` still satisfies `'mode' in obj`.
  */
 function lookupToken(
   foundation: FoundationSpec | undefined,
   token: string,
-): { value?: YamlValue; code?: YamlValue } {
+): { alias?: string; resolved?: YamlValue; external?: boolean; code?: YamlValue; mode?: string } {
   if (!foundation) return {};
   for (const collection of foundation.collections) {
     for (const variable of collection.variables) {
       if (variable.name !== token) continue;
       const raw = variable.valuesByMode[collection.defaultModeId];
       const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
-      return {
-        value: raw ? valueOf(raw) : undefined,
-        code: code as YamlValue,
+      // A modeId with no entry in collection.modes is stale (its mode was
+      // deleted after this value was recorded) -- same staleness class the
+      // foundation brief's tokenOf/modeName already handle. Falling back to
+      // the raw Figma modeId would leak an internal id into a payload whose
+      // rule is that ids stay inside, so an unresolved mode name is left out
+      // of the result entirely rather than emitted blank or id-keyed.
+      const modeName = collection.modes.find((m) => m.modeId === collection.defaultModeId)?.name;
+      const shared: { code?: YamlValue; mode?: string } = {
+        ...(code !== undefined ? { code: code as YamlValue } : {}),
+        ...(modeName !== undefined ? { mode: modeName } : {}),
       };
+      if (!raw) return shared;
+      if (raw.kind === 'alias') {
+        const resolved = raw.resolved ? valueOf(raw.resolved) : undefined;
+        return {
+          alias: raw.targetName,
+          ...(resolved !== undefined ? { resolved } : {}),
+          ...(raw.external ? { external: true } : {}),
+          ...shared,
+        };
+      }
+      return { resolved: valueOf(raw), ...shared };
     }
   }
   return {};

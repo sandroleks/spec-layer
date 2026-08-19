@@ -706,11 +706,14 @@ describe('componentBrief', () => {
 // ---------------------------------------------------------------------------
 
 /** A token's resolved definition as emitted under `tokens.used`. Mirrors
- *  `lookupToken`'s return shape; Task 8 adds `mode` to that same shape.
- *  Typed rather than `any` so a shape drift fails at compile time, matching
- *  the convention above. */
+ *  `lookupToken`'s flat return shape: `alias`, `resolved`, `mode` and `code`
+ *  as siblings, not nested under a `value` key. Typed rather than `any` so a
+ *  shape drift fails at compile time, matching the convention above. */
 interface TokenDefinition {
-  value?: string | number | boolean | Record<string, unknown>;
+  alias?: string;
+  resolved?: string | number | boolean | Record<string, unknown>;
+  external?: boolean;
+  mode?: string;
   code?: Record<string, string>;
 }
 
@@ -885,12 +888,68 @@ describe('componentBrief tokens', () => {
   it('resolves token values through the foundation when one is supplied', () => {
     const y = tokenBrief({ foundation: FOUNDATION });
     // color/bg/brand resolves at the collection's default mode (Light).
-    expect(y.tokens.used['color/bg/brand'].value).toBe('#2563EB');
+    expect(y.tokens.used['color/bg/brand'].resolved).toBe('#2563EB');
   });
 
-  it('omits value entirely when no foundation is supplied', () => {
+  it("names the resolved value's mode as the collection's own default mode", () => {
+    const y = tokenBrief({ foundation: FOUNDATION });
+    expect(y.tokens.used['color/bg/brand'].mode).toBe('Light');
+  });
+
+  // From the task brief: a collection whose default mode is NOT the first one
+  // declared (Dark, not Light) must still name that mode, rather than a
+  // reader assuming the first mode listed is always the one in force.
+  it('names the mode a resolved value was read at', () => {
+    const foundation: FoundationSpec = {
+      fileKey: 'F', extractedAt: 'T', textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Semantic', defaultModeId: 'm2',
+        modes: [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }],
+        variables: [{
+          name: 'color/surface/default', group: '', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: {
+            m1: { kind: 'color', hex: '#ffffff', alpha: 1 },
+            m2: { kind: 'color', hex: '#111111', alpha: 1 },
+          },
+        }],
+      }],
+    };
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
+      property: 'fill', conditions: {}, token: 'color/surface/default' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+    const used = brief.tokens.used['color/surface/default'];
+    // The collection's own default mode is m2, so the value is the Dark one,
+    // and the brief says so instead of leaving a reader to assume Light.
+    expect(used.resolved).toBe('#111111');
+    expect(used.mode).toBe('Dark');
+  });
+
+  it('drops a deleted default mode rather than leaking its internal Figma id', () => {
+    const foundation: FoundationSpec = {
+      fileKey: 'F', extractedAt: 'T', textStyles: [],
+      collections: [{
+        id: 'c1', name: 'Semantic', defaultModeId: 'gone',
+        modes: [{ modeId: 'm1', name: 'Light' }],
+        variables: [{
+          name: 'color/surface/default', group: '', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
+        }],
+      }],
+    };
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
+      property: 'fill', conditions: {}, token: 'color/surface/default' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+    const used = brief.tokens.used['color/surface/default'];
+    expect('mode' in used).toBe(false);
+    expect(JSON.stringify(used)).not.toContain('gone');
+  });
+
+  it('omits resolved entirely when no foundation is supplied', () => {
     const y = tokenBrief();
-    expect('value' in y.tokens.used['color/bg/brand']).toBe(false);
+    expect('resolved' in y.tokens.used['color/bg/brand']).toBe(false);
+    expect('mode' in y.tokens.used['color/bg/brand']).toBe(false);
   });
 
   it('emits code when the resolved variable has codeSyntax', () => {
@@ -931,5 +990,109 @@ describe('componentBrief tokens', () => {
     // Three rules produce three bindings, no matter how many variant
     // instances they'd have resolved against under v1.
     expect(y.tokens.bindings).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// componentBrief tokens.used flattening -- one test per valueOf kind
+// ---------------------------------------------------------------------------
+
+/**
+ * One `used[token]`, looked up directly off the raw (non-YAML) brief object,
+ * for a single-token component bound to `token`. Raw rather than round-tripped
+ * through YAML deliberately: several assertions below check `'key' in entry`,
+ * which only proves a key is truly absent (not merely undefined-valued) when
+ * read off the object the emitter itself will filter, not off the emitter's
+ * own output.
+ */
+function usedFor(foundation: FoundationSpec, token: string): Record<string, unknown> {
+  const spec: IntermediateSpec = { ...baseSpec(), tokens: [
+    { part: 'Container', path: 'Container', property: 'fill', conditions: {}, token },
+  ] };
+  const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+  return brief.tokens.used[token];
+}
+
+/** One collection covering all six `FoundationValue` kinds `valueOf` switches
+ *  on, so each kind's flattened `used` entry can be asserted in isolation.
+ *  `color/alpha` and `unresolved/cycle` exist alongside the two more common
+ *  kinds specifically because `valueOf`'s color and alias branches are each
+ *  two cases, not one -- an opaque color collapses to a bare hex string but a
+ *  translucent one stays an object, and a resolvable alias carries a
+ *  `resolved` key that an unresolved one cannot. */
+function sixKindFoundation(): FoundationSpec {
+  return {
+    fileKey: 'F', extractedAt: 'T', textStyles: [],
+    collections: [{
+      id: 'c1', name: 'Kinds', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Mode1' }],
+      variables: [
+        { name: 'color/opaque', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#112233', alpha: 1 } } },
+        { name: 'color/alpha', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#112233', alpha: 0.5 } } },
+        { name: 'number/radius', group: '', resolvedType: 'FLOAT', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'number', value: 8 } } },
+        { name: 'string/font', group: '', resolvedType: 'STRING', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'string', value: 'Inter' } } },
+        { name: 'boolean/flag', group: '', resolvedType: 'BOOLEAN', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'boolean', value: true } } },
+        { name: 'alias/internal', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'alias', targetName: 'color/opaque', targetCollection: 'Kinds',
+            external: false, resolved: { kind: 'color', hex: '#112233', alpha: 1 } } } },
+        { name: 'alias/external', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'alias', targetName: 'brand/blue', targetCollection: 'Other Library',
+            external: true, resolved: null } } },
+        { name: 'unresolved/cycle', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'unresolved', reason: 'cycle' } } },
+      ],
+    }],
+  };
+}
+
+describe('componentBrief tokens.used flattening', () => {
+  const foundation = sixKindFoundation();
+
+  it('flattens an opaque color to a bare hex string under resolved', () => {
+    const used = usedFor(foundation, 'color/opaque');
+    expect(used).toEqual({ resolved: '#112233', mode: 'Mode1' });
+  });
+
+  it('flattens a translucent color to a {hex, alpha} object under resolved', () => {
+    const used = usedFor(foundation, 'color/alpha');
+    expect(used).toEqual({ resolved: { hex: '#112233', alpha: 0.5 }, mode: 'Mode1' });
+  });
+
+  it('flattens a number to a machine-readable number under resolved, not a formatted string', () => {
+    const used = usedFor(foundation, 'number/radius');
+    expect(used.resolved).toBe(8);
+    expect(typeof used.resolved).toBe('number');
+  });
+
+  it('flattens a string to a bare string under resolved', () => {
+    const used = usedFor(foundation, 'string/font');
+    expect(used).toEqual({ resolved: 'Inter', mode: 'Mode1' });
+  });
+
+  it('flattens a boolean to a bare boolean under resolved', () => {
+    const used = usedFor(foundation, 'boolean/flag');
+    expect(used).toEqual({ resolved: true, mode: 'Mode1' });
+  });
+
+  it('flattens a resolvable alias to alias and resolved as siblings, no value wrapper', () => {
+    const used = usedFor(foundation, 'alias/internal');
+    expect(used).toEqual({ alias: 'color/opaque', resolved: '#112233', mode: 'Mode1' });
+    expect('value' in used).toBe(false);
+  });
+
+  it('keeps the external flag on an unresolved external alias, and omits resolved rather than nulling it', () => {
+    const used = usedFor(foundation, 'alias/external');
+    expect(used).toEqual({ alias: 'brand/blue', external: true, mode: 'Mode1' });
+    expect('resolved' in used).toBe(false);
+  });
+
+  it('surfaces an unresolved value truthfully under resolved instead of dropping it', () => {
+    const used = usedFor(foundation, 'unresolved/cycle');
+    expect(used).toEqual({ resolved: { unresolved: 'cycle' }, mode: 'Mode1' });
   });
 });
