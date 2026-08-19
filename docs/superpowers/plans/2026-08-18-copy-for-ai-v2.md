@@ -980,7 +980,16 @@ v1 emitted the same information three times, as `api`, `axes` and `states`, and 
 
 **Interfaces:**
 - Consumes: `detectStateMatrix`, `stateAxisProps` from `statesMatrix.ts` (both already exported).
-- Produces: `api` is `{ variants?: Record<string, { options, default? }>, states?: string[], booleans?: Record<string, { default? }> }`. Top-level `axes` and `states` are gone.
+- Produces: `api` is `{ variants?, states?, booleans?, slots? }` where `variants` is `Record<string, { options, default? }>`, `states` is `string[]`, `booleans` is `Record<string, { default? }>`, and `slots` is `Record<string, { type: 'text' | 'instanceSwap', default?, options? }>`. Top-level `axes` and `states` are gone.
+
+**`slots` is not optional polish.** `ComponentProp.kind` has five values, and v1's flat
+`api` emitted all of them. A three-group split covering only variant and boolean kinds
+silently DROPS every `text` and `instanceSwap` property — and both fixtures in this repo
+have a `text:Label` prop, so the loss is immediate and real, not hypothetical. A text
+property is the component's label slot and an instanceSwap property is its icon slot;
+those are the two things an implementer most needs to know a component exposes. Any prop
+whose kind is neither variant nor boolean belongs here, so a future sixth kind surfaces
+rather than disappearing.
 
 - [ ] **Step 1: Write the failing tests**
 
