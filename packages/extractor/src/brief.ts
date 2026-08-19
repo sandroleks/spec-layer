@@ -343,10 +343,19 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
     }
   }
 
-  // 'Default' is the matrix's own baseline column, not a state the component has.
+  // Under the flags encoding, 'Default' is a column detectStateMatrix
+  // SYNTHESIZES as a baseline to compare the flags against (statesMatrix.ts:
+  // `{ label: 'Default', override: {} }`) -- the component declares no such
+  // state, so it must not be listed. Under the enum encoding there is no
+  // synthesized column: every label is a value the axis's own Figma
+  // definition declared, and 'Default' can be one of them for real (e.g.
+  // chip.json's States axis literally declares 'Default' alongside 'Hover',
+  // 'Focus', 'Press') -- dropping it there would delete a state the
+  // component genuinely has, and could even contradict a token binding that
+  // conditions on `States: ['Default']` elsewhere in the same brief.
   const states = (matrix?.columns ?? [])
     .map((c) => c.label)
-    .filter((label) => label.toLowerCase() !== 'default');
+    .filter((label) => matrix?.encoding !== 'flags' || label.toLowerCase() !== 'default');
 
   // Built by conditionally adding keys, not by assigning `undefined` to them:
   // an object literal like `{ states: undefined }` still has a `states` key

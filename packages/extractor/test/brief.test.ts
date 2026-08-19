@@ -329,6 +329,25 @@ describe('componentBrief', () => {
     expect('booleans' in brief.api).toBe(false);
   });
 
+  // Review caught that the 'Default' filter below was written for the
+  // flags encoding (where detectStateMatrix SYNTHESIZES a 'Default' baseline
+  // column that isn't a real state) but applied unconditionally, so it also
+  // stripped a real, Figma-declared 'Default' value under the enum encoding
+  // -- chip.json's States axis genuinely declares 'Default' alongside
+  // 'Hover'/'Focus'/'Press'. This pins both behaviours so neither regresses:
+  // the synthetic flags-path 'Default' stays dropped (already asserted by
+  // 'separates configurable variants from interaction states' above, via
+  // `expect(brief.api.states).not.toContain('Default')`), while a real
+  // enum-declared 'Default' survives.
+  it('keeps a real Default value under the enum encoding', () => {
+    const spec = { ...baseSpec(),
+      variants: [{ prop: 'States', values: ['Default', 'Hovered', 'Pressed'] }],
+      props: [{ name: 'States', kind: 'variant' as const,
+                options: ['Default', 'Hovered', 'Pressed'], default: 'Default' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.api.states).toEqual(['Default', 'Hovered', 'Pressed']);
+  });
+
   // A fourth group, added after review caught that `apiOf` originally
   // covered only variant and boolean kinds: a `text` prop (a component's
   // label slot) and an `instanceSwap` prop (its icon slot) fell through
