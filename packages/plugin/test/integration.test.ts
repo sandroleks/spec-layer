@@ -80,8 +80,11 @@ describe('full pipeline: serialize → extract → render → parse', () => {
     expect(spec.tokens).toContainEqual(
       expect.objectContaining({ part: 'label', property: 'typography', token: 'md.sys.typescale.label-large' }),
     );
+    // property is 'gap', not 'itemSpacing': it must match the name a real
+    // itemSpacing token binding normalizes to (SIMPLE_PROPERTY_MAP), or the
+    // two can never reconcile against each other.
     expect(spec.gaps).toContainEqual({
-      part: 'container', path: 'Container/container', property: 'itemSpacing',
+      part: 'container', path: 'Container/container', property: 'gap',
       issue: 'hardcoded-value', value: 8,
     });
     expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8' });

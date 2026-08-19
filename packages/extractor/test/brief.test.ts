@@ -260,7 +260,7 @@ const SPEC: IntermediateSpec = {
   states: ['Enabled', 'Hovered'],
   tokens: [],
   related: ['Icon'],
-  gaps: [{ part: 'container', path: 'Container/container', property: 'itemSpacing',
+  gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
            issue: 'hardcoded-value', value: 8 }],
   layout: [{ part: 'container', summary: 'horizontal, gap 8' }],
   rawValues: [],
@@ -496,7 +496,7 @@ describe('componentBrief', () => {
 
   it('emits gaps as unbound', () => {
     expect(brief().unbound).toEqual([
-      { path: 'Container/container', property: 'itemSpacing', issue: 'hardcoded-value', value: 8 },
+      { path: 'Container/container', property: 'gap', issue: 'hardcoded-value', value: 8 },
     ]);
   });
 
@@ -507,14 +507,14 @@ describe('componentBrief', () => {
                  conditions: {}, token: 'color/text/default' }],
       gaps: [
         { part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const },
-        { part: 'Label', path: 'Container/Label', property: 'itemSpacing',
+        { part: 'Label', path: 'Container/Label', property: 'gap',
           issue: 'hardcoded-value' as const, value: 8 },
       ],
     };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
     // The fill gap contradicted a real binding, so it goes. The spacing gap stays.
     expect(brief.unbound).toEqual([
-      { path: 'Container/Label', property: 'itemSpacing', issue: 'hardcoded-value', value: 8 },
+      { path: 'Container/Label', property: 'gap', issue: 'hardcoded-value', value: 8 },
     ]);
   });
 
@@ -560,6 +560,25 @@ describe('componentBrief', () => {
     expect(brief.unbound).toEqual([
       { path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' },
     ]);
+  });
+
+  // extractGaps emits property 'gap' for a hardcoded itemSpacing (not
+  // 'itemSpacing'): that is the exact name a real itemSpacing binding
+  // normalizes to via SIMPLE_PROPERTY_MAP in tokens.ts. This is the
+  // regression this task's Fix 1 closes: a hardcoded spacing value on a part
+  // that also carries a real `gap` token binding (bound in a different
+  // variant than the one gap-detection walked) must now reconcile away,
+  // exactly like the ButtonLabel colour case that motivated this task.
+  it('drops a hardcoded itemSpacing gap when the same path has a real gap token binding', () => {
+    const spec = {
+      ...baseSpec(),
+      tokens: [{ part: 'container', path: 'Container/container', property: 'gap',
+                 conditions: {}, token: 'space/md' }],
+      gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
+               issue: 'hardcoded-value' as const, value: 8 }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect('unbound' in brief).toBe(false);
   });
 
   it('includes stored guidelines verbatim', () => {

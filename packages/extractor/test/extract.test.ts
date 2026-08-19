@@ -37,7 +37,11 @@ describe('extract', () => {
     // order agrees with the fixture's declaration order here.
     expect(spec.states).toEqual(['Enabled', 'Hovered', 'Disabled']);
     expect(spec.tokens.length).toBeGreaterThan(0);
-    expect(spec.gaps.length).toBe(4);
+    // 5, not 4: the fixture's padding is asymmetric-but-paired
+    // (top=bottom=10, left=right=24), so it now splits into two gaps
+    // (padding-x, padding-y) instead of one bare 'padding' gap — the same
+    // shape a real padding-x/padding-y binding would produce.
+    expect(spec.gaps.length).toBe(5);
     expect(spec.layout).toEqual([
       { part: 'container', summary: 'horizontal, padding 10/24/10/24, gap 8' },
     ]);

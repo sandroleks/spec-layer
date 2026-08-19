@@ -45,6 +45,17 @@ export function specContentHash(spec: IntermediateSpec): string {
     // enter: they are real content (Task 8 moved the measured number out of
     // the old prose `issue` string and into its own field), so dropping them
     // would silently stop the hash from noticing a gap's value change.
+    //
+    // gaps itself reaches only componentBrief's `unbound` list (the clipboard
+    // brief, generated fresh on every click, never stored), so nothing on
+    // canvas ever renders a gap directly. It stays in this hash anyway:
+    // rawValues IS rendered (docModel.ts builds the Tokens table's unbound
+    // rows from it) but is excluded from this hash, and gaps/rawValues are
+    // produced by the same hardcoded-value detection and move together. Right
+    // now, gaps moving is what makes that detection register as drift at all.
+    // Excluding gaps here would leave a hardcoded-value change silently
+    // unflagged rather than merely over-flagged — worse, not better. Don't
+    // remove this without first covering that case some other way.
     gaps: spec.gaps.map(({ part, property, issue, value }) =>
       ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
   };

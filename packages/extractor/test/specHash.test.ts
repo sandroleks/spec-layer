@@ -30,23 +30,25 @@ describe('specContentHash', () => {
   });
 });
 
-/** Re-cut on 2026-08-19 by Task 8: gap issue strings became stable ids, which
- *  is a real content change, so every existing component doc legitimately shows
- *  "update available" once. It must settle after a single Update.
- *  Every component doc on canvas stores a baseline computed this way, so a change
- *  to this constant means every one of them reports drift. Only a task that says
- *  it re-cuts the baseline may change it. */
-const BUTTON_HASH_V2 = 'b49b6a3dd3b50fe73c7b2ced8e64f25517e4f56383746e455e338335bd5a873d';
+/** Re-cut on 2026-08-19 by Task 8: gap issue strings became stable ids (fixing
+ *  `unbound` contradicting `tokens`) and gap properties were aligned with the
+ *  token path's own vocabulary. Real content changes, so this supersedes the
+ *  pre-v2-brief value `d445791b...` once: every existing component doc
+ *  legitimately reports "update available" a single time, and must settle
+ *  after a single Update. Every component doc on canvas stores a baseline
+ *  computed this way, so a change to this constant means every one of them
+ *  reports drift. Only a task that says it re-cuts the baseline may change it. */
+const BUTTON_HASH = 'adcffcb7d2eec911d960bb883794cf1e387d8b8d729064670b708abce8490516';
 
 it('is unchanged by removing the contrast field', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
   const spec = extract(node, { figmaFile: 'FILE1' });
-  expect(specContentHash(spec)).toBe(BUTTON_HASH_V2);
+  expect(specContentHash(spec)).toBe(BUTTON_HASH);
 });
 
 it('is unchanged by adding paths to tokens and gaps', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
   const spec = extract(node, { figmaFile: 'FILE1' });
   expect(spec.tokens[0].path).toBeTruthy();            // the field exists
-  expect(specContentHash(spec)).toBe(BUTTON_HASH_V2);  // and does not enter the hash
+  expect(specContentHash(spec)).toBe(BUTTON_HASH);  // and does not enter the hash
 });

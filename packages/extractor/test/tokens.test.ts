@@ -386,12 +386,23 @@ describe('extractGaps', () => {
 
   it('flags hardcoded layout values not bound to variables', () => {
     const gaps = extractGaps(root);
+    // itemSpacing gaps carry property 'gap', the exact same name a real
+    // itemSpacing binding normalizes to (SIMPLE_PROPERTY_MAP), so the two can
+    // reconcile against each other.
     expect(gaps).toContainEqual({
-      part: 'container', path: 'Container/container', property: 'itemSpacing',
+      part: 'container', path: 'Container/container', property: 'gap',
       issue: 'hardcoded-value', value: 8,
     });
+    // The fixture's padding is [top:10, right:24, bottom:10, left:24]: not
+    // uniform, but left=right and top=bottom, so it collapses into the same
+    // two composite properties a real padding-x/padding-y binding would use.
     expect(gaps).toContainEqual({
-      part: 'container', path: 'Container/container', property: 'padding', issue: 'hardcoded-value',
+      part: 'container', path: 'Container/container', property: 'padding-x',
+      issue: 'hardcoded-value', value: 24,
+    });
+    expect(gaps).toContainEqual({
+      part: 'container', path: 'Container/container', property: 'padding-y',
+      issue: 'hardcoded-value', value: 10,
     });
     // cornerRadius IS bound on container → must NOT be flagged
     expect(gaps).not.toContainEqual(expect.objectContaining({ property: 'border-radius' }));

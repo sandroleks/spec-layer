@@ -149,6 +149,52 @@ const PADDING_RAW_PROPS = new Set([
 const TYPOGRAPHY_SUBPROPS = new Set(['fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing']);
 
 /**
+ * The property name a real variable/style binding would carry for one raw
+ * Figma property name, e.g. `fills` -> `fill`. The single source of truth for
+ * that renaming: both a real binding (`normalizeBindings`) and a hardcoded
+ * value with no binding at all (`extractGaps`) route through this, so the two
+ * can never again land on different property vocabularies for the same
+ * underlying thing.
+ */
+const simpleProperty = (raw: string): string => SIMPLE_PROPERTY_MAP[raw] ?? raw;
+
+/**
+ * Decide which composite padding property name(s) apply, given each side's
+ * candidate value already narrowed to at most one (a real binding resolves to
+ * one token per side; a hardcoded layout value resolves to one number per
+ * side): `padding` when all four sides agree, `padding-x`/`padding-y` when a
+ * pair agrees, or the four individual `padding-{side}` names otherwise.
+ * Shared between `normalizeBindings` (values are token names) and
+ * `extractGaps` (values are hardcoded numbers) so a hardcoded padding gap and
+ * a real padding binding on the same shape land on the exact same property
+ * name — vocabulary drift between the two is the defect this task removes.
+ */
+function paddingSides<T>(
+  top: T[], right: T[], bottom: T[], left: T[],
+): Array<{ property: string; value: T }> {
+  const single = (xs: T[]): T | null => (xs.length === 1 ? xs[0] : null);
+  const sides = [top, right, bottom, left];
+  const out: Array<{ property: string; value: T }> = [];
+  if (sides.every((s) => single(s) !== null) && new Set(sides.map((s) => single(s))).size === 1) {
+    out.push({ property: 'padding', value: single(top)! });
+    return out;
+  }
+  if (left.length && single(left) !== null && single(left) === single(right)) {
+    out.push({ property: 'padding-x', value: single(left)! });
+  } else {
+    for (const t of left) out.push({ property: 'padding-left', value: t });
+    for (const t of right) out.push({ property: 'padding-right', value: t });
+  }
+  if (top.length && single(top) !== null && single(top) === single(bottom)) {
+    out.push({ property: 'padding-y', value: single(top)! });
+  } else {
+    for (const t of top) out.push({ property: 'padding-top', value: t });
+    for (const t of bottom) out.push({ property: 'padding-bottom', value: t });
+  }
+  return out;
+}
+
+/**
  * Normalize one node's raw bindings:
  * - 4 corner radii sharing a token collapse to `border-radius`
  * - paddings collapse to `padding` (all 4 equal) or `padding-x`/`padding-y` (pairs equal)
@@ -179,27 +225,13 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
 
   // Padding
   const sideTokens = (...props: string[]) => props.flatMap((p) => byProp.get(p) ?? []);
-  const top = sideTokens('paddingTop', 'verticalPadding');
-  const bottom = sideTokens('paddingBottom', 'verticalPadding');
-  const left = sideTokens('paddingLeft', 'horizontalPadding');
-  const right = sideTokens('paddingRight', 'horizontalPadding');
-  const single = (xs: string[]) => (xs.length === 1 ? xs[0] : null);
-  const sides = [top, right, bottom, left];
-  if (sides.every((s) => single(s) !== null) && new Set(sides.map((s) => s[0])).size === 1) {
-    emit('padding', top[0]);
-  } else {
-    if (left.length && single(left) !== null && single(left) === single(right)) {
-      emit('padding-x', left[0]);
-    } else {
-      for (const t of left) emit('padding-left', t);
-      for (const t of right) emit('padding-right', t);
-    }
-    if (top.length && single(top) !== null && single(top) === single(bottom)) {
-      emit('padding-y', top[0]);
-    } else {
-      for (const t of top) emit('padding-top', t);
-      for (const t of bottom) emit('padding-bottom', t);
-    }
+  for (const { property, value } of paddingSides(
+    sideTokens('paddingTop', 'verticalPadding'),
+    sideTokens('paddingRight', 'horizontalPadding'),
+    sideTokens('paddingBottom', 'verticalPadding'),
+    sideTokens('paddingLeft', 'horizontalPadding'),
+  )) {
+    emit(property, value);
   }
 
   // Everything else
@@ -207,7 +239,7 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
   for (const [prop, tokens] of byProp) {
     if (RADIUS_PROPS.includes(prop) || PADDING_RAW_PROPS.has(prop)) continue;
     if (hasTypography && TYPOGRAPHY_SUBPROPS.has(prop)) continue;
-    const mapped = SIMPLE_PROPERTY_MAP[prop] ?? prop;
+    const mapped = simpleProperty(prop);
     for (const t of tokens) emit(mapped, t);
   }
   return out;
@@ -561,19 +593,24 @@ export function extractGaps(root: SerializedNode): Gap[] {
   const def = defaultVariant(root);
   walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part, path) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
+    // Every property name below is routed through `simpleProperty` (the same
+    // rename `normalizeBindings` applies to a real binding on `fills`,
+    // `strokes`, etc.) rather than hand-picked, so a hardcoded value and a
+    // real binding for the same raw Figma property can never land on
+    // different property vocabularies.
     if (n.hasUnboundPaint) {
-      pushGap(part, path, 'fill', 'hardcoded-color', n.unboundFill);
+      pushGap(part, path, simpleProperty('fills'), 'hardcoded-color', n.unboundFill);
     }
     if (n.hasUnboundStroke) {
-      pushGap(part, path, 'border', 'hardcoded-color', n.unboundStroke);
+      pushGap(part, path, simpleProperty('strokes'), 'hardcoded-color', n.unboundStroke);
     }
     if (n.hasUnboundGradient) {
       // A gradient/image fill has no single hex to report, so there is no
       // `value` here, unlike the solid-fill and stroke cases above.
-      pushGap(part, path, 'fill', 'missing-token-binding');
+      pushGap(part, path, simpleProperty('fills'), 'missing-token-binding');
     }
     if (n.hasUnboundEffect) {
-      pushGap(part, path, 'effects', 'missing-token-binding');
+      pushGap(part, path, simpleProperty('effects'), 'missing-token-binding');
     }
     if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
       // Rounded here as well as in serialize.ts, because this number is inside
@@ -581,24 +618,31 @@ export function extractGaps(root: SerializedNode): Gap[] {
       // come from this repo's serializer (an uploaded dump, an older plugin
       // build). Figma's float32 opacity would otherwise print 30% as
       // 0.30000001192092896, both on the page and in the drift baseline.
-      pushGap(part, path, 'opacity', 'hardcoded-value', Math.round(n.opacity * 10000) / 10000);
+      pushGap(part, path, simpleProperty('opacity'), 'hardcoded-value', Math.round(n.opacity * 10000) / 10000);
     }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
-      pushGap(part, path, 'typography', 'missing-token-binding');
+      pushGap(part, path, simpleProperty('typography'), 'missing-token-binding');
     }
     const l = n.layout;
     if (!l) return;
     if (l.itemSpacing !== undefined && !bound.has('itemSpacing')) {
-      pushGap(part, path, 'itemSpacing', 'hardcoded-value', l.itemSpacing);
+      pushGap(part, path, simpleProperty('itemSpacing'), 'hardcoded-value', l.itemSpacing);
     }
     if (l.cornerRadius !== undefined && !bound.has('cornerRadius') && !bound.has('topLeftRadius')) {
-      pushGap(part, path, 'border-radius', 'hardcoded-value', l.cornerRadius);
+      pushGap(part, path, simpleProperty('cornerRadius'), 'hardcoded-value', l.cornerRadius);
     }
-    const pads = [l.paddingTop, l.paddingRight, l.paddingBottom, l.paddingLeft];
-    if (pads.some((p) => p !== undefined) && !PADDING_PROPS.some((p) => bound.has(p))) {
-      // Padding can be asymmetric (four independent sides), so there is no
-      // single number to report as `value` here.
-      pushGap(part, path, 'padding', 'hardcoded-value');
+    if (!PADDING_PROPS.some((p) => bound.has(p))) {
+      const side = (v: number | undefined): number[] => (v !== undefined ? [v] : []);
+      // Same collapsing `normalizeBindings` applies to real padding bindings,
+      // run over the raw numbers instead of token names: equal numbers stand
+      // in for "the same token" so a hardcoded padding gap lands on exactly
+      // the property (`padding`, `padding-x`/`padding-y`, or an individual
+      // side) that a real binding on this same shape would use.
+      for (const { property, value } of paddingSides(
+        side(l.paddingTop), side(l.paddingRight), side(l.paddingBottom), side(l.paddingLeft),
+      )) {
+        pushGap(part, path, property, 'hardcoded-value', value);
+      }
     }
   });
   return out;
