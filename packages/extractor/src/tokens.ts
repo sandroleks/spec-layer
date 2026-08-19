@@ -1,6 +1,6 @@
 import type { SerializedNode, TokenRef } from './tree';
 import { defaultVariant } from './anatomy';
-import { parseVariantName, cleanPartName, walkParts, joinPath } from './naming';
+import { parseVariantName, cleanPartName, walkParts } from './naming';
 
 /**
  * A minimized token rule: `token` applies to `part.property` whenever every

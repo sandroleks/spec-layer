@@ -79,6 +79,39 @@ function oneCollection(): FoundationSpec {
   };
 }
 
+/**
+ * Structural shape of the raw (pre-YAML) object foundationBrief and
+ * componentBrief return, covering just the blocks the tests below read
+ * directly off that object -- before it round-trips through YAML, so a test
+ * can still tell a genuinely-absent key from a present-but-undefined one via
+ * `'x' in obj`. A field every test only ever passes whole into `expect(...)`
+ * or checks with `in` stays optional here; a field a test indexes or
+ * dereferences further (`.api.variants.type`, `.guidelines.group_descriptions.A`,
+ * `.collections[0].tokens[0]`, ...) is typed as present, because a raw,
+ * un-narrowed chain like that needs every intermediate step to be provably
+ * defined. One cast at the point each brief is produced, reused by every
+ * test below instead of a fresh `any` at each site.
+ */
+interface BriefShape {
+  source?: { file: string; node: string; component_key?: string };
+  component?: { name: string; related?: string[] };
+  api: {
+    variants: Record<string, { options: string[]; default?: string | boolean }>;
+    states?: string[];
+    booleans?: Record<string, { default?: string | boolean }>;
+    slots: Record<string, { type: string; default?: string | boolean; options?: string[] }>;
+  };
+  anatomy?: unknown[];
+  layout?: Array<{ part: string; summary: string }>;
+  tokens: {
+    used: Record<string, Record<string, unknown>>;
+    bindings: Array<{ path: string; property: string; token: string; when?: Record<string, string[]> }>;
+  };
+  unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
+  guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
+  collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
+}
+
 describe('foundationBrief', () => {
   it('stamps the envelope with the extractor version and brief version', () => {
     const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
@@ -162,7 +195,7 @@ describe('foundationBrief', () => {
     const brief = foundationBrief(oneCollection(), {
       generatedAt: 'T',
       groupDescriptions: { Primitives: { 'color/surface': 'Surfaces you paint panels with.' } },
-    }) as Record<string, any>;
+    }) as unknown as BriefShape;
     expect(brief.guidelines.origin).toBe('generated');
     expect(brief.guidelines.group_descriptions).toEqual({
       Primitives: { 'color/surface': 'Surfaces you paint panels with.' },
@@ -173,25 +206,25 @@ describe('foundationBrief', () => {
     const brief = foundationBrief(oneCollection(), {
       generatedAt: 'T',
       groupDescriptions: { A: { color: 'From A.' }, B: { color: 'From B.' } },
-    }) as Record<string, any>;
+    }) as unknown as BriefShape;
     expect(brief.guidelines.group_descriptions.A.color).toBe('From A.');
     expect(brief.guidelines.group_descriptions.B.color).toBe('From B.');
   });
 
   it('omits the guidelines block entirely when there are no descriptions', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as Record<string, any>;
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
     expect('guidelines' in brief).toBe(false);
   });
 
   it('omits the block when a description map is present but empty', () => {
     const brief = foundationBrief(oneCollection(), {
       generatedAt: 'T', groupDescriptions: { Primitives: {} },
-    }) as Record<string, any>;
+    }) as unknown as BriefShape;
     expect('guidelines' in brief).toBe(false);
   });
 
   it('still emits collections and text styles unchanged', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as Record<string, any>;
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.collections[0].name).toBe('Primitives');
     expect(brief.collections[0].tokens[0].name).toBe('color/surface/default');
   });
@@ -333,7 +366,7 @@ describe('componentBrief', () => {
         { name: 'iconLeft', kind: 'boolean' as const, default: true },
       ],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(Object.keys(brief.api.variants)).toEqual(['type', 'size']);
     expect(brief.api.variants.type).toEqual(
       { options: ['Primary', 'Outline', 'Ghost'], default: 'Primary' });
@@ -344,7 +377,7 @@ describe('componentBrief', () => {
   });
 
   it('no longer emits a top-level axes or states block', () => {
-    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as unknown as BriefShape;
     expect('axes' in brief).toBe(false);
     expect('states' in brief).toBe(false);
   });
@@ -353,14 +386,14 @@ describe('componentBrief', () => {
     const spec = { ...baseSpec(), variants: [{ prop: 'size', values: ['Large', 'Small'] }],
       props: [{ name: 'size', kind: 'variant' as const,
                 options: ['Large', 'Small'], default: 'Large' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect('states' in brief.api).toBe(false);
     expect(Object.keys(brief.api.variants)).toEqual(['size']);
   });
 
   it('omits the whole api block for a component with no props', () => {
     const spec = { ...baseSpec(), variants: [], props: [] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect('api' in brief).toBe(false);
   });
 
@@ -381,7 +414,7 @@ describe('componentBrief', () => {
         { name: 'disabled', kind: 'boolean' as const, default: false },
       ],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(Object.keys(brief.api.variants)).toEqual(['size']);
     expect(brief.api.states).toEqual(['disabled']);
     expect('booleans' in brief.api).toBe(false);
@@ -402,7 +435,7 @@ describe('componentBrief', () => {
       variants: [{ prop: 'States', values: ['Default', 'Hovered', 'Pressed'] }],
       props: [{ name: 'States', kind: 'variant' as const,
                 options: ['Default', 'Hovered', 'Pressed'], default: 'Default' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.api.states).toEqual(['Default', 'Hovered', 'Pressed']);
   });
 
@@ -414,14 +447,14 @@ describe('componentBrief', () => {
   it('puts a text prop in slots, carrying its kind and default', () => {
     const spec = { ...baseSpec(), variants: [],
       props: [{ name: 'Label', kind: 'text' as const, default: 'Button' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.api.slots).toEqual({ Label: { type: 'text', default: 'Button' } });
   });
 
   it('puts an instanceSwap prop in slots', () => {
     const spec = { ...baseSpec(), variants: [],
       props: [{ name: 'icon', kind: 'instanceSwap' as const }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(Object.keys(brief.api.slots)).toEqual(['icon']);
     expect(brief.api.slots.icon.type).toBe('instanceSwap');
   });
@@ -430,7 +463,7 @@ describe('componentBrief', () => {
     const spec = { ...baseSpec(), variants: [{ prop: 'size', values: ['Large', 'Small'] }],
       props: [{ name: 'size', kind: 'variant' as const,
                 options: ['Large', 'Small'], default: 'Large' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect('slots' in brief.api).toBe(false);
   });
 
@@ -458,7 +491,7 @@ describe('componentBrief', () => {
         { name: 'icon', kind: 'instanceSwap' as const },
       ],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
 
     const expectedNames = new Set<string>([
       ...spec.variants.map((v) => v.prop),
@@ -511,7 +544,7 @@ describe('componentBrief', () => {
           issue: 'hardcoded-value' as const, value: 8 },
       ],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     // The fill gap contradicted a real binding, so it goes. The spacing gap stays.
     expect(brief.unbound).toEqual([
       { path: 'Container/Label', property: 'gap', issue: 'hardcoded-value', value: 8 },
@@ -526,7 +559,7 @@ describe('componentBrief', () => {
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill',
                issue: 'hardcoded-color' as const }],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect('unbound' in brief).toBe(false);
   });
 
@@ -541,7 +574,7 @@ describe('componentBrief', () => {
                  conditions: {}, token: 'color/icon/default' }],
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.unbound).toEqual([
       { path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' },
     ]);
@@ -556,7 +589,7 @@ describe('componentBrief', () => {
                  conditions: {}, token: 'space/md' }],
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.unbound).toEqual([
       { path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' },
     ]);
@@ -577,7 +610,7 @@ describe('componentBrief', () => {
       gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
                issue: 'hardcoded-value' as const, value: 8 }],
     };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect('unbound' in brief).toBe(false);
   });
 
@@ -765,7 +798,7 @@ describe('componentBrief tokens', () => {
       { part: 'Container', path: 'Container', property: 'height',
         conditions: { size: ['Large'] }, token: 'button/lg-height' },
     ] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(Object.keys(brief.tokens.used)).toEqual([
       'color/surface/primary/default', 'button/lg-height',
     ]);
@@ -776,7 +809,7 @@ describe('componentBrief tokens', () => {
       { part: 'Container', path: 'Container', property: 'height',
         conditions: { size: ['Large'] }, token: 'button/lg-height' },
     ] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toEqual([
       { path: 'Container', property: 'height', token: 'button/lg-height',
         when: { size: ['Large'] } },
@@ -788,14 +821,14 @@ describe('componentBrief tokens', () => {
       { part: 'Container', path: 'Container', property: 'border-radius',
         conditions: {}, token: 'rd-sm' },
     ] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings[0]).toEqual(
       { path: 'Container', property: 'border-radius', token: 'rd-sm' });
     expect('when' in brief.tokens.bindings[0]).toBe(false);
   });
 
   it('no longer emits base or by_variant', () => {
-    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as unknown as BriefShape;
     expect('base' in brief.tokens).toBe(false);
     expect('by_variant' in brief.tokens).toBe(false);
   });
@@ -808,7 +841,7 @@ describe('componentBrief tokens', () => {
     const rule = { part: 'Label', path: 'Container/Label', property: 'fill',
                    conditions: { type: ['Primary'] }, token: 'color/text/default' };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [rule, { ...rule }] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toHaveLength(1);
   });
 
@@ -819,7 +852,7 @@ describe('componentBrief tokens', () => {
       { part: 'Container', path: 'Container', property: 'fill',
         conditions: { size: ['Small'] }, token: 'a' },
     ] };
-    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toHaveLength(2);
   });
 
@@ -917,7 +950,7 @@ describe('componentBrief tokens', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
       property: 'fill', conditions: {}, token: 'color/surface/default' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const used = brief.tokens.used['color/surface/default'];
     // The collection's own default mode is m2, so the value is the Dark one,
     // and the brief says so instead of leaving a reader to assume Light.
@@ -940,7 +973,7 @@ describe('componentBrief tokens', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
       property: 'fill', conditions: {}, token: 'color/surface/default' }] };
-    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+    const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const used = brief.tokens.used['color/surface/default'];
     expect('mode' in used).toBe(false);
     expect(JSON.stringify(used)).not.toContain('gone');
@@ -1009,7 +1042,7 @@ function usedFor(foundation: FoundationSpec, token: string): Record<string, unkn
   const spec: IntermediateSpec = { ...baseSpec(), tokens: [
     { part: 'Container', path: 'Container', property: 'fill', conditions: {}, token },
   ] };
-  const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as Record<string, any>;
+  const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
   return brief.tokens.used[token];
 }
 
