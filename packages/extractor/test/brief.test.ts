@@ -372,31 +372,43 @@ describe('componentBrief', () => {
 // componentBrief tokens
 // ---------------------------------------------------------------------------
 
-/** A resolved binding as it appears in the brief. Typed rather than `any` so
- *  a shape drift fails at compile time, matching the convention above. */
-interface Binding {
-  part: string;
-  property: string;
-  token: string;
+/** A token's resolved definition as emitted under `tokens.used`. Mirrors
+ *  `lookupToken`'s return shape; Task 8 adds `mode` to that same shape.
+ *  Typed rather than `any` so a shape drift fails at compile time, matching
+ *  the convention above. */
+interface TokenDefinition {
   value?: string | number | boolean | Record<string, unknown>;
   code?: Record<string, string>;
 }
 
-interface VariantBindings {
-  when: Record<string, string>;
-  bindings: Binding[];
+/** A binding as it appears in the brief: identity plus the minimal condition
+ *  it holds under, if any. `when` is a lookup from axis name to the values
+ *  the binding holds for, not a boolean expression -- an absent `when` means
+ *  every variant. Typed rather than `any` so a shape drift fails at compile
+ *  time, matching the convention above. */
+interface Binding {
+  path: string;
+  property: string;
+  token: string;
+  when?: Record<string, string[]>;
 }
 
 interface ParsedTokenBrief extends ParsedComponentBrief {
-  tokens: { base: Binding[]; by_variant: VariantBindings[] };
+  tokens: { used: Record<string, TokenDefinition>; bindings: Binding[] };
+}
+
+/** An IntermediateSpec with no tokens of its own, for tests that only care
+ *  about the tokens block: callers spread this and override `tokens`. */
+function baseSpec(): IntermediateSpec {
+  return { ...SPEC, tokens: [] };
 }
 
 const TOKEN_SPEC: IntermediateSpec = {
   ...SPEC,
   tokens: [
-    // Unconditioned: applies to every variant, so it belongs in base.
+    // Unconditioned: holds in every variant, so its binding has no `when`.
     { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'radius/md' },
-    // Conditioned per state: belongs in by_variant.
+    // Conditioned per state: its binding carries a `when`.
     { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
     { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hovered'] }, token: 'color/bg/brand-hover' },
   ],
@@ -406,65 +418,156 @@ const tokenBrief = (over: Partial<ComponentBriefOptions> = {}): ParsedTokenBrief
   load(toYaml(componentBrief(TOKEN_SPEC, { generatedAt: AT, ...over }))) as ParsedTokenBrief;
 
 describe('componentBrief tokens', () => {
-  it('factors bindings common to every variant into base', () => {
-    expect(tokenBrief().tokens.base).toEqual([
-      { part: 'container', property: 'border-radius', token: 'radius/md' },
+  // -- from the task brief, Step 1 --------------------------------------
+
+  it('lists each token once under used, in first-use order', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { type: ['Primary'] }, token: 'color/surface/primary/default' },
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { type: ['Outline'] }, token: 'color/surface/primary/default' },
+      { part: 'Container', path: 'Container', property: 'height',
+        conditions: { size: ['Large'] }, token: 'button/lg-height' },
+    ] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(Object.keys(brief.tokens.used)).toEqual([
+      'color/surface/primary/default', 'button/lg-height',
     ]);
   });
 
-  it('emits only the differing bindings per variant', () => {
-    expect(tokenBrief().tokens.by_variant).toEqual([
-      { when: { Style: 'Filled', State: 'Enabled' },
-        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand' }] },
-      { when: { Style: 'Filled', State: 'Hovered' },
-        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand-hover' }] },
+  it('emits one binding per rule, carrying only the axes it depends on', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [
+      { part: 'Container', path: 'Container', property: 'height',
+        conditions: { size: ['Large'] }, token: 'button/lg-height' },
+    ] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.tokens.bindings).toEqual([
+      { path: 'Container', property: 'height', token: 'button/lg-height',
+        when: { size: ['Large'] } },
     ]);
   });
 
-  it('never repeats a base binding inside by_variant', () => {
+  it('omits when entirely for a binding that holds in every variant', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [
+      { part: 'Container', path: 'Container', property: 'border-radius',
+        conditions: {}, token: 'rd-sm' },
+    ] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.tokens.bindings[0]).toEqual(
+      { path: 'Container', property: 'border-radius', token: 'rd-sm' });
+    expect('when' in brief.tokens.bindings[0]).toBe(false);
+  });
+
+  it('no longer emits base or by_variant', () => {
+    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as Record<string, any>;
+    expect('base' in brief.tokens).toBe(false);
+    expect('by_variant' in brief.tokens).toBe(false);
+  });
+
+  it('dedupes rules identical in path, property, token and conditions', () => {
+    // tokens.ts documents that a part name is unique only among siblings, so
+    // two nodes in different subtrees can minimize into identical rules.
+    // Paths make most of those distinct, but a genuine duplicate must still
+    // collapse to one.
+    const rule = { part: 'Label', path: 'Container/Label', property: 'fill',
+                   conditions: { type: ['Primary'] }, token: 'color/text/default' };
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [rule, { ...rule }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.tokens.bindings).toHaveLength(1);
+  });
+
+  it('keeps two rules that differ only in conditions', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), tokens: [
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { size: ['Large'] }, token: 'a' },
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { size: ['Small'] }, token: 'a' },
+    ] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.tokens.bindings).toHaveLength(2);
+  });
+
+  // -- rewritten from the v1 base/by_variant shape ----------------------
+  //
+  // Each test below covered a real case under v1 and is rewritten, not
+  // deleted, so that coverage isn't silently dropped:
+  //   - 'factors bindings common to every variant into base' and 'never
+  //     repeats a base binding inside by_variant' -> a universal binding now
+  //     surfaces as one entry in `bindings` with no `when` at all (there is
+  //     no separate list for it to also appear in).
+  //   - 'emits only the differing bindings per variant' -> a
+  //     variant-conditioned binding now surfaces as one entry in `bindings`
+  //     carrying a `when` naming the axis it depends on.
+  //   - the two 'collapses two distinct rules that resolve to the same
+  //     binding' cases relied on v1 intersecting RESOLVED bindings across
+  //     variants, which let two rules with different (but overlapping)
+  //     conditions collapse into one. `ruleKey` deliberately does not do
+  //     this -- two rules differing only in conditions are two real rules --
+  //     so that exact collapse no longer happens; the underlying case (a
+  //     genuine duplicate rule must still collapse to one binding, and two
+  //     merely similar rules must not) is what the Step 1 tests
+  //     'dedupes rules identical in path, property, token and conditions'
+  //     and 'keeps two rules that differ only in conditions' cover instead.
+  //   - 'emits an empty by_variant rather than omitting tokens when there are
+  //     no variants' and 'keeps a wide variant set small by factoring, not by
+  //     truncating' -> the new projection reads `conditions` directly and
+  //     never looks at `variantInstances`, so both become one case: bindings
+  //     are emitted per RULE regardless of how many variant instances exist.
+
+  it('emits a binding with no `when` for a rule that holds in every variant', () => {
     const y = tokenBrief();
-    for (const v of y.tokens.by_variant) {
-      expect(v.bindings.some((b) => b.property === 'border-radius')).toBe(false);
-    }
+    const universal = y.tokens.bindings.find((b) => b.property === 'border-radius');
+    expect(universal).toEqual({ path: 'Container/container', property: 'border-radius', token: 'radius/md' });
+    expect(universal && 'when' in universal).toBe(false);
   });
 
-  it('every `when` names a declared axis and a declared value', () => {
+  it('emits a binding with `when` naming the axis a variant-conditioned rule depends on', () => {
+    const y = tokenBrief();
+    expect(y.tokens.bindings).toContainEqual({
+      path: 'Container/container', property: 'fill', token: 'color/bg/brand',
+      when: { State: ['Enabled'] },
+    });
+    expect(y.tokens.bindings).toContainEqual({
+      path: 'Container/container', property: 'fill', token: 'color/bg/brand-hover',
+      when: { State: ['Hovered'] },
+    });
+  });
+
+  it('every `when` names a declared axis and only declared values', () => {
     const y = tokenBrief();
     const declared = new Map((y.axes ?? []).map((a) => [a.prop, a.values]));
-    for (const v of y.tokens.by_variant) {
-      for (const [axis, value] of Object.entries(v.when)) {
+    for (const b of y.tokens.bindings) {
+      if (!b.when) continue;
+      for (const [axis, values] of Object.entries(b.when)) {
         expect(declared.has(axis)).toBe(true);
-        expect(declared.get(axis)).toContain(value);
+        for (const v of values) expect(declared.get(axis)).toContain(v);
       }
     }
   });
 
   it('resolves token values through the foundation when one is supplied', () => {
     const y = tokenBrief({ foundation: FOUNDATION });
-    const enabled = y.tokens.by_variant.find((v) => v.when.State === 'Enabled');
     // color/bg/brand resolves at the collection's default mode (Light).
-    expect(enabled?.bindings[0].value).toBe('#2563EB');
+    expect(y.tokens.used['color/bg/brand'].value).toBe('#2563EB');
   });
 
   it('omits value entirely when no foundation is supplied', () => {
     const y = tokenBrief();
-    expect('value' in y.tokens.by_variant[0].bindings[0]).toBe(false);
+    expect('value' in y.tokens.used['color/bg/brand']).toBe(false);
   });
 
   it('emits code when the resolved variable has codeSyntax', () => {
     const y = tokenBrief({ foundation: FOUNDATION });
-    const enabled = y.tokens.by_variant.find((v) => v.when.State === 'Enabled');
-    expect(enabled?.bindings[0].code).toEqual({ WEB: '--color-bg-brand' });
+    expect(y.tokens.used['color/bg/brand'].code).toEqual({ WEB: '--color-bg-brand' });
   });
 
-  it('emits an empty by_variant rather than omitting tokens when there are no variants', () => {
+  it('emits the same bindings whether or not there are variant instances', () => {
     const single: IntermediateSpec = { ...TOKEN_SPEC, variantInstances: [], variants: [] };
     const y = load(toYaml(componentBrief(single, { generatedAt: AT }))) as ParsedTokenBrief;
-    expect(y.tokens.by_variant).toEqual([]);
-    expect(y.tokens.base.length).toBe(3);
+    expect(y.tokens.bindings).toHaveLength(3);
   });
 
-  it('keeps a wide variant set small by factoring, not by truncating', () => {
+  it('keeps a wide variant set small by emitting rules, never the variant matrix', () => {
     const axes = [
       { prop: 'Style', values: ['A', 'B', 'C', 'D'] },
       { prop: 'Size', values: ['S', 'M', 'L'] },
@@ -488,56 +591,8 @@ describe('componentBrief tokens', () => {
     };
     const y = load(toYaml(componentBrief(wide, { generatedAt: AT }))) as ParsedTokenBrief;
     expect(instances.length).toBe(60);
-    // Every variant is still present: factoring must not drop any.
-    expect(y.tokens.by_variant.length).toBe(60);
-    expect(y.tokens.base.length).toBe(2);
-    // The 12 Hover variants carry a binding; the other 48 carry none.
-    expect(y.tokens.by_variant.filter((v) => v.bindings.length > 0).length).toBe(12);
-  });
-
-  it('collapses two distinct rules that resolve to the same binding on every variant, in base', () => {
-    // Two TokenRule entries with different conditions can still resolve to the
-    // identical (part, property, token) for a given variant -- tokens.ts notes
-    // this happens for real when sibling subtrees share a cleaned part name.
-    // Both rules below match every SPEC variant instance (both have Style=Filled;
-    // one rule is unconditioned, the other only restates that same axis), so the
-    // binding is common to every variant and must appear in base exactly once,
-    // not twice.
-    const spec: IntermediateSpec = {
-      ...SPEC,
-      tokens: [
-        { part: 'container', path: 'Container/container', property: 'fill', conditions: {}, token: 'color/bg/brand' },
-        { part: 'container', path: 'Container/container', property: 'fill', conditions: { Style: ['Filled'] }, token: 'color/bg/brand' },
-      ],
-    };
-    const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;
-    expect(y.tokens.base).toEqual([
-      { part: 'container', property: 'fill', token: 'color/bg/brand' },
-    ]);
-    expect(y.tokens.by_variant).toEqual([
-      { when: { Style: 'Filled', State: 'Enabled' }, bindings: [] },
-      { when: { Style: 'Filled', State: 'Hovered' }, bindings: [] },
-    ]);
-  });
-
-  it('collapses two distinct rules that resolve to the same binding on one variant, in by_variant', () => {
-    // Same duplication shape as above, but both rules are conditioned on
-    // State=Enabled, so the binding is NOT common to every variant (the
-    // Hovered variant carries neither rule) and lands in by_variant instead.
-    // The Enabled entry must still list the binding once, not twice.
-    const spec: IntermediateSpec = {
-      ...SPEC,
-      tokens: [
-        { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
-        { part: 'container', path: 'Container/container', property: 'fill', conditions: { Style: ['Filled'], State: ['Enabled'] }, token: 'color/bg/brand' },
-      ],
-    };
-    const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedTokenBrief;
-    expect(y.tokens.base).toEqual([]);
-    expect(y.tokens.by_variant).toEqual([
-      { when: { Style: 'Filled', State: 'Enabled' },
-        bindings: [{ part: 'container', property: 'fill', token: 'color/bg/brand' }] },
-      { when: { Style: 'Filled', State: 'Hovered' }, bindings: [] },
-    ]);
+    // Three rules produce three bindings, no matter how many variant
+    // instances they'd have resolved against under v1.
+    expect(y.tokens.bindings).toHaveLength(3);
   });
 });

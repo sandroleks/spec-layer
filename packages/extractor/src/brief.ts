@@ -14,7 +14,7 @@ import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
-import { resolveTokensForVariant, type ResolvedToken } from './resolve';
+import type { TokenRule } from './tokens';
 
 /** Brief schema version. Bumped when the brief's shape or field meanings
  *  change, independently of EXTRACTOR_VERSION. */
@@ -189,14 +189,22 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
 }
 
 // ---------------------------------------------------------------------------
-// Token bindings — resolved per variant, factored into base + by_variant
+// Token bindings — definitions once, bindings by condition
 // ---------------------------------------------------------------------------
 
-/** Stable identity for a resolved binding, used to intersect across variants.
- *  U+0000 cannot occur inside a Figma layer, property, or variable name, so
- *  two different bindings can never collide into the same key. */
-function bindingKey(t: ResolvedToken): string {
-  return `${t.part}\0${t.property}\0${t.token}`;
+/**
+ * Identity of a RULE, not of a resolved binding: two rules differing only in
+ * `conditions` are two real rules and must both survive. Conditions are
+ * canonicalized through JSON.stringify over sorted axis names, so key order in
+ * the object cannot make one rule look like two.
+ *
+ * The separator is a space. An earlier version of this file used a NUL byte,
+ * which is invisible in a diff and evades every check in the repo.
+ */
+function ruleKey(t: TokenRule): string {
+  const axes = Object.keys(t.conditions).sort();
+  const canon = JSON.stringify(axes.map((a) => [a, t.conditions[a]]));
+  return `${t.path} ${t.property} ${t.token} ${canon}`;
 }
 
 /**
@@ -231,89 +239,52 @@ function lookupToken(
   return {};
 }
 
-function bindingOf(t: ResolvedToken, foundation: FoundationSpec | undefined): YamlValue {
-  return { part: t.part, property: t.property, token: t.token, ...lookupToken(foundation, t.token) };
-}
-
 /**
- * De-duplicate resolved bindings by `bindingKey`, keeping first-seen order.
+ * Token definitions once, bindings by condition.
  *
- * `resolveTokensForVariant` does not dedupe, and two DISTINCT `TokenRule`
- * entries can resolve to the identical (part, property, token) for the same
- * variant: tokens.ts documents that a part name is only unique among
- * siblings, so two nodes in different subtrees that clean to the same part
- * name (e.g. two unrelated "label" parts) can each independently minimize
- * into their own rule, and those two rules can easily share a token. Without
- * this, such a pair would be emitted twice — once in `base` if the binding is
- * common to every variant, or twice inside one variant's own `bindings` list
- * otherwise — which would misreport one binding as two.
- */
-function dedupeByKey(tokens: ResolvedToken[]): ResolvedToken[] {
-  const seen = new Set<string>();
-  const out: ResolvedToken[] = [];
-  for (const t of tokens) {
-    const key = bindingKey(t);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
-}
-
-/**
- * Resolve `spec.tokens` per variant (via resolveTokensForVariant) and factor
- * out what's common to EVERY variant into `base`, leaving only the deltas in
- * `by_variant`. Emitting the minimized `conditions` verbatim would force the
- * reader to evaluate a boolean expression to answer "what does this variant
- * bind"; resolving per variant then factoring gives that answer directly
- * without repeating near-identical binding lists 60 times over.
+ * v1 resolved every rule against every variant instance and factored the
+ * result into `base` plus a `by_variant` entry per variant. The argument was
+ * that a consuming model should never have to evaluate a condition; the cost
+ * was that a 36-variant component repeated its geometry and colour bindings
+ * 36 times, which made `tokens` roughly 2,400 of a 2,700-line brief.
  *
- * Deliberately intersects the RESOLVED bindings across variants rather than
- * checking `conditions === {}`: after the minimizer runs, a rule's conditions
- * can happen to cover every declared value of an axis, which makes it
- * universal in effect while its `conditions` object is still non-empty. Only
- * the resolved intersection catches that; testing for empty conditions would
- * wrongly leave such a rule duplicated across every by_variant entry.
+ * `conditions` is already minimal: the minimizer in tokens.ts collapsed each
+ * rule to the smallest set of axes it actually depends on. Emitting that is
+ * not asking the reader to evaluate a boolean expression, because it is not
+ * one: it is a map from axis name to the values the binding holds for. An
+ * absent `when` means every variant.
+ *
+ * `when` is built with a conditional spread rather than `when: cond ??
+ * undefined` so an unconditioned rule's binding has no `when` KEY at all
+ * (not merely an undefined-valued one) — the two differ for a caller that
+ * inspects the raw object with `'when' in binding` instead of going through
+ * the YAML round trip.
  */
 function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined): YamlValue {
-  const perVariant = spec.variantInstances.map((v) => ({
-    when: v.values,
-    // Deduped here, once, so every downstream consumer (the intersection,
-    // `base`, and each variant's own `bindings`) sees an already-unique list
-    // rather than each having to filter the same duplicates out separately.
-    resolved: dedupeByKey(resolveTokensForVariant(spec.tokens, v.values)),
-  }));
-
-  // No variant instances means there is nothing to intersect ACROSS: every
-  // rule is unconditional relative to this (empty) variant set, so it all
-  // lands in base and by_variant is correctly empty.
-  if (perVariant.length === 0) {
-    const rules = dedupeByKey(spec.tokens.map((t) => ({ part: t.part, property: t.property, token: t.token })));
-    return {
-      base: rules.map((t) => bindingOf(t, foundation)),
-      by_variant: [],
-    };
+  const seen = new Set<string>();
+  const rules: TokenRule[] = [];
+  for (const t of spec.tokens) {
+    const key = ruleKey(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rules.push(t);
   }
 
-  // A binding is `base` only when it is present, identically, on EVERY
-  // variant — the intersection of each variant's resolved binding-key set.
-  let common = new Set(perVariant[0].resolved.map(bindingKey));
-  for (const v of perVariant.slice(1)) {
-    const here = new Set(v.resolved.map(bindingKey));
-    common = new Set([...common].filter((k) => here.has(k)));
+  // First-use order, so reading top to bottom introduces a token before the
+  // bindings that reference it.
+  const used: Record<string, YamlValue> = {};
+  for (const r of rules) {
+    if (r.token in used) continue;
+    used[r.token] = lookupToken(foundation, r.token) as YamlValue;
   }
-
-  const baseTokens = perVariant[0].resolved.filter((t) => common.has(bindingKey(t)));
 
   return {
-    base: baseTokens.map((t) => bindingOf(t, foundation)),
-    // Every variant instance gets its own entry, even when it carries zero
-    // differing bindings: factoring removes DUPLICATION, never a VARIANT.
-    by_variant: perVariant.map((v) => ({
-      when: v.when,
-      bindings: v.resolved
-        .filter((t) => !common.has(bindingKey(t)))
-        .map((t) => bindingOf(t, foundation)),
+    used,
+    bindings: rules.map((r) => ({
+      path: r.path,
+      property: r.property,
+      token: r.token,
+      ...(Object.keys(r.conditions).length > 0 ? { when: r.conditions } : {}),
     })),
   };
 }
