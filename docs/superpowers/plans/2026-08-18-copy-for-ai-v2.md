@@ -50,6 +50,14 @@ Removing the broken per-component contrast still happens at Task 1, so the misle
      rather than vanishing. `api.slots` exists because a three-group allow-list dropped
      every `text` and `instanceSwap` prop, and both fixtures had one.
 
+- **`npm run lint` is a hard CI gate and MUST be green before every commit.**
+  `lint: eslint . --max-warnings=0` is the FIRST command in both `check` and `check:ci`,
+  so a single new error breaks the build. This was missed for the first nine tasks and
+  `brief.test.ts` accumulated 29 `no-explicit-any` errors as a result, going from 4 `any`
+  mentions to 36. Run `npm run lint` alongside `npm test` and the tsc count. Never
+  silence a rule with an inline disable to get green: type the value properly, or if the
+  shape is genuinely dynamic, introduce a narrow structural type once and reuse it.
+
 - **Commit after every task.** Conventional commits, with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` as the last line.
 
 ---
