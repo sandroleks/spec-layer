@@ -727,15 +727,24 @@ Run: `npx vitest run packages/extractor/test/brief.test.ts`
 Expected: PASS. Existing tests asserting `base` or `by_variant` must be rewritten to the
 new shape, not deleted: each was covering a real case, and the case still exists.
 
-- [ ] **Step 5: Measure the win**
+- [ ] **Step 5: Measure the invariant, not the line count**
+
+Be aware of a trap here. The repo's `button.json` fixture has only **3 variants and 6
+token rules**, so it renders in about 104 lines either way. The ~2,700-line payload that
+motivates this task comes from a real 36-variant component in Figma, which no fixture
+reproduces. Measuring lines on the fixture would therefore "prove" a win the measurement
+cannot actually see.
+
+Measure the property being fixed instead: **emitted bindings track distinct RULES, never
+the variant matrix.**
 
 ```bash
-npx tsx -e "const {readFileSync}=require('fs');const {extract,componentBrief,toYaml}=require('./packages/extractor/src/index.ts');const n=JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json','utf8'));const y=toYaml(componentBrief(extract(n,{figmaFile:'F'}),{generatedAt:'T'}));console.log(y.split('\n').length+' lines');"
+npx tsx -e "const {readFileSync}=require('fs');const {extract,componentBrief}=require('./packages/extractor/src/index.ts');const n=JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json','utf8'));const s=extract(n,{figmaFile:'F'});const b=componentBrief(s,{generatedAt:'T'});console.log('variants',s.variantInstances.length,'rules',s.tokens.length,'bindings',b.tokens.bindings.length,'used',Object.keys(b.tokens.used).length);"
 ```
 
-Expected: a few hundred lines, down from roughly 2,700. Record the number in the commit
-message. If it is still over 800, stop and investigate before continuing: the whole point
-of this task is that number.
+Expected: `bindings` is at most `rules`, and is nowhere near `variants * rules`. Record all
+four numbers in the commit message. The real-world line reduction is confirmed by a human
+in Task 19 against an actual Figma component; do not claim it from this fixture.
 
 - [ ] **Step 6: Run the full suite and the type check**
 
@@ -1997,24 +2006,45 @@ const button = () =>
   JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
 
 describe('component brief size', () => {
-  it('keeps a 36-variant component under 600 lines', () => {
-    const yaml = toYaml(componentBrief(extract(button(), { figmaFile: 'FILE1' }),
-      { generatedAt: '2026-08-18T00:00:00.000Z' }));
-    const lines = yaml.split('\n').length;
-    // The target is 400-500. This assertion sits above it as a regression guard,
-    // not as the goal. v1 was roughly 2700 lines, and the Copy action itself warns
-    // above 800, so anything approaching that has undone Task 4.
-    expect(lines).toBeLessThan(600);
+  // The repo's button.json has 3 variants and 6 token rules, so it renders in about
+  // 104 lines whether bindings are condition-based or expanded per variant. An
+  // absolute line threshold would pass forever and guard nothing. The property that
+  // matters is that output tracks distinct RULES rather than the variant matrix, and
+  // that holds at any fixture size.
+  it('emits one binding per distinct rule, never one per variant', () => {
+    const spec = extract(button(), { figmaFile: 'FILE1' });
+    const brief = componentBrief(spec, { generatedAt: '2026-08-18T00:00:00.000Z' })
+      as unknown as { tokens: { bindings: unknown[] } };
+    expect(brief.tokens.bindings.length).toBeLessThanOrEqual(spec.tokens.length);
+    // v1's shape was one entry per variant, each repeating every binding. If anyone
+    // reintroduces that, this fails even on a 3-variant fixture.
+    expect(brief.tokens.bindings.length)
+      .toBeLessThan(spec.variantInstances.length * spec.tokens.length);
+  });
+
+  it('lists each token once however many bindings reference it', () => {
+    const spec = extract(button(), { figmaFile: 'FILE1' });
+    const brief = componentBrief(spec, { generatedAt: '2026-08-18T00:00:00.000Z' })
+      as unknown as { tokens: { bindings: { token: string }[]; used: Record<string, unknown> } };
+    const referenced = new Set(brief.tokens.bindings.map((b) => b.token));
+    expect(Object.keys(brief.tokens.used).sort()).toEqual([...referenced].sort());
+  });
+
+  it('has no base or by_variant block', () => {
+    const brief = componentBrief(extract(button(), { figmaFile: 'FILE1' }),
+      { generatedAt: '2026-08-18T00:00:00.000Z' }) as unknown as { tokens: object };
+    expect('base' in brief.tokens).toBe(false);
+    expect('by_variant' in brief.tokens).toBe(false);
   });
 });
 ```
 
-- [ ] **Step 2: Run it to see the real number**
+- [ ] **Step 2: Run it**
 
 Run: `npx vitest run packages/extractor/test/briefGolden.test.ts`
 
-Expected: PASS. If it fails, Task 4 regressed and that is the bug to fix; do not raise the
-threshold to make the test pass.
+Expected: PASS. If any of the three fails, Task 4 regressed and that is the bug to fix.
+Do not relax an assertion to make it pass.
 
 - [ ] **Step 3: Write the golden-file test**
 

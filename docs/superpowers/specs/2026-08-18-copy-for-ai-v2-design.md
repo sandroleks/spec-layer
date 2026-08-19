@@ -558,8 +558,13 @@ The extractor is pure, so everything below runs under vitest without Figma.
   extracted half intact, no docs omits the block.
 - **Boundary:** a scan asserting no key outside `guidelines` carries generated
   text, in both briefs.
-- **Size:** the Button fixture brief is under 600 lines. The target is 400-500;
-  the assertion sits above it as a regression guard, not as the goal.
+- **Size:** guarded by invariant, not by an absolute line count. The repo's
+  `button.json` fixture has 3 variants and 6 token rules, so it renders in about
+  104 lines whether or not bindings are condition-based, and a line threshold on
+  it would pass forever while guarding nothing. The assertions pin that emitted
+  bindings track distinct rules rather than the variant matrix, which holds at
+  any fixture size. The 400-500 line figure describes a real 36-variant component
+  and is confirmed by the manual Figma pass, the only place that case exists.
 - **Golden file:** the full Button brief, reviewed once by hand, then diffed.
 
 ## Risks and open questions
