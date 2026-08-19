@@ -87,7 +87,7 @@ describe('full pipeline: serialize → extract → render → parse', () => {
       part: 'container', path: 'Container/container', property: 'gap',
       issue: 'hardcoded-value', value: 8,
     });
-    expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8' });
+    expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8', values: { gap: 8 } });
   });
 });
 

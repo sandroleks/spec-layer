@@ -108,6 +108,10 @@ interface BriefShape {
     bindings: Array<{ path: string; property: string; token: string; when?: Record<string, string[]> }>;
   };
   unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
+  validation?: Array<{
+    id: string; severity: string; path?: string; property?: string;
+    message: string; when?: Record<string, string[]>;
+  }>;
   guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
   collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
   typography?: Record<string, {
@@ -304,7 +308,7 @@ const SPEC: IntermediateSpec = {
   related: ['Icon'],
   gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
            issue: 'hardcoded-value', value: 8 }],
-  layout: [{ part: 'container', summary: 'horizontal, gap 8' }],
+  layout: [{ part: 'container', summary: 'horizontal, gap 8', values: { gap: 8 } }],
   rawValues: [],
 };
 
@@ -1219,5 +1223,60 @@ describe('componentBrief tokens.used flattening', () => {
   it('surfaces an unresolved value truthfully under resolved instead of dropping it', () => {
     const used = usedFor(foundation, 'unresolved/cycle');
     expect(used).toEqual({ resolved: { unresolved: 'cycle' }, mode: 'Mode1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// componentBrief validation
+// ---------------------------------------------------------------------------
+
+describe('componentBrief validation', () => {
+  it('omits the validation block entirely for a clean component', () => {
+    const spec = { ...baseSpec(), gaps: [] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('validation' in brief).toBe(false);
+  });
+
+  it('mirrors a surviving gap as an unbound-value finding', () => {
+    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as unknown as BriefShape;
+    const hit = brief.validation?.find((f) => f.id === 'unbound-value');
+    expect(hit).toEqual({
+      id: 'unbound-value', severity: 'warning',
+      path: 'Container/container', property: 'gap',
+      message: 'gap is a hardcoded 8 rather than a bound token.',
+    });
+  });
+
+  it('flags a binding whose token names a state its own condition does not', () => {
+    const spec = {
+      ...baseSpec(),
+      gaps: [],
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill',
+                 conditions: { type: ['Primary'], size: ['Large'] },
+                 token: 'color/surface/primary/disabled' }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    const hit = brief.validation?.find((f) => f.id === 'default-state-uses-state-token');
+    expect(hit?.message).toContain('disabled');
+    expect(hit?.path).toBe('Container');
+  });
+
+  // Exercises the real wiring end to end: the resolved-number map is built
+  // from the same lookupToken() results tokens.used reports, not re-derived,
+  // so this also proves that map actually gets populated with a real number
+  // (sixKindFoundation's number/radius resolves to 8) rather than staying
+  // empty because of a field-name mismatch on lookupToken's return shape.
+  it('flags a rendered radius disagreeing with its bound token, resolved via the foundation', () => {
+    const spec = {
+      ...baseSpec(),
+      gaps: [],
+      tokens: [{ part: 'container', path: 'Container/container', property: 'border-radius',
+                 conditions: {}, token: 'number/radius' }],
+      layout: [{ part: 'container', summary: 'horizontal, radius 4', values: { radius: 4 } }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T', foundation: sixKindFoundation() }) as unknown as BriefShape;
+    const hit = brief.validation?.find((f) => f.id === 'geometry-token-mismatch');
+    expect(hit?.message).toContain('4');
+    expect(hit?.message).toContain('8');
   });
 });

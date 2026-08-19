@@ -70,8 +70,11 @@ function orderStates(values: string[]): string[] {
 }
 
 /** An axis is state-like when named State/Status, or when ≥2 of its values sit
- *  in the state vocabulary. */
-function isStateLike(axis: VariantAxis): boolean {
+ *  in the state vocabulary. Exported so the ambiguous-state-axis finding in
+ *  validate.ts tests exactly what detectStateMatrix tests, rather than
+ *  reimplementing the same rule and risking disagreement with what the
+ *  frames actually render. */
+export function isStateLike(axis: VariantAxis): boolean {
   const n = axis.prop.trim().toLowerCase();
   if (isStateAxisName(axis.prop) || n === 'status') return true;
   const hits = axis.values.filter((v) => STATE_VOCAB.has(v.trim().toLowerCase())).length;

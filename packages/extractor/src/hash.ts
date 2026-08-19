@@ -58,6 +58,14 @@ export function specContentHash(spec: IntermediateSpec): string {
     // remove this without first covering that case some other way.
     gaps: spec.gaps.map(({ part, property, issue, value }) =>
       ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
+    // `values` is a new identity for numbers already hashed inside `summary`'s
+    // rendered sentence (Task 11 gives validate.ts the structured numbers so it
+    // never has to regex-parse that sentence), so it must stay out of the hash
+    // for the same reason `path` stays out of `tokens`/`gaps` above: every
+    // committed doc's baseline was computed without it, and including it would
+    // flip all of them to "update available" for a change that alters no
+    // rendered output.
+    layout: spec.layout.map(({ part, summary }) => ({ part, summary })),
   };
   return contentHash(hashable);
 }

@@ -43,7 +43,7 @@ describe('extract', () => {
     // shape a real padding-x/padding-y binding would produce.
     expect(spec.gaps.length).toBe(5);
     expect(spec.layout).toEqual([
-      { part: 'container', summary: 'horizontal, padding 10/24/10/24, gap 8' },
+      { part: 'container', summary: 'horizontal, padding 10/24/10/24, gap 8', values: { gap: 8 } },
     ]);
   });
 

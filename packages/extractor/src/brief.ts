@@ -16,6 +16,7 @@ import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
 import type { TokenRule } from './tokens';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
+import { validate } from './validate';
 
 /** Brief schema version. Bumped when the brief's shape or field meanings
  *  change, independently of EXTRACTOR_VERSION. */
@@ -528,6 +529,39 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       ...(g.value !== undefined ? { value: g.value } : {}),
     }));
   const typography = typographyOf(spec, opts.foundation);
+  // The geometry-token-mismatch finding needs each bound token's resolved
+  // NUMBER, at the same mode `tokens.used` already reports it under (via
+  // lookupToken) -- not re-resolved by validate.ts itself, so the finding and
+  // the brief's own `tokens` block can never disagree about what a token
+  // resolves to.
+  const resolved = new Map<string, number>();
+  for (const t of spec.tokens) {
+    const looked = lookupToken(opts.foundation, t.token);
+    const v = looked.resolved;
+    if (typeof v === 'number') {
+      resolved.set(t.token, v);
+    } else if (v && typeof v === 'object' && 'resolved' in v
+               && typeof (v as { resolved?: unknown }).resolved === 'number') {
+      // One level of alias-of-alias: lookupToken flattens a single alias hop
+      // into a bare number, but a chain (alias -> alias -> number) still
+      // leaves one nested `resolved` key here.
+      resolved.set(t.token, (v as { resolved: number }).resolved);
+    }
+  }
+  // Projected into fresh literal objects rather than embedding `Finding[]`
+  // directly: `Finding` is a declared interface, and TypeScript will not
+  // assign a declared (non-literal) type to YamlValue's index-signature
+  // branch even when every field is structurally a YamlValue -- the same
+  // reason every other block in this file is built as a fresh object/array
+  // literal rather than a typed internal shape passed through as-is.
+  const validation = validate(spec, resolved).map((f) => ({
+    id: f.id,
+    severity: f.severity,
+    ...(f.path !== undefined ? { path: f.path } : {}),
+    ...(f.property !== undefined ? { property: f.property } : {}),
+    message: f.message,
+    ...(f.when !== undefined ? { when: f.when } : {}),
+  }));
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
@@ -550,6 +584,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     // `{ key: undefined }` still leaves `'unbound' in brief` true.
     ...(unbound.length > 0 ? { unbound } : {}),
     ...(typography !== undefined ? { typography } : {}),
+    ...(validation.length > 0 ? { validation } : {}),
     guidelines: guidelinesOf(opts.prose),
   };
 }
