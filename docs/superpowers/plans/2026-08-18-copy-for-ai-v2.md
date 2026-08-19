@@ -1007,6 +1007,17 @@ rather than disappearing.
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
+it('keeps a real Default value under the enum encoding', () => {
+  // An enum state axis declaring Default has that state for real, unlike the flags
+  // path where detectStateMatrix invents the baseline column.
+  const spec = { ...baseSpec(),
+    variants: [{ prop: 'States', values: ['Default', 'Hovered', 'Pressed'] }],
+    props: [{ name: 'States', kind: 'variant' as const,
+              options: ['Default', 'Hovered', 'Pressed'], default: 'Default' }] };
+  const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+  expect(brief.api.states).toEqual(['Default', 'Hovered', 'Pressed']);
+});
+
 it('separates configurable variants from interaction states', () => {
   const spec = {
     ...baseSpec(),
@@ -1103,10 +1114,19 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
     booleans[p.name] = { default: p.default };
   }
 
-  // 'Default' is the matrix's own baseline column, not a state the component has.
-  const states = (matrix?.columns ?? [])
-    .map((c) => c.label)
-    .filter((label) => label.toLowerCase() !== 'default');
+  // Dropping 'Default' is correct for the FLAGS encoding only, where the baseline
+  // column is synthetic: detectStateMatrix invents it so the matrix has something to
+  // compare the flags against, and the component has no such state.
+  //
+  // Under the ENUM encoding, 'Default' can be a real declared value of a real axis
+  // (chip.json has exactly that). Dropping it there loses a value the component
+  // genuinely has, and worse, a token binding may condition on `States: [Default]`,
+  // which would leave `bindings` referencing a state `api.states` says does not
+  // exist. Same class of silent loss as the allow-list that dropped every text prop.
+  const columns = matrix?.columns ?? [];
+  const states = matrix?.encoding === 'flags'
+    ? columns.map((c) => c.label).filter((label) => label.toLowerCase() !== 'default')
+    : columns.map((c) => c.label);
 
   const result = {
     variants: Object.keys(variants).length > 0 ? variants : undefined,
