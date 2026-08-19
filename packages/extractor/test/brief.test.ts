@@ -222,7 +222,7 @@ interface ParsedComponentBrief {
   };
   anatomy: AnatomyNode[];
   layout?: Array<{ part: string; summary: string }>;
-  unbound?: Array<{ part: string; issue: string }>;
+  unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
   guidelines?: {
     definition?: string;
     accessibility?: string;
@@ -260,7 +260,8 @@ const SPEC: IntermediateSpec = {
   states: ['Enabled', 'Hovered'],
   tokens: [],
   related: ['Icon'],
-  gaps: [{ part: 'container', path: 'Container/container', issue: 'hardcoded itemSpacing (8px)' }],
+  gaps: [{ part: 'container', path: 'Container/container', property: 'itemSpacing',
+           issue: 'hardcoded-value', value: 8 }],
   layout: [{ part: 'container', summary: 'horizontal, gap 8' }],
   rawValues: [],
 };
@@ -494,7 +495,71 @@ describe('componentBrief', () => {
   });
 
   it('emits gaps as unbound', () => {
-    expect(brief().unbound).toEqual([{ part: 'container', issue: 'hardcoded itemSpacing (8px)' }]);
+    expect(brief().unbound).toEqual([
+      { path: 'Container/container', property: 'itemSpacing', issue: 'hardcoded-value', value: 8 },
+    ]);
+  });
+
+  it('drops an unbound entry whose path and property are already bound', () => {
+    const spec = {
+      ...baseSpec(),
+      tokens: [{ part: 'Label', path: 'Container/Label', property: 'fill',
+                 conditions: {}, token: 'color/text/default' }],
+      gaps: [
+        { part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const },
+        { part: 'Label', path: 'Container/Label', property: 'itemSpacing',
+          issue: 'hardcoded-value' as const, value: 8 },
+      ],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    // The fill gap contradicted a real binding, so it goes. The spacing gap stays.
+    expect(brief.unbound).toEqual([
+      { path: 'Container/Label', property: 'itemSpacing', issue: 'hardcoded-value', value: 8 },
+    ]);
+  });
+
+  it('omits unbound entirely when every gap was contradicted', () => {
+    const spec = {
+      ...baseSpec(),
+      tokens: [{ part: 'Label', path: 'Container/Label', property: 'fill',
+                 conditions: {}, token: 'color/text/default' }],
+      gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill',
+               issue: 'hardcoded-color' as const }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect('unbound' in brief).toBe(false);
+  });
+
+  // The reconciliation is a deletion, so a match that is too loose silently
+  // destroys a real finding. Both halves of the join key must agree: matching
+  // on property alone (ignoring the path) or on path alone (ignoring the
+  // property) would both wrongly drop a gap here.
+  it('keeps a gap whose property is bound, but only on a different path', () => {
+    const spec = {
+      ...baseSpec(),
+      tokens: [{ part: 'Icon', path: 'Container/icon', property: 'fill',
+                 conditions: {}, token: 'color/icon/default' }],
+      gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.unbound).toEqual([
+      { path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' },
+    ]);
+  });
+
+  // Same path, but the token covers a different property (padding, not fill):
+  // must not be mistaken for coverage of the fill gap.
+  it('keeps a gap on one property when the same path is bound only on another property', () => {
+    const spec = {
+      ...baseSpec(),
+      tokens: [{ part: 'Label', path: 'Container/Label', property: 'padding',
+                 conditions: {}, token: 'space/md' }],
+      gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.unbound).toEqual([
+      { path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' },
+    ]);
   });
 
   it('includes stored guidelines verbatim', () => {

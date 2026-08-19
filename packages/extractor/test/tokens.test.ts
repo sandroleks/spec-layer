@@ -374,22 +374,27 @@ describe('formatConditions', () => {
 describe('extractGaps', () => {
   it('reports unbound paints as gaps, including on invisible layers', () => {
     expect(extractGaps(root)).toContainEqual(
-      { part: 'debug-overlay', path: 'Container/debug-overlay', issue: 'hardcoded color (no variable or style)' },
+      { part: 'debug-overlay', path: 'Container/debug-overlay', property: 'fill', issue: 'hardcoded-color' },
     );
   });
 
   it('flags TEXT parts with no text style or typography variable', () => {
     expect(extractGaps(root)).toContainEqual(
-      { part: 'label', path: 'Container/label', issue: 'no text style or typography variable' },
+      { part: 'label', path: 'Container/label', property: 'typography', issue: 'missing-token-binding' },
     );
   });
 
   it('flags hardcoded layout values not bound to variables', () => {
     const gaps = extractGaps(root);
-    expect(gaps).toContainEqual({ part: 'container', path: 'Container/container', issue: 'hardcoded itemSpacing (8px)' });
-    expect(gaps).toContainEqual({ part: 'container', path: 'Container/container', issue: 'hardcoded padding' });
+    expect(gaps).toContainEqual({
+      part: 'container', path: 'Container/container', property: 'itemSpacing',
+      issue: 'hardcoded-value', value: 8,
+    });
+    expect(gaps).toContainEqual({
+      part: 'container', path: 'Container/container', property: 'padding', issue: 'hardcoded-value',
+    });
     // cornerRadius IS bound on container → must NOT be flagged
-    expect(gaps).not.toContainEqual(expect.objectContaining({ issue: expect.stringContaining('cornerRadius') }));
+    expect(gaps).not.toContainEqual(expect.objectContaining({ property: 'border-radius' }));
   });
 });
 
@@ -400,22 +405,36 @@ describe('extractGaps coverage', () => {
 
   it('reports a hardcoded stroke color', () => {
     const gaps = extractGaps(comp({ hasUnboundStroke: true }));
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'border', issue: 'hardcoded-color' });
+  });
+
+  it('reports a hardcoded stroke color with its hex value', () => {
+    const gaps = extractGaps(comp({ hasUnboundStroke: true, unboundStroke: '#ff0000' }));
+    expect(gaps).toContainEqual({
+      part: 'Button', path: 'Button', property: 'border', issue: 'hardcoded-color', value: '#ff0000',
+    });
+  });
+
+  it('reports a hardcoded fill color with its hex value', () => {
+    const gaps = extractGaps(comp({ hasUnboundPaint: true, unboundFill: '#00ff00' }));
+    expect(gaps).toContainEqual({
+      part: 'Button', path: 'Button', property: 'fill', issue: 'hardcoded-color', value: '#00ff00',
+    });
   });
 
   it('reports a hardcoded gradient or image fill', () => {
     const gaps = extractGaps(comp({ hasUnboundGradient: true }));
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded gradient or image fill (no style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'fill', issue: 'missing-token-binding' });
   });
 
   it('reports an unbound effect', () => {
     const gaps = extractGaps(comp({ hasUnboundEffect: true }));
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded shadow or blur (no effect style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'effects', issue: 'missing-token-binding' });
   });
 
   it('reports a hand-set opacity', () => {
     const gaps = extractGaps(comp({ opacity: 0.5 }));
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded opacity (0.5)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'opacity', issue: 'hardcoded-value', value: 0.5 });
   });
 
   it('does not report opacity when it is fully opaque', () => {
@@ -431,8 +450,8 @@ describe('extractGaps coverage', () => {
     // pushGap dedupes on (path, issue), not on part alone — two distinct issues
     // on one part must not collapse into one gap.
     const gaps = extractGaps(comp({ hasUnboundPaint: true, hasUnboundStroke: true }));
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded color (no variable or style)' });
-    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', issue: 'hardcoded stroke color (no variable or style)' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'fill', issue: 'hardcoded-color' });
+    expect(gaps).toContainEqual({ part: 'Button', path: 'Button', property: 'border', issue: 'hardcoded-color' });
     expect(gaps).toHaveLength(2);
   });
 
@@ -454,10 +473,10 @@ describe('extractGaps coverage', () => {
     };
     const gaps = extractGaps(root);
     expect(gaps).toContainEqual(
-      { part: 'label', path: 'Root/header/label', issue: 'hardcoded color (no variable or style)' },
+      { part: 'label', path: 'Root/header/label', property: 'fill', issue: 'hardcoded-color' },
     );
     expect(gaps).toContainEqual(
-      { part: 'label', path: 'Root/footer/label', issue: 'hardcoded color (no variable or style)' },
+      { part: 'label', path: 'Root/footer/label', property: 'fill', issue: 'hardcoded-color' },
     );
     expect(gaps).toHaveLength(2);
   });

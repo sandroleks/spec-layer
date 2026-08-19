@@ -40,7 +40,13 @@ export function specContentHash(spec: IntermediateSpec): string {
     // same shape, as the anatomy reduction above.
     tokens: spec.tokens.map(({ part, property, conditions, token }) =>
       ({ part, property, conditions, token })),
-    gaps: spec.gaps.map(({ part, issue }) => ({ part, issue })),
+    // Same reasoning as `tokens` above: `path` is a new identity for data
+    // already hashed under `part`, so it stays out. `property` and `value` do
+    // enter: they are real content (Task 8 moved the measured number out of
+    // the old prose `issue` string and into its own field), so dropping them
+    // would silently stop the hash from noticing a gap's value change.
+    gaps: spec.gaps.map(({ part, property, issue, value }) =>
+      ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
   };
   return contentHash(hashable);
 }

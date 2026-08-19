@@ -20,7 +20,19 @@ export interface TokenRule {
   token: string;
 }
 
-export interface Gap { part: string; path: string; issue: string }
+/** Stable ids, not prose. A free-form sentence cannot drive UI, a test, or a
+ *  comparison against a binding, and the measured number belongs in its own
+ *  field rather than embedded in text. */
+export type GapIssue = 'hardcoded-value' | 'hardcoded-color' | 'missing-token-binding';
+
+export interface Gap {
+  part: string;
+  path: string;
+  property: string;
+  issue: GapIssue;
+  /** The hardcoded value itself, where there is one to report. */
+  value?: number | string;
+}
 
 /** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {
@@ -530,54 +542,63 @@ const PADDING_PROPS = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLe
 export function extractGaps(root: SerializedNode): Gap[] {
   const out: Gap[] = [];
   const seenGaps = new Set<string>();
-  const pushGap = (part: string, path: string, issue: string) => {
-    // Keyed on path, not part: `part` is unique only among siblings, so two
-    // nodes with the same cleaned leaf name in different subtrees ("header >
-    // label" and "footer > label") would otherwise share a key and the
-    // second node's gap would silently never get pushed at all.
-    const key = `${path}\0${issue}`;
+  // Separator is a SPACE, not a NUL byte: a NUL in source has bitten this repo
+  // repeatedly and evades lint, tests and `git diff`.
+  const pushGap = (part: string, path: string, property: string,
+                    issue: GapIssue, value?: number | string) => {
+    // Keyed on path (not part) + property + issue: `part` is unique only among
+    // siblings, so two nodes with the same cleaned leaf name in different
+    // subtrees ("header > label" and "footer > label") would otherwise share a
+    // key and the second node's gap would silently never get pushed at all.
+    // `property` is included so two distinct issues that happen to share a
+    // path never collapse into one.
+    const key = `${path} ${property} ${issue}`;
     if (seenGaps.has(key)) return;
     seenGaps.add(key);
-    out.push({ part, path, issue });
+    out.push({ part, path, property, issue, ...(value !== undefined ? { value } : {}) });
   };
   const isInSet = root.type === 'COMPONENT_SET';
   const def = defaultVariant(root);
   walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part, path) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
     if (n.hasUnboundPaint) {
-      pushGap(part, path, 'hardcoded color (no variable or style)');
+      pushGap(part, path, 'fill', 'hardcoded-color', n.unboundFill);
     }
     if (n.hasUnboundStroke) {
-      pushGap(part, path, 'hardcoded stroke color (no variable or style)');
+      pushGap(part, path, 'border', 'hardcoded-color', n.unboundStroke);
     }
     if (n.hasUnboundGradient) {
-      pushGap(part, path, 'hardcoded gradient or image fill (no style)');
+      // A gradient/image fill has no single hex to report, so there is no
+      // `value` here, unlike the solid-fill and stroke cases above.
+      pushGap(part, path, 'fill', 'missing-token-binding');
     }
     if (n.hasUnboundEffect) {
-      pushGap(part, path, 'hardcoded shadow or blur (no effect style)');
+      pushGap(part, path, 'effects', 'missing-token-binding');
     }
     if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
-      // Rounded here as well as in serialize.ts, because this string is inside
+      // Rounded here as well as in serialize.ts, because this number is inside
       // specContentHash and the extractor also runs over node JSON that did not
       // come from this repo's serializer (an uploaded dump, an older plugin
       // build). Figma's float32 opacity would otherwise print 30% as
       // 0.30000001192092896, both on the page and in the drift baseline.
-      pushGap(part, path, `hardcoded opacity (${Math.round(n.opacity * 10000) / 10000})`);
+      pushGap(part, path, 'opacity', 'hardcoded-value', Math.round(n.opacity * 10000) / 10000);
     }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
-      pushGap(part, path, 'no text style or typography variable');
+      pushGap(part, path, 'typography', 'missing-token-binding');
     }
     const l = n.layout;
     if (!l) return;
     if (l.itemSpacing !== undefined && !bound.has('itemSpacing')) {
-      pushGap(part, path, `hardcoded itemSpacing (${l.itemSpacing}px)`);
+      pushGap(part, path, 'itemSpacing', 'hardcoded-value', l.itemSpacing);
     }
     if (l.cornerRadius !== undefined && !bound.has('cornerRadius') && !bound.has('topLeftRadius')) {
-      pushGap(part, path, `hardcoded cornerRadius (${l.cornerRadius}px)`);
+      pushGap(part, path, 'border-radius', 'hardcoded-value', l.cornerRadius);
     }
     const pads = [l.paddingTop, l.paddingRight, l.paddingBottom, l.paddingLeft];
     if (pads.some((p) => p !== undefined) && !PADDING_PROPS.some((p) => bound.has(p))) {
-      pushGap(part, path, 'hardcoded padding');
+      // Padding can be asymmetric (four independent sides), so there is no
+      // single number to report as `value` here.
+      pushGap(part, path, 'padding', 'hardcoded-value');
     }
   });
   return out;

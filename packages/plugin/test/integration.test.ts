@@ -80,7 +80,10 @@ describe('full pipeline: serialize → extract → render → parse', () => {
     expect(spec.tokens).toContainEqual(
       expect.objectContaining({ part: 'label', property: 'typography', token: 'md.sys.typescale.label-large' }),
     );
-    expect(spec.gaps).toContainEqual({ part: 'container', path: 'Container/container', issue: 'hardcoded itemSpacing (8px)' });
+    expect(spec.gaps).toContainEqual({
+      part: 'container', path: 'Container/container', property: 'itemSpacing',
+      issue: 'hardcoded-value', value: 8,
+    });
     expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8' });
   });
 });

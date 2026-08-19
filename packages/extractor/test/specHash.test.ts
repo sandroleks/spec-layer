@@ -30,21 +30,23 @@ describe('specContentHash', () => {
   });
 });
 
-/** Measured on 2026-08-19 against v1, before contrast left IntermediateSpec.
+/** Re-cut on 2026-08-19 by Task 8: gap issue strings became stable ids, which
+ *  is a real content change, so every existing component doc legitimately shows
+ *  "update available" once. It must settle after a single Update.
  *  Every component doc on canvas stores a baseline computed this way, so a change
  *  to this constant means every one of them reports drift. Only a task that says
  *  it re-cuts the baseline may change it. */
-const BUTTON_HASH_V1 = 'd445791b4151e4bfa53b61e535851d2aa5a8a4fbf0276251a2049ee9798194e7';
+const BUTTON_HASH_V2 = 'b49b6a3dd3b50fe73c7b2ced8e64f25517e4f56383746e455e338335bd5a873d';
 
 it('is unchanged by removing the contrast field', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
   const spec = extract(node, { figmaFile: 'FILE1' });
-  expect(specContentHash(spec)).toBe(BUTTON_HASH_V1);
+  expect(specContentHash(spec)).toBe(BUTTON_HASH_V2);
 });
 
 it('is unchanged by adding paths to tokens and gaps', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
   const spec = extract(node, { figmaFile: 'FILE1' });
   expect(spec.tokens[0].path).toBeTruthy();            // the field exists
-  expect(specContentHash(spec)).toBe(BUTTON_HASH_V1);  // and does not enter the hash
+  expect(specContentHash(spec)).toBe(BUTTON_HASH_V2);  // and does not enter the hash
 });

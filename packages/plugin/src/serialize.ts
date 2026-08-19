@@ -138,9 +138,9 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const hasUnboundEffect = hasEffects && !effectsBound ? true : undefined;
 
   // Figma's opacity is float32-backed, so 30% comes back as 0.30000001192092896.
-  // That value is written verbatim into a gap string ("hardcoded opacity (...)")
-  // which IS covered by specContentHash, so leaving it unrounded puts float noise
-  // in front of the reader and in the drift baseline. Four decimals is well past
+  // That value is written verbatim into the gap's `value` field, which IS
+  // covered by specContentHash, so leaving it unrounded puts float noise in
+  // front of the reader and in the drift baseline. Four decimals is well past
   // anything Figma's own percent field can express.
   const opacity = typeof node.opacity === 'number' && node.opacity !== 1
     ? Math.round(node.opacity * 10000) / 10000

@@ -411,6 +411,20 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   // no props has no `api` key at all on the raw object, not merely one with
   // an undefined value.
   const api = apiOf(spec);
+  // A gap and a binding can name the same path and property: gap detection
+  // walks hidden subtrees that token extraction prunes, and a part can be
+  // hardcoded in one variant while bound in another. Emitting both makes the
+  // brief contradict itself, which is exactly what v1 did when `unbound`
+  // reported ButtonLabel as having a hardcoded colour while `tokens` showed
+  // the token bound on the same node. A binding is the stronger evidence, so
+  // it wins.
+  const bound = new Set(spec.tokens.map((t) => `${t.path} ${t.property}`));
+  const unbound = spec.gaps
+    .filter((g) => !bound.has(`${g.path} ${g.property}`))
+    .map((g) => ({
+      path: g.path, property: g.property, issue: g.issue,
+      ...(g.value !== undefined ? { value: g.value } : {}),
+    }));
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
@@ -428,9 +442,10 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       ? spec.layout.map((l) => ({ part: l.part, summary: l.summary }))
       : undefined,
     tokens: tokensOf(spec, opts.foundation),
-    unbound: spec.gaps.length > 0
-      ? spec.gaps.map((g) => ({ part: g.part, issue: g.issue }))
-      : undefined,
+    // Same reasoning as `api` above: spread the key in only when a gap
+    // survived reconciliation, rather than assigning `unbound: undefined` —
+    // `{ key: undefined }` still leaves `'unbound' in brief` true.
+    ...(unbound.length > 0 ? { unbound } : {}),
     guidelines: guidelinesOf(opts.prose),
   };
 }
