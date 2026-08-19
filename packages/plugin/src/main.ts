@@ -362,7 +362,7 @@ function writeRegistry(r: { v: 1; docIds: string[] }): void {
 // Every foundation doc link currently on canvas, read via the registry. A
 // dangling registry id (its Section deleted) is skipped rather than pruned
 // here: enumeration elsewhere already owns that cleanup, and this scan's only
-// job is to feed mergeFoundationGroupDescriptions for the Copy button.
+// job is to feed mergeFoundationGroupDescriptions.
 async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
   const links: FoundationDocLink[] = [];
   for (const docId of readRegistry().docIds) {
@@ -373,6 +373,33 @@ async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
     if (data && isFoundationLink(data)) links.push(data);
   }
   return links;
+}
+
+/**
+ * The current truth of every group description on canvas, re-derived fresh
+ * rather than trusted from any earlier send/reply.
+ *
+ * Read after every action that can change which foundation docs exist or
+ * what they carry (create, rebuild, detach, remove) so the UI's copy-time
+ * cache is refreshed from what actually landed on canvas, not from what a
+ * message believed it was sending. This is what closes the staleness gap: a
+ * doc's stored `groupDescriptions` can be a narrower set than what was asked
+ * for (`descriptionsForUnit` keeps only the folders a unit actually rendered
+ * as color rows), so persisted state is the only source that can't drift out
+ * of step with a bulk build's own map, or with an old browser-thread cache
+ * a Copy click would otherwise read from.
+ *
+ * Best-effort: a scan failure here must never fail the action it rides along
+ * with, so it fails to an empty map rather than throwing. That matches this
+ * same fallback already accepted for the plain `requestFoundation` path
+ * below, where a failed merge is likewise absorbed rather than surfaced.
+ */
+async function liveFoundationGroupDescriptions(): Promise<Record<string, Record<string, string>>> {
+  try {
+    return mergeFoundationGroupDescriptions(await liveFoundationDocLinks());
+  } catch {
+    return {};
+  }
 }
 
 // Resolve the existing doc Section for a source, preferring the registry
@@ -802,13 +829,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         foundationCache = { fileKey, dump };
         // Merged from every foundation doc link on canvas so the Copy button
         // can hand the agent the vocabulary the plugin already generated,
-        // not just a bare token table. Best-effort: a link enumeration
-        // failure here must not fail the foundation read itself.
-        let groupDescriptions: Record<string, Record<string, string>> | undefined;
-        try {
-          const merged = mergeFoundationGroupDescriptions(await liveFoundationDocLinks());
-          if (Object.keys(merged).length > 0) groupDescriptions = merged;
-        } catch { /* leave groupDescriptions absent */ }
+        // not just a bare token table. Omitted rather than sent empty so an
+        // absent field keeps meaning "nothing on canvas", matching
+        // foundationBrief's own absent-vs-empty rule one layer up.
+        const merged = await liveFoundationGroupDescriptions();
+        const groupDescriptions = Object.keys(merged).length > 0 ? merged : undefined;
         figma.ui.postMessage({ type: 'foundation', dump, groupDescriptions } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -971,7 +996,13 @@ figma.ui.onmessage = async (raw: unknown) => {
           } as MainToUi);
         }
 
-        figma.ui.postMessage({ type: 'foundationDone', created, replaced } as MainToUi);
+        // Every Section built above already has its final groupDescriptions
+        // stamped in (descriptionsForUnit's filtered subset, not the raw map
+        // this handler was sent), so re-deriving from canvas rather than
+        // trusting msg.groupDescriptions is what keeps the UI's copy-time
+        // cache from drifting out of step with what was actually persisted.
+        const groupDescriptions = await liveFoundationGroupDescriptions();
+        figma.ui.postMessage({ type: 'foundationDone', created, replaced, groupDescriptions } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         // A throw earlier in the loop (buildFoundationFrame, writeRegistry, or
@@ -1105,8 +1136,16 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Stamp the docId so the reply identifies itself as this row's Update
         // rather than the Foundations tab's bulk run, which posts the same
         // message type without one.
+        //
+        // An Update reuses link.groupDescriptions verbatim (no regeneration,
+        // see above), but every OTHER foundation doc's descriptions on canvas
+        // are just as able to have drifted from the UI's cache since it was
+        // last populated, so this re-derives the whole-canvas truth the same
+        // way renderFoundation's reply does rather than special-casing "only
+        // this one doc changed".
+        const groupDescriptions = await liveFoundationGroupDescriptions();
         figma.ui.postMessage({
-          type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId,
+          type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId, groupDescriptions,
         } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1138,7 +1177,13 @@ figma.ui.onmessage = async (raw: unknown) => {
         if (node && node.type === 'SECTION') (node as SectionNode).setPluginData(DOC_LINK_KEY, '');
       } catch { /* gone already */ }
       writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
-      figma.ui.postMessage({ type: 'docDetached', docId: msg.docId } as MainToUi);
+      // Detaching a foundation doc wipes its link, so the merge below no
+      // longer sees it: this is the inverse staleness case, where the UI's
+      // cache must be told a description set is now GONE, not just told
+      // about new ones. Recomputed fresh from canvas rather than assumed, so
+      // it is correct whether or not msg.docId was a foundation doc at all.
+      const groupDescriptions = await liveFoundationGroupDescriptions();
+      figma.ui.postMessage({ type: 'docDetached', docId: msg.docId, groupDescriptions } as MainToUi);
       break;
     }
 
@@ -1148,7 +1193,10 @@ figma.ui.onmessage = async (raw: unknown) => {
         if (node) node.remove();
       } catch { /* gone already */ }
       writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
-      figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId } as MainToUi);
+      // Same inverse-staleness reasoning as detachDoc above: a removed
+      // foundation doc's descriptions must stop being offered by Copy.
+      const groupDescriptions = await liveFoundationGroupDescriptions();
+      figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId, groupDescriptions } as MainToUi);
       break;
     }
 

@@ -26,6 +26,7 @@ import {
   setAiEnabled,
   setBrandTheme,
   onFoundationMessage,
+  setFoundationGroupDescriptions,
   onSelectionFoundation,
   onFoundationCheckboxChange,
   onFoundationToggleAll,
@@ -1132,6 +1133,10 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'foundationDone': {
+      // Refresh the copy-time cache from what actually landed on canvas,
+      // whichever branch below this build reply takes: both the bulk build
+      // and a single row's Update can change what Copy should carry.
+      setFoundationGroupDescriptions(msg.groupDescriptions);
       // updateFoundationDoc (a single library row's Update) replies on this same
       // message rather than a message of its own, and stamps the docId it
       // rebuilt. Branch on THAT, not on this UI's own in-flight flag: reading
@@ -1230,6 +1235,11 @@ window.onmessage = (event: MessageEvent) => {
 
     case 'docDetached':
     case 'docRemoved': {
+      // The detached/removed doc might have been a foundation doc, so its
+      // descriptions (if any) are gone from canvas: refresh the cache with
+      // the fresh whole-canvas truth rather than leaving the pre-removal one
+      // in place for the next Copy to serve.
+      setFoundationGroupDescriptions(msg.groupDescriptions);
       if (libMenuDocId === msg.docId) closeRowMenu();
       libEntries = libEntries.filter((e) => e.docId !== msg.docId);
       libDrift.delete(msg.docId);

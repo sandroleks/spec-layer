@@ -63,8 +63,14 @@ export type MainToUi =
   | { type: 'docFrameDone'; frameName: string; replaced: boolean }
   | { type: 'docFrameError'; message: string }
   | { type: 'library'; entries: LibraryEntry[] }
-  | { type: 'docDetached'; docId: string }
-  | { type: 'docRemoved'; docId: string }
+  /** `groupDescriptions` is the whole-canvas merge, re-derived AFTER the
+   *  detach/remove landed, not carried over from any earlier reply. Always
+   *  present (possibly `{}`) rather than omitted-when-empty like the
+   *  `foundation` message below: the UI must overwrite its copy-time cache
+   *  with this value even when it is empty, since "this doc's descriptions
+   *  are gone" is exactly the fact an omitted field could not carry. */
+  | { type: 'docDetached'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
+  | { type: 'docRemoved'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string }
   | { type: 'driftError'; docId: string }
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
@@ -81,8 +87,17 @@ export type MainToUi =
    *  set only by `updateFoundationDoc` (one My Library row), absent on the
    *  Foundations tab's bulk `renderFoundation`. The UI must branch on this and
    *  not on its own in-flight flag, or a bulk reply arriving while a row Update
-   *  is pending gets read as that row's. */
-  | { type: 'foundationDone'; created: number; replaced: number; docId?: string }
+   *  is pending gets read as that row's.
+   *
+   *  `groupDescriptions` is the whole-canvas merge re-read after every Section
+   *  this build touched already has its final `groupDescriptions` stamped in
+   *  (a build's own send-time map can be a strict superset of what actually
+   *  got persisted per unit, so this reply is the only truthful source). The
+   *  UI must replace its copy-time cache with this value outright, even when
+   *  it is `{}` — this is what fixes generate-then-copy in the same session
+   *  without a manual "Refresh sources". */
+  | { type: 'foundationDone'; created: number; replaced: number; docId?: string;
+      groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'foundationFrameError'; message: string; created: number }
   | { type: 'docProse'; docId: string; prose: ProseDrafts | null };
 

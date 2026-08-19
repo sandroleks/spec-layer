@@ -614,12 +614,36 @@ export async function copyBriefFromSource(
 let foundationSpec: FoundationSpec | null = null;
 let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
 // AI-written group descriptions merged from every foundation doc link on
-// canvas, keyed by collection name then folder path. Set alongside
-// foundationSpec by onFoundationMessage (never by onSelectionFoundation,
-// which the copy button's guard — "Read the foundations first" — never
-// reaches without a 'foundation' reply landing first). Read-only pass-through
+// canvas, keyed by collection name then folder path. Read-only pass-through
 // for copyFoundationBrief; never generated here.
+//
+// Set initially by onFoundationMessage, alongside foundationSpec (never by
+// onSelectionFoundation, since the copy button's guard, "Read the
+// foundations first", never fires without a 'foundation' reply landing
+// first). But that first population goes stale the moment the user
+// generates or changes descriptions in the SAME session: creating or
+// rebuilding a foundation doc, or detaching/removing one, all change what is
+// on canvas without re-sending 'foundation'. setFoundationGroupDescriptions
+// is the one place every one of those replies (foundationDone, docDetached,
+// docRemoved) refreshes this cache from the main thread's own re-derived,
+// whole-canvas truth, so the very next Copy always reflects what was last
+// actually persisted rather than what the UI believed at tab-open time.
 let foundationGroupDescriptions: Record<string, Record<string, string>> = {};
+
+/**
+ * Refresh the group-descriptions cache from a main-thread reply that just
+ * changed what is on canvas (a build, an Update, a detach, or a remove).
+ * Always overwrites, including with `{}`: an empty map here is not "no new
+ * information", it is the reply's own truthful answer, and a doc whose
+ * descriptions just vanished from canvas must not keep offering them to the
+ * next Copy.
+ */
+export function setFoundationGroupDescriptions(
+  groupDescriptions: Record<string, Record<string, string>>,
+): void {
+  foundationGroupDescriptions = groupDescriptions;
+}
+
 // True from the moment the create-frames click handler sends its request until
 // foundationDone/foundationFrameError comes back. Threaded into the disabled
 // computation so a repaint mid-generation (e.g. the user toggling a checkbox)

@@ -89,6 +89,7 @@ import {
   currentGroupBriefs,
   onFoundationChange,
   onFoundationMessage,
+  setFoundationGroupDescriptions,
   onSelectionFoundation,
   onFoundationToggleAll,
   send,
@@ -2030,6 +2031,10 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'foundationDone':
+      // Refresh the copy-time cache from what actually landed on canvas
+      // before branching: both the bulk build and a single row's Update
+      // (below) can change what the next Copy should carry.
+      setFoundationGroupDescriptions(msg.groupDescriptions);
       // A docId belongs to a Library row update. The Library migration handles
       // that branch; this one owns only the bulk Foundation workflow.
       if (msg.docId) {
@@ -2188,6 +2193,11 @@ window.onmessage = (event: MessageEvent): void => {
 
     case 'docDetached':
     case 'docRemoved':
+      // The detached/removed doc might have been a foundation doc, so its
+      // descriptions (if any) are gone from canvas: refresh the cache with
+      // the fresh whole-canvas truth rather than leaving the pre-removal one
+      // in place for the next Copy to serve.
+      setFoundationGroupDescriptions(msg.groupDescriptions);
       nativeNotify(
         msg.type === 'docDetached'
           ? 'Documentation detached from its source.'
