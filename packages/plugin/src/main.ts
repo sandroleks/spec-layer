@@ -20,7 +20,7 @@ import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
-  serializeProse, parseProse,
+  serializeProse, parseProse, mergeFoundationGroupDescriptions,
   type DocLinkData, type FoundationDocLink, type DocRegistry,
 } from './docLink';
 
@@ -357,6 +357,22 @@ function readRegistry() {
 }
 function writeRegistry(r: { v: 1; docIds: string[] }): void {
   figma.root.setPluginData(DOC_REGISTRY_KEY, serializeRegistry(r));
+}
+
+// Every foundation doc link currently on canvas, read via the registry. A
+// dangling registry id (its Section deleted) is skipped rather than pruned
+// here: enumeration elsewhere already owns that cleanup, and this scan's only
+// job is to feed mergeFoundationGroupDescriptions for the Copy button.
+async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
+  const links: FoundationDocLink[] = [];
+  for (const docId of readRegistry().docIds) {
+    let node: BaseNode | null = null;
+    try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
+    if (!node || node.type !== 'SECTION') continue;
+    const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+    if (data && isFoundationLink(data)) links.push(data);
+  }
+  return links;
 }
 
 // Resolve the existing doc Section for a source, preferring the registry
@@ -784,7 +800,16 @@ figma.ui.onmessage = async (raw: unknown) => {
         // instead of leaving foundationFor() serving a dump this same click
         // just proved stale.
         foundationCache = { fileKey, dump };
-        figma.ui.postMessage({ type: 'foundation', dump } as MainToUi);
+        // Merged from every foundation doc link on canvas so the Copy button
+        // can hand the agent the vocabulary the plugin already generated,
+        // not just a bare token table. Best-effort: a link enumeration
+        // failure here must not fail the foundation read itself.
+        let groupDescriptions: Record<string, Record<string, string>> | undefined;
+        try {
+          const merged = mergeFoundationGroupDescriptions(await liveFoundationDocLinks());
+          if (Object.keys(merged).length > 0) groupDescriptions = merged;
+        } catch { /* leave groupDescriptions absent */ }
+        figma.ui.postMessage({ type: 'foundation', dump, groupDescriptions } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'foundationError', message } as MainToUi);

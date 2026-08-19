@@ -613,6 +613,13 @@ export async function copyBriefFromSource(
 
 let foundationSpec: FoundationSpec | null = null;
 let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
+// AI-written group descriptions merged from every foundation doc link on
+// canvas, keyed by collection name then folder path. Set alongside
+// foundationSpec by onFoundationMessage (never by onSelectionFoundation,
+// which the copy button's guard — "Read the foundations first" — never
+// reaches without a 'foundation' reply landing first). Read-only pass-through
+// for copyFoundationBrief; never generated here.
+let foundationGroupDescriptions: Record<string, Record<string, string>> = {};
 // True from the moment the create-frames click handler sends its request until
 // foundationDone/foundationFrameError comes back. Threaded into the disabled
 // computation so a repaint mid-generation (e.g. the user toggling a checkbox)
@@ -667,7 +674,10 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
     return;
   }
   try {
-    const yaml = toYaml(foundationBrief(spec, new Date().toISOString()));
+    const yaml = toYaml(foundationBrief(spec, {
+      generatedAt: new Date().toISOString(),
+      groupDescriptions: foundationGroupDescriptions,
+    }));
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
     const tier = await copyText(yaml);
@@ -731,9 +741,13 @@ export function isFoundationGenerating(): boolean {
   return foundationGenerating;
 }
 
-export function onFoundationMessage(dump: SerializedFoundation): void {
+export function onFoundationMessage(
+  dump: SerializedFoundation,
+  groupDescriptions?: Record<string, Record<string, string>>,
+): void {
   foundationSpec = buildFoundation(dump);
   foundationSelection = defaultSelection(foundationSpec);
+  foundationGroupDescriptions = groupDescriptions ?? {};
   foundationHost.repaint();
 }
 

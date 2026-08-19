@@ -60,38 +60,57 @@ const FOUNDATION: FoundationSpec = {
   }],
 };
 
+/** Minimal FoundationSpec for the group-descriptions tests below: one
+ *  single-mode collection holding one COLOR variable, just enough to exercise
+ *  the guidelines block without dragging in FOUNDATION's second mode/alias
+ *  machinery, which those tests have no use for. */
+function oneCollection(): FoundationSpec {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', textStyles: [],
+    collections: [{
+      id: 'c1', name: 'Primitives', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Value' }],
+      variables: [{
+        name: 'color/surface/default', group: 'color', resolvedType: 'COLOR',
+        description: '', codeSyntax: {},
+        valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
+      }],
+    }],
+  };
+}
+
 describe('foundationBrief', () => {
   it('stamps the envelope with the extractor version and brief version', () => {
-    const b = foundationBrief(FOUNDATION, AT) as Record<string, Record<string, unknown>>;
+    const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
     expect(b.spec_layer.kind).toBe('foundation');
     expect(b.spec_layer.version).toBe(1);
     expect(b.spec_layer.extractor).toBe('1');
   });
 
   it('keys mode values by mode name, not modeId', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, AT));
+    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect(y.collections[0].tokens[0].values).toEqual({ Light: '#2563EB', Dark: '#3B82F6' });
   });
 
   it('emits code only when codeSyntax is populated', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, AT));
+    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect(y.collections[0].tokens[0].code).toEqual({ WEB: '--color-bg-brand' });
     expect('code' in y.collections[0].tokens[1]).toBe(false);
   });
 
   it('gives an alias both its target and its resolved value', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, AT));
+    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect((y.collections[0].tokens[1].values as Record<string, unknown>).Light)
       .toEqual({ alias: 'color/neutral/100', resolved: '#F5F5F5' });
   });
 
   it('states why an unresolved value is unresolved instead of dropping it', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, AT));
+    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect((y.collections[0].tokens[1].values as Record<string, unknown>).Dark).toEqual({ unresolved: 'external' });
   });
 
   it('emits text styles', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, AT));
+    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect(y.text_styles[0]).toEqual({
       name: 'Body/Regular',
       font: { family: 'Inter', style: 'Regular', size: 16 },
@@ -101,7 +120,7 @@ describe('foundationBrief', () => {
   });
 
   it('is deterministic', () => {
-    expect(toYaml(foundationBrief(FOUNDATION, AT))).toBe(toYaml(foundationBrief(FOUNDATION, AT)));
+    expect(toYaml(foundationBrief(FOUNDATION, { generatedAt: AT }))).toBe(toYaml(foundationBrief(FOUNDATION, { generatedAt: AT })));
   });
 
   it('drops a value keyed by a mode no longer in collection.modes instead of leaking the raw modeId', () => {
@@ -121,7 +140,7 @@ describe('foundationBrief', () => {
         }],
       }],
     };
-    const y = parseBrief(foundationBrief(stale, AT));
+    const y = parseBrief(foundationBrief(stale, { generatedAt: AT }));
     const values = y.collections[0].tokens[0].values as Record<string, unknown>;
     expect(values).toEqual({ Light: '#2563EB' });
     expect(Object.values(values)).not.toContain('m9');
@@ -133,10 +152,48 @@ describe('foundationBrief', () => {
       ...FOUNDATION,
       collections: [{ ...FOUNDATION.collections[0], defaultModeId: 'm9' }],
     };
-    const y = parseBrief(foundationBrief(stale, AT)) as unknown as
+    const y = parseBrief(foundationBrief(stale, { generatedAt: AT })) as unknown as
       { collections: Record<string, unknown>[] };
     expect('default_mode' in y.collections[0]).toBe(false);
     expect(JSON.stringify(y)).not.toContain('m9');
+  });
+
+  it('carries group descriptions nested under their collection', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T',
+      groupDescriptions: { Primitives: { 'color/surface': 'Surfaces you paint panels with.' } },
+    }) as Record<string, any>;
+    expect(brief.guidelines.origin).toBe('generated');
+    expect(brief.guidelines.group_descriptions).toEqual({
+      Primitives: { 'color/surface': 'Surfaces you paint panels with.' },
+    });
+  });
+
+  it('nests by collection so two collections can share a folder name', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T',
+      groupDescriptions: { A: { color: 'From A.' }, B: { color: 'From B.' } },
+    }) as Record<string, any>;
+    expect(brief.guidelines.group_descriptions.A.color).toBe('From A.');
+    expect(brief.guidelines.group_descriptions.B.color).toBe('From B.');
+  });
+
+  it('omits the guidelines block entirely when there are no descriptions', () => {
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as Record<string, any>;
+    expect('guidelines' in brief).toBe(false);
+  });
+
+  it('omits the block when a description map is present but empty', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T', groupDescriptions: { Primitives: {} },
+    }) as Record<string, any>;
+    expect('guidelines' in brief).toBe(false);
+  });
+
+  it('still emits collections and text styles unchanged', () => {
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as Record<string, any>;
+    expect(brief.collections[0].name).toBe('Primitives');
+    expect(brief.collections[0].tokens[0].name).toBe('color/surface/default');
   });
 });
 

@@ -69,7 +69,12 @@ export type MainToUi =
   | { type: 'driftError'; docId: string }
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
-  | { type: 'foundation'; dump: SerializedFoundation }
+  /** `groupDescriptions` merges every foundation doc link's stored group
+   *  descriptions found on canvas, keyed by collection name then folder path.
+   *  Absent when no foundation doc carries any (including every file with no
+   *  foundation doc at all). Read by copyFoundationBrief, never generated
+   *  from this dump's tokens themselves. */
+  | { type: 'foundation'; dump: SerializedFoundation; groupDescriptions?: Record<string, Record<string, string>> }
   | { type: 'foundationError'; message: string }
   | { type: 'foundationProgress'; done: number; total: number }
   /** Reply for BOTH foundation build paths. `docId` is what tells them apart:

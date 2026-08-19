@@ -1107,7 +1107,7 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'foundation': {
-      onFoundationMessage(msg.dump);
+      onFoundationMessage(msg.dump, msg.groupDescriptions);
       break;
     }
 

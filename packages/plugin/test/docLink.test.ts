@@ -3,7 +3,7 @@ import { EXTRACTOR_VERSION, type ProseDrafts } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
-  isFoundationLink, foundationScopeKey, retargetScope,
+  isFoundationLink, foundationScopeKey, retargetScope, mergeFoundationGroupDescriptions,
   DOC_PROSE_KEY, serializeProse, parseProse, PROSE_BUDGET_BYTES,
   type DocLinkData, type FoundationDocLink, type ComponentDocLink,
 } from '../src/docLink';
@@ -198,6 +198,78 @@ describe('docLink foundation variant', () => {
     const raw = JSON.stringify(FOUNDATION);
     expect(raw).not.toContain('sourceNodeId');
     expect(parseDocLink(raw)).not.toBeNull();
+  });
+});
+
+describe('mergeFoundationGroupDescriptions', () => {
+  it('nests a link\'s descriptions under its collection name', () => {
+    const link: FoundationDocLink = {
+      ...FOUNDATION,
+      groupDescriptions: { 'color/surface': 'Surfaces you paint panels with.' },
+    };
+    expect(mergeFoundationGroupDescriptions([link])).toEqual({
+      Semantic: { 'color/surface': 'Surfaces you paint panels with.' },
+    });
+  });
+
+  it('merges folders from two links that name the same collection (its groups split across docs)', () => {
+    const a: FoundationDocLink = {
+      ...FOUNDATION,
+      scope: { ...FOUNDATION.scope, group: 'color' } as FoundationDocLink['scope'],
+      groupDescriptions: { 'color/surface': 'From the color unit.' },
+    };
+    const b: FoundationDocLink = {
+      ...FOUNDATION,
+      scope: { ...FOUNDATION.scope, group: 'spacing' } as FoundationDocLink['scope'],
+      groupDescriptions: { 'spacing/gap': 'From the spacing unit.' },
+    };
+    expect(mergeFoundationGroupDescriptions([a, b])).toEqual({
+      Semantic: {
+        'color/surface': 'From the color unit.',
+        'spacing/gap': 'From the spacing unit.',
+      },
+    });
+  });
+
+  it('keeps two DIFFERENT collections that share a folder name from colliding', () => {
+    const a: FoundationDocLink = {
+      ...FOUNDATION,
+      scope: { target: 'collection', collectionId: 'cA', collectionName: 'A', modeIds: [] },
+      groupDescriptions: { color: 'From A.' },
+    };
+    const b: FoundationDocLink = {
+      ...FOUNDATION,
+      scope: { target: 'collection', collectionId: 'cB', collectionName: 'B', modeIds: [] },
+      groupDescriptions: { color: 'From B.' },
+    };
+    expect(mergeFoundationGroupDescriptions([a, b])).toEqual({
+      A: { color: 'From A.' },
+      B: { color: 'From B.' },
+    });
+  });
+
+  it('skips a textStyles-target link rather than inventing a key', () => {
+    const link: FoundationDocLink = {
+      ...FOUNDATION,
+      scope: { target: 'textStyles', group: 'Heading' },
+      groupDescriptions: { Heading: 'Large display text.' },
+    };
+    expect(mergeFoundationGroupDescriptions([link])).toEqual({});
+  });
+
+  it('drops a link with no descriptions', () => {
+    const link: FoundationDocLink = { ...FOUNDATION };
+    delete (link as { groupDescriptions?: unknown }).groupDescriptions;
+    expect(mergeFoundationGroupDescriptions([link])).toEqual({});
+  });
+
+  it('drops a link whose description map is present but empty', () => {
+    const link: FoundationDocLink = { ...FOUNDATION, groupDescriptions: {} };
+    expect(mergeFoundationGroupDescriptions([link])).toEqual({});
+  });
+
+  it('returns an empty map for no links', () => {
+    expect(mergeFoundationGroupDescriptions([])).toEqual({});
   });
 });
 

@@ -17,6 +17,7 @@ const { copyFoundationBrief, onFoundationMessage } = await import('../src/ui/act
 interface ParsedFoundationBrief {
   spec_layer: { kind: string };
   collections: Array<{ tokens: Array<{ name: string }> }>;
+  guidelines?: { origin: string; group_descriptions: Record<string, Record<string, string>> };
 }
 
 function presenter() {
@@ -62,6 +63,23 @@ describe('copyFoundationBrief', () => {
     const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
     expect(y.spec_layer.kind).toBe('foundation');
     expect(y.collections[0].tokens[0].name).toBe('color/bg/brand');
+  });
+
+  it('omits guidelines when no foundation doc on canvas carries group descriptions', async () => {
+    onFoundationMessage(DUMP);
+    await copyFoundationBrief(presenter());
+    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
+    expect('guidelines' in y).toBe(false);
+  });
+
+  it('carries group descriptions merged from the foundation doc links on canvas', async () => {
+    onFoundationMessage(DUMP, { Color: { 'color/bg': 'Backgrounds behind content.' } });
+    await copyFoundationBrief(presenter());
+    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
+    expect(y.guidelines?.origin).toBe('generated');
+    expect(y.guidelines?.group_descriptions).toEqual({
+      Color: { 'color/bg': 'Backgrounds behind content.' },
+    });
   });
 
   it('renders no caveat in the tier-3 modal for a small payload', async () => {

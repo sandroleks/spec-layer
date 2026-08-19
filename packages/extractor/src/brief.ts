@@ -64,9 +64,36 @@ function tokenOf(variable: FoundationVariable, modeName: (id: string) => string 
   };
 }
 
-export function foundationBrief(foundation: FoundationSpec, generatedAt: string): YamlValue {
+export interface FoundationBriefOptions {
+  generatedAt: string;
+  /**
+   * AI-written group descriptions, read from the foundation doc links on canvas
+   * and keyed by collection name, then folder path. Nested rather than flat
+   * because two collections can each hold a folder of the same name, which a
+   * flat map would silently collapse into one entry.
+   *
+   * Partial by nature: copyFoundationBrief deliberately covers the whole file
+   * while a foundation doc may cover one scope, and a file may have no
+   * foundation doc at all. Never generated here, only passed through from
+   * storage.
+   */
+  groupDescriptions?: Record<string, Record<string, string>>;
+}
+
+export function foundationBrief(
+  foundation: FoundationSpec,
+  opts: FoundationBriefOptions,
+): YamlValue {
+  // A collection whose map is present but empty contributes nothing, and
+  // letting it through would emit a guidelines block containing an empty
+  // object.
+  const descriptions = Object.fromEntries(
+    Object.entries(opts.groupDescriptions ?? {})
+      .filter(([, folders]) => Object.keys(folders).length > 0),
+  );
+  const hasDescriptions = Object.keys(descriptions).length > 0;
   return {
-    spec_layer: envelope('foundation', generatedAt),
+    spec_layer: envelope('foundation', opts.generatedAt),
     source: { file: foundation.fileKey },
     collections: foundation.collections.map((c) => {
       const byId = new Map(c.modes.map((m) => [m.modeId, m.name]));
@@ -91,6 +118,9 @@ export function foundationBrief(foundation: FoundationSpec, generatedAt: string)
       line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
       letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
     })),
+    ...(hasDescriptions
+      ? { guidelines: { origin: 'generated', group_descriptions: descriptions } }
+      : {}),
   };
 }
 

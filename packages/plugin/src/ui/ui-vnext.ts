@@ -2004,7 +2004,7 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'foundation':
-      onFoundationMessage(msg.dump);
+      onFoundationMessage(msg.dump, msg.groupDescriptions);
       foundationScreen = { kind: 'ready' };
       foundationRefreshing = false;
       paint();

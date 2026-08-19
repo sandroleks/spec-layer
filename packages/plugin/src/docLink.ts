@@ -189,6 +189,36 @@ export function isFoundationLink(d: DocLinkData): d is FoundationDocLink {
   return d.kind === 'foundation';
 }
 
+/**
+ * Merge every foundation doc link's stored group descriptions into one map
+ * for `foundationBrief`'s `groupDescriptions` option, keyed by collection
+ * name then folder path.
+ *
+ * Nested rather than flat: two collections can each hold a folder of the
+ * same name (e.g. two "color" folders in two different collections), and a
+ * flat map would silently collapse them into one entry.
+ *
+ * A `textStyles`-target link has no collection name and is skipped rather
+ * than inventing a key. A link with no descriptions, or an empty map,
+ * contributes nothing. When two links somehow name the same collection, their
+ * folders are merged (later links win on a folder-name collision), which can
+ * only happen for genuinely different groups of the same collection since a
+ * doc's own groups never repeat within itself.
+ */
+export function mergeFoundationGroupDescriptions(
+  links: readonly FoundationDocLink[],
+): Record<string, Record<string, string>> {
+  const merged: Record<string, Record<string, string>> = {};
+  for (const link of links) {
+    if (link.scope.target !== 'collection') continue;
+    const folders = link.groupDescriptions;
+    if (!folders || Object.keys(folders).length === 0) continue;
+    const name = link.scope.collectionName;
+    merged[name] = { ...(merged[name] ?? {}), ...folders };
+  }
+  return merged;
+}
+
 /** The key by which a foundation Section is matched to its predecessor on
  *  regenerate: two sections cover the same doc when they target the same
  *  collection and group, or both cover text styles with the same group. */
