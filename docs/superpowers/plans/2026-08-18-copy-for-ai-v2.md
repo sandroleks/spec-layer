@@ -14,18 +14,18 @@
 correctness half from a format half; this plan interleaves them, because they are not
 independent and because the size reduction is the most valuable single change.
 
-**Order, and why.** The size win lands at Task 4, not at Task 13. Three dependencies
+**Order, and why.** The size win lands at Tasks 4 and 5, not at Task 13. Three dependencies
 force the shape:
 
 - Condition-based bindings need a part identity, so path identity (Task 3) comes first.
   Keying bindings on `part` and migrating later would mean writing them twice.
-- The `validation` block needs gaps to carry a property and stable ids (Task 7) and
-  values to know their mode (Task 8), so it follows both.
+- The `validation` block needs gaps to carry a property and stable ids (Task 8) and
+  values to know their mode (Task 9), so it follows both.
 - Removing per-component contrast (Tasks 1-2) precedes the format rewrite, because both
   edit the same regions of `brief.ts` and removal deletes code the rewrite would
   otherwise carry forward.
 
-Foundation contrast (Tasks 13-18) has no dependency on the format work, so it sits last.
+Foundation contrast (Tasks 14-19) has no dependency on the format work, so it sits last.
 Removing the broken per-component contrast still happens at Task 1, so the misleading
 `measured: 0` block goes away immediately either way.
 
@@ -244,7 +244,7 @@ Keep `relativeLuminance`, `contrastRatio`, `blend`, `requiredRatio`, `resolveTok
 
 Delete `ContrastFinding`, `ContrastReport`, `emptyContrastReport`, `TextMetrics`, `VariantTextMetrics`, `collectTextMetrics`, `isDisabled`, `AncestorFill`, `nearestPaintedAncestor`, `checkContrast`, and the now-unused imports of `IntermediateSpec`, `VariantAxisModel`, `cleanPartName`, `walkParts` and `resolveTokensForVariant`.
 
-Promote the private `concrete` to an export, because `colorContrast.ts` needs it in Task 15:
+Promote the private `concrete` to an export, because `colorContrast.ts` needs it in Task 16:
 
 ```ts
 /** Follow an alias chain to the concrete colour it stands for. Exported because
@@ -571,7 +571,7 @@ lookup, not a boolean expression.
 - Test: `packages/extractor/test/brief.test.ts`
 
 **Interfaces:**
-- Consumes: `TokenRule.path` (Task 3); `lookupToken` (existing, gains `mode` in Task 8).
+- Consumes: `TokenRule.path` (Task 3); `lookupToken` (existing, gains `mode` in Task 9).
 - Produces: `tokens` is `{ used: Record<string, TokenDefinition>, bindings: Binding[] }` where
   `TokenDefinition` is `{ alias?, resolved?, code? }` and `Binding` is
   `{ path, property, token, when? }`. `base` and `by_variant` no longer exist.
@@ -744,7 +744,7 @@ npx tsx -e "const {readFileSync}=require('fs');const {extract,componentBrief}=re
 
 Expected: `bindings` is at most `rules`, and is nowhere near `variants * rules`. Record all
 four numbers in the commit message. The real-world line reduction is confirmed by a human
-in Task 19 against an actual Figma component; do not claim it from this fixture.
+in Task 20 against an actual Figma component; do not claim it from this fixture.
 
 - [ ] **Step 6: Run the full suite and the type check**
 
@@ -762,7 +762,214 @@ git commit -m "feat(extractor)!: token definitions once, bindings by condition" 
 
 ---
 
-### Task 5: Split the API into variants, states and booleans
+### Task 5: Emit short scalar collections in flow style
+
+Task 4 removed the 36-way duplication, but the payload is still far larger than the
+design's 400-500 line target, and the reason is the emitter rather than the projection.
+
+`yaml.ts` states its own limit at the top of the file: block style only, no flow maps.
+So a binding's condition renders as
+
+```yaml
+      when:
+        Style:
+          - Filled
+        State:
+          - Enabled
+```
+
+five lines for two facts. On a real component with roughly 250 bindings averaging two
+axes, `when` alone costs well over a thousand lines. The design's example shape,
+`when: { type: [Primary], size: [Small] }`, is not currently expressible.
+
+This task teaches the emitter flow style for short, scalar-only collections. It is a
+change to how the same data is rendered; no projection changes.
+
+**Files:**
+- Modify: `packages/extractor/src/yaml.ts`
+- Test: `packages/extractor/test/yaml.test.ts`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: no API change. `toYaml` keeps its signature; only its output narrows.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `packages/extractor/test/yaml.test.ts`:
+
+```ts
+describe('flow style for short scalar collections', () => {
+  it('renders a short all-scalar sequence inline', () => {
+    expect(toYaml({ values: ['Primary', 'Outline', 'Ghost'] }))
+      .toBe('values: [Primary, Outline, Ghost]\n');
+  });
+
+  it('renders a short all-scalar map inline', () => {
+    expect(toYaml({ size: { value: 8, unit: 'px' } }))
+      .toBe('size: { value: 8, unit: px }\n');
+  });
+
+  it('renders a map of short sequences inline at both levels', () => {
+    expect(toYaml({ when: { type: ['Primary'], size: ['Large'] } }))
+      .toBe('when: { type: [Primary], size: [Large] }\n');
+  });
+
+  it('stays block when any member is itself a collection that is not short', () => {
+    const long = Array.from({ length: 12 }, (_, i) => `value-number-${i}`);
+    const out = toYaml({ options: long });
+    expect(out).toContain('\n  - value-number-0');
+    expect(out).not.toContain('[value-number-0');
+  });
+
+  it('stays block when the rendered flow form would exceed the width budget', () => {
+    const out = toYaml({ note: { a: 'x'.repeat(60), b: 'y'.repeat(60) } });
+    expect(out).toContain('\n  a: ');
+    expect(out).not.toContain('{ a: ');
+  });
+
+  it('stays block for a string that cannot be inline', () => {
+    // A multi-line string is already handled by the block scalar path and must
+    // not be dragged into a flow collection.
+    const out = toYaml({ wrap: { text: 'line one\nline two' } });
+    expect(out).not.toContain('{ text:');
+  });
+
+  it('quotes inside flow style exactly as it does in block style', () => {
+    // A value needing quotes must still get them, and a comma or brace in a
+    // scalar must not be able to break out of the flow collection.
+    expect(toYaml({ a: ['yes', 'no'] })).toBe('a: ["yes", "no"]\n');
+    expect(toYaml({ a: ['x, y'] })).toBe('a: ["x, y"]\n');
+    expect(toYaml({ a: ['{ z }'] })).toBe('a: ["{ z }"]\n');
+  });
+
+  it('renders an empty collection as it did before', () => {
+    expect(toYaml({ a: [], b: {} })).toBe('a: []\nb: {}\n');
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npx vitest run packages/extractor/test/yaml.test.ts -t "flow style"`
+
+Expected: FAIL. Everything currently renders in block style.
+
+- [ ] **Step 3: Implement flow style**
+
+In `packages/extractor/src/yaml.ts`, first correct the file header, which currently
+claims block style only and would otherwise become a lie:
+
+```
+ * Emits YAML 1.2. Block style by default; short, scalar-only collections render
+ * in flow style (see flowText) because the brief is read in a chat window and a
+ * two-fact condition costing five lines is the difference between a payload that
+ * pastes and one that does not.
+```
+
+Then add the flow renderer. Keep the existing `needsQuote` / `doubleQuote` /
+`inlineScalar` helpers as the single source of quoting truth, so a scalar is escaped
+identically in both styles:
+
+```ts
+/** Width budget for a flow collection, measured on the rendered text excluding
+ *  indentation. Past this, block style is more readable than a long line, which is
+ *  the only reason flow style is worth having. */
+const FLOW_MAX = 72;
+
+/**
+ * A collection is flow-eligible when every member is an inline scalar, or is itself
+ * a flow-eligible collection. Nesting is allowed because `when: { type: [Primary] }`
+ * is exactly that shape and is the case this exists for.
+ *
+ * Depth is bounded: two levels is enough for every shape the brief emits, and an
+ * unbounded rule would let a deeply nested object collapse into an unreadable line.
+ */
+function flowEligible(value: YamlValue, depth = 0): boolean {
+  if (isInline(value)) return true;
+  if (depth >= 2) return false;
+  const members = Array.isArray(value) ? value : Object.values(value).filter((v) => v !== undefined);
+  if (members.length === 0) return true;
+  return members.every((m) => flowEligible(m as YamlValue, depth + 1));
+}
+
+/** Render a flow-eligible collection. Scalars go through inlineText, so quoting,
+ *  escaping and special-value handling are shared with block style rather than
+ *  reimplemented here. */
+function flowText(value: YamlValue): string {
+  if (isInline(value)) return inlineText(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => flowText(v)).join(', ')}]`;
+  }
+  const entries = Object.entries(value).filter(([, v]) => v !== undefined);
+  return `{ ${entries.map(([k, v]) => `${inlineScalar(k)}: ${flowText(v as YamlValue)}`).join(', ')} }`;
+}
+
+/** Flow style only when it is eligible AND the result actually fits. */
+function asFlow(value: YamlValue): string | null {
+  if (isInline(value)) return null;
+  if (!flowEligible(value)) return null;
+  const text = flowText(value);
+  return text.length <= FLOW_MAX ? text : null;
+}
+```
+
+Then, at each point where the existing emitter is about to descend into a nested
+collection under a key or a sequence dash, try `asFlow` first and fall back to the
+current block path when it returns null. Do not change the empty-collection handling
+that already renders `[]` and `{}`.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npx vitest run packages/extractor/test/yaml.test.ts`
+
+Expected: PASS, including every pre-existing test in the file. Several of those assert
+block output for structures that are now flow-eligible; each such change is a real
+output change, so read the failure, confirm the new form is correct YAML carrying the
+same data, and update the expectation. If a pre-existing test asserts something that
+flow style genuinely breaks, stop and report it.
+
+- [ ] **Step 5: Prove the round trip still holds**
+
+`yaml.test.ts` already round-trips output through `js-yaml`. That property is what
+makes flow style safe: if `js-yaml` parses the flow output back to the same object,
+the change is a rendering difference and nothing more. Confirm the existing
+round-trip tests still pass, and add one for a nested flow map:
+
+```ts
+it('round-trips a nested flow map through js-yaml', () => {
+  const value = { bindings: [{ path: 'Container', when: { type: ['Primary'] } }] };
+  expect(load(toYaml(value))).toEqual(value);
+});
+```
+
+- [ ] **Step 6: Measure the effect on a real payload shape**
+
+```bash
+npx tsx -e "const {readFileSync}=require('fs');const {extract,componentBrief,toYaml}=require('./packages/extractor/src/index.ts');const n=JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json','utf8'));const y=toYaml(componentBrief(extract(n,{figmaFile:'F'}),{generatedAt:'T'}));console.log(y.split('\n').length+' lines');console.log(y.slice(y.indexOf('bindings:'), y.indexOf('bindings:')+260));"
+```
+
+Record the before and after line counts in the commit message. The fixture is small
+(3 variants, 6 rules), so expect a modest absolute drop; what matters is that each
+`when` now occupies one line instead of five, which is what scales.
+
+- [ ] **Step 7: Run the full suite and the type check**
+
+Run: `npm test && npx tsc -p tsconfig.base.json --noEmit`
+
+Expected: PASS, with the tsc error count unchanged at 10. Note that the plugin's
+foundation and component briefs both flow through this emitter, so plugin tests
+asserting on emitted YAML may also need their expectations updated.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add packages/extractor/src/yaml.ts packages/extractor/test/yaml.test.ts
+git commit -m "feat(extractor): emit short scalar collections in flow style" -m "Task 4 removed the 36-way duplication, but block style still spent five lines on a two-fact condition, so a real component's bindings cost well over a thousand lines for when clauses alone and the 400-500 line target was unreachable." -m "Flow style applies only to collections whose members are all inline scalars or themselves flow-eligible, bounded to two levels and a 72-character budget, and scalars still go through the existing quoting helpers so escaping is identical in both styles. The js-yaml round-trip tests are what make this safe: the data is unchanged, only its rendering." -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 6: Split the API into variants, states and booleans
 v1 emitted the same information three times, as `api`, `axes` and `states`, and its
 `axes` block listed five boolean state props as independent axes, implying
 3 x 2^5 = 384 combinations against 36 real variants.
@@ -913,7 +1120,7 @@ git commit -m "feat(extractor)!: split the brief API into variants, states and b
 
 ---
 
-### Task 6: Carry the generated group descriptions in the foundation brief
+### Task 7: Carry the generated group descriptions in the foundation brief
 This fixes step 1 of the intended workflow. The foundation frame renders AI-written
 per-group descriptions, persisted on the doc link as
 `FoundationDocLink.groupDescriptions`, but `foundationBrief` emits only `collections`
@@ -932,7 +1139,7 @@ the end.
 - Consumes: `FoundationDocLink.groupDescriptions` (existing).
 - Produces: `foundationBrief(f: FoundationSpec, opts: FoundationBriefOptions): YamlValue` where
   `FoundationBriefOptions` is `{ generatedAt: string; groupDescriptions?: Record<string, Record<string, string>> }`.
-  Task 18 adds a `contrast` field to the same options object.
+  Task 19 adds a `contrast` field to the same options object.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1095,7 +1302,7 @@ git commit -m "feat(extractor,plugin): carry generated group descriptions in the
 
 ---
 
-### Task 7: Stop `unbound` contradicting `tokens`
+### Task 8: Stop `unbound` contradicting `tokens`
 **Files:**
 - Modify: `packages/extractor/src/tokens.ts:20` (`Gap`), `:523-560` (`extractGaps`)
 - Modify: `packages/extractor/src/brief.ts` (the `unbound` mapping in `componentBrief`)
@@ -1265,7 +1472,7 @@ git commit -m "fix(extractor): stop unbound contradicting tokens" -m "Gaps now c
 
 ---
 
-### Task 8: State which mode a resolved value came from
+### Task 9: State which mode a resolved value came from
 Task 4 already put `resolved` inside `tokens.used`, one entry per token. This adds the
 mode that value was read at.
 
@@ -1374,7 +1581,7 @@ git commit -m "feat(extractor): name the mode a resolved value was read at" -m "
 
 ---
 
-### Task 9: Resolve typography structurally
+### Task 10: Resolve typography structurally
 v1 emitted typography as a display string, `"Button/L : 14px Medium"`, with no
 `value` and no `code`. Nothing downstream could act on it, including `requiredRatio`,
 which needs a size and a weight to pick a WCAG threshold.
@@ -1502,7 +1709,7 @@ git commit -m "feat(extractor): resolve typography structurally" -m "v1 emitted 
 
 ---
 
-### Task 10: Emit deterministic validation findings
+### Task 11: Emit deterministic validation findings
 The sample Button's most important fact is that its Primary/Large default variant
 binds `color/surface/primary/disabled`. In v1 that sits in row 1 of 36, indistinguishable
 from every other binding. This block names it.
@@ -1520,7 +1727,7 @@ number.
 - Test: `packages/extractor/test/validate.test.ts`, `packages/extractor/test/layout.test.ts`, `packages/extractor/test/specHash.test.ts`
 
 **Interfaces:**
-- Consumes: `TokenRule.path`, `Gap.property` and `GapIssue` (Task 7), `lookupToken`'s `mode` (Task 8), `spec.layout`.
+- Consumes: `TokenRule.path`, `Gap.property` and `GapIssue` (Task 8), `lookupToken`'s `mode` (Task 9), `spec.layout`.
 - Produces:
 
 ```ts
@@ -1882,7 +2089,7 @@ git commit -m "feat(extractor): emit deterministic validation findings" -m "Five
 
 ---
 
-### Task 11: Split `source` into key, name, node and component key
+### Task 12: Split `source` into key, name, node and component key
 **Files:**
 - Modify: `packages/extractor/src/extract.ts` (`IntermediateSpec` gains `figmaFileName`)
 - Modify: `packages/extractor/src/brief.ts` (both `source` blocks)
@@ -1980,7 +2187,7 @@ git commit -m "feat(extractor): split brief source into key, name, node and comp
 
 ---
 
-### Task 12: Lock the size win with an assertion and a golden file
+### Task 13: Lock the size win with an assertion and a golden file
 Task 4 delivered the size reduction. Nothing yet stops a later change from undoing it,
 and nothing reviews the whole payload as a document rather than field by field.
 
@@ -1990,7 +2197,7 @@ and nothing reviews the whole payload as a document rather than field by field.
 - Test: both of the above
 
 **Interfaces:**
-- Consumes: everything from Tasks 1-11.
+- Consumes: everything from Tasks 1-12.
 - Produces: no source change. Two regression guards.
 
 - [ ] **Step 1: Write the size assertion**
@@ -2161,7 +2368,7 @@ git commit -m "test(extractor): lock the brief size and add a golden file" -m "A
 
 ---
 
-### Task 13: Classify foundation colour variables by role
+### Task 14: Classify foundation colour variables by role
 **Files:**
 - Create: `packages/extractor/src/colorContrast.ts`
 - Test: `packages/extractor/test/colorContrast.test.ts`
@@ -2308,7 +2515,7 @@ git commit -m "feat(extractor): classify foundation colours by role" -m "Pairs f
 
 ---
 
-### Task 14: Report which WCAG bars a ratio clears
+### Task 15: Report which WCAG bars a ratio clears
 **Files:**
 - Modify: `packages/extractor/src/colorContrast.ts`
 - Test: `packages/extractor/test/colorContrast.test.ts`
@@ -2395,13 +2602,13 @@ git commit -m "feat(extractor): report which WCAG bars a ratio clears" -m "Not a
 
 ---
 
-### Task 15: Measure within-collection pairs per mode
+### Task 16: Measure within-collection pairs per mode
 **Files:**
 - Modify: `packages/extractor/src/colorContrast.ts`, `packages/extractor/src/index.ts`
 - Test: `packages/extractor/test/colorContrast.test.ts`
 
 **Interfaces:**
-- Consumes: `colorRole` and `barsCleared` (Tasks 13-14); `concreteColor`, `contrastRatio`, `blend` from `contrast.ts` (Task 2); `FoundationSpec`, `FoundationVariable` from `foundation.ts`.
+- Consumes: `colorRole` and `barsCleared` (Tasks 14-15); `concreteColor`, `contrastRatio`, `blend` from `contrast.ts` (Task 2); `FoundationSpec`, `FoundationVariable` from `foundation.ts`.
 - Produces:
 
 ```ts
@@ -2716,7 +2923,7 @@ git commit -m "feat(extractor): measure within-collection colour contrast per mo
 
 ---
 
-### Task 16: Add the foundation contrast toggle
+### Task 17: Add the foundation contrast toggle
 **Files:**
 - Modify: `packages/plugin/src/docLink.ts:155-160` (`FoundationConfig`), and the foundation config parse near `:326-345`
 - Test: `packages/plugin/test/docLink.test.ts`
@@ -2844,14 +3051,14 @@ git commit -m "feat(plugin): add the foundation contrast toggle" -m "Defaults to
 
 ---
 
-### Task 17: Render the contrast matrix on the foundation frame
+### Task 18: Render the contrast matrix on the foundation frame
 **Files:**
 - Create: `packages/plugin/src/foundationContrast.ts`
 - Modify: `packages/plugin/src/foundationFrame.ts`
 - Test: `packages/plugin/test/foundationContrast.test.ts`
 
 **Interfaces:**
-- Consumes: `ColorContrastReport`, `ContrastMatrix` (Task 15); `FoundationConfig.includeContrast` (Task 16).
+- Consumes: `ColorContrastReport`, `ContrastMatrix` (Task 16); `FoundationConfig.includeContrast` (Task 17).
 - Produces:
 
 ```ts
@@ -3086,9 +3293,9 @@ git commit -m "feat(plugin): render the colour contrast matrix on foundation fra
 
 ---
 
-### Task 18: Carry contrast failures in the foundation brief
-Task 6 gave the foundation brief its generated prose. This adds the contrast half, now
-that Tasks 13-17 have something to report.
+### Task 19: Carry contrast failures in the foundation brief
+Task 7 gave the foundation brief its generated prose. This adds the contrast half, now
+that Tasks 14-18 have something to report.
 
 **Files:**
 - Modify: `packages/extractor/src/brief.ts` (`FoundationBriefOptions`, `foundationBrief`)
@@ -3096,7 +3303,7 @@ that Tasks 13-17 have something to report.
 - Test: `packages/extractor/test/brief.test.ts`
 
 **Interfaces:**
-- Consumes: `ColorContrastReport` (Task 15); `FoundationBriefOptions` (Task 6).
+- Consumes: `ColorContrastReport` (Task 16); `FoundationBriefOptions` (Task 7).
 - Produces: `FoundationBriefOptions` gains `contrast?: ColorContrastReport`; the brief gains a `contrast` block.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3178,7 +3385,7 @@ And to `foundationBrief`'s return, before `guidelines`:
 
 - [ ] **Step 4: Compute it at the copy site**
 
-In `copyFoundationBrief`, extend the call added in Task 6:
+In `copyFoundationBrief`, extend the call added in Task 7:
 
 ```ts
     const yaml = toYaml(foundationBrief(spec, {
@@ -3207,7 +3414,7 @@ git commit -m "feat(extractor,plugin): carry contrast failures in the foundation
 
 ---
 
-### Task 19: Verify in Figma
+### Task 20: Verify in Figma
 Every prior task is pure or unit-tested, and none of them proves the plugin runs. v1 was code-complete, fully reviewed, and never once run in Figma. This task is a release gate, not a follow-up.
 
 **Files:**
@@ -3227,7 +3434,7 @@ Record every result in `docs/manual-tests/2026-08-18-copy-for-ai-v2.md`. A line 
 
 - [ ] The Accessibility group offers Interactions, Content Considerations and Semantics & Focus, and no Contrast checkbox.
 - [ ] A component doc generated before this change rebuilds via Update, and the rebuilt frame has no Contrast section.
-- [ ] Existing component docs show "Update available" once (expected: Task 7 changed gap issue ids) and settle after a single Update rather than reporting drift again.
+- [ ] Existing component docs show "Update available" once (expected: Task 8 changed gap issue ids) and settle after a single Update rather than reporting drift again.
 - [ ] Existing foundation docs show NO "Update available". The contrast toggle defaults off and the block is derived, so the hash must not have moved.
 - [ ] Turning the contrast toggle on renders the matrix, backgrounds across and foregrounds down, with readable labels at the 92px cell width.
 - [ ] A two-mode collection renders one matrix per mode, and the Dark matrix shows Dark values.
