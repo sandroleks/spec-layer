@@ -448,13 +448,17 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
  * implementation needs.
  *
  * v1 emitted only the display string, which made typography the one binding
- * shape that carried no value and no code: a consumer could not generate CSS
- * from "Button/L : 14px Medium", and requiredRatio could not pick a WCAG
- * threshold without a size and a weight.
+ * shape that carried no value and no code: nothing downstream could act on
+ * it, and an implementation could not produce CSS from a string like
+ * "Button/L : 14px Medium".
  *
  * `source_name` keeps the raw Figma style name, stray double spaces
  * included, because that string is what a designer searches for in the
  * file — it is never normalised.
+ *
+ * Known gap: `font_style` is a Figma style name ("Medium", "Bold"), not a
+ * numeric weight. A consumer that needs a numeric CSS `font-weight` has to
+ * map the name itself; this block does not do that mapping.
  *
  * `line_height.value` is added conditionally, not assigned `undefined`:
  * `lineHeight.unit` can be `AUTO` with no numeric value at all (the style
