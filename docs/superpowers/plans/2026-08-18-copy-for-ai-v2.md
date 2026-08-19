@@ -37,6 +37,19 @@ Removing the broken per-component contrast still happens at Task 1, so the misle
 - **Plugin UI copy: never use em dashes or en dashes.** Plain, honest, peer tone. Rules in `docs/plugin-voice-and-copy.md`.
 - **`specContentHash` and `foundationContentHash` must not change value except where a task says so explicitly.** Every task touching a hashed type adds a projection and a test proving the hash held.
 - **Baseline:** `npm test` is green at 76 files / 1271 tests before starting. Run it after every task.
+- **Two authoring bugs recur in this plan's own code samples. Fix them silently when you
+  hit one; they are not behaviour changes.**
+  1. **`{ key: undefined }` does not remove a key in JavaScript.** Several samples build a
+     result object with undefined-valued keys, relying on the YAML emitter to drop them —
+     but the same task's tests often assert `'key' in obj` on the RAW object, where the key
+     is present with value `undefined`. Build such objects with conditional key adds
+     (`...(v !== undefined ? { key: v } : {})`) so the raw object matches what the tests
+     and the emitted YAML both claim. This has already bitten Tasks 4, 6 and 7.
+  2. **A group defined by an allow-list silently drops what it does not list.** Prefer
+     defining a bucket by exclusion, so a value the author did not anticipate surfaces
+     rather than vanishing. `api.slots` exists because a three-group allow-list dropped
+     every `text` and `instanceSwap` prop, and both fixtures had one.
+
 - **Commit after every task.** Conventional commits, with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` as the last line.
 
 ---
