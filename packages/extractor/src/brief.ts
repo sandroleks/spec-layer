@@ -15,6 +15,7 @@ import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
 import type { TokenRule } from './tokens';
+import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 
 /** Brief schema version. Bumped when the brief's shape or field meanings
  *  change, independently of EXTRACTOR_VERSION. */
@@ -290,11 +291,70 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
 }
 
 /**
+ * The component's API, with configurable variants separated from interaction
+ * states.
+ *
+ * v1 emitted this three times over: `api` as a flat prop list, `axes` as the
+ * same props again, and `states` as a third view. Worse, `axes` listed each
+ * boolean state prop as an independent axis, so a Button with three types,
+ * two sizes and five state flags advertised 3 x 2^5 = 384 combinations
+ * against 36 real variants.
+ *
+ * The split is not a judgement call: `stateAxisProps` already computes
+ * exactly which variant props the States matrix consumes, and the canvas
+ * frames have relied on it for both the Variants and the States sections.
+ * Every prop lands in exactly one of the three groups below (or is absent
+ * from all of them, for a text/instanceSwap prop, which this block does not
+ * carry): a variant axis is either a state flag (→ `states`, via
+ * `stateAxisProps`) or a configurable variant (→ `variants`); a boolean prop
+ * is a state flag only when it is ALSO a variant axis that `stateAxisProps`
+ * claimed, otherwise it is a genuine content toggle (→ `booleans`).
+ */
+function apiOf(spec: IntermediateSpec): YamlValue | undefined {
+  const stateProps = stateAxisProps(spec.variants);
+  const matrix = detectStateMatrix(spec.variants);
+
+  const variants: Record<string, YamlValue> = {};
+  for (const axis of spec.variants) {
+    if (stateProps.has(axis.prop)) continue;
+    const declared = spec.props.find((p) => p.name === axis.prop);
+    variants[axis.prop] = { options: axis.values, default: declared?.default };
+  }
+
+  const booleans: Record<string, YamlValue> = {};
+  for (const p of spec.props) {
+    if (p.kind !== 'boolean' || stateProps.has(p.name)) continue;
+    booleans[p.name] = { default: p.default };
+  }
+
+  // 'Default' is the matrix's own baseline column, not a state the component has.
+  const states = (matrix?.columns ?? [])
+    .map((c) => c.label)
+    .filter((label) => label.toLowerCase() !== 'default');
+
+  // Built by conditionally adding keys, not by assigning `undefined` to them:
+  // an object literal like `{ states: undefined }` still has a `states` key
+  // (`'states' in obj` is true even though the value is undefined), and the
+  // callers of this function check presence directly rather than only after
+  // a YAML round trip (which does drop undefined-valued keys).
+  const result: Record<string, YamlValue> = {};
+  if (Object.keys(variants).length > 0) result.variants = variants;
+  if (states.length > 0) result.states = states;
+  if (Object.keys(booleans).length > 0) result.booleans = booleans;
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
  * The public component brief: everything about one component, including its
  * token bindings. `spec` is the extractor's internal IntermediateSpec; this
  * is a PROJECTION of it, not a dump — see the file header.
  */
 export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
+  // Same reasoning as inside apiOf: only spread the key in when there is an
+  // api block, rather than assigning `api: undefined`, so a component with
+  // no props has no `api` key at all on the raw object, not merely one with
+  // an undefined value.
+  const api = apiOf(spec);
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
@@ -306,16 +366,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       name: spec.name,
       related: spec.related.length > 0 ? spec.related : undefined,
     },
-    api: spec.props.map((p) => ({
-      name: p.name,
-      kind: p.kind,
-      options: p.options,
-      default: p.default,
-    })),
-    axes: spec.variants.length > 0
-      ? spec.variants.map((v) => ({ prop: v.prop, values: v.values }))
-      : undefined,
-    states: spec.states.length > 0 ? spec.states : undefined,
+    ...(api !== undefined ? { api } : {}),
     anatomy: nestAnatomy(spec.anatomy),
     layout: spec.layout.length > 0
       ? spec.layout.map((l) => ({ part: l.part, summary: l.summary }))

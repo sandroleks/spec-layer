@@ -157,9 +157,11 @@ interface ParsedComponentBrief {
   spec_layer: { kind: string; version: number; extractor: string; generated: string };
   source: { file: string; node: string; component_key?: string };
   component: { name: string; related?: string[] };
-  api: Array<{ name: string; kind: string; options?: string[]; default?: string | boolean }>;
-  axes?: Array<{ prop: string; values: string[] }>;
-  states?: string[];
+  api?: {
+    variants?: Record<string, { options: string[]; default?: string | boolean }>;
+    states?: string[];
+    booleans?: Record<string, { default?: string | boolean }>;
+  };
   anatomy: AnatomyNode[];
   layout?: Array<{ part: string; summary: string }>;
   unbound?: Array<{ part: string; issue: string }>;
@@ -215,12 +217,17 @@ describe('componentBrief', () => {
     expect(y.source).toEqual({ file: 'abc123', node: '1:100', component_key: 'm3-button' });
   });
 
-  it('emits props with their PropKind verbatim', () => {
-    expect(brief().api).toEqual([
-      { name: 'label', kind: 'text', default: 'Button' },
-      { name: 'Style', kind: 'variant', options: ['Filled', 'Outlined'], default: 'Filled' },
-      { name: 'disabled', kind: 'boolean', default: false },
-    ]);
+  // Rewritten from the v1 flat-array `api` shape: SPEC's declared props are
+  // 'label' (text), 'Style' (variant) and 'disabled' (boolean). 'disabled'
+  // isn't a variant axis here (it's not in spec.variants), so it isn't a
+  // state flag and lands in `booleans`; 'label' is a text prop, which this
+  // block does not carry (see apiOf's doc comment).
+  it('splits the API into variants, states and booleans', () => {
+    expect(brief().api).toEqual({
+      variants: { Style: { options: ['Filled', 'Outlined'], default: 'Filled' } },
+      states: ['Enabled', 'Hovered'],
+      booleans: { disabled: { default: false } },
+    });
   });
 
   it('nests anatomy by depth rather than emitting a flat list', () => {
@@ -233,15 +240,89 @@ describe('componentBrief', () => {
     }]);
   });
 
-  it('emits axes, states, layout and related', () => {
+  // Rewritten from the v1 test that also asserted on the now-removed
+  // top-level `axes` and `states` blocks; that coverage moved to the API
+  // split tests below.
+  it('emits layout and related', () => {
     const y = brief();
-    expect(y.axes).toEqual([
-      { prop: 'Style', values: ['Filled', 'Outlined'] },
-      { prop: 'State', values: ['Enabled', 'Hovered'] },
-    ]);
-    expect(y.states).toEqual(['Enabled', 'Hovered']);
     expect(y.layout).toEqual([{ part: 'container', summary: 'horizontal, gap 8' }]);
     expect(y.component).toEqual({ name: 'Button', related: ['Icon'] });
+  });
+
+  // ---------------------------------------------------------------------
+  // api: variants / states / booleans
+  // ---------------------------------------------------------------------
+
+  it('separates configurable variants from interaction states', () => {
+    const spec = {
+      ...baseSpec(),
+      variants: [
+        { prop: 'type', values: ['Primary', 'Outline', 'Ghost'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+        { prop: 'hover', values: ['False', 'True'] },
+        { prop: 'disabled', values: ['False', 'True'] },
+      ],
+      props: [
+        { name: 'type', kind: 'variant' as const,
+          options: ['Primary', 'Outline', 'Ghost'], default: 'Primary' },
+        { name: 'size', kind: 'variant' as const, options: ['Large', 'Small'], default: 'Large' },
+        { name: 'hover', kind: 'variant' as const, options: ['False', 'True'], default: 'False' },
+        { name: 'disabled', kind: 'variant' as const, options: ['False', 'True'], default: 'False' },
+        { name: 'iconLeft', kind: 'boolean' as const, default: true },
+      ],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(Object.keys(brief.api.variants)).toEqual(['type', 'size']);
+    expect(brief.api.variants.type).toEqual(
+      { options: ['Primary', 'Outline', 'Ghost'], default: 'Primary' });
+    expect(brief.api.states).toContain('hover');
+    expect(brief.api.states).toContain('disabled');
+    expect(brief.api.states).not.toContain('Default');
+    expect(brief.api.booleans).toEqual({ iconLeft: { default: true } });
+  });
+
+  it('no longer emits a top-level axes or states block', () => {
+    const brief = componentBrief(baseSpec(), { generatedAt: 'T' }) as Record<string, any>;
+    expect('axes' in brief).toBe(false);
+    expect('states' in brief).toBe(false);
+  });
+
+  it('omits states when the component has none', () => {
+    const spec = { ...baseSpec(), variants: [{ prop: 'size', values: ['Large', 'Small'] }],
+      props: [{ name: 'size', kind: 'variant' as const,
+                options: ['Large', 'Small'], default: 'Large' }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect('states' in brief.api).toBe(false);
+    expect(Object.keys(brief.api.variants)).toEqual(['size']);
+  });
+
+  it('omits the whole api block for a component with no props', () => {
+    const spec = { ...baseSpec(), variants: [], props: [] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect('api' in brief).toBe(false);
+  });
+
+  // The correctness question this task is really about: a boolean prop whose
+  // name is itself a state word (STATE_ORDER in statesMatrix.ts includes
+  // 'disabled') is picked up by detectStateMatrix's flags path when it is a
+  // variant axis. It must land in `states` exactly once, never in `booleans`
+  // and never in `variants` -- no drop, no double count.
+  it('never double-counts or drops a boolean prop whose name is a state word', () => {
+    const spec = {
+      ...baseSpec(),
+      variants: [
+        { prop: 'size', values: ['Large', 'Small'] },
+        { prop: 'disabled', values: ['False', 'True'] },
+      ],
+      props: [
+        { name: 'size', kind: 'variant' as const, options: ['Large', 'Small'], default: 'Large' },
+        { name: 'disabled', kind: 'boolean' as const, default: false },
+      ],
+    };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as Record<string, any>;
+    expect(Object.keys(brief.api.variants)).toEqual(['size']);
+    expect(brief.api.states).toEqual(['disabled']);
+    expect('booleans' in brief.api).toBe(false);
   });
 
   it('emits gaps as unbound', () => {
@@ -533,9 +614,13 @@ describe('componentBrief tokens', () => {
     });
   });
 
-  it('every `when` names a declared axis and only declared values', () => {
+  // Rewritten from the v1 test that read the now-removed top-level `axes`
+  // block: the ground truth for "what axes exist" is the source spec, not
+  // the brief projection (which now splits variant axes across
+  // `api.variants` and `api.states` rather than listing them verbatim).
+  it('every `when` names an axis declared on the component and only declared values', () => {
     const y = tokenBrief();
-    const declared = new Map((y.axes ?? []).map((a) => [a.prop, a.values]));
+    const declared = new Map(TOKEN_SPEC.variants.map((a) => [a.prop, a.values]));
     for (const b of y.tokens.bindings) {
       if (!b.when) continue;
       for (const [axis, values] of Object.entries(b.when)) {
