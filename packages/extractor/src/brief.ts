@@ -18,9 +18,22 @@ import type { TokenRule } from './tokens';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
 
-/** Brief schema version. Bumped when the brief's shape or field meanings
- *  change, independently of EXTRACTOR_VERSION. */
-export const BRIEF_VERSION = 1;
+/**
+ * Brief schema version. Bumped when the brief's shape or field meanings change,
+ * independently of EXTRACTOR_VERSION.
+ *
+ * 2: the v2 brief. `source` split into file_key/file_name/node_id/node_name,
+ * with an unavailable key now absent rather than the string 'unknown'; `api`
+ * split into variants/states/booleans/slots; `tokens` restructured into `used`
+ * plus condition-based `bindings` instead of a per-variant expansion;
+ * `typography` carrying structured metrics instead of a display string; a
+ * `validation` block added; and the component-level `contrast` block removed.
+ *
+ * Distinct from the doc drift baseline: nothing keys "rebuild needed" on this
+ * number (that reads EXTRACTOR_VERSION), so bumping it does not restate every
+ * committed doc.
+ */
+export const BRIEF_VERSION = 2;
 
 function envelope(kind: 'component' | 'foundation', generatedAt: string): YamlValue {
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
