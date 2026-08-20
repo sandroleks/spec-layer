@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validate } from '../src/validate';
+import { extract } from '../src/extract';
+import type { SerializedNode } from '../src/tree';
 
 const base = () => ({
   name: 'Button', figmaKey: '', figmaFile: 'F', figmaNode: '1:1',
@@ -222,5 +224,162 @@ describe('validate', () => {
                  token: 'color/surface/primary/disabled' }] };
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
+  });
+});
+
+// --- The geometry join must respect the condition, not just the path -------
+//
+// `spec.layout` describes the DEFAULT variant only, so a rule scoped to some
+// OTHER variant must never be the one it is compared against. These cases are
+// built as serialized trees and run through `extract()` rather than as
+// hand-written specs, because the defect is exactly a disagreement between two
+// real producers (extractLayout's default-variant walk and extractTokens'
+// per-variant minimization) and a hand-built spec can only assert what the
+// author already believed about both.
+
+const tree = (o: Record<string, unknown>): SerializedNode => o as unknown as SerializedNode;
+
+/** A two-variant set on one axis, each variant holding one node that carries
+ *  `layout` and (optionally) a binding for the same geometry property. */
+const twoVariantSet = (
+  axis: string,
+  defaultValue: string,
+  leaf: string,
+  figmaProperty: string,
+  variants: { value: string; rendered: number; token?: string }[],
+): SerializedNode =>
+  tree({
+    id: '1:0', name: 'Btn', type: 'COMPONENT_SET', visible: true,
+    propertyDefinitions: {
+      [axis]: { type: 'VARIANT', defaultValue, variantOptions: variants.map((v) => v.value) },
+    },
+    children: variants.map((v, i) => ({
+      id: `1:${i * 2 + 1}`, name: `${axis}=${v.value}`, type: 'COMPONENT', visible: true,
+      children: [{
+        id: `1:${i * 2 + 2}`, name: leaf, type: 'FRAME', visible: true,
+        layout: { mode: 'HORIZONTAL', [figmaProperty]: v.rendered },
+        ...(v.token ? { bindings: [{ property: figmaProperty, token: v.token }] } : {}),
+      }],
+    })),
+  });
+
+const geometry = (root: SerializedNode, resolved: Map<string, number>) =>
+  validate(extract(root, { figmaFile: 'F' }), resolved)
+    .filter((f) => f.id === 'geometry-token-mismatch');
+
+describe('validate geometry-token-mismatch, per variant bindings', () => {
+  it('does not flag a gap bound to a different token in each variant, all of them correct', () => {
+    // The reviewer's F4. `Size=Small` is the DECLARED default, and the designer
+    // has dragged `Size=Large` to sit first on the canvas, which is not the
+    // default and never was. Small renders gap 4 and binds `space-1`, which
+    // resolves to 4. Large renders 12 and binds `space-3`, which resolves to
+    // 12. Every variant is individually correct, so there is nothing to report;
+    // joining on path and property alone compared Small's rendered 4 against
+    // Large's `space-3` and claimed the frame disagreed with its own token.
+    const root = twoVariantSet('Size', 'Small', 'row#', 'itemSpacing', [
+      { value: 'Large', rendered: 12, token: 'space-3' },
+      { value: 'Small', rendered: 4, token: 'space-1' },
+    ]);
+    expect(geometry(root, new Map([['space-1', 4], ['space-3', 12]]))).toEqual([]);
+  });
+
+  it('does not flag a border-radius bound to a different token in each variant', () => {
+    // The reviewer's C9: the same mechanism on `cornerRadius`, with the
+    // declared default as the SECOND child, so child order and default order
+    // disagree in the other direction. Large renders 12 and binds `rd-lg`,
+    // which resolves to 12.
+    const root = twoVariantSet('Size', 'Large', 'box#', 'cornerRadius', [
+      { value: 'Small', rendered: 4, token: 'rd-sm' },
+      { value: 'Large', rendered: 12, token: 'rd-lg' },
+    ]);
+    expect(geometry(root, new Map([['rd-sm', 4], ['rd-lg', 12]]))).toEqual([]);
+  });
+
+  it('does not flag a default-variant node against a token bound only in a non-default variant', () => {
+    // The reviewer's C6. `State=Hover` binds `icon#` to `rd-sm`; the default
+    // variant's `icon#` carries a hardcoded 8 and no binding at all. The rule
+    // used to claim the frame disagreed with a token it is not bound to.
+    const root = twoVariantSet('State', 'Default', 'icon#', 'cornerRadius', [
+      { value: 'Default', rendered: 8 },
+      { value: 'Hover', rendered: 4, token: 'rd-sm' },
+    ]);
+    expect(geometry(root, new Map([['rd-sm', 4]]))).toEqual([]);
+  });
+
+  it('still flags the default variant against the token that really applies to it', () => {
+    // The other half: a genuine defect on the same shape. Small IS the default,
+    // it binds `space-1` which resolves to 4, and it renders 6. The finding
+    // must fire, and it must name `space-1` rather than `space-3` from the
+    // variant that happens to sit first.
+    const root = twoVariantSet('Size', 'Small', 'row#', 'itemSpacing', [
+      { value: 'Large', rendered: 12, token: 'space-3' },
+      { value: 'Small', rendered: 6, token: 'space-1' },
+    ]);
+    const f = geometry(root, new Map([['space-1', 4], ['space-3', 12]]));
+    expect(f.map((x) => x.path)).toEqual(['Container/row']);
+    expect(f[0].message).toBe('The frame renders gap 6, while the bound token space-1 resolves to 4.');
+  });
+
+  it('says nothing when two rules both apply to the default variant', () => {
+    // One node bound twice for one property. Both rules are unconditioned, so
+    // both apply to the default variant and neither is the frame's obvious
+    // source. That is a genuine conflict, and `duplicate-conflicting-binding`
+    // is the finding that describes it correctly; picking one of the two here
+    // and calling the frame wrong is the guess that produced the bug above.
+    const root = tree({
+      id: '1:0', name: 'Btn', type: 'COMPONENT_SET', visible: true,
+      propertyDefinitions: { Size: { type: 'VARIANT', defaultValue: 'Small', variantOptions: ['Small'] } },
+      children: [{
+        id: '1:1', name: 'Size=Small', type: 'COMPONENT', visible: true,
+        children: [{
+          id: '1:2', name: 'box#', type: 'FRAME', visible: true,
+          layout: { mode: 'HORIZONTAL', cornerRadius: 8 },
+          bindings: [
+            { property: 'cornerRadius', token: 'rd-sm' },
+            { property: 'cornerRadius', token: 'rd-lg' },
+          ],
+        }],
+      }],
+    });
+    const resolved = new Map([['rd-sm', 4], ['rd-lg', 12]]);
+    expect(geometry(root, resolved)).toEqual([]);
+    // The conflict itself is still reported, so nothing is swallowed.
+    expect(validate(extract(root, { figmaFile: 'F' }), resolved).map((x) => x.id))
+      .toContain('duplicate-conflicting-binding');
+  });
+
+  it('compares the only rule when the default variant combo cannot be derived', () => {
+    // No variantInstance carries `anatomyComponentId`, so the combo falls back
+    // to empty and every rule matches. With exactly one rule that is still an
+    // honest comparison, so the fallback must not silence the rule outright.
+    const spec = { ...base(),
+      anatomyComponentId: 'not-a-variant',
+      variantInstances: [{ nodeId: '9:9', name: 'Size=Small', values: { Size: 'Small' } }],
+      tokens: [{ part: 'box', path: 'Container/box', property: 'border-radius',
+                 conditions: { Size: ['Large'] }, token: 'rd-lg' }],
+      layout: [{ part: 'box#', path: 'Container/box',
+                 summary: 'radius 4', values: { radius: 4 } }] };
+    const f = validate(spec as never, new Map([['rd-lg', 12]]));
+    expect(f.map((x) => x.id)).toEqual(['geometry-token-mismatch']);
+    expect(f[0].message).toContain('rd-lg');
+  });
+
+  it('says nothing when the combo cannot be derived and several rules exist', () => {
+    // Same undrivable combo, two per-variant rules. Every rule matches an empty
+    // combo, so the more-than-one guard is the whole protection here: without
+    // it this is precisely the F4 shape, guessing between two rules for a frame
+    // whose variant it cannot identify.
+    const spec = { ...base(),
+      anatomyComponentId: 'not-a-variant',
+      variantInstances: [{ nodeId: '9:9', name: 'Size=Small', values: { Size: 'Small' } }],
+      tokens: [
+        { part: 'row', path: 'Container/row', property: 'gap',
+          conditions: { Size: ['Large'] }, token: 'space-3' },
+        { part: 'row', path: 'Container/row', property: 'gap',
+          conditions: { Size: ['Small'] }, token: 'space-1' },
+      ],
+      layout: [{ part: 'row#', path: 'Container/row',
+                 summary: 'horizontal, gap 4', values: { gap: 4 } }] };
+    expect(validate(spec as never, new Map([['space-1', 4], ['space-3', 12]]))).toEqual([]);
   });
 });

@@ -11,7 +11,7 @@
 import type { IntermediateSpec } from './extract';
 import type { LayoutSummary } from './layout';
 import type { VariantAxis } from './props';
-import { isModifierAxis } from './pivot';
+import { isModifierAxis, ruleMatchesConfig } from './pivot';
 import { isStateLike, isStateVocabName } from './statesMatrix';
 
 export type FindingId =
@@ -153,17 +153,51 @@ export function validate(
   // 2. A rendered number disagreeing with its bound token's resolved value.
   //
   // Joined on `path`, not `part`. `part` is unique only among SIBLINGS, so two
-  // subtrees each holding a node named `Icon` share one flat `part` key -- and
-  // `find` returns the first, so the SECOND node's rendered radius was compared
-  // against the FIRST node's token and reported under the FIRST node's path.
-  // Both nodes can be individually correct and still produce that finding: a
-  // fabricated contradiction between two unrelated nodes, attributed to the
-  // wrong path. `path` is the identity extractTokens itself groups by, for
-  // exactly this reason (see the grouping comment in tokens.ts).
+  // subtrees each holding a node named `Icon` share one flat `part` key, and a
+  // lookup keyed on it took the first match, so the SECOND node's rendered
+  // radius was compared against the FIRST node's token and reported under the
+  // FIRST node's path. Both nodes can be individually correct and still produce
+  // that finding: a fabricated contradiction between two unrelated nodes,
+  // attributed to the wrong path. `path` is the identity extractTokens itself
+  // groups by, for exactly this reason (see the grouping comment in tokens.ts).
+  //
+  // Joined on the CONDITION too, not just on path and property. extractLayout
+  // walks the default variant only, so a LayoutSummary states what the DEFAULT
+  // variant renders. A `find` over path and property alone took whichever rule
+  // came first regardless of the variants it is scoped to, so a component that
+  // binds one geometry property to a different token per variant had the
+  // default variant's rendered number compared against another variant's
+  // token: every variant individually correct, and a confidently wrong finding
+  // anyway.
+  //
+  // `defaultCombo` is the default variant's own axis values, already on the
+  // spec: `anatomyComponentId` IS the default variant's node id, and
+  // `variantInstances` carries the axis combo extractTokens conditioned its
+  // rules with, from the one shared axis model. `ruleMatchesConfig` treats an
+  // axis absent from a rule's conditions as matching anything, which is what an
+  // unconditioned or partially conditioned rule means.
+  //
+  // Then, deliberately, exactly ONE surviving rule is compared:
+  //  - ZERO: nothing is bound here for the default variant. Silent, as before.
+  //  - MORE THAN ONE: two rules both applying to the default variant for one
+  //    path and property is either a genuine conflict, which
+  //    `duplicate-conflicting-binding` reports below with the right message, or
+  //    a distinction on an axis this comparison cannot see. Guessing which one
+  //    the frame actually used is precisely how the bug above happened, so do
+  //    not guess.
+  // When the combo cannot be derived at all (no variantInstance carries the
+  // default variant's node id) the combo is empty, so EVERY rule matches and
+  // the more-than-one guard is what stops a multi-variant component from
+  // reporting nonsense.
+  const defaultCombo =
+    spec.variantInstances.find((v) => v.nodeId === spec.anatomyComponentId)?.values ?? {};
   for (const l of spec.layout) {
     for (const { property, value } of geometryOf(l)) {
-      const rule = spec.tokens.find((t) => t.path === l.path && t.property === property);
-      if (!rule) continue;
+      const applicable = spec.tokens.filter(
+        (t) => t.path === l.path && t.property === property && ruleMatchesConfig(t, defaultCombo),
+      );
+      if (applicable.length !== 1) continue;
+      const rule = applicable[0];
       const target = resolved.get(rule.token);
       if (target === undefined || target === value) continue;
       findings.push({

@@ -47,7 +47,7 @@ function axesUsed(rules: TokenRule[]): Set<string> {
   return out;
 }
 
-function ruleMatchesConfig(rule: TokenRule, config: Record<string, string>): boolean {
+export function ruleMatchesConfig(rule: TokenRule, config: Record<string, string>): boolean {
   for (const [axis, value] of Object.entries(config)) {
     const allowed = rule.conditions[axis];
     if (allowed && !allowed.includes(value)) return false;
