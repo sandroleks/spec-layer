@@ -10,7 +10,9 @@
  */
 import type { IntermediateSpec } from './extract';
 import type { LayoutSummary } from './layout';
-import { isStateLike } from './statesMatrix';
+import type { VariantAxis } from './props';
+import { isModifierAxis } from './pivot';
+import { isStateLike, isStateVocabName } from './statesMatrix';
 
 export type FindingId =
   | 'default-state-uses-state-token'
@@ -51,6 +53,50 @@ const STATE_SYNONYMS: Record<string, string[]> = {
 const hasWord = (haystack: string, word: string): boolean => new RegExp(`\\b${word}\\b`).test(haystack);
 
 /**
+ * Values that read as a boolean flag's own two settings.
+ *
+ * `isModifierAxis` needs exactly `true` and `false` together, so it is false
+ * for a condition SLICE like `{ Enabled: ['False'] }`, which names only the one
+ * value the binding is scoped to. This reads the same signal through such a
+ * slice, which is what makes the verdict independent of whether the axis was
+ * declared in `variants` at all.
+ */
+const isBooleanValues = (values: string[]): boolean =>
+  values.length > 0 && values.every((v) => v.toLowerCase() === 'true' || v.toLowerCase() === 'false');
+
+/**
+ * Does this binding's own condition restrict it to a STATE axis at all?
+ *
+ * Deliberately NOT a table mapping axis names to state meanings (`Enabled:
+ * False` -> disabled, `Active: True` -> ...). Such a table is unbounded, every
+ * entry guesses at someone else's naming, and each guess is a new way to be
+ * confidently wrong. This asks only the structural question the rest of the
+ * codebase already asks: is the axis named after a state concept
+ * (`isStateVocabName`, the same test detectStateMatrix's flags path uses), and
+ * is it a boolean flag rather than an enum? A name-only test would not do:
+ * `isStateVocabName('State')` is true, so it would suppress the enum
+ * `{ State: ['Default'] }` case this rule is named after.
+ *
+ * The consequence, accepted on purpose: this is POLARITY-BLIND. A binding
+ * conditioned `{ Enabled: ['True'] }` or `{ Loading: ['True'] }` on a
+ * `...disabled` token is a genuine defect and will now be missed. Reading
+ * polarity means deciding what `True` means on someone else's axis, which is
+ * the guessing table above. The message can only honestly claim "this binding
+ * applies where that state is not set" when no state-named axis is involved at
+ * all, so the rule now claims exactly that much and no more.
+ */
+function conditionsNameAStateAxis(
+  conditions: Record<string, string[]>,
+  variants: VariantAxis[],
+): boolean {
+  return Object.entries(conditions).some(([prop, values]) => {
+    if (!isStateVocabName(prop)) return false;
+    const declared = variants.find((v) => v.prop === prop);
+    return (declared !== undefined && isModifierAxis(declared)) || isBooleanValues(values);
+  });
+}
+
+/**
  * The geometry a layout entry states, as property name plus number.
  *
  * Reads `values`, the structured numbers extractLayout now carries. An earlier
@@ -74,11 +120,19 @@ export function validate(
 
   // 1. A binding whose token names a state that its own condition does not.
   //
-  // The condition is checked against every inflection of the word the token
-  // matched (via STATE_SYNONYMS), not just that exact spelling: a condition
-  // reading `{ State: ['Hovered'] }` must still suppress a token named
-  // `...primary-hover`, and vice versa, or the two most common spellings of
-  // the same state would silently fail to recognize each other.
+  // Two independent suppressions, neither of which subsumes the other:
+  //
+  //  - LEXICAL: the condition spells the state word itself. Checked against
+  //    every inflection of the word the token matched (via STATE_SYNONYMS),
+  //    not just that exact spelling: a condition reading `{ State: ['Hovered'] }`
+  //    must still suppress a token named `...primary-hover`, and vice versa, or
+  //    the two most common spellings of one state fail to recognize each other.
+  //    This one catches `{ State: ['Disabled'] }`, where the axis is an enum and
+  //    the structural test below says nothing.
+  //  - STRUCTURAL: the condition restricts to a state-named BOOLEAN axis, whose
+  //    value spells no state word at all. This one catches
+  //    `{ Enabled: ['False'] }`, a very common way to model "disabled", which
+  //    the lexical test reported as the exact defect the rule looks for.
   for (const t of spec.tokens) {
     const word = STATE_WORDS.find((w) => hasWord(t.token.toLowerCase(), w));
     if (!word) continue;
@@ -86,6 +140,7 @@ export function validate(
       .map(([axis, values]) => `${axis} ${values.join(' ')}`).join(' ').toLowerCase();
     const synonyms = STATE_SYNONYMS[word] ?? [word];
     if (synonyms.some((s) => hasWord(conditionText, s))) continue;
+    if (conditionsNameAStateAxis(t.conditions, spec.variants)) continue;
     findings.push({
       id: 'default-state-uses-state-token', severity: 'warning',
       path: t.path, property: t.property,

@@ -158,4 +158,69 @@ describe('validate', () => {
     expect(f[0].path).toBe('Footer/Icon');
     expect(f[0].message).toContain('rd-lg');
   });
+
+  // --- A state expressed through a differently named boolean axis ---------
+
+  it('does not flag a disabled token scoped by a boolean Enabled axis', () => {
+    // Many design systems model "disabled" as `Enabled = false` instead of
+    // adding a Disabled axis. `Enabled` names a state concept and its values
+    // are a boolean flag's own two settings, so this binding IS scoped to the
+    // state its token names -- the textbook-correct shape the rule exists to
+    // protect, previously reported as the exact defect it looks for.
+    const spec = { ...base(),
+      variants: [{ prop: 'Enabled', values: ['True', 'False'] }],
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill',
+                 conditions: { Enabled: ['False'] },
+                 token: 'color/surface/primary/disabled' }] };
+    expect(validate(spec as never, new Map())).toEqual([]);
+  });
+
+  it('does not flag a disabled token scoped by a boolean axis absent from the declared variants', () => {
+    // Same binding, with nothing declared in `variants`. The condition slice
+    // carries the boolean signal on its own, so the verdict must not depend on
+    // whether the axis happened to be declared.
+    const spec = { ...base(), tokens: [{
+      part: 'Container', path: 'Container', property: 'fill',
+      conditions: { Enabled: ['False'] },
+      token: 'color/surface/primary/disabled' }] };
+    expect(validate(spec as never, new Map())).toEqual([]);
+  });
+
+  it('still flags a disabled token scoped to the Default value of an enum State axis', () => {
+    // The case the rule is named after, and the one a careless fallback kills:
+    // `State` is state vocabulary, but an enum axis pinned to `Default` does
+    // not scope this binding to the disabled state at all.
+    const spec = { ...base(),
+      variants: [{ prop: 'State', values: ['Default', 'Hover', 'Disabled'] }],
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill',
+                 conditions: { State: ['Default'] },
+                 token: 'color/surface/primary/disabled' }] };
+    const f = validate(spec as never, new Map());
+    const hit = f.find((x) => x.id === 'default-state-uses-state-token')!;
+    expect(hit.message).toContain('disabled');
+    expect(hit.when).toEqual({ State: ['Default'] });
+  });
+
+  it('still flags a disabled token scoped to an enum state value when no variants are declared', () => {
+    const spec = { ...base(), tokens: [{
+      part: 'Container', path: 'Container', property: 'fill',
+      conditions: { State: ['Default'] },
+      token: 'color/surface/primary/disabled' }] };
+    const f = validate(spec as never, new Map());
+    expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
+  });
+
+  it('still flags a disabled token scoped only by non-state axes', () => {
+    // The motivating shape: no state-named axis anywhere in the condition.
+    const spec = { ...base(),
+      variants: [
+        { prop: 'Style', values: ['Primary', 'Secondary'] },
+        { prop: 'Size', values: ['Large', 'Small'] },
+      ],
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill',
+                 conditions: { Style: ['Primary'], Size: ['Large'] },
+                 token: 'color/surface/primary/disabled' }] };
+    const f = validate(spec as never, new Map());
+    expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
+  });
 });
