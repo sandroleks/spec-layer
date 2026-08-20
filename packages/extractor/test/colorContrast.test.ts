@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colorRole } from '../src/colorContrast';
+import { colorRole, barsCleared } from '../src/colorContrast';
 
 describe('colorRole', () => {
   it('reads text, icon, stroke, border and content as foreground', () => {
@@ -102,5 +102,67 @@ describe('colorRole', () => {
     expect(colorRole('color/text primary/default')).toBeNull();
     expect(colorRole('color/text_primary/default')).toBeNull();
     expect(colorRole('color.text.primary')).toBeNull();
+  });
+});
+
+describe('barsCleared', () => {
+  it('clears nothing below 3:1', () => {
+    expect(barsCleared(2.23)).toEqual([]);
+    expect(barsCleared(1)).toEqual([]);
+  });
+  it('clears aa-large from 3:1', () => {
+    expect(barsCleared(3)).toEqual(['aa-large']);
+    expect(barsCleared(4.22)).toEqual(['aa-large']);
+  });
+  it('clears aa from 4.5:1', () => {
+    expect(barsCleared(4.5)).toEqual(['aa-large', 'aa']);
+    expect(barsCleared(6.94)).toEqual(['aa-large', 'aa']);
+  });
+  it('clears aaa from 7:1', () => {
+    expect(barsCleared(7)).toEqual(['aa-large', 'aa', 'aaa']);
+    expect(barsCleared(21)).toEqual(['aa-large', 'aa', 'aaa']);
+  });
+  it('returns bars in ascending strictness so the last is the strongest', () => {
+    expect(barsCleared(21)[2]).toBe('aaa');
+  });
+
+  it('clears a bar exactly at its threshold, so the comparisons are >= not >', () => {
+    // Full float precision one step below each threshold. If any comparison
+    // were >, the exact-threshold cases above would return one bar fewer, and
+    // if any threshold were nudged down, these would return one bar more.
+    expect(barsCleared(2.9999999999999996)).toEqual([]);
+    expect(barsCleared(4.499999999999999)).toEqual(['aa-large']);
+    expect(barsCleared(6.999999999999999)).toEqual(['aa-large', 'aa']);
+  });
+
+  it('returns [] for NaN, which is not distinguishable from a failing pair', () => {
+    // Every comparison against NaN is false, so a NaN ratio reports the same
+    // empty list as a genuinely low-contrast pair. Left as is on purpose: the
+    // question this function answers is which bars a ratio clears, and NaN
+    // clears none. A ratio can only be NaN because the luminance maths that
+    // produced it was fed something invalid, so the place to catch that is
+    // where the ratio is computed, not here, where rejecting it would mean a
+    // second return shape for a case that cannot arise from valid colours.
+    expect(barsCleared(NaN)).toEqual([]);
+  });
+
+  it('does not range check, so out of range ratios report by the same rule', () => {
+    // A real contrast ratio is bounded to 1 through 21, but nothing here
+    // depends on that and nothing clamps it. Values below 1 clear no bar for
+    // the same reason 1 clears none, and values above 21 clear all three for
+    // the same reason 21 does, so a range check would add a failure mode
+    // without adding information. An out of range ratio is an upstream bug,
+    // and clamping it here would hide it.
+    expect(barsCleared(0)).toEqual([]);
+    expect(barsCleared(-1)).toEqual([]);
+    expect(barsCleared(-Infinity)).toEqual([]);
+    expect(barsCleared(21.5)).toEqual(['aa-large', 'aa', 'aaa']);
+    expect(barsCleared(Infinity)).toEqual(['aa-large', 'aa', 'aaa']);
+  });
+
+  it('returns a fresh array each call, so a caller mutating it changes nothing', () => {
+    const first = barsCleared(7);
+    first.push('aaa');
+    expect(barsCleared(7)).toEqual(['aa-large', 'aa', 'aaa']);
   });
 });

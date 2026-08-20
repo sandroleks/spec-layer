@@ -41,3 +41,24 @@ export function colorRole(name: string): ColorRole {
   }
   return null;
 }
+
+/** The named WCAG bars a ratio can clear, ascending in strictness. */
+export type ContrastBar = 'aa-large' | 'aa' | 'aaa';
+
+/**
+ * Which bars this ratio clears.
+ *
+ * Deliberately NOT a pass/fail verdict. A foundation carries no font size, so
+ * nothing here can know whether 3:1 (SC 1.4.3 large text, and SC 1.4.11 for UI
+ * components and borders) or 4.5:1 (normal text) is the bar that applies to a
+ * given use of the pair. Reporting every bar the ratio clears lets the reader
+ * apply the one their case needs, instead of the extractor asserting a threshold
+ * it cannot justify.
+ */
+export function barsCleared(ratio: number): ContrastBar[] {
+  const out: ContrastBar[] = [];
+  if (ratio >= 3) out.push('aa-large');
+  if (ratio >= 4.5) out.push('aa');
+  if (ratio >= 7) out.push('aaa');
+  return out;
+}
