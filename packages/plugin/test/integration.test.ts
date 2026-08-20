@@ -87,7 +87,12 @@ describe('full pipeline: serialize → extract → render → parse', () => {
       part: 'container', path: 'Container/container', property: 'gap',
       issue: 'hardcoded-value', value: 8,
     });
-    expect(spec.layout).toContainEqual({ part: 'container', summary: 'horizontal, gap 8', values: { gap: 8 } });
+    // `path` matches the gap's own path above: both walks are walkParts, so the
+    // geometry finding can join a layout entry to the rule on the same node.
+    expect(spec.layout).toContainEqual({
+      part: 'container', path: 'Container/container',
+      summary: 'horizontal, gap 8', values: { gap: 8 },
+    });
   });
 });
 

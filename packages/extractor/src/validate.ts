@@ -96,9 +96,18 @@ export function validate(
   }
 
   // 2. A rendered number disagreeing with its bound token's resolved value.
+  //
+  // Joined on `path`, not `part`. `part` is unique only among SIBLINGS, so two
+  // subtrees each holding a node named `Icon` share one flat `part` key -- and
+  // `find` returns the first, so the SECOND node's rendered radius was compared
+  // against the FIRST node's token and reported under the FIRST node's path.
+  // Both nodes can be individually correct and still produce that finding: a
+  // fabricated contradiction between two unrelated nodes, attributed to the
+  // wrong path. `path` is the identity extractTokens itself groups by, for
+  // exactly this reason (see the grouping comment in tokens.ts).
   for (const l of spec.layout) {
     for (const { property, value } of geometryOf(l)) {
-      const rule = spec.tokens.find((t) => t.part === l.part && t.property === property);
+      const rule = spec.tokens.find((t) => t.path === l.path && t.property === property);
       if (!rule) continue;
       const target = resolved.get(rule.token);
       if (target === undefined || target === value) continue;

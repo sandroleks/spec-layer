@@ -31,8 +31,8 @@ describe('validate', () => {
     const spec = { ...base(),
       tokens: [{ part: 'Container', path: 'Container', property: 'border-radius',
                  conditions: {}, token: 'rd-sm' }],
-      layout: [{ part: 'Container', summary: 'horizontal, radius 4',
-                 values: { radius: 4 } }] };
+      layout: [{ part: 'Container', path: 'Container',
+                 summary: 'horizontal, radius 4', values: { radius: 4 } }] };
     const f = validate(spec as never, new Map([['rd-sm', 8]]));
     const hit = f.find((x) => x.id === 'geometry-token-mismatch')!;
     expect(hit.message).toContain('4');
@@ -121,5 +121,41 @@ describe('validate', () => {
     const hit = f.find((x) => x.id === 'duplicate-conflicting-binding')!;
     expect(hit.path).toBe('Container/Icon Left');
     expect(hit.property).toBe('fill');
+  });
+
+  it('does not compare a layout entry against a token bound in another subtree', () => {
+    // Two subtrees each holding a node named `Icon` is an ordinary button
+    // shape. Joining on the leaf `part` made Footer/Icon's radius compare
+    // against Header/Icon's token and report the disagreement under
+    // Header/Icon's path: a fabricated contradiction between two unrelated
+    // nodes, attributed to whichever of them `find` happened to reach first.
+    const spec = { ...base(),
+      tokens: [{ part: 'Icon', path: 'Header/Icon', property: 'border-radius',
+                 conditions: {}, token: 'rd-sm' }],
+      layout: [
+        { part: 'Icon', path: 'Header/Icon', summary: 'radius 4', values: { radius: 4 } },
+        { part: 'Icon', path: 'Footer/Icon', summary: 'radius 8', values: { radius: 8 } },
+      ] };
+    expect(validate(spec as never, new Map([['rd-sm', 4]]))).toEqual([]);
+  });
+
+  it('still flags the mismatched subtree when two subtrees share a leaf part name', () => {
+    // The other half of the narrowing: joining on `path` must not silence the
+    // rule, and the finding must name the node that actually disagrees.
+    const spec = { ...base(),
+      tokens: [
+        { part: 'Icon', path: 'Header/Icon', property: 'border-radius',
+          conditions: {}, token: 'rd-sm' },
+        { part: 'Icon', path: 'Footer/Icon', property: 'border-radius',
+          conditions: {}, token: 'rd-lg' },
+      ],
+      layout: [
+        { part: 'Icon', path: 'Header/Icon', summary: 'radius 4', values: { radius: 4 } },
+        { part: 'Icon', path: 'Footer/Icon', summary: 'radius 8', values: { radius: 8 } },
+      ] };
+    const f = validate(spec as never, new Map([['rd-sm', 4], ['rd-lg', 12]]));
+    expect(f.map((x) => x.id)).toEqual(['geometry-token-mismatch']);
+    expect(f[0].path).toBe('Footer/Icon');
+    expect(f[0].message).toContain('rd-lg');
   });
 });

@@ -308,7 +308,8 @@ const SPEC: IntermediateSpec = {
   related: ['Icon'],
   gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
            issue: 'hardcoded-value', value: 8 }],
-  layout: [{ part: 'container', summary: 'horizontal, gap 8', values: { gap: 8 } }],
+  layout: [{ part: 'container', path: 'Container/container',
+             summary: 'horizontal, gap 8', values: { gap: 8 } }],
   rawValues: [],
 };
 
@@ -1272,7 +1273,8 @@ describe('componentBrief validation', () => {
       gaps: [],
       tokens: [{ part: 'container', path: 'Container/container', property: 'border-radius',
                  conditions: {}, token: 'number/radius' }],
-      layout: [{ part: 'container', summary: 'horizontal, radius 4', values: { radius: 4 } }],
+      layout: [{ part: 'container', path: 'Container/container',
+                 summary: 'horizontal, radius 4', values: { radius: 4 } }],
     };
     const brief = componentBrief(spec, { generatedAt: 'T', foundation: sixKindFoundation() }) as unknown as BriefShape;
     const hit = brief.validation?.find((f) => f.id === 'geometry-token-mismatch');
