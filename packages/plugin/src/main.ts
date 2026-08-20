@@ -210,7 +210,7 @@ async function postSelection(): Promise<void> {
   if (!component) {
     figma.notify('Select a component or component set');
     if (seq !== selectionSeq) return;
-    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source };
+    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
     figma.ui.postMessage(msg);
     return;
   }
@@ -240,6 +240,9 @@ async function postSelection(): Promise<void> {
     if (seq !== selectionSeq) return; // a newer selection superseded this one
     const msg: MainToUi = {
       type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
+      // figma.root.name is main-thread only, so the file's NAME has to ride
+      // this message alongside its key; the UI cannot read it itself.
+      fileName: figma.root.name,
       ...(foundation ? { foundation } : {}),
     };
     figma.ui.postMessage(msg);
@@ -247,7 +250,7 @@ async function postSelection(): Promise<void> {
     // Serialization failed: show the empty state rather than leaving the panel
     // stuck on the previous component with no feedback.
     if (seq !== selectionSeq) return;
-    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source };
+    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
     figma.ui.postMessage(msg);
   }
 }
@@ -1210,7 +1213,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey } as MainToUi);
+        figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
       } catch {
         figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
       }
@@ -1267,7 +1270,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, config: data.config, selfEdited, intent: msg.intent } as MainToUi);
+        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name, config: data.config, selfEdited, intent: msg.intent } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);

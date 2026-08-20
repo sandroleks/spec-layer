@@ -27,7 +27,11 @@ export const contentHash = (value: unknown): string => sha256(canonical(value));
  * frontmatter and on-canvas drift detection call it.
  */
 export function specContentHash(spec: IntermediateSpec): string {
-  const { rawValues: _rawValues, ...rest } = spec;
+  // figmaFileName is destructured out alongside rawValues: renaming a Figma
+  // file is not component drift, and every committed doc's baseline was
+  // computed before the field existed, so including it would flip all of them
+  // to "update available" for a change that alters no rendered output.
+  const { rawValues: _rawValues, figmaFileName: _figmaFileName, ...rest } = spec;
   const hashable = {
     ...rest,
     anatomy: spec.anatomy

@@ -52,3 +52,12 @@ it('is unchanged by adding paths to tokens and gaps', () => {
   expect(spec.tokens[0].path).toBeTruthy();            // the field exists
   expect(specContentHash(spec)).toBe(BUTTON_HASH);  // and does not enter the hash
 });
+
+it('is unchanged by the Figma file name', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const named = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
+  const renamed = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System (2026)' });
+  expect(named.figmaFileName).toBe('Design System');      // the field exists
+  expect(specContentHash(named)).toBe(BUTTON_HASH);       // and does not enter the hash
+  expect(specContentHash(renamed)).toBe(BUTTON_HASH);     // so a rename is not drift
+});

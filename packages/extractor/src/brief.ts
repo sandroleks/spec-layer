@@ -26,6 +26,19 @@ function envelope(kind: 'component' | 'foundation', generatedAt: string): YamlVa
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
 }
 
+/**
+ * The `file_key` entry for a source block, or nothing at all.
+ *
+ * `resolveFileKey` (plugin `fileKey.ts`) returns the literal string 'unknown'
+ * when Figma exposes no file key and the user set no override. A consumer
+ * cannot tell that apart from a real key, so an unavailable key is emitted as
+ * an ABSENT key rather than as a placeholder value. Shared by both briefs so
+ * the two source blocks cannot drift apart on what "unavailable" means.
+ */
+function fileKeyOf(fileKey: string): { file_key?: string } {
+  return fileKey && fileKey !== 'unknown' ? { file_key: fileKey } : {};
+}
+
 /** A resolved value flattened to what a consumer can act on. */
 function valueOf(v: FoundationValue): YamlValue {
   switch (v.kind) {
@@ -95,7 +108,12 @@ export function foundationBrief(
   const hasDescriptions = Object.keys(descriptions).length > 0;
   return {
     spec_layer: envelope('foundation', opts.generatedAt),
-    source: { file: foundation.fileKey },
+    // `file`, holding a file KEY, read as a file name to anyone who had not
+    // read fileKey.ts. It is `file_key` now. And resolveFileKey yields the
+    // literal string 'unknown' when Figma exposes no key and the user set no
+    // override: emitting that reads as a value a consumer cannot tell apart
+    // from a real key, so an unavailable key is an ABSENT key.
+    source: fileKeyOf(foundation.fileKey),
     collections: foundation.collections.map((c) => {
       const byId = new Map(c.modes.map((m) => [m.modeId, m.name]));
       // Same staleness class as unitContent() in foundation.ts: a mode can be
@@ -565,9 +583,17 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
-      file: spec.figmaFile,
-      node: spec.figmaNode,
-      component_key: spec.figmaKey || undefined,
+      // Same two fixes as foundationBrief's source above: a file KEY no longer
+      // sits under a field named `file`, and an unavailable key is omitted
+      // rather than emitted as the literal string 'unknown'. Conditional
+      // spreads, not `key: undefined`: the YAML emitter drops undefined-valued
+      // keys, but `{ file_key: undefined }` still leaves `'file_key' in source`
+      // true for any consumer reading the object before it is serialized.
+      ...fileKeyOf(spec.figmaFile),
+      ...(spec.figmaFileName ? { file_name: spec.figmaFileName } : {}),
+      node_id: spec.figmaNode,
+      node_name: spec.name,
+      ...(spec.figmaKey ? { component_key: spec.figmaKey } : {}),
     },
     component: {
       name: spec.name,

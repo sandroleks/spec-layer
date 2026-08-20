@@ -991,6 +991,10 @@ window.onmessage = (event: MessageEvent) => {
       state.currentNode = msg.node;
       // msg.fileKey is the file key computed by main; embedded in the spec.
       state.currentFileKey = msg.fileKey;
+      // msg.fileName is figma.root.name, which only the main thread can read.
+      // Absent on a message built without one, which leaves the brief's
+      // `file_name` omitted rather than guessed.
+      state.currentFileName = msg.fileName ?? '';
       state.currentSpec = null;
       state.currentExtractedAt = '';
       state.phase = 'idle';
@@ -1197,7 +1201,7 @@ window.onmessage = (event: MessageEvent) => {
       // we asked, dropping this docId). Ignore it rather than comparing against
       // `undefined`, which would always read as drifted → a phantom "Update".
       if (baseline === undefined) break;
-      const spec = extract(msg.node, { figmaFile: msg.fileKey });
+      const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
       const drifted = specContentHash(spec) !== baseline;
       libDrift.set(msg.docId, drifted ? 'drifted' : 'inSync');
       renderLibrary(refs, libEntries, libDrift);
@@ -1212,8 +1216,11 @@ window.onmessage = (event: MessageEvent) => {
     }
 
     case 'docSource': {
-      const src: { docId: string; node: typeof msg.node; fileKey: string; config: DocConfig } = {
-        docId: msg.docId, node: msg.node, fileKey: msg.fileKey, config: msg.config,
+      const src: { docId: string; node: typeof msg.node; fileKey: string; fileName?: string;
+                   config: DocConfig } = {
+        docId: msg.docId, node: msg.node, fileKey: msg.fileKey,
+        ...(msg.fileName ? { fileName: msg.fileName } : {}),
+        config: msg.config,
       };
       void runUpdateFromSource(refs, state, src)
         .then((dispatched) => { if (!dispatched) refs.createFrameBtn.disabled = false; })

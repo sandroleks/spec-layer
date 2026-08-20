@@ -1842,6 +1842,9 @@ function applySelection(msg: SelectionMessage): void {
   const node = msg.node;
   state.currentNode = node;
   state.currentFileKey = msg.fileKey;
+  // figma.root.name, readable only on the main thread, so it arrives on this
+  // message or not at all.
+  state.currentFileName = msg.fileName ?? '';
   state.currentSpec = null;
   state.currentExtractedAt = '';
   state.generatedProse = null;
@@ -2105,7 +2108,7 @@ window.onmessage = (event: MessageEvent): void => {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
-          const spec = extract(msg.node, { figmaFile: msg.fileKey });
+          const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
           libraryDrift.set(
             msg.docId,
             specContentHash(spec) === baseline ? 'inSync' : 'drifted',
@@ -2147,6 +2150,7 @@ window.onmessage = (event: MessageEvent): void => {
         docId: msg.docId,
         node: msg.node,
         fileKey: msg.fileKey,
+        ...(msg.fileName ? { fileName: msg.fileName } : {}),
         config: msg.config,
       };
       if (active.kind === 'copy') {

@@ -16,6 +16,7 @@ const { copyBriefFromSource, createState } = await import('../src/ui/actions');
  *  convention in packages/extractor/test/brief.test.ts. */
 interface ParsedCopyBrief {
   spec_layer: { kind: string };
+  source: { file_key?: string; file_name?: string; node_id: string; node_name: string };
   component: { name: string };
   guidelines?: { definition: string };
 }
@@ -53,6 +54,20 @@ describe('copyBriefFromSource', () => {
     expect(y.spec_layer.kind).toBe('component');
     expect(y.component.name).toBe('Button');
     expect(ui.error).not.toHaveBeenCalled();
+  });
+
+  it('names the source file key and file name it was given', async () => {
+    await copyBriefFromSource(createState(), { ...SRC, fileName: 'Design System' }, null, presenter());
+    const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
+    expect(y.source.file_key).toBe('F1');
+    expect(y.source.file_name).toBe('Design System');
+    expect(y.source.node_id).toBe('1:100');
+  });
+
+  it('omits file_name when the stored source carries no file name', async () => {
+    await copyBriefFromSource(createState(), SRC, null, presenter());
+    const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
+    expect('file_name' in y.source).toBe(false);
   });
 
   it('includes stored guidelines without generating any', async () => {

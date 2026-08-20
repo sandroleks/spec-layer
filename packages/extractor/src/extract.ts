@@ -23,6 +23,12 @@ export interface IntermediateSpec {
   name: string;
   figmaKey: string;
   figmaFile: string;
+  /** The Figma file's NAME, when a caller knows it. `figma.root.name` is
+   *  main-thread only, so it reaches the UI on the message that already
+   *  carries the file key; a caller without one omits it rather than
+   *  inventing a placeholder. Excluded from specContentHash: renaming a
+   *  Figma file is not component drift. */
+  figmaFileName?: string;
   figmaNode: string;
   anatomy: AnatomyPart[];
   /** Node id of the default-variant COMPONENT — the coordinate space anatomy
@@ -45,7 +51,7 @@ function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
 
 export function extract(
   root: SerializedNode,
-  meta: { figmaFile: string },
+  meta: { figmaFile: string; figmaFileName?: string },
 ): IntermediateSpec {
   const { parts, related, componentId } = extractAnatomy(root);
   // Built once and threaded into both extractTokens and toVariantInstances.
@@ -60,6 +66,9 @@ export function extract(
     name: root.name,
     figmaKey: root.key ?? '',
     figmaFile: meta.figmaFile,
+    // Spread in only when a name was actually supplied, so an absent name is
+    // an absent key rather than a key holding undefined.
+    ...(meta.figmaFileName ? { figmaFileName: meta.figmaFileName } : {}),
     figmaNode: root.id,
     anatomy: parts,
     anatomyComponentId: componentId,

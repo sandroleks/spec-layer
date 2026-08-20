@@ -93,7 +93,10 @@ function oneCollection(): FoundationSpec {
  * test below instead of a fresh `any` at each site.
  */
 interface BriefShape {
-  source?: { file: string; node: string; component_key?: string };
+  source: {
+    file_key?: string; file_name?: string;
+    node_id: string; node_name: string; component_key?: string;
+  };
   component?: { name: string; related?: string[] };
   api: {
     variants: Record<string, { options: string[]; default?: string | boolean }>;
@@ -131,6 +134,14 @@ describe('foundationBrief', () => {
     expect(b.spec_layer.kind).toBe('foundation');
     expect(b.spec_layer.version).toBe(1);
     expect(b.spec_layer.extractor).toBe('1');
+  });
+
+  it('names the file key as file_key, and omits an unavailable one', () => {
+    const withKey = foundationBrief(FOUNDATION, { generatedAt: AT }) as unknown as BriefShape;
+    expect(withKey.source).toEqual({ file_key: 'abc123' });
+    const noKey = foundationBrief({ ...FOUNDATION, fileKey: 'unknown' },
+      { generatedAt: AT }) as unknown as BriefShape;
+    expect('file_key' in noKey.source).toBe(false);
   });
 
   it('keys mode values by mode name, not modeId', () => {
@@ -258,7 +269,8 @@ interface AnatomyNode {
 }
 interface ParsedComponentBrief {
   spec_layer: { kind: string; version: number; extractor: string; generated: string };
-  source: { file: string; node: string; component_key?: string };
+  source: { file_key?: string; file_name?: string;
+            node_id: string; node_name: string; component_key?: string };
   component: { name: string; related?: string[] };
   api?: {
     variants?: Record<string, { options: string[]; default?: string | boolean }>;
@@ -320,7 +332,43 @@ describe('componentBrief', () => {
   it('stamps a component envelope and the source identity', () => {
     const y = brief();
     expect(y.spec_layer.kind).toBe('component');
-    expect(y.source).toEqual({ file: 'abc123', node: '1:100', component_key: 'm3-button' });
+    expect(y.source).toEqual(
+      { file_key: 'abc123', node_id: '1:100', node_name: 'Button', component_key: 'm3-button' });
+  });
+
+  // The pre-YAML object, not the parsed brief: only here can a test tell an
+  // absent key apart from one present with an undefined value.
+  it('splits source into file key, file name, node id, node name and component key', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), figmaFile: 'KEY1', figmaFileName: 'Design System' };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect(brief.source).toEqual({
+      file_key: 'KEY1', file_name: 'Design System',
+      node_id: '1:100', node_name: 'Button', component_key: 'm3-button',
+    });
+  });
+
+  it('omits an unavailable file key rather than emitting the string unknown', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), figmaFile: 'unknown' };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('file_key' in brief.source).toBe(false);
+    expect('file_name' in brief.source).toBe(false);
+    expect(brief.source.node_id).toBe('1:100');
+  });
+
+  it('omits an empty file key and an empty file name', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), figmaFile: '', figmaFileName: '' };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('file_key' in brief.source).toBe(false);
+    expect('file_name' in brief.source).toBe(false);
+  });
+
+  // Dropping file_key shortens the block enough for the emitter to render it
+  // in flow style, where `node_id: 1:100` is an unquoted scalar carrying a
+  // colon. Round-trip it to prove that still parses.
+  it('emits a parseable source block when the file key is dropped', () => {
+    const spec: IntermediateSpec = { ...baseSpec(), figmaFile: 'unknown' };
+    const y = load(toYaml(componentBrief(spec, { generatedAt: AT }))) as ParsedComponentBrief;
+    expect(y.source).toEqual({ node_id: '1:100', node_name: 'Button', component_key: 'm3-button' });
   });
 
   // Rewritten from the v1 flat-array `api` shape: SPEC's declared props are

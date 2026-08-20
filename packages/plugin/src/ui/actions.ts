@@ -41,6 +41,9 @@ export interface UiState {
   phase: UiPhase;
   currentNode: SerializedNode | null;
   currentFileKey: string;
+  /** The selection message's file NAME, when it carried one. Empty string when
+   *  it did not, in which case the brief simply omits `file_name`. */
+  currentFileName: string;
   currentSpec: IntermediateSpec | null;
   currentExtractedAt: string;
   // Proxy-routed AI flow: a pro license key (mirrored to clientStorage via
@@ -81,6 +84,7 @@ export function createState(): UiState {
     phase: 'idle',
     currentNode: null,
     currentFileKey: '',
+    currentFileName: '',
     currentSpec: null,
     currentExtractedAt: '',
     licenseKey: null,
@@ -114,9 +118,12 @@ export function send(msg: UiToMain): void {
 export function renderOne(
   node: SerializedNode,
   fileKey: string,
+  /** Optional: a caller that has no file name omits it, and the brief omits
+   *  `file_name` rather than inventing a placeholder. */
+  fileName?: string,
 ): { name: string; spec: IntermediateSpec; extractedAt: string } {
   const extractedAt = new Date().toISOString();
-  const spec = extract(node, { figmaFile: fileKey });
+  const spec = extract(node, { figmaFile: fileKey, ...(fileName ? { figmaFileName: fileName } : {}) });
   return { name: spec.name, spec, extractedAt };
 }
 
@@ -132,7 +139,7 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
   state.phase = nextStatus(state.phase, 'selected');
   renderPhase(refs, state);
 
-  const { name, spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
+  const { name, spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey, state.currentFileName);
   state.currentSpec = spec;
   state.currentExtractedAt = extractedAt;
 
@@ -151,7 +158,7 @@ export async function runExtract(refs: Refs, state: UiState): Promise<void> {
 export function ensureExtracted(state: UiState): boolean {
   if (state.currentSpec) return true;
   if (!state.currentNode) return false;
-  const { spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey);
+  const { spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey, state.currentFileName);
   state.currentSpec = spec;
   state.currentExtractedAt = extractedAt;
   return true;
@@ -498,6 +505,10 @@ export type DocSource = {
   docId: string;
   node: SerializedNode;
   fileKey: string;
+  /** The file NAME the main thread sent alongside the key, when it had one.
+   *  Optional so a caller without one compiles and the brief simply omits
+   *  `file_name`. */
+  fileName?: string;
   config: DocConfig;
 };
 
@@ -513,7 +524,7 @@ export async function updateFromSource(
   ui.clear();
   ui.startProgress(['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
   try {
-    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const selected = new Set<SectionId>(src.config.sections);
 
     let prose = null as Awaited<ReturnType<typeof generateProse>>;
@@ -581,7 +592,7 @@ export async function copyBriefFromSource(
 ): Promise<void> {
   ui.clear();
   try {
-    const spec = extract(src.node, { figmaFile: src.fileKey });
+    const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const yaml = toYaml(componentBrief(spec, {
       generatedAt: new Date().toISOString(),
       ...(foundationSpec ? { foundation: foundationSpec } : {}),

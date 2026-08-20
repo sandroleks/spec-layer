@@ -45,6 +45,11 @@ export interface LibraryEntry {
 
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource;
+      /** The Figma file's name (`figma.root.name`), which only the main thread
+       *  can read. It rides this message so the brief can name the file it came
+       *  from instead of showing only an opaque key. Optional: a caller with no
+       *  name omits it, and the brief omits `file_name` in turn. */
+      fileName?: string;
       /** The file's variables/styles, best-effort — absent when the dump
        *  failed to build or hasn't been fetched yet, in which case the
        *  selection still works, and the component brief's token bindings
@@ -71,9 +76,12 @@ export type MainToUi =
    *  are gone" is exactly the fact an omitted field could not carry. */
   | { type: 'docDetached'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'docRemoved'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
-  | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string }
+  /** `fileName` travels with `fileKey` here for the same reason as on
+   *  `selection`: every extract() call site should be able to name the file.
+   *  Drift itself is unaffected, since specContentHash excludes the name. */
+  | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string }
   | { type: 'driftError'; docId: string }
-  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
+  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
   /** `groupDescriptions` merges every foundation doc link's stored group
    *  descriptions found on canvas, keyed by collection name then folder path.

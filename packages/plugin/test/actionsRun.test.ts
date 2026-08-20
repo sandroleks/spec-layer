@@ -131,6 +131,12 @@ describe('renderOne', () => {
     expect(out.spec.figmaFile).toBe('FILE1');
     expect(Number.isNaN(Date.parse(out.extractedAt))).toBe(false);
   });
+
+  it('threads the Figma file name into the spec, and omits it when there is none', () => {
+    expect(renderOne(buttonNode(), 'FILE1', 'Design System').spec.figmaFileName)
+      .toBe('Design System');
+    expect('figmaFileName' in renderOne(buttonNode(), 'FILE1').spec).toBe(false);
+  });
 });
 
 describe('ensureExtracted', () => {
@@ -140,6 +146,15 @@ describe('ensureExtracted', () => {
     state.currentFileKey = 'FILE1';
     expect(ensureExtracted(state)).toBe(true);
     expect(state.currentSpec?.name).toBe('Button');
+  });
+
+  it('carries the selection\'s file name into the extracted spec', () => {
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'FILE1';
+    state.currentFileName = 'Design System';
+    expect(ensureExtracted(state)).toBe(true);
+    expect(state.currentSpec?.figmaFileName).toBe('Design System');
   });
 
   it('reuses an existing spec instead of re-extracting', () => {
