@@ -72,6 +72,20 @@ describe('draftProse base64 image', () => {
     expect(proseCacheKey(withRaw)).toEqual(base);
   });
 
+  // Same rule as rawValues, and the same cost if it is broken. The Figma file
+  // name reaches the brief's `source` block and nothing else: no reader exists
+  // anywhere under prose/, so it cannot change a single word the model sees.
+  // Keying on it would mean renaming a file (or opening a duplicate saved under
+  // a new name) orphans every cached draft for every component and re-bills a
+  // metered generation for byte-identical prose.
+  it('ignores the Figma file name, which the prompt never sees', () => {
+    const base = proseCacheKey(spec);
+    const named = { ...spec, figmaFileName: 'Design System' } as unknown as IntermediateSpec;
+    const renamed = { ...spec, figmaFileName: 'Design System (2026)' } as unknown as IntermediateSpec;
+    expect(proseCacheKey(named)).toEqual(base);
+    expect(proseCacheKey(renamed)).toEqual(base);
+  });
+
   it('still changes when something the prompt reads changes', () => {
     const renamed = { ...spec, name: 'Chip' } as unknown as IntermediateSpec;
     expect(proseCacheKey(renamed)).not.toEqual(proseCacheKey(spec));

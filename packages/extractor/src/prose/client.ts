@@ -32,16 +32,23 @@ export const PROSE_PROMPT_VERSION = 'v8';
 /**
  * The part of a spec a prose draft actually depends on.
  *
- * `rawValues` is excluded: it never reaches buildProsePrompt (which reads
- * name, anatomy, props, variants, states, tokens, layout and related), so
- * dropping it cannot make the key blind to an input the model actually sees.
+ * `rawValues` and `figmaFileName` are excluded: neither reaches
+ * buildProsePrompt (which reads name, anatomy, props, variants, states, tokens,
+ * layout and related), so dropping them cannot make the key blind to an input
+ * the model actually sees. `figmaFileName` reaches the brief's `source` block
+ * and nothing else.
+ *
+ * This exclusion list is a DENY-list, so every field added to IntermediateSpec
+ * enters this key by default and has to be excluded deliberately. That has now
+ * cost one billed regeneration bug (figmaFileName), so weigh any new field
+ * against this function before adding it.
  *
  * Deliberately NOT specContentHash: that projection also flattens anatomy to its
  * depth-0 legacy shape, and nested anatomy parts do reach the prompt, so reusing
  * it here would serve a stale draft after a real change to the component.
  */
 function proseInputHash(spec: IntermediateSpec): string {
-  const { rawValues: _rawValues, ...rest } = spec;
+  const { rawValues: _rawValues, figmaFileName: _figmaFileName, ...rest } = spec;
   return contentHash(rest);
 }
 
