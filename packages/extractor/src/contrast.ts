@@ -72,9 +72,15 @@ export function concreteColor(v: FoundationValue): { hex: string; alpha: number 
 
 /**
  * Look a token name up in the foundation and return its colour in the owning
- * collection's DEFAULT mode. Per-mode checking (light against dark) is a
- * deliberate follow-up: text and background can live in different collections
- * with different mode sets, so pairing modes correctly needs its own design.
+ * collection's DEFAULT mode. The lookup spans every collection, which is what
+ * component contrast needs: one component's text and background tokens
+ * routinely live in different collections.
+ *
+ * That reach is also why it stays on the default mode. Two collections can carry
+ * unrelated mode sets, so there is no correspondence that would pair Light in one
+ * with Light in the other. Per-mode measurement is `colorContrast` in
+ * colorContrast.ts, which earns a shared mode set by confining each pair to a
+ * single collection, and therefore cannot serve a cross-collection lookup.
  */
 export function resolveTokenColor(
   foundation: FoundationSpec,

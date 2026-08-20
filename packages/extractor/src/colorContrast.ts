@@ -8,6 +8,9 @@
  * that is actually present: the words in the variable's own name.
  */
 
+import type { FoundationSpec, FoundationVariable } from './foundation';
+import { blend, contrastRatio, concreteColor } from './contrast';
+
 export type ColorRole = 'foreground' | 'background' | null;
 
 /** Words meaning "this colour is drawn ON something". */
@@ -61,4 +64,125 @@ export function barsCleared(ratio: number): ContrastBar[] {
   if (ratio >= 4.5) out.push('aa');
   if (ratio >= 7) out.push('aaa');
   return out;
+}
+
+/**
+ * Cap on each axis of one matrix. A frame has to stay readable and a brief has to
+ * stay small, and a 40 by 40 grid is neither. What the cap drops is REPORTED (see
+ * `omitted`), because a bounded result presented as a complete one is worse than
+ * no result at all.
+ */
+export const CONTRAST_AXIS_CAP = 24;
+
+export interface ContrastCell { ratio: number; clears: ContrastBar[] }
+
+export interface ContrastMatrix {
+  collection: string;
+  mode: string;
+  foregrounds: string[];
+  backgrounds: string[];
+  /** `cells[fgIndex][bgIndex]`, null where the pair could not be measured. */
+  cells: (ContrastCell | null)[][];
+}
+
+export interface ContrastFailure {
+  collection: string;
+  mode: string;
+  foreground: { token: string; value: string };
+  background: { token: string; value: string };
+  ratio: number;
+  clears: ContrastBar[];
+}
+
+export interface ColorContrastReport {
+  /** Pairs actually measured. Zero means nothing was checked, never "all pass". */
+  measured: number;
+  /** COLOUR variables whose name declared no role, so they were never paired. */
+  unclassified: number;
+  /** Classified variables dropped by the cap. */
+  omitted: number;
+  matrices: ContrastMatrix[];
+  /** Every measured pair clearing NO bar at all, flattened across matrices. A
+   *  pair clearing aa-large but not aa is not listed: whether that is a failure
+   *  depends on a font size the foundation does not have. */
+  failures: ContrastFailure[];
+}
+
+/**
+ * Measure contrast across a foundation's colour variables.
+ *
+ * Pairs are confined to ONE collection, which is what makes per-mode measurement
+ * possible: both sides then share a single mode set, so Light pairs with Light and
+ * Dark with Dark without inventing a correspondence between two collections'
+ * unrelated modes. Cross-collection pairing needs exactly that correspondence,
+ * which is why it stays out of scope rather than being approximated.
+ */
+export function colorContrast(
+  foundation: FoundationSpec,
+  cap: number = CONTRAST_AXIS_CAP,
+): ColorContrastReport {
+  const matrices: ContrastMatrix[] = [];
+  const failures: ContrastFailure[] = [];
+  let measured = 0;
+  let unclassified = 0;
+  let omitted = 0;
+
+  for (const collection of foundation.collections) {
+    const colours = collection.variables.filter((v) => v.resolvedType === 'COLOR');
+    const fg: FoundationVariable[] = [];
+    const bg: FoundationVariable[] = [];
+    for (const v of colours) {
+      const role = colorRole(v.name);
+      if (role === 'foreground') fg.push(v);
+      else if (role === 'background') bg.push(v);
+      else unclassified++;
+    }
+
+    // Each variable sits on exactly one axis, so summing the two overflows counts
+    // distinct dropped variables rather than double counting any of them.
+    omitted += Math.max(0, fg.length - cap) + Math.max(0, bg.length - cap);
+    const foregrounds = fg.slice(0, cap);
+    const backgrounds = bg.slice(0, cap);
+    if (!foregrounds.length || !backgrounds.length) continue;
+
+    for (const mode of collection.modes) {
+      const cells: (ContrastCell | null)[][] = [];
+      for (const f of foregrounds) {
+        const row: (ContrastCell | null)[] = [];
+        const fgValue = f.valuesByMode[mode.modeId];
+        const fgColour = fgValue ? concreteColor(fgValue) : null;
+        for (const b of backgrounds) {
+          const bgValue = b.valuesByMode[mode.modeId];
+          const bgColour = bgValue ? concreteColor(bgValue) : null;
+          // A translucent background is only meaningful over whatever sits behind
+          // it, and a foundation does not know that. Assuming white would lighten
+          // the computed background enough to push a real failure above threshold,
+          // so skip and let the counts say so.
+          if (!fgColour || !bgColour || bgColour.alpha < 1) { row.push(null); continue; }
+          const composited = blend(fgColour.hex, fgColour.alpha, bgColour.hex);
+          const ratio = Math.round(contrastRatio(composited, bgColour.hex) * 100) / 100;
+          const clears = barsCleared(ratio);
+          row.push({ ratio, clears });
+          measured++;
+          if (clears.length === 0) {
+            failures.push({
+              collection: collection.name, mode: mode.name,
+              foreground: { token: f.name, value: composited },
+              background: { token: b.name, value: bgColour.hex },
+              ratio, clears,
+            });
+          }
+        }
+        cells.push(row);
+      }
+      matrices.push({
+        collection: collection.name, mode: mode.name,
+        foregrounds: foregrounds.map((v) => v.name),
+        backgrounds: backgrounds.map((v) => v.name),
+        cells,
+      });
+    }
+  }
+
+  return { measured, unclassified, omitted, matrices, failures };
 }

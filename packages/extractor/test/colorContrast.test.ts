@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { colorRole, barsCleared } from '../src/colorContrast';
+import { colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP } from '../src/colorContrast';
+import type { FoundationSpec, FoundationValue } from '../src/foundation';
+import * as packageRoot from '../src/index';
 
 describe('colorRole', () => {
   it('reads text, icon, stroke, border and content as foreground', () => {
@@ -164,5 +166,269 @@ describe('barsCleared', () => {
     const first = barsCleared(7);
     first.push('aaa');
     expect(barsCleared(7)).toEqual(['aa-large', 'aa', 'aaa']);
+  });
+});
+
+const hex = (h: string, alpha = 1): FoundationValue => ({ kind: 'color', hex: h, alpha });
+
+function spec(
+  variables: { name: string; valuesByMode: Record<string, FoundationValue> }[],
+  modes = [{ modeId: 'm1', name: 'Light' }],
+): FoundationSpec {
+  return {
+    fileKey: 'FILE1',
+    extractedAt: '2026-08-18T00:00:00.000Z',
+    textStyles: [],
+    collections: [{
+      id: 'c1', name: 'Semantic', defaultModeId: 'm1', modes,
+      variables: variables.map((v) => ({
+        name: v.name, group: '', resolvedType: 'COLOR' as const,
+        description: '', codeSyntax: {}, valuesByMode: v.valuesByMode,
+      })),
+    }],
+  };
+}
+
+describe('colorContrast', () => {
+  it('measures every foreground against every background', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/text/b', valuesByMode: { m1: hex('#000000') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#722ed1') } },
+    ]));
+    expect(r.matrices).toHaveLength(1);
+    expect(r.matrices[0].foregrounds).toEqual(['color/text/a', 'color/text/b']);
+    expect(r.matrices[0].backgrounds).toEqual(['color/surface/x']);
+    expect(r.measured).toBe(2);
+  });
+
+  it('reproduces the known Button failures', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/on-surface/default', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/text/primary/default', valuesByMode: { m1: hex('#722ed1') } },
+      { name: 'color/surface/primary/disabled', valuesByMode: { m1: hex('#a9aeb8') } },
+      { name: 'color/surface/primary/light-press', valuesByMode: { m1: hex('#ddbef6') } },
+    ]));
+    const f = (fg: string, bg: string) =>
+      r.failures.find((x) => x.foreground.token === fg && x.background.token === bg);
+    const disabled = f('color/text/on-surface/default', 'color/surface/primary/disabled')!;
+    expect(disabled.ratio).toBeCloseTo(2.23, 2);
+    expect(disabled.clears).toEqual([]);
+    // 4.22 clears aa-large but not aa, so it is not a failure by the bar-based
+    // definition and must NOT appear in `failures`.
+    const press = r.matrices[0].cells[1][1]!;
+    expect(press.ratio).toBeCloseTo(4.22, 2);
+    expect(press.clears).toEqual(['aa-large']);
+  });
+
+  it('measures each mode separately', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff'), m2: hex('#000000') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#000000'), m2: hex('#ffffff') } },
+    ], [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }]));
+    expect(r.matrices.map((m) => m.mode)).toEqual(['Light', 'Dark']);
+    expect(r.matrices[0].cells[0][0]!.ratio).toBeCloseTo(21, 1);
+    expect(r.matrices[1].cells[0][0]!.ratio).toBeCloseTo(21, 1);
+  });
+
+  it('composites a translucent foreground over its background', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#000000', 0.5) } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#ffffff') } },
+    ]));
+    // #000 at 50% over white is #808080, which is about 3.95:1 against white.
+    expect(r.matrices[0].cells[0][0]!.ratio).toBeCloseTo(3.95, 1);
+  });
+
+  it('skips a translucent background as unknowable', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#722ed1', 0.5) } },
+    ]));
+    expect(r.matrices[0].cells[0][0]).toBeNull();
+    expect(r.measured).toBe(0);
+  });
+
+  it('counts colours that classify as neither role', () => {
+    const r = colorContrast(spec([
+      { name: 'colors/blue/500', valuesByMode: { m1: hex('#722ed1') } },
+      { name: 'brand/1', valuesByMode: { m1: hex('#000000') } },
+    ]));
+    expect(r.unclassified).toBe(2);
+    expect(r.matrices).toEqual([]);
+    expect(r.measured).toBe(0);
+  });
+
+  it('caps each axis and reports how many tokens it dropped', () => {
+    const many = Array.from({ length: CONTRAST_AXIS_CAP + 3 }, (_, i) => ({
+      name: `color/text/t${i}`, valuesByMode: { m1: hex('#000000') },
+    }));
+    const r = colorContrast(spec([
+      ...many,
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#ffffff') } },
+    ]));
+    expect(r.matrices[0].foregrounds).toHaveLength(CONTRAST_AXIS_CAP);
+    expect(r.omitted).toBe(3);
+  });
+
+  it('ignores non-colour variables', () => {
+    const s = spec([{ name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } }]);
+    s.collections[0].variables.push({
+      name: 'space/4', group: '', resolvedType: 'FLOAT',
+      description: '', codeSyntax: {}, valuesByMode: { m1: { kind: 'number', value: 16 } },
+    });
+    const r = colorContrast(s);
+    expect(r.unclassified).toBe(0);
+  });
+});
+
+describe('colorContrast edge cases', () => {
+  it('leaves a cell null where a variable has no value for that mode', () => {
+    // The foreground exists only in Light. Dark therefore measures nothing, and
+    // the missing cell is null rather than a fabricated ratio.
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#000000'), m2: hex('#111111') } },
+    ], [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }]));
+    expect(r.matrices[1].cells).toEqual([[null]]);
+    expect(r.measured).toBe(1);
+    expect(r.failures).toEqual([]);
+  });
+
+  it('follows an alias to its colour and nulls one that never resolved', () => {
+    // Role comes from the name, so an alias classifies either way; only the
+    // value decides whether the pair can be measured.
+    const alias = (target: string, resolved: FoundationValue | null): FoundationValue =>
+      ({ kind: 'alias', targetName: target, targetCollection: 'Primitives', external: resolved === null, resolved });
+    const r = colorContrast(spec([
+      { name: 'color/text/unresolved', valuesByMode: { m1: alias('base/white', null) } },
+      { name: 'color/text/resolved', valuesByMode: { m1: alias('base/white', hex('#ffffff')) } },
+      { name: 'color/surface/x', valuesByMode: { m1: alias('base/black', hex('#000000')) } },
+    ]));
+    expect(r.unclassified).toBe(0);
+    expect(r.matrices[0].cells[0]).toEqual([null]);
+    expect(r.matrices[0].cells[1][0]!.ratio).toBeCloseTo(21, 1);
+    expect(r.measured).toBe(1);
+  });
+
+  it('leaves a cell null for a value that resolved to nothing at all', () => {
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/surface/x', valuesByMode: { m1: { kind: 'unresolved', reason: 'external' } } },
+    ]));
+    expect(r.matrices[0].cells).toEqual([[null]]);
+    expect(r.measured).toBe(0);
+  });
+
+  it('emits no matrix for a collection with no modes', () => {
+    // Without a mode there is nothing to look a value up by, so an empty matrix
+    // would carry no information and would read as "checked, all fine".
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#000000') } },
+    ], []));
+    expect(r.matrices).toEqual([]);
+    expect(r.measured).toBe(0);
+  });
+
+  it('emits no matrix when a collection declares no background at all', () => {
+    // Two foregrounds and nothing to sit them on. They are not `unclassified`,
+    // because their names did declare a role, and they are not `omitted`,
+    // because no cap dropped them. Only `measured` being 0 says nothing ran.
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/text/b', valuesByMode: { m1: hex('#000000') } },
+    ]));
+    expect(r).toEqual({
+      measured: 0, unclassified: 0, omitted: 0, matrices: [], failures: [],
+    });
+  });
+
+  const capSpec = () => spec([
+    { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+    { name: 'color/text/b', valuesByMode: { m1: hex('#eeeeee') } },
+    { name: 'color/surface/x', valuesByMode: { m1: hex('#000000') } },
+    { name: 'color/surface/y', valuesByMode: { m1: hex('#111111') } },
+  ]);
+
+  it('measures nothing at a cap of 0 and reports every classified token omitted', () => {
+    const r = colorContrast(capSpec(), 0);
+    expect(r.matrices).toEqual([]);
+    expect(r.measured).toBe(0);
+    expect(r.omitted).toBe(4);
+  });
+
+  it('still measures the first pair at a cap of 1', () => {
+    const r = colorContrast(capSpec(), 1);
+    expect(r.matrices[0].foregrounds).toEqual(['color/text/a']);
+    expect(r.matrices[0].backgrounds).toEqual(['color/surface/x']);
+    expect(r.measured).toBe(1);
+    expect(r.omitted).toBe(2);
+  });
+
+  it('sums the overflow of both axes without counting any variable twice', () => {
+    // 5 foregrounds and 4 backgrounds at a cap of 2 keeps 2 of each and drops
+    // 3 + 2. Every variable sits on exactly one axis, so 5 is the count of
+    // distinct dropped variables, which is what `omitted` claims to be.
+    const r = colorContrast(spec([
+      ...Array.from({ length: 5 }, (_, i) => ({
+        name: `color/text/t${i}`, valuesByMode: { m1: hex('#000000') },
+      })),
+      ...Array.from({ length: 4 }, (_, i) => ({
+        name: `color/surface/s${i}`, valuesByMode: { m1: hex('#ffffff') },
+      })),
+    ]), 2);
+    expect(r.omitted).toBe(5);
+    expect(r.measured).toBe(4);
+  });
+
+  it('takes axis order from the collection and repeats it exactly', () => {
+    // No sort: each axis is in the order the collection lists its variables, so
+    // the same input always produces byte-identical output. Sorting would be a
+    // second, competing order for a reader comparing the matrix against Figma.
+    const s = spec([
+      { name: 'color/surface/z', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/text/b', valuesByMode: { m1: hex('#000000') } },
+      { name: 'color/text/a', valuesByMode: { m1: hex('#722ed1') } },
+      { name: 'color/surface/a', valuesByMode: { m1: hex('#000000') } },
+    ]);
+    const first = colorContrast(s);
+    expect(first.matrices[0].foregrounds).toEqual(['color/text/b', 'color/text/a']);
+    expect(first.matrices[0].backgrounds).toEqual(['color/surface/z', 'color/surface/a']);
+    expect(colorContrast(s)).toEqual(first);
+  });
+
+  it('reads bars off the rounded ratio, so the two always agree', () => {
+    // White on #959595 is 2.9953:1, which rounds to 3.00 and is then reported as
+    // clearing aa-large. The bars are deliberately derived from the number the
+    // reader sees: printing "3.00, clears nothing" next to "3.00, clears
+    // aa-large" elsewhere reads as a bug, and the discrepancy it hides is at
+    // most 0.005 of a ratio point.
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#959595') } },
+    ]));
+    expect(r.matrices[0].cells[0][0]).toEqual({ ratio: 3, clears: ['aa-large'] });
+    expect(r.failures).toEqual([]);
+  });
+
+  it('records the composited foreground value on a failure, not the raw hex', () => {
+    // A translucent foreground fails at the colour a user actually sees, so the
+    // failure has to name that colour or the ratio cannot be reproduced.
+    const r = colorContrast(spec([
+      { name: 'color/text/faint', valuesByMode: { m1: hex('#000000', 0.1) } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#ffffff') } },
+    ]));
+    expect(r.failures).toHaveLength(1);
+    expect(r.failures[0].foreground).toEqual({ token: 'color/text/faint', value: '#e6e6e6' });
+    expect(r.failures[0].background).toEqual({ token: 'color/surface/x', value: '#ffffff' });
+    expect(r.failures[0].clears).toEqual([]);
+  });
+
+  it('is exported from the package root', () => {
+    expect(packageRoot.colorContrast).toBe(colorContrast);
+    expect(packageRoot.CONTRAST_AXIS_CAP).toBe(CONTRAST_AXIS_CAP);
+    expect(packageRoot.colorRole).toBe(colorRole);
+    expect(packageRoot.barsCleared).toBe(barsCleared);
   });
 });
