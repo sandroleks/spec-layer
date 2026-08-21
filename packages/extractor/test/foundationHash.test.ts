@@ -39,9 +39,34 @@ const OTHER: FoundationScope = {
 const hashOf = (d: SerializedFoundation, scope: FoundationScope = SEMANTIC) =>
   foundationContentHash(buildFoundation(d), scope);
 
+/**
+ * The foundation drift baseline for the fixture above, pinned the way BUTTON_HASH
+ * pins the component one.
+ *
+ * Every foundation doc on a user's canvas stores a hash computed this way, so a
+ * change to this constant means every one of them reports "update available" at
+ * once. Only a task that says it re-cuts the baseline may change it.
+ *
+ * The behavioural tests below say which INPUTS move the hash and which do not.
+ * None of them can catch the hash being WIDENED to cover something new: add a
+ * field to what unitContent returns and every moves/does-not-move test still
+ * passes, while every existing doc silently drifts. This literal is what catches
+ * that, and it is why Task 17 asked for it when FoundationConfig gained
+ * includeContrast. FoundationConfig is deliberately not a parameter of
+ * foundationContentHash or unitContent and is not reachable from either, so a
+ * config toggle cannot produce a second hash value for one doc. If this constant
+ * moves after a change that only added a config field, that structural property
+ * has been broken and the change is wrong.
+ */
+const SEMANTIC_HASH = '85ec3438ba5a2d1feff0e4c7048e9d370a2d920f5f91dadf81286b15d6f0e4bc';
+
 describe('foundationContentHash', () => {
   it('is stable across re-extraction of identical data', () => {
     expect(hashOf(dump())).toBe(hashOf(dump()));
+  });
+
+  it('matches the pinned baseline, so a widening of what it covers is caught', () => {
+    expect(hashOf(dump())).toBe(SEMANTIC_HASH);
   });
 
   it('ignores extractedAt', () => {
