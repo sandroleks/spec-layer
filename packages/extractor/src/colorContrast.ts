@@ -13,8 +13,16 @@ import { blend, contrastRatio, concreteColor } from './contrast';
 
 export type ColorRole = 'foreground' | 'background' | null;
 
-/** Words meaning "this colour is drawn ON something". */
-const FOREGROUND_WORDS = new Set(['text', 'icon', 'stroke', 'border', 'content']);
+/** Words meaning "this colour is drawn ON something".
+ *
+ *  `foreground` and `fg` are the exact mirrors of `background` and `bg` in the
+ *  set below, and their absence was pure asymmetry rather than a decision. It
+ *  silently dropped every text token in any shadcn, Radix or Tailwind v4
+ *  library (`color/foreground`, `color/muted-foreground`), which would hand
+ *  colorContrast a matrix with an empty foreground axis, and it also inverted a
+ *  flat `fg-on-surface` name into a background, because the `on-` guard fires
+ *  only on a segment that STARTS with `on-`. */
+const FOREGROUND_WORDS = new Set(['text', 'icon', 'stroke', 'border', 'content', 'foreground', 'fg']);
 /** Words meaning "this colour is what something is drawn on". */
 const BACKGROUND_WORDS = new Set(['surface', 'background', 'bg', 'fill', 'canvas', 'base']);
 

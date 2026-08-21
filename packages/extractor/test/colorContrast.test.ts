@@ -40,6 +40,33 @@ describe('colorRole', () => {
     expect(colorRole('color/text-muted/default')).toBe('foreground');
   });
 
+  it('reads foreground and fg, the mirrors of background and bg', () => {
+    // These were absent while `background` and `bg` were both present: pure
+    // asymmetry with no design reason. Their absence silently dropped every
+    // text token in any shadcn / Radix / Tailwind v4 library, which would hand
+    // colorContrast a matrix with an EMPTY foreground axis.
+    expect(colorRole('color/foreground')).toBe('foreground');
+    expect(colorRole('color/muted-foreground')).toBe('foreground');
+    expect(colorRole('color/card-foreground')).toBe('foreground');
+    expect(colorRole('color/fg/default')).toBe('foreground');
+  });
+
+  it('keeps background and bg classifying as background', () => {
+    // The foreground set is tested first within a segment, so adding the
+    // mirrors must not capture their opposites.
+    expect(colorRole('color/background/page')).toBe('background');
+    expect(colorRole('color/bg/subtle')).toBe('background');
+  });
+
+  it('resolves a flat X-on-Y name by its role word, not by the tail', () => {
+    // The `on-` guard fires only when a segment STARTS with `on-`, so in a flat
+    // fg-on-surface name the guard misses, the hyphen split runs, and `surface`
+    // in the tail used to win: the exact inversion the on- rule exists to
+    // prevent. A leading role word now settles it first.
+    expect(colorRole('color/fg-on-surface/default')).toBe('foreground');
+    expect(colorRole('color/foreground-on-surface/default')).toBe('foreground');
+  });
+
   it('is case insensitive', () => {
     expect(colorRole('Color/Surface/Primary')).toBe('background');
     expect(colorRole('COLOR/TEXT/PRIMARY')).toBe('foreground');
