@@ -512,7 +512,9 @@ async function runFoundationBuild(): Promise<void> {
     // includeDescriptions is hardcoded true: v1 has no descriptions checkbox in
     // the tab, and buildFoundationFrame already suppresses the column when no
     // row has one.
-    config: { includeDescriptions: true, aiNotes: wantsAi },
+    // includeContrast is hardcoded false for the same reason: no checkbox, and
+    // false is the output every doc written before the field renders.
+    config: { includeDescriptions: true, aiNotes: wantsAi, includeContrast: false },
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions } : {}),
   });

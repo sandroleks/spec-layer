@@ -131,7 +131,7 @@ const FOUNDATION: FoundationDocLink = {
     modeIds: ['s1', 's2'],
   },
   contentHash: 'fhash', selfHash: 'fself',
-  config: { includeDescriptions: true, aiNotes: false },
+  config: { includeDescriptions: true, aiNotes: false, includeContrast: false },
   generatedAt: 1720000000000, pluginVersion: '3.0.0',
 };
 
@@ -191,13 +191,35 @@ describe('docLink foundation variant', () => {
     const raw = JSON.stringify({ ...FOUNDATION, config: {} });
     const parsed = parseDocLink(raw);
     expect(isFoundationLink(parsed!) && parsed.config)
-      .toEqual({ includeDescriptions: true, aiNotes: false });
+      .toEqual({ includeDescriptions: true, aiNotes: false, includeContrast: false });
   });
 
   it('does not require sourceNodeId on a foundation blob', () => {
     const raw = JSON.stringify(FOUNDATION);
     expect(raw).not.toContain('sourceNodeId');
     expect(parseDocLink(raw)).not.toBeNull();
+  });
+
+  it('defaults includeContrast to false on a link written before it existed', () => {
+    const blob = JSON.stringify({
+      v: 1, kind: 'foundation', generatedAt: 0, pluginVersion: '2.0.0',
+      contentHash: 'h', selfHash: 's',
+      scope: { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: ['m1'] },
+      config: { includeDescriptions: true, aiNotes: false },
+    });
+    const parsed = parseDocLink(blob);
+    expect(parsed).not.toBeNull();
+    expect((parsed as FoundationDocLink).config.includeContrast).toBe(false);
+  });
+
+  it('round-trips includeContrast when set', () => {
+    const blob = JSON.stringify({
+      v: 1, kind: 'foundation', generatedAt: 0, pluginVersion: '2.0.0',
+      contentHash: 'h', selfHash: 's',
+      scope: { target: 'textStyles' },
+      config: { includeDescriptions: false, aiNotes: false, includeContrast: true },
+    });
+    expect((parseDocLink(blob) as FoundationDocLink).config.includeContrast).toBe(true);
   });
 });
 

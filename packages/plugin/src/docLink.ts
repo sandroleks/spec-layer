@@ -155,6 +155,16 @@ export interface ComponentDocLink {
 export interface FoundationConfig {
   includeDescriptions: boolean;
   aiNotes: boolean;
+  /**
+   * Render the colour contrast matrix. Defaults to FALSE on any link written
+   * before this existed, which is what keeps an existing doc's rendered output
+   * identical after an upgrade.
+   *
+   * The matrix is derived from colours already hashed via
+   * FoundationUnitContent.rows, so toggling it changes what renders without
+   * moving foundationContentHash, exactly as includeDescriptions does.
+   */
+  includeContrast: boolean;
 }
 
 /** A foundation doc has no source node: its source is the file's own
@@ -364,6 +374,7 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
     config: {
       includeDescriptions: c.includeDescriptions !== false,
       aiNotes: c.aiNotes === true,
+      includeContrast: c.includeContrast === true,
     },
     // Omitted rather than set to {} when there are none, so a doc written before
     // descriptions existed still serializes byte-identically.

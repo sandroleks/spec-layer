@@ -601,6 +601,9 @@ async function buildFoundations(): Promise<void> {
     config: {
       includeDescriptions: true,
       aiNotes: Boolean(groupDescriptions && Object.keys(groupDescriptions).length > 0),
+      // No contrast toggle in this tab yet, so ask for the output an existing
+      // doc already renders. Task 19 wires the checkbox that flips this.
+      includeContrast: false,
     },
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions }
