@@ -52,11 +52,28 @@ export type ContrastBar = 'aa-large' | 'aa' | 'aaa';
  * Which bars this ratio clears.
  *
  * Deliberately NOT a pass/fail verdict. A foundation carries no font size, so
- * nothing here can know whether 3:1 (SC 1.4.3 large text, and SC 1.4.11 for UI
- * components and borders) or 4.5:1 (normal text) is the bar that applies to a
- * given use of the pair. Reporting every bar the ratio clears lets the reader
- * apply the one their case needs, instead of the extractor asserting a threshold
- * it cannot justify.
+ * nothing here can know whether 3:1 or 4.5:1 is the bar that applies to a given
+ * use of the pair. Reporting every bar the ratio clears lets the reader apply
+ * the one their case needs, instead of the extractor asserting a threshold it
+ * cannot justify.
+ *
+ * The three numbers cover every distinct threshold in WCAG 2.x, but each NAME
+ * is narrower than the thresholds it stands for, and these names are
+ * payload-facing (they reach ContrastCell.clears and the failure list), so read
+ * them as numbers first:
+ *
+ *   3:1   `aa-large`  SC 1.4.3 AA large text, AND SC 1.4.11 non-text contrast,
+ *                     which covers user interface components and graphical
+ *                     objects: icons, chart segments, focus indicators, any
+ *                     graphic needed to understand content. Much wider than the
+ *                     text-flavoured name suggests.
+ *   4.5:1 `aa`        SC 1.4.3 AA normal text, AND SC 1.4.6 AAA LARGE text. So
+ *                     a reader with large text who sees ['aa-large', 'aa'] has
+ *                     met AAA for their case, which the name alone hides.
+ *   7:1   `aaa`       SC 1.4.6 AAA normal text.
+ *
+ * There is no separate AAA-large bar because 4.5:1 already is it. Adding one
+ * would change no output value, only the label.
  */
 export function barsCleared(ratio: number): ContrastBar[] {
   const out: ContrastBar[] = [];

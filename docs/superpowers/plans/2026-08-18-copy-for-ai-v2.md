@@ -2620,8 +2620,8 @@ export type ContrastBar = 'aa-large' | 'aa' | 'aaa';
  * Which bars this ratio clears.
  *
  * Deliberately NOT a pass/fail verdict. A foundation carries no font size, so
- * nothing here can know whether 3:1 (SC 1.4.3 large text, and SC 1.4.11 for UI
- * components and borders) or 4.5:1 (normal text) is the bar that applies to a
+ * nothing here can know whether 3:1 (SC 1.4.3 large text, and SC 1.4.11 for user
+ * interface components and graphical objects) or 4.5:1 (normal text) is the bar that applies to a
  * given use of the pair. Reporting every bar the ratio clears lets the reader
  * apply the one their case needs, instead of the extractor asserting a threshold
  * it cannot justify.

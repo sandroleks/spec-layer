@@ -22,7 +22,8 @@ import { validate } from './validate';
  * Brief schema version. Bumped when the brief's shape or field meanings change,
  * independently of EXTRACTOR_VERSION.
  *
- * 2: the v2 brief. `source` split into file_key/file_name/node_id/node_name,
+ * 2: the v2 brief. `source` split into
+ * file_key/file_name/node_id/node_name/component_key,
  * with an unavailable key now absent rather than the string 'unknown'; `api`
  * split into variants/states/booleans/slots; `tokens` restructured into `used`
  * plus condition-based `bindings` instead of a per-variant expansion;
