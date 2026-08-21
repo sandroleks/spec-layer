@@ -6,7 +6,7 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, foundationBrief, toYaml } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation, colorContrast, componentBrief, foundationBrief, toYaml } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
@@ -712,6 +712,13 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
     const yaml = toYaml(foundationBrief(spec, {
       generatedAt: new Date().toISOString(),
       groupDescriptions: foundationGroupDescriptions,
+      // Always computed here, unlike the foundation FRAME, which draws its
+      // matrices only when the doc's includeContrast is on. A frame costs canvas
+      // space a user has to look at, so it is opt in; the brief carries only the
+      // failures and the counts, which are small, and an agent asked to pick
+      // colours cannot know it is pairing two that fail unless they are in the
+      // payload. A file with no measurable pair still gets the block, saying so.
+      contrast: colorContrast(spec),
     }));
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';

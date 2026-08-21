@@ -6,6 +6,7 @@ import { toYaml } from '../src/yaml';
 import type { FoundationSpec } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
 import type { YamlValue } from '../src/yaml';
+import type { ColorContrastReport, ContrastFailure } from '../src/colorContrast';
 
 const AT = '2026-08-14T10:22:00.000Z';
 
@@ -116,6 +117,14 @@ interface BriefShape {
     message: string; when?: Record<string, string[]>;
   }>;
   guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
+  contrast: {
+    measured: number;
+    unclassified: number;
+    omitted: number;
+    note?: string;
+    reason?: string;
+    failures: ContrastFailure[];
+  };
   collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
   typography?: Record<string, {
     unresolved?: string;
@@ -251,6 +260,136 @@ describe('foundationBrief', () => {
     const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.collections[0].name).toBe('Primitives');
     expect(brief.collections[0].tokens[0].name).toBe('color/surface/default');
+  });
+
+  // -------------------------------------------------------------------------
+  // contrast
+  // -------------------------------------------------------------------------
+
+  /** A report with the counts zeroed, so each test states only the numbers it
+   *  is actually about. */
+  const report = (over: Partial<ColorContrastReport> = {}): ColorContrastReport => ({
+    measured: 0, unclassified: 0, omitted: 0, matrices: [], failures: [], ...over,
+  });
+
+  /** Failures in two different collections AND two different modes, which is
+   *  the case a per-failure `collection`/`mode` has to survive: without both,
+   *  a reader holding only the brief cannot tell which grid a pair came from. */
+  const twoFailures = (): ContrastFailure[] => ([
+    {
+      collection: 'Primitives', mode: 'Value',
+      foreground: { token: 'color/text/on-surface/default', value: '#ffffff' },
+      background: { token: 'color/surface/primary/disabled', value: '#a9aeb8' },
+      ratio: 2.23, clears: [],
+    },
+    {
+      collection: 'Semantic', mode: 'Dark',
+      foreground: { token: 'color/text/muted', value: '#6b7280' },
+      background: { token: 'color/surface/canvas', value: '#111827' },
+      ratio: 1.94, clears: [],
+    },
+  ]);
+
+  it('carries contrast failures and counts but never the full matrix', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T',
+      contrast: report({
+        measured: 96, unclassified: 4,
+        // ContrastMatrix carries its OWN collection's counts (1 unclassified
+        // here). The brief's counts are the report's foundation-level totals
+        // (4), because the foundation brief describes the whole foundation and
+        // there is no per-collection grid in it for a scoped count to belong to.
+        matrices: [{
+          collection: 'Primitives', mode: 'Value',
+          foregrounds: ['a'], backgrounds: ['b'],
+          cells: [[{ ratio: 2.22, clears: [] }]],
+          unclassified: 1, omitted: 0,
+        }],
+        failures: twoFailures(),
+      }),
+    }) as unknown as BriefShape;
+    expect(brief.contrast.measured).toBe(96);
+    expect(brief.contrast.unclassified).toBe(4);
+    // toEqual on the whole list, not a length check: every field a reader needs
+    // to act without the matrix (both collections, both modes, both token
+    // names, both composited values, the ratio) has to survive the projection.
+    expect(brief.contrast.failures).toEqual(twoFailures());
+    // The matrix is for the frame. In a brief it is hundreds of passing cells.
+    expect('matrices' in brief.contrast).toBe(false);
+  });
+
+  it('emits the counts even when nothing failed', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ measured: 40 }),
+    }) as unknown as BriefShape;
+    // measured tells "checked and clean" apart from "could not check", which an
+    // empty failures list alone cannot do.
+    expect(brief.contrast.measured).toBe(40);
+    expect(brief.contrast.failures).toEqual([]);
+    expect('reason' in brief.contrast).toBe(false);
+    expect('note' in brief.contrast).toBe(false);
+  });
+
+  it('does not let a report that measured nothing read as clean', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ unclassified: 12 }),
+    }) as unknown as BriefShape;
+    expect(brief.contrast.measured).toBe(0);
+    // `failures: []` next to `measured: 0` is the trap: it renders as an empty
+    // list, which reads as "checked, nothing wrong". colorContrast only ever
+    // records a failure for a pair it measured, so with measured 0 there is no
+    // list to show, and the block says why instead.
+    expect('failures' in brief.contrast).toBe(false);
+    expect(brief.contrast.reason).toMatch(/no colour pair could be measured/);
+  });
+
+  it('says coverage was bounded when the axis cap dropped variables', () => {
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ measured: 576, omitted: 7 }),
+    }) as unknown as BriefShape;
+    expect(brief.contrast.omitted).toBe(7);
+    // The count alone is a number with no stated consequence, so the note says
+    // the consequence: a reader cannot take this for a complete check.
+    expect(brief.contrast.note).toContain('7');
+    expect(brief.contrast.note).toMatch(/bounded/);
+  });
+
+  it('passes a failure through as given rather than re-deriving the threshold', () => {
+    // Per Task 16 only a pair clearing NO bar is a failure, so this input is
+    // one colorContrast would never produce. The brief still carries it
+    // verbatim: re-filtering here would make the brief a second, drift-prone
+    // owner of a threshold the foundation has no font size to justify.
+    const clearsOne: ContrastFailure = {
+      collection: 'Primitives', mode: 'Value',
+      foreground: { token: 'color/icon/muted', value: '#767676' },
+      background: { token: 'color/surface/default', value: '#ffffff' },
+      ratio: 4.54, clears: ['aa-large', 'aa'],
+    };
+    const brief = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ measured: 1, failures: [clearsOne] }),
+    }) as unknown as BriefShape;
+    expect(brief.contrast.failures).toEqual([clearsOne]);
+  });
+
+  it('omits contrast entirely when none was computed', () => {
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
+    // `in`, not an undefined comparison: `{ contrast: undefined }` would still
+    // leave the key present for any consumer reading the object before it is
+    // serialized.
+    expect('contrast' in brief).toBe(false);
+  });
+
+  it('uses no em dash or en dash in the copy it writes', () => {
+    const bounded = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ measured: 4, omitted: 2 }),
+    }) as unknown as BriefShape;
+    const unmeasured = foundationBrief(oneCollection(), {
+      generatedAt: 'T', contrast: report({ unclassified: 3 }),
+    }) as unknown as BriefShape;
+    for (const text of [bounded.contrast.note, unmeasured.contrast.reason]) {
+      expect(text).toBeTruthy();
+      expect(text).not.toMatch(/[\u2013\u2014]/);
+    }
   });
 });
 

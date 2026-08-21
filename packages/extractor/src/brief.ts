@@ -15,6 +15,7 @@ import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
 import type { TokenRule } from './tokens';
+import type { ColorContrastReport } from './colorContrast';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
 
@@ -106,6 +107,67 @@ export interface FoundationBriefOptions {
    * storage.
    */
   groupDescriptions?: Record<string, Record<string, string>>;
+  /**
+   * Contrast over this file's colour variables, computed by colorContrast() at
+   * copy time. Absent when the caller did not compute it, which is NOT the same
+   * as a file having no failures: the block is omitted entirely rather than
+   * emitted empty, so an agent never reads silence as a clean bill of health.
+   */
+  contrast?: ColorContrastReport;
+}
+
+/**
+ * The contrast block: the FAILURES and the COUNTS, never the matrices.
+ *
+ * A matrix is the right shape for a human reading a grid on the frame, and the
+ * wrong shape here: one 24 by 24 grid is 576 cells, almost all of them passing
+ * and none of them actionable, which would spend the whole payload budget this
+ * brief exists to defend on data an agent cannot use. The failures are the
+ * actionable subset.
+ *
+ * The counts are what keep that subset honest, because a failure list alone is
+ * ambiguous in two directions:
+ * - `measured` separates "checked and clean" from "nothing was checked". With
+ *   measured 0 the `failures` key is dropped and a `reason` takes its place: an
+ *   empty list renders as `failures: []`, which reads as a verdict, and
+ *   colorContrast only ever records a failure for a pair it measured, so at
+ *   measured 0 there is no verdict to report.
+ * - `omitted` (and `unclassified`) say how much was never in scope. When the
+ *   axis cap dropped variables, a `note` states the consequence, so a bounded
+ *   check cannot be mistaken for a complete one.
+ *
+ * The counts emitted here are the report's FOUNDATION-level totals, not the
+ * per-collection counts ContrastMatrix also carries. Those exist for a consumer
+ * drawing one collection's grid, and this brief draws none: it describes the
+ * whole foundation in one block, so a scoped count would have nothing to be
+ * scoped to and would understate what was skipped file-wide.
+ *
+ * Failures are passed through as given. Task 16 owns the rule that only a pair
+ * clearing NO bar is a failure; re-deriving it here would make this a second
+ * owner of a threshold a foundation, which carries no font size, cannot
+ * justify.
+ */
+function contrastOf(report: ColorContrastReport): YamlValue {
+  return {
+    measured: report.measured,
+    unclassified: report.unclassified,
+    omitted: report.omitted,
+    ...(report.omitted > 0
+      ? { note: `${report.omitted} classified colour variables were dropped by the per-axis cap, so this check is bounded rather than complete.` }
+      : {}),
+    ...(report.measured === 0
+      ? { reason: 'no colour pair could be measured, so the absence of failures here is not a pass.' }
+      : {
+        failures: report.failures.map((f) => ({
+          collection: f.collection,
+          mode: f.mode,
+          foreground: { token: f.foreground.token, value: f.foreground.value },
+          background: { token: f.background.token, value: f.background.value },
+          ratio: f.ratio,
+          clears: [...f.clears],
+        })),
+      }),
+  };
 }
 
 export function foundationBrief(
@@ -151,6 +213,10 @@ export function foundationBrief(
       line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
       letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
     })),
+    // A conditional spread, not `contrast: opts.contrast && ...`: a key set to
+    // undefined still leaves `'contrast' in brief` true for any consumer
+    // reading this object before it is serialized.
+    ...(opts.contrast ? { contrast: contrastOf(opts.contrast) } : {}),
     ...(hasDescriptions
       ? { guidelines: { origin: 'generated', group_descriptions: descriptions } }
       : {}),
