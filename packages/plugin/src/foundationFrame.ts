@@ -20,7 +20,7 @@
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
-  FoundationRow, FoundationVariableRow,
+  FoundationRow, FoundationVariableRow, ColorContrastReport,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
@@ -28,6 +28,9 @@ import {
   headingFont,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
+import {
+  contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
+} from './foundationContrast';
 import type { resolveTheme } from './brandColors';
 
 /**
@@ -635,6 +638,48 @@ function labelledBlock(text: string, block: FrameNode): FrameNode {
   return group;
 }
 
+// A grid to the next grid, and the last grid to the note under it. Wider than
+// the swatch list's own rhythm because each grid is a bordered box.
+const CONTRAST_GAP = 16;
+
+/**
+ * A note set to a readable measure. The contrast block's two prose strings are
+ * the only sentences on a foundation frame long enough to need one.
+ */
+function contrastNote(parent: FrameNode, text: string): void {
+  const box = vstack(0);
+  parent.appendChild(box);
+  fixWidthHugHeight(box, GROUP_NOTE_W);
+  wrappingText(box, text, 'Regular', 11, palette.muted);
+}
+
+/**
+ * The contrast block: one grid per mode, plus whatever the model has to say.
+ *
+ * The empty case draws its REASON rather than an empty grid. The two look
+ * identical on a frame and mean opposite things, and a reader who sees a blank
+ * grid concludes the colours are fine.
+ */
+function buildContrastBlock(model: ContrastBlockModel): FrameNode {
+  const stack = vstack(CONTRAST_GAP);
+  stack.name = 'Contrast';
+  if (model.kind === 'none') {
+    contrastNote(stack, model.reason);
+    return labelledBlock('Contrast', stack);
+  }
+  // Labelled by mode only when there are several, the same rule the swatch
+  // list's mode headings follow: with one mode there is nothing to tell apart.
+  const many = model.matrices.length > 1;
+  for (const m of model.matrices) {
+    const grid = matrixFrame(m);
+    stack.appendChild(many ? labelledBlock(m.mode, grid) : grid);
+  }
+  // Under the grids, not over them: it says what is missing from what you just
+  // read, which is a footnote rather than a preamble.
+  if (model.note) contrastNote(stack, model.note);
+  return labelledBlock('Contrast', stack);
+}
+
 /**
  * A column heading. Not uppercased, unlike the component doc's table headings:
  * half of these labels are user-authored mode names, and shouting a name the
@@ -705,6 +750,12 @@ export async function buildFoundationFrame(
   includeDescriptions: boolean,
   logoBase64?: string | null,
   groupDescriptions?: Record<string, string>,
+  // Optional and defaulted off, on the same parameter path groupDescriptions
+  // takes. A caller that has not been taught about contrast yet renders exactly
+  // what it rendered before, which is what keeps every existing doc's drift
+  // baseline where it is.
+  includeContrast = false,
+  contrast?: ColorContrastReport,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -717,6 +768,17 @@ export async function buildFoundationFrame(
   // mixed collection (colour plus spacing plus radius) gets both, in that order.
   const colorRows = content.rows.filter(isColorRow) as FoundationVariableRow[];
   const tableRows = content.rows.filter((r) => !isColorRow(r));
+
+  // Decided before the card is sized, because the card CLIPS and a grid at the
+  // extractor's 24 column cap is wider than anything the table or the swatch
+  // list asks for.
+  //
+  // Skipped for the text-styles unit: it holds no colour variables at all, so a
+  // "no colour pairs to measure" note there would state the obvious about a
+  // document that never had any, and its collectionName is empty besides.
+  const contrastModel = includeContrast && contrast && !isText
+    ? contrastBlockModel(contrast, content.collectionName)
+    : null;
 
   // The column appears only when the user asked for descriptions AND some row
   // in this unit actually has one, so a file with no descriptions never gets a
@@ -753,6 +815,9 @@ export async function buildFoundationFrame(
     tableRows.length > 0 ? cardWidth(columns) : CARD_WIDTH_MIN,
     colorRows.length > 0
       ? Math.max(CARD_WIDTH_MIN, swatchRowWidth(content.modeNames.length) + HEADER_PAD_X * 2)
+      : CARD_WIDTH_MIN,
+    contrastModel?.kind === 'matrix'
+      ? contrastBlockWidth(contrastModel.matrices) + HEADER_PAD_X * 2
       : CARD_WIDTH_MIN,
   );
 
@@ -807,6 +872,11 @@ export async function buildFoundationFrame(
       colorRows, content.modeNames, includeDescriptions, groupDescriptions);
     body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
   }
+
+  // --- contrast grids ---
+  // After the colours it measures and before the table of everything else, and
+  // ahead of the early return below so a colours-only frame gets it too.
+  if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
 
   // --- table (everything else) ---
   if (tableRows.length === 0) {
