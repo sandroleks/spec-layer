@@ -602,7 +602,13 @@ async function buildFoundations(): Promise<void> {
       includeDescriptions: true,
       aiNotes: Boolean(groupDescriptions && Object.keys(groupDescriptions).length > 0),
       // No contrast toggle in this tab yet, so ask for the output an existing
-      // doc already renders. Task 19 wires the checkbox that flips this.
+      // doc already renders. main.ts threads this through to
+      // buildFoundationFrame, so flipping it to true is all that is needed to
+      // render the matrix; what is missing is the control that lets a user
+      // choose. No task in the v2 plan added one, so this is the last mile of
+      // the contrast feature and it is a product decision, not an oversight to
+      // patch silently: turning it on unasked changes every foundation doc's
+      // output for every user.
       includeContrast: false,
     },
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0

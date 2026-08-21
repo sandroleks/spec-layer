@@ -7,7 +7,7 @@ import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
-  foundationUnitTitle, groupRowsByFolder,
+  foundationUnitTitle, groupRowsByFolder, colorContrast,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
 } from '@spec-layer/extractor';
@@ -912,6 +912,13 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
         }
 
+        // Measured ONCE for the whole build, not per unit. colorContrast reads
+        // the entire foundation on every call and `spec` does not change across
+        // this loop, so measuring per unit would repeat identical work for each
+        // one. Skipped entirely when the toggle is off, so a user who does not
+        // want the check does not pay for it.
+        const contrastReport = msg.config.includeContrast ? colorContrast(spec) : undefined;
+
         for (let i = 0; i < units.length; i++) {
           const unit = units[i];
           // Unreachable in this path: unitContent returns null for a missing
@@ -941,6 +948,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, brandLogo, descriptions,
+            msg.config.includeContrast, contrastReport,
           );
 
           const data: FoundationDocLink = {
@@ -1102,9 +1110,14 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         // Reuse the descriptions this doc was generated with. An Update is a
         // source refresh, not a reason to re-ask the model and re-bill the quota.
+        // An Update re-renders with the config the doc was created under, the
+        // same rule its descriptions follow: an Update is a source refresh, not
+        // a change of what the doc is.
         const section = await buildFoundationFrame(
           content, unit, resolveTheme(brandTheme), link.config.includeDescriptions,
           brandLogo, link.groupDescriptions,
+          link.config.includeContrast,
+          link.config.includeContrast ? colorContrast(spec) : undefined,
         );
 
         const data: FoundationDocLink = {

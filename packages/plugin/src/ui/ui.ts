@@ -513,7 +513,10 @@ async function runFoundationBuild(): Promise<void> {
     // the tab, and buildFoundationFrame already suppresses the column when no
     // row has one.
     // includeContrast is hardcoded false for the same reason: no checkbox, and
-    // false is the output every doc written before the field renders.
+    // false is the output every doc written before the field renders. The build
+    // path behind it is complete (main.ts passes it to buildFoundationFrame),
+    // so this is the one remaining step, and it is a product decision: flipping
+    // it changes every foundation doc's output for every user.
     config: { includeDescriptions: true, aiNotes: wantsAi, includeContrast: false },
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions } : {}),
