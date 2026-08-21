@@ -86,6 +86,84 @@ describe('draftProse base64 image', () => {
     expect(proseCacheKey(renamed)).toEqual(base);
   });
 
+  // The key must be sensitive to EXACTLY what the model sees, no more and no
+  // less. Every field below is present on IntermediateSpec and never read by
+  // buildProsePrompt, so moving it cannot change one word of generated prose.
+  // Keying on any of them re-bills a metered Haiku call for identical output.
+  //
+  // These are enumerated rather than covered by one loop because each is a
+  // separate claim about what the prompt reads, and a loop would hide which
+  // one regressed.
+  describe('ignores every field the prompt never reads', () => {
+    const unchanged = (mutated: Partial<Record<string, unknown>>) => {
+      const next = { ...spec, ...mutated } as unknown as IntermediateSpec;
+      expect(proseCacheKey(next)).toEqual(proseCacheKey(spec));
+    };
+
+    it('ignores the Figma file key, so a duplicate or a branch reuses the cache', () => {
+      // A duplicated file and a Figma branch both get a new file key while the
+      // component is untouched.
+      unchanged({ figmaFile: 'a-different-file-key' });
+    });
+
+    it('ignores the component key and the node id', () => {
+      unchanged({ figmaKey: 'CK-changed' });
+      unchanged({ figmaNode: '999:999' });
+    });
+
+    it('ignores anatomyComponentId and variantInstances', () => {
+      unchanged({ anatomyComponentId: '42:42' });
+      unchanged({ variantInstances: [{ nodeId: '7:7', name: 'Size=Small', values: { Size: 'Small' } }] });
+    });
+
+    it('ignores gaps, which are rendered but never prompted', () => {
+      unchanged({
+        gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color', value: '#bbb' }],
+      });
+    });
+
+    it('ignores the identity fields threaded onto tokens and layout', () => {
+      // tokens[].path and layout[].path/[].values are all NEW on this branch, so
+      // without this they would each have orphaned every cached draft on release.
+      const base = {
+        ...spec,
+        tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, token: 'color/surface' }],
+        layout: [{ part: 'Container', path: 'Container', summary: 'horizontal, gap 8', values: { gap: 8 } }],
+      } as unknown as IntermediateSpec;
+      const moved = {
+        ...base,
+        tokens: [{ ...(base.tokens[0]), path: 'Somewhere/Else' }],
+        layout: [{ ...(base.layout[0]), path: 'Somewhere/Else', values: { gap: 99 } }],
+      } as unknown as IntermediateSpec;
+      expect(proseCacheKey(moved)).toEqual(proseCacheKey(base));
+    });
+
+    it('ignores anatomy fields outside name and nested', () => {
+      const base = {
+        ...spec,
+        anatomy: [{ id: '1:2', name: 'Label', type: 'TEXT', nested: false, depth: 0, path: 'Container/Label' }],
+      } as unknown as IntermediateSpec;
+      const moved = {
+        ...base,
+        anatomy: [{ ...(base.anatomy[0]), id: '9:9', depth: 3, path: 'Elsewhere/Label' }],
+      } as unknown as IntermediateSpec;
+      expect(proseCacheKey(moved)).toEqual(proseCacheKey(base));
+    });
+  });
+
+  it('still changes when a token the prompt DOES read changes', () => {
+    // The counterpart to the block above: proving the key is not simply inert.
+    const base = {
+      ...spec,
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, token: 'color/surface' }],
+    } as unknown as IntermediateSpec;
+    const moved = {
+      ...base,
+      tokens: [{ ...(base.tokens[0]), token: 'color/surface/brand' }],
+    } as unknown as IntermediateSpec;
+    expect(proseCacheKey(moved)).not.toEqual(proseCacheKey(base));
+  });
+
   it('still changes when something the prompt reads changes', () => {
     const renamed = { ...spec, name: 'Chip' } as unknown as IntermediateSpec;
     expect(proseCacheKey(renamed)).not.toEqual(proseCacheKey(spec));

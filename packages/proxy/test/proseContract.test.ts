@@ -25,6 +25,17 @@ const briefs: FoundationGroupBrief[] = [{
   sampleValues: ['#722ED1'],
 }];
 
+// A complete-enough spec, shared by both cases below. proseCacheKey hashes the
+// RENDERED prompt rather than a projection of the spec, so it walks the same
+// fields buildProsePrompt walks; the `{ name: 'Button' }` stub this replaced no
+// longer reaches a key. Not a loosened assertion: these tests are about the
+// proxy's cacheKey prefix rule, and a real caller always holds an extract()
+// result, which carries every field.
+const spec = {
+  name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1',
+  anatomy: [], props: [], variants: [], states: [], tokens: [], related: [], gaps: [], layout: [],
+} as unknown as IntermediateSpec;
+
 describe('/v1/prose accepts what the client sends', () => {
   it('accepts the group-description payload', () => {
     const payload = groupProseRequest({ collectionName: 'Semantic', groups: briefs });
@@ -34,7 +45,6 @@ describe('/v1/prose accepts what the client sends', () => {
   it('accepts a component prose cacheKey too', () => {
     // The other caller of the same endpoint, so the prefix rule is covered for
     // both and neither can drift alone.
-    const spec = { name: 'Button' } as unknown as IntermediateSpec;
     expect(validateProseBody({
       cacheKey: proseCacheKey(spec),
       request: {
@@ -62,7 +72,6 @@ describe('/v1/prose accepts what the client sends', () => {
   it('keeps group keys out of the component prose namespace', () => {
     // Both hit one endpoint and one server-side cache, so a shared key would let
     // a component response be served as a group description.
-    const spec = { name: 'Button' } as unknown as IntermediateSpec;
     const groupKey = groupCacheKey({ collectionName: 'Semantic', groups: briefs });
     expect(groupKey).not.toBe(proseCacheKey(spec));
     expect(groupKey).toContain(':groups:');

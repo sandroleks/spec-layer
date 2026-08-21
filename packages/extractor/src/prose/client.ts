@@ -26,30 +26,47 @@ import {
  * v7 = Definition renamed to Overview, value-led prose (no style names);
  * v8 = accessibility group expansion (Interactions, Design/Content Considerations)
  *      + selection-aware prompting and cache keys.
+ *
+ * DELIBERATELY NOT bumped on 2026-08-21, when proseInputHash changed from a
+ * deny-list over IntermediateSpec to a hash of the rendered prompt. This
+ * constant means "the produced voice changed", and it did not: the prompt is
+ * byte-identical. The change does void every key minted before it, so drafts
+ * cached under the old derivation are unreachable and regenerate once. That is
+ * a one-time cost being paid deliberately, in exchange for the key never again
+ * moving for a reason the model cannot see. Bumping this instead would have
+ * bought the same regeneration while claiming a voice change that never
+ * happened.
  */
 export const PROSE_PROMPT_VERSION = 'v8';
 
 /**
- * The part of a spec a prose draft actually depends on.
+ * The part of a spec a prose draft actually depends on: the prompt itself.
  *
- * `rawValues` and `figmaFileName` are excluded: neither reaches
- * buildProsePrompt (which reads name, anatomy, props, variants, states, tokens,
- * layout and related), so dropping them cannot make the key blind to an input
- * the model actually sees. `figmaFileName` reaches the brief's `source` block
- * and nothing else.
+ * This hashes the rendered prompt rather than a projection of the spec, which
+ * makes the key sensitive to EXACTLY what the model sees, by construction. A
+ * field that does not reach buildProsePrompt cannot move the key, and a field
+ * that does cannot fail to, without anyone maintaining a list.
  *
- * This exclusion list is a DENY-list, so every field added to IntermediateSpec
- * enters this key by default and has to be excluded deliberately. That has now
- * cost one billed regeneration bug (figmaFileName), so weigh any new field
- * against this function before adding it.
+ * It was previously a DENY-list over IntermediateSpec, and that shape was wrong
+ * in a way that cost money twice. `draftProse` sends this key to the proxy,
+ * which reserves quota against it: a known key returns the stored body free,
+ * while an unknown key calls Anthropic and commits a metered generation. So
+ * every field present in the hash and absent from the prompt was a billed
+ * regeneration for byte-identical prose. The deny-list let in `figmaFileName`
+ * (a rename re-billed every component), the Figma file key (a duplicate or a
+ * branch re-billed every component), the component key, the node id,
+ * anatomyComponentId, variantInstances, gaps, and the `path`/`values` identity
+ * fields threaded onto tokens, layout and anatomy by this branch. Sixteen
+ * fields in total, four of them new, each one an independent way to orphan
+ * every cached draft in existence.
  *
- * Deliberately NOT specContentHash: that projection also flattens anatomy to its
- * depth-0 legacy shape, and nested anatomy parts do reach the prompt, so reusing
- * it here would serve a stale draft after a real change to the component.
+ * Deliberately NOT specContentHash: that projection flattens anatomy to its
+ * depth-0 legacy shape, and nested anatomy parts DO reach the prompt, so reusing
+ * it would serve a stale draft after a real change to the component. The two
+ * hashes answer different questions and must not be merged.
  */
-function proseInputHash(spec: IntermediateSpec): string {
-  const { rawValues: _rawValues, figmaFileName: _figmaFileName, ...rest } = spec;
-  return contentHash(rest);
+function proseInputHash(spec: IntermediateSpec, requested?: ReadonlySet<ProseKey>): string {
+  return contentHash(buildProsePrompt(spec, requested as Set<ProseKey> | undefined));
 }
 
 /**
@@ -66,7 +83,12 @@ export function proseCacheKey(
   const keySig = opts.keys && opts.keys.length
     ? `:keys=${[...opts.keys].sort().join(',')}`
     : '';
-  return `prose:${PROSE_PROMPT_VERSION}:${proseInputHash(spec)}${opts.image ? ':img' : ''}${keySig}`;
+  // The requested set is threaded into the hash as well as being spelled out in
+  // keySig: buildProsePrompt varies with it, so the hash has to see it or two
+  // different requests would collide. keySig stays because it makes a key
+  // readable in a log without reversing a hash.
+  const requested = opts.keys && opts.keys.length ? new Set(opts.keys) : undefined;
+  return `prose:${PROSE_PROMPT_VERSION}:${proseInputHash(spec, requested)}${opts.image ? ':img' : ''}${keySig}`;
 }
 
 export interface CacheStore {
