@@ -22,9 +22,11 @@ export type ColorRole = 'foreground' | 'background' | null;
  *  colorContrast a matrix with an empty foreground axis, and it also inverted a
  *  flat `fg-on-surface` name into a background, because the `on-` guard fires
  *  only on a segment that STARTS with `on-`. */
-const FOREGROUND_WORDS = new Set(['text', 'icon', 'stroke', 'border', 'content', 'foreground', 'fg']);
+export const FOREGROUND_WORDS: ReadonlySet<string> =
+  new Set(['text', 'icon', 'stroke', 'border', 'content', 'foreground', 'fg']);
 /** Words meaning "this colour is what something is drawn on". */
-const BACKGROUND_WORDS = new Set(['surface', 'background', 'bg', 'fill', 'canvas', 'base']);
+export const BACKGROUND_WORDS: ReadonlySet<string> =
+  new Set(['surface', 'background', 'bg', 'fill', 'canvas', 'base']);
 
 /**
  * The role a colour variable's name declares, or null when it declares none.
@@ -108,6 +110,16 @@ export interface ContrastMatrix {
   backgrounds: string[];
   /** `cells[fgIndex][bgIndex]`, null where the pair could not be measured. */
   cells: (ContrastCell | null)[][];
+  /** THIS collection's unclassified colour count, not the foundation's.
+   *
+   *  Present because the report's top-level totals are foundation-global while a
+   *  consumer drawing one collection's grid needs that collection's numbers, and
+   *  nothing downstream can recover them from a total. Reporting a global count
+   *  beside one collection's grid would tell a reader that tokens were dropped
+   *  from a collection they were not dropped from. */
+  unclassified: number;
+  /** THIS collection's count of classified colours dropped by the cap. */
+  omitted: number;
 }
 
 export interface ContrastFailure {
@@ -156,16 +168,19 @@ export function colorContrast(
     const colours = collection.variables.filter((v) => v.resolvedType === 'COLOR');
     const fg: FoundationVariable[] = [];
     const bg: FoundationVariable[] = [];
+    let collectionUnclassified = 0;
     for (const v of colours) {
       const role = colorRole(v.name);
       if (role === 'foreground') fg.push(v);
       else if (role === 'background') bg.push(v);
-      else unclassified++;
+      else collectionUnclassified++;
     }
+    unclassified += collectionUnclassified;
 
     // Each variable sits on exactly one axis, so summing the two overflows counts
     // distinct dropped variables rather than double counting any of them.
-    omitted += Math.max(0, fg.length - cap) + Math.max(0, bg.length - cap);
+    const collectionOmitted = Math.max(0, fg.length - cap) + Math.max(0, bg.length - cap);
+    omitted += collectionOmitted;
     const foregrounds = fg.slice(0, cap);
     const backgrounds = bg.slice(0, cap);
     if (!foregrounds.length || !backgrounds.length) continue;
@@ -185,7 +200,16 @@ export function colorContrast(
           // so skip and let the counts say so.
           if (!fgColour || !bgColour || bgColour.alpha < 1) { row.push(null); continue; }
           const composited = blend(fgColour.hex, fgColour.alpha, bgColour.hex);
-          const ratio = Math.round(contrastRatio(composited, bgColour.hex) * 100) / 100;
+          // FLOOR, never round. Rounding awards a bar the exact ratio does not
+          // clear: across 10.2 million real colour pairs it produces 13,600 false
+          // passes, and #0078d7 on white (an ordinary brand blue) measures
+          // 4.4989:1, fails AA, and would be reported as "4.5:1 AA". Flooring is
+          // exactly equivalent to reading the bars off the unrounded ratio,
+          // because 3, 4.5 and 7 are all representable at two decimals, so the
+          // printed number and the bars still come from one value and that value
+          // never overstates. For an accessibility tool a false pass is the
+          // expensive direction, so the truncation is deliberate.
+          const ratio = Math.floor(contrastRatio(composited, bgColour.hex) * 100) / 100;
           const clears = barsCleared(ratio);
           row.push({ ratio, clears });
           measured++;
@@ -205,6 +229,8 @@ export function colorContrast(
         foregrounds: foregrounds.map((v) => v.name),
         backgrounds: backgrounds.map((v) => v.name),
         cells,
+        unclassified: collectionUnclassified,
+        omitted: collectionOmitted,
       });
     }
   }

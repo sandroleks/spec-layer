@@ -239,12 +239,12 @@ describe('colorContrast', () => {
     const f = (fg: string, bg: string) =>
       r.failures.find((x) => x.foreground.token === fg && x.background.token === bg);
     const disabled = f('color/text/on-surface/default', 'color/surface/primary/disabled')!;
-    expect(disabled.ratio).toBeCloseTo(2.23, 2);
+    expect(disabled.ratio).toBeCloseTo(2.22, 2);  // floored from 2.2261, never rounded up
     expect(disabled.clears).toEqual([]);
     // 4.22 clears aa-large but not aa, so it is not a failure by the bar-based
     // definition and must NOT appear in `failures`.
     const press = r.matrices[0].cells[1][1]!;
-    expect(press.ratio).toBeCloseTo(4.22, 2);
+    expect(press.ratio).toBeCloseTo(4.21, 2);  // floored from 4.2189, never rounded up
     expect(press.clears).toEqual(['aa-large']);
   });
 
@@ -425,18 +425,64 @@ describe('colorContrast edge cases', () => {
     expect(colorContrast(s)).toEqual(first);
   });
 
-  it('reads bars off the rounded ratio, so the two always agree', () => {
-    // White on #959595 is 2.9953:1, which rounds to 3.00 and is then reported as
-    // clearing aa-large. The bars are deliberately derived from the number the
-    // reader sees: printing "3.00, clears nothing" next to "3.00, clears
-    // aa-large" elsewhere reads as a bug, and the discrepancy it hides is at
-    // most 0.005 of a ratio point.
+  it('never reports a bar the exact ratio does not clear', () => {
+    // This test previously pinned the opposite, and pinned a real defect. The
+    // ratio was rounded, so white on #959595 (2.9953:1) was published as
+    // "3.00, clears aa-large": a conformance claim the colours do not meet. The
+    // old rationale was that the printed number and the bars must agree, which
+    // is right, and that rounding was the way to get it, which was wrong.
+    // Flooring achieves the same agreement without ever overstating, because 3,
+    // 4.5 and 7 are all exactly representable at two decimals, so a floored
+    // ratio clears a bar if and only if the exact ratio does.
     const r = colorContrast(spec([
       { name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } },
       { name: 'color/surface/x', valuesByMode: { m1: hex('#959595') } },
     ]));
-    expect(r.matrices[0].cells[0][0]).toEqual({ ratio: 3, clears: ['aa-large'] });
-    expect(r.failures).toEqual([]);
+    expect(r.matrices[0].cells[0][0]).toEqual({ ratio: 2.99, clears: [] });
+    expect(r.failures).toHaveLength(1);
+  });
+
+  it('denies AA to a brand blue that misses it by a thousandth', () => {
+    // #0078d7 on white is 4.4988:1 and fails AA. Rounding published it as
+    // "4.5:1 AA". This is the ordinary, non-contrived case: a reviewer found
+    // 13,600 such false passes across 10.2 million real colour pairs, and zero
+    // when flooring.
+    const r = colorContrast(spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#0078d7') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#ffffff') } },
+    ]));
+    expect(r.matrices[0].cells[0][0]).toEqual({ ratio: 4.49, clears: ['aa-large'] });
+  });
+
+  it('carries each collection\'s own unclassified and omitted counts on its matrix', () => {
+    // The report's top-level totals are foundation-global. A consumer drawing ONE
+    // collection's grid needs that collection's numbers, and nothing downstream
+    // can recover them from a total: reporting a global count beside one grid
+    // tells a reader that tokens were dropped from a collection they were not
+    // dropped from.
+    const foundation = spec([
+      { name: 'color/text/a', valuesByMode: { m1: hex('#000000') } },
+      { name: 'color/surface/x', valuesByMode: { m1: hex('#ffffff') } },
+    ]);
+    foundation.collections.push({
+      id: 'c2', name: 'Primitives', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Light' }],
+      variables: [
+        { name: 'palette/blue/500', group: '', resolvedType: 'COLOR' as const,
+          description: '', codeSyntax: {}, valuesByMode: { m1: hex('#0000ff') } },
+        { name: 'palette/red/500', group: '', resolvedType: 'COLOR' as const,
+          description: '', codeSyntax: {}, valuesByMode: { m1: hex('#ff0000') } },
+      ],
+    });
+    const r = colorContrast(foundation);
+    // Two unclassified palette colours, both in Primitives, none in Semantic.
+    expect(r.unclassified).toBe(2);
+    const semantic = r.matrices.find((m) => m.collection === 'Semantic')!;
+    expect(semantic.unclassified).toBe(0);
+    expect(semantic.omitted).toBe(0);
+    // Primitives classified nothing, so it emits no matrix to carry its counts;
+    // the foundation total is where they remain visible.
+    expect(r.matrices.map((m) => m.collection)).toEqual(['Semantic']);
   });
 
   it('records the composited foreground value on a failure, not the raw hex', () => {
