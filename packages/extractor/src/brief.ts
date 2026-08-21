@@ -220,7 +220,12 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
 
 /**
  * Guidelines read from storage, passed through verbatim. Renamed to the
- * brief's snake_case convention; nothing here is generated.
+ * brief's snake_case convention; nothing here is written by this function.
+ *
+ * `origin: 'generated'` leads the block, the same marker foundationBrief
+ * stamps on its own guidelines. The prose in here is the only model-written
+ * content in either brief, so one marked block is the whole generated-content
+ * boundary and a consumer needs no per-field annotation to find it.
  *
  * Every field applies the same empty-string-means-absent guard (`|| undefined`
  * for strings, a length check for the two string arrays) so a field that
@@ -234,11 +239,14 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
  * optional sections were requested and the model omitted them), and that
  * object is truthy. Deciding on the result means such a case collapses to no
  * `guidelines` key at all, matching every other optional block in this brief,
- * rather than leaking a `guidelines: {}` line.
+ * rather than leaking a `guidelines: {}` line. `origin` is excluded from that
+ * decision for exactly the same reason: counting it would make a brief with no
+ * prose at all emit a guidelines block holding nothing but the marker.
  */
 function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefined {
   if (!prose) return undefined;
   const result: Record<string, YamlValue | undefined> = {
+    origin: 'generated',
     definition: prose.definition || undefined,
     accessibility: prose.accessibility || undefined,
     interactions: prose.interactions || undefined,
@@ -249,7 +257,8 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
     dos: prose.dos.length > 0 ? prose.dos : undefined,
     donts: prose.donts.length > 0 ? prose.donts : undefined,
   };
-  return Object.values(result).some((v) => v !== undefined) ? result : undefined;
+  const { origin: _origin, ...fields } = result;
+  return Object.values(fields).some((v) => v !== undefined) ? result : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -561,6 +570,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       ...(g.value !== undefined ? { value: g.value } : {}),
     }));
   const typography = typographyOf(spec, opts.foundation);
+  const guidelines = guidelinesOf(opts.prose);
   // The geometry-token-mismatch finding needs each bound token's resolved
   // NUMBER, at the same mode `tokens.used` already reports it under (via
   // lookupToken) -- not re-resolved by validate.ts itself, so the finding and
@@ -625,6 +635,10 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     ...(unbound.length > 0 ? { unbound } : {}),
     ...(typography !== undefined ? { typography } : {}),
     ...(validation.length > 0 ? { validation } : {}),
-    guidelines: guidelinesOf(opts.prose),
+    // Conditional spread for the same reason as every optional block above:
+    // guidelinesOf returns undefined when there is no prose, and
+    // `{ guidelines: undefined }` still leaves `'guidelines' in brief` true for
+    // a consumer reading the object before it is serialized.
+    ...(guidelines !== undefined ? { guidelines } : {}),
   };
 }

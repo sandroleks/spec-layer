@@ -1,0 +1,99 @@
+spec_layer:
+  kind: component
+  version: 2
+  extractor: "1"
+  generated: 2026-08-18T00:00:00.000Z
+source:
+  file_key: FILE1
+  file_name: Design System
+  node_id: 1:100
+  node_name: Button
+  component_key: m3-button
+component: { name: Button, related: [Icon] }
+api:
+  variants:
+    Style: { options: [Filled, Outlined], default: Filled }
+  states: [Enabled, Hovered, Disabled]
+  booleans: { Show icon: { default: false } }
+  slots: { Label: { type: text, default: Button } }
+anatomy:
+  - { part: container, type: FRAME }
+  - { part: label, type: TEXT }
+  - { part: icon, type: INSTANCE, component: Icon }
+layout: [{ part: container, summary: "horizontal, padding 10/24/10/24, gap 8" }]
+tokens:
+  used:
+    md.sys.color.primary: {}
+    md.sys.color.primary-hover: {}
+    md.sys.shape.corner.full: {}
+    md.sys.color.outline: {}
+    md.sys.color.on-primary: {}
+  bindings:
+    - path: Container/container
+      property: fill
+      token: md.sys.color.primary
+      when: { Style: [Filled], State: [Enabled] }
+    - path: Container/container
+      property: fill
+      token: md.sys.color.primary-hover
+      when: { State: [Hovered] }
+    - path: Container/container
+      property: border-radius
+      token: md.sys.shape.corner.full
+    - path: Container/container
+      property: border
+      token: md.sys.color.outline
+      when: { Style: [Outlined] }
+    - path: Container/label
+      property: fill
+      token: md.sys.color.on-primary
+      when: { Style: [Filled] }
+    - path: Container/label
+      property: fill
+      token: md.sys.color.primary
+      when: { Style: [Outlined] }
+unbound:
+  - path: Container/container
+    property: gap
+    issue: hardcoded-value
+    value: 8
+  - path: Container/container
+    property: padding-x
+    issue: hardcoded-value
+    value: 24
+  - path: Container/container
+    property: padding-y
+    issue: hardcoded-value
+    value: 10
+  - path: Container/label
+    property: typography
+    issue: missing-token-binding
+  - path: Container/debug-overlay
+    property: fill
+    issue: hardcoded-color
+validation:
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: gap
+    message: gap is a hardcoded 8 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: padding-x
+    message: padding-x is a hardcoded 24 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: padding-y
+    message: padding-y is a hardcoded 10 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/label
+    property: typography
+    message: typography is not bound to a token.
+  - id: unbound-value
+    severity: warning
+    path: Container/debug-overlay
+    property: fill
+    message: fill is not bound to a token.

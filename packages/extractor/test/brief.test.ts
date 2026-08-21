@@ -282,6 +282,7 @@ interface ParsedComponentBrief {
   layout?: Array<{ part: string; summary: string }>;
   unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
   guidelines?: {
+    origin?: string;
     definition?: string;
     accessibility?: string;
     dos?: string[];
@@ -679,6 +680,7 @@ describe('componentBrief', () => {
   it('includes stored guidelines verbatim', () => {
     const y = brief({ prose: { definition: 'A button.', accessibility: 'Name it.', dos: ['Do'], donts: ['Do not'] } });
     expect(y.guidelines).toEqual({
+      origin: 'generated',
       definition: 'A button.', accessibility: 'Name it.', dos: ['Do'], donts: ['Do not'],
     });
   });
@@ -688,9 +690,32 @@ describe('componentBrief', () => {
     expect('guidelines' in brief({ prose: null })).toBe(false);
   });
 
+  // Key ABSENCE on the raw object, not `guidelines === undefined` after a YAML
+  // round trip: the emitter drops undefined-valued keys either way, so only a
+  // conditional spread in componentBrief makes `'guidelines' in brief` false
+  // for a consumer that reads the object before it is serialized. The three
+  // tests above all parse YAML and so cannot tell the two apart.
+  it('leaves no guidelines key on the raw object when there is no prose', () => {
+    const raw = componentBrief(SPEC, { generatedAt: AT }) as Record<string, unknown>;
+    const rawNull = componentBrief(SPEC, { generatedAt: AT, prose: null }) as Record<string, unknown>;
+    expect('guidelines' in raw).toBe(false);
+    expect('guidelines' in rawNull).toBe(false);
+  });
+
   it('omits guidelines entirely when a stored ProseDrafts is truthy but every field is empty', () => {
     const y = brief({ prose: { definition: '', accessibility: '', dos: [], donts: [] } });
     expect('guidelines' in y).toBe(false);
+  });
+
+  // The `origin` marker must not count towards the emptiness check. If it did,
+  // a stored ProseDrafts with nothing in it would start emitting a guidelines
+  // block whose only content is the marker saying it was generated.
+  it('emits no guidelines block for empty prose even though origin is always set', () => {
+    const raw = componentBrief(SPEC, {
+      generatedAt: AT,
+      prose: { definition: '', accessibility: '', dos: [], donts: [] },
+    }) as Record<string, unknown>;
+    expect('guidelines' in raw).toBe(false);
   });
 
   it('treats an empty-string optional prose field as absent, not as a blank value', () => {
@@ -704,6 +729,7 @@ describe('componentBrief', () => {
       },
     });
     expect(y.guidelines).toEqual({
+      origin: 'generated',
       definition: 'A button.', accessibility: 'Name it.', dos: ['Do'], donts: ['Do not'],
     });
     expect(y.guidelines && 'interactions' in y.guidelines).toBe(false);
@@ -724,6 +750,7 @@ describe('componentBrief', () => {
       },
     });
     expect(y.guidelines).toEqual({
+      origin: 'generated',
       definition: 'A button.',
       accessibility: 'Name it.',
       dos: ['Do'],
