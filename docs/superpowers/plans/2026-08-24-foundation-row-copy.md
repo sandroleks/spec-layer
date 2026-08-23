@@ -655,8 +655,13 @@ describe('copyFoundationBriefForScope', () => {
   });
 
   it('refuses when no foundation has been read', async () => {
+    // A fresh module instance, so this case sees the null spec a real cold
+    // start has. The alternative — a reset helper exported from actions.ts —
+    // would put test scaffolding in production code for one assertion.
+    vi.resetModules();
+    const fresh = await import('../src/ui/actions');
     const ui = presenter();
-    await copyFoundationBriefForScope(COLOR_SCOPE, ui);
+    await fresh.copyFoundationBriefForScope(COLOR_SCOPE, ui);
     expect(copyText).not.toHaveBeenCalled();
     expect(ui.error).toHaveBeenCalledWith(
       "Still reading this file's variables. Try again in a moment.",
@@ -681,16 +686,12 @@ describe('copyFoundationBriefForScope', () => {
 });
 ```
 
-The `describe` block needs `onFoundationMessage` reset between tests. The file's existing `beforeEach` resets the clipboard mocks; add this line to it so a spec set by one test does not leak into the "no foundation has been read" test:
-
-```ts
-  resetFoundationForTest();
-```
+Every test above except the cold-start one calls `onFoundationMessage(TWO)` itself, so no shared reset hook is needed and `actions.ts` gains no test-only export.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run packages/plugin/test/copyFoundation.test.ts`
-Expected: FAIL. `copyFoundationBriefForScope` and `resetFoundationForTest` are not exported from `../src/ui/actions`.
+Expected: FAIL. `copyFoundationBriefForScope` is not exported from `../src/ui/actions`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -777,13 +778,6 @@ export async function copyFoundationBriefForScope(
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
   }
-}
-
-/** Test-only: clear the module-level foundation state between cases, so a spec
- *  set by one test cannot satisfy another test's "nothing has been read" path. */
-export function resetFoundationForTest(): void {
-  foundationSpec = null;
-  foundationGroupDescriptions = {};
 }
 ```
 
