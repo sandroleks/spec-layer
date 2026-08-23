@@ -218,6 +218,28 @@ describe('library screen presentation', () => {
     expect(markup).toContain('Copy for AI');
   });
 
+  it('offers Copy for AI on a foundation row', () => {
+    const foundationRow = row('foundSemantic', 'inSync', {
+      kind: 'foundation',
+      foundationIcon: 'mixed',
+      sourceNodeId: '',
+      canOpenSource: false,
+      canCopy: true,
+    });
+    const markup = libraryScrollMarkup(model({
+      allRows: [foundationRow],
+      rows: [foundationRow],
+      counts: { all: 1, updates: 0, inSync: 1 },
+      menuDocId: 'foundSemantic',
+    }));
+    expect(markup).toContain('data-library-action="copy"');
+    expect(markup).toContain('Copy for AI');
+    // Copy sits in the navigation group beside the frame link, not among the
+    // destructive actions.
+    expect(markup.indexOf('data-library-action="copy"'))
+      .toBeLessThan(markup.indexOf('data-library-action="remove"'));
+  });
+
   it('hides Copy for AI when the source is gone', () => {
     const orphanedRow = row('buttonMissing', 'orphaned', {
       canCopy: false,

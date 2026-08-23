@@ -45,13 +45,24 @@ export interface LibraryRowModel {
   canUpdate: boolean;
   canDetach: boolean;
   canRemove: boolean;
-  /** A COMPONENT row whose source still exists — the same condition the
-   *  removed Download action used. Copy never mutates anything, so it does
-   *  not depend on drift/self-edit status the way canUpdate does, EXCEPT for
-   *  `unavailable`: that status means the drift check itself failed against
-   *  this source, and Copy re-extracts that same source, so it would very
-   *  likely fail too. `updateAvailable`/`edited` stay copyable, since Copy
-   *  reading the live (drifted) source is exactly the point for those rows. */
+  /**
+   * Whether this row offers Copy for AI. Copy never mutates anything, so it
+   * does not depend on drift or self-edit status the way canUpdate does:
+   * `updateAvailable` and `edited` rows stay copyable, since reading the live
+   * (drifted) source is exactly the point for those.
+   *
+   * Component rows: the source component still exists — the same condition the
+   * removed Download action used.
+   *
+   * Foundation rows: the doc's scope still resolves, and the main thread told
+   * us what that scope is. A foundation doc has no source node, so it can never
+   * satisfy the component condition and had no Copy at all until this became
+   * kind-aware.
+   *
+   * Both kinds exclude `unavailable`, which means the live read against this
+   * source failed. Copy re-reads that same source, so it would very likely fail
+   * too, and offering it would promise something that cannot be delivered.
+   */
   canCopy: boolean;
   /**
    * The current protocol establishes hash drift, not a reliable itemized diff.
@@ -192,7 +203,15 @@ export function buildLibraryRow(
       && status !== 'orphaned',
     canDetach: true,
     canRemove: true,
-    canCopy: componentSourceAvailable && status !== 'unavailable',
+    canCopy: entry.kind === 'foundation'
+      // An entry from an older main thread carries no scope. Unlike
+      // foundationIcon, which falls back to `mixed`, there is no honest
+      // fallback for "which collection": copying the wrong one is worse than
+      // not offering, so the row withholds the action.
+      ? entry.foundationScope !== undefined
+        && status !== 'unavailable'
+        && status !== 'orphaned'
+      : componentSourceAvailable && status !== 'unavailable',
     changeGroups: null,
   };
 }

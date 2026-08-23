@@ -322,3 +322,71 @@ describe('libraryBadgeVisible', () => {
     expect(shown).toBe(false);
   });
 });
+
+describe('canCopy on foundation rows', () => {
+  function foundationEntry(overrides: Partial<LibraryEntry> = {}): LibraryEntry {
+    return entry({
+      docId: 'found-1',
+      kind: 'foundation',
+      label: 'Foundations · Semantic',
+      componentName: 'Foundations · Semantic',
+      sourceLabel: 'Semantic',
+      // A foundation doc has no source node. This is exactly why the old
+      // component-shaped canCopy could never be true here.
+      sourceNodeId: '',
+      foundationIcon: 'mixed',
+      foundationScope: {
+        target: 'collection', collectionId: 'sem',
+        collectionName: 'Semantic', modeIds: ['s1'],
+      },
+      currentContentHash: 'stored',
+      storedContentHash: 'stored',
+      ...overrides,
+    });
+  }
+
+  it('offers Copy on an in-sync foundation row', () => {
+    const row = buildLibraryRow(foundationEntry(), { now: NOW });
+    expect(row.status).toBe('inSync');
+    expect(row.canCopy).toBe(true);
+  });
+
+  it('offers Copy on a drifted foundation row, since reading the live source is the point', () => {
+    const row = buildLibraryRow(
+      foundationEntry({ currentContentHash: 'live', storedContentHash: 'stored' }),
+      { now: NOW },
+    );
+    expect(row.status).toBe('updateAvailable');
+    expect(row.canCopy).toBe(true);
+  });
+
+  it('withholds Copy when the scope no longer resolves', () => {
+    const row = buildLibraryRow(
+      foundationEntry({ sourceExists: false }),
+      { now: NOW },
+    );
+    expect(row.status).toBe('orphaned');
+    expect(row.canCopy).toBe(false);
+  });
+
+  it('withholds Copy when the live read failed', () => {
+    const row = buildLibraryRow(
+      foundationEntry({ currentContentHash: undefined }),
+      { now: NOW },
+    );
+    expect(row.status).toBe('unavailable');
+    expect(row.canCopy).toBe(false);
+  });
+
+  it('withholds Copy from an older main thread that sent no scope', () => {
+    const older = foundationEntry();
+    delete older.foundationScope;
+    expect(buildLibraryRow(older, { now: NOW }).canCopy).toBe(false);
+  });
+
+  it('leaves component rows unchanged', () => {
+    expect(buildLibraryRow(entry(), { now: NOW }).canCopy).toBe(true);
+    expect(buildLibraryRow(entry({ sourceNodeId: '' }), { now: NOW }).canCopy).toBe(false);
+    expect(buildLibraryRow(entry({ sourceExists: false }), { now: NOW }).canCopy).toBe(false);
+  });
+});
