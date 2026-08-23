@@ -111,8 +111,7 @@ npm run typecheck       # all TypeScript workspaces
 npm test                # Vitest suite
 npm run test:coverage   # with coverage thresholds
 npm run build           # production web build
-npm run build:plugin    # default vNext Figma plugin bundle
-npm run build:plugin:legacy # temporary rollback bundle
+npm run build:plugin    # Figma plugin bundle
 ```
 
 > **Note:** builds from source currently point at the staging proxy (`spec-layer-proxy.spec-layer-test.workers.dev`), in both `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`. Swap both for the production host before cutting a public release.

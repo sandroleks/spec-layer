@@ -10,8 +10,10 @@ npm run build:plugin
 Import `packages/plugin/manifest.json` through Figma desktop's development
 plugin menu. The plugin needs no local server and no account to run.
 
-`npm run build:plugin` builds vNext. Use `npm run build:plugin:legacy` only to
-compare against the temporary rollback UI.
+`npm run build:plugin` builds the plugin. There is one UI and one bundle: the
+old UI and its `UI_LEGACY` rollback flag were removed, because both builds wrote
+the same `dist/ui.html` and a stray legacy build silently replaced the real UI
+with an unstyled one.
 
 ## Pre-merge pass
 
@@ -164,7 +166,6 @@ npm test -- packages/plugin/test
 npm run typecheck
 npm run lint
 npm run build:plugin
-npm run build:plugin:legacy
 ```
 
 ## Release note

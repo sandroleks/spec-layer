@@ -132,10 +132,9 @@ overrides when a semantic role can express the state.
 
 ## Build and verification
 
-- `npm run build:plugin` builds vNext.
-- `npm run build:plugin:legacy` builds the temporary rollback UI.
-- `npm run check` runs lint, type checking, tests, the legacy web build, and
-  both plugin builds.
+- `npm run build:plugin` builds the plugin. One UI, one bundle: the old UI and
+  its `UI_LEGACY` flag are gone.
+- `npm run check` runs lint, type checking, tests, and the plugin build.
 - `npm run check:ci` adds coverage and the full production dependency audit.
 - `npm run audit:active` and `npm run audit:legacy` attribute future advisories.
 

@@ -33,7 +33,7 @@ Owns:
 
 ### Iframe UI
 
-Entry: `src/ui/ui.ts`
+Entry: `src/ui/ui-vnext.ts`
 
 Owns:
 

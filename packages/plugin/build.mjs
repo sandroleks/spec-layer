@@ -14,9 +14,10 @@ mkdirSync(dist, { recursive: true });
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 
-// vNext is the production entry point. Keep the old UI behind an explicit
-// rollback flag until the manual Figma acceptance pass is complete.
-const uiLegacy = process.env.UI_LEGACY === '1';
+// vNext is the only UI. The old one and its UI_LEGACY rollback flag were
+// removed once vNext shipped: both builds wrote the same dist/ui.html, so a
+// stray legacy build silently replaced the real UI with an unstyled one and
+// looked exactly like a catastrophic regression.
 const define = {
   __PLUGIN_VERSION__: JSON.stringify(pkg.version),
 };
@@ -37,30 +38,23 @@ console.log('Built dist/main.js');
 
 // ---------------------------------------------------------------------------
 // Build 2: UI iframe → dist/ui.html
-//   The flag selects the entry point rather than branching inside a shared
-//   module, so a legacy build cannot contain the shell and a vNext build
-//   cannot contain the legacy UI.
 //   If the entry exists: bundle it and embed in a minimal HTML document.
 //   Otherwise: write a placeholder HTML so the manifest reference is valid.
 // ---------------------------------------------------------------------------
-const uiEntry = resolve(__dirname, uiLegacy ? 'src/ui/ui.ts' : 'src/ui/ui-vnext.ts');
+const uiEntry = resolve(__dirname, 'src/ui/ui-vnext.ts');
 
 // The design system is embedded from disk rather than imported through the
 // TypeScript graph, so src/ui/design-system/*.css stays the single source and
 // no second copy can drift. Order is the documented cascade: tokens define the
 // roles, components consume them, patterns compose components.
 //
-// The layers open with a global reset and set :root/body theme rules that the
-// legacy UI also sets, so shipping them anywhere the legacy UI renders
-// silently restyles it (measured: tab buttons 79x38 -> 85x45, different font).
-// Hence two separate values: the harness always needs the CSS, but ui.html
-// only gets it when ui.html is actually the new shell.
+// One value now, not two: with the legacy UI gone there is no build whose
+// ui.html should omit the design system, so the CSS is unconditional.
 const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
   .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
   .join('\n');
 
-/** Empty unless this build's ui.html is the vNext shell. */
-const uiHtmlCss = uiLegacy ? '' : designSystemCss;
+const uiHtmlCss = designSystemCss;
 
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
@@ -85,7 +79,7 @@ if (existsSync(uiEntry)) {
 </body>
 </html>`;
   writeFileSync(resolve(dist, 'ui.html'), html, 'utf-8');
-  console.log(`Built dist/ui.html (from ${uiLegacy ? 'src/ui/ui.ts' : 'src/ui/ui-vnext.ts'})`);
+  console.log('Built dist/ui.html (from src/ui/ui-vnext.ts)');
 } else {
   const placeholder = `<!DOCTYPE html>
 <html lang="en">

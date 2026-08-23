@@ -12,6 +12,7 @@ const pluginDir = fileURLToPath(new URL('..', import.meta.url));
 const uiHtml = fileURLToPath(new URL('../dist/ui.html', import.meta.url));
 const harness = fileURLToPath(new URL('../dist/ui-harness.html', import.meta.url));
 
+/** `env` is still needed for UI_HARNESS, the one remaining build flag. */
 function build(env: NodeJS.ProcessEnv = {}): void {
   execFileSync('node', ['build.mjs'], {
     cwd: pluginDir, stdio: 'pipe', env: { ...process.env, ...env },
@@ -20,8 +21,8 @@ function build(env: NodeJS.ProcessEnv = {}): void {
 
 /**
  * These specs overwrite the developer's dist/. Put it back the way a plain
- * build leaves it, so someone who built with the flag and then ran the tests
- * is not silently left holding a different artefact than they think they have.
+ * build leaves it, so running the tests never leaves someone holding a
+ * different artefact than they think they have.
  */
 afterAll(() => {
   build();
@@ -29,34 +30,16 @@ afterAll(() => {
 });
 
 describe('dist/ui.html', () => {
-  let legacy = '';
   let vnext = '';
 
   beforeAll(() => {
-    build({ UI_LEGACY: '1' });
-    legacy = readFileSync(uiHtml, 'utf-8');
     build();
     vnext = readFileSync(uiHtml, 'utf-8');
   });
 
-  /**
-   * The design-system layers open with a global reset and set :root/body theme
-   * rules the legacy UI also sets, so shipping them in a default build
-   * restyles the UI users actually run. The flag is off by default and the CSS
-   * has to be off with it.
-   */
-  it('keeps the design system out of an explicit legacy build', () => {
-    expect(legacy).not.toContain('--sl-color-canvas');
-    expect(legacy).not.toContain('.sl-plugin-shell');
-  });
-
-  it('still builds the legacy UI behind the rollback flag', () => {
-    expect(legacy).toContain('tab-panel-selected');
-  });
-
-  it('does not ship Anatomy display-mode controls in either UI', () => {
-    expect(legacy).not.toContain('id="anatomy-view"');
-    expect(legacy).not.toContain('name="anatomy-view"');
+  it('does not ship Anatomy display-mode controls', () => {
+    expect(vnext).not.toContain('id="anatomy-view"');
+    expect(vnext).not.toContain('name="anatomy-view"');
     expect(vnext).not.toContain('data-anatomy=');
   });
 
@@ -75,8 +58,13 @@ describe('dist/ui.html', () => {
     expect(vnext).toContain('sl-plugin-shell');
   });
 
-  /** Two entry points, two bundles: neither build can carry the other's UI. */
-  it('does not ship the legacy UI inside the default build', () => {
+  /**
+   * The deleted UI's markup must not reappear through a shared module. There is
+   * only one entry point now, so this can no longer fail by building the wrong
+   * file; it can still fail if legacy markup gets reintroduced somewhere the
+   * vNext graph reaches.
+   */
+  it('does not ship the deleted legacy UI markup', () => {
     expect(vnext).not.toContain('tab-panel-selected');
   });
 
