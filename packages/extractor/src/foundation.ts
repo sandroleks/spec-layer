@@ -106,6 +106,46 @@ export type FoundationScope =
       group?: string; modeIds: string[] }
   | { target: 'textStyles'; group?: string };
 
+/**
+ * What a single Copy-for-AI request covers.
+ *
+ * Deliberately coarser than FoundationScope, which additionally carries a
+ * `group` and a `modeIds` subset. Both of those are artifacts of drawing a
+ * frame — modes are capped at MAX_MODE_COLUMNS because a frame has four
+ * columns, and a collection over SPLIT_THRESHOLD is divided into one document
+ * per group — and the clipboard has neither limit. A copy that inherited them
+ * would silently hide modes and whole token families from the agent reading it.
+ */
+export type FoundationCopyTarget =
+  | { target: 'collection'; collectionId: string }
+  | { target: 'textStyles' };
+
+/**
+ * Reduce a whole-file spec to the part one Copy covers, so foundationBrief and
+ * colorContrast can run over it unmodified.
+ *
+ * Returns null when the target resolves to nothing: a collection deleted since
+ * its document was generated, or a text-styles target in a file whose styles
+ * are all gone. Null rather than an empty spec, because "there is nothing here
+ * any more" is a message the caller must show, not a brief it should copy.
+ *
+ * Alias values are untouched. They were resolved during buildFoundation, so a
+ * variable aliasing into a collection this narrowing drops still carries both
+ * its target name and its resolved concrete value.
+ */
+export function narrowFoundation(
+  spec: FoundationSpec,
+  target: FoundationCopyTarget,
+): FoundationSpec | null {
+  if (target.target === 'textStyles') {
+    if (spec.textStyles.length === 0) return null;
+    return { ...spec, collections: [], textStyles: spec.textStyles };
+  }
+  const collection = spec.collections.find((c) => c.id === target.collectionId);
+  if (!collection) return null;
+  return { ...spec, collections: [collection], textStyles: [] };
+}
+
 /** Rows per output unit, above which a unit splits by top-level group. */
 export const SPLIT_THRESHOLD = 150;
 /** Hard ceiling on rendered mode columns. */
