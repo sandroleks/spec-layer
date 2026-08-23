@@ -454,10 +454,22 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
 
   // First-use order, so reading top to bottom introduces a token before the
   // bindings that reference it.
+  // A typography binding names a TEXT STYLE, not a variable, so lookupToken
+  // finds nothing and used to emit a bare `{}`: a key that tells a reader
+  // nothing while implying the token could not be resolved. The real data is in
+  // the `typography` block, so say that instead of emitting an empty map.
+  const typographyTokens = new Set(
+    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.token));
+
   const used: Record<string, YamlValue> = {};
   for (const r of rules) {
     if (r.token in used) continue;
-    used[r.token] = lookupToken(foundation, r.token) as YamlValue;
+    const looked = lookupToken(foundation, r.token) as YamlValue;
+    const empty = looked !== null && typeof looked === 'object'
+      && Object.keys(looked as Record<string, unknown>).length === 0;
+    used[r.token] = empty && typographyTokens.has(r.token)
+      ? { kind: 'typography' }
+      : looked;
   }
 
   return {
@@ -576,6 +588,17 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
  * truthful reading: "this style does not specify a line height", which is
  * exactly what AUTO means.
  */
+/**
+ * Trim binary-float noise off a measurement.
+ *
+ * Figma stores these as doubles derived from percentage and pixel inputs, so a
+ * line height a designer typed as 140 arrives as 139.9999976158142 and a letter
+ * spacing of 0.2 as 0.20000000298023224. Emitted raw, an agent reproduces the
+ * noise verbatim in generated CSS. Two decimals is past any precision a type
+ * ramp expresses while still keeping a real 137.5 intact.
+ */
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
 function typographyOf(
   spec: IntermediateSpec,
   foundation: FoundationSpec | undefined,
@@ -587,6 +610,7 @@ function typographyOf(
   const out: Record<string, YamlValue> = {};
   for (const name of names) {
     const style = foundation?.textStyles.find((s) => s.name === name);
+
     if (!style) {
       // Bound in the file but absent from this dump: a published library
       // style, or a foundation read that did not cover it. Unresolved, never
@@ -599,12 +623,12 @@ function typographyOf(
       source_name: style.name,
       font_family: style.fontFamily,
       font_style: style.fontStyle,
-      font_size: style.fontSize,
+      font_size: round2(style.fontSize),
       line_height: {
         unit: style.lineHeight.unit,
-        ...(style.lineHeight.value !== undefined ? { value: style.lineHeight.value } : {}),
+        ...(style.lineHeight.value !== undefined ? { value: round2(style.lineHeight.value) } : {}),
       },
-      letter_spacing: { unit: style.letterSpacing.unit, value: style.letterSpacing.value },
+      letter_spacing: { unit: style.letterSpacing.unit, value: round2(style.letterSpacing.value) },
     };
   }
   return out;
@@ -692,7 +716,12 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
     ...(api !== undefined ? { api } : {}),
     anatomy: nestAnatomy(spec.anatomy),
     layout: spec.layout.length > 0
-      ? spec.layout.map((l) => ({ part: l.part, summary: l.summary }))
+      // `path`, not `part`. Every other block that names a node uses the path
+      // identity (bindings, unbound, validation), and `part` for the root is
+      // the raw variant name ("type=Primary, size=Large, hover=False, ..."),
+      // so a reader could not match a layout row to the `Container` its
+      // bindings talk about. Joinability is the whole point of the identity.
+      ? spec.layout.map((l) => ({ path: l.path, summary: l.summary }))
       : undefined,
     tokens: tokensOf(spec, opts.foundation),
     // Same reasoning as `api` above: spread the key in only when a gap

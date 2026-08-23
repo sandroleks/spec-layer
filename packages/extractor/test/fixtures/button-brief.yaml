@@ -20,7 +20,9 @@ anatomy:
   - { part: container, type: FRAME }
   - { part: label, type: TEXT }
   - { part: icon, type: INSTANCE, component: Icon }
-layout: [{ part: container, summary: "horizontal, padding 10/24/10/24, gap 8" }]
+layout:
+  - path: Container/container
+    summary: horizontal, padding 10/24/10/24, gap 8
 tokens:
   used:
     md.sys.color.primary: {}

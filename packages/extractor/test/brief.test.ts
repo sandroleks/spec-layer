@@ -106,7 +106,7 @@ interface BriefShape {
     slots: Record<string, { type: string; default?: string | boolean; options?: string[] }>;
   };
   anatomy?: unknown[];
-  layout?: Array<{ part: string; summary: string }>;
+  layout?: Array<{ path: string; summary: string }>;
   tokens: {
     used: Record<string, Record<string, unknown>>;
     bindings: Array<{ path: string; property: string; token: string; when?: Record<string, string[]> }>;
@@ -418,7 +418,7 @@ interface ParsedComponentBrief {
     slots?: Record<string, { type: string; default?: string | boolean; options?: string[] }>;
   };
   anatomy: AnatomyNode[];
-  layout?: Array<{ part: string; summary: string }>;
+  layout?: Array<{ path: string; summary: string }>;
   unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
   guidelines?: {
     origin?: string;
@@ -542,7 +542,9 @@ describe('componentBrief', () => {
   // split tests below.
   it('emits layout and related', () => {
     const y = brief();
-    expect(y.layout).toEqual([{ part: 'container', summary: 'horizontal, gap 8' }]);
+    // `path`, not `part`: this is the identity bindings, unbound and validation
+    // all use, so a reader can join a layout row to the node it describes.
+    expect(y.layout).toEqual([{ path: 'Container/container', summary: 'horizontal, gap 8' }]);
     expect(y.component).toEqual({ name: 'Button', related: ['Icon'] });
   });
 
@@ -1266,6 +1268,59 @@ describe('componentBrief tokens', () => {
 // dump doesn't carry, and omitting the whole block when nothing is bound.
 
 describe('componentBrief typography', () => {
+  /** The exact float noise a real Figma file produced for 140% and 0.2px. */
+  const noisyFoundation: FoundationSpec = {
+    fileKey: 'F', extractedAt: 'T', collections: [],
+    textStyles: [{
+      name: 'Button/L : 14px Medium', group: 'Button', description: '',
+      fontFamily: 'Open Sans', fontStyle: 'Regular', fontSize: 14,
+      lineHeight: { unit: 'PERCENT', value: 139.9999976158142 },
+      letterSpacing: { unit: 'PIXELS', value: 0.20000000298023224 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL',
+      textDecoration: 'NONE', boundVariables: {},
+    }],
+  };
+  const noisySpec = (): IntermediateSpec => ({ ...baseSpec(), tokens: [{
+    part: 'Label', path: 'Container/Label', property: 'typography',
+    conditions: { size: ['Large'] }, token: 'Button/L : 14px Medium' }] });
+
+  it('trims binary-float noise off the metrics', () => {
+    // Measured from a real run: a designer typed 140 and 0.2, and Figma stored
+    // doubles. Emitted raw, an agent copies 139.9999976158142 into CSS.
+    const b = componentBrief(
+      noisySpec(), { generatedAt: 'T', foundation: noisyFoundation }) as unknown as BriefShape;
+    expect(b.typography?.['Button/L : 14px Medium']?.line_height)
+      .toEqual({ unit: 'PERCENT', value: 140 });
+    expect(b.typography?.['Button/L : 14px Medium']?.letter_spacing)
+      .toEqual({ unit: 'PIXELS', value: 0.2 });
+  });
+
+  it('keeps a precision a type ramp actually expresses', () => {
+    // Rounding must not flatten a real fractional value into a lie.
+    const foundation: FoundationSpec = {
+      ...noisyFoundation,
+      textStyles: [{
+        ...noisyFoundation.textStyles[0],
+        lineHeight: { unit: 'PERCENT', value: 137.5 },
+        letterSpacing: { unit: 'PIXELS', value: -0.25 },
+      }],
+    };
+    const b = componentBrief(noisySpec(), { generatedAt: 'T', foundation }) as unknown as BriefShape;
+    expect(b.typography?.['Button/L : 14px Medium']?.line_height)
+      .toEqual({ unit: 'PERCENT', value: 137.5 });
+    expect(b.typography?.['Button/L : 14px Medium']?.letter_spacing)
+      .toEqual({ unit: 'PIXELS', value: -0.25 });
+  });
+
+  it('points a typography token at the typography block instead of an empty map', () => {
+    // A typography binding names a TEXT STYLE, not a variable, so lookupToken
+    // finds nothing. It used to emit a bare `{}`, which reads as "could not be
+    // resolved" when the metrics are in fact right there in `typography`.
+    const b = componentBrief(
+      noisySpec(), { generatedAt: 'T', foundation: noisyFoundation }) as unknown as BriefShape;
+    expect(b.tokens.used['Button/L : 14px Medium']).toEqual({ kind: 'typography' });
+  });
+
   it('resolves a bound text style to real metrics', () => {
     const foundation: FoundationSpec = {
       fileKey: 'F', extractedAt: 'T', collections: [],
