@@ -1,4 +1,4 @@
-import type { SerializedNode, SerializedFoundation, FoundationSelection, ProseDrafts } from '@spec-layer/extractor';
+import type { SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseDrafts } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
@@ -41,6 +41,17 @@ export interface LibraryEntry {
    *  travels with the entry rather than being re-derived in the UI. Absent on
    *  component rows. */
   foundationIcon?: FoundationIconKind;
+  /** Foundation rows only: the scope this doc was generated for, already
+   *  retargeted to the live collection id the way `foundationIcon` is. Only the
+   *  main thread can read it (it lives in the section's pluginData), so it
+   *  travels with the entry rather than being re-derived in the UI.
+   *
+   *  Copy is its only consumer, and it reads only `target` and `collectionId`:
+   *  see FoundationCopyTarget for why `group` and `modeIds` are dropped there.
+   *
+   *  Absent on component rows, and on any entry an older main thread produced,
+   *  which is why Copy is withheld rather than guessed at when it is missing. */
+  foundationScope?: FoundationScope;
 }
 
 export type MainToUi =

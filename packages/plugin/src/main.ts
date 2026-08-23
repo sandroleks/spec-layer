@@ -779,6 +779,10 @@ figma.ui.onmessage = async (raw: unknown) => {
             // Read from the retargeted scope, so a renamed collection keeps the
             // icon its variables earn rather than falling back to `mixed`.
             foundationIcon: scopeIconKind(live, scope),
+            // The RETARGETED scope, matching foundationIcon above: a renamed
+            // collection resolves to its live id, which is the id Copy has to
+            // match against the foundation dump the UI holds.
+            foundationScope: scope,
           });
           continue;
         }
