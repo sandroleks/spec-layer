@@ -60,7 +60,7 @@ A document's title is derived rather than stored. `foundationUnitTitle` in the e
 
 Foundation Sections join the same doc registry as component docs. `DocLinkData` is a union discriminated on `kind`, and a blob written before foundation support carries no `kind`, so it parses through the original component path unchanged. A foundation link addresses its source by scope rather than by node id, since its source is the file's own collections. Drift for every foundation row resolves from a single extraction during a library refresh, rather than one round trip per row. A scope stores both collection id and name, so a renamed collection retargets by name and reads as out of date rather than as missing.
 
-`frameKit.applyThemeToKit` and the inline theme preamble in `buildDocFrames` do the same job. Migrating `docFrame` onto the shared helper was left out of the foundation work to avoid restructuring a large file mid-feature. The duplication is deliberate and known; the two must be changed together until it is resolved.
+`frameKit.applyThemeToKit` is the single theme entry point for both frame families: `buildDocFrames` and `buildFoundationFrame` both call it. `docFrame` used to inline an equivalent preamble, left duplicated during the foundation work to avoid restructuring a large file mid-feature; it was merged once the legacy UI removal made the file smaller. Palette, corner style and font families are module state, so the helper sets every field on every build — a Default build after a themed one has to reset rather than inherit, which is what its tests pin down.
 
 ### `@spec-layer/proxy`
 
