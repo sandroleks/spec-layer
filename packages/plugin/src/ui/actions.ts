@@ -6,10 +6,11 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation, colorContrast, componentBrief, foundationBrief, toYaml } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation, colorContrast, componentBrief, foundationBrief, toYaml, narrowFoundation } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
+  FoundationScope, FoundationCopyTarget,
 } from '@spec-layer/extractor';
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
@@ -719,6 +720,86 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
       // colours cannot know it is pairing two that fail unless they are in the
       // payload. A file with no measurable pair still gets the block, saying so.
       contrast: colorContrast(spec),
+    }));
+    const lines = yaml.split('\n').length;
+    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml, size.trim() || undefined);
+      return;
+    }
+    ui.info(`Copied.${size}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
+  }
+}
+
+/**
+ * Reduce a document's stored scope to what a Copy covers.
+ *
+ * This is the ONE place `group` and `modeIds` are dropped. They exist because a
+ * frame renders at most MAX_MODE_COLUMNS columns and splits above
+ * SPLIT_THRESHOLD rows; the clipboard has neither limit, and inheriting them
+ * would hide whole token families and modes from the agent reading the brief.
+ * Do not "restore fidelity" here: the widening is the intent.
+ */
+function copyTargetOf(scope: FoundationScope): FoundationCopyTarget {
+  return scope.target === 'collection'
+    ? { target: 'collection', collectionId: scope.collectionId }
+    : { target: 'textStyles' };
+}
+
+/**
+ * Copy one library row's foundation as a YAML brief.
+ *
+ * The sibling of copyFoundationBrief, which covers the whole file. Two
+ * functions rather than one with a flag: the whole-file path's "deliberately
+ * ignores the scope selection" reasoning is a doctrine for a file-wide screen,
+ * and it should not acquire an escape hatch.
+ *
+ * Aliases into collections this narrowing drops still carry their resolved
+ * concrete values, since resolution happened in buildFoundation, upstream of
+ * any narrowing. That is what makes a scoped brief safe to hand an agent.
+ */
+export async function copyFoundationBriefForScope(
+  scope: FoundationScope,
+  ui: BuildPresenter,
+): Promise<void> {
+  ui.clear();
+  const spec = currentFoundationSpec();
+  if (!spec) {
+    // Not "read the foundations first": from My Library that names a remedy on
+    // another screen. The Library view asks for the dump on entry, so this is a
+    // sub-second race or a read that failed, and both resolve by retrying.
+    ui.error("Still reading this file's variables. Try again in a moment.");
+    return;
+  }
+  const narrowed = narrowFoundation(spec, copyTargetOf(scope));
+  if (!narrowed) {
+    ui.error(scope.target === 'collection'
+      ? 'That collection is no longer in this file. Nothing was copied.'
+      : 'This file has no text styles left. Nothing was copied.');
+    return;
+  }
+  try {
+    // Filtered, not passed whole: group descriptions are keyed by collection
+    // name, and a brief covering one collection must not carry another's
+    // guidelines. A text styles copy gets none, since these describe variable
+    // folders.
+    const groupDescriptions = scope.target === 'collection'
+      ? Object.fromEntries(
+          Object.entries(foundationGroupDescriptions)
+            .filter(([name]) => name === scope.collectionName),
+        )
+      : {};
+    const yaml = toYaml(foundationBrief(narrowed, {
+      generatedAt: new Date().toISOString(),
+      groupDescriptions,
+      // Measured on the NARROWED spec, so the pairs reported are the ones
+      // inside this collection. colorContrast already scopes per collection,
+      // so this needs no argument of its own.
+      contrast: colorContrast(narrowed),
     }));
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';

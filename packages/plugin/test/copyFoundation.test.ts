@@ -9,7 +9,7 @@ vi.mock('../src/ui/clipboard', () => ({
   renderManualCopyModal: (t: string, notice?: string) => renderManualCopyModal(t, notice),
 }));
 
-const { copyFoundationBrief, onFoundationMessage, setFoundationGroupDescriptions } =
+const { copyFoundationBrief, copyFoundationBriefForScope, onFoundationMessage, setFoundationGroupDescriptions } =
   await import('../src/ui/actions');
 
 /** Shape of the parsed brief, just deep enough for these assertions. Typed
@@ -146,5 +146,119 @@ describe('copyFoundationBrief', () => {
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
     const [, notice] = renderManualCopyModal.mock.calls[0];
     expect(notice).toMatch(/lines, which is large for some chat windows\.$/);
+  });
+});
+
+describe('copyFoundationBriefForScope', () => {
+  /** Two collections plus a text style, so narrowing has something to drop. */
+  const TWO: SerializedFoundation = {
+    fileKey: 'F1',
+    extractedAt: '2026-08-24T00:00:00.000Z',
+    externals: [],
+    textStyles: [{
+      name: 'heading/lg', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
+      fontSize: 32, lineHeight: { unit: 'AUTO' },
+      letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+      paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }],
+    collections: [
+      {
+        id: 'C1', name: 'Color', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Light' }],
+        variables: [{
+          id: 'V1', name: 'color/bg/brand', resolvedType: 'COLOR', description: '',
+          codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
+        }],
+      },
+      {
+        id: 'C2', name: 'Spacing', defaultModeId: 'n1',
+        modes: [{ modeId: 'n1', name: 'Value' }],
+        variables: [{
+          id: 'V2', name: 'space/gap', resolvedType: 'FLOAT', description: '',
+          codeSyntax: {}, valuesByMode: { n1: 8 },
+        }],
+      },
+    ],
+  };
+
+  const COLOR_SCOPE = {
+    target: 'collection' as const, collectionId: 'C1',
+    collectionName: 'Color', modeIds: ['m1'],
+  };
+
+  function parse(): ParsedFoundationBrief {
+    return load(copyText.mock.calls[0][0] as string) as ParsedFoundationBrief;
+  }
+
+  it('copies only the scoped collection', async () => {
+    onFoundationMessage(TWO);
+    const ui = presenter();
+    await copyFoundationBriefForScope(COLOR_SCOPE, ui);
+    const brief = parse();
+    expect(brief.collections).toHaveLength(1);
+    expect(brief.collections[0].tokens.map((t) => t.name)).toEqual(['color/bg/brand']);
+    expect(ui.info).toHaveBeenCalled();
+    expect(ui.error).not.toHaveBeenCalled();
+  });
+
+  it('ignores the group and mode narrowing the scope carries', async () => {
+    onFoundationMessage(TWO);
+    await copyFoundationBriefForScope(
+      { ...COLOR_SCOPE, group: 'nonexistent', modeIds: [] },
+      presenter(),
+    );
+    const brief = parse();
+    expect(brief.collections[0].tokens.map((t) => t.name)).toEqual(['color/bg/brand']);
+  });
+
+  it('copies every text style for a text styles scope', async () => {
+    onFoundationMessage(TWO);
+    await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
+    const brief = parse();
+    expect(brief.collections).toEqual([]);
+  });
+
+  it('passes only the scoped collection\'s group descriptions', async () => {
+    onFoundationMessage(TWO);
+    setFoundationGroupDescriptions({
+      Color: { color: 'Surface and text colours.' },
+      Spacing: { space: 'The 8px scale.' },
+    });
+    await copyFoundationBriefForScope(COLOR_SCOPE, presenter());
+    const brief = parse();
+    expect(brief.guidelines?.group_descriptions).toEqual({
+      Color: { color: 'Surface and text colours.' },
+    });
+  });
+
+  it('refuses when no foundation has been read', async () => {
+    // A fresh module instance, so this case sees the null spec a real cold
+    // start has. The alternative — a reset helper exported from actions.ts —
+    // would put test scaffolding in production code for one assertion.
+    vi.resetModules();
+    const fresh = await import('../src/ui/actions');
+    const ui = presenter();
+    await fresh.copyFoundationBriefForScope(COLOR_SCOPE, ui);
+    expect(copyText).not.toHaveBeenCalled();
+    expect(ui.error).toHaveBeenCalledWith(
+      "Still reading this file's variables. Try again in a moment.",
+    );
+  });
+
+  it('refuses when the collection is gone from the file', async () => {
+    onFoundationMessage(TWO);
+    const ui = presenter();
+    await copyFoundationBriefForScope({ ...COLOR_SCOPE, collectionId: 'GONE' }, ui);
+    expect(copyText).not.toHaveBeenCalled();
+    expect(ui.error).toHaveBeenCalledWith(
+      'That collection is no longer in this file. Nothing was copied.',
+    );
+  });
+
+  it('leaves the whole-file copy covering every collection', async () => {
+    onFoundationMessage(TWO);
+    await copyFoundationBrief(presenter());
+    expect(parse().collections).toHaveLength(2);
   });
 });
