@@ -9,7 +9,7 @@
  * removes the async clientStorage round-trip that used to cause the flash.
  *
  * applyThemeMode() always sets body[data-theme] (our published palette in
- * dom.ts) rather than relying on Figma's injected :root vars — that way the
+ * design-system/tokens.css) rather than relying on Figma's injected :root vars — that way the
  * forced palette is deterministic regardless of how/when Figma injects.
  */
 

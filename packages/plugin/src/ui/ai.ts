@@ -5,7 +5,7 @@ import type {
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
 
-// One in-flight image request at a time; resolved by ui.ts on 'componentImage'.
+// One in-flight image request at a time; resolved by ui-vnext.ts on 'componentImage'.
 // The timer is cleared on resolve so a stale timeout can never null-resolve a
 // newer request (see plan review). settle() is idempotent and self-clearing.
 type ImageResult = { base64: string; mediaType: string } | null;

@@ -2,7 +2,7 @@
  * actions.ts — the action handlers (runExtract / runDownload / runCreateDocFrame)
  * plus the module-scoped UI state.
  *
- * Logic only — DOM reads/writes that are view concerns live in render.ts; these
+ * Logic only — DOM reads/writes that are view concerns live in screens/*; these
  * handlers call into render for banners/phase updates.
  */
 
@@ -15,23 +15,14 @@ import type {
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
-import { nextStatus, resetToIdle, type UiPhase } from './state';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, ALL_SECTIONS, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
-import type { Refs } from './dom';
+import { buildDocModel, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
 import {
   defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
-import {
-  showBanner,
-  clearBanners,
-  renderPhase,
-  startLoader,
-  stopLoader,
-} from './render';
 import { copyText, renderManualCopyModal } from './clipboard';
 
 // ---------------------------------------------------------------------------
@@ -39,7 +30,6 @@ import { copyText, renderManualCopyModal } from './clipboard';
 // ---------------------------------------------------------------------------
 
 export interface UiState {
-  phase: UiPhase;
   currentNode: SerializedNode | null;
   currentFileKey: string;
   /** The selection message's file NAME, when it carried one. Empty string when
@@ -82,7 +72,6 @@ export interface UiState {
 
 export function createState(): UiState {
   return {
-    phase: 'idle',
     currentNode: null,
     currentFileKey: '',
     currentFileName: '',
@@ -126,28 +115,6 @@ export function renderOne(
   const extractedAt = new Date().toISOString();
   const spec = extract(node, { figmaFile: fileKey, ...(fileName ? { figmaFileName: fileName } : {}) });
   return { name: spec.name, spec, extractedAt };
-}
-
-// ---------------------------------------------------------------------------
-// Extract — pure extractor pipeline; preview rendered into the textarea.
-// ---------------------------------------------------------------------------
-
-export async function runExtract(refs: Refs, state: UiState): Promise<void> {
-  if (!state.currentNode) return;
-
-  clearBanners(refs);
-  state.phase = resetToIdle();
-  state.phase = nextStatus(state.phase, 'selected');
-  renderPhase(refs, state);
-
-  const { name, spec, extractedAt } = renderOne(state.currentNode, state.currentFileKey, state.currentFileName);
-  state.currentSpec = spec;
-  state.currentExtractedAt = extractedAt;
-
-  state.phase = nextStatus(state.phase, 'rendered');
-  renderPhase(refs, state);
-
-  send({ type: 'notify', message: `Spec extracted for ${name}` });
 }
 
 // ---------------------------------------------------------------------------
@@ -196,18 +163,6 @@ export function autoExtract(
     onReading(false);
     onReady?.();
   });
-}
-
-/** Legacy adapter: drives the old phase-label chip. */
-export function runAutoExtract(refs: Refs, state: UiState, onReady?: () => void): void {
-  autoExtract(
-    state,
-    (reading) => {
-      refs.phaseLabel.className = reading ? 'chip' : 'phase-label';
-      refs.phaseLabel.textContent = reading ? 'Reading…' : '';
-    },
-    onReady,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -309,9 +264,9 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
 /**
  * What the user picked, passed in rather than read from the DOM.
  *
- * The legacy UI keeps this in its checkboxes and the vNext screen keeps it in
- * module state, so the build path cannot read either one directly. Threading it
- * through as a value is what lets both UIs drive the same code.
+ * The screen keeps this in module state, so the build path never reaches into
+ * the DOM to recover it. Threading it through as a value is what keeps the
+ * build logic testable without a rendered screen.
  */
 export interface DocSelection {
   sections: Set<SectionId>;
@@ -319,10 +274,9 @@ export interface DocSelection {
 }
 
 /**
- * How a build reports itself. Each UI supplies its own: the legacy one writes
- * to its banner and loader, the vNext screen to its status row and footer
- * button. Keeping this an interface is what stops the build logic from being
- * copied once per UI.
+ * How a build reports itself. The component screen writes to its status row and
+ * footer button; the foundations screen to its own. Keeping this an interface is
+ * what lets one build path serve every caller.
  */
 export interface BuildPresenter {
   /** Clear any status left over from a previous run. */
@@ -388,36 +342,6 @@ export async function createDocFrame(
   }
 }
 
-/** Read the legacy UI's checkboxes into a selection value. */
-export function selectionFromRefs(refs: Refs): DocSelection {
-  const sections = new Set<SectionId>();
-  for (const { id } of ALL_SECTIONS) {
-    if (refs.sectionChecks[id]?.checked) sections.add(id);
-  }
-  const variantIds = new Set<string>();
-  refs.variantList.querySelectorAll('input:checked').forEach((el) => {
-    const id = (el as HTMLInputElement).dataset.nodeId;
-    if (id) variantIds.add(id);
-  });
-  return { sections, variantIds };
-}
-
-/** Drive the legacy banner, loader, and Create-frame button. */
-export function refsPresenter(refs: Refs, button: HTMLButtonElement): BuildPresenter {
-  return {
-    clear: () => clearBanners(refs),
-    error: (message) => showBanner(refs, 'error', message),
-    info: (message) => showBanner(refs, 'info', message),
-    setBusy: (busy) => { button.disabled = busy; },
-    startProgress: (messages) => startLoader(refs.loader, refs.loaderText, messages),
-    stopProgress: () => stopLoader(refs.loader),
-  };
-}
-
-export function runCreateDocFrame(refs: Refs, state: UiState): Promise<void> {
-  return createDocFrame(state, selectionFromRefs(refs), refsPresenter(refs, refs.createFrameBtn));
-}
-
 /**
  * Shared prep for the two "build the doc" actions (Create frame / Download):
  * write AI prose if needed, gather the checked sections and ticked variants,
@@ -475,7 +399,7 @@ export function generatingMessages(withAi: boolean): string[] {
 
 // ---------------------------------------------------------------------------
 // AI plumbing — update state + persist via the main thread. The state mutations
-// live here for testability; ui.ts wires the input/toggle events to them.
+// live here for testability; ui-vnext.ts wires the input/toggle events to them.
 // ---------------------------------------------------------------------------
 
 export function setLicenseKey(state: UiState, value: string, instanceId: string | null): void {
@@ -558,7 +482,7 @@ export async function updateFromSource(
       config: src.config,
       ...(prose ? { prose } : {}),
     });
-    // Loader stops on docFrameDone/docFrameError (ui.ts).
+    // Loader stops on docFrameDone/docFrameError (ui-vnext.ts).
     return true;
   } catch (err) {
     ui.stopProgress();
@@ -566,15 +490,6 @@ export async function updateFromSource(
     ui.error(`Update failed: ${msg}`);
     return false;
   }
-}
-
-/** Legacy adapter for a Library row update. */
-export function runUpdateFromSource(
-  refs: Refs,
-  state: UiState,
-  src: DocSource,
-): Promise<boolean> {
-  return updateFromSource(state, src, refsPresenter(refs, refs.createFrameBtn));
 }
 
 // ---------------------------------------------------------------------------
@@ -818,7 +733,7 @@ export async function copyFoundationBriefForScope(
   })), ui);
 }
 
-/** Set by ui.ts around the renderFoundation round-trip: true on click, false on
+/** Set by ui-vnext.ts around the renderFoundation round-trip: true on click, false on
  *  both foundationDone and foundationFrameError. Repaints immediately so the
  *  button's disabled state is correct without waiting for an unrelated event.
  *
@@ -861,7 +776,7 @@ function foundationBuildMessages(frames: number): string[] {
   ];
 }
 
-/** Whether the Foundations tab's bulk build is in flight. Read by ui.ts's
+/** Whether the Foundations tab's bulk build is in flight. Read by ui-vnext.ts's
  *  shared build guard, so the other two entry points can see this one. */
 export function isFoundationGenerating(): boolean {
   return foundationGenerating;
@@ -941,28 +856,7 @@ export function onFoundationChange(change: FoundationChange): void {
   foundationHost.repaint();
 }
 
-/** Legacy adapter: translate a rendered checkbox into a value for the action. */
-export function onFoundationCheckboxChange(input: HTMLInputElement): void {
-  const collectionId = input.dataset.collectionId ?? '';
-  switch (input.dataset.act) {
-    case 'toggle-collection':
-      onFoundationChange({ kind: 'collection', collectionId, checked: input.checked });
-      break;
-    case 'toggle-mode':
-      onFoundationChange({
-        kind: 'mode',
-        collectionId,
-        modeId: input.dataset.modeId ?? '',
-        checked: input.checked,
-      });
-      break;
-    case 'toggle-text-styles':
-      onFoundationChange({ kind: 'textStyles', checked: input.checked });
-      break;
-  }
-}
-
-/** Read by the create-frames button; exported so ui.ts can post it. */
+/** Read by the create-frames button; exported so ui-vnext.ts can post it. */
 export function currentFoundationSelection(): FoundationSelection {
   return foundationSelection;
 }

@@ -1,27 +1,14 @@
 /**
- * actionsRun.test.ts — the My Library run* handlers.
+ * actionsRun.test.ts — extraction helpers and preference setters.
  *
- * These orchestrate extract → optional prose → buildDocModel → send/download.
- * The view layer (banners, loader) and the AI call are mocked so the tests
- * assert on the orchestration itself: what reaches `send`, when prose is
- * skipped, and that a throw anywhere degrades to a banner rather than escaping.
- *
- * Kept separate from actions.test.ts because these need module mocks that the
- * pure-function tests there deliberately do without.
+ * Kept separate from actions.test.ts because these need module mocks (and a
+ * stubbed `document`/`URL`) that the pure-function tests there deliberately do
+ * without.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SerializedNode } from '@spec-layer/extractor';
-import type { DocConfig } from '../src/docLink';
 
 // --- mocks (must be declared before importing the module under test) -------
-
-vi.mock('../src/ui/render', () => ({
-  showBanner: vi.fn(),
-  clearBanners: vi.fn(),
-  renderPhase: vi.fn(),
-  startLoader: vi.fn(),
-  stopLoader: vi.fn(),
-}));
 
 vi.mock('../src/ui/ai', () => ({
   generateProse: vi.fn(),
@@ -31,14 +18,10 @@ import {
   createState,
   ensureExtracted,
   renderOne,
-  runUpdateFromSource,
   setAiEnabled,
   setBrandTheme,
   type UiState,
 } from '../src/ui/actions';
-import { showBanner, clearBanners, startLoader, stopLoader } from '../src/ui/render';
-import { generateProse } from '../src/ui/ai';
-import type { Refs } from '../src/ui/dom';
 
 // --- fixtures --------------------------------------------------------------
 
@@ -67,29 +50,6 @@ function buttonNode(): SerializedNode {
       },
     ],
   };
-}
-
-function docConfig(over: Partial<DocConfig> = {}): DocConfig {
-  return {
-    sections: ['configuration', 'tokens'],
-    variantIds: [],
-    aiEnabled: false,
-    anatomyView: 'diagram',
-    measureViews: ['size'],
-    ...over,
-  };
-}
-
-function source(over: Partial<{ config: DocConfig }> = {}) {
-  return { docId: 'doc-1', node: buttonNode(), fileKey: 'FILE1', config: docConfig(), ...over };
-}
-
-/** Refs is a large DOM surface; these handlers only touch it through the
- *  mocked render helpers, so a permissive stub is enough. */
-function refsStub(): Refs {
-  return new Proxy({}, {
-    get: () => ({ disabled: false, className: '', textContent: '', checked: false }),
-  }) as unknown as Refs;
 }
 
 let sent: unknown[];
@@ -188,115 +148,5 @@ describe('preference setters', () => {
     setBrandTheme(state, theme);
     expect(state.brandTheme).toEqual(theme);
     expect(sent).toContainEqual({ type: 'setBrandTheme', value: theme });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// runUpdateFromSource
-// ---------------------------------------------------------------------------
-
-describe('runUpdateFromSource', () => {
-  it('rebuilds the doc and dispatches renderDocFrame with the source node id', async () => {
-    const state = createState();
-    const src = source();
-    await expect(runUpdateFromSource(refsStub(), state, src)).resolves.toBe(true);
-
-    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
-      type: string; nodeId: string; contentHash: string; config: DocConfig; model: unknown;
-    };
-    expect(msg).toBeDefined();
-    expect(msg.nodeId).toBe('1:1');
-    expect(msg.contentHash).toMatch(/^[0-9a-f]+$/);
-    expect(msg.config).toEqual(src.config);
-    expect(msg.model).toBeTruthy();
-  });
-
-  it('clears banners and starts the loader before doing work', async () => {
-    await runUpdateFromSource(refsStub(), createState(), source());
-    expect(clearBanners).toHaveBeenCalled();
-    expect(startLoader).toHaveBeenCalled();
-    // The loader is stopped by docFrameDone/docFrameError in ui.ts, not here.
-    expect(stopLoader).not.toHaveBeenCalled();
-  });
-
-  it('skips prose entirely when the stored config had AI off', async () => {
-    const state = createState();
-    state.licenseKey = 'LK';
-    await runUpdateFromSource(refsStub(), state, source({ config: docConfig({ aiEnabled: false }) }));
-    expect(generateProse).not.toHaveBeenCalled();
-  });
-
-  it('skips prose when AI is on but no identity is available', async () => {
-    const state = createState();
-    state.licenseKey = null;
-    state.figmaUserId = null;
-    await runUpdateFromSource(
-      refsStub(),
-      state,
-      source({ config: docConfig({ aiEnabled: true, sections: ['definition'] }) }),
-    );
-    expect(generateProse).not.toHaveBeenCalled();
-  });
-
-  it('skips prose when the selected sections request no prose keys', async () => {
-    const state = createState();
-    state.licenseKey = 'LK';
-    // tokens/configuration are deterministic sections, so nothing to draft.
-    await runUpdateFromSource(
-      refsStub(),
-      state,
-      source({ config: docConfig({ aiEnabled: true, sections: ['tokens', 'configuration'] }) }),
-    );
-    expect(generateProse).not.toHaveBeenCalled();
-  });
-
-  it('generates prose and records the quota callback when AI is on with an identity', async () => {
-    const state = createState();
-    state.figmaUserId = 'user-1';
-    const quota = { used: 3, limit: 20, tier: 'free' };
-    vi.mocked(generateProse).mockImplementation((async (
-      ..._args: unknown[]
-    ) => {
-      const onQuota = _args[4] as ((q: unknown) => void) | undefined;
-      onQuota?.(quota);
-      return { definition: 'A button.', accessibility: '', dos: [], donts: [] };
-    }) as unknown as typeof generateProse);
-
-    await runUpdateFromSource(
-      refsStub(),
-      state,
-      source({ config: docConfig({ aiEnabled: true, sections: ['definition'] }) }),
-    );
-
-    expect(generateProse).toHaveBeenCalledOnce();
-    expect(state.quota).toEqual(quota);
-    expect(sent.some((m) => (m as { type: string }).type === 'renderDocFrame')).toBe(true);
-  });
-
-  it('still renders the frame when prose generation fails', async () => {
-    const state = createState();
-    state.figmaUserId = 'user-1';
-    vi.mocked(generateProse).mockRejectedValue(new Error('quota exhausted'));
-
-    await expect(
-      runUpdateFromSource(
-        refsStub(),
-        state,
-        source({ config: docConfig({ aiEnabled: true, sections: ['definition'] }) }),
-      ),
-    ).resolves.toBe(true);
-
-    // AI is best-effort garnish: the frame ships with placeholders.
-    expect(sent.some((m) => (m as { type: string }).type === 'renderDocFrame')).toBe(true);
-    expect(showBanner).not.toHaveBeenCalled();
-  });
-
-  it('reports a banner and returns false when extraction throws', async () => {
-    const bad = { ...source(), node: null as unknown as SerializedNode };
-    await expect(runUpdateFromSource(refsStub(), createState(), bad)).resolves.toBe(false);
-    expect(stopLoader).toHaveBeenCalled();
-    expect(vi.mocked(showBanner).mock.calls[0][1]).toBe('error');
-    expect(String(vi.mocked(showBanner).mock.calls[0][2])).toContain('Update failed');
-    expect(sent.some((m) => (m as { type: string }).type === 'renderDocFrame')).toBe(false);
   });
 });

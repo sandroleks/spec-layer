@@ -47,45 +47,6 @@ export function effectiveAuth(
   return { licenseKey: useKey, licenseInstanceId: useKey ? licenseInstanceId : null, figmaUserId };
 }
 
-export type LicenseView = 'none' | 'pro' | 'inactive' | 'unknown';
-
-/**
- * Single source of truth for what the Settings panel says about the plan.
- * We claim `inactive` ONLY on a definite free-tier response while a key is
- * stored; a null quota (offline / server unreachable) stays `unknown` so a blip
- * never reads to the user as a cancelled subscription.
- */
-export function resolveLicenseView(hasKey: boolean, quota: ProxyQuota | null): LicenseView {
-  if (!hasKey) return 'none';
-  if (!quota) return 'unknown';
-  if (quota.tier === 'pro') return 'pro';
-  // A proxy that could not reach the license server is a blip, not a lapse.
-  return quota.licenseReason === 'unreachable' ? 'unknown' : 'inactive';
-}
-
-export function licenseStatusCopy(view: LicenseView, reason?: string): string {
-  switch (view) {
-    case 'pro': return 'Pro plan active ✓';
-    case 'inactive':
-      return reason === 'expired'
-        ? "Your Pro subscription isn't active right now, so you're on the free plan. Renew to switch Pro back on."
-        : "Your Pro key isn't connected to this device right now, so you're on the free plan. Press Activate to reconnect it.";
-    case 'unknown': return 'Your Pro key is saved.';
-    case 'none': return '';
-  }
-}
-
-/** Activation feedback keyed on the raw Lemon Squeezy license status. */
-export function activationErrorCopy(status: string): string {
-  switch (status) {
-    case 'expired': return 'That subscription has expired. Grab Pro again from the store to switch it back on.';
-    case 'disabled': return "That key has been turned off. Reach out to support if that's unexpected.";
-    case 'inactive': return "That key exists but isn't connected to a device. Press Activate again to link this one.";
-    default: return "We couldn't find that key. Double-check it against your purchase email.";
-  }
-}
-
-/** User-facing copy for a failed generation. The raw code never reaches here. */
 export function generationErrorCopy(code: ProseProxyErrorCode): string {
   switch (code) {
     case 'rate_limited': return 'Too many requests just now. Give it a minute.';
@@ -162,69 +123,13 @@ export async function deactivateLicense(
   }
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-
-export type QuotaMeterState = 'hidden' | 'pro' | 'ok' | 'low' | 'empty';
-
-export interface QuotaMeterModel {
-  state: QuotaMeterState;
-  fillPct: number;   // 0..100 bar width
-  countText: string; // "" when hidden
-  linkText: string;  // "" when no link (pro / hidden)
-}
-
-/** ISO timestamp -> "Aug 1" (UTC). Empty for missing/unparseable input. */
-export function formatResetDate(resetsAt: string | undefined): string {
-  if (!resetsAt) return '';
-  const d = new Date(resetsAt);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}`;
-}
-
-/**
- * View model for the AI-card quota meter. Pure: all branching lives here so
- * render.ts just applies the result. Hidden when AI is off or the quota is
- * unknown (offline). Amber ("low") when remaining < lowThreshold.
- */
-export function quotaMeterModel(
-  q: ProxyQuota | null,
-  aiEnabled: boolean,
-  lowThreshold = 5,
-): QuotaMeterModel {
-  if (!aiEnabled || !q) return { state: 'hidden', fillPct: 0, countText: '', linkText: '' };
-  if (q.tier === 'pro') {
-    return { state: 'pro', fillPct: 0, countText: 'Unlimited generations · Pro', linkText: '' };
-  }
-  const limit = q.limit ?? 0;
-  const remaining = q.remaining ?? Math.max(0, limit - q.used);
-  const fillPct = limit > 0 ? Math.max(0, Math.min(100, (remaining / limit) * 100)) : 0;
-  if (remaining <= 0) {
-    const reset = formatResetDate(q.resetsAt);
-    return {
-      state: 'empty',
-      fillPct: 100,
-      countText: reset ? `0 left · resets ${reset}` : '0 left',
-      linkText: 'Get unlimited',
-    };
-  }
-  const state: QuotaMeterState = remaining < lowThreshold ? 'low' : 'ok';
-  return { state, fillPct, countText: `${remaining} of ${limit} left this month`, linkText: 'Upgrade' };
-}
-
 /**
  * Whether a fetched quota means the free AI allowance is used up. Pro is never
  * exhausted; a null quota (offline / not yet probed) tells us nothing, so it is
- * not treated as exhausted. Mirrors the `empty` branch of quotaMeterModel so the
- * upsell fork and the meter agree on when the user is out.
+ * not treated as exhausted.
  */
 export function isQuotaExhausted(q: ProxyQuota | null): boolean {
   if (!q || q.tier === 'pro') return false;
   const remaining = q.remaining ?? Math.max(0, (q.limit ?? 0) - q.used);
   return remaining <= 0;
-}
-
-export function upsellText(resetsAt: string | undefined, now: Date = new Date()): string {
-  void resetsAt; // reserved: could show the reset date later
-  return `You've used your free AI generations for ${MONTHS[now.getUTCMonth()]}.`;
 }

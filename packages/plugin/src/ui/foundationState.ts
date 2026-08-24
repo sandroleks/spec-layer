@@ -1,7 +1,7 @@
 /**
  * foundationState.ts — the pure selection model behind the Foundations tab.
  *
- * dom.ts owns markup and render.ts owns painting; everything decidable without
+ * screens/foundations.ts owns markup and painting; everything decidable without
  * a DOM lives here so it can be tested. Mode selections are always stored in
  * collection order rather than click order, so a rebuilt doc's columns do not
  * silently reorder between generations.

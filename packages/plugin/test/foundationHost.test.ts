@@ -5,7 +5,6 @@ import {
   currentFoundationSpec,
   isFoundationGenerating,
   onFoundationChange,
-  onFoundationCheckboxChange,
   onFoundationMessage,
   onFoundationToggleAll,
   setFoundationGenerating,
@@ -117,28 +116,5 @@ describe('foundation host', () => {
     onFoundationToggleAll();
     expect(currentFoundationSelection()).toEqual({ collections: [], textStyles: false });
     expect(host.repaint).toHaveBeenCalledOnce();
-  });
-
-  it('maps every legacy checkbox action into the value API', () => {
-    onFoundationMessage(dump());
-    onFoundationCheckboxChange({
-      dataset: { act: 'toggle-mode', collectionId: 'c1', modeId: 'm2' },
-      checked: false,
-    } as unknown as HTMLInputElement);
-    expect(currentFoundationSelection().collections).toEqual([
-      { collectionId: 'c1', modeIds: ['m1'] },
-    ]);
-
-    onFoundationCheckboxChange({
-      dataset: { act: 'toggle-text-styles' },
-      checked: false,
-    } as unknown as HTMLInputElement);
-    expect(currentFoundationSelection().textStyles).toBe(false);
-
-    onFoundationCheckboxChange({
-      dataset: { act: 'toggle-collection', collectionId: 'c1' },
-      checked: false,
-    } as unknown as HTMLInputElement);
-    expect(currentFoundationSelection().collections).toEqual([]);
   });
 });

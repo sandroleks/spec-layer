@@ -1,12 +1,8 @@
 /**
- * ui-vnext.ts — entry point for the new shell.
+ * ui-vnext.ts — the plugin UI's only entry point.
  *
- * The flag selects an entry point rather than branching inside ui.ts, so the
- * legacy UI and the new shell can never both run: the legacy module is not in
- * this bundle at all.
- *
- * Each migrated screen renders through the shared shell while legacy-only
- * workflows stay explicitly unavailable until their production mapping lands.
+ * Every screen renders through the shared shell: this module owns the state and
+ * the message plumbing, and each `screens/*` module owns its own markup.
  */
 
 import { extract, ProseProxyError, specContentHash, EXTRACTOR_VERSION } from '@spec-layer/extractor';
@@ -929,9 +925,9 @@ function renderGlobalSearch(focusInput = false): void {
 // The list is an overlay in the shell root, rendered and positioned here while
 // screens/settings.ts owns its markup. It follows the global search palette
 // below rather than fontPicker.ts's createFontPicker: that one binds listeners
-// to its input and menu, which works against the legacy UI's static template
-// but not here, where every paint replaces the screen's DOM. The one piece
-// worth sharing is computeMenuPlacement, which is pure.
+// to its input and menu, which needs a static template, whereas here every
+// paint replaces the screen's DOM. The one piece worth sharing is
+// computeMenuPlacement, which is pure.
 // ---------------------------------------------------------------------------
 
 /**

@@ -82,10 +82,8 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
           showUpgrade: true,
           // A full ring, not an empty one: at 0 remaining a "remaining" gauge
           // has nothing to show regardless of stroke color, so the amber tone
-          // on [data-state="exhausted"] would render but never be visible.
-          // proxy.ts's legacy quotaMeterModel already got this right (100 at
-          // `empty`) — this mirrors it so the vNext ring shows the same
-          // brimming-amber urgency the legacy meter always has.
+          // on [data-state="exhausted"] would render but never be visible. A
+          // brimming amber ring is what carries the urgency instead.
           fillPct: 100,
           ariaLabel: 'AI writing: no free uses left. Open License.',
         };

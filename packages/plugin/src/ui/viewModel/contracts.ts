@@ -2,7 +2,7 @@
  * Presentation contracts for the plugin UI redesign.
  *
  * These types do not replace the current plugin state or message protocol.
- * They define the exhaustive visual states that render.ts should map from
+ * They define the exhaustive visual states that screens/* should map from
  * existing domain state.
  */
 

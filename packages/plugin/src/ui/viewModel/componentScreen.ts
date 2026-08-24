@@ -1,9 +1,9 @@
 /**
  * componentScreen.ts — the section picker, as pure data.
  *
- * The legacy UI kept the user's section choice in its checkboxes and read it
- * back out of the DOM at build time. This screen keeps it in a set and hands it
- * to `createDocFrame`, so the choice is inspectable and testable without a DOM.
+ * The user's section choice lives in a set and is handed to `createDocFrame`
+ * rather than read back out of the DOM at build time, so the choice is
+ * inspectable and testable without a DOM.
  */
 
 import { ALL_SECTIONS, GROUPS, type GroupId, type SectionId } from '../docModel';
@@ -14,8 +14,7 @@ import type { ComponentFacts } from './componentFacts';
  * Related components is the only section that starts unchecked. The approved
  * component-screen prototype shows every accessibility section included.
  *
- * This is the one source for that default. `dom.ts` imports it too, so the
- * legacy UI and this screen cannot start from different states.
+ * This is the one source for that default.
  */
 export const DEFAULT_OFF_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
   'related',
