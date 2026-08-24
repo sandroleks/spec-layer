@@ -6,7 +6,6 @@ dist/
 .DS_Store
 **/.claude/settings.local.json
 .claude/
-.next/
 coverage/
 *.tsbuildinfo
 # Local config file — may contain API keys; never commit
@@ -15,8 +14,6 @@ coverage/
 .worktrees/
 **/.spec-cache/
 **/.spec-data/
-apps/web/content/components/_inbox/*
-!apps/web/content/components/_inbox/.gitkeep
 
 # Screen recordings and marketing video source — tens of MB each, and git can
 # never forget a blob once it lands. These are working files, not shipped assets.

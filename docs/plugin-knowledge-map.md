@@ -21,10 +21,8 @@ image through the Spec Layer proxy. The plugin never receives an Anthropic key.
 | Area | Ownership |
 |---|---|
 | `packages/plugin` | Figma API boundary, iframe UI, connected-document Library, canvas renderers |
-| `packages/extractor` | Pure serialized-node extraction, Foundation planning, Markdown, hashes, AI prompts/parsers |
-| `packages/format` | Markdown frontmatter contract and serialization |
+| `packages/extractor` | Pure serialized-node extraction, Foundation planning, YAML briefs, hashes, AI prompts/parsers |
 | `packages/proxy` | Anthropic credential, request validation, quota authority, license validation |
-| `apps/web` | Legacy local Markdown browser/editor; not a plugin runtime dependency |
 
 The extractor must remain free of Figma globals. `packages/plugin/src/serialize.ts`
 and `serializeFoundation.ts` convert live Figma data into plain inputs that can
@@ -136,16 +134,19 @@ overrides when a semantic role can express the state.
   its `UI_LEGACY` flag are gone.
 - `npm run check` runs lint, type checking, tests, and the plugin build.
 - `npm run check:ci` adds coverage and the full production dependency audit.
-- `npm run audit:active` and `npm run audit:legacy` attribute future advisories.
+- `npm run audit:active` narrows an advisory to the three shipped workspaces.
 
-The manual release gate is `packages/plugin/TESTING.md`. After that pass, remove
-the legacy entry point, its adapters, and its build/test path in one dedicated
-change.
+The manual release gate is `packages/plugin/TESTING.md`.
+
+The legacy entry point, its adapters, and its build and test paths are gone:
+`dom.ts`, `render.ts` and `ui/state.ts` were deleted along with the `Refs`-taking
+functions in `actions.ts` and the license/quota copy helpers in `ui/proxy.ts`
+that only the old UI called.
 
 ## Invariants
 
 1. No Figma globals in the extractor.
-2. Do not change Markdown or hash projections casually.
+2. Do not change the YAML brief or hash projections casually.
 3. UI presentation reads derived state, not DOM-owned business state.
 4. AI failure never blocks deterministic output.
 5. One production design-system source.

@@ -1,27 +1,25 @@
-# Spec Layer v0.1.0
+# Spec Layer vX.Y.Z
 
 ## Highlights
 
-- Turn Figma components into structured, version-controlled Markdown specs.
-- Review imports in a local inbox, fill supported guideline sections with AI, and save components individually or in bulk.
-- Export one component as Markdown or all components as a ZIP from the Figma plugin.
-- Run the complete workflow locally with explicit host, origin, token, upload, and ZIP safeguards.
+- <User-visible change, in the plugin's voice: plain, specific, no em dashes.>
 
 ## Getting Started
 
-Requires Node.js 20.9 or newer and npm 10 or newer.
+Install from the [Figma Community listing](https://www.figma.com/community/plugin/1652104411578396548).
+
+To run this release from source, with Node.js 20.9 or newer:
 
 ```bash
 npm ci
-cp apps/web/.env.example apps/web/.env.local
-npm run dev -w md-ds
+npm run build:plugin
 ```
 
-Open `http://localhost:3000`. Build the Figma plugin with `npm run build:plugin`, then import `packages/plugin/manifest.json` in Figma Desktop.
+Then in Figma desktop choose **Plugins → Development → Import plugin from manifest** and select `packages/plugin/manifest.json`.
 
 ## Security Model
 
-Spec Layer is a trusted localhost tool. Do not expose the web app as a public or multi-user service. The plugin's **Send to docs** posts from an opaque origin and needs no token; keep credentials and private design-system data out of Git.
+Deterministic sections run entirely inside the plugin and send nothing. AI prose routes through the Spec Layer proxy, which holds the Anthropic credential; no user API key is involved. License keys are stored hashed server-side, never in the clear and never in a URL. Keep credentials and private design-system data out of Git.
 
 ## Verification
 
@@ -29,20 +27,16 @@ The release candidate must pass:
 
 ```text
 npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run build:plugin
-npm audit --omit=dev
+npm run check:ci
 git diff --check
 ```
+
+Plus the manual Figma pass for anything the suite cannot reach: load the built manifest and confirm the release's changes on a real file.
 
 ## Known Limitations
 
 - Workspace packages are not published to npm.
-- The application has no accounts, tenant isolation, or public-hosting security model.
-- GitHub synchronization, drift detection, and the MCP server are roadmap work.
+- Builds from source point at the staging proxy. Swap the host in `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess` before a public release.
 
 ## Full Changelog
 

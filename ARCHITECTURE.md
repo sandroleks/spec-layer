@@ -1,6 +1,6 @@
 # Architecture
 
-Spec Layer is an npm-workspaces monorepo with four runtime areas: the Markdown format, the pure extractor, the Figma plugin, and the local docs app.
+Spec Layer is an npm-workspaces monorepo with three runtime areas: the pure extractor, the Figma plugin, and the AI proxy.
 
 ## Data Flow
 
@@ -9,25 +9,17 @@ Figma node
   → plugin serializer
   → IntermediateSpec
   ├─→ deterministic canvas documentation + connected Library entry
-  ├─→ Markdown/sidecar download
+  ├─→ YAML brief on the clipboard (Copy for AI)
   └─→ optional AI-writing proxy → Anthropic
-
-Downloaded Markdown
-  → legacy local docs app
-  → filesystem content tree
 ```
 
-The Figma plugin owns Figma API access. `@spec-layer/extractor` receives plain JSON and has no dependency on the Figma runtime, which keeps extraction testable with fixtures. `@spec-layer/format` owns frontmatter validation and serialization. The web app owns local persistence, inbox review, navigation, editing, optional guideline generation, and previews.
+The Figma plugin owns Figma API access. `@spec-layer/extractor` receives plain JSON and has no dependency on the Figma runtime, which keeps extraction testable with fixtures. Nothing outside the plugin persists a document: the canvas and the clipboard are the two destinations.
 
 ## Workspaces
 
-### `@spec-layer/format`
-
-Defines `SpecFrontmatter`, validates format version and optional lifecycle status, and parses or serializes YAML frontmatter. It does not interpret the Markdown body.
-
 ### `@spec-layer/extractor`
 
-Transforms serialized Figma trees into `IntermediateSpec` data and Markdown. Deterministic modules derive anatomy, properties, variants, states, token rules, gaps, and content hashes. The prose module is optional and receives only derived fields.
+Transforms serialized Figma trees into `IntermediateSpec` data and YAML briefs. Deterministic modules derive anatomy, properties, variants, states, token rules, gaps, and content hashes. The prose module is optional and receives only derived fields.
 
 `foundation.ts` models the layer beneath components: variable collections with their modes, and local text styles. It receives a raw dump and resolves alias chains synchronously, so cycles, depth limits, dangling targets, and cross-file references are fixture-testable rather than dependent on a live Figma runtime. An alias into a library carries its target's name and no value, because a remote variable's `valuesByMode` is keyed by the remote collection's mode ids and cannot be mapped onto local modes. `planFoundationUnits` decides how many documents a file produces: one per collection, split by top-level name group past `SPLIT_THRESHOLD` rows, with mode columns capped at `MAX_MODE_COLUMNS`.
 
@@ -46,10 +38,9 @@ AI-written group descriptions are the one deliberate exception to "rendered impl
 ### `@spec-layer/plugin`
 
 Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It
-supports selected-component extraction, canvas documentation, Markdown/sidecar
-download, Foundation documents, connected-document maintenance, frame themes,
-and license management. vNext is the default UI; the previous tabbed UI is a
-temporary rollback build only.
+supports selected-component extraction, canvas documentation, Copy for AI,
+Foundation documents, connected-document maintenance, frame themes, and license
+management. There is one UI and one bundle.
 
 A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
 
@@ -69,17 +60,7 @@ A document's title is derived rather than stored. `foundationUnitTitle` in the e
 
 Foundation Sections join the same doc registry as component docs. `DocLinkData` is a union discriminated on `kind`, and a blob written before foundation support carries no `kind`, so it parses through the original component path unchanged. A foundation link addresses its source by scope rather than by node id, since its source is the file's own collections. Drift for every foundation row resolves from a single extraction during a library refresh, rather than one round trip per row. A scope stores both collection id and name, so a renamed collection retargets by name and reads as out of date rather than as missing.
 
-Foundation Markdown does not exist yet, so the library row for a foundation doc offers no Markdown download.
-
 `frameKit.applyThemeToKit` and the inline theme preamble in `buildDocFrames` do the same job. Migrating `docFrame` onto the shared helper was left out of the foundation work to avoid restructuring a large file mid-feature. The duplication is deliberate and known; the two must be changed together until it is resolved.
-
-### `md-ds`
-
-The legacy Next.js App Router app renders a filesystem content tree and exposes
-local APIs for import, inbox actions, AI guideline filling, editing, navigation,
-settings, search, and Figma previews. It is no longer connected directly to the
-plugin. Files remain the source of truth; refreshes read current content rather
-than requiring a publishing step.
 
 ### `@spec-layer/proxy`
 
@@ -93,54 +74,27 @@ backstop.
 
 ## Storage
 
-The content root resolves from `DS_CONTENT_DIR`, then falls back to `apps/web/content/components`. Each page is a Markdown file and folders form navigation groups.
+The plugin persists nothing outside Figma. Three surfaces hold state, each
+chosen for its lifetime:
 
-Runtime artifacts are intentionally untracked:
+- `figma.clientStorage` holds per-user preferences: the license key and its
+  instance id, the `aiEnabled` toggle, the brand theme, and the captured logo.
+  It is per user and per machine, which is why license activation re-probes
+  each session rather than trusting a stored verdict.
+- `figma.root` plugin data holds the document registry, so a file knows which
+  documents it contains without scanning every page.
+- Each generated Section holds its own doc link and prose under plugin data on
+  the node, which is what lets a document be found, drift-checked, and updated
+  from the node itself rather than from a registry that could disagree with it.
 
-- `_inbox/` contains imported files waiting to be organized.
-- `.spec-data/` stores source extractions used for regeneration.
-- `.spec-cache/` stores generated prose cache entries.
-- `.ds-config.json` stores optional local settings and credentials.
-
-Settings writes use a temporary file, atomic rename, and mode `0600` where supported.
-
-## Local API Boundary
-
-The app is designed to bind to loopback. API requests are checked in this order:
-
-1. The request `Host` must be loopback or listed in `SPEC_LAYER_ALLOWED_HOSTS`.
-2. Requests without an `Origin`, and same-origin requests, are accepted on an allowed host.
-3. Cross-origin requests are accepted only from `Origin: null` (the Figma plugin) or an origin listed in `SPEC_LAYER_ALLOWED_ORIGINS`; all other origins are rejected.
-
-This policy covers read and write APIs that expose local content or credentials. CORS headers are emitted only for allowed origins. Figma URLs are accepted only over HTTPS on `figma.com` or `www.figma.com`.
-
-Browser mutations use JSON-only request guards with explicit body limits. CORS preflight requests return without performing authorization; disallowed origins receive no `Access-Control-Allow-Origin`, while the corresponding request is still rejected by the host/origin/token policy.
-
-The boundary reduces exposure during local development. A public deployment would still require user authentication, per-project authorization, tenant isolation, CSRF analysis, durable secret management, rate limiting, and deployment-specific network controls.
-
-## Imports
-
-Import endpoints validate paths and constrain input size. Markdown uploads are limited to 2 MiB. JSON imports are limited to 5 MiB. ZIP uploads are limited to 10 MiB compressed, 1,000 entries, 2 MiB expanded per file, and 50 MiB expanded in total. ZIP limits are enforced while entries stream, before unrestricted expansion can occur.
-
-## Rendering And Editing
-
-The app parses frontmatter with `gray-matter`, identifies sections by Markdown headings, and renders bodies with `react-markdown`, GFM, and slugged headings. Section edits update only the selected section. Navigation operations validate every slug segment before joining filesystem paths.
-
-Interactive tabs, dialogs, command search, and plugin tabs implement keyboard navigation and visible focus. Reduced-motion preferences disable nonessential transitions and animations.
-
-## Optional Integrations
-
-- Figma preview APIs use `FIGMA_TOKEN` or the token stored in Settings.
-- Prose generation uses `ANTHROPIC_API_KEY` or the key stored in Settings.
-
-Neither integration is required for structural extraction, Markdown import, editing, or rendering.
-
-AI guideline filling writes only Definition, Accessibility, and Do's & Don'ts. Bulk fill replaces placeholder sections only. A reviewer can explicitly regenerate one supported section, and the app rejects the write if the source spec changes while generation is running.
+The proxy holds the only server-side state: a KV namespace caching license
+verdicts, and a Durable Object per hashed identity serializing quota updates.
+Neither stores a license key in the clear.
 
 ## Verification
 
-The root `npm run check` command runs lint, TypeScript checks, unit tests, the
-legacy web build, and both the default vNext and rollback plugin builds. GitHub
-Actions adds coverage thresholds and audits the full production dependency
-tree. `npm run audit:active` and `npm run audit:legacy` remain available when a
-future advisory needs to be traced to its owning runtime.
+The root `npm run check` command runs lint, TypeScript checks, a NUL-byte scan,
+unit tests, the plugin build, and a scan asserting the main-thread bundle
+touches no browser globals the Figma sandbox does not provide. GitHub Actions
+adds coverage thresholds and audits the full production dependency tree.
+`npm run audit:active` narrows an advisory to the three shipped workspaces.

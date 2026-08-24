@@ -1,6 +1,6 @@
 # Prose style guide — judgment sections
 
-> Companion to `spec/SPEC.md`. SPEC.md defines the *shape* of a spec; this defines
+> The YAML brief defines the *shape* of a spec; this defines
 > the *voice* of its judgment sections — **Definition**, **Accessibility**, and
 > **Do's & Don'ts**. It is the source of truth for both human authors and the
 > AI prose pass (it is the basis of the generation system prompt).

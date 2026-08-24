@@ -18,7 +18,6 @@ A Figma plugin that turns your components into spec and guideline frames, right 
 - [How it works](#how-it-works)
 - [Development](#development)
 - [Repository layout](#repository-layout)
-- [Local docs app (legacy)](#local-docs-app-legacy)
 - [Content safety](#content-safety)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -35,7 +34,7 @@ Select a component or component set, choose the sections you want, and the plugi
 - **Usage docs, drafted by AI.** Overview, do's and don'ts, and interaction notes.
 - **Library.** Tracks the components you have documented. When a source component changes, its doc is flagged so you can update it in a click.
 
-Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Docs can also be downloaded as Markdown, or exported for a whole library as a ZIP.
+Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Any document, or a whole variable collection, can also be copied as a YAML brief for an AI coding agent to read.
 
 ## Free and Pro
 
@@ -44,7 +43,7 @@ Every spec feature is free, with no account needed.
 | | Free | Pro |
 |---|---|---|
 | Measurements, states, anatomy, tokens, theming | Yes | Yes |
-| On-canvas doc frames, Markdown and ZIP export | Yes | Yes |
+| On-canvas doc frames and Copy for AI | Yes | Yes |
 | AI writing | 20 free uses in your first month, then 10 a month | Unlimited for normal individual use |
 | Priority support | | Yes |
 
@@ -85,14 +84,14 @@ Figma node
   → plugin serializer (main thread)
   → IntermediateSpec
   → deterministic derivation: anatomy, properties, variants, states, tokens
-  → canvas doc frame, Markdown download, or ZIP export
+  → canvas doc frame, or a YAML brief on the clipboard
 ```
 
 The plugin owns all Figma API access. `@spec-layer/extractor` receives plain JSON and never touches the Figma runtime, which keeps extraction testable against fixtures. AI prose is the one networked path: it routes through `@spec-layer/proxy`, a Cloudflare Worker that holds the Anthropic key, enforces free-tier quotas in a Durable Object, and validates Pro licenses against Lemon Squeezy. All quota and license authority is server-side, so the plugin only displays the state it is told.
 
 Generated frames store their source node id and a content hash, which is what makes drift detection and one-click updates possible.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data flow and trust boundaries, and [spec/SPEC.md](spec/SPEC.md) for the Markdown contract.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data flow and trust boundaries.
 
 ## Development
 
@@ -100,7 +99,7 @@ Requires Node.js 20.9 or newer, npm 10 or newer, and Figma desktop for plugin de
 
 ```bash
 npm ci
-npm run check           # lint, typecheck, tests, both builds
+npm run check           # lint, typecheck, NUL scan, tests, plugin build, sandbox scan
 ```
 
 Individual steps:
@@ -110,7 +109,6 @@ npm run lint            # ESLint
 npm run typecheck       # all TypeScript workspaces
 npm test                # Vitest suite
 npm run test:coverage   # with coverage thresholds
-npm run build           # production web build
 npm run build:plugin    # Figma plugin bundle
 ```
 
@@ -118,31 +116,19 @@ npm run build:plugin    # Figma plugin bundle
 
 CI runs the same stages as `npm run check`, adds coverage thresholds, and audits
 the full production dependency tree on pushes to `main` and pull requests.
-`npm run audit:active` and `npm run audit:legacy` help attribute future
-advisories to the shipped plugin stack or the retired local docs app.
+`npm run audit:active` narrows an advisory to the three shipped workspaces.
 
 ## Repository layout
 
 ```text
 packages/plugin/       Figma plugin: main-thread serializer and iframe UI
-packages/extractor/    deterministic extraction and Markdown rendering
-packages/format/       frontmatter schema and serialization
+packages/extractor/    deterministic extraction and YAML brief rendering
 packages/proxy/        Cloudflare Worker: AI relay, quota, licensing
 apps/landing/          static marketing and policy pages
-apps/web/              legacy local Markdown docs app
-spec/                  Markdown format definition and reference examples
 docs/                  specs, plans, reviews, voice and prose guides
 ```
 
 Release history is in [CHANGELOG.md](CHANGELOG.md).
-
-## Local docs app (legacy)
-
-`apps/web` is a local-first Next.js app for importing, browsing, and editing exported specs as Markdown. It predates the plugin-first direction and is no longer actively developed. It still builds and its tests pass, but it has received none of the recent work and may be removed in a future release. It is not recommended for new use.
-
-It reads and writes files on the host machine, binds to loopback, and is not hardened as a multi-user service. Setup, configuration variables, and the local API boundary are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
-
-![A Spec Layer component page for Button in the legacy docs app, showing the library sidebar, a live Figma preview of the component's variants, and the structured Markdown documentation with Guidelines and Specs tabs.](.github/assets/component.jpg)
 
 ## Content safety
 
@@ -156,7 +142,7 @@ Bug reports and test fixtures must use synthetic or explicitly publishable data.
 - Configurable units (px / rem).
 - Drift detection surfaces beyond the in-Figma badge, using the committed content hash.
 
-Not planned: remote MCP or agentic vision enrichment, and new Markdown spec sections (the format is frozen for hash stability). See [docs/feature-backlog-2026-07.md](docs/feature-backlog-2026-07.md) for the full backlog and [docs/strategy/](docs/strategy/) for positioning notes.
+Not planned: remote MCP or agentic vision enrichment. See [docs/feature-backlog-2026-07.md](docs/feature-backlog-2026-07.md) for the full backlog and [docs/strategy/](docs/strategy/) for positioning notes.
 
 ## Contributing
 
