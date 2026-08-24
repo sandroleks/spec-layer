@@ -363,12 +363,7 @@ function navigateToView(
   closeFontMenu();
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
-  if (view === 'library') {
-    if (options.refreshLibrary !== false) refreshLibrary();
-    // Unconditional: the dump is needed whether or not the entry list is being
-    // refreshed, and the guard inside makes repeat visits free.
-    prefetchFoundationsForCopy();
-  }
+  if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
   if (view === 'settings' && !settingsFontsRequested) {
     settingsFontsRequested = true;
     send({ type: 'requestFonts' });
@@ -864,6 +859,14 @@ function startLibraryCopy(docId: string): void {
     // Withheld by canCopy, so this is a guard against a stale menu rather than
     // a path a user can reach by clicking.
     if (!entry.foundationScope) return;
+    // Re-arm the fetch before delegating. A failed prefetch clears
+    // foundationRequested but leaves the spec null, and nothing else on this
+    // screen ever re-sends requestFoundation — without this, a failed read
+    // makes copyFoundationBriefForScope's "try again in a moment" error
+    // repeat forever. prefetchFoundationsForCopy's own guard makes this free
+    // on the happy path and during an in-flight race, so it only does work
+    // when there is actually nothing to retry with.
+    if (!currentFoundationSpec()) prefetchFoundationsForCopy();
     void copyFoundationBriefForScope(entry.foundationScope, copyPresenter());
     return;
   }
@@ -2147,6 +2150,17 @@ window.onmessage = (event: MessageEvent): void => {
       startLibraryDriftChecks();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
+      // Fired from the reply rather than from navigateToView: requestLibrary
+      // already runs a live foundation extraction on the main thread (for
+      // drift) whenever a foundation doc exists, so a file with only
+      // component docs no longer pays for a second full read of nothing.
+      // This still lands well before a click: these are the same entries
+      // that populate the rows a user must see before they can Copy one, and
+      // prefetchFoundationsForCopy's own guard keeps it once-per-session
+      // across repeat library loads.
+      if (msg.entries.some((entry) => entry.kind === 'foundation')) {
+        prefetchFoundationsForCopy();
+      }
       if (view === 'library') paint();
       if (searchOpen) renderGlobalSearch();
       return;

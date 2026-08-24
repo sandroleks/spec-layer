@@ -695,6 +695,35 @@ export function currentFoundationSpec(): FoundationSpec | null {
 }
 
 /**
+ * Render, copy, and report a foundation brief.
+ *
+ * Shared tail of copyFoundationBrief and copyFoundationBriefForScope: the two
+ * differ only in how they build the spec-to-brief options (whole file vs. one
+ * narrowed collection), and were otherwise identical down to the 800-line
+ * threshold and the error string. `buildYaml` is a thunk rather than an
+ * already-built string so this can keep wrapping the brief construction
+ * itself in the same try/catch the duplicated code used — a failure in
+ * toYaml/foundationBrief/colorContrast is reported the same "could not read"
+ * way a copy failure is, exactly as before the extraction.
+ */
+async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promise<void> {
+  try {
+    const yaml = buildYaml();
+    const lines = yaml.split('\n').length;
+    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const tier = await copyText(yaml);
+    if (tier === 'manual') {
+      renderManualCopyModal(yaml, size.trim() || undefined);
+      return;
+    }
+    ui.info(`Copied.${size}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
+  }
+}
+
+/**
  * Copy the whole file's foundation as a YAML brief.
  *
  * Deliberately ignores the scope selection that foundation DOCUMENT generation
@@ -709,30 +738,17 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
     ui.error('Read the foundations first, then copy.');
     return;
   }
-  try {
-    const yaml = toYaml(foundationBrief(spec, {
-      generatedAt: new Date().toISOString(),
-      groupDescriptions: foundationGroupDescriptions,
-      // Always computed here, unlike the foundation FRAME, which draws its
-      // matrices only when the doc's includeContrast is on. A frame costs canvas
-      // space a user has to look at, so it is opt in; the brief carries only the
-      // failures and the counts, which are small, and an agent asked to pick
-      // colours cannot know it is pairing two that fail unless they are in the
-      // payload. A file with no measurable pair still gets the block, saying so.
-      contrast: colorContrast(spec),
-    }));
-    const lines = yaml.split('\n').length;
-    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
-    const tier = await copyText(yaml);
-    if (tier === 'manual') {
-      renderManualCopyModal(yaml, size.trim() || undefined);
-      return;
-    }
-    ui.info(`Copied.${size}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
-  }
+  await deliverBrief(() => toYaml(foundationBrief(spec, {
+    generatedAt: new Date().toISOString(),
+    groupDescriptions: foundationGroupDescriptions,
+    // Always computed here, unlike the foundation FRAME, which draws its
+    // matrices only when the doc's includeContrast is on. A frame costs canvas
+    // space a user has to look at, so it is opt in; the brief carries only the
+    // failures and the counts, which are small, and an agent asked to pick
+    // colours cannot know it is pairing two that fail unless they are in the
+    // payload. A file with no measurable pair still gets the block, saying so.
+    contrast: colorContrast(spec),
+  })), ui);
 }
 
 /**
@@ -782,37 +798,24 @@ export async function copyFoundationBriefForScope(
       : 'This file has no text styles left. Nothing was copied.');
     return;
   }
-  try {
-    // Filtered, not passed whole: group descriptions are keyed by collection
-    // name, and a brief covering one collection must not carry another's
-    // guidelines. A text styles copy gets none, since these describe variable
-    // folders.
-    const groupDescriptions = scope.target === 'collection'
-      ? Object.fromEntries(
-          Object.entries(foundationGroupDescriptions)
-            .filter(([name]) => name === scope.collectionName),
-        )
-      : {};
-    const yaml = toYaml(foundationBrief(narrowed, {
-      generatedAt: new Date().toISOString(),
-      groupDescriptions,
-      // Measured on the NARROWED spec, so the pairs reported are the ones
-      // inside this collection. colorContrast already scopes per collection,
-      // so this needs no argument of its own.
-      contrast: colorContrast(narrowed),
-    }));
-    const lines = yaml.split('\n').length;
-    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
-    const tier = await copyText(yaml);
-    if (tier === 'manual') {
-      renderManualCopyModal(yaml, size.trim() || undefined);
-      return;
-    }
-    ui.info(`Copied.${size}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
-  }
+  // Filtered, not passed whole: group descriptions are keyed by collection
+  // name, and a brief covering one collection must not carry another's
+  // guidelines. A text styles copy gets none, since these describe variable
+  // folders.
+  const groupDescriptions = scope.target === 'collection'
+    ? Object.fromEntries(
+        Object.entries(foundationGroupDescriptions)
+          .filter(([name]) => name === scope.collectionName),
+      )
+    : {};
+  await deliverBrief(() => toYaml(foundationBrief(narrowed, {
+    generatedAt: new Date().toISOString(),
+    groupDescriptions,
+    // Measured on the NARROWED spec, so the pairs reported are the ones
+    // inside this collection. colorContrast already scopes per collection,
+    // so this needs no argument of its own.
+    contrast: colorContrast(narrowed),
+  })), ui);
 }
 
 /** Set by ui.ts around the renderFoundation round-trip: true on click, false on

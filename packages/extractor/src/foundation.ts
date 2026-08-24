@@ -132,6 +132,10 @@ export type FoundationCopyTarget =
  * Alias values are untouched. They were resolved during buildFoundation, so a
  * variable aliasing into a collection this narrowing drops still carries both
  * its target name and its resolved concrete value.
+ *
+ * The kept collection is not cloned: it is the same object reference as in
+ * `spec`. Treat both the input and the returned spec's collection as
+ * read-only, since mutating one mutates the other.
  */
 export function narrowFoundation(
   spec: FoundationSpec,
