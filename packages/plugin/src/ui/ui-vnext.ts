@@ -923,10 +923,10 @@ function renderGlobalSearch(focusInput = false): void {
 // Font picker
 //
 // The list is an overlay in the shell root, rendered and positioned here while
-// screens/settings.ts owns its markup. It follows the global search palette
-// below rather than fontPicker.ts's createFontPicker: that one binds listeners
-// to its input and menu, which needs a static template, whereas here every
-// paint replaces the screen's DOM. The one piece worth sharing is
+// screens/settings.ts owns its markup. It follows the same shape as the global
+// search palette below: listeners live here rather than inside a self-contained
+// component, because every paint replaces the screen's DOM and anything bound
+// to its own elements would not survive that. fontPicker.ts keeps only
 // computeMenuPlacement, which is pure.
 // ---------------------------------------------------------------------------
 
