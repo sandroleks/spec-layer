@@ -201,8 +201,8 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160): Prom
  * Inter (families missing Medium/Bold are common), then always loads the Inter
  * faces since they are the fallback and are needed for bold runs.
  *
- * buildDocFrames still inlines an equivalent preamble; migrating it onto this
- * helper is a follow-up.
+ * Both frame families go through here: buildDocFrames for component docs and
+ * buildFoundationFrame for foundation docs.
  */
 export async function applyThemeToKit(theme: {
   headerBg: string; accent: string; bodyText: string; tableHeadBg: string;

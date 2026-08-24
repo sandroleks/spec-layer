@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  applyThemeToKit,
   setCornerStyle,
   radius,
   hex,
@@ -247,5 +248,82 @@ describe('buildSlot', () => {
     installFigma({ getNodeByIdAsync: async () => ({ type: 'FRAME' }) });
     const slot = await buildSlot('1:1', 200) as unknown as FakeFrame;
     expect((slot.children[0] as Record<string, unknown>).characters).toBe('Drop instance');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyThemeToKit — the single theme entry point for BOTH frame families.
+//
+// buildDocFrames used to inline an equivalent preamble; it now calls this, so
+// these tests are the only thing standing between a theme change and two frame
+// families disagreeing. Worth stating because buildDocFrames itself has no
+// coverage: nothing else here would notice a regression in this path.
+// ---------------------------------------------------------------------------
+
+const THEME = {
+  headerBg: '#101828', accent: '#2E90FA', bodyText: '#344054',
+  tableHeadBg: '#F9FAFB', cornerStyle: 'sharp' as const,
+  headingFont: 'Playfair Display', bodyFont: 'Source Sans 3',
+};
+
+describe('applyThemeToKit', () => {
+  it('applies every palette field, the corner style and both families', async () => {
+    installFigma({ loadFontAsync: async () => {} });
+    await applyThemeToKit(THEME);
+
+    expect(palette.headerBg).toEqual(hex('#101828'));
+    expect(palette.accent).toEqual(hex('#2E90FA'));
+    expect(palette.body).toEqual(hex('#344054'));
+    expect(palette.tableHeadBg).toEqual(hex('#F9FAFB'));
+    // 'sharp' squares everything off, so every radius collapses to 0.
+    expect(radius(8)).toBe(0);
+    expect(headingFont('Bold')).toEqual({ family: 'Playfair Display', style: 'Bold' });
+    expect(font('Regular')).toEqual({ family: 'Source Sans 3', style: 'Regular' });
+  });
+
+  it('fully resets a themed build back to the defaults', async () => {
+    installFigma({ loadFontAsync: async () => {} });
+    await applyThemeToKit(THEME);
+    await applyThemeToKit({
+      headerBg: '#FFFFFF', accent: '#000000', bodyText: '#000000',
+      tableHeadBg: '#FFFFFF', cornerStyle: 'soft',
+      headingFont: 'Inter', bodyFont: 'Inter',
+    });
+
+    // Every field is module state, so a Default build after a themed one has to
+    // clear the previous values rather than inherit them.
+    expect(palette.headerBg).toEqual(hex('#FFFFFF'));
+    expect(radius(8)).toBe(8);
+    expect(headingFont('Bold')).toEqual({ family: 'Inter', style: 'Bold' });
+    expect(font('Regular')).toEqual({ family: 'Inter', style: 'Regular' });
+  });
+
+  it('reverts a family to Inter when its faces will not load', async () => {
+    // Families missing Medium/Bold are common; a partial load must not leave
+    // the frame half-styled in a family that cannot render bold runs.
+    installFigma({
+      loadFontAsync: async ({ family }: { family: string }) => {
+        if (family === 'Playfair Display') throw new Error('no such face');
+      },
+    });
+    await applyThemeToKit(THEME);
+
+    expect(headingFont('Bold')).toEqual({ family: 'Inter', style: 'Bold' });
+    // The body family loaded fine, so it is kept.
+    expect(font('Regular')).toEqual({ family: 'Source Sans 3', style: 'Regular' });
+  });
+
+  it('always loads the Inter faces, since they are the fallback', async () => {
+    const loaded: string[] = [];
+    installFigma({
+      loadFontAsync: async ({ family, style }: { family: string; style: string }) => {
+        loaded.push(`${family} ${style}`);
+      },
+    });
+    await applyThemeToKit(THEME);
+
+    expect(loaded).toContain('Inter Regular');
+    expect(loaded).toContain('Inter Medium');
+    expect(loaded).toContain('Inter Bold');
   });
 });

@@ -11,8 +11,8 @@ import type {
 } from './ui/docModel';
 import type { resolveTheme } from './brandColors';
 import {
-  palette, hex, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, setFontFamilies, matchVariableModes, radius, setCornerStyle,
+  palette, solidFill, vstack, hstack, makeText, buildSlot, font,
+  headingFont, matchVariableModes, radius, applyThemeToKit,
   type FontStyle,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
@@ -1138,45 +1138,11 @@ export async function buildDocFrames(
   // edits variables/styles picks up fresh values instead of stale ones.
   resetTokenResolveCaches();
 
-  // Apply the (already-resolved) theme palette before any layout reads it.
-  // EVERY mutable field is set per build so a Default build after a themed one
-  // fully resets (palette is module state).
-  palette.headerBg = hex(theme.headerBg);
-  palette.accent = hex(theme.accent);
-  palette.body = hex(theme.bodyText);
-  palette.tableHeadBg = hex(theme.tableHeadBg);
-
-  // Corner style is module state in frameKit, same as the font families —
-  // set it every build so styles never leak into the next build.
-  setCornerStyle(theme.cornerStyle);
-
-  // Fonts: try the requested families; ANY failure reverts that family to Inter
-  // (families missing Medium/Bold are common — robustness beats partial styling).
-  const tryFamily = async (family: string): Promise<string> => {
-    if (family === 'Inter') return 'Inter';
-    try {
-      await Promise.all((['Regular', 'Medium', 'Bold'] as const).map((style) =>
-        figma.loadFontAsync({ family, style })));
-      return family;
-    } catch {
-      return 'Inter';
-    }
-  };
-  const [headingFam, bodyFam] = await Promise.all([
-    tryFamily(theme.headingFont),
-    tryFamily(theme.bodyFont),
-  ]);
-  // Set families every build (with the Inter fallbacks above) so a themed build
-  // never leaves stale families for the next Default build.
-  setFontFamilies(headingFam, bodyFam);
-
-  // Always load Inter faces too — fallback family + text measuring below need
-  // them, and bold runs need the Bold face before setRangeFontName.
-  await Promise.all(
-    (['Regular', 'Medium', 'Bold'] as FontStyle[]).map((style) =>
-      figma.loadFontAsync({ family: 'Inter', style }),
-    ),
-  );
+  // Palette, corner style and fonts are module state in frameKit, so every
+  // field is set per build: a Default build after a themed one has to fully
+  // reset rather than inherit. foundationFrame.ts calls the same helper, which
+  // is what keeps the two frame families from drifting apart.
+  await applyThemeToKit(theme);
 
   // Shared width across all frames — measured over the full (flat) model.
   fitFrameWidthToTokens(model);

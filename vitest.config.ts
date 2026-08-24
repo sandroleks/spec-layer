@@ -27,10 +27,10 @@ export default defineConfig({
       // measured set: the old floor was mostly slack, and slack in a ratchet
       // is just a regression nobody notices.
       thresholds: {
-        statements: 70,
-        branches: 75,
-        functions: 85,
-        lines: 69,
+        statements: 72,
+        branches: 77,
+        functions: 88,
+        lines: 71,
       },
     },
   },
