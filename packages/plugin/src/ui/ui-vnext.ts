@@ -82,6 +82,7 @@ import {
   autoExtract,
   copyBriefFromSource,
   copyFoundationBrief,
+  copyFoundationBriefForScope,
   createDocFrame,
   createState,
   currentFoundationSelection,
@@ -362,7 +363,12 @@ function navigateToView(
   closeFontMenu();
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
-  if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
+  if (view === 'library') {
+    if (options.refreshLibrary !== false) refreshLibrary();
+    // Unconditional: the dump is needed whether or not the entry list is being
+    // refreshed, and the guard inside makes repeat visits free.
+    prefetchFoundationsForCopy();
+  }
   if (view === 'settings' && !settingsFontsRequested) {
     settingsFontsRequested = true;
     send({ type: 'requestFonts' });
@@ -553,6 +559,26 @@ function refreshFoundations(): void {
   foundationRequested = true;
   foundationRefreshing = true;
   paint();
+  send({ type: 'requestFoundation' });
+}
+
+/**
+ * Ask for the foundation dump when Library opens, if nothing has fetched it
+ * yet, so a foundation row's Copy can build its brief without a round trip.
+ *
+ * Copy needs the dump, and the two things that normally supply it may both be
+ * absent here: the Foundations tab may never have been opened, and the
+ * 'selection' message only carries a dump when a COMPONENT is selected, so
+ * opening the plugin with nothing selected leaves the UI with no spec at all.
+ *
+ * Reuses foundationRequested rather than adding a second flag. On success the
+ * 'foundation' reply sets the Foundations screen to 'ready' as well, so
+ * skipping its own request later is correct; on failure 'foundationError'
+ * clears the flag, so navigating there re-requests and resets to loading.
+ */
+function prefetchFoundationsForCopy(): void {
+  if (foundationRequested || currentFoundationSpec()) return;
+  foundationRequested = true;
   send({ type: 'requestFoundation' });
 }
 
@@ -816,16 +842,33 @@ function completeCurrentLibraryUpdate(): void {
 }
 
 /**
- * Copy for AI. The brief needs both the stored prose and the doc's source, so
- * this asks for prose first (cheap: a single pluginData read) and only sends
- * requestDocSource once the docProse reply lands and is stashed on the
- * operation. The docSource handler below reads that prose back off, builds
- * the brief, and clears the operation on every exit — success, a copy
- * failure, or the source no longer being available (docSourceError).
+ * Copy for AI.
+ *
+ * Component rows need a round trip: the brief needs both the stored prose and
+ * the doc's source, so this asks for prose first (cheap: a single pluginData
+ * read) and only sends requestDocSource once the docProse reply lands and is
+ * stashed on the operation. The docSource handler reads that prose back off,
+ * builds the brief, and clears the operation on every exit.
+ *
+ * Foundation rows need none of that. The whole file's variables are already in
+ * memory (the Library view asks for them on entry), and the doc's scope rode in
+ * on its LibraryEntry, so the copy is synchronous. It deliberately does NOT
+ * take the operation lock: there is nothing to wait for, and holding the lock
+ * would block an unrelated Update behind an act that has already finished.
  */
 function startLibraryCopy(docId: string): void {
   const entry = libraryEntry(docId);
-  if (!entry || entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
+  if (!entry) return;
+
+  if (entry.kind === 'foundation') {
+    // Withheld by canCopy, so this is a guard against a stale menu rather than
+    // a path a user can reach by clicking.
+    if (!entry.foundationScope) return;
+    void copyFoundationBriefForScope(entry.foundationScope, copyPresenter());
+    return;
+  }
+
+  if (entry.kind !== 'component' || !entry.sourceExists || operation.active) return;
   if (!beginOperation(operation)) return;
   libraryOperation = { kind: 'copy', currentDocId: docId };
   paint();
