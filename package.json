@@ -2,7 +2,7 @@
   "name": "spec-layer",
   "version": "1.0.0",
   "private": true,
-  "description": "Local-first Figma-to-Markdown design system specification toolkit",
+  "description": "Figma plugin that turns components and variables into design-system documentation",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,35 +25,28 @@
     "typecheck": "tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "build:plugin": "node packages/plugin/build.mjs",
-    "build:plugin:vnext": "node packages/plugin/build.mjs",
     "audit:production": "npm audit --omit=dev",
     "audit:active": "npm audit --omit=dev --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
     "check:nul": "node scripts/check-nul-bytes.mjs",
-    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin:vnext && npm run check:sandbox",
-    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin:vnext && npm run check:sandbox && npm run audit:production",
+    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin && npm run check:sandbox",
+    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin && npm run check:sandbox && npm run audit:production",
     "check:sandbox": "node scripts/check-main-sandbox.mjs"
   },
   "overrides": {
     "brace-expansion": "^5.0.8",
-    "minimatch": "^10.2.6",
-    "postcss": "^8.5.24",
-    "sharp": "^0.35.3"
+    "minimatch": "^10.2.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.12",
+    "globals": "^14.0.0",
     "happy-dom": "^20.11.2",
     "js-yaml": "^5.3.0",
-    "next": "^16.2.12",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.61.0",
     "vitest": "^4.1.8"
-  },
-  "optionalDependencies": {
-    "@rolldown/binding-linux-x64-gnu": "1.0.3"
   }
 }

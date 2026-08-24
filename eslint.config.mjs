@@ -1,22 +1,36 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTypescript from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
+// The plugin is the only product, so this gate lints TypeScript and plain JS
+// and nothing else. It used to extend eslint-config-next, which pulled Next,
+// React and react-dom in as devDependencies for the sake of the deleted
+// apps/web — three heavy trees whose rules had no React left to fire on.
 export default defineConfig([
-  ...nextVitals,
-  ...nextTypescript,
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
+    // Source runs in the Figma plugin sandbox (main thread) or its UI iframe;
+    // the build and check scripts run in Node.
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
     rules: {
-      "@next/next/no-html-link-for-pages": "off",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "react-hooks/set-state-in-effect": "off",
     },
   },
+  {
+    // The YAML writer's whole job is deciding which characters must be quoted
+    // or escaped, so matching C0 controls literally is the point rather than a
+    // slip. See the NUL-byte handling in `needsQuote`/`quoteDouble`.
+    files: ["packages/extractor/src/yaml.ts"],
+    rules: { "no-control-regex": "off" },
+  },
   globalIgnores([
-    "**/.next/**",
     "**/coverage/**",
     "**/dist/**",
     "**/node_modules/**",

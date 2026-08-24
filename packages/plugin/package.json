@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@spec-layer/extractor": "*",
-    "fflate": "^0.8.2"
+    "@spec-layer/extractor": "*"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.100.0",
