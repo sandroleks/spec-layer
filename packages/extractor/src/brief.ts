@@ -15,8 +15,10 @@ import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
 import type { TokenRule } from './tokens';
+import type { RefIdentity, RefKind } from './tree';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
+import { resolutionOf } from './resolution';
 
 /**
  * Brief schema version. Bumped when the brief's shape or field meanings change,
@@ -327,12 +329,14 @@ function ruleKey(t: TokenRule): string {
  */
 function lookupToken(
   foundation: FoundationSpec | undefined,
-  token: string,
+  ref: RefIdentity,
 ): { alias?: string; resolved?: YamlValue; external?: boolean; code?: YamlValue; mode?: string } {
-  if (!foundation) return {};
+  // Variables only. A style name has no entry in any collection, so walking
+  // them for one was the lookup whose empty result used to be emitted as `{}`.
+  if (!foundation || ref.kind !== 'variable') return {};
   for (const collection of foundation.collections) {
     for (const variable of collection.variables) {
-      if (variable.name !== token) continue;
+      if (variable.name !== ref.name) continue;
       const raw = variable.valuesByMode[collection.defaultModeId];
       const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
       // A modeId with no entry in collection.modes is stale (its mode was
@@ -383,7 +387,16 @@ function lookupToken(
  * inspects the raw object with `'when' in binding` instead of going through
  * the YAML round trip.
  */
-function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined): YamlValue {
+/** (name, kind) is the join identity between `used` and `bindings`. Two
+ *  references sharing a name are two entries; the same reference bound in five
+ *  places is one. */
+const usedKey = (r: TokenRule): string => JSON.stringify([r.kind, r.name]);
+
+function tokensOf(
+  spec: IntermediateSpec,
+  foundation: FoundationSpec | undefined,
+  definedNames: (kind: RefKind) => Set<string>,
+): YamlValue {
   const seen = new Set<string>();
   const rules: TokenRule[] = [];
   for (const t of spec.tokens) {
@@ -393,24 +406,33 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
     rules.push(t);
   }
 
-  // First-use order, so reading top to bottom introduces a token before the
-  // bindings that reference it.
-  // A typography binding names a TEXT STYLE, not a variable, so lookupToken
-  // finds nothing and used to emit a bare `{}`: a key that tells a reader
-  // nothing while implying the token could not be resolved. The real data is in
-  // the `typography` block, so say that instead of emitting an empty map.
-  const typographyTokens = new Set(
-    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.name));
-
-  const used: Record<string, YamlValue> = {};
+  // A LIST, not a map. A map keyed by name cannot hold a variable and an effect
+  // style that share one, and a conditional key that only qualifies on collision
+  // is the kind of thing that bites later.
+  //
+  // First-use order, so reading top to bottom introduces a reference before the
+  // bindings that name it.
+  const used: YamlValue[] = [];
+  const usedSeen = new Set<string>();
   for (const r of rules) {
-    if (r.name in used) continue;
-    const looked = lookupToken(foundation, r.name) as YamlValue;
-    const empty = looked !== null && typeof looked === 'object'
-      && Object.keys(looked as Record<string, unknown>).length === 0;
-    used[r.name] = empty && typographyTokens.has(r.name)
-      ? { kind: 'typography' }
-      : looked;
+    const key = usedKey(r);
+    if (usedSeen.has(key)) continue;
+    usedSeen.add(key);
+
+    // A style entry is a POINTER, not a copy: the definitions live in
+    // `typography:` and `effects:`, so restating them here would give the brief
+    // two owners for the same values.
+    if (r.kind === 'text-style' || r.kind === 'effect-style') {
+      used.push(definedNames(r.kind).has(r.name)
+        ? { token: r.name, kind: r.kind }
+        : { token: r.name, kind: r.kind, resolution: resolutionOf(foundation, r) as unknown as YamlValue });
+      continue;
+    }
+
+    const looked = lookupToken(foundation, r);
+    used.push(Object.keys(looked).length > 0
+      ? { token: r.name, kind: r.kind, ...looked }
+      : { token: r.name, kind: r.kind, resolution: resolutionOf(foundation, r) as unknown as YamlValue });
   }
 
   return {
@@ -419,6 +441,9 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
       path: r.path,
       property: r.property,
       token: r.name,
+      // Carried so a binding joins to `used` on (token, kind) rather than on a
+      // name that two references can share.
+      kind: r.kind,
       ...(Object.keys(r.conditions).length > 0 ? { when: r.conditions } : {}),
     })),
   };
@@ -545,7 +570,7 @@ function typographyOf(
   foundation: FoundationSpec | undefined,
 ): YamlValue | undefined {
   const names = new Set(
-    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.name));
+    spec.tokens.filter((t) => t.kind === 'text-style').map((t) => t.name));
   if (names.size === 0) return undefined;
 
   const out: Record<string, YamlValue> = {};
@@ -553,11 +578,13 @@ function typographyOf(
     const style = foundation?.textStyles.find((s) => s.name === name);
 
     if (!style) {
-      // Bound in the file but absent from this dump: a published library
-      // style, or a foundation read that did not cover it. Unresolved, never
-      // absent -- dropping it would make the brief claim the label has no
-      // typography at all.
-      out[name] = { unresolved: 'not in this file' };
+      // Restated in the resolution vocabulary rather than as its own ad-hoc
+      // sentence, so `typography` and `tokens.used` cannot disagree about what
+      // "not in this file" means. The rule is looked up rather than
+      // reconstructed from the name, so the resolution reads Figma's own
+      // `remote` and reports `external` where that is the real cause.
+      const ref = spec.tokens.find((t) => t.kind === 'text-style' && t.name === name)!;
+      out[name] = { resolution: resolutionOf(foundation, ref) as unknown as YamlValue };
       continue;
     }
     out[name] = {
@@ -570,6 +597,42 @@ function typographyOf(
         ...(style.lineHeight.value !== undefined ? { value: round2(style.lineHeight.value) } : {}),
       },
       letter_spacing: { unit: style.letterSpacing.unit, value: round2(style.letterSpacing.value) },
+    };
+  }
+  return out;
+}
+
+/**
+ * Every effect style this component binds, resolved to its layers.
+ *
+ * Beside `typography:` and for the same reason: `tokens.used` carries the kind
+ * and this block carries the definition, so the brief has exactly one owner for
+ * the values. Keyed by style name, which is the join key `used` and `bindings`
+ * both carry.
+ *
+ * `source_name` keeps the raw Figma style name, stray double spaces included,
+ * because that string is what a designer searches for in the file.
+ */
+function effectsOf(
+  spec: IntermediateSpec,
+  foundation: FoundationSpec | undefined,
+): YamlValue | undefined {
+  const names = new Set(
+    spec.tokens.filter((t) => t.kind === 'effect-style').map((t) => t.name));
+  if (names.size === 0) return undefined;
+
+  const out: Record<string, YamlValue> = {};
+  for (const name of names) {
+    const style = foundation?.effectStyles.find((s) => s.name === name);
+    if (!style) {
+      const ref = spec.tokens.find((t) => t.kind === 'effect-style' && t.name === name)!;
+      out[name] = { resolution: resolutionOf(foundation, ref) as unknown as YamlValue };
+      continue;
+    }
+    out[name] = {
+      source_name: style.name,
+      description: style.description || undefined,
+      layers: style.effects as unknown as YamlValue,
     };
   }
   return out;
@@ -601,6 +664,23 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       ...(g.value !== undefined ? { value: g.value } : {}),
     }));
   const typography = typographyOf(spec, opts.foundation);
+  const effects = effectsOf(spec, opts.foundation);
+  // The definitions this brief actually carries, so `tokens.used` knows whether
+  // a style entry is a pointer to something real or needs a resolution instead.
+  const definedNames = (kind: RefKind): Set<string> => new Set(
+    kind === 'text-style'
+      ? (opts.foundation?.textStyles ?? []).map((s) => s.name)
+      : (opts.foundation?.effectStyles ?? []).map((s) => s.name),
+  );
+  // Joined to `unbound` and `bindings` on (path, property), never on path alone:
+  // one node routinely has several rows -- fill, border, effects, spacing -- at
+  // the same path.
+  const effectsInline = spec.nodeEffects.map((n) => ({
+    path: n.path,
+    // Inline here, unlike the style entries above, because a node-level effect
+    // has no style name to point at.
+    layers: n.effects as unknown as YamlValue,
+  }));
   const guidelines = guidelinesOf(opts.prose);
   // The geometry-token-mismatch finding needs each bound token's resolved
   // NUMBER, at the same mode `tokens.used` already reports it under (via
@@ -609,7 +689,7 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   // resolves to.
   const resolved = new Map<string, number>();
   for (const t of spec.tokens) {
-    const looked = lookupToken(opts.foundation, t.name);
+    const looked = lookupToken(opts.foundation, t);
     const v = looked.resolved;
     if (typeof v === 'number') {
       resolved.set(t.name, v);
@@ -664,12 +744,14 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
       // bindings talk about. Joinability is the whole point of the identity.
       ? spec.layout.map((l) => ({ path: l.path, summary: l.summary }))
       : undefined,
-    tokens: tokensOf(spec, opts.foundation),
+    tokens: tokensOf(spec, opts.foundation, definedNames),
+    ...(effectsInline.length > 0 ? { effects_inline: effectsInline } : {}),
     // Same reasoning as `api` above: spread the key in only when a gap
     // survived reconciliation, rather than assigning `unbound: undefined` —
     // `{ key: undefined }` still leaves `'unbound' in brief` true.
     ...(unbound.length > 0 ? { unbound } : {}),
     ...(typography !== undefined ? { typography } : {}),
+    ...(effects !== undefined ? { effects } : {}),
     ...(validation.length > 0 ? { validation } : {}),
     // Conditional spread for the same reason as every optional block above:
     // guidelinesOf returns undefined when there is no prose, and

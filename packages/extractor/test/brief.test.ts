@@ -7,6 +7,7 @@ import type { FoundationSpec } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
 import type { YamlValue } from '../src/yaml';
 import type { RefIdentity } from '../src/tree';
+import type { TokenRule } from '../src/tokens';
 
 /** A TokenRule now carries the full identity Figma stated for the reference.
  *  These tests are about what the brief EMITS, so one identity is minted per
@@ -14,6 +15,14 @@ import type { RefIdentity } from '../src/tree';
  *  The brief's own emitted key stays `token`; only the rule's field is `name`. */
 const ident = (name: string): RefIdentity => (
   { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+
+/** Same idea as `ident`, but for a text style / effect style binding. A
+ *  typography or effects rule names a STYLE, not a variable, and the new
+ *  resolution vocabulary selects on `kind` -- so a token modelled with
+ *  `kind: 'variable'` here would silently miss `typographyOf`/`effectsOf`'s
+ *  name filters. */
+const identStyle = (name: string, kind: 'text-style' | 'effect-style'): RefIdentity => (
+  { id: `S:${name}`, name, kind, remote: false });
 
 const AT = '2026-08-14T10:22:00.000Z';
 
@@ -101,6 +110,29 @@ function oneCollection(): FoundationSpec {
  * defined. One cast at the point each brief is produced, reused by every
  * test below instead of a fresh `any` at each site.
  */
+/** One `tokens.used` entry now that `used` is a list, not a map keyed by
+ *  name: every entry carries `token` and `kind` (the join identity), a
+ *  variable entry also carries whatever `lookupToken` found, and a style
+ *  entry (text-style / effect-style) carries neither a definition nor a
+ *  lookup, only a `resolution` when it isn't a pointer to something real. */
+interface UsedEntry {
+  token: string;
+  kind: string;
+  resolution?: { status: string; reason: string };
+  alias?: string;
+  resolved?: string | number | boolean | Record<string, unknown>;
+  external?: boolean;
+  mode?: string;
+  code?: Record<string, string>;
+}
+
+/** Find one `used` entry by (token, kind) -- the join identity `usedKey` in
+ *  brief.ts mints, since a plain name lookup can no longer be unambiguous
+ *  once a variable and a style can share one. */
+function usedEntry(used: UsedEntry[], token: string, kind = 'variable'): UsedEntry | undefined {
+  return used.find((u) => u.token === token && u.kind === kind);
+}
+
 interface BriefShape {
   source: {
     file_key?: string; file_name?: string;
@@ -116,8 +148,11 @@ interface BriefShape {
   anatomy?: unknown[];
   layout?: Array<{ path: string; summary: string }>;
   tokens: {
-    used: Record<string, Record<string, unknown>>;
-    bindings: Array<{ path: string; property: string; token: string; when?: Record<string, string[]> }>;
+    used: UsedEntry[];
+    bindings: Array<{
+      path: string; property: string; token: string; kind: string;
+      when?: Record<string, string[]>;
+    }>;
   };
   unbound?: Array<{ path: string; property: string; issue: string; value?: number | string }>;
   validation?: Array<{
@@ -127,7 +162,7 @@ interface BriefShape {
   guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
   collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
   typography?: Record<string, {
-    unresolved?: string;
+    resolution?: { status: string; reason: string };
     source_name?: string;
     font_family?: string;
     font_style?: string;
@@ -135,6 +170,13 @@ interface BriefShape {
     line_height?: { unit: string; value?: number };
     letter_spacing?: { unit: string; value: number };
   }>;
+  effects?: Record<string, {
+    resolution?: { status: string; reason: string };
+    source_name?: string;
+    description?: string;
+    layers?: unknown[];
+  }>;
+  effects_inline?: Array<{ path: string; layers: unknown[] }>;
 }
 
 describe('foundationBrief', () => {
@@ -849,32 +891,23 @@ describe('componentBrief', () => {
 // componentBrief tokens
 // ---------------------------------------------------------------------------
 
-/** A token's resolved definition as emitted under `tokens.used`. Mirrors
- *  `lookupToken`'s flat return shape: `alias`, `resolved`, `mode` and `code`
- *  as siblings, not nested under a `value` key. Typed rather than `any` so a
- *  shape drift fails at compile time, matching the convention above. */
-interface TokenDefinition {
-  alias?: string;
-  resolved?: string | number | boolean | Record<string, unknown>;
-  external?: boolean;
-  mode?: string;
-  code?: Record<string, string>;
-}
-
 /** A binding as it appears in the brief: identity plus the minimal condition
  *  it holds under, if any. `when` is a lookup from axis name to the values
  *  the binding holds for, not a boolean expression -- an absent `when` means
- *  every variant. Typed rather than `any` so a shape drift fails at compile
- *  time, matching the convention above. */
+ *  every variant. `kind` joins a binding to its `used` entry on (token, kind)
+ *  rather than on a name that a variable and a style can share. Typed rather
+ *  than `any` so a shape drift fails at compile time, matching the
+ *  convention above. */
 interface Binding {
   path: string;
   property: string;
   token: string;
+  kind: string;
   when?: Record<string, string[]>;
 }
 
 interface ParsedTokenBrief extends ParsedComponentBrief {
-  tokens: { used: Record<string, TokenDefinition>; bindings: Binding[] };
+  tokens: { used: UsedEntry[]; bindings: Binding[] };
 }
 
 /** An IntermediateSpec with no tokens of its own, for tests that only care
@@ -910,7 +943,7 @@ describe('componentBrief tokens', () => {
         conditions: { size: ['Large'] }, ...ident('button/lg-height') },
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
-    expect(Object.keys(brief.tokens.used)).toEqual([
+    expect(brief.tokens.used.map((u) => u.token)).toEqual([
       'color/surface/primary/default', 'button/lg-height',
     ]);
   });
@@ -922,7 +955,7 @@ describe('componentBrief tokens', () => {
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toEqual([
-      { path: 'Container', property: 'height', token: 'button/lg-height',
+      { path: 'Container', property: 'height', token: 'button/lg-height', kind: 'variable',
         when: { size: ['Large'] } },
     ]);
   });
@@ -934,7 +967,7 @@ describe('componentBrief tokens', () => {
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings[0]).toEqual(
-      { path: 'Container', property: 'border-radius', token: 'rd-sm' });
+      { path: 'Container', property: 'border-radius', token: 'rd-sm', kind: 'variable' });
     expect('when' in brief.tokens.bindings[0]).toBe(false);
   });
 
@@ -997,18 +1030,20 @@ describe('componentBrief tokens', () => {
   it('emits a binding with no `when` for a rule that holds in every variant', () => {
     const y = tokenBrief();
     const universal = y.tokens.bindings.find((b) => b.property === 'border-radius');
-    expect(universal).toEqual({ path: 'Container/container', property: 'border-radius', token: 'radius/md' });
+    expect(universal).toEqual({
+      path: 'Container/container', property: 'border-radius', token: 'radius/md', kind: 'variable',
+    });
     expect(universal && 'when' in universal).toBe(false);
   });
 
   it('emits a binding with `when` naming the axis a variant-conditioned rule depends on', () => {
     const y = tokenBrief();
     expect(y.tokens.bindings).toContainEqual({
-      path: 'Container/container', property: 'fill', token: 'color/bg/brand',
+      path: 'Container/container', property: 'fill', token: 'color/bg/brand', kind: 'variable',
       when: { State: ['Enabled'] },
     });
     expect(y.tokens.bindings).toContainEqual({
-      path: 'Container/container', property: 'fill', token: 'color/bg/brand-hover',
+      path: 'Container/container', property: 'fill', token: 'color/bg/brand-hover', kind: 'variable',
       when: { State: ['Hovered'] },
     });
   });
@@ -1032,12 +1067,12 @@ describe('componentBrief tokens', () => {
   it('resolves token values through the foundation when one is supplied', () => {
     const y = tokenBrief({ foundation: FOUNDATION });
     // color/bg/brand resolves at the collection's default mode (Light).
-    expect(y.tokens.used['color/bg/brand'].resolved).toBe('#2563EB');
+    expect(usedEntry(y.tokens.used, 'color/bg/brand')?.resolved).toBe('#2563EB');
   });
 
   it("names the resolved value's mode as the collection's own default mode", () => {
     const y = tokenBrief({ foundation: FOUNDATION });
-    expect(y.tokens.used['color/bg/brand'].mode).toBe('Light');
+    expect(usedEntry(y.tokens.used, 'color/bg/brand')?.mode).toBe('Light');
   });
 
   // From the task brief: a collection whose default mode is NOT the first one
@@ -1062,7 +1097,7 @@ describe('componentBrief tokens', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
       property: 'fill', conditions: {}, ...ident('color/surface/default') }] };
     const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
-    const used = brief.tokens.used['color/surface/default'];
+    const used = usedEntry(brief.tokens.used, 'color/surface/default')!;
     // The collection's own default mode is m2, so the value is the Dark one,
     // and the brief says so instead of leaving a reader to assume Light.
     expect(used.resolved).toBe('#111111');
@@ -1085,20 +1120,21 @@ describe('componentBrief tokens', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
       property: 'fill', conditions: {}, ...ident('color/surface/default') }] };
     const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
-    const used = brief.tokens.used['color/surface/default'];
+    const used = usedEntry(brief.tokens.used, 'color/surface/default')!;
     expect('mode' in used).toBe(false);
     expect(JSON.stringify(used)).not.toContain('gone');
   });
 
   it('omits resolved entirely when no foundation is supplied', () => {
     const y = tokenBrief();
-    expect('resolved' in y.tokens.used['color/bg/brand']).toBe(false);
-    expect('mode' in y.tokens.used['color/bg/brand']).toBe(false);
+    const used = usedEntry(y.tokens.used, 'color/bg/brand')!;
+    expect('resolved' in used).toBe(false);
+    expect('mode' in used).toBe(false);
   });
 
   it('emits code when the resolved variable has codeSyntax', () => {
     const y = tokenBrief({ foundation: FOUNDATION });
-    expect(y.tokens.used['color/bg/brand'].code).toEqual({ WEB: '--color-bg-brand' });
+    expect(usedEntry(y.tokens.used, 'color/bg/brand')?.code).toEqual({ WEB: '--color-bg-brand' });
   });
 
   it('emits the same bindings whether or not there are variant instances', () => {
@@ -1125,7 +1161,7 @@ describe('componentBrief tokens', () => {
       ...SPEC, variants: axes, variantInstances: instances,
       tokens: [
         { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, ...ident('radius/md') },
-        { part: 'label', path: 'Container/label', property: 'typography', conditions: {}, ...ident('type/label') },
+        { part: 'label', path: 'Container/label', property: 'typography', conditions: {}, ...identStyle('type/label', 'text-style') },
         { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/bg/hover') },
       ],
     };
@@ -1163,7 +1199,7 @@ describe('componentBrief typography', () => {
   };
   const noisySpec = (): IntermediateSpec => ({ ...baseSpec(), tokens: [{
     part: 'Label', path: 'Container/Label', property: 'typography',
-    conditions: { size: ['Large'] }, ...ident('Button/L : 14px Medium') }] });
+    conditions: { size: ['Large'] }, ...identStyle('Button/L : 14px Medium', 'text-style') }] });
 
   it('trims binary-float noise off the metrics', () => {
     // Measured from a real run: a designer typed 140 and 0.2, and Figma stored
@@ -1193,13 +1229,16 @@ describe('componentBrief typography', () => {
       .toEqual({ unit: 'PIXELS', value: -0.25 });
   });
 
-  it('points a typography token at the typography block instead of an empty map', () => {
+  it('points a text-style entry at the typography block instead of an empty map', () => {
     // A typography binding names a TEXT STYLE, not a variable, so lookupToken
     // finds nothing. It used to emit a bare `{}`, which reads as "could not be
-    // resolved" when the metrics are in fact right there in `typography`.
+    // resolved" when the metrics are in fact right there in `typography`. Since
+    // this style IS defined in the foundation, `used` carries a bare pointer
+    // (token + kind), never a copy of the metrics that live in `typography`.
     const b = componentBrief(
       noisySpec(), { generatedAt: 'T', foundation: noisyFoundation }) as unknown as BriefShape;
-    expect(b.tokens.used['Button/L : 14px Medium']).toEqual({ kind: 'typography' });
+    expect(usedEntry(b.tokens.used, 'Button/L : 14px Medium', 'text-style'))
+      .toEqual({ token: 'Button/L : 14px Medium', kind: 'text-style' });
   });
 
   it('resolves a bound text style to real metrics', () => {
@@ -1216,7 +1255,7 @@ describe('componentBrief typography', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: { size: ['Large'] }, ...ident('Button/L : 14px Medium') }] };
+      conditions: { size: ['Large'] }, ...identStyle('Button/L : 14px Medium', 'text-style') }] };
     const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     expect(b.typography?.['Button/L : 14px Medium']).toEqual({
       source_name: 'Button/L : 14px Medium',
@@ -1234,14 +1273,21 @@ describe('componentBrief typography', () => {
   it('records a bound style the foundation cannot resolve rather than dropping it', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: {}, ...ident('Missing/Style') }] };
+      conditions: {}, ...identStyle('Missing/Style', 'text-style') }] };
     const foundation: FoundationSpec =
       { fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [], effectStyles: [] };
     const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     // A style bound in the file but absent from this dump is unresolved, not
     // absent. Dropping it would make the brief claim the label has no
-    // typography at all.
-    expect(b.typography?.['Missing/Style']).toEqual({ unresolved: 'not in this file' });
+    // typography at all -- restated in the shared resolution vocabulary rather
+    // than an ad-hoc string, so this can never disagree with `tokens.used`.
+    expect(b.typography?.['Missing/Style']).toEqual({
+      resolution: {
+        status: 'not-in-snapshot',
+        reason: 'local to this file but absent from the foundation snapshot, which is read '
+          + 'once per session. Read the foundations again to pick it up.',
+      },
+    });
   });
 
   it('records an AUTO line height truthfully, with no fabricated value', () => {
@@ -1258,7 +1304,7 @@ describe('componentBrief typography', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: {}, ...ident('Heading/Auto') }] };
+      conditions: {}, ...identStyle('Heading/Auto', 'text-style') }] };
     const raw = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const entry = raw.typography?.['Heading/Auto'];
     // Truthful: no numeric value is invented for AUTO, and the raw object
@@ -1278,19 +1324,19 @@ describe('componentBrief typography', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * One `used[token]`, looked up directly off the raw (non-YAML) brief object,
- * for a single-token component bound to `token`. Raw rather than round-tripped
- * through YAML deliberately: several assertions below check `'key' in entry`,
- * which only proves a key is truly absent (not merely undefined-valued) when
- * read off the object the emitter itself will filter, not off the emitter's
- * own output.
+ * One `used` entry for `token`, looked up directly off the raw (non-YAML)
+ * brief object, for a single-token component bound to `token`. Raw rather
+ * than round-tripped through YAML deliberately: several assertions below
+ * check `'key' in entry`, which only proves a key is truly absent (not merely
+ * undefined-valued) when read off the object the emitter itself will filter,
+ * not off the emitter's own output.
  */
-function usedFor(foundation: FoundationSpec, token: string): Record<string, unknown> {
+function usedFor(foundation: FoundationSpec, token: string): UsedEntry {
   const spec: IntermediateSpec = { ...baseSpec(), tokens: [
     { part: 'Container', path: 'Container', property: 'fill', conditions: {}, ...ident(token) },
   ] };
   const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
-  return brief.tokens.used[token];
+  return usedEntry(brief.tokens.used, token)!;
 }
 
 /** One collection covering all six `FoundationValue` kinds `valueOf` switches
@@ -1335,12 +1381,15 @@ describe('componentBrief tokens.used flattening', () => {
 
   it('flattens an opaque color to a bare hex string under resolved', () => {
     const used = usedFor(foundation, 'color/opaque');
-    expect(used).toEqual({ resolved: '#112233', mode: 'Mode1' });
+    expect(used).toEqual({ token: 'color/opaque', kind: 'variable', resolved: '#112233', mode: 'Mode1' });
   });
 
   it('flattens a translucent color to a {hex, alpha} object under resolved', () => {
     const used = usedFor(foundation, 'color/alpha');
-    expect(used).toEqual({ resolved: { hex: '#112233', alpha: 0.5 }, mode: 'Mode1' });
+    expect(used).toEqual({
+      token: 'color/alpha', kind: 'variable',
+      resolved: { hex: '#112233', alpha: 0.5 }, mode: 'Mode1',
+    });
   });
 
   it('flattens a number to a machine-readable number under resolved, not a formatted string', () => {
@@ -1351,29 +1400,36 @@ describe('componentBrief tokens.used flattening', () => {
 
   it('flattens a string to a bare string under resolved', () => {
     const used = usedFor(foundation, 'string/font');
-    expect(used).toEqual({ resolved: 'Inter', mode: 'Mode1' });
+    expect(used).toEqual({ token: 'string/font', kind: 'variable', resolved: 'Inter', mode: 'Mode1' });
   });
 
   it('flattens a boolean to a bare boolean under resolved', () => {
     const used = usedFor(foundation, 'boolean/flag');
-    expect(used).toEqual({ resolved: true, mode: 'Mode1' });
+    expect(used).toEqual({ token: 'boolean/flag', kind: 'variable', resolved: true, mode: 'Mode1' });
   });
 
   it('flattens a resolvable alias to alias and resolved as siblings, no value wrapper', () => {
     const used = usedFor(foundation, 'alias/internal');
-    expect(used).toEqual({ alias: 'color/opaque', resolved: '#112233', mode: 'Mode1' });
+    expect(used).toEqual({
+      token: 'alias/internal', kind: 'variable',
+      alias: 'color/opaque', resolved: '#112233', mode: 'Mode1',
+    });
     expect('value' in used).toBe(false);
   });
 
   it('keeps the external flag on an unresolved external alias, and omits resolved rather than nulling it', () => {
     const used = usedFor(foundation, 'alias/external');
-    expect(used).toEqual({ alias: 'brand/blue', external: true, mode: 'Mode1' });
+    expect(used).toEqual({
+      token: 'alias/external', kind: 'variable', alias: 'brand/blue', external: true, mode: 'Mode1',
+    });
     expect('resolved' in used).toBe(false);
   });
 
   it('surfaces an unresolved value truthfully under resolved instead of dropping it', () => {
     const used = usedFor(foundation, 'unresolved/cycle');
-    expect(used).toEqual({ resolved: { unresolved: 'cycle' }, mode: 'Mode1' });
+    expect(used).toEqual({
+      token: 'unresolved/cycle', kind: 'variable', resolved: { unresolved: 'cycle' }, mode: 'Mode1',
+    });
   });
 });
 
@@ -1430,5 +1486,106 @@ describe('componentBrief validation', () => {
     const hit = brief.validation?.find((f) => f.id === 'geometry-token-mismatch');
     expect(hit?.message).toContain('4');
     expect(hit?.message).toContain('8');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tokens.used as a list -- a variable and a style can share one name
+// ---------------------------------------------------------------------------
+
+/** A minimal FoundationSpec holding one effect style named `name`, so the
+ *  "pointer, not a copy" test below has a real definition for `effects:` to
+ *  carry and `tokens.used` to point at. */
+function foundationWithEffectStyle(name: string): FoundationSpec {
+  return {
+    fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [],
+    effectStyles: [{
+      name, group: '', description: '',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 0.25 }, offset: { x: 0, y: 2 }, radius: 4,
+      }],
+    }],
+  };
+}
+
+describe('tokens.used as a list', () => {
+  const specWith = (refs: Array<Partial<TokenRule>>): IntermediateSpec => ({
+    ...baseSpec(),
+    tokens: refs.map((r) => ({
+      part: 'Container', path: 'Container', property: 'fills', conditions: {},
+      id: 'VariableID:1', name: 'color/brand', kind: 'variable' as const, remote: false, ...r,
+    })),
+  });
+
+  it('holds a variable and an effect style that share one name', () => {
+    const brief = componentBrief(specWith([
+      { id: 'VariableID:1', name: 'Elevation/1', kind: 'variable', property: 'fills' },
+      { id: 'S:1', name: 'Elevation/1', kind: 'effect-style', property: 'effects' },
+    ]), { generatedAt: AT }) as unknown as {
+      tokens: { used: Array<{ token: string; kind: string; resolution?: { status: string } }> };
+    };
+    // A map keyed by name cannot hold both, and a conditional key that only
+    // qualifies on collision is the kind of thing that bites later.
+    expect(brief.tokens.used).toHaveLength(2);
+    expect(brief.tokens.used.map((u) => u.kind).sort()).toEqual(['effect-style', 'variable']);
+  });
+
+  it('gives a paint style a kind and a stated status, never a bare {}', () => {
+    const brief = componentBrief(specWith([
+      { id: 'S:2', name: 'Brand/Card', kind: 'paint-style', property: 'fills' },
+    ]), { generatedAt: AT }) as unknown as {
+      tokens: { used: Array<{ token: string; kind: string; resolution: { status: string; reason: string } }> };
+    };
+    expect(brief.tokens.used[0]).toEqual({
+      token: 'Brand/Card', kind: 'paint-style',
+      resolution: { status: 'not-extracted', reason: 'paint style definitions are not extracted.' },
+    });
+  });
+
+  it('carries kind on every binding so it joins to used on (token, kind)', () => {
+    const brief = componentBrief(specWith([{ kind: 'effect-style', id: 'S:1', property: 'effects' }]),
+      { generatedAt: AT }) as unknown as {
+        tokens: { bindings: Array<{ token: string; kind: string }> };
+      };
+    expect(brief.tokens.bindings[0].kind).toBe('effect-style');
+  });
+
+  it('makes a style entry a pointer, never a copy of its definition', () => {
+    const foundation = foundationWithEffectStyle('Focused/Primary');
+    const brief = componentBrief(specWith([
+      { id: 'S:1', name: 'Focused/Primary', kind: 'effect-style', property: 'effects' },
+    ]), { generatedAt: AT, foundation }) as unknown as {
+      tokens: { used: Array<Record<string, unknown>> };
+      effects: Record<string, { source_name: string; layers: unknown[] }>;
+    };
+    // Inlining would give the brief two owners for the same values, which is the
+    // failure componentBrief already guards against for `unbound` vs `tokens`.
+    expect(brief.tokens.used[0]).toEqual({ token: 'Focused/Primary', kind: 'effect-style' });
+    expect(brief.effects['Focused/Primary'].source_name).toBe('Focused/Primary');
+    expect(brief.effects['Focused/Primary'].layers).toHaveLength(1);
+  });
+
+  it('cannot produce not-in-scope, because componentBrief is never given a narrowed spec', () => {
+    // actions.ts:512 always passes the unnarrowed currentFoundationSpec(). A
+    // status that cannot occur on a path does not belong in that path's
+    // vocabulary, so this asserts the absence rather than trusting the call site.
+    const foundation = oneCollection();
+    expect('narrowedTo' in foundation).toBe(false);
+    const brief = componentBrief(specWith([
+      { id: 'VariableID:99', name: 'color/new', kind: 'variable' },
+    ]), { generatedAt: AT, foundation }) as unknown as {
+      tokens: { used: Array<{ resolution?: { status: string } }> };
+    };
+    expect(brief.tokens.used[0].resolution?.status).toBe('not-in-snapshot');
+  });
+
+  it('calls a text style binding text-style, not typography', () => {
+    const brief = componentBrief(specWith([
+      { id: 'S:3', name: 'Paragraph/S', kind: 'text-style', property: 'typography' },
+    ]), { generatedAt: AT }) as unknown as { tokens: { used: Array<{ kind: string }> } };
+    // The style kinds share one vocabulary now: `typography` named the PROPERTY,
+    // not the kind of thing bound.
+    expect(brief.tokens.used[0].kind).toBe('text-style');
   });
 });

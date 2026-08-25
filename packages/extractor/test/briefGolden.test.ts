@@ -41,10 +41,11 @@ describe('component brief size', () => {
   it('lists each token once however many bindings reference it', () => {
     const spec = extract(root, { figmaFile: 'FILE1' });
     const brief = componentBrief(spec, { generatedAt: AT }) as unknown as {
-      tokens: { bindings: { token: string }[]; used: Record<string, unknown> };
+      tokens: { bindings: { token: string }[]; used: Array<{ token: string }> };
     };
     const referenced = new Set(brief.tokens.bindings.map((b) => b.token));
-    expect(Object.keys(brief.tokens.used).sort()).toEqual([...referenced].sort());
+    // `used` is a list now, not a map keyed by name -- see brief.ts's tokensOf.
+    expect(brief.tokens.used.map((u) => u.token).sort()).toEqual([...referenced].sort());
   });
 
   it('has no base or by_variant block', () => {
@@ -100,13 +101,12 @@ describe('phase A output stability', () => {
     const brief = componentBrief(extract(chip as SerializedNode, { figmaFile: 'FILE1' }),
       { generatedAt: AT }) as unknown as {
         tokens: {
-          used: Record<string, unknown> | Array<{ token: string }>;
+          used: Array<{ token: string }>;
           bindings: Array<{ path: string; property: string; token: string }>;
         };
       };
-    const used = Array.isArray(brief.tokens.used)
-      ? brief.tokens.used.map((u) => u.token)
-      : Object.keys(brief.tokens.used);
+    // `used` is a list now, not a map keyed by name -- see brief.ts's tokensOf.
+    const used = brief.tokens.used.map((u) => u.token);
     expect(used.sort()).toEqual(['Text Color/Body/Primary', 'font-size/fs-100']);
     // The literal rows, frozen. chip.json binds one text colour on three nodes
     // and one font size on one, and every one of those has to survive the

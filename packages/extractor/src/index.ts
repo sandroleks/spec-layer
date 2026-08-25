@@ -29,3 +29,4 @@ export * from './prose/client';
 export * from './yaml';
 export * from './brief';
 export * from './validate';
+export * from './resolution';

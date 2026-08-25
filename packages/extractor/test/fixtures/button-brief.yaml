@@ -25,34 +25,60 @@ layout:
     summary: horizontal, padding 10/24/10/24, gap 8
 tokens:
   used:
-    md.sys.color.primary: {}
-    md.sys.color.primary-hover: {}
-    md.sys.shape.corner.full: {}
-    md.sys.color.outline: {}
-    md.sys.color.on-primary: {}
+    - token: md.sys.color.primary
+      kind: variable
+      resolution:
+        status: no-foundation
+        reason: no foundation was read, so no definition could be looked up.
+    - token: md.sys.color.primary-hover
+      kind: variable
+      resolution:
+        status: no-foundation
+        reason: no foundation was read, so no definition could be looked up.
+    - token: md.sys.shape.corner.full
+      kind: variable
+      resolution:
+        status: no-foundation
+        reason: no foundation was read, so no definition could be looked up.
+    - token: md.sys.color.outline
+      kind: variable
+      resolution:
+        status: no-foundation
+        reason: no foundation was read, so no definition could be looked up.
+    - token: md.sys.color.on-primary
+      kind: variable
+      resolution:
+        status: no-foundation
+        reason: no foundation was read, so no definition could be looked up.
   bindings:
     - path: Container/container
       property: fill
       token: md.sys.color.primary
+      kind: variable
       when: { Style: [Filled], State: [Enabled] }
     - path: Container/container
       property: fill
       token: md.sys.color.primary-hover
+      kind: variable
       when: { State: [Hovered] }
     - path: Container/container
       property: border-radius
       token: md.sys.shape.corner.full
+      kind: variable
     - path: Container/container
       property: border
       token: md.sys.color.outline
+      kind: variable
       when: { Style: [Outlined] }
     - path: Container/label
       property: fill
       token: md.sys.color.on-primary
+      kind: variable
       when: { Style: [Filled] }
     - path: Container/label
       property: fill
       token: md.sys.color.primary
+      kind: variable
       when: { Style: [Outlined] }
 unbound:
   - path: Container/container
