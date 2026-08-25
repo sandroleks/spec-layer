@@ -1,3 +1,5 @@
+import type { EffectLayer } from './effects';
+
 /** A Figma node serialized by the plugin main thread. Pure JSON. */
 export interface SerializedNode {
   id: string;
@@ -23,6 +25,11 @@ export interface SerializedNode {
   hasUnboundGradient?: boolean;
   /** True when the node has effects but no effect style and no bound effect. */
   hasUnboundEffect?: boolean;
+  /** The node's own effect layers, present when the node has effects and no
+   *  effect style. `hasUnboundEffect` still reports the gap; this reports what
+   *  the gap is made of. Additive: excluded from specContentHash, same contract
+   *  as rawValues. */
+  effects?: EffectLayer[];
   /** Node opacity when it is not 1 (hand-set or bound). */
   opacity?: number;
   /** For INSTANCE nodes: the main component's name and key. */

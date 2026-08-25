@@ -1,4 +1,5 @@
 export * from './tree';
+export * from './effects';
 export * from './anatomy';
 export * from './props';
 export * from './naming';

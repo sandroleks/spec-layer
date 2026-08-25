@@ -1,4 +1,4 @@
-import type { SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo } from '@spec-layer/extractor';
+import type { SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo, RawEffect } from '@spec-layer/extractor';
 
 /**
  * Resolve the reference name/key for an instance's main component. When the main
@@ -77,7 +77,10 @@ interface RawNode {
   fillStyleId?: string;
   strokes?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }>;
   strokeStyleId?: string;
-  effects?: Array<{ type: string }>;
+  // The whole effect object, not just its type. Reading only `.length` is what
+  // made a shadow with a variable-bound colour and hardcoded radius, offset and
+  // spread count as fully bound while silently dropping every geometry value.
+  effects?: RawEffect[];
   opacity?: number;
   textStyleId?: string | symbol;
   effectStyleId?: string | symbol;
