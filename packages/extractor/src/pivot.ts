@@ -187,7 +187,7 @@ export function pivotColorPart(
     // disagreements collect every token rather than discarding any.
     type CellPick = { tokens: string[]; score: number };
     const cells = new Map<string, CellPick>();
-    const cellKey = (p: string, s: string, c: string) => `${p}\0${s}\0${c}`;
+    const cellKey = (p: string, s: string, c: string) => JSON.stringify([p, s, c]);
 
     for (const r of subRules) {
       const score = Object.keys(r.conditions).length;

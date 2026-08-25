@@ -266,27 +266,37 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * The identity key for one reference: what makes two bindings the same binding.
+ *
+ * `${kind}|${id}`, not the name. A name is a display string and two different
+ * Figma resources can share one; keying on it is what used to make a variable
+ * and an effect style called "Elevation/1" a single rule.
+ */
+const refKey = (r: RefIdentity): string => `${r.kind}|${r.id}`;
+
+/**
  * Marks "this part/property does not exist in this variant". Backfilled into
  * every grid so absence participates in difference-detection like any other
- * value. Never escapes extractTokens: sentinel rules are dropped when the
- * public shape is built.
+ * value. Never escapes extractTokens: absent rules are dropped when the public
+ * shape is built.
  *
- * The SOH prefix makes it unspellable as a Figma variable name. It deliberately
- * avoids the NUL that joins composite keys in this file (`${part}\0${property}`
- * and `tokens.join('\0')`), so the sentinel can never be mistaken for a
- * multi-token cell.
+ * A plain word rather than a control-character prefix, and safe because a real
+ * refKey ALWAYS contains a `|` and this never does. The previous version began
+ * with a raw SOH byte, which is exactly the class of invisible source that
+ * `npm run check:nul` exists to catch and that its NUL-only scan missed.
  */
-const ABSENT = 'ABSENT';
+const ABSENT_KEY = 'absent';
 
-/** One observed data point: in the variant identified by `combo`, the part/property carries `tokens`. */
+/** One observed data point: in the variant identified by `combo`, the
+ *  part/property carries the references named by `keys`. */
 interface Cell {
   combo: Record<string, string>;
-  tokens: string[]; // sorted
+  keys: string[]; // sorted refKeys, or exactly [ABSENT_KEY]
 }
 
-/** Work-in-progress rule: conditioned axes mapped to accepted value sets. */
+/** Work-in-progress rule: one reference plus conditioned axes mapped to accepted value sets. */
 interface DraftRule {
-  token: string;
+  key: string;
   values: Map<string, Set<string>>;
 }
 
@@ -325,57 +335,64 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
 
   // --- Collect the observation grid ----------------------------------------
   // Grouped by (path, property), NOT (part, property). `part` is unique only
-  // among SIBLINGS (siblingPartNames numbers duplicates within ONE parent's
-  // children), so two nodes with the same cleaned name in DIFFERENT subtrees
-  // ("header > label" and "footer > label") would still share a flat `part`
-  // key. `path`, threaded from walkParts, is the real, unambiguous identity —
-  // grouping on it is what keeps those two nodes as two separate rules, each
-  // carrying its own correct path, instead of merging their bindings into one
-  // cell and stamping a single (and for one of them, wrong) path onto both.
+  // among SIBLINGS, so two nodes with the same cleaned name in DIFFERENT
+  // subtrees ("header > label" and "footer > label") would still share a flat
+  // `part` key. `path`, threaded from walkParts, is the real identity.
+  //
+  // The composite key is JSON, not a separator-joined string. A separator has
+  // to be a character neither component can contain, which in this repo has
+  // meant a NUL or a SOH: invisible in a diff, silent under `grep`, and past
+  // git's binary-detection window. JSON.stringify escapes its own components,
+  // so the key is unambiguous AND readable in a debugger.
+  const gridKey = (path: string, property: string): string => JSON.stringify([path, property]);
+
   const cellsByPathProp = new Map<string, Cell[]>();
   const pathOrder: string[] = [];
   const propOrder = new Map<string, string[]>();
-  // Leaf part name for display, recorded per path. Every visit of a given
-  // path names the same node, so this is never overwritten with a different
-  // value the way a `part`-keyed map would be.
   const partByPath = new Map<string, string>();
-  /** Identity by NAME, for this task only. A name is still the grouping key
-   *  here, exactly as it was before, so two references sharing one still
-   *  collapse: that is Task 4's job, not this one's. */
-  const identityByName = new Map<string, RefIdentity>();
+  /** Every reference seen anywhere in this component, by refKey, so a rule can
+   *  be turned back into a full identity at emit time. Two refs sharing a
+   *  (kind, id) are the same Figma resource, so overwriting is a no-op.
+   *
+   *  This REPLACES `identityByName` from the previous task, which was keyed by
+   *  name and so could only ever hold one of two references that shared one.
+   *  Delete that map and its two uses. */
+  const refsByKey = new Map<string, RefIdentity>();
 
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
-    const variantTokens = new Map<string, Set<string>>(); // "path\0prop" -> tokens
+    // Outer key path-and-property, inner key refKey, so two refs sharing a name
+    // stay two refs all the way through.
+    const variantRefs = new Map<string, Map<string, RefIdentity>>();
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
       for (const ref of normalizeBindings(n.bindings ?? [])) {
-        const key = `${path}\0${ref.property}`;
+        const key = gridKey(path, ref.property);
         partByPath.set(path, part);
-        // Store the identity WITHOUT `property`: toTokenRule spreads this over a
-        // literal that already set `property` from the (path, property) cell it
-        // is emitting, so a `property` left on here would win the spread and
-        // stamp whichever property this name was last seen under onto the rule.
+        // Store the identity WITHOUT `property`: toTokenRule spreads this over
+        // a literal that already set `property` from the (path, property)
+        // cell it is emitting, so a `property` left on here would win the
+        // spread and stamp whichever property this ref was last seen under
+        // onto the rule.
         const { property: _property, ...identity } = ref;
-        identityByName.set(ref.name, identity);
-        let set = variantTokens.get(key);
-        if (!set) variantTokens.set(key, (set = new Set()));
-        set.add(ref.name);
+        let inner = variantRefs.get(key);
+        if (!inner) variantRefs.set(key, (inner = new Map()));
+        const rk = refKey(ref);
+        inner.set(rk, identity);
+        refsByKey.set(rk, identity);
       }
     }, true);
-    for (const [key, tokens] of variantTokens) {
+    for (const [key, inner] of variantRefs) {
       let cells = cellsByPathProp.get(key);
       if (!cells) {
         cellsByPathProp.set(key, (cells = []));
-        const nul = key.indexOf('\0');
-        const path = key.slice(0, nul);
-        const prop = key.slice(nul + 1);
+        const [path, prop] = JSON.parse(key) as [string, string];
         if (!propOrder.has(path)) {
           pathOrder.push(path);
           propOrder.set(path, []);
         }
         propOrder.get(path)!.push(prop);
       }
-      cells.push({ combo, tokens: [...tokens].sort() });
+      cells.push({ combo, keys: [...inner.keys()].sort() });
     }
   });
 
@@ -390,13 +407,16 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   for (const cells of cellsByPathProp.values()) {
     const present = new Set(cells.map((c) => c.combo));
     for (const combo of combos) {
-      if (!present.has(combo)) cells.push({ combo, tokens: [ABSENT] });
+      if (!present.has(combo)) cells.push({ combo, keys: [ABSENT_KEY] });
     }
   }
 
   // --- Minimize each (part, property) grid into rules -----------------------
-  const tokensKey = (c: Cell) => c.tokens.join('\0');
-  const projKey = (combo: Record<string, string>, axes: string[]) => axes.map((a) => combo[a]).join('\0');
+  // JSON, not a joined string, for the reason gridKey gives: an axis value is
+  // whatever a designer typed, so no separator character is safely unavailable.
+  const cellKey = (c: Cell) => JSON.stringify(c.keys);
+  const projKey = (combo: Record<string, string>, axes: string[]) =>
+    JSON.stringify(axes.map((a) => combo[a]));
 
   /** Axes whose value (or whose presence pattern) affects this property. */
   const relevantAxes = (cells: Cell[]): string[] => {
@@ -413,7 +433,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       const groups = new Map<string, string>();
       for (const c of cells) {
         const gk = projKey(c.combo, others);
-        const tk = tokensKey(c);
+        const tk = cellKey(c);
         const prev = groups.get(gk);
         if (prev === undefined) groups.set(gk, tk);
         else if (prev !== tk) {
@@ -429,7 +449,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     const m = new Map<string, string>();
     for (const c of cells) {
       const k = projKey(c.combo, axes);
-      const tk = tokensKey(c);
+      const tk = cellKey(c);
       const prev = m.get(k);
       if (prev === undefined) m.set(k, tk);
       else if (prev !== tk) return true;
@@ -448,7 +468,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     }
 
     // Backstop. If a conflict survives adding every axis, two variants parse to
-    // the SAME combo (hand-edited variant names do this). Unioning their token
+    // the SAME combo (hand-edited variant names do this). Unioning their key
     // sets below would invent a binding no variant carries, so fall back to
     // fully-specific conditions and keep only the first cell per combo.
     if (hasConflict(cells, relevant)) {
@@ -462,33 +482,32 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     }
 
     // Project cells onto the relevant axes.
-    const groups = new Map<string, { combo: Record<string, string>; tokens: Set<string> }>();
+    const groups = new Map<string, { combo: Record<string, string>; keys: Set<string> }>();
     for (const c of cells) {
       const k = projKey(c.combo, relevant);
       let g = groups.get(k);
-      if (!g) groups.set(k, (g = { combo: c.combo, tokens: new Set() }));
-      c.tokens.forEach((t) => g!.tokens.add(t));
+      if (!g) groups.set(k, (g = { combo: c.combo, keys: new Set() }));
+      c.keys.forEach((t) => g!.keys.add(t));
     }
 
-    // One candidate rule per (projected combo, token), singleton value sets.
+    // One candidate rule per (projected combo, key), singleton value sets.
     let rules: DraftRule[] = [];
     for (const g of groups.values()) {
-      for (const token of [...g.tokens].sort()) {
-        rules.push({ token, values: new Map(relevant.map((a) => [a, new Set([g.combo[a]])])) });
+      for (const key of [...g.keys].sort()) {
+        rules.push({ key, values: new Map(relevant.map((a) => [a, new Set([g.combo[a]])])) });
       }
     }
 
-    // Merge along each axis: rules with the same token and identical conditions
+    // Merge along each axis: rules with the same key and identical conditions
     // on every other axis combine their value lists.
     const conditionKey = (r: DraftRule, excludeAxis: string | null) =>
-      axisOrder
+      JSON.stringify(axisOrder
         .filter((a) => a !== excludeAxis)
-        .map((a) => (r.values.has(a) ? [...r.values.get(a)!].sort().join(',') : '*'))
-        .join('\0');
+        .map((a) => (r.values.has(a) ? [...r.values.get(a)!].sort() : null)));
     for (const axis of relevant) {
       const merged = new Map<string, DraftRule>();
       for (const r of rules) {
-        const k = `${r.token}\0${conditionKey(r, axis)}`;
+        const k = JSON.stringify([r.key, conditionKey(r, axis)]);
         const prev = merged.get(k);
         if (prev && prev.values.has(axis) && r.values.has(axis)) {
           r.values.get(axis)!.forEach((v) => prev.values.get(axis)!.add(v));
@@ -522,7 +541,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     // Dedupe, then remove rules subsumed by a strictly more general rule.
     const seen = new Map<string, DraftRule>();
     for (const r of rules) {
-      const k = `${r.token}\0${conditionKey(r, null)}`;
+      const k = JSON.stringify([r.key, conditionKey(r, null)]);
       if (!seen.has(k)) seen.set(k, r);
     }
     rules = [...seen.values()];
@@ -531,7 +550,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
         !rules.some(
           (other) =>
             other !== r &&
-            other.token === r.token &&
+            other.key === r.key &&
             other.values.size < r.values.size &&
             [...other.values.entries()].every(
               ([a, vs]) => r.values.has(a) && [...r.values.get(a)!].every((v) => vs.has(v)),
@@ -550,12 +569,21 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       if (!vs) continue;
       conditions[axis] = axisValues.get(axis)!.filter((v) => vs.has(v));
     }
-    // Spread the identity, not just the name: `name` is one of its fields, so
-    // the rule carries the id, kind and remote that resolution needs.
-    return { part: partByPath.get(path)!, path, property, conditions, ...identityByName.get(r.token)! };
+    return { part: partByPath.get(path)!, path, property, conditions, ...refsByKey.get(r.key)! };
   };
 
-  const ruleSortKey = (r: DraftRule): string => {
+  /**
+   * Sort fields, compared one at a time. Deliberately an array rather than a
+   * separator-joined string: a joined key makes ordering depend on how the
+   * separator sorts against whatever the previous field's last characters were,
+   * which is why the old version needed an unspellable NUL to be correct. Field
+   * by field, that question does not arise.
+   *
+   * Field 4 is the reference's NAME, so rules still sort the way a reader
+   * expects to see them. Field 5 is the refKey, which only ever breaks a tie
+   * between two references that genuinely share a name.
+   */
+  const ruleSortKey = (r: DraftRule): string[] => {
     const matchesDefault = [...r.values.entries()].every(([a, vs]) => vs.has(defaultCombo[a]));
     const axisBits = axisOrder
       .map((a, i) => {
@@ -569,20 +597,33 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       })
       .filter(Boolean)
       .join('|');
-    return `${matchesDefault ? 0 : 1}\0${String(r.values.size).padStart(3, '0')}\0${axisBits}\0${r.token}`;
+    return [
+      matchesDefault ? '0' : '1',
+      String(r.values.size).padStart(3, '0'),
+      axisBits,
+      // An absent rule has no reference and sorts first, exactly as the old
+      // control-character sentinel did. It is dropped below either way.
+      refsByKey.get(r.key)?.name ?? '',
+      r.key,
+    ];
+  };
+
+  const compareKeys = (a: string[], b: string[]): number => {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] < b[i]) return -1;
+      if (a[i] > b[i]) return 1;
+    }
+    return 0;
   };
 
   const out: TokenRule[] = [];
   for (const path of pathOrder) {
     for (const prop of propOrder.get(path)!) {
-      const cells = cellsByPathProp.get(`${path}\0${prop}`)!;
+      const cells = cellsByPathProp.get(gridKey(path, prop))!;
       const rules = buildRules(cells);
-      rules.sort((a, b) => {
-        const ka = ruleSortKey(a), kb = ruleSortKey(b);
-        return ka < kb ? -1 : ka > kb ? 1 : 0;
-      });
+      rules.sort((a, b) => compareKeys(ruleSortKey(a), ruleSortKey(b)));
       for (const r of rules) {
-        if (r.token === ABSENT) continue;
+        if (r.key === ABSENT_KEY) continue;
         out.push(toTokenRule(path, prop, r));
       }
     }

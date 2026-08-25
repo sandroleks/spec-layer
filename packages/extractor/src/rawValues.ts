@@ -21,7 +21,7 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
   const out: RawValue[] = [];
   const seen = new Set<string>();
   const push = (part: string, property: string, value: string): void => {
-    const k = `${part}\0${property}`;
+    const k = JSON.stringify([part, property]);
     if (seen.has(k)) return;
     seen.add(k);
     out.push({ part, property, value });

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { extractTokens, extractGaps, formatConditions } from '../src/tokens';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
@@ -494,12 +495,13 @@ describe('extractGaps coverage', () => {
     expect(gaps).toHaveLength(2);
   });
 
-  // Regression (code review, Task 3): pushGap's dedupe key was `${part}\0${issue}`,
-  // so two nodes in DIFFERENT subtrees with the same cleaned leaf name ("header
-  // > label" and "footer > label") shared a key. Unlike the tokens.ts defect,
-  // this didn't corrupt a path — dedup runs BEFORE the push, so the second
-  // node's gap was silently dropped rather than merged. Keying on (path, issue)
-  // fixes both: two gaps are reported, each with its own correct path.
+  // Regression (code review, Task 3): pushGap's dedupe key joined part and
+  // issue with a NUL separator, so two nodes in DIFFERENT subtrees with the
+  // same cleaned leaf name ("header > label" and "footer > label") shared a
+  // key. Unlike the tokens.ts defect, this didn't corrupt a path — dedup runs
+  // BEFORE the push, so the second node's gap was silently dropped rather than
+  // merged. Keying on (path, issue) fixes both: two gaps are reported, each
+  // with its own correct path.
   it('reports the same issue on two same-named parts in different subtrees as two gaps', () => {
     const root: SerializedNode = {
       id: 'root', name: 'Root', type: 'COMPONENT', visible: true,
@@ -709,5 +711,56 @@ describe('ref identity', () => {
     // `in`, not an undefined comparison: a leftover `token: undefined` would
     // still satisfy every consumer that reads it and silently emit nothing.
     expect('token' in extractTokens(root)[0]).toBe(false);
+  });
+});
+
+describe('identity through minimization', () => {
+  const base = (bindings: TokenRef[]): SerializedNode => ({
+    id: '1:1', name: 'Card', type: 'COMPONENT', visible: true, bindings,
+  } as SerializedNode);
+
+  it('keeps a variable and an effect style that share one name as two rules', () => {
+    const rules = extractTokens(base([
+      { property: 'fills', id: 'VariableID:1', name: 'Elevation/1', kind: 'variable', remote: false },
+      { property: 'effects', id: 'S:effect,1:1', name: 'Elevation/1', kind: 'effect-style', remote: false },
+    ]));
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.kind).sort()).toEqual(['effect-style', 'variable']);
+  });
+
+  it('keeps two variables that share one name as two rules', () => {
+    const rules = extractTokens(base([
+      { property: 'fills', id: 'VariableID:1', name: 'brand', kind: 'variable', remote: false },
+      { property: 'strokes', id: 'VariableID:2', name: 'brand', kind: 'variable', remote: false },
+    ]));
+    expect(rules).toHaveLength(2);
+    expect(new Set(rules.map((r) => r.id)).size).toBe(2);
+  });
+
+  it('collapses one variable bound twice on the same property to one rule', () => {
+    const rules = extractTokens(base([
+      { property: 'fills', id: 'VariableID:1', name: 'brand', kind: 'variable', remote: false },
+      { property: 'fills', id: 'VariableID:1', name: 'brand', kind: 'variable', remote: false },
+    ]));
+    expect(rules).toHaveLength(1);
+  });
+});
+
+describe('composite keys', () => {
+  // Built from char codes, never written as literals. A test that spells the
+  // sequence it forbids puts that sequence into a tracked source file, and
+  // check:nul would then fail on the test rather than on the defect.
+  const BACKSLASH_ZERO = String.fromCharCode(92) + '0';
+  const CONTROL = new RegExp('[' + "\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f" + ']');
+
+  it('uses no control character in any key these modules build', () => {
+    // Read the source, not the behaviour: a control character in a key is
+    // invisible in a diff, survives grep without -P, and sat past git's
+    // binary-detection window every time it reached this repo.
+    for (const file of ['tokens.ts', 'rawValues.ts', 'pivot.ts', 'validate.ts']) {
+      const src = readFileSync(`packages/extractor/src/${file}`, 'utf8');
+      expect(CONTROL.test(src), `${file} holds a raw control character`).toBe(false);
+      expect(src.includes(BACKSLASH_ZERO), `${file} holds a NUL escape`).toBe(false);
+    }
   });
 });

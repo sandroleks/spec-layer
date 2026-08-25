@@ -217,7 +217,7 @@ export function validate(
   // reported path.
   const byTarget = new Map<string, { path: string; property: string; tokens: Set<string> }>();
   for (const t of spec.tokens) {
-    const key = `${t.path}${t.property}${JSON.stringify(t.conditions)}`;
+    const key = JSON.stringify([t.path, t.property, t.conditions]);
     const entry = byTarget.get(key) ?? { path: t.path, property: t.property, tokens: new Set<string>() };
     entry.tokens.add(t.name);
     byTarget.set(key, entry);
