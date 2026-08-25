@@ -61,3 +61,20 @@ it('is unchanged by the Figma file name', () => {
   expect(specContentHash(named)).toBe(BUTTON_HASH);       // and does not enter the hash
   expect(specContentHash(renamed)).toBe(BUTTON_HASH);     // so a rename is not drift
 });
+
+/** Cut on 2026-08-25 before Phase A of the brief-resolution-fidelity plan, from
+ *  the tree as it stood at BRIEF_VERSION 3. Its whole job is to fail loudly if
+ *  the `token` to `name` rename, the ref-keyed minimization, or the composite-key
+ *  change moves the drift baseline. Same rule as BUTTON_HASH above: only a task
+ *  that says it re-cuts the baseline may change it, and no task in this plan does. */
+const CHIP_HASH = 'f2f7e6432f44b8405f31a9094a7494bdf89f68483a52dedd222a0d48e006d12b';
+
+it('is unchanged across the whole of Phase A, on both fixtures', () => {
+  for (const [file, expected] of [
+    ['packages/extractor/test/fixtures/button.json', BUTTON_HASH],
+    ['packages/extractor/test/fixtures/chip.json', CHIP_HASH],
+  ] as const) {
+    const node = JSON.parse(readFileSync(file, 'utf8'));
+    expect(specContentHash(extract(node, { figmaFile: 'FILE1' }))).toBe(expected);
+  }
+});

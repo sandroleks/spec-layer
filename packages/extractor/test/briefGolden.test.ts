@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { componentBrief, extract } from '../src/index';
 import type { SerializedNode } from '../src/tree';
 import button from './fixtures/button.json';
+import chip from './fixtures/chip.json';
 import { GOLDEN_PATH, renderButtonBrief } from './fixtures/buttonBrief';
 
 const root = button as SerializedNode;
@@ -87,5 +88,37 @@ describe('generated-content boundary', () => {
     }
     expect(JSON.stringify(brief.guidelines)).toContain('GENERATED_MARKER_A');
     expect(JSON.stringify(brief.guidelines)).toContain('GENERATED_MARKER_B');
+  });
+});
+
+describe('phase A output stability', () => {
+  // Frozen here rather than in a golden file because the point is not the whole
+  // document (button-brief.yaml already covers that) but that these exact token
+  // names still reach these exact keys after `TokenRef.token` becomes
+  // `TokenRef.name` and minimization starts keying on (kind, id).
+  it('emits the same token names and binding rows for chip.json', () => {
+    const brief = componentBrief(extract(chip as SerializedNode, { figmaFile: 'FILE1' }),
+      { generatedAt: AT }) as unknown as {
+        tokens: {
+          used: Record<string, unknown> | Array<{ token: string }>;
+          bindings: Array<{ path: string; property: string; token: string }>;
+        };
+      };
+    const used = Array.isArray(brief.tokens.used)
+      ? brief.tokens.used.map((u) => u.token)
+      : Object.keys(brief.tokens.used);
+    expect(used.sort()).toEqual(['Text Color/Body/Primary', 'font-size/fs-100']);
+    // The literal rows, frozen. chip.json binds one text colour on three nodes
+    // and one font size on one, and every one of those has to survive the
+    // rename and the ref-keyed minimization landing on the same path and
+    // property it does today. `icon` and `icon (2)` are sibling-disambiguated
+    // names, which is exactly the pair a name-keyed grouping used to merge.
+    expect(brief.tokens.bindings.map((b) => `${b.path} ${b.property} ${b.token}`).sort())
+      .toEqual([
+        'Container/Contents/Label fill Text Color/Body/Primary',
+        'Container/Contents/Label font-size font-size/fs-100',
+        'Container/Contents/icon (2) fill Text Color/Body/Primary',
+        'Container/Contents/icon fill Text Color/Body/Primary',
+      ]);
   });
 });

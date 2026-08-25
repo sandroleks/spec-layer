@@ -344,3 +344,20 @@ describe('foundationContentHash — part numbering is covered', () => {
       .not.toBe(foundationContentHash(buildFoundation(before), scope));
   });
 });
+
+it('is unchanged by FoundationSpec fields that reach no rendered row', () => {
+  const spec = buildFoundation(dump());
+  const before = foundationContentHash(spec, SEMANTIC);
+
+  // Cast, not a typed literal: this test has to keep working while the fields
+  // below are still being added, and it must fail if unitContent ever starts
+  // spreading the spec instead of naming the rows it renders.
+  const widened = {
+    ...spec,
+    effectStyles: [{ id: 'S:1', name: 'Focused/Primary', description: '', group: 'Focused', effects: [] }],
+    narrowedTo: { target: 'collection', collectionId: 'c1' },
+    unavailable: ['effectStyles'],
+  } as unknown as typeof spec;
+
+  expect(foundationContentHash(widened, SEMANTIC)).toBe(before);
+});
