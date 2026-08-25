@@ -891,6 +891,77 @@ describe('componentBrief', () => {
 });
 
 // ---------------------------------------------------------------------------
+// componentBrief effects_inline
+// ---------------------------------------------------------------------------
+
+describe('componentBrief effects_inline', () => {
+  // The identity a bound effect field carries is a full RefIdentity, id and
+  // all -- the same shape a node-level fill/stroke binding carries. Built by
+  // hand rather than through `ident` so the id and collectionId look exactly
+  // like the ones the finding this test guards against showed leaking.
+  const colorBinding: RefIdentity = {
+    id: 'VariableID:5', name: 'color/shadow/default', kind: 'variable',
+    remote: false, collectionId: 'VariableCollectionId:1',
+  };
+
+  const spec: IntermediateSpec = {
+    ...SPEC,
+    nodeEffects: [{
+      part: 'Container',
+      path: 'Container',
+      effects: [{
+        type: 'drop-shadow',
+        visible: true,
+        blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 0.08 },
+        offset: { x: 0, y: 2 },
+        radius: 4,
+        spread: 1,
+        bindings: { color: colorBinding },
+      }],
+    }],
+  };
+
+  it('projects a bound field to its token NAME, dropping every identity field', () => {
+    const raw = componentBrief(spec, { generatedAt: AT }) as Record<string, unknown>;
+    // Deep equality, not a spot check on `color`: a shape drift that let ANY
+    // extra key (id, remote, collectionId, or a nested object in place of the
+    // bare name) back into `bindings` fails this immediately, which a test
+    // that only asserted `bindings.color === 'color/shadow/default'` would
+    // not -- that assertion is satisfied even if a sibling `id` key rides
+    // along unnoticed.
+    expect(raw.effects_inline).toEqual([{
+      path: 'Container',
+      layers: [{
+        type: 'drop-shadow',
+        visible: true,
+        blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 0.08 },
+        offset: { x: 0, y: 2 },
+        // Geometry survives untouched -- this is the whole point of the
+        // block, and the fix must not collapse it while closing the leak.
+        radius: 4,
+        spread: 1,
+        bindings: { color: 'color/shadow/default' },
+      }],
+    }]);
+  });
+
+  it('never puts the Figma id, remote flag or collection id on the wire', () => {
+    const y = toYaml(componentBrief(spec, { generatedAt: AT }));
+    expect(y).toContain('color/shadow/default');
+    // Substring checks on the serialized YAML, not just the raw object: this
+    // is the shape that actually reaches the clipboard, and the finding this
+    // test guards against was specifically about what an agent reads there.
+    expect(y).not.toContain('VariableID:5');
+    expect(y).not.toContain('VariableCollectionId:1');
+    expect(y).not.toMatch(/\bid:\s*VariableID/);
+    expect(y).not.toMatch(/\bremote:/);
+    expect(y).not.toMatch(/\bcollectionId:/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // componentBrief tokens
 // ---------------------------------------------------------------------------
 

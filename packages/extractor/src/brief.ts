@@ -10,6 +10,7 @@
 
 import type { FoundationSpec, FoundationValue, FoundationVariable } from './foundation';
 import { roundN } from './effects';
+import type { EffectLayer } from './effects';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
@@ -132,6 +133,41 @@ function tokenOf(variable: FoundationVariable, modeName: (id: string) => string 
   };
 }
 
+/**
+ * Effect layers, projected for emission: every field-level binding becomes
+ * its token NAME instead of the `RefIdentity` Figma gave it. `RefIdentity.id`
+ * (tree.ts) is explicit that the brief's rule is that internal ids stay
+ * inside, and `remote`/`collectionId` are provenance a consumer acting on the
+ * brief has no use for -- so a `bindings.<field>` entry projects down to a
+ * bare string, matching this block's own design-spec example.
+ *
+ * A bare name, not `{ token, kind }` the way `tokens.bindings` (see
+ * `tokensOf`) does it. `tokens.bindings` carries `kind` alongside `token`
+ * because its `token` field can name a variable OR a style, and two
+ * references that share a name are only safely joined back to `tokens.used`
+ * by pairing name with kind. An effect field's binding has no such
+ * ambiguity: `EffectField` (effects.ts) is defined as exactly
+ * `VariableBindableEffectField`, and every caller that builds `bindings`
+ * (`serialize.ts`) resolves each id through `resolver.variable` alone -- a
+ * `bindings.<field>` entry is always a variable and never a style. Restating
+ * `kind: 'variable'` on every single entry here would be constant noise, not
+ * information a consumer can act on.
+ *
+ * Every non-binding field -- geometry, colour, `visible`, `blendMode`,
+ * `figma_type` on an unknown layer -- passes through untouched; only the
+ * `bindings` key, when present, is rewritten.
+ */
+function projectEffectLayers(layers: EffectLayer[]): YamlValue {
+  return layers.map((layer) => {
+    const raw = layer as unknown as Record<string, unknown>;
+    const bindings = raw.bindings as Record<string, RefIdentity> | undefined;
+    if (!bindings) return layer as unknown as YamlValue;
+    const projected: Record<string, string> = {};
+    for (const [field, ref] of Object.entries(bindings)) projected[field] = ref.name;
+    return { ...raw, bindings: projected } as unknown as YamlValue;
+  }) as unknown as YamlValue;
+}
+
 export interface FoundationBriefOptions {
   generatedAt: string;
   /**
@@ -226,7 +262,12 @@ export function foundationBrief(
       ? { effect_styles: foundation.effectStyles.map((s) => ({
           name: s.name,
           description: s.description || undefined,
-          effects: s.effects as unknown as YamlValue,
+          // Style layers are never resolved with bindings today (see
+          // RawEffectStyle in foundation.ts), so this is a no-op in practice --
+          // routed through the same projection as effects_inline anyway, since
+          // the type still allows a `bindings` key and the id-leak rule admits
+          // no exceptions.
+          effects: projectEffectLayers(s.effects),
         })) }
       : {}),
     ...(hasDescriptions
@@ -690,7 +731,11 @@ function effectsOf(
     out[name] = {
       source_name: style.name,
       description: style.description || undefined,
-      layers: style.effects as unknown as YamlValue,
+      // Same source as foundationBrief's effect_styles (foundation.effectStyles),
+      // so bindings is never populated here either -- projected anyway for the
+      // same reason: the type allows it, and the id-leak rule admits no
+      // exceptions.
+      layers: projectEffectLayers(style.effects),
     };
   }
   return out;
@@ -736,8 +781,11 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   const effectsInline = spec.nodeEffects.map((n) => ({
     path: n.path,
     // Inline here, unlike the style entries above, because a node-level effect
-    // has no style name to point at.
-    layers: n.effects as unknown as YamlValue,
+    // has no style name to point at. Projected, not cast straight through:
+    // a bound field carries a full RefIdentity (id, name, kind, remote,
+    // collectionId) and only `name` is fit to leave the file -- see
+    // projectEffectLayers.
+    layers: projectEffectLayers(n.effects),
   }));
   const guidelines = guidelinesOf(opts.prose);
   // The geometry-token-mismatch finding needs each bound token's resolved
