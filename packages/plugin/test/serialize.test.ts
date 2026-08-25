@@ -451,4 +451,20 @@ describe('inline node effects', () => {
     // for the same values.
     expect('effects' in out).toBe(false);
   });
+
+  it('degrades a malformed effect to unknown instead of losing the whole node', async () => {
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    // Missing color/offset/radius: effectLayerOf's shadow branch throws
+    // reading it. serializeNode recurses through Promise.all, so an
+    // unguarded throw here would reject the whole tree and return an empty
+    // component for one bad layer.
+    const out = await serializeNode({
+      id: '1', name: 'N', type: 'FRAME', opacity: 0.5,
+      effects: [{ type: 'DROP_SHADOW' }],
+    } as never, r);
+    expect(out.effects).toEqual([{ type: 'unknown', figma_type: 'DROP_SHADOW' }]);
+    // The rest of the node's data survives the degraded layer.
+    expect(out.opacity).toBe(0.5);
+    expect(out.name).toBe('N');
+  });
 });

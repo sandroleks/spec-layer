@@ -220,7 +220,15 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
         const v = await resolver.variable(id);
         if (v) bindings[field] = variableRef(v);
       }
-      effects.push(effectLayerOf(raw, bindings));
+      try {
+        effects.push(effectLayerOf(raw, bindings));
+      } catch {
+        // A shape we cannot read is reported as unmodelled, exactly as an
+        // unrecognised `type` already is. serializeNode recurses through
+        // Promise.all, so letting this throw would reject the whole tree and
+        // return an empty component for one bad layer.
+        effects.push({ type: 'unknown', figma_type: raw.type });
+      }
     }
   }
 

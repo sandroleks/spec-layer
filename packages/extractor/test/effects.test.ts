@@ -144,4 +144,22 @@ describe('extractNodeEffects', () => {
       { part: 'Wrapper', path: 'Card/Wrapper', effects: root.children![0].effects },
     ]);
   });
+
+  it('includes a hidden subtree, matching extractGaps walk exactly', () => {
+    // extractGaps walks with hidden subtrees INCLUDED (no skipInvisible), and
+    // a later task joins effects_inline against gaps on (path, property). A
+    // walk that skipped invisible nodes here would silently drop rows that
+    // gaps still reports, so this fixture is deliberately visible: false.
+    const root = {
+      id: '1:1', name: 'Card', type: 'COMPONENT', visible: true,
+      children: [{
+        id: '1:2', name: 'Hidden', type: 'FRAME', visible: false,
+        effects: [{ type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#000000', alpha: 0.08 }, offset: { x: 0, y: 2 }, radius: 4, spread: 0 }],
+      }],
+    } as unknown as SerializedNode;
+    expect(extractNodeEffects(root)).toEqual([
+      { part: 'Hidden', path: 'Card/Hidden', effects: root.children![0].effects },
+    ]);
+  });
 });
