@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { serializeNode, mainComponentRef } from '../src/serialize';
 
 const resolver = {
-  variableName: async (id: string) => (({ 'VariableID:1': 'md.sys.color.primary' } as Record<string,string>)[id] ?? null),
-  styleName: async (_id: string) => null,
+  variable: async (id: string) =>
+    (({ 'VariableID:1': 'md.sys.color.primary' } as Record<string,string>)[id]
+      ? { id, name: 'md.sys.color.primary', remote: false, collectionId: 'VariableCollectionId:1' }
+      : null),
+  style: async (_id: string) => null,
   mainComponent: async (_node: unknown) => null,
 };
 
@@ -47,7 +50,7 @@ describe('serializeNode', () => {
   it('resolves fillStyleId to a binding', async () => {
     const styledResolver = {
       ...resolver,
-      styleName: async (_id: string) => 'color/primary',
+      style: async (id: string) => ({ id, name: 'color/primary', remote: false, kind: 'paint-style' as const }),
     };
     const styled = { ...mockRect, boundVariables: {}, fillStyleId: 'S:abc,1:1' };
     const out = await serializeNode(styled as never, styledResolver);
@@ -56,14 +59,20 @@ describe('serializeNode', () => {
   });
 
   it('resolves textStyleId to a typography binding', async () => {
-    const r = { ...resolver, styleName: async () => 'md.sys.typescale.label-large' };
+    const r = {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'md.sys.typescale.label-large', remote: false, kind: 'text-style' as const }),
+    };
     const text = { id: '3:1', name: 'label', type: 'TEXT', visible: true, textStyleId: 'S:txt,1:1' };
     const out = await serializeNode(text as never, r);
     expect(out.bindings).toContainEqual({ property: 'typography', token: 'md.sys.typescale.label-large' });
   });
 
   it('resolves effectStyleId to an effects binding', async () => {
-    const r = { ...resolver, styleName: async () => 'md.sys.elevation.level1' };
+    const r = {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'md.sys.elevation.level1', remote: false, kind: 'effect-style' as const }),
+    };
     const card = { id: '3:2', name: 'card', type: 'FRAME', visible: true, effectStyleId: 'S:fx,1:1' };
     const out = await serializeNode(card as never, r);
     expect(out.bindings).toContainEqual({ property: 'effects', token: 'md.sys.elevation.level1' });
@@ -72,8 +81,10 @@ describe('serializeNode', () => {
   it('resolves ALL entries of array-valued bound variables', async () => {
     const r = {
       ...resolver,
-      variableName: async (id: string) =>
-        (({ 'V:1': 'color/overlay', 'V:2': 'color/base' } as Record<string, string>)[id] ?? null),
+      variable: async (id: string) => {
+        const name = ({ 'V:1': 'color/overlay', 'V:2': 'color/base' } as Record<string, string>)[id];
+        return name ? { id, name, remote: false, collectionId: 'VariableCollectionId:1' } : null;
+      },
     };
     const multi = { ...mockRect, boundVariables: { fills: [{ id: 'V:1' }, { id: 'V:2' }] } };
     const out = await serializeNode(multi as never, r);
@@ -110,7 +121,10 @@ describe('serializeNode', () => {
   });
 
   it('skips mixed (symbol) effectStyleId without calling the resolver', async () => {
-    const r = { ...resolver, styleName: async () => 'should-not-appear' };
+    const r = {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'should-not-appear', remote: false, kind: 'effect-style' as const }),
+    };
     const mixed = { id: '3:5', name: 'card', type: 'FRAME', visible: true, effectStyleId: Symbol('figma.mixed') };
     const out = await serializeNode(mixed as never, r);
     expect(out.bindings ?? []).not.toContainEqual(expect.objectContaining({ property: 'effects' }));
@@ -118,7 +132,7 @@ describe('serializeNode', () => {
 });
 
 describe('unbound paint detection', () => {
-  const resolver = { variableName: async () => null, styleName: async () => null, mainComponent: async () => null };
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
 
   it('flags a hardcoded stroke and records its hex', async () => {
     const n = await serializeNode({
@@ -134,7 +148,10 @@ describe('unbound paint detection', () => {
       id: '1', name: 'Box', type: 'FRAME',
       strokes: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
       boundVariables: { strokes: [{ id: 'V:1' }] },
-    } as never, { ...resolver, variableName: async () => 'border/default' });
+    } as never, {
+      ...resolver,
+      variable: async (id: string) => ({ id, name: 'border/default', remote: false, collectionId: 'VariableCollectionId:1' }),
+    });
     expect(n.hasUnboundStroke).toBeUndefined();
   });
 
@@ -143,7 +160,10 @@ describe('unbound paint detection', () => {
       id: '1', name: 'Box', type: 'FRAME',
       strokes: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
       strokeStyleId: 'S:border,1:1',
-    } as never, { ...resolver, styleName: async () => 'border/default' });
+    } as never, {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'border/default', remote: false, kind: 'paint-style' as const }),
+    });
     expect(n.hasUnboundStroke).toBeUndefined();
   });
 
@@ -159,7 +179,10 @@ describe('unbound paint detection', () => {
       id: '1', name: 'Box', type: 'FRAME',
       fills: [{ type: 'GRADIENT_LINEAR' }],
       fillStyleId: 'S:fill,1:1',
-    } as never, { ...resolver, styleName: async () => 'gradient/brand' });
+    } as never, {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'gradient/brand', remote: false, kind: 'paint-style' as const }),
+    });
     expect(n.hasUnboundGradient).toBeUndefined();
   });
 
@@ -175,7 +198,10 @@ describe('unbound paint detection', () => {
       id: '1', name: 'Box', type: 'FRAME',
       effects: [{ type: 'DROP_SHADOW' }],
       boundVariables: { effects: [{ id: 'V:1' }] },
-    } as never, { ...resolver, variableName: async () => 'elevation/level1' });
+    } as never, {
+      ...resolver,
+      variable: async (id: string) => ({ id, name: 'elevation/level1', remote: false, collectionId: 'VariableCollectionId:1' }),
+    });
     expect(n.hasUnboundEffect).toBeUndefined();
   });
 
@@ -184,7 +210,10 @@ describe('unbound paint detection', () => {
       id: '1', name: 'Box', type: 'FRAME',
       effects: [{ type: 'DROP_SHADOW' }],
       effectStyleId: 'S:fx,1:1',
-    } as never, { ...resolver, styleName: async () => 'md.sys.elevation.level1' });
+    } as never, {
+      ...resolver,
+      style: async (id: string) => ({ id, name: 'md.sys.elevation.level1', remote: false, kind: 'effect-style' as const }),
+    });
     expect(n.hasUnboundEffect).toBeUndefined();
   });
 
@@ -234,7 +263,7 @@ describe('mainComponentRef', () => {
 });
 
 describe('text metrics and fill alpha', () => {
-  const resolver = { variableName: async () => null, styleName: async () => null, mainComponent: async () => null };
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
 
   it('records font size and weight for a TEXT node', async () => {
     const n = await serializeNode({
@@ -279,5 +308,49 @@ describe('text metrics and fill alpha', () => {
       id: '2', name: 'box', type: 'FRAME', opacity: 1,
     } as never, resolver);
     expect(opaque.opacity).toBeUndefined();
+  });
+});
+
+describe('NodeResolver identity', () => {
+  it('carries remote from Figma rather than inferring it from a lookup', async () => {
+    const r = {
+      variable: async (id: string) => ({
+        id, name: 'color/brand', remote: true, collectionId: 'VariableCollectionId:9',
+      }),
+      style: async () => null,
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never,
+      r,
+    );
+    // The name still reaches `token` here: TokenRef does not widen until the
+    // next task, so this task is output-identical by construction.
+    expect(out.bindings).toEqual([{ property: 'fills', token: 'color/brand' }]);
+  });
+
+  it('asks the style for its own kind instead of guessing from the property', async () => {
+    const seen: string[] = [];
+    const r = {
+      variable: async () => null,
+      style: async (id: string) => {
+        seen.push(id);
+        return { id, name: 'Focused/Primary', remote: false, kind: 'effect-style' as const };
+      },
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', effectStyleId: 'S:effect,1:1' } as never, r,
+    );
+    expect(seen).toEqual(['S:effect,1:1']);
+    expect(out.bindings).toEqual([{ property: 'effects', token: 'Focused/Primary' }]);
+  });
+
+  it('drops a binding whose resolver returns null, exactly as before', async () => {
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', fillStyleId: 'S:paint,1:1' } as never, r,
+    );
+    expect('bindings' in out).toBe(false);
   });
 });

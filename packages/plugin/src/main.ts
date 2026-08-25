@@ -1,6 +1,6 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
-import type { NodeResolver } from './serialize';
+import type { NodeResolver, ResolvedStyle } from './serialize';
 import type { MainToUi, UiToMain, LibraryEntry } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
@@ -37,19 +37,32 @@ let brandLogo: string | null = null;
 // ---------------------------------------------------------------------------
 // NodeResolver — wraps async Figma APIs
 // ---------------------------------------------------------------------------
+/** BaseStyle.type is a closed union; an unrecognized value cannot occur today
+ *  and is dropped rather than guessed at, the same way a null style already is. */
+const STYLE_KINDS: Record<string, ResolvedStyle['kind']> = {
+  PAINT: 'paint-style', TEXT: 'text-style', EFFECT: 'effect-style', GRID: 'grid-style',
+};
+
 const resolver: NodeResolver = {
-  async variableName(id) {
+  async variable(id) {
     try {
       const v = await figma.variables.getVariableByIdAsync(id);
-      return v?.name ?? null;
+      if (!v) return null;
+      // Variable.remote is Figma's own answer about whether this came from a
+      // library. Carrying it is what lets the brief say `external` as a fact
+      // instead of inferring it from a lookup that found nothing.
+      return { id: v.id, name: v.name, remote: v.remote, collectionId: v.variableCollectionId };
     } catch {
       return null;
     }
   },
-  async styleName(id) {
+  async style(id) {
     try {
       const s = await figma.getStyleByIdAsync(id);
-      return s?.name ?? null;
+      if (!s) return null;
+      const kind = STYLE_KINDS[s.type];
+      // PublishableMixin.remote, inherited by every style.
+      return kind ? { id: s.id, name: s.name, remote: s.remote, kind } : null;
     } catch {
       return null;
     }

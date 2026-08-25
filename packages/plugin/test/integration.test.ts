@@ -31,8 +31,12 @@ const mockButtonSet = {
 };
 
 const resolver: NodeResolver = {
-  variableName: async (id) => (({ 'VAR:1': 'md.sys.color.primary', 'VAR:2': 'md.sys.color.on-primary' } as Record<string,string>)[id] ?? null),
-  styleName: async (id) => (id === 'S:type,1:1' ? 'md.sys.typescale.label-large' : null),
+  variable: async (id) => {
+    const name = ({ 'VAR:1': 'md.sys.color.primary', 'VAR:2': 'md.sys.color.on-primary' } as Record<string,string>)[id];
+    return name ? { id, name, remote: false, collectionId: 'VariableCollectionId:1' } : null;
+  },
+  style: async (id) =>
+    (id === 'S:type,1:1' ? { id, name: 'md.sys.typescale.label-large', remote: false, kind: 'text-style' as const } : null),
   mainComponent: async () => ({ name: 'Icon', key: 'm3-icon' }),
 };
 

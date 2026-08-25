@@ -14,10 +14,35 @@ export function mainComponentRef(
   return { name: mc.name, key: mc.key };
 }
 
+/** What Figma says about a variable a node binds. Ids and `remote` come from the
+ *  API (`Variable.remote`), never from a failed lookup somewhere downstream. */
+export interface ResolvedVariable {
+  id: string;
+  name: string;
+  remote: boolean;
+  collectionId: string;
+}
+
+/**
+ * What Figma says about a style a node binds.
+ *
+ * `kind` maps from `BaseStyle.type`, which is a closed four-value union
+ * (`PAINT | TEXT | EFFECT | GRID`). Asking the style is the point: the property
+ * a style id was read from is a strong hint and not an answer, and an `effects`
+ * binding in particular is the one the property map at tokens.ts:100 records as
+ * unresolvable without it.
+ */
+export interface ResolvedStyle {
+  id: string;
+  name: string;
+  remote: boolean;
+  kind: 'paint-style' | 'text-style' | 'effect-style' | 'grid-style';
+}
+
 /** Injected resolver — keeps serialize.ts free of Figma globals so it runs under vitest. */
 export interface NodeResolver {
-  variableName(id: string): Promise<string | null>;
-  styleName(id: string): Promise<string | null>;
+  variable(id: string): Promise<ResolvedVariable | null>;
+  style(id: string): Promise<ResolvedStyle | null>;
   mainComponent(node: unknown): Promise<{ name: string; key: string } | null>;
 }
 
@@ -85,29 +110,28 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     const entries: RawBoundVar[] = Array.isArray(value) ? value : [value];
     for (const entry of entries) {
       if (!entry?.id) continue;
-      const token = await resolver.variableName(entry.id);
-      if (token && !bindings.some((b) => b.property === property && b.token === token)) {
-        bindings.push({ property, token });
+      const v = await resolver.variable(entry.id);
+      if (v && !bindings.some((b) => b.property === property && b.token === v.name)) {
+        bindings.push({ property, token: v.name });
       }
     }
   }
 
   // --- Resolve style ids ---
-  if (node.fillStyleId) {
-    const token = await resolver.styleName(node.fillStyleId);
-    if (token) bindings.push({ property: 'fills', token });
-  }
-  if (node.strokeStyleId) {
-    const token = await resolver.styleName(node.strokeStyleId);
-    if (token) bindings.push({ property: 'strokes', token });
-  }
+  // The property each id was read from decides the BINDING property; the style
+  // itself decides what kind of thing it is. Those are two different questions
+  // and this task stops answering the second by guessing at the first.
+  const styleBinding = async (id: string, property: string): Promise<void> => {
+    const s = await resolver.style(id);
+    if (s) bindings.push({ property, token: s.name });
+  };
+  if (node.fillStyleId) await styleBinding(node.fillStyleId, 'fills');
+  if (node.strokeStyleId) await styleBinding(node.strokeStyleId, 'strokes');
   if (typeof node.textStyleId === 'string' && node.textStyleId) {
-    const token = await resolver.styleName(node.textStyleId);
-    if (token) bindings.push({ property: 'typography', token });
+    await styleBinding(node.textStyleId, 'typography');
   }
   if (typeof node.effectStyleId === 'string' && node.effectStyleId) {
-    const token = await resolver.styleName(node.effectStyleId);
-    if (token) bindings.push({ property: 'effects', token });
+    await styleBinding(node.effectStyleId, 'effects');
   }
 
   // --- Unbound paints, effects and opacity ---
