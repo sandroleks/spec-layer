@@ -184,7 +184,7 @@ describe('foundationBrief', () => {
   it('stamps the envelope with the extractor version and brief version', () => {
     const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
     expect(b.spec_layer.kind).toBe('foundation');
-    expect(b.spec_layer.version).toBe(3);
+    expect(b.spec_layer.version).toBe(4);
     expect(b.spec_layer.extractor).toBe('1');
   });
 

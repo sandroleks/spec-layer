@@ -1,6 +1,6 @@
 # Plugin knowledge map
 
-Updated: 2026-07-29
+Updated: 2026-08-25
 
 This is the current orientation guide for the Figma plugin and its supporting
 packages. Historical design decisions remain in `docs/superpowers/`; current
@@ -21,7 +21,7 @@ image through the Spec Layer proxy. The plugin never receives an Anthropic key.
 | Area | Ownership |
 |---|---|
 | `packages/plugin` | Figma API boundary, iframe UI, connected-document Library, canvas renderers |
-| `packages/extractor` | Pure serialized-node extraction, Foundation planning, YAML briefs, hashes, AI prompts/parsers |
+| `packages/extractor` | Pure serialized-node extraction, Foundation planning, YAML briefs, hashes, AI prompts/parsers. Bindings carry Figma's own identity (id, kind, `remote`) end to end; `resolution.ts` turns an unresolvable one into a stated status rather than an empty map. |
 | `packages/proxy` | Anthropic credential, request validation, quota authority, license validation |
 
 The extractor must remain free of Figma globals. `packages/plugin/src/serialize.ts`
@@ -146,7 +146,11 @@ that only the old UI called.
 ## Invariants
 
 1. No Figma globals in the extractor.
-2. Do not change the YAML brief or hash projections casually.
+2. Do not change the YAML brief or hash projections casually. `specContentHash`
+   projects `TokenRule.name` back onto the old `token` key on purpose: the
+   projection is what keeps a field rename from drifting every committed
+   document. `nodeEffects`, `rawValues` and `figmaFileName` are excluded from it
+   for the same reason.
 3. UI presentation reads derived state, not DOM-owned business state.
 4. AI failure never blocks deterministic output.
 5. One production design-system source.

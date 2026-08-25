@@ -43,8 +43,20 @@ import { resolutionOf } from './resolution';
  * Distinct from the doc drift baseline: nothing keys "rebuild needed" on this
  * number (that reads EXTRACTOR_VERSION), so bumping it does not restate every
  * committed doc.
+ *
+ * 4: reference identity reaches the payload. Every entry in `tokens.used`
+ * carries a `kind`, and one that cannot be resolved carries a `resolution`
+ * with one of six statuses instead of a bare `{}`. `used` is a LIST, because a
+ * map keyed by name cannot hold a variable and an effect style that share one.
+ * `kind: 'typography'` became `kind: 'text-style'`, so the style kinds share a
+ * vocabulary. New blocks: `effects` (effect style definitions, beside
+ * `typography`), `effects_inline` (node-level effect layers with their
+ * per-field bindings), `effect_styles` on the foundation brief, and `scope` on
+ * a narrowed copy. External aliases name their collection; colour alpha rounds
+ * to four decimals; `source`, `text_styles` and `effect_styles` are absent
+ * rather than empty.
  */
-export const BRIEF_VERSION = 3;
+export const BRIEF_VERSION = 4;
 
 function envelope(kind: 'component' | 'foundation', generatedAt: string): YamlValue {
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
