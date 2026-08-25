@@ -3,7 +3,8 @@ import { load } from 'js-yaml';
 import { foundationBrief, componentBrief } from '../src/brief';
 import type { ComponentBriefOptions } from '../src/brief';
 import { toYaml } from '../src/yaml';
-import type { FoundationSpec } from '../src/foundation';
+import { buildFoundation, narrowFoundation } from '../src/foundation';
+import type { FoundationSpec, SerializedFoundation } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
 import type { YamlValue } from '../src/yaml';
 import type { RefIdentity } from '../src/tree';
@@ -160,7 +161,7 @@ interface BriefShape {
     message: string; when?: Record<string, string[]>;
   }>;
   guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
-  collections: Array<{ name: string; tokens: Array<{ name: string }> }>;
+  collections: Array<{ name: string; tokens: Array<{ name: string; values: Record<string, YamlValue> }> }>;
   typography?: Record<string, {
     resolution?: { status: string; reason: string };
     source_name?: string;
@@ -187,12 +188,14 @@ describe('foundationBrief', () => {
     expect(b.spec_layer.extractor).toBe('1');
   });
 
-  it('names the file key as file_key, and omits an unavailable one', () => {
+  it('names the file key as file_key, and omits the source block entirely when unavailable', () => {
     const withKey = foundationBrief(FOUNDATION, { generatedAt: AT }) as unknown as BriefShape;
     expect(withKey.source).toEqual({ file_key: 'abc123' });
+    // Not `source: {}`: an empty container reads as a measured verdict rather
+    // than as an absence, so the whole key is missing instead.
     const noKey = foundationBrief({ ...FOUNDATION, fileKey: 'unknown' },
-      { generatedAt: AT }) as unknown as BriefShape;
-    expect('file_key' in noKey.source).toBe(false);
+      { generatedAt: AT }) as unknown as Record<string, unknown>;
+    expect('source' in noKey).toBe(false);
   });
 
   it('keys mode values by mode name, not modeId', () => {
@@ -1587,5 +1590,175 @@ describe('tokens.used as a list', () => {
     // The style kinds share one vocabulary now: `typography` named the PROPERTY,
     // not the kind of thing bound.
     expect(brief.tokens.used[0].kind).toBe('text-style');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// honest values and containers (B6, B7)
+// ---------------------------------------------------------------------------
+
+/** One collection ('Semantic') holding a plain colour token and a second
+ *  token that aliases out to `targetName` in `targetCollection`, external by
+ *  default. `targetCollection` is what an EXTERNAL alias carries end to end;
+ *  passing '' models `readCollectionName` failing to name it. */
+function aliasFoundation(targetCollection = 'Core Palette'): FoundationSpec {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'sem', name: 'Semantic', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Mode 1' }],
+      variables: [
+        {
+          name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
+        },
+        {
+          name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: {
+            m1: { kind: 'alias', targetName: 'colors/gray/200', targetCollection,
+                  external: true, resolved: null },
+          },
+        },
+      ],
+    }],
+  };
+}
+
+/** Same shape as aliasFoundation, but the second token's alias resolves
+ *  LOCALLY (external: false). A local alias already resolves, so its
+ *  targetCollection -- 'Semantic', the same collection it lives in -- must
+ *  never surface: naming it would add a line without adding information. */
+function localAliasFoundation(): FoundationSpec {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'sem', name: 'Semantic', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Mode 1' }],
+      variables: [
+        {
+          name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
+        },
+        {
+          name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: {
+            m1: { kind: 'alias', targetName: 'color/bg/default', targetCollection: 'Semantic',
+                  external: false, resolved: { kind: 'color', hex: '#ffffff', alpha: 1 } },
+          },
+        },
+      ],
+    }],
+  };
+}
+
+/** One collection holding a single colour token at the given alpha, to probe
+ *  the rounding boundary between "noise" (0.03999999910593033) and a real
+ *  value the percent field can express (0.125). */
+function alphaFoundation(alpha: number): FoundationSpec {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'c1', name: 'Colors', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Mode 1' }],
+      variables: [{
+        name: 'color/overlay', group: 'color', resolvedType: 'COLOR',
+        description: '', codeSyntax: {},
+        valuesByMode: { m1: { kind: 'color', hex: '#000000', alpha } },
+      }],
+    }],
+  };
+}
+
+/** A raw dump (buildFoundation input, not a resolved FoundationSpec) with two
+ *  collections -- 'Primitives' (id 'prim') and 'Semantic' (id 'sem') -- so
+ *  narrowFoundation's collection branch has a real target to narrow down to,
+ *  distinct from the collection left behind. */
+function twoCollectionDump(): SerializedFoundation {
+  return {
+    fileKey: 'FILE1', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
+    collections: [
+      {
+        id: 'prim', name: 'Primitives', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: [{
+          id: 'v1', name: 'color/gray/100', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: { m1: { r: 1, g: 1, b: 1, a: 1 } },
+        }],
+      },
+      {
+        id: 'sem', name: 'Semantic', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Mode 1' }],
+        variables: [{
+          id: 'v2', name: 'color/bg/default', resolvedType: 'COLOR',
+          description: '', codeSyntax: {},
+          valuesByMode: { m1: { r: 1, g: 1, b: 1, a: 1 } },
+        }],
+      },
+    ],
+  };
+}
+
+describe('honest values and containers', () => {
+  it('names the collection an external alias points into', () => {
+    // In one real export, 13 external target names also existed locally and 4
+    // did not. Without the collection, the payload prints a name matching a
+    // local token of different identity with nothing to separate them.
+    const brief = foundationBrief(aliasFoundation(), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect(brief.collections[0].tokens[1].values['Mode 1'])
+      .toEqual({ alias: 'colors/gray/200', external: true, collection: 'Core Palette' });
+  });
+
+  it('omits the collection when the reader could not name it', () => {
+    const brief = foundationBrief(aliasFoundation(''), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('collection' in (brief.collections[0].tokens[1].values['Mode 1'] as object)).toBe(false);
+  });
+
+  it('leaves a local alias alone', () => {
+    // A local alias already resolves, so naming its collection adds a line
+    // without adding information.
+    const brief = foundationBrief(localAliasFoundation(), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('collection' in (brief.collections[0].tokens[1].values['Mode 1'] as object)).toBe(false);
+  });
+
+  it('trims float noise off alpha without flattening a real 0.125', () => {
+    const brief = foundationBrief(alphaFoundation(0.03999999910593033), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect((brief.collections[0].tokens[0].values['Mode 1'] as { alpha: number }).alpha).toBe(0.04);
+    const fine = foundationBrief(alphaFoundation(0.125), { generatedAt: 'T' }) as unknown as BriefShape;
+    // Four decimals, not two: Figma's own percent field can express 0.125 and
+    // two decimals would silently round it to 0.13.
+    expect((fine.collections[0].tokens[0].values['Mode 1'] as { alpha: number }).alpha).toBe(0.125);
+  });
+
+  it('omits source entirely when Figma exposes no file key', () => {
+    const brief = foundationBrief({ ...oneCollection(), fileKey: 'unknown' },
+      { generatedAt: 'T' }) as unknown as Record<string, unknown>;
+    // `source: {}` is not an honest empty: it reads as a measured verdict.
+    expect('source' in brief).toBe(false);
+  });
+
+  it('omits empty text_styles and effect_styles rather than emitting []', () => {
+    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as Record<string, unknown>;
+    expect('text_styles' in brief).toBe(false);
+    expect('effect_styles' in brief).toBe(false);
+  });
+
+  it('says what a narrowed copy covers, and says nothing on a whole-file copy', () => {
+    const whole = buildFoundation(twoCollectionDump());
+    expect('scope' in (foundationBrief(whole, { generatedAt: 'T' }) as object)).toBe(false);
+
+    const narrowed = narrowFoundation(whole, { target: 'collection', collectionId: 'sem' })!;
+    const brief = foundationBrief(narrowed, { generatedAt: 'T' }) as unknown as {
+      scope: { collections: string[]; text_styles: string; effect_styles: string };
+    };
+    // `text_styles: []` used to read as "this file has no text styles". It means
+    // "this copy does not cover them".
+    expect(brief.scope).toEqual({
+      collections: ['Semantic'], text_styles: 'excluded', effect_styles: 'excluded',
+    });
   });
 });

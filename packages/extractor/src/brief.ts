@@ -9,6 +9,7 @@
  */
 
 import type { FoundationSpec, FoundationValue, FoundationVariable } from './foundation';
+import { roundN } from './effects';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
@@ -65,7 +66,13 @@ function fileKeyOf(fileKey: string): { file_key?: string } {
 /** A resolved value flattened to what a consumer can act on. */
 function valueOf(v: FoundationValue): YamlValue {
   switch (v.kind) {
-    case 'color': return v.alpha === 1 ? v.hex : { hex: v.hex, alpha: v.alpha };
+    case 'color':
+      // Four decimals on alpha. Figma stores it as a double derived from a
+      // percentage input, so 4% arrives as 0.03999999910593033 and an agent
+      // reproduces that verbatim in generated CSS. Two decimals is not enough:
+      // 0.04, 0.08 and 0.12 survive it, but Figma's own percent field can
+      // express 0.125.
+      return v.alpha === 1 ? v.hex : { hex: v.hex, alpha: roundN(v.alpha, 4) };
     case 'number': return v.value;
     case 'string': return v.value;
     case 'boolean': return v.value;
@@ -74,6 +81,16 @@ function valueOf(v: FoundationValue): YamlValue {
         alias: v.targetName,
         resolved: v.resolved ? valueOf(v.resolved) : undefined,
         external: v.external ? true : undefined,
+        // The alias's target collection, on EXTERNAL aliases only. An external
+        // alias prints a name that may also exist locally as a different token,
+        // with nothing to separate them; a local alias already resolves, so
+        // naming its collection adds a line without adding information.
+        // Omitted when readCollectionName yielded '', because a blank name is
+        // not a name. A conditional spread, not a plain `collection: undefined`
+        // key: a test inspects the raw object with `'collection' in value`
+        // before any YAML round trip, and only the spread form leaves that key
+        // genuinely absent rather than present-but-undefined.
+        ...(v.external && v.targetCollection ? { collection: v.targetCollection } : {}),
       };
     case 'unresolved': return { unresolved: v.reason };
   }
@@ -117,6 +134,28 @@ export interface FoundationBriefOptions {
   groupDescriptions?: Record<string, Record<string, string>>;
 }
 
+/**
+ * What a narrowed copy covers, stated rather than implied by an empty container.
+ *
+ * Derived from `narrowedTo`, which narrowFoundation stamps, so
+ * copyFoundationBriefForScope gets a scope block and copyFoundationBrief does
+ * not without either caller passing anything extra. Neither changes WHAT it
+ * covers: copyFoundationBrief still deliberately ignores the scope selection
+ * that document generation respects.
+ */
+function scopeOf(foundation: FoundationSpec): YamlValue | undefined {
+  const target = foundation.narrowedTo;
+  if (!target) return undefined;
+  if (target.target === 'textStyles') {
+    return { collections: 'excluded', text_styles: 'included', effect_styles: 'excluded' };
+  }
+  return {
+    collections: foundation.collections.map((c) => c.name),
+    text_styles: 'excluded',
+    effect_styles: 'excluded',
+  };
+}
+
 export function foundationBrief(
   foundation: FoundationSpec,
   opts: FoundationBriefOptions,
@@ -129,14 +168,18 @@ export function foundationBrief(
       .filter(([, folders]) => Object.keys(folders).length > 0),
   );
   const hasDescriptions = Object.keys(descriptions).length > 0;
+  const source = fileKeyOf(foundation.fileKey);
+  const scope = scopeOf(foundation);
   return {
     spec_layer: envelope('foundation', opts.generatedAt),
-    // `file`, holding a file KEY, read as a file name to anyone who had not
-    // read fileKey.ts. It is `file_key` now. And resolveFileKey yields the
-    // literal string 'unknown' when Figma exposes no key and the user set no
-    // override: emitting that reads as a value a consumer cannot tell apart
-    // from a real key, so an unavailable key is an ABSENT key.
-    source: fileKeyOf(foundation.fileKey),
+    // Omitted ENTIRELY when Figma exposes no file key. fileKeyOf already refuses
+    // to emit the literal 'unknown'; spreading its empty result into a key
+    // anyway produced `source: {}`, and an empty container reads as a measured
+    // verdict rather than as an absence.
+    ...(Object.keys(source).length > 0 ? { source } : {}),
+    // Present only on a narrowed copy. A whole-file copy covers everything, so
+    // there is nothing to state.
+    ...(scope !== undefined ? { scope } : {}),
     collections: foundation.collections.map((c) => {
       const byId = new Map(c.modes.map((m) => [m.modeId, m.name]));
       // Same staleness class as unitContent() in foundation.ts: a mode can be
@@ -154,12 +197,24 @@ export function foundationBrief(
         tokens: c.variables.map((v) => tokenOf(v, modeName)),
       };
     }),
-    text_styles: foundation.textStyles.map((t) => ({
-      name: t.name,
-      font: { family: t.fontFamily, style: t.fontStyle, size: t.fontSize },
-      line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
-      letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
-    })),
+    // Omitted when empty, for the reason `source` is: `text_styles: []` reads as
+    // "this file has no text styles" when it means "this copy does not cover
+    // them", and narrowFoundation sets exactly that on every scoped copy.
+    ...(foundation.textStyles.length > 0
+      ? { text_styles: foundation.textStyles.map((t) => ({
+          name: t.name,
+          font: { family: t.fontFamily, style: t.fontStyle, size: t.fontSize },
+          line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
+          letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
+        })) }
+      : {}),
+    ...(foundation.effectStyles.length > 0
+      ? { effect_styles: foundation.effectStyles.map((s) => ({
+          name: s.name,
+          description: s.description || undefined,
+          effects: s.effects as unknown as YamlValue,
+        })) }
+      : {}),
     ...(hasDescriptions
       ? { guidelines: { origin: 'generated', group_descriptions: descriptions } }
       : {}),
@@ -554,17 +609,6 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
  * truthful reading: "this style does not specify a line height", which is
  * exactly what AUTO means.
  */
-/**
- * Trim binary-float noise off a measurement.
- *
- * Figma stores these as doubles derived from percentage and pixel inputs, so a
- * line height a designer typed as 140 arrives as 139.9999976158142 and a letter
- * spacing of 0.2 as 0.20000000298023224. Emitted raw, an agent reproduces the
- * noise verbatim in generated CSS. Two decimals is past any precision a type
- * ramp expresses while still keeping a real 137.5 intact.
- */
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
 function typographyOf(
   spec: IntermediateSpec,
   foundation: FoundationSpec | undefined,
@@ -591,12 +635,12 @@ function typographyOf(
       source_name: style.name,
       font_family: style.fontFamily,
       font_style: style.fontStyle,
-      font_size: round2(style.fontSize),
+      font_size: roundN(style.fontSize, 2),
       line_height: {
         unit: style.lineHeight.unit,
-        ...(style.lineHeight.value !== undefined ? { value: round2(style.lineHeight.value) } : {}),
+        ...(style.lineHeight.value !== undefined ? { value: roundN(style.lineHeight.value, 2) } : {}),
       },
-      letter_spacing: { unit: style.letterSpacing.unit, value: round2(style.letterSpacing.value) },
+      letter_spacing: { unit: style.letterSpacing.unit, value: roundN(style.letterSpacing.value, 2) },
     };
   }
   return out;
