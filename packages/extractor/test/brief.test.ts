@@ -1676,10 +1676,19 @@ function alphaFoundation(alpha: number): FoundationSpec {
 /** A raw dump (buildFoundation input, not a resolved FoundationSpec) with two
  *  collections -- 'Primitives' (id 'prim') and 'Semantic' (id 'sem') -- so
  *  narrowFoundation's collection branch has a real target to narrow down to,
- *  distinct from the collection left behind. */
+ *  distinct from the collection left behind. Carries one real text style, not
+ *  `[]`: narrowFoundation's textStyles branch returns null BEFORE stamping
+ *  anything when textStyles is empty, which would make a textStyles-scoped
+ *  narrowing test vacuous (asserting against a spec that was never produced). */
 function twoCollectionDump(): SerializedFoundation {
   return {
-    fileKey: 'FILE1', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
+    fileKey: 'FILE1', extractedAt: 'T', externals: [], effectStyles: [],
+    textStyles: [{
+      name: 'Body/Regular', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }],
     collections: [
       {
         id: 'prim', name: 'Primitives', defaultModeId: 'm1',
@@ -1760,5 +1769,27 @@ describe('honest values and containers', () => {
     expect(brief.scope).toEqual({
       collections: ['Semantic'], text_styles: 'excluded', effect_styles: 'excluded',
     });
+  });
+
+  it('states scope for a text-styles-scoped copy, distinctly from a collection-scoped one', () => {
+    const whole = buildFoundation(twoCollectionDump());
+    const narrowed = narrowFoundation(whole, { target: 'textStyles' });
+    // Guards the vacuous-test trap: narrowFoundation's textStyles branch
+    // returns null BEFORE stamping narrowedTo when textStyles is empty, so a
+    // fixture with none would make every assertion below compare against
+    // `undefined` rather than against real behaviour.
+    expect(narrowed).not.toBeNull();
+    const brief = foundationBrief(narrowed!, { generatedAt: 'T' }) as unknown as {
+      scope: { collections: string; text_styles: string; effect_styles: string };
+      text_styles?: unknown[];
+    };
+    expect(brief.scope).toEqual({
+      collections: 'excluded', text_styles: 'included', effect_styles: 'excluded',
+    });
+    // Pins 'included' against what the payload actually contains, not just
+    // against the literal string: a textStyles-scoped copy covers them, so it
+    // must still emit the text_styles block itself.
+    expect(brief.text_styles).toBeDefined();
+    expect(brief.text_styles!.length).toBeGreaterThan(0);
   });
 });

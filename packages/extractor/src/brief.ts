@@ -79,17 +79,19 @@ function valueOf(v: FoundationValue): YamlValue {
     case 'alias':
       return {
         alias: v.targetName,
-        resolved: v.resolved ? valueOf(v.resolved) : undefined,
-        external: v.external ? true : undefined,
+        // Conditional spreads throughout, not plain `key: cond ? x : undefined`
+        // assignments: a test inspects this raw object with `'key' in value`
+        // before any YAML round trip (the emitter would drop an undefined value
+        // either way, but the raw object would still have the key), so only the
+        // spread form leaves an absent field genuinely absent.
+        ...(v.resolved ? { resolved: valueOf(v.resolved) } : {}),
+        ...(v.external ? { external: true } : {}),
         // The alias's target collection, on EXTERNAL aliases only. An external
         // alias prints a name that may also exist locally as a different token,
         // with nothing to separate them; a local alias already resolves, so
         // naming its collection adds a line without adding information.
         // Omitted when readCollectionName yielded '', because a blank name is
-        // not a name. A conditional spread, not a plain `collection: undefined`
-        // key: a test inspects the raw object with `'collection' in value`
-        // before any YAML round trip, and only the spread form leaves that key
-        // genuinely absent rather than present-but-undefined.
+        // not a name.
         ...(v.external && v.targetCollection ? { collection: v.targetCollection } : {}),
       };
     case 'unresolved': return { unresolved: v.reason };
