@@ -5,7 +5,7 @@ import { collectionIconKind, scopeIconKind } from '../src/foundationIcon';
 function dump(): SerializedFoundation {
   return {
     fileKey: 'FILE1', extractedAt: 'T', externals: [],
-    textStyles: [],
+    textStyles: [], effectStyles: [],
     collections: [{
       id: 'c1', name: 'Foundation', defaultModeId: 's1',
       modes: [{ modeId: 's1', name: 'Default' }],

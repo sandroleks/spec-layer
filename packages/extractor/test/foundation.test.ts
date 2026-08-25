@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildFoundation, groupOf, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
-  foundationUnitTitle, groupTitle, groupTitles,
+  foundationUnitTitle, groupTitle, groupTitles, narrowFoundation,
   type FoundationSelection,
 } from '../src/foundation';
 
@@ -13,6 +13,7 @@ function dumpOneOfEach(): SerializedFoundation {
     extractedAt: '2026-07-25T00:00:00.000Z',
     externals: [],
     textStyles: [],
+    effectStyles: [],
     collections: [{
       id: 'c1',
       name: 'Primitives',
@@ -124,6 +125,7 @@ function dumpWithAliases(): SerializedFoundation {
     extractedAt: '2026-07-25T00:00:00.000Z',
     externals: [],
     textStyles: [],
+    effectStyles: [],
     collections: [
       {
         id: 'c1', name: 'Primitives', defaultModeId: 'p1',
@@ -290,7 +292,7 @@ function bigDump(count: number, groups: string[]): SerializedFoundation {
     valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
   }));
   return {
-    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
     collections: [{
       id: 'c1', name: 'Primitives', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Value' }],
@@ -580,7 +582,7 @@ describe('unitContent — part numbering', () => {
         valuesByMode: { [`${prefix}m1`]: { r: 0, g: 0, b: 0, a: 1 } },
       }));
     return {
-      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
       collections: [
         { id: 'c1', name: 'Primitives', defaultModeId: 'am1',
           modes: [{ modeId: 'am1', name: 'Value' }],
@@ -680,7 +682,7 @@ describe('unitContent — part numbering', () => {
 function textStyleDump(count: number, groups: string[]): SerializedFoundation {
   return {
     fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [],
-    collections: [],
+    collections: [], effectStyles: [],
     textStyles: Array.from({ length: count }, (_, i) => ({
       name: `${groups[i % groups.length]}/style${i}`,
       description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
@@ -795,5 +797,43 @@ describe('groupTitle / groupTitles', () => {
   it('handles one group', () => {
     expect(groupTitles(['colors/blue'])).toEqual(['Blue']);
     expect(groupTitles([])).toEqual([]);
+  });
+});
+
+describe('effect styles', () => {
+  const withEffects = (): SerializedFoundation => ({
+    fileKey: 'FILE1', extractedAt: 'T', externals: [], collections: [],
+    // Non-empty, deliberately: narrowFoundation's 'textStyles' branch returns
+    // null when there are no text styles left, which would make the narrowing
+    // test below vacuous (asserting on a null spec's optional-chained field)
+    // rather than exercising the drop this test is named for.
+    textStyles: [{
+      name: 'Body/M', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
+      fontSize: 16, lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PIXELS', value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL',
+      textDecoration: 'NONE', boundVariables: {},
+    }],
+    effectStyles: [{
+      name: 'Focused/Primary', description: 'Focus ring.',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#722ed1', alpha: 0.2 }, offset: { x: 0, y: 0 },
+        radius: 4, spread: 2,
+      }],
+    }],
+  });
+
+  it('groups an effect style by its top-level path segment', () => {
+    const spec = buildFoundation(withEffects());
+    expect(spec.effectStyles[0].group).toBe('Focused');
+    expect(spec.effectStyles[0].effects[0].type).toBe('drop-shadow');
+  });
+
+  it('narrows effect styles away exactly as it narrows text styles', () => {
+    const spec = buildFoundation(withEffects());
+    // A text-styles copy covers the file's text styles, not its effect styles.
+    // Carrying them along would make a scoped copy quietly wider than its scope.
+    const narrowed = narrowFoundation(spec, { target: 'textStyles' });
+    expect(narrowed?.effectStyles).toEqual([]);
   });
 });

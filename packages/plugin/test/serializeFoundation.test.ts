@@ -35,6 +35,7 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
         boundVariables: { fontSize: { id: 'v1' } },
       }];
     },
+    async effectStyles() { return []; },
     ...over,
   };
 }
@@ -154,6 +155,7 @@ describe('serializeFoundation', () => {
       },
       async variable(id) { return vars[id] ?? null; },
       async textStyles() { return []; },
+      async effectStyles() { return []; },
     };
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.externals).toEqual([]);
@@ -199,6 +201,7 @@ describe('serializeFoundation', () => {
         });
       },
       async textStyles() { return []; },
+      async effectStyles() { return []; },
     };
 
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
@@ -258,5 +261,32 @@ describe('serializeFoundation', () => {
       const dump = await serializeFoundation(fakeReader(), 'FILE1', 'T');
       expect('unavailable' in dump).toBe(false);
     });
+  });
+});
+
+describe('effect styles', () => {
+  it('converts each style layer through the shared effect union', async () => {
+    const reader = fakeReader({
+      effectStyles: async () => [{
+        name: 'Focused/Primary', description: '',
+        effects: [{
+          type: 'DROP_SHADOW', color: { r: 0.447, g: 0.18, b: 0.82, a: 0.2 },
+          offset: { x: 0, y: 0 }, radius: 4, spread: 2, visible: true, blendMode: 'NORMAL',
+        }],
+      }],
+    });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.effectStyles[0].effects[0]).toEqual({
+      type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+      color: { hex: '#722ed1', alpha: 0.2 }, offset: { x: 0, y: 0 },
+      radius: 4, spread: 2,
+    });
+  });
+
+  it('records an effect styles read that threw', async () => {
+    const reader = fakeReader({ effectStyles: async () => { throw new Error('nope'); } });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.effectStyles).toEqual([]);
+    expect(dump.unavailable).toEqual(['effectStyles']);
   });
 });

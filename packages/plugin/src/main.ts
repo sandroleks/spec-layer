@@ -9,7 +9,7 @@ import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
-  type FoundationVariableRow, type SerializedFoundation,
+  type FoundationVariableRow, type SerializedFoundation, type RawEffect,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
@@ -140,6 +140,16 @@ const foundationReader: FoundationReader = {
           .filter((e): e is [string, VariableAlias] => Boolean(e[1]?.id))
           .map(([k, v]) => [k, { id: v.id }]),
       ),
+    }));
+  },
+  async effectStyles() {
+    const styles = await figma.getLocalEffectStylesAsync();
+    return styles.map((s) => ({
+      name: s.name,
+      description: s.description ?? '',
+      // Handed to effectLayerOf as-is: it is structurally typed for exactly this,
+      // which is what keeps the effect union in the extractor rather than here.
+      effects: s.effects as unknown as RawEffect[],
     }));
   },
   async collectionName(id) {

@@ -66,6 +66,7 @@ const FOUNDATION: FoundationSpec = {
     paragraphSpacing: 0, paragraphIndent: 0,
     textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {},
   }],
+  effectStyles: [],
 };
 
 /** Minimal FoundationSpec for the group-descriptions tests below: one
@@ -74,7 +75,7 @@ const FOUNDATION: FoundationSpec = {
  *  machinery, which those tests have no use for. */
 function oneCollection(): FoundationSpec {
   return {
-    fileKey: 'FILE1', extractedAt: 'T', textStyles: [],
+    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
     collections: [{
       id: 'c1', name: 'Primitives', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Value' }],
@@ -1043,7 +1044,7 @@ describe('componentBrief tokens', () => {
   // reader assuming the first mode listed is always the one in force.
   it('names the mode a resolved value was read at', () => {
     const foundation: FoundationSpec = {
-      fileKey: 'F', extractedAt: 'T', textStyles: [],
+      fileKey: 'F', extractedAt: 'T', textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Semantic', defaultModeId: 'm2',
         modes: [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }],
@@ -1069,7 +1070,7 @@ describe('componentBrief tokens', () => {
 
   it('drops a deleted default mode rather than leaking its internal Figma id', () => {
     const foundation: FoundationSpec = {
-      fileKey: 'F', extractedAt: 'T', textStyles: [],
+      fileKey: 'F', extractedAt: 'T', textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Semantic', defaultModeId: 'gone',
         modes: [{ modeId: 'm1', name: 'Light' }],
@@ -1149,7 +1150,7 @@ describe('componentBrief tokens', () => {
 describe('componentBrief typography', () => {
   /** The exact float noise a real Figma file produced for 140% and 0.2px. */
   const noisyFoundation: FoundationSpec = {
-    fileKey: 'F', extractedAt: 'T', collections: [],
+    fileKey: 'F', extractedAt: 'T', collections: [], effectStyles: [],
     textStyles: [{
       name: 'Button/L : 14px Medium', group: 'Button', description: '',
       fontFamily: 'Open Sans', fontStyle: 'Regular', fontSize: 14,
@@ -1202,7 +1203,7 @@ describe('componentBrief typography', () => {
 
   it('resolves a bound text style to real metrics', () => {
     const foundation: FoundationSpec = {
-      fileKey: 'F', extractedAt: 'T', collections: [],
+      fileKey: 'F', extractedAt: 'T', collections: [], effectStyles: [],
       textStyles: [{
         name: 'Button/L : 14px Medium', group: 'Button', description: '',
         fontFamily: 'Inter', fontStyle: 'Medium', fontSize: 14,
@@ -1234,7 +1235,7 @@ describe('componentBrief typography', () => {
       part: 'Label', path: 'Container/Label', property: 'typography',
       conditions: {}, ...ident('Missing/Style') }] };
     const foundation: FoundationSpec =
-      { fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [] };
+      { fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [], effectStyles: [] };
     const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     // A style bound in the file but absent from this dump is unresolved, not
     // absent. Dropping it would make the brief claim the label has no
@@ -1244,7 +1245,7 @@ describe('componentBrief typography', () => {
 
   it('records an AUTO line height truthfully, with no fabricated value', () => {
     const foundation: FoundationSpec = {
-      fileKey: 'F', extractedAt: 'T', collections: [],
+      fileKey: 'F', extractedAt: 'T', collections: [], effectStyles: [],
       textStyles: [{
         name: 'Heading/Auto', group: 'Heading', description: '',
         fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32,
@@ -1300,7 +1301,7 @@ function usedFor(foundation: FoundationSpec, token: string): Record<string, unkn
  *  `resolved` key that an unresolved one cannot. */
 function sixKindFoundation(): FoundationSpec {
   return {
-    fileKey: 'F', extractedAt: 'T', textStyles: [],
+    fileKey: 'F', extractedAt: 'T', textStyles: [], effectStyles: [],
     collections: [{
       id: 'c1', name: 'Kinds', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Mode1' }],

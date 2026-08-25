@@ -6,6 +6,7 @@
  * plugin dumps raw Figma data (aliases left as {type,id}); everything here is
  * synchronous and fixture-testable, including alias resolution.
  */
+import type { EffectLayer } from './effects';
 
 // ---------------------------------------------------------------------------
 // Raw dump — produced by packages/plugin/src/serializeFoundation.ts
@@ -49,6 +50,22 @@ export interface RawTextStyle {
   boundVariables: Record<string, string>;
 }
 
+/**
+ * One effect style from the file, with each layer already converted through the
+ * shared EffectLayer union.
+ *
+ * Per-field variable bindings on a style's layers are deliberately NOT resolved
+ * here. Node-level inline effects carry them (see extractNodeEffects); a style
+ * layer emits its literal values. Resolving them would need `remote` on
+ * ReaderVariable and a second resolution path for a case the design does not
+ * cover; when that changes, this comment is the place to start.
+ */
+export interface RawEffectStyle {
+  name: string;
+  description: string;
+  effects: EffectLayer[];
+}
+
 /** An alias target that lives in a library, not in this file's local dump. */
 export interface RawExternalRef { id: string; name: string; collectionName: string }
 
@@ -60,6 +77,7 @@ export interface SerializedFoundation {
   fileKey: string;
   collections: RawCollection[];
   textStyles: RawTextStyle[];
+  effectStyles: RawEffectStyle[];
   externals: RawExternalRef[];
   extractedAt: string;
   /**
@@ -107,10 +125,13 @@ export interface FoundationCollection {
 
 export interface FoundationTextStyle extends RawTextStyle { group: string }
 
+export interface FoundationEffectStyle extends RawEffectStyle { group: string }
+
 export interface FoundationSpec {
   fileKey: string;
   collections: FoundationCollection[];
   textStyles: FoundationTextStyle[];
+  effectStyles: FoundationEffectStyle[];
   extractedAt: string;
   /** Carried straight through from the dump. See SerializedFoundation. */
   unavailable?: FoundationRead[];
@@ -164,11 +185,14 @@ export function narrowFoundation(
 ): FoundationSpec | null {
   if (target.target === 'textStyles') {
     if (spec.textStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: spec.textStyles, narrowedTo: target };
+    // Effect styles are narrowed away here as well as on the collection branch:
+    // FoundationCopyTarget has no effect-styles target, so no scoped copy claims
+    // to cover them and the whole-file copy is where they appear.
+    return { ...spec, collections: [], textStyles: spec.textStyles, effectStyles: [], narrowedTo: target };
   }
   const collection = spec.collections.find((c) => c.id === target.collectionId);
   if (!collection) return null;
-  return { ...spec, collections: [collection], textStyles: [], narrowedTo: target };
+  return { ...spec, collections: [collection], textStyles: [], effectStyles: [], narrowedTo: target };
 }
 
 /** Rows per output unit, above which a unit splits by top-level group. */
@@ -352,6 +376,7 @@ export function buildFoundation(dump: SerializedFoundation): FoundationSpec {
     fileKey: dump.fileKey,
     collections,
     textStyles: dump.textStyles.map((s) => ({ ...s, group: groupOf(s.name) })),
+    effectStyles: dump.effectStyles.map((s) => ({ ...s, group: groupOf(s.name) })),
     extractedAt: dump.extractedAt,
     // Spread, not `unavailable: dump.unavailable`: a clean read has no key at
     // all rather than one holding undefined, matching how every other optional

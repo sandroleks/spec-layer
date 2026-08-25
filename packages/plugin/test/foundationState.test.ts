@@ -12,7 +12,7 @@ import {
 
 function dump(over: Partial<SerializedFoundation> = {}): SerializedFoundation {
   return {
-    fileKey: 'FILE1', extractedAt: 'T', externals: [], textStyles: [],
+    fileKey: 'FILE1', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
     collections: [{
       id: 'c1', name: 'Semantic', defaultModeId: 's1',
       modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
@@ -250,7 +250,7 @@ describe('emptyStateLines', () => {
 /** A collection of `count` variables spread over `groups`, plus `styles` styles. */
 function bigDump(count: number, groups: string[], styles = 0): SerializedFoundation {
   return {
-    fileKey: 'FILE1', extractedAt: 'T', externals: [],
+    fileKey: 'FILE1', extractedAt: 'T', externals: [], effectStyles: [],
     collections: [{
       id: 'big', name: 'Primitives', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Value' }],

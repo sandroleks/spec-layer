@@ -323,7 +323,7 @@ describe('buildFoundationFrame with contrast', () => {
   /** One pairable collection: a foreground, a background, and a spacing value. */
   function dump(names: string[]): SerializedFoundation {
     return {
-      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [],
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Semantic', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Light' }],

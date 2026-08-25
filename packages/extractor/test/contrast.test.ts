@@ -67,7 +67,7 @@ describe('requiredRatio', () => {
 });
 
 const foundation = (vars: Record<string, string>): FoundationSpec => ({
-  fileKey: 'f', extractedAt: '', textStyles: [],
+  fileKey: 'f', extractedAt: '', textStyles: [], effectStyles: [],
   collections: [{
     id: 'c1', name: 'Core', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Light' }],
     variables: Object.entries(vars).map(([name, hex]) => ({

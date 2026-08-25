@@ -4,7 +4,7 @@ import { foundationContentHash } from '../src/hash';
 
 function dump(): SerializedFoundation {
   return {
-    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+    fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
     collections: [
       {
         id: 'c1', name: 'Semantic', defaultModeId: 's1',
@@ -210,7 +210,7 @@ describe('foundationContentHash — variables cover exactly what is drawn', () =
 function textDump(): SerializedFoundation {
   return {
     fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [],
-    collections: [],
+    collections: [], effectStyles: [],
     textStyles: [{
       name: 'Body/M', description: 'Default body.',
       fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
@@ -295,7 +295,7 @@ describe('foundationContentHash — part numbering is covered', () => {
   /** A collection over the split threshold, spread across `groups`. */
   function splitDump(groups: string[]): SerializedFoundation {
     return {
-      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+      fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Primitives', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Value' }],

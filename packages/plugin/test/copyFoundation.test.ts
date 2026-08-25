@@ -33,6 +33,7 @@ const DUMP: SerializedFoundation = {
   extractedAt: '2026-08-14T00:00:00.000Z',
   externals: [],
   textStyles: [],
+  effectStyles: [],
   collections: [{
     id: 'C1', name: 'Color', defaultModeId: 'm1',
     modes: [{ modeId: 'm1', name: 'Light' }],
@@ -155,6 +156,7 @@ describe('copyFoundationBriefForScope', () => {
     fileKey: 'F1',
     extractedAt: '2026-08-24T00:00:00.000Z',
     externals: [],
+    effectStyles: [],
     textStyles: [{
       name: 'heading/lg', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
       fontSize: 32, lineHeight: { unit: 'AUTO' },

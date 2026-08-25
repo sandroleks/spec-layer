@@ -23,6 +23,7 @@ function dumpTwoCollections(): SerializedFoundation {
     fileKey: 'FILE1',
     extractedAt: '2026-08-24T00:00:00.000Z',
     externals: [],
+    effectStyles: [],
     textStyles: [textStyle('heading/lg'), textStyle('body/md')],
     collections: [
       {

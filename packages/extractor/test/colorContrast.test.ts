@@ -206,6 +206,7 @@ function spec(
     fileKey: 'FILE1',
     extractedAt: '2026-08-18T00:00:00.000Z',
     textStyles: [],
+    effectStyles: [],
     collections: [{
       id: 'c1', name: 'Semantic', defaultModeId: 'm1', modes,
       variables: variables.map((v) => ({

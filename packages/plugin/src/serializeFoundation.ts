@@ -6,9 +6,11 @@
  * the same pattern serialize.ts uses with NodeResolver, so the dump logic is
  * unit-testable and main.ts owns the Figma API surface.
  */
-import type {
-  SerializedFoundation, RawCollection, RawVariable, RawTextStyle, RawExternalRef,
-  RawVariableValue, FoundationVariableType, FoundationMode, FoundationRead,
+import {
+  effectLayerOf,
+  type SerializedFoundation, type RawCollection, type RawVariable, type RawTextStyle,
+  type RawExternalRef, type RawVariableValue, type FoundationVariableType,
+  type FoundationMode, type FoundationRead, type RawEffectStyle, type RawEffect,
 } from '@spec-layer/extractor';
 
 export interface ReaderCollection {
@@ -43,11 +45,18 @@ export interface ReaderTextStyle {
   boundVariables: Record<string, { id: string }>;
 }
 
+export interface ReaderEffectStyle {
+  name: string;
+  description: string;
+  effects: RawEffect[];
+}
+
 /** Injected Figma surface. main.ts supplies the real one; tests a fake. */
 export interface FoundationReader {
   collections(): Promise<ReaderCollection[]>;
   variable(id: string): Promise<ReaderVariable | null>;
   textStyles(): Promise<ReaderTextStyle[]>;
+  effectStyles(): Promise<ReaderEffectStyle[]>;
   /** Name of a collection that may be remote. Optional: absent → ''. */
   collectionName?(id: string): Promise<string | null>;
 }
@@ -193,8 +202,20 @@ export async function serializeFoundation(
     };
   }));
 
+  let readerEffects: ReaderEffectStyle[] = [];
+  try {
+    readerEffects = await reader.effectStyles();
+  } catch {
+    unavailable.push('effectStyles');
+  }
+  const effectStyles: RawEffectStyle[] = readerEffects.map((rs) => ({
+    name: rs.name,
+    description: rs.description,
+    effects: rs.effects.map((e) => effectLayerOf(e)),
+  }));
+
   return {
-    fileKey, collections, textStyles, externals, extractedAt,
+    fileKey, collections, textStyles, effectStyles, externals, extractedAt,
     ...(unavailable.length > 0 ? { unavailable } : {}),
   };
 }

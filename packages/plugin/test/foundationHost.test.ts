@@ -17,6 +17,7 @@ function dump(): SerializedFoundation {
     fileKey: 'FILE1',
     extractedAt: 'T',
     externals: [],
+    effectStyles: [],
     textStyles: [{
       name: 'Body/M',
       description: '',

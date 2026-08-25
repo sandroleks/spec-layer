@@ -187,6 +187,7 @@ describe('footerNotes — end to end over a split batch', () => {
       }));
     return {
       fileKey: 'FILE1', extractedAt: '2026-07-25T00:00:00.000Z', externals: [], textStyles: [],
+      effectStyles: [],
       collections: [
         { id: 'c1', name: 'Primitives', defaultModeId: 'am1',
           modes: [{ modeId: 'am1', name: 'Value' }],
@@ -444,7 +445,7 @@ describe('buildFoundationFrame', () => {
   /** Two modes, three described variables, plus one text style. */
   function dump(): SerializedFoundation {
     return {
-      fileKey: 'FILE1', extractedAt: '2026-07-27T00:00:00.000Z', externals: [],
+      fileKey: 'FILE1', extractedAt: '2026-07-27T00:00:00.000Z', externals: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Primitives', defaultModeId: 'light',
         modes: [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
@@ -1012,7 +1013,7 @@ describe('buildFoundationFrame — colour groups', () => {
   /** Colours across three folders, deliberately interleaved in source order. */
   function grouped(names: string[]): SerializedFoundation {
     return {
-      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [],
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Semantic', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Value' }],
@@ -1114,7 +1115,7 @@ describe('buildFoundationFrame — AI group descriptions', () => {
 
   async function listWith(descriptions?: Record<string, string>): Promise<FakeFrame> {
     const dump: SerializedFoundation = {
-      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [],
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
       collections: [{
         id: 'c1', name: 'Semantic', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Value' }],
