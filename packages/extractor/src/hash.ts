@@ -31,7 +31,15 @@ export function specContentHash(spec: IntermediateSpec): string {
   // file is not component drift, and every committed doc's baseline was
   // computed before the field existed, so including it would flip all of them
   // to "update available" for a change that alters no rendered output.
-  const { rawValues: _rawValues, figmaFileName: _figmaFileName, ...rest } = spec;
+  const {
+    rawValues: _rawValues,
+    figmaFileName: _figmaFileName,
+    // Same contract as rawValues: additive detail that alters no rendered
+    // output, so including it would flip every committed document to "update
+    // available" for a change nobody can see on canvas.
+    nodeEffects: _nodeEffects,
+    ...rest
+  } = spec;
   const hashable = {
     ...rest,
     anatomy: spec.anatomy

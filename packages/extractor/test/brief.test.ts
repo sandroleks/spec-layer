@@ -343,6 +343,7 @@ const SPEC: IntermediateSpec = {
   layout: [{ part: 'container', path: 'Container/container',
              summary: 'horizontal, gap 8', values: { gap: 8 } }],
   rawValues: [],
+  nodeEffects: [],
 };
 
 const brief = (over: Partial<Parameters<typeof componentBrief>[1]> = {}): ParsedComponentBrief =>

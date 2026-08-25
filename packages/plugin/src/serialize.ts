@@ -1,4 +1,14 @@
-import type { SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo, RawEffect } from '@spec-layer/extractor';
+import type {
+  SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo, RawEffect,
+  EffectLayer, EffectBindings,
+} from '@spec-layer/extractor';
+import { effectLayerOf } from '@spec-layer/extractor';
+
+/** VariableBindableEffectField. Shadows accept all five; blurs accept `radius`
+ *  alone; noise, texture and glass accept none and declare `boundVariables?: {}`.
+ *  Reading all five off every effect is safe because an effect that cannot bind
+ *  a field simply has no entry for it. */
+const EFFECT_FIELDS = ['color', 'radius', 'spread', 'offsetX', 'offsetY'] as const;
 
 /**
  * Resolve the reference name/key for an instance's main component. When the main
@@ -181,9 +191,38 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const solidStroke = hasUnboundStroke ? strokes.find((s) => s.type === 'SOLID' && s.color) : undefined;
   const unboundStroke = solidStroke?.color ? hex(solidStroke.color) : undefined;
 
-  const hasEffects = (node.effects ?? []).length > 0;
-  const effectsBound = 'effects' in bv || (typeof node.effectStyleId === 'string' && Boolean(node.effectStyleId));
+  const rawEffects = node.effects ?? [];
+  const hasEffects = rawEffects.length > 0;
+  const effectStyled = typeof node.effectStyleId === 'string' && Boolean(node.effectStyleId);
+  // UNCHANGED semantics, deliberately. hasUnboundEffect is what extractGaps
+  // keys the `effects` gap on, and gaps are inside specContentHash. Changing
+  // when this fires would move every committed document's drift baseline for a
+  // change that adds detail rather than altering a verdict.
+  const effectsBound = 'effects' in bv || effectStyled;
   const hasUnboundEffect = hasEffects && !effectsBound ? true : undefined;
+
+  // The layers themselves, whenever the node has effects and no effect STYLE --
+  // not only when nothing is bound. A style name is a pointer to a definition
+  // extracted once in the foundation; a node-level effect has no name to point
+  // at, so it is inlined. Per-field bindings are read from each effect's own
+  // boundVariables, which is where Figma actually puts them: node-level
+  // boundVariables.effects is a flat VariableAlias[] with no field or layer
+  // identity at all.
+  let effects: EffectLayer[] | undefined;
+  if (hasEffects && !effectStyled) {
+    effects = [];
+    for (const raw of rawEffects) {
+      const bv2 = (raw as { boundVariables?: Record<string, { id?: string }> }).boundVariables ?? {};
+      const bindings: EffectBindings = {};
+      for (const field of EFFECT_FIELDS) {
+        const id = bv2[field]?.id;
+        if (!id) continue;
+        const v = await resolver.variable(id);
+        if (v) bindings[field] = variableRef(v);
+      }
+      effects.push(effectLayerOf(raw, bindings));
+    }
+  }
 
   // Figma's opacity is float32-backed, so 30% comes back as 0.30000001192092896.
   // That value is written verbatim into the gap's `value` field, which IS
@@ -268,6 +307,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(unboundStroke ? { unboundStroke } : {}),
     ...(hasUnboundGradient ? { hasUnboundGradient } : {}),
     ...(hasUnboundEffect ? { hasUnboundEffect } : {}),
+    ...(effects && effects.length > 0 ? { effects } : {}),
     ...(opacity !== undefined ? { opacity } : {}),
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),

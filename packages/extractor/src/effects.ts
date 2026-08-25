@@ -6,7 +6,9 @@
  * takes a structurally-typed plain object, so the plugin's serializers can hand
  * it a live `Effect` and a test can hand it a literal.
  */
-import type { RefIdentity } from './tree';
+import type { RefIdentity, SerializedNode } from './tree';
+import { defaultVariant } from './anatomy';
+import { cleanPartName, walkParts } from './naming';
 
 /** A colour with its opacity, both already rounded. */
 export interface Rgba { hex: string; alpha: number }
@@ -227,4 +229,28 @@ export function effectLayerOf(raw: RawEffect, bindings?: EffectBindings): Effect
     default:
       return { type: 'unknown', figma_type: raw.type };
   }
+}
+
+/** One node's effect layers, joined to everything else by `path`. */
+export interface NodeEffects {
+  part: string;
+  path: string;
+  effects: EffectLayer[];
+}
+
+/**
+ * Effect layers on the DEFAULT variant, path-keyed.
+ *
+ * Walks exactly the way extractGaps does (default variant, hidden subtrees
+ * INCLUDED) so an entry here and a gap there always describe the same set of
+ * nodes. rawValues walks with skipInvisible and would not line up.
+ */
+export function extractNodeEffects(root: SerializedNode): NodeEffects[] {
+  const out: NodeEffects[] = [];
+  const def = defaultVariant(root);
+  walkParts(def, root.type === 'COMPONENT_SET' ? 'Container' : cleanPartName(def.name),
+    (n, part, path) => {
+      if (n.effects && n.effects.length > 0) out.push({ part, path, effects: n.effects });
+    });
+  return out;
 }

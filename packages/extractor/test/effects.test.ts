@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { effectLayerOf, type EffectLayer } from '../src/effects';
+import { effectLayerOf, extractNodeEffects, type EffectLayer } from '../src/effects';
+import type { SerializedNode } from '../src/tree';
 
 const rgba = (r: number, g: number, b: number, a: number) => ({ r, g, b, a });
 
@@ -126,5 +127,21 @@ describe('effectLayerOf', () => {
       type: 'NOISE', noiseType: 'HALFTONE', color: rgba(0, 0, 0, 1), visible: true,
       blendMode: 'NORMAL', noiseSize: 2, density: 0.5,
     })).toEqual({ type: 'unknown', figma_type: 'NOISE/HALFTONE' });
+  });
+});
+
+describe('extractNodeEffects', () => {
+  it('records one entry per node carrying effects, keyed by path', () => {
+    const root = {
+      id: '1:1', name: 'Card', type: 'COMPONENT', visible: true,
+      children: [{
+        id: '1:2', name: 'Wrapper', type: 'FRAME', visible: true,
+        effects: [{ type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#000000', alpha: 0.08 }, offset: { x: 0, y: 2 }, radius: 4, spread: 0 }],
+      }],
+    } as unknown as SerializedNode;
+    expect(extractNodeEffects(root)).toEqual([
+      { part: 'Wrapper', path: 'Card/Wrapper', effects: root.children![0].effects },
+    ]);
   });
 });

@@ -192,7 +192,8 @@ describe('unbound paint detection', () => {
 
   it('flags a node with effects and no style or variable', async () => {
     const n = await serializeNode({
-      id: '1', name: 'Box', type: 'FRAME', effects: [{ type: 'DROP_SHADOW' }],
+      id: '1', name: 'Box', type: 'FRAME', effects: [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 1 },
+        offset: { x: 0, y: 1 }, radius: 1, visible: true, blendMode: 'NORMAL' }],
     } as never, resolver);
     expect(n.hasUnboundEffect).toBe(true);
   });
@@ -200,7 +201,8 @@ describe('unbound paint detection', () => {
   it('does not flag effects bound to a variable', async () => {
     const n = await serializeNode({
       id: '1', name: 'Box', type: 'FRAME',
-      effects: [{ type: 'DROP_SHADOW' }],
+      effects: [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 1 },
+        offset: { x: 0, y: 1 }, radius: 1, visible: true, blendMode: 'NORMAL' }],
       boundVariables: { effects: [{ id: 'V:1' }] },
     } as never, {
       ...resolver,
@@ -212,7 +214,8 @@ describe('unbound paint detection', () => {
   it('does not flag effects bound to a string effect style id', async () => {
     const n = await serializeNode({
       id: '1', name: 'Box', type: 'FRAME',
-      effects: [{ type: 'DROP_SHADOW' }],
+      effects: [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 1 },
+        offset: { x: 0, y: 1 }, radius: 1, visible: true, blendMode: 'NORMAL' }],
       effectStyleId: 'S:fx,1:1',
     } as never, {
       ...resolver,
@@ -227,7 +230,8 @@ describe('unbound paint detection', () => {
     // symbol would wrongly read as "has a style" — it must not suppress the gap.
     const n = await serializeNode({
       id: '1', name: 'Box', type: 'FRAME',
-      effects: [{ type: 'DROP_SHADOW' }],
+      effects: [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 1 },
+        offset: { x: 0, y: 1 }, radius: 1, visible: true, blendMode: 'NORMAL' }],
       effectStyleId: Symbol('figma.mixed'),
     } as never, resolver);
     expect(n.hasUnboundEffect).toBe(true);
@@ -389,5 +393,62 @@ describe('NodeResolver identity', () => {
       { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never, r,
     );
     expect('collectionId' in out.bindings![0]).toBe(false);
+  });
+});
+
+describe('inline node effects', () => {
+  const shadow = (over: Record<string, unknown> = {}) => ({
+    type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 0.08 }, offset: { x: 0, y: 2 },
+    radius: 4, spread: 0, visible: true, blendMode: 'NORMAL', ...over,
+  });
+
+  it('emits the layers when the node has effects and no effect style', async () => {
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', effects: [shadow()] } as never, r,
+    );
+    expect(out.effects).toHaveLength(1);
+    expect(out.effects![0]).toMatchObject({ type: 'drop-shadow', radius: 4, spread: 0 });
+    // Unchanged semantics: a fully hardcoded effect is still an unbound effect.
+    expect(out.hasUnboundEffect).toBe(true);
+  });
+
+  it('emits the layers for a PARTIALLY bound shadow, and still reports no gap', async () => {
+    const r = {
+      variable: async (id: string) => ({
+        id, name: 'color/shadow/default', remote: false, collectionId: 'VariableCollectionId:1',
+      }),
+      style: async () => null,
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode({
+      id: '1', name: 'N', type: 'FRAME',
+      effects: [shadow({ boundVariables: { color: { id: 'VariableID:5' } } })],
+      boundVariables: { effects: [{ id: 'VariableID:5' }] },
+    } as never, r);
+    // hasUnboundEffect keeps its exact current semantics: `effects` is in bv, so
+    // no gap. That flag is inside specContentHash and must not move.
+    expect('hasUnboundEffect' in out).toBe(false);
+    // The geometry survives anyway, which is the whole point: a bound colour used
+    // to make Figma report the layer as fully bound and drop radius, offset and
+    // spread with nothing saying so.
+    expect(out.effects![0]).toMatchObject({ radius: 4, spread: 0, offset: { x: 0, y: 2 } });
+    expect((out.effects![0] as { bindings?: { color?: { name: string } } }).bindings?.color?.name)
+      .toBe('color/shadow/default');
+  });
+
+  it('emits nothing when an effect STYLE governs the node', async () => {
+    const r = {
+      variable: async () => null,
+      style: async (id: string) => ({ id, name: 'Focused/Primary', remote: false, kind: 'effect-style' as const }),
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode({
+      id: '1', name: 'N', type: 'FRAME', effects: [shadow()], effectStyleId: 'S:effect,1:1',
+    } as never, r);
+    // The style name is the pointer, and the style's own layers are extracted
+    // once in the foundation. Inlining them here would give the brief two owners
+    // for the same values.
+    expect('effects' in out).toBe(false);
   });
 });

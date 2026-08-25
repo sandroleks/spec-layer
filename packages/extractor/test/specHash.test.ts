@@ -78,3 +78,15 @@ it('is unchanged across the whole of Phase A, on both fixtures', () => {
     expect(specContentHash(extract(node, { figmaFile: 'FILE1' }))).toBe(expected);
   }
 });
+
+it('is unchanged by nodeEffects', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const spec = extract(node, { figmaFile: 'FILE1' });
+  const withEffects = {
+    ...spec,
+    nodeEffects: [{ part: 'Container', path: 'Container', effects: [{ type: 'unknown', figma_type: 'X' }] }],
+  };
+  // Same contract as rawValues: additive detail that alters no rendered output
+  // must never mark a committed document as drifted.
+  expect(specContentHash(withEffects as typeof spec)).toBe(BUTTON_HASH);
+});

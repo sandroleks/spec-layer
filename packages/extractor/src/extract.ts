@@ -4,6 +4,7 @@ import { extractProps, extractVariants, extractStates, type ComponentProp, type 
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
+import { extractNodeEffects, type NodeEffects } from './effects';
 
 /**
  * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
@@ -43,6 +44,12 @@ export interface IntermediateSpec {
   gaps: Gap[];
   layout: LayoutSummary[];
   rawValues: RawValue[];
+  /** Effect layers on the default variant. Additive: never included in
+   *  specContentHash, same contract as rawValues. Joined to `gaps` and
+   *  `tokens` on (path, property) -- never on path alone, because one node
+   *  routinely has several unbound rows (fill, border, effects, spacing) at
+   *  the same path. */
+  nodeEffects: NodeEffects[];
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -81,5 +88,6 @@ export function extract(
     gaps: extractGaps(root),
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
+    nodeEffects: extractNodeEffects(root),
   };
 }
