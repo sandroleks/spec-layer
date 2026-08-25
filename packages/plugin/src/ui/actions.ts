@@ -6,7 +6,7 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation, colorContrast, componentBrief, foundationBrief, toYaml, narrowFoundation } from '@spec-layer/extractor';
+import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, foundationBrief, toYaml, narrowFoundation } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
@@ -618,7 +618,7 @@ export function currentFoundationSpec(): FoundationSpec | null {
  * threshold and the error string. `buildYaml` is a thunk rather than an
  * already-built string so this can keep wrapping the brief construction
  * itself in the same try/catch the duplicated code used — a failure in
- * toYaml/foundationBrief/colorContrast is reported the same "could not read"
+ * toYaml/foundationBrief is reported the same "could not read"
  * way a copy failure is, exactly as before the extraction.
  */
 async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promise<void> {
@@ -656,13 +656,11 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
   await deliverBrief(() => toYaml(foundationBrief(spec, {
     generatedAt: new Date().toISOString(),
     groupDescriptions: foundationGroupDescriptions,
-    // Always computed here, unlike the foundation FRAME, which draws its
-    // matrices only when the doc's includeContrast is on. A frame costs canvas
-    // space a user has to look at, so it is opt in; the brief carries only the
-    // failures and the counts, which are small, and an agent asked to pick
-    // colours cannot know it is pairing two that fail unless they are in the
-    // payload. A file with no measurable pair still gets the block, saying so.
-    contrast: colorContrast(spec),
+    // No contrast. The brief exists to hand an agent a token vocabulary, and a
+    // WCAG check is measured over every colour pair, so its failure list grows
+    // with the file and crowds out the tokens. Contrast is a thing to LOOK at:
+    // it stays on the foundation FRAME, which draws its matrices when the doc's
+    // includeContrast is on.
   })), ui);
 }
 
@@ -726,10 +724,8 @@ export async function copyFoundationBriefForScope(
   await deliverBrief(() => toYaml(foundationBrief(narrowed, {
     generatedAt: new Date().toISOString(),
     groupDescriptions,
-    // Measured on the NARROWED spec, so the pairs reported are the ones
-    // inside this collection. colorContrast already scopes per collection,
-    // so this needs no argument of its own.
-    contrast: colorContrast(narrowed),
+    // No contrast here either, for the reason copyFoundationBrief gives: a
+    // scoped copy is still a token vocabulary, not an audit.
   })), ui);
 }
 
