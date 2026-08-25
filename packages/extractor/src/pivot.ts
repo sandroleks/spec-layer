@@ -66,7 +66,7 @@ function makeTable(header: string[], rows: string[][]): string[] {
 function flatRows(rules: TokenRule[]): string[] {
   return makeTable(
     ['Property', 'Condition', 'Token'],
-    rules.map((r) => [r.property, formatConditions(r.conditions), code(r.token)]),
+    rules.map((r) => [r.property, formatConditions(r.conditions), code(r.name)]),
   );
 }
 
@@ -200,9 +200,9 @@ export function pivotColorPart(
           const k = cellKey(r.property, s, c);
           const prev = cells.get(k);
           if (!prev || score > prev.score) {
-            cells.set(k, { tokens: [r.token], score });
-          } else if (score === prev.score && !prev.tokens.includes(r.token)) {
-            prev.tokens.push(r.token);
+            cells.set(k, { tokens: [r.name], score });
+          } else if (score === prev.score && !prev.tokens.includes(r.name)) {
+            prev.tokens.push(r.name);
           }
         }
       }
@@ -245,7 +245,7 @@ export function flatGlobalTable(rules: TokenRule[]): string[] {
   return [
     ...makeTable(
       ['Part', 'Property', 'Condition', 'Token'],
-      rules.map((r) => [r.part, r.property, formatConditions(r.conditions), code(r.token)]),
+      rules.map((r) => [r.part, r.property, formatConditions(r.conditions), code(r.name)]),
     ),
     '',
   ];
@@ -256,7 +256,7 @@ export function fixedTable(entries: { part: string; rule: TokenRule }[]): string
   return [
     ...makeTable(
       ['Part', 'Property', 'Token'],
-      entries.map((e) => [e.part, e.rule.property, code(e.rule.token)]),
+      entries.map((e) => [e.part, e.rule.property, code(e.rule.name)]),
     ),
     '',
   ];

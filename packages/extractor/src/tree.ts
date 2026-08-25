@@ -7,7 +7,9 @@ export interface SerializedNode {
   children?: SerializedNode[];
   /** Present on COMPONENT_SET (or standalone COMPONENT). */
   propertyDefinitions?: Record<string, PropertyDefinition>;
-  /** Variable bindings, resolved to token names: e.g. { property: "fills", token: "md.sys.color.primary" } */
+  /** Variable and style bindings with the identity Figma stated for each:
+   *  e.g. { property: "fills", id: "VariableID:7", name: "md.sys.color.primary",
+   *  kind: "variable", remote: false }. */
   bindings?: TokenRef[];
   /** True when a paint is hardcoded (no variable/style) — feeds the gaps report. */
   hasUnboundPaint?: boolean;
@@ -40,9 +42,33 @@ export interface PropertyDefinition {
   variantOptions?: string[];
 }
 
-export interface TokenRef {
+/** What kind of Figma resource a binding names. A closed set: `getStyleByIdAsync`
+ *  can also return a GRID style, but no node property this file reads produces a
+ *  grid binding, so a grid style never becomes a TokenRef. */
+export type RefKind = 'variable' | 'paint-style' | 'text-style' | 'effect-style';
+
+/**
+ * A resolved reference to one Figma resource, with everything Figma stated
+ * about it. Shared by node bindings (TokenRef), minimized rules (TokenRule) and
+ * per-field effect bindings, so all three answer the same questions the same way.
+ */
+export interface RefIdentity {
+  /** Figma id. Drives resolution. Never emitted: the brief's rule is that
+   *  internal ids stay inside. */
+  id: string;
+  /** Display and join identity, as `token` was. */
+  name: string;
+  kind: RefKind;
+  /** Figma's own answer (Variable.remote / PublishableMixin.remote), not
+   *  inferred from a failed lookup. */
+  remote: boolean;
+  /** Variables only. */
+  collectionId?: string;
+}
+
+/** A binding on one node: an identity plus the property it is bound to. */
+export interface TokenRef extends RefIdentity {
   property: string; // fills | strokes | itemSpacing | cornerRadius | ...
-  token: string;    // resolved variable or style name
 }
 
 /** Auto-layout and shape values captured from the Figma node (only values > 0 are present). */

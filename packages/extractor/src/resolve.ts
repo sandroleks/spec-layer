@@ -20,7 +20,10 @@ export function resolveTokensForVariant(
 ): ResolvedToken[] {
   return tokens
     .filter((rule) => matches(rule.conditions, values))
-    .map(({ part, property, token }) => ({ part, property, token }));
+    // `token` stays the field name here: ResolvedToken feeds the canvas view
+    // models in docModel.ts and docFrame.ts, which are not references and have
+    // no id or kind to carry.
+    .map(({ part, property, name }) => ({ part, property, token: name }));
 }
 
 function matches(conditions: Record<string, string[]>, values: Record<string, string>): boolean {

@@ -134,7 +134,7 @@ export function validate(
   //    `{ Enabled: ['False'] }`, a very common way to model "disabled", which
   //    the lexical test reported as the exact defect the rule looks for.
   for (const t of spec.tokens) {
-    const word = STATE_WORDS.find((w) => hasWord(t.token.toLowerCase(), w));
+    const word = STATE_WORDS.find((w) => hasWord(t.name.toLowerCase(), w));
     if (!word) continue;
     const conditionText = Object.entries(t.conditions)
       .map(([axis, values]) => `${axis} ${values.join(' ')}`).join(' ').toLowerCase();
@@ -144,7 +144,7 @@ export function validate(
     findings.push({
       id: 'default-state-uses-state-token', severity: 'warning',
       path: t.path, property: t.property,
-      message: `${t.property} is bound to ${t.token}, which names the ${word} state, `
+      message: `${t.property} is bound to ${t.name}, which names the ${word} state, `
         + 'but this binding applies where that state is not set.',
       ...(Object.keys(t.conditions).length > 0 ? { when: t.conditions } : {}),
     });
@@ -198,13 +198,13 @@ export function validate(
       );
       if (applicable.length !== 1) continue;
       const rule = applicable[0];
-      const target = resolved.get(rule.token);
+      const target = resolved.get(rule.name);
       if (target === undefined || target === value) continue;
       findings.push({
         id: 'geometry-token-mismatch', severity: 'warning',
         path: rule.path, property,
         message: `The frame renders ${property} ${value}, while the bound token `
-          + `${rule.token} resolves to ${target}.`,
+          + `${rule.name} resolves to ${target}.`,
       });
     }
   }
@@ -219,7 +219,7 @@ export function validate(
   for (const t of spec.tokens) {
     const key = `${t.path}${t.property}${JSON.stringify(t.conditions)}`;
     const entry = byTarget.get(key) ?? { path: t.path, property: t.property, tokens: new Set<string>() };
-    entry.tokens.add(t.token);
+    entry.tokens.add(t.name);
     byTarget.set(key, entry);
   }
   for (const { path, property, tokens } of byTarget.values()) {

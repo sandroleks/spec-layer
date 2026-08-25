@@ -334,7 +334,7 @@ function buildSection(
           id: a.id,
           depth: a.depth,
           component: a.component,
-          tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.token))],
+          tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.name))],
           type: a.type,
           description: descByName.get(a.name.trim().toLowerCase()),
         }));
@@ -581,7 +581,7 @@ function buildSection(
       const rows = spec.tokens.map((t) => [
         t.part,
         t.property,
-        t.token,
+        t.name,
         formatConditions(t.conditions),
       ]);
       return {

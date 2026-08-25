@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { draftProse, proseCacheKey, ProseProxyError } from '../src/prose/client';
 import type { IntermediateSpec } from '../src/extract';
+import type { RefIdentity } from '../src/tree';
+
+/** A reference now carries a full identity, not just a name. These tests are
+ *  not about resolution, so one identity is minted per token NAME -- which is
+ *  exactly what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const spec = {
   name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1',
@@ -127,7 +134,7 @@ describe('draftProse base64 image', () => {
       // without this they would each have orphaned every cached draft on release.
       const base = {
         ...spec,
-        tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, token: 'color/surface' }],
+        tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, ...ident('color/surface') }],
         layout: [{ part: 'Container', path: 'Container', summary: 'horizontal, gap 8', values: { gap: 8 } }],
       } as unknown as IntermediateSpec;
       const moved = {
@@ -155,11 +162,11 @@ describe('draftProse base64 image', () => {
     // The counterpart to the block above: proving the key is not simply inert.
     const base = {
       ...spec,
-      tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, token: 'color/surface' }],
+      tokens: [{ part: 'Container', path: 'Container', property: 'fill', conditions: {}, ...ident('color/surface') }],
     } as unknown as IntermediateSpec;
     const moved = {
       ...base,
-      tokens: [{ ...(base.tokens[0]), token: 'color/surface/brand' }],
+      tokens: [{ ...(base.tokens[0]), ...ident('color/surface/brand') }],
     } as unknown as IntermediateSpec;
     expect(proseCacheKey(moved)).not.toEqual(proseCacheKey(base));
   });

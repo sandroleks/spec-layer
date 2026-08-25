@@ -66,7 +66,7 @@ describe('full pipeline: serialize → extract → render → parse', () => {
     // Single-variant mock: the container fill is unconditioned, so the rule
     // carries the resolved variable name straight through.
     expect(spec.tokens).toContainEqual(
-      expect.objectContaining({ part: 'container', property: 'fill', token: 'md.sys.color.primary' }),
+      expect.objectContaining({ part: 'container', property: 'fill', name: 'md.sys.color.primary' }),
     );
   });
 
@@ -82,7 +82,7 @@ describe('full pipeline: serialize → extract → render → parse', () => {
     const spec = extract(node, { figmaFile: 'FILEKEY' });
 
     expect(spec.tokens).toContainEqual(
-      expect.objectContaining({ part: 'label', property: 'typography', token: 'md.sys.typescale.label-large' }),
+      expect.objectContaining({ part: 'label', property: 'typography', name: 'md.sys.typescale.label-large' }),
     );
     // property is 'gap', not 'itemSpacing': it must match the name a real
     // itemSpacing token binding normalizes to (SIMPLE_PROPERTY_MAP), or the

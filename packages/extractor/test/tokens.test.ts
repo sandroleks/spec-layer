@@ -2,15 +2,43 @@ import { describe, it, expect } from 'vitest';
 import { extractTokens, extractGaps, formatConditions } from '../src/tokens';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
-import type { SerializedNode } from '../src/tree';
+import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
 
 const root = button as SerializedNode;
+
+/**
+ * A binding now carries a full identity, and a rule spreads that identity
+ * through. `ident` mints ONE identity per distinct token NAME, which is exactly
+ * what a name meant before this change, so a synthetic fixture and the rule it
+ * is expected to produce agree without every literal restating four fields.
+ *
+ * The button and chip fixtures state their own identities, so they are learned
+ * first and win: an expectation about a fixture token then carries the real id
+ * and collectionId that fixture declared, not a synthetic stand-in.
+ */
+const minted = new Map<string, RefIdentity>();
+const learn = (n: SerializedNode): void => {
+  for (const b of n.bindings ?? []) {
+    const { property: _property, ...identity } = b;
+    if (!minted.has(identity.name)) minted.set(identity.name, identity);
+  }
+  (n.children ?? []).forEach(learn);
+};
+learn(button as SerializedNode);
+learn(chip as SerializedNode);
+
+const ident = (name: string): RefIdentity => {
+  let i = minted.get(name);
+  if (!i) minted.set(name, (i = { id: `VariableID:${name}`, name, kind: 'variable', remote: false }));
+  return i;
+};
+const bind = (property: string, token: string): TokenRef => ({ property, ...ident(token) });
 
 /** Build a COMPONENT_SET fixture from variant descriptors. */
 function makeSet(
   variants: {
     name: string;
-    parts: { name: string; type?: string; visible?: boolean; bindings: { property: string; token: string }[] }[];
+    parts: { name: string; type?: string; visible?: boolean; bindings: TokenRef[] }[];
   }[],
   propertyDefinitions?: SerializedNode['propertyDefinitions'],
 ): SerializedNode {
@@ -31,7 +59,7 @@ function makeSet(
 describe('extractTokens — rule minimization', () => {
   it('emits unconditioned rules for tokens shared by every variant', () => {
     expect(extractTokens(root)).toContainEqual(
-      { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'md.sys.shape.corner.full' },
+      { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, ...ident('md.sys.shape.corner.full') },
     );
   });
 
@@ -39,10 +67,10 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(root);
     // label fill depends only on Style — State must not appear in the conditions
     expect(tokens).toContainEqual(
-      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Filled'] }, token: 'md.sys.color.on-primary' },
+      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Filled'] }, ...ident('md.sys.color.on-primary') },
     );
     expect(tokens).toContainEqual(
-      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.primary' },
+      { part: 'label', path: 'Container/label', property: 'fill', conditions: { Style: ['Outlined'] }, ...ident('md.sys.color.primary') },
     );
   });
 
@@ -52,7 +80,7 @@ describe('extractTokens — rule minimization', () => {
       {
         part: 'container', path: 'Container/container', property: 'fill',
         conditions: { Style: ['Filled'], State: ['Enabled'] },
-        token: 'md.sys.color.primary',
+        ...ident('md.sys.color.primary'),
       },
     );
     // The only State=Hovered variant in the (sparse) fixture is Filled, so the
@@ -61,7 +89,7 @@ describe('extractTokens — rule minimization', () => {
       {
         part: 'container', path: 'Container/container', property: 'fill',
         conditions: { State: ['Hovered'] },
-        token: 'md.sys.color.primary-hover',
+        ...ident('md.sys.color.primary-hover'),
       },
     );
   });
@@ -69,26 +97,26 @@ describe('extractTokens — rule minimization', () => {
   it('drops non-restrictive axes on a sparse grid (Outlined exists only as Enabled)', () => {
     const tokens = extractTokens(root);
     expect(tokens).toContainEqual(
-      { part: 'container', path: 'Container/container', property: 'border', conditions: { Style: ['Outlined'] }, token: 'md.sys.color.outline' },
+      { part: 'container', path: 'Container/container', property: 'border', conditions: { Style: ['Outlined'] }, ...ident('md.sys.color.outline') },
     );
   });
 
   it('does not repeat a single-axis rule for every combination of unrelated axes', () => {
     const set = makeSet([
-      { name: 'Size=S, State=Default', parts: [{ name: 'Label', type: 'TEXT', bindings: [{ property: 'typography', token: 'Action/S' }] }] },
-      { name: 'Size=L, State=Default', parts: [{ name: 'Label', type: 'TEXT', bindings: [{ property: 'typography', token: 'Action/L' }] }] },
-      { name: 'Size=S, State=Hover', parts: [{ name: 'Label', type: 'TEXT', bindings: [{ property: 'typography', token: 'Action/S' }] }] },
-      { name: 'Size=L, State=Hover', parts: [{ name: 'Label', type: 'TEXT', bindings: [{ property: 'typography', token: 'Action/L' }] }] },
+      { name: 'Size=S, State=Default', parts: [{ name: 'Label', type: 'TEXT', bindings: [bind('typography', 'Action/S')] }] },
+      { name: 'Size=L, State=Default', parts: [{ name: 'Label', type: 'TEXT', bindings: [bind('typography', 'Action/L')] }] },
+      { name: 'Size=S, State=Hover', parts: [{ name: 'Label', type: 'TEXT', bindings: [bind('typography', 'Action/S')] }] },
+      { name: 'Size=L, State=Hover', parts: [{ name: 'Label', type: 'TEXT', bindings: [bind('typography', 'Action/L')] }] },
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toEqual([
-      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['S'] }, token: 'Action/S' },
-      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['L'] }, token: 'Action/L' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['S'] }, ...ident('Action/S') },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: { Size: ['L'] }, ...ident('Action/L') },
     ]);
   });
 
   it('collapses an override axis into a wildcard rule (Disabled wins across states)', () => {
-    const fill = (token: string) => [{ property: 'fills', token }];
+    const fill = (token: string) => [bind('fills', token)];
     const set = makeSet([
       { name: 'State=Default, Disabled=false', parts: [{ name: 'bg', bindings: fill('color/base') }] },
       { name: 'State=Hover, Disabled=false', parts: [{ name: 'bg', bindings: fill('color/hover') }] },
@@ -97,18 +125,18 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color/disabled' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Disabled: ['true'] }, ...ident('color/disabled') },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Default'], Disabled: ['false'] }, token: 'color/base' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Default'], Disabled: ['false'] }, ...ident('color/base') },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Hover'], Disabled: ['false'] }, token: 'color/hover' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { State: ['Hover'], Disabled: ['false'] }, ...ident('color/hover') },
     );
   });
 
   it('never claims combinations that do not exist in a sparse grid', () => {
-    const fill = (token: string) => [{ property: 'fills', token }];
+    const fill = (token: string) => [bind('fills', token)];
     // A=2/B=2 does not exist (the Danger x Disabled pattern)
     const set = makeSet([
       { name: 'A=1, B=1', parts: [{ name: 'bg', bindings: fill('color/x') }] },
@@ -118,13 +146,13 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(set);
     // y applies to all existing A=2 variants — B is non-restrictive and dropped
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['2'] }, token: 'color/y' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['2'] }, ...ident('color/y') },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { B: ['2'] }, token: 'color/z' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { B: ['2'] }, ...ident('color/z') },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['1'], B: ['1'] }, token: 'color/x' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['1'], B: ['1'] }, ...ident('color/x') },
     );
     expect(tokens).toHaveLength(3);
   });
@@ -135,11 +163,11 @@ describe('extractTokens — rule minimization', () => {
       { name: 'State=Hover', parts: [] },
       {
         name: 'State=Focus',
-        parts: [{ name: 'Focus Rect', bindings: [{ property: 'strokes', token: 'border/focus' }] }],
+        parts: [{ name: 'Focus Rect', bindings: [bind('strokes', 'border/focus')] }],
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
+      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, ...ident('border/focus') },
     ]);
   });
 
@@ -150,7 +178,7 @@ describe('extractTokens — rule minimization', () => {
     const focusRect = (visible: boolean) => ({
       name: 'Focus Rect',
       visible,
-      bindings: [{ property: 'strokes', token: 'border/focus' }],
+      bindings: [bind('strokes', 'border/focus')],
     });
     const set = makeSet([
       { name: 'State=Default', parts: [focusRect(false)] },
@@ -158,7 +186,7 @@ describe('extractTokens — rule minimization', () => {
       { name: 'State=Focus', parts: [focusRect(true)] },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, token: 'border/focus' },
+      { part: 'Focus Rect', path: 'Container/Focus Rect', property: 'border', conditions: { State: ['Focus'] }, ...ident('border/focus') },
     ]);
   });
 
@@ -167,23 +195,23 @@ describe('extractTokens — rule minimization', () => {
       {
         name: 'A=One',
         parts: [{ name: 'bg', bindings: [
-          { property: 'fills', token: 'color/overlay' },
-          { property: 'fills', token: 'color/base' },
+          bind('fills', 'color/overlay'),
+          bind('fills', 'color/base'),
         ] }],
       },
       {
         name: 'A=Two',
-        parts: [{ name: 'bg', bindings: [{ property: 'fills', token: 'color/overlay' }] }],
+        parts: [{ name: 'bg', bindings: [bind('fills', 'color/overlay')] }],
       },
     ]);
     const tokens = extractTokens(set);
     // overlay is present everywhere → unconditioned; base only on A=One
-    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: {}, token: 'color/overlay' });
-    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['One'] }, token: 'color/base' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: {}, ...ident('color/overlay') });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'fill', conditions: { A: ['One'] }, ...ident('color/base') });
   });
 
   it('merges sibling axis values that share a token', () => {
-    const fill = (token: string) => [{ property: 'fills', token }];
+    const fill = (token: string) => [bind('fills', token)];
     const set = makeSet([
       { name: 'Type=Primary', parts: [{ name: 'bg', bindings: fill('color/primary') }] },
       { name: 'Type=Secondary', parts: [{ name: 'bg', bindings: fill('color/muted') }] },
@@ -191,12 +219,12 @@ describe('extractTokens — rule minimization', () => {
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, ...ident('color/muted') },
     );
   });
 
   it('orders condition values by the declared variantOptions order', () => {
-    const fill = (token: string) => [{ property: 'fills', token }];
+    const fill = (token: string) => [bind('fills', token)];
     const set = makeSet(
       [
         { name: 'Type=Tertiary', parts: [{ name: 'bg', bindings: fill('color/muted') }] },
@@ -206,7 +234,7 @@ describe('extractTokens — rule minimization', () => {
       { Type: { type: 'VARIANT', defaultValue: 'Primary', variantOptions: ['Primary', 'Secondary', 'Tertiary'] } },
     );
     expect(extractTokens(set)).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color/muted' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, ...ident('color/muted') },
     );
   });
 
@@ -214,7 +242,7 @@ describe('extractTokens — rule minimization', () => {
     const tokens = extractTokens(chip as SerializedNode);
     const iconFills = tokens.filter((t) => t.part === 'icon' && t.property === 'fill');
     expect(iconFills).toEqual([
-      { part: 'icon', path: 'Container/Contents/icon', property: 'fill', conditions: {}, token: 'Text Color/Body/Primary' },
+      { part: 'icon', path: 'Container/Contents/icon', property: 'fill', conditions: {}, ...ident('Text Color/Body/Primary') },
     ]);
   });
 
@@ -223,16 +251,16 @@ describe('extractTokens — rule minimization', () => {
       {
         name: 'Size=XSmall',
         parts: [{ name: 'bg', bindings: [
-          { property: 'paddingLeft', token: 'size-12' },
-          { property: 'paddingRight', token: 'size-12' },
-          { property: 'paddingTop', token: 'size-4' },
-          { property: 'paddingBottom', token: 'size-4' },
+          bind('paddingLeft', 'size-12'),
+          bind('paddingRight', 'size-12'),
+          bind('paddingTop', 'size-4'),
+          bind('paddingBottom', 'size-4'),
         ] }],
       },
     ]);
     const tokens = extractTokens(set);
-    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-x', conditions: {}, token: 'size-12' });
-    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-y', conditions: {}, token: 'size-4' });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-x', conditions: {}, ...ident('size-12') });
+    expect(tokens).toContainEqual({ part: 'bg', path: 'Container/bg', property: 'padding-y', conditions: {}, ...ident('size-4') });
   });
 
   it('collapses all four equal paddings into a single padding rule', () => {
@@ -240,15 +268,15 @@ describe('extractTokens — rule minimization', () => {
       {
         name: 'Size=M',
         parts: [{ name: 'bg', bindings: [
-          { property: 'paddingLeft', token: 'size-8' },
-          { property: 'paddingRight', token: 'size-8' },
-          { property: 'paddingTop', token: 'size-8' },
-          { property: 'paddingBottom', token: 'size-8' },
+          bind('paddingLeft', 'size-8'),
+          bind('paddingRight', 'size-8'),
+          bind('paddingTop', 'size-8'),
+          bind('paddingBottom', 'size-8'),
         ] }],
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'bg', path: 'Container/bg', property: 'padding', conditions: {}, token: 'size-8' },
+      { part: 'bg', path: 'Container/bg', property: 'padding', conditions: {}, ...ident('size-8') },
     ]);
   });
 
@@ -257,14 +285,14 @@ describe('extractTokens — rule minimization', () => {
       {
         name: 'Size=M',
         parts: [{ name: 'Label', type: 'TEXT', bindings: [
-          { property: 'typography', token: 'Action/M' },
-          { property: 'fontSize', token: 'font-size/fs-200' },
-          { property: 'lineHeight', token: 'line-height/lh-400' },
+          bind('typography', 'Action/M'),
+          bind('fontSize', 'font-size/fs-200'),
+          bind('lineHeight', 'line-height/lh-400'),
         ] }],
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: {}, token: 'Action/M' },
+      { part: 'Label', path: 'Container/Label', property: 'typography', conditions: {}, ...ident('Action/M') },
     ]);
   });
 
@@ -272,33 +300,33 @@ describe('extractTokens — rule minimization', () => {
     const set = makeSet([
       {
         name: 'Size=M',
-        parts: [{ name: 'icon-primary#', bindings: [{ property: 'fills', token: 'color/icon' }] }],
+        parts: [{ name: 'icon-primary#', bindings: [bind('fills', 'color/icon')] }],
       },
     ]);
     expect(extractTokens(set)).toEqual([
-      { part: 'icon-primary', path: 'Container/icon-primary', property: 'fill', conditions: {}, token: 'color/icon' },
+      { part: 'icon-primary', path: 'Container/icon-primary', property: 'fill', conditions: {}, ...ident('color/icon') },
     ]);
   });
 
   it('falls back to a Variant pseudo-axis when names are not Axis=Value shaped', () => {
-    const fill = (token: string) => [{ property: 'fills', token }];
+    const fill = (token: string) => [bind('fills', token)];
     const set = makeSet([
       { name: 'Plain', parts: [{ name: 'bg', bindings: fill('color/base') }] },
       { name: 'Fancy Variant', parts: [{ name: 'bg', bindings: fill('color/fancy') }] },
     ]);
     const tokens = extractTokens(set);
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Plain'] }, token: 'color/base' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Plain'] }, ...ident('color/base') },
     );
     expect(tokens).toContainEqual(
-      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Fancy Variant'] }, token: 'color/fancy' },
+      { part: 'bg', path: 'Container/bg', property: 'fill', conditions: { Variant: ['Fancy Variant'] }, ...ident('color/fancy') },
     );
   });
 
   it('lists the default-variant rule before the others', () => {
     const tokens = extractTokens(root);
     const containerFills = tokens.filter((t) => t.part === 'container' && t.property === 'fill');
-    expect(containerFills[0].token).toBe('md.sys.color.primary');
+    expect(containerFills[0].name).toBe('md.sys.color.primary');
   });
 
   it('handles an Auris-Button-shaped sparse grid without a combinatorial explosion', () => {
@@ -324,8 +352,8 @@ describe('extractTokens — rule minimization', () => {
             variants.push({
               name: `Size=${size}, Type=${type}, State=${state}, Danger=${danger}, Disabled=${disabled}`,
               parts: [
-                { name: 'bg', bindings: [{ property: 'fills', token: fillToken(type, state, danger, disabled) }] },
-                { name: 'Label', type: 'TEXT', bindings: [{ property: 'typography', token: `action/${size}` }] },
+                { name: 'bg', bindings: [bind('fills', fillToken(type, state, danger, disabled))] },
+                { name: 'Label', type: 'TEXT', bindings: [bind('typography', `action/${size}`)] },
               ],
             });
     const tokens = extractTokens(makeSet(variants));
@@ -342,12 +370,12 @@ describe('extractTokens — rule minimization', () => {
     expect(fills).toContainEqual({
       part: 'bg', path: 'Container/bg', property: 'fill',
       conditions: { Type: ['Primary'], Disabled: ['true'] },
-      token: 'bg/primary-disabled',
+      ...ident('bg/primary-disabled'),
     });
     expect(fills).toContainEqual({
       part: 'bg', path: 'Container/bg', property: 'fill',
       conditions: { Type: ['Secondary', 'Tertiary'], State: ['Hover'], Danger: ['true'] },
-      token: 'bg/danger-secondary-Hover',
+      ...ident('bg/danger-secondary-Hover'),
     });
     // No rule may claim the non-existent Danger=true + Disabled=true combination.
     for (const f of fills) {
@@ -453,7 +481,7 @@ describe('extractGaps coverage', () => {
   });
 
   it('does not report opacity when it is bound to a variable', () => {
-    const gaps = extractGaps(comp({ opacity: 0.5, bindings: [{ property: 'opacity', token: 'a/b' }] }));
+    const gaps = extractGaps(comp({ opacity: 0.5, bindings: [bind('opacity', 'a/b')] }));
     expect(gaps).toEqual([]);
   });
 
@@ -500,15 +528,15 @@ describe('same-named siblings', () => {
     children: [{
       id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
       children: [
-        { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/leading' }] },
-        { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [{ property: 'fills', token: 'tok/text' }] },
-        { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/trailing' }] },
+        { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/leading')] },
+        { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [bind('fills', 'tok/text')] },
+        { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/trailing')] },
       ],
     }],
   };
 
   it('keeps two same-named siblings as distinct parts', () => {
-    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.name}`);
     expect(byPart).toContain('icon=tok/leading');
     expect(byPart).toContain('icon (2)=tok/trailing');
     // The bug: both landed on `icon`, producing two unconditioned rules for one part.
@@ -529,13 +557,13 @@ describe('same-named siblings — hidden collision', () => {
       children: [{
         id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
         children: [
-          { id: 'a', name: 'icon', type: 'FRAME', visible: false, bindings: [{ property: 'fills', token: 'tok/hidden' }] },
-          { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [{ property: 'fills', token: 'tok/text' }] },
-          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/trailing' }] },
+          { id: 'a', name: 'icon', type: 'FRAME', visible: false, bindings: [bind('fills', 'tok/hidden')] },
+          { id: 'b', name: 'label', type: 'TEXT', visible: true, bindings: [bind('fills', 'tok/text')] },
+          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/trailing')] },
         ],
       }],
     };
-    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.name}`);
     expect(byPart).toContain('icon (2)=tok/trailing');
     expect(byPart).not.toContain('icon=tok/trailing');
   });
@@ -547,13 +575,13 @@ describe('same-named siblings — hidden collision', () => {
       children: [{
         id: 'v0', name: 'Style=Filled', type: 'COMPONENT', visible: true,
         children: [
-          { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/1' }] },
-          { id: 'b', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/2' }] },
-          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [{ property: 'fills', token: 'tok/3' }] },
+          { id: 'a', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/1')] },
+          { id: 'b', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/2')] },
+          { id: 'c', name: 'icon', type: 'FRAME', visible: true, bindings: [bind('fills', 'tok/3')] },
         ],
       }],
     };
-    const byPart = extractTokens(set).map((r) => `${r.part}=${r.token}`);
+    const byPart = extractTokens(set).map((r) => `${r.part}=${r.name}`);
     expect(byPart).toContain('icon=tok/1');
     expect(byPart).toContain('icon (2)=tok/2');
     expect(byPart).toContain('icon (3)=tok/3');
@@ -569,9 +597,9 @@ describe('duplicate parsed combos', () => {
       propertyDefinitions: { Size: { type: 'VARIANT', variantOptions: ['S'] } },
       children: [
         { id: 'v0', name: 'Size=S', type: 'COMPONENT', visible: true,
-          bindings: [{ property: 'fills', token: 'tok/a' }] },
+          bindings: [bind('fills', 'tok/a')] },
         { id: 'v1', name: 'Size=M, Size=S', type: 'COMPONENT', visible: true,
-          bindings: [{ property: 'fills', token: 'tok/b' }] },
+          bindings: [bind('fills', 'tok/b')] },
       ],
     };
     const rules = extractTokens(set);
@@ -587,11 +615,11 @@ describe('property name normalization', () => {
     const set: SerializedNode = {
       id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
       bindings: [
-        { property: 'strokeWeight', token: 'border/width/thin' },
-        { property: 'effects', token: 'shadow/sm' },
-        { property: 'opacity', token: 'opacity/muted' },
-        { property: 'width', token: 'size/track' },
-        { property: 'height', token: 'size/thumb' },
+        bind('strokeWeight', 'border/width/thin'),
+        bind('effects', 'shadow/sm'),
+        bind('opacity', 'opacity/muted'),
+        bind('width', 'size/track'),
+        bind('height', 'size/thumb'),
       ],
     };
     const props = extractTokens(set).map((r) => r.property);
@@ -601,7 +629,7 @@ describe('property name normalization', () => {
   it('passes counterAxisSpacing through unchanged, since the correct CSS name depends on layoutMode', () => {
     const set: SerializedNode = {
       id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
-      bindings: [{ property: 'counterAxisSpacing', token: 'space/sm' }],
+      bindings: [bind('counterAxisSpacing', 'space/sm')],
     };
     const props = extractTokens(set).map((r) => r.property);
     expect(props).toEqual(['counterAxisSpacing']);
@@ -625,14 +653,14 @@ describe('cross-subtree name collision (path grouping)', () => {
           id: 'h', name: 'header', type: 'FRAME', visible: true,
           children: [
             { id: 'hl', name: 'label', type: 'TEXT', visible: true,
-              bindings: [{ property: 'fills', token: 'color.header.label' }] },
+              bindings: [bind('fills', 'color.header.label')] },
           ],
         },
         {
           id: 'f', name: 'footer', type: 'FRAME', visible: true,
           children: [
             { id: 'fl', name: 'label', type: 'TEXT', visible: true,
-              bindings: [{ property: 'fills', token: 'color.footer.label' }] },
+              bindings: [bind('fills', 'color.footer.label')] },
           ],
         },
       ],
@@ -640,16 +668,46 @@ describe('cross-subtree name collision (path grouping)', () => {
     const tokens = extractTokens(root);
     expect(tokens).toHaveLength(2);
 
-    const header = tokens.find((t) => t.token === 'color.header.label');
-    const footer = tokens.find((t) => t.token === 'color.footer.label');
+    const header = tokens.find((t) => t.name === 'color.header.label');
+    const footer = tokens.find((t) => t.name === 'color.footer.label');
     expect(header).toEqual(
-      { part: 'label', path: 'Root/header/label', property: 'fill', conditions: {}, token: 'color.header.label' },
+      { part: 'label', path: 'Root/header/label', property: 'fill', conditions: {}, ...ident('color.header.label') },
     );
     expect(footer).toEqual(
-      { part: 'label', path: 'Root/footer/label', property: 'fill', conditions: {}, token: 'color.footer.label' },
+      { part: 'label', path: 'Root/footer/label', property: 'fill', conditions: {}, ...ident('color.footer.label') },
     );
     // The defect under review: both rules reporting the SAME (wrong-for-one)
     // path is exactly what must not happen.
     expect(header!.path).not.toBe(footer!.path);
+  });
+});
+
+describe('ref identity', () => {
+  const ref = (over: Partial<TokenRef> & { property: string }): TokenRef => ({
+    id: 'VariableID:1', name: 'color/brand', kind: 'variable', remote: false, ...over,
+  });
+
+  it('carries id, kind and remote onto the emitted rule', () => {
+    const root: SerializedNode = {
+      id: '1:1', name: 'Card', type: 'COMPONENT', visible: true,
+      bindings: [ref({ property: 'fills', id: 'VariableID:9', remote: true,
+        collectionId: 'VariableCollectionId:3' })],
+    } as SerializedNode;
+    const [rule] = extractTokens(root);
+    expect(rule.name).toBe('color/brand');
+    expect(rule.id).toBe('VariableID:9');
+    expect(rule.kind).toBe('variable');
+    expect(rule.remote).toBe(true);
+    expect(rule.collectionId).toBe('VariableCollectionId:3');
+  });
+
+  it('has no `token` field left on a rule', () => {
+    const root: SerializedNode = {
+      id: '1:1', name: 'Card', type: 'COMPONENT', visible: true,
+      bindings: [ref({ property: 'fills' })],
+    } as SerializedNode;
+    // `in`, not an undefined comparison: a leftover `token: undefined` would
+    // still satisfy every consumer that reads it and silently emit nothing.
+    expect('token' in extractTokens(root)[0]).toBe(false);
   });
 });

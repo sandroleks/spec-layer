@@ -42,8 +42,15 @@ export function specContentHash(spec: IntermediateSpec): string {
     // computed without it, and including it would flip all of them to "update
     // available" for a change that alters no rendered output. Same reasoning, and
     // same shape, as the anatomy reduction above.
-    tokens: spec.tokens.map(({ part, property, conditions, token }) =>
-      ({ part, property, conditions, token })),
+    //
+    // The projection emits the OLD key `token` from the NEW field `name`. The
+    // rename carries no content: it is the same string, resolved from the same
+    // Figma resource, and every committed doc's baseline was computed with it
+    // under the old key. Emitting `name` here instead would drift every document
+    // on every canvas for a field rename. The new identity fields (`id`, `kind`,
+    // `remote`, `collectionId`) stay out for the same reason `path` does.
+    tokens: spec.tokens.map(({ part, property, conditions, name }) =>
+      ({ part, property, conditions, token: name })),
     // Same reasoning as `tokens` above: `path` is a new identity for data
     // already hashed under `part`, so it stays out. `property` and `value` do
     // enter: they are real content (Task 8 moved the measured number out of

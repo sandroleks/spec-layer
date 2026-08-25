@@ -1,15 +1,15 @@
-import type { SerializedNode, TokenRef } from './tree';
+import type { SerializedNode, TokenRef, RefIdentity } from './tree';
 import { defaultVariant } from './anatomy';
 import { parseVariantName, cleanPartName, walkParts } from './naming';
 
 /**
- * A minimized token rule: `token` applies to `part.property` whenever every
+ * A minimized token rule: `name` applies to `part.property` whenever every
  * conditioned axis matches one of its listed values. An empty `conditions`
  * object means the rule applies to every variant. Conditions only name the
  * axes that actually determine the value — axes that never affect it are
  * never mentioned.
  */
-export interface TokenRule {
+export interface TokenRule extends RefIdentity {
   part: string;
   /** Path identity from the component root. The join key every consumer uses;
    *  `part` is the leaf name and is for display only. */
@@ -17,7 +17,6 @@ export interface TokenRule {
   property: string;
   /** axis -> matching values, axes in variant-name order, values in axis order. */
   conditions: Record<string, string[]>;
-  token: string;
 }
 
 /** Stable ids, not prose. A free-form sentence cannot drive UI, a test, or a
@@ -171,21 +170,29 @@ const simpleProperty = (raw: string): string => SIMPLE_PROPERTY_MAP[raw] ?? raw;
  */
 function paddingSides<T>(
   top: T[], right: T[], bottom: T[], left: T[],
+  key: (v: T) => string = String,
 ): Array<{ property: string; value: T }> {
   const single = (xs: T[]): T | null => (xs.length === 1 ? xs[0] : null);
+  const sameKey = (a: T[], b: T[]): boolean => {
+    const x = single(a), y = single(b);
+    return x !== null && y !== null && key(x) === key(y);
+  };
   const sides = [top, right, bottom, left];
   const out: Array<{ property: string; value: T }> = [];
-  if (sides.every((s) => single(s) !== null) && new Set(sides.map((s) => single(s))).size === 1) {
+  // Compared through `key`, not by identity: four sides bound to ONE variable
+  // are four distinct ref objects, and a Set of them has size 4.
+  if (sides.every((s) => single(s) !== null)
+      && new Set(sides.map((s) => key(single(s)!))).size === 1) {
     out.push({ property: 'padding', value: single(top)! });
     return out;
   }
-  if (left.length && single(left) !== null && single(left) === single(right)) {
+  if (left.length && sameKey(left, right)) {
     out.push({ property: 'padding-x', value: single(left)! });
   } else {
     for (const t of left) out.push({ property: 'padding-left', value: t });
     for (const t of right) out.push({ property: 'padding-right', value: t });
   }
-  if (top.length && single(top) !== null && single(top) === single(bottom)) {
+  if (top.length && sameKey(top, bottom)) {
     out.push({ property: 'padding-y', value: single(top)! });
   } else {
     for (const t of top) out.push({ property: 'padding-top', value: t });
@@ -202,45 +209,54 @@ function paddingSides<T>(
  * - everything else is renamed via SIMPLE_PROPERTY_MAP
  */
 function normalizeBindings(raw: TokenRef[]): TokenRef[] {
-  const byProp = new Map<string, string[]>();
+  // Keyed on the WHOLE ref, not on its name: two different resources sharing a
+  // name are two bindings, and collapsing them on the name is the defect this
+  // change exists to remove.
+  const byProp = new Map<string, TokenRef[]>();
   for (const b of raw) {
-    const tokens = byProp.get(b.property) ?? [];
-    if (!tokens.includes(b.token)) tokens.push(b.token);
-    byProp.set(b.property, tokens);
+    const refs = byProp.get(b.property) ?? [];
+    if (!refs.some((r) => r.kind === b.kind && r.id === b.id)) refs.push(b);
+    byProp.set(b.property, refs);
   }
 
   const out: TokenRef[] = [];
-  const emit = (property: string, token: string) => {
-    if (!out.some((o) => o.property === property && o.token === token)) out.push({ property, token });
+  const emit = (property: string, ref: TokenRef) => {
+    if (out.some((o) => o.property === property && o.kind === ref.kind && o.id === ref.id)) return;
+    // The ref travels through with its identity intact; only the PROPERTY is
+    // renamed. Reconstructing `{ property, token }` here is what used to flatten
+    // every binding back to a string one stage after it was resolved.
+    out.push({ ...ref, property });
   };
 
   // Corner radii
   const radii = RADIUS_PROPS.filter((p) => byProp.has(p));
-  const radiusTokens = new Set(radii.flatMap((p) => byProp.get(p)!));
-  if (radii.length === RADIUS_PROPS.length && radiusTokens.size === 1) {
-    emit('border-radius', [...radiusTokens][0]);
+  const radiusRefs = radii.flatMap((p) => byProp.get(p)!);
+  const distinctRadius = new Set(radiusRefs.map((r) => `${r.kind}|${r.id}`));
+  if (radii.length === RADIUS_PROPS.length && distinctRadius.size === 1) {
+    emit('border-radius', radiusRefs[0]);
   } else {
-    for (const p of radii) for (const t of byProp.get(p)!) emit(RADIUS_INDIVIDUAL_MAP[p], t);
+    for (const p of radii) for (const r of byProp.get(p)!) emit(RADIUS_INDIVIDUAL_MAP[p], r);
   }
 
   // Padding
-  const sideTokens = (...props: string[]) => props.flatMap((p) => byProp.get(p) ?? []);
+  const sideRefs = (...props: string[]) => props.flatMap((p) => byProp.get(p) ?? []);
   for (const { property, value } of paddingSides(
-    sideTokens('paddingTop', 'verticalPadding'),
-    sideTokens('paddingRight', 'horizontalPadding'),
-    sideTokens('paddingBottom', 'verticalPadding'),
-    sideTokens('paddingLeft', 'horizontalPadding'),
+    sideRefs('paddingTop', 'verticalPadding'),
+    sideRefs('paddingRight', 'horizontalPadding'),
+    sideRefs('paddingBottom', 'verticalPadding'),
+    sideRefs('paddingLeft', 'horizontalPadding'),
+    (r) => `${r.kind}|${r.id}`,
   )) {
     emit(property, value);
   }
 
   // Everything else
   const hasTypography = byProp.has('typography');
-  for (const [prop, tokens] of byProp) {
+  for (const [prop, refs] of byProp) {
     if (RADIUS_PROPS.includes(prop) || PADDING_RAW_PROPS.has(prop)) continue;
     if (hasTypography && TYPOGRAPHY_SUBPROPS.has(prop)) continue;
     const mapped = simpleProperty(prop);
-    for (const t of tokens) emit(mapped, t);
+    for (const r of refs) emit(mapped, r);
   }
   return out;
 }
@@ -323,17 +339,27 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   // path names the same node, so this is never overwritten with a different
   // value the way a `part`-keyed map would be.
   const partByPath = new Map<string, string>();
+  /** Identity by NAME, for this task only. A name is still the grouping key
+   *  here, exactly as it was before, so two references sharing one still
+   *  collapse: that is Task 4's job, not this one's. */
+  const identityByName = new Map<string, RefIdentity>();
 
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
     const variantTokens = new Map<string, Set<string>>(); // "path\0prop" -> tokens
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
-      for (const { property, token } of normalizeBindings(n.bindings ?? [])) {
-        const key = `${path}\0${property}`;
+      for (const ref of normalizeBindings(n.bindings ?? [])) {
+        const key = `${path}\0${ref.property}`;
         partByPath.set(path, part);
+        // Store the identity WITHOUT `property`: toTokenRule spreads this over a
+        // literal that already set `property` from the (path, property) cell it
+        // is emitting, so a `property` left on here would win the spread and
+        // stamp whichever property this name was last seen under onto the rule.
+        const { property: _property, ...identity } = ref;
+        identityByName.set(ref.name, identity);
         let set = variantTokens.get(key);
         if (!set) variantTokens.set(key, (set = new Set()));
-        set.add(token);
+        set.add(ref.name);
       }
     }, true);
     for (const [key, tokens] of variantTokens) {
@@ -524,7 +550,9 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       if (!vs) continue;
       conditions[axis] = axisValues.get(axis)!.filter((v) => vs.has(v));
     }
-    return { part: partByPath.get(path)!, path, property, conditions, token: r.token };
+    // Spread the identity, not just the name: `name` is one of its fields, so
+    // the rule carries the id, kind and remote that resolution needs.
+    return { part: partByPath.get(path)!, path, property, conditions, ...identityByName.get(r.token)! };
   };
 
   const ruleSortKey = (r: DraftRule): string => {

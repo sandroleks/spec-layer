@@ -37,8 +37,8 @@
           "type": "FRAME",
           "visible": true,
           "bindings": [
-            { "property": "fills", "token": "md.sys.color.primary" },
-            { "property": "cornerRadius", "token": "md.sys.shape.corner.full" }
+            { "property": "fills", "id": "VariableID:1", "name": "md.sys.color.primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" },
+            { "property": "cornerRadius", "id": "VariableID:2", "name": "md.sys.shape.corner.full", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ],
           "layout": { "mode": "HORIZONTAL", "paddingTop": 10, "paddingRight": 24, "paddingBottom": 10, "paddingLeft": 24, "itemSpacing": 8 }
         },
@@ -48,7 +48,7 @@
           "type": "TEXT",
           "visible": true,
           "bindings": [
-            { "property": "fills", "token": "md.sys.color.on-primary" }
+            { "property": "fills", "id": "VariableID:3", "name": "md.sys.color.on-primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ]
         },
         {
@@ -79,8 +79,8 @@
           "type": "FRAME",
           "visible": true,
           "bindings": [
-            { "property": "strokes", "token": "md.sys.color.outline" },
-            { "property": "cornerRadius", "token": "md.sys.shape.corner.full" }
+            { "property": "strokes", "id": "VariableID:4", "name": "md.sys.color.outline", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" },
+            { "property": "cornerRadius", "id": "VariableID:2", "name": "md.sys.shape.corner.full", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ]
         },
         {
@@ -89,7 +89,7 @@
           "type": "TEXT",
           "visible": true,
           "bindings": [
-            { "property": "fills", "token": "md.sys.color.primary" }
+            { "property": "fills", "id": "VariableID:1", "name": "md.sys.color.primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ]
         },
         {
@@ -113,8 +113,8 @@
           "type": "FRAME",
           "visible": true,
           "bindings": [
-            { "property": "fills", "token": "md.sys.color.primary-hover" },
-            { "property": "cornerRadius", "token": "md.sys.shape.corner.full" }
+            { "property": "fills", "id": "VariableID:5", "name": "md.sys.color.primary-hover", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" },
+            { "property": "cornerRadius", "id": "VariableID:2", "name": "md.sys.shape.corner.full", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ]
         },
         {
@@ -123,7 +123,7 @@
           "type": "TEXT",
           "visible": true,
           "bindings": [
-            { "property": "fills", "token": "md.sys.color.on-primary" }
+            { "property": "fills", "id": "VariableID:3", "name": "md.sys.color.on-primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
           ]
         }
       ]

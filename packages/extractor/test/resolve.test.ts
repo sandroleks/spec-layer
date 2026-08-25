@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTokensForVariant } from '../src/resolve';
 import type { TokenRule } from '../src/tokens';
+import type { RefIdentity } from '../src/tree';
+
+/** A reference now carries a full identity, not just a name. These tests are
+ *  not about resolution, so one identity is minted per token NAME -- which is
+ *  exactly what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const rules: TokenRule[] = [
-  { part: 'Container', path: 'Container', property: 'border-radius', conditions: {}, token: 'shape.full' },
-  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Primary'] }, token: 'color.primary' },
-  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, token: 'color.surface' },
+  { part: 'Container', path: 'Container', property: 'border-radius', conditions: {}, ...ident('shape.full') },
+  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Primary'] }, ...ident('color.primary') },
+  { part: 'Container', path: 'Container', property: 'fill', conditions: { Type: ['Secondary', 'Tertiary'] }, ...ident('color.surface') },
   {
     part: 'Container', path: 'Container', property: 'fill',
-    conditions: { Type: ['Primary'], State: ['Hover'] }, token: 'color.primary-hover',
+    conditions: { Type: ['Primary'], State: ['Hover'] }, ...ident('color.primary-hover'),
   },
-  { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Disabled: ['true'] }, token: 'color.disabled' },
+  { part: 'Label', path: 'Container/Label', property: 'fill', conditions: { Disabled: ['true'] }, ...ident('color.disabled') },
 ];
 
 describe('resolveTokensForVariant', () => {

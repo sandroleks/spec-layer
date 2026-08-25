@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
-import type { IntermediateSpec } from '@spec-layer/extractor';
+import type { IntermediateSpec, RefIdentity } from '@spec-layer/extractor';
+
+/** A TokenRule now carries the full identity Figma stated for the reference.
+ *  These tests are about the doc model, not resolution, so one identity is
+ *  minted per token NAME -- what a name meant before the identity fields
+ *  existed. The view model's own `token` field is untouched. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const spec = {
   name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1',
@@ -8,7 +15,7 @@ const spec = {
   props: [{ name: 'Size', kind: 'variant', default: 'M', options: ['S','M'] }],
   variants: [{ prop: 'Style', values: ['Filled','Text'] }],
   states: ['Enabled','Hovered'],
-  tokens: [{ part: 'Container', property: 'fill', token: 'color/bg', conditions: {} }],
+  tokens: [{ part: 'Container', property: 'fill', ...ident('color/bg'), conditions: {} }],
   rawValues: [],
   related: ['Icon'], gaps: [],
   layout: [], variantInstances: [],
@@ -99,8 +106,8 @@ describe('buildDocModel', () => {
         { nodeId: 'n2', name: 'Text', values: { Style: 'Text' } },
       ],
       tokens: [
-        { part: 'Container', property: 'fill', token: 'color/bg/brand', conditions: { Style: ['Filled'] } },
-        { part: 'Label', property: 'color', token: 'color/text', conditions: {} },
+        { part: 'Container', property: 'fill', ...ident('color/bg/brand'), conditions: { Style: ['Filled'] } },
+        { part: 'Label', property: 'color', ...ident('color/text'), conditions: {} },
       ],
     } as unknown as IntermediateSpec;
 
@@ -143,7 +150,7 @@ describe('buildDocModel', () => {
       ...spec,
       anatomyComponentId: 'c:1',
       anatomy: [{ id: '2', name: 'label', type: 'TEXT', nested: false, depth: 0 }],
-      tokens: [{ part: 'label', property: 'fill', token: 'color/label', conditions: {} }],
+      tokens: [{ part: 'label', property: 'fill', ...ident('color/label'), conditions: {} }],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'both' });
     const block = model.sections[0];
@@ -182,9 +189,9 @@ describe('measurements section', () => {
     ],
     states: ['Default', 'Hover'],
     tokens: [
-      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
-      { part: 'Container', property: 'gap', conditions: {}, token: 'spacing/sm' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+      { part: 'Container', property: 'padding', conditions: {}, ...ident('spacing/md') },
+      { part: 'Container', property: 'gap', conditions: {}, ...ident('spacing/sm') },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
     related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
@@ -233,7 +240,7 @@ describe('measurements section', () => {
     const plain: IntermediateSpec = {
       ...spec, variants: [], props: [],
       variantInstances: [{ nodeId: '1:2', name: 'Button', values: {} }],
-      tokens: [{ part: 'Button', property: 'padding', conditions: {}, token: 'spacing/md' }],
+      tokens: [{ part: 'Button', property: 'padding', conditions: {}, ...ident('spacing/md') }],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(plain, null, new Set(['measurements']), new Set(['1:2']));
     const block = model.sections[0];
@@ -264,8 +271,8 @@ describe('states matrix section', () => {
     ],
     states: ['Default', 'Hover'],
     tokens: [
-      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, token: 'color/rest' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, ...ident('color/rest') },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
     rawValues: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
@@ -288,7 +295,7 @@ describe('states matrix section', () => {
         { nodeId: '1:2', name: 'S', values: { Size: 'S' } },
         { nodeId: '1:3', name: 'M', values: { Size: 'M' } },
       ],
-      tokens: [{ part: 'Container', property: 'fill', conditions: {}, token: 'color/bg' }],
+      tokens: [{ part: 'Container', property: 'fill', conditions: {}, ...ident('color/bg') }],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(noStates, null, new Set(['states']), undefined);
     expect(model.sections.find((s) => s.id === 'states')).toBeUndefined();
@@ -368,8 +375,8 @@ describe('states matrix section: flags encoding', () => {
     ],
     states: [],
     tokens: [
-      { part: 'Container', property: 'fill', conditions: { Hover: ['True'] }, token: 'color/hover' },
-      { part: 'Container', property: 'opacity', conditions: { Disabled: ['True'] }, token: 'opacity/disabled' },
+      { part: 'Container', property: 'fill', conditions: { Hover: ['True'] }, ...ident('color/hover') },
+      { part: 'Container', property: 'opacity', conditions: { Disabled: ['True'] }, ...ident('opacity/disabled') },
     ],
     rawValues: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
@@ -575,9 +582,9 @@ describe('variant token cards: diff vs default', () => {
     ],
     states: ['Default', 'Hover'],
     tokens: [
-      { part: 'Container', property: 'padding', conditions: {}, token: 'spacing/md' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, token: 'color/rest' },
-      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/hover' },
+      { part: 'Container', property: 'padding', conditions: {}, ...ident('spacing/md') },
+      { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, ...ident('color/rest') },
+      { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
     rawValues: [{ part: 'label', property: 'gap', value: '4' }],
     related: [], gaps: [], layout: [],

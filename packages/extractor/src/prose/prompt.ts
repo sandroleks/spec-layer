@@ -269,7 +269,7 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: Set<ProseKe
     for (const t of spec.tokens) {
       const condition = formatConditions(t.conditions);
       const qualifier = condition === '—' ? '' : ` [${condition}]`;
-      lines.push(`  ${t.part}.${t.property}${qualifier} → ${t.token}`);
+      lines.push(`  ${t.part}.${t.property}${qualifier} → ${t.name}`);
     }
     if (spec.tokens.some((t) => Object.keys(t.conditions).length)) {
       lines.push(

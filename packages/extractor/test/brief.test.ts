@@ -6,6 +6,14 @@ import { toYaml } from '../src/yaml';
 import type { FoundationSpec } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
 import type { YamlValue } from '../src/yaml';
+import type { RefIdentity } from '../src/tree';
+
+/** A TokenRule now carries the full identity Figma stated for the reference.
+ *  These tests are about what the brief EMITS, so one identity is minted per
+ *  token NAME -- which is what a name meant before the identity fields existed.
+ *  The brief's own emitted key stays `token`; only the rule's field is `name`. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const AT = '2026-08-14T10:22:00.000Z';
 
@@ -612,7 +620,7 @@ describe('componentBrief', () => {
     const spec = {
       ...baseSpec(),
       tokens: [{ part: 'Label', path: 'Container/Label', property: 'fill',
-                 conditions: {}, token: 'color/text/default' }],
+                 conditions: {}, ...ident('color/text/default') }],
       gaps: [
         { part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const },
         { part: 'Label', path: 'Container/Label', property: 'gap',
@@ -630,7 +638,7 @@ describe('componentBrief', () => {
     const spec = {
       ...baseSpec(),
       tokens: [{ part: 'Label', path: 'Container/Label', property: 'fill',
-                 conditions: {}, token: 'color/text/default' }],
+                 conditions: {}, ...ident('color/text/default') }],
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill',
                issue: 'hardcoded-color' as const }],
     };
@@ -646,7 +654,7 @@ describe('componentBrief', () => {
     const spec = {
       ...baseSpec(),
       tokens: [{ part: 'Icon', path: 'Container/icon', property: 'fill',
-                 conditions: {}, token: 'color/icon/default' }],
+                 conditions: {}, ...ident('color/icon/default') }],
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
     };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
@@ -661,7 +669,7 @@ describe('componentBrief', () => {
     const spec = {
       ...baseSpec(),
       tokens: [{ part: 'Label', path: 'Container/Label', property: 'padding',
-                 conditions: {}, token: 'space/md' }],
+                 conditions: {}, ...ident('space/md') }],
       gaps: [{ part: 'Label', path: 'Container/Label', property: 'fill', issue: 'hardcoded-color' as const }],
     };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
@@ -681,7 +689,7 @@ describe('componentBrief', () => {
     const spec = {
       ...baseSpec(),
       tokens: [{ part: 'container', path: 'Container/container', property: 'gap',
-                 conditions: {}, token: 'space/md' }],
+                 conditions: {}, ...ident('space/md') }],
       gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
                issue: 'hardcoded-value' as const, value: 8 }],
     };
@@ -877,10 +885,10 @@ const TOKEN_SPEC: IntermediateSpec = {
   ...SPEC,
   tokens: [
     // Unconditioned: holds in every variant, so its binding has no `when`.
-    { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'radius/md' },
+    { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, ...ident('radius/md') },
     // Conditioned per state: its binding carries a `when`.
-    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, token: 'color/bg/brand' },
-    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hovered'] }, token: 'color/bg/brand-hover' },
+    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Enabled'] }, ...ident('color/bg/brand') },
+    { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hovered'] }, ...ident('color/bg/brand-hover') },
   ],
 };
 
@@ -893,11 +901,11 @@ describe('componentBrief tokens', () => {
   it('lists each token once under used, in first-use order', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [
       { part: 'Container', path: 'Container', property: 'fill',
-        conditions: { type: ['Primary'] }, token: 'color/surface/primary/default' },
+        conditions: { type: ['Primary'] }, ...ident('color/surface/primary/default') },
       { part: 'Container', path: 'Container', property: 'fill',
-        conditions: { type: ['Outline'] }, token: 'color/surface/primary/default' },
+        conditions: { type: ['Outline'] }, ...ident('color/surface/primary/default') },
       { part: 'Container', path: 'Container', property: 'height',
-        conditions: { size: ['Large'] }, token: 'button/lg-height' },
+        conditions: { size: ['Large'] }, ...ident('button/lg-height') },
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(Object.keys(brief.tokens.used)).toEqual([
@@ -908,7 +916,7 @@ describe('componentBrief tokens', () => {
   it('emits one binding per rule, carrying only the axes it depends on', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [
       { part: 'Container', path: 'Container', property: 'height',
-        conditions: { size: ['Large'] }, token: 'button/lg-height' },
+        conditions: { size: ['Large'] }, ...ident('button/lg-height') },
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toEqual([
@@ -920,7 +928,7 @@ describe('componentBrief tokens', () => {
   it('omits when entirely for a binding that holds in every variant', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [
       { part: 'Container', path: 'Container', property: 'border-radius',
-        conditions: {}, token: 'rd-sm' },
+        conditions: {}, ...ident('rd-sm') },
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings[0]).toEqual(
@@ -940,7 +948,7 @@ describe('componentBrief tokens', () => {
     // Paths make most of those distinct, but a genuine duplicate must still
     // collapse to one.
     const rule = { part: 'Label', path: 'Container/Label', property: 'fill',
-                   conditions: { type: ['Primary'] }, token: 'color/text/default' };
+                   conditions: { type: ['Primary'] }, ...ident('color/text/default') };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [rule, { ...rule }] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toHaveLength(1);
@@ -949,9 +957,9 @@ describe('componentBrief tokens', () => {
   it('keeps two rules that differ only in conditions', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [
       { part: 'Container', path: 'Container', property: 'fill',
-        conditions: { size: ['Large'] }, token: 'a' },
+        conditions: { size: ['Large'] }, ...ident('a') },
       { part: 'Container', path: 'Container', property: 'fill',
-        conditions: { size: ['Small'] }, token: 'a' },
+        conditions: { size: ['Small'] }, ...ident('a') },
     ] };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     expect(brief.tokens.bindings).toHaveLength(2);
@@ -1050,7 +1058,7 @@ describe('componentBrief tokens', () => {
       }],
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
-      property: 'fill', conditions: {}, token: 'color/surface/default' }] };
+      property: 'fill', conditions: {}, ...ident('color/surface/default') }] };
     const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const used = brief.tokens.used['color/surface/default'];
     // The collection's own default mode is m2, so the value is the Dark one,
@@ -1073,7 +1081,7 @@ describe('componentBrief tokens', () => {
       }],
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{ part: 'Container', path: 'Container',
-      property: 'fill', conditions: {}, token: 'color/surface/default' }] };
+      property: 'fill', conditions: {}, ...ident('color/surface/default') }] };
     const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const used = brief.tokens.used['color/surface/default'];
     expect('mode' in used).toBe(false);
@@ -1114,9 +1122,9 @@ describe('componentBrief tokens', () => {
     const wide: IntermediateSpec = {
       ...SPEC, variants: axes, variantInstances: instances,
       tokens: [
-        { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, token: 'radius/md' },
-        { part: 'label', path: 'Container/label', property: 'typography', conditions: {}, token: 'type/label' },
-        { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hover'] }, token: 'color/bg/hover' },
+        { part: 'container', path: 'Container/container', property: 'border-radius', conditions: {}, ...ident('radius/md') },
+        { part: 'label', path: 'Container/label', property: 'typography', conditions: {}, ...ident('type/label') },
+        { part: 'container', path: 'Container/container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/bg/hover') },
       ],
     };
     const y = load(toYaml(componentBrief(wide, { generatedAt: AT }))) as ParsedTokenBrief;
@@ -1153,7 +1161,7 @@ describe('componentBrief typography', () => {
   };
   const noisySpec = (): IntermediateSpec => ({ ...baseSpec(), tokens: [{
     part: 'Label', path: 'Container/Label', property: 'typography',
-    conditions: { size: ['Large'] }, token: 'Button/L : 14px Medium' }] });
+    conditions: { size: ['Large'] }, ...ident('Button/L : 14px Medium') }] });
 
   it('trims binary-float noise off the metrics', () => {
     // Measured from a real run: a designer typed 140 and 0.2, and Figma stored
@@ -1206,7 +1214,7 @@ describe('componentBrief typography', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: { size: ['Large'] }, token: 'Button/L : 14px Medium' }] };
+      conditions: { size: ['Large'] }, ...ident('Button/L : 14px Medium') }] };
     const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     expect(b.typography?.['Button/L : 14px Medium']).toEqual({
       source_name: 'Button/L : 14px Medium',
@@ -1224,7 +1232,7 @@ describe('componentBrief typography', () => {
   it('records a bound style the foundation cannot resolve rather than dropping it', () => {
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: {}, token: 'Missing/Style' }] };
+      conditions: {}, ...ident('Missing/Style') }] };
     const foundation: FoundationSpec =
       { fileKey: 'F', extractedAt: 'T', collections: [], textStyles: [] };
     const b = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
@@ -1248,7 +1256,7 @@ describe('componentBrief typography', () => {
     };
     const spec: IntermediateSpec = { ...baseSpec(), tokens: [{
       part: 'Label', path: 'Container/Label', property: 'typography',
-      conditions: {}, token: 'Heading/Auto' }] };
+      conditions: {}, ...ident('Heading/Auto') }] };
     const raw = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
     const entry = raw.typography?.['Heading/Auto'];
     // Truthful: no numeric value is invented for AUTO, and the raw object
@@ -1277,7 +1285,7 @@ describe('componentBrief typography', () => {
  */
 function usedFor(foundation: FoundationSpec, token: string): Record<string, unknown> {
   const spec: IntermediateSpec = { ...baseSpec(), tokens: [
-    { part: 'Container', path: 'Container', property: 'fill', conditions: {}, token },
+    { part: 'Container', path: 'Container', property: 'fill', conditions: {}, ...ident(token) },
   ] };
   const brief = componentBrief(spec, { generatedAt: 'T', foundation }) as unknown as BriefShape;
   return brief.tokens.used[token];
@@ -1394,7 +1402,7 @@ describe('componentBrief validation', () => {
       gaps: [],
       tokens: [{ part: 'Container', path: 'Container', property: 'fill',
                  conditions: { type: ['Primary'], size: ['Large'] },
-                 token: 'color/surface/primary/disabled' }],
+                 ...ident('color/surface/primary/disabled') }],
     };
     const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
     const hit = brief.validation?.find((f) => f.id === 'default-state-uses-state-token');
@@ -1412,7 +1420,7 @@ describe('componentBrief validation', () => {
       ...baseSpec(),
       gaps: [],
       tokens: [{ part: 'container', path: 'Container/container', property: 'border-radius',
-                 conditions: {}, token: 'number/radius' }],
+                 conditions: {}, ...ident('number/radius') }],
       layout: [{ part: 'container', path: 'Container/container',
                  summary: 'horizontal, radius 4', values: { radius: 4 } }],
     };

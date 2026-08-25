@@ -21,7 +21,8 @@ const mockRect = {
 describe('serializeNode', () => {
   it('resolves variable bindings to token names', async () => {
     const out = await serializeNode(mockRect as never, resolver);
-    expect(out.bindings).toContainEqual({ property: 'fills', token: 'md.sys.color.primary' });
+    expect(out.bindings).toContainEqual({ property: 'fills', id: 'VariableID:1',
+      name: 'md.sys.color.primary', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' });
     expect(out.hasUnboundPaint).toBeFalsy();
   });
 
@@ -54,7 +55,8 @@ describe('serializeNode', () => {
     };
     const styled = { ...mockRect, boundVariables: {}, fillStyleId: 'S:abc,1:1' };
     const out = await serializeNode(styled as never, styledResolver);
-    expect(out.bindings).toContainEqual({ property: 'fills', token: 'color/primary' });
+    expect(out.bindings).toContainEqual({ property: 'fills', id: 'S:abc,1:1',
+      name: 'color/primary', kind: 'paint-style', remote: false });
     expect(out.hasUnboundPaint).toBeFalsy();
   });
 
@@ -65,7 +67,8 @@ describe('serializeNode', () => {
     };
     const text = { id: '3:1', name: 'label', type: 'TEXT', visible: true, textStyleId: 'S:txt,1:1' };
     const out = await serializeNode(text as never, r);
-    expect(out.bindings).toContainEqual({ property: 'typography', token: 'md.sys.typescale.label-large' });
+    expect(out.bindings).toContainEqual({ property: 'typography', id: 'S:txt,1:1',
+      name: 'md.sys.typescale.label-large', kind: 'text-style', remote: false });
   });
 
   it('resolves effectStyleId to an effects binding', async () => {
@@ -75,7 +78,8 @@ describe('serializeNode', () => {
     };
     const card = { id: '3:2', name: 'card', type: 'FRAME', visible: true, effectStyleId: 'S:fx,1:1' };
     const out = await serializeNode(card as never, r);
-    expect(out.bindings).toContainEqual({ property: 'effects', token: 'md.sys.elevation.level1' });
+    expect(out.bindings).toContainEqual({ property: 'effects', id: 'S:fx,1:1',
+      name: 'md.sys.elevation.level1', kind: 'effect-style', remote: false });
   });
 
   it('resolves ALL entries of array-valued bound variables', async () => {
@@ -88,8 +92,8 @@ describe('serializeNode', () => {
     };
     const multi = { ...mockRect, boundVariables: { fills: [{ id: 'V:1' }, { id: 'V:2' }] } };
     const out = await serializeNode(multi as never, r);
-    expect(out.bindings).toContainEqual({ property: 'fills', token: 'color/overlay' });
-    expect(out.bindings).toContainEqual({ property: 'fills', token: 'color/base' });
+    expect(out.bindings).toContainEqual({ property: 'fills', id: 'V:1', name: 'color/overlay', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' });
+    expect(out.bindings).toContainEqual({ property: 'fills', id: 'V:2', name: 'color/base', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' });
   });
 
   it('captures auto-layout and corner radius values', async () => {
@@ -324,9 +328,12 @@ describe('NodeResolver identity', () => {
       { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never,
       r,
     );
-    // The name still reaches `token` here: TokenRef does not widen until the
-    // next task, so this task is output-identical by construction.
-    expect(out.bindings).toEqual([{ property: 'fills', token: 'color/brand' }]);
+    // The whole identity now reaches the binding, `remote: true` included --
+    // Figma's own answer, not something inferred from a lookup that failed.
+    expect(out.bindings).toEqual([{
+      property: 'fills', id: 'VariableID:7', name: 'color/brand', kind: 'variable',
+      remote: true, collectionId: 'VariableCollectionId:9',
+    }]);
   });
 
   it('asks the style for its own kind instead of guessing from the property', async () => {
@@ -343,7 +350,10 @@ describe('NodeResolver identity', () => {
       { id: '1', name: 'N', type: 'FRAME', effectStyleId: 'S:effect,1:1' } as never, r,
     );
     expect(seen).toEqual(['S:effect,1:1']);
-    expect(out.bindings).toEqual([{ property: 'effects', token: 'Focused/Primary' }]);
+    expect(out.bindings).toEqual([{
+      property: 'effects', id: 'S:effect,1:1', name: 'Focused/Primary',
+      kind: 'effect-style', remote: false,
+    }]);
   });
 
   it('drops a binding whose resolver returns null, exactly as before', async () => {
@@ -352,5 +362,32 @@ describe('NodeResolver identity', () => {
       { id: '1', name: 'N', type: 'FRAME', fillStyleId: 'S:paint,1:1' } as never, r,
     );
     expect('bindings' in out).toBe(false);
+  });
+
+  it('drops a GRID style rather than inventing a kind for it', async () => {
+    // No node property serializeNode reads can hold a grid style, so a grid
+    // style here means the id was not what the property claimed. Dropping it is
+    // the honest result: RefKind has no grid member to widen to.
+    const r = {
+      variable: async () => null,
+      style: async (id: string) => ({ id, name: '8pt Grid', remote: false, kind: 'grid-style' as const }),
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', fillStyleId: 'S:grid,1:1' } as never, r,
+    );
+    expect('bindings' in out).toBe(false);
+  });
+
+  it('omits collectionId entirely when Figma reported none', async () => {
+    const r = {
+      variable: async (id: string) => ({ id, name: 'color/brand', remote: false, collectionId: '' }),
+      style: async () => null,
+      mainComponent: async () => null,
+    };
+    const out = await serializeNode(
+      { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never, r,
+    );
+    expect('collectionId' in out.bindings![0]).toBe(false);
   });
 });

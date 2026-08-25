@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { extractRawValues } from '../src/rawValues';
-import type { SerializedNode } from '../src/tree';
+import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
+
+/** A reference now carries a full identity, not just a name. These tests are
+ *  not about resolution, so one identity is minted per token NAME -- which is
+ *  exactly what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+const bind = (property: string, token: string): TokenRef => ({ property, ...ident(token) });
 
 const base = { visible: true } as const;
 
@@ -31,7 +38,7 @@ describe('extractRawValues', () => {
   it('suppresses values covered by a binding and emits unbound fills', () => {
     const root: SerializedNode = {
       ...base, id: '1', name: 'Button', type: 'COMPONENT',
-      bindings: [{ property: 'itemSpacing', token: 'spacing/sm' }],
+      bindings: [bind('itemSpacing', 'spacing/sm')],
       layout: { mode: 'HORIZONTAL', itemSpacing: 8 },
       children: [
         { ...base, id: '2', name: 'label', type: 'TEXT', unboundFill: '#6750a4' },

@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { validate } from '../src/validate';
 import { extract } from '../src/extract';
-import type { SerializedNode } from '../src/tree';
+import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
+
+/** A rule and a binding both carry a full identity now. These tests are about
+ *  validation findings, not resolution, so one identity is minted per token
+ *  NAME — which is exactly what a name meant before the identity fields
+ *  existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+const bind = (property: string, token: string): TokenRef => ({ property, ...ident(token) });
 
 const base = () => ({
   name: 'Button', figmaKey: '', figmaFile: 'F', figmaNode: '1:1',
@@ -15,7 +23,7 @@ describe('validate', () => {
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
       conditions: { type: ['Primary'], size: ['Large'] },
-      token: 'color/surface/primary/disabled' }] };
+      ...ident('color/surface/primary/disabled') }] };
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toContain('default-state-uses-state-token');
     expect(f[0].message).toContain('disabled');
@@ -25,14 +33,14 @@ describe('validate', () => {
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
       conditions: { disabled: ['True'] },
-      token: 'color/surface/primary/disabled' }] };
+      ...ident('color/surface/primary/disabled') }] };
     expect(validate(spec as never, new Map())).toEqual([]);
   });
 
   it('flags a rendered geometry value disagreeing with its bound token', () => {
     const spec = { ...base(),
       tokens: [{ part: 'Container', path: 'Container', property: 'border-radius',
-                 conditions: {}, token: 'rd-sm' }],
+                 conditions: {}, ...ident('rd-sm') }],
       layout: [{ part: 'Container', path: 'Container',
                  summary: 'horizontal, radius 4', values: { radius: 4 } }] };
     const f = validate(spec as never, new Map([['rd-sm', 8]]));
@@ -44,9 +52,9 @@ describe('validate', () => {
   it('flags one path and property bound to two tokens under the same condition', () => {
     const spec = { ...base(), tokens: [
       { part: 'vector', path: 'Container/vector', property: 'border-color',
-        conditions: { loading: ['True'] }, token: 'color/icon/primary/primary' },
+        conditions: { loading: ['True'] }, ...ident('color/icon/primary/primary') },
       { part: 'vector', path: 'Container/vector', property: 'border-color',
-        conditions: { loading: ['True'] }, token: 'color/stroke/primary/default' },
+        conditions: { loading: ['True'] }, ...ident('color/stroke/primary/default') },
     ] };
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toContain('duplicate-conflicting-binding');
@@ -82,7 +90,7 @@ describe('validate', () => {
     // "compressed" contains the substring "press", but names no state.
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
-      conditions: {}, token: 'color/surface/compressed/default' }] };
+      conditions: {}, ...ident('color/surface/compressed/default') }] };
     expect(validate(spec as never, new Map())).toEqual([]);
   });
 
@@ -94,7 +102,7 @@ describe('validate', () => {
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
       conditions: { State: ['Hovered'] },
-      token: 'color/surface/primary/hover' }] };
+      ...ident('color/surface/primary/hover') }] };
     expect(validate(spec as never, new Map())).toEqual([]);
   });
 
@@ -106,7 +114,7 @@ describe('validate', () => {
     // flatly contradict `tokens` for the identical fact.
     const spec = { ...base(),
       tokens: [{ part: 'container', path: 'Container/container', property: 'gap',
-                 conditions: {}, token: 'space/md' }],
+                 conditions: {}, ...ident('space/md') }],
       gaps: [{ part: 'container', path: 'Container/container', property: 'gap',
                issue: 'hardcoded-value' as const, value: 8 }] };
     expect(validate(spec as never, new Map())).toEqual([]);
@@ -115,9 +123,9 @@ describe('validate', () => {
   it('reports the correct path for a duplicate binding when the part name contains a space', () => {
     const spec = { ...base(), tokens: [
       { part: 'Icon Left', path: 'Container/Icon Left', property: 'fill',
-        conditions: { loading: ['True'] }, token: 'color/a' },
+        conditions: { loading: ['True'] }, ...ident('color/a') },
       { part: 'Icon Left', path: 'Container/Icon Left', property: 'fill',
-        conditions: { loading: ['True'] }, token: 'color/b' },
+        conditions: { loading: ['True'] }, ...ident('color/b') },
     ] };
     const f = validate(spec as never, new Map());
     const hit = f.find((x) => x.id === 'duplicate-conflicting-binding')!;
@@ -133,7 +141,7 @@ describe('validate', () => {
     // nodes, attributed to whichever of them `find` happened to reach first.
     const spec = { ...base(),
       tokens: [{ part: 'Icon', path: 'Header/Icon', property: 'border-radius',
-                 conditions: {}, token: 'rd-sm' }],
+                 conditions: {}, ...ident('rd-sm') }],
       layout: [
         { part: 'Icon', path: 'Header/Icon', summary: 'radius 4', values: { radius: 4 } },
         { part: 'Icon', path: 'Footer/Icon', summary: 'radius 8', values: { radius: 8 } },
@@ -147,9 +155,9 @@ describe('validate', () => {
     const spec = { ...base(),
       tokens: [
         { part: 'Icon', path: 'Header/Icon', property: 'border-radius',
-          conditions: {}, token: 'rd-sm' },
+          conditions: {}, ...ident('rd-sm') },
         { part: 'Icon', path: 'Footer/Icon', property: 'border-radius',
-          conditions: {}, token: 'rd-lg' },
+          conditions: {}, ...ident('rd-lg') },
       ],
       layout: [
         { part: 'Icon', path: 'Header/Icon', summary: 'radius 4', values: { radius: 4 } },
@@ -173,7 +181,7 @@ describe('validate', () => {
       variants: [{ prop: 'Enabled', values: ['True', 'False'] }],
       tokens: [{ part: 'Container', path: 'Container', property: 'fill',
                  conditions: { Enabled: ['False'] },
-                 token: 'color/surface/primary/disabled' }] };
+                 ...ident('color/surface/primary/disabled') }] };
     expect(validate(spec as never, new Map())).toEqual([]);
   });
 
@@ -184,7 +192,7 @@ describe('validate', () => {
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
       conditions: { Enabled: ['False'] },
-      token: 'color/surface/primary/disabled' }] };
+      ...ident('color/surface/primary/disabled') }] };
     expect(validate(spec as never, new Map())).toEqual([]);
   });
 
@@ -196,7 +204,7 @@ describe('validate', () => {
       variants: [{ prop: 'State', values: ['Default', 'Hover', 'Disabled'] }],
       tokens: [{ part: 'Container', path: 'Container', property: 'fill',
                  conditions: { State: ['Default'] },
-                 token: 'color/surface/primary/disabled' }] };
+                 ...ident('color/surface/primary/disabled') }] };
     const f = validate(spec as never, new Map());
     const hit = f.find((x) => x.id === 'default-state-uses-state-token')!;
     expect(hit.message).toContain('disabled');
@@ -207,7 +215,7 @@ describe('validate', () => {
     const spec = { ...base(), tokens: [{
       part: 'Container', path: 'Container', property: 'fill',
       conditions: { State: ['Default'] },
-      token: 'color/surface/primary/disabled' }] };
+      ...ident('color/surface/primary/disabled') }] };
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
   });
@@ -221,7 +229,7 @@ describe('validate', () => {
       ],
       tokens: [{ part: 'Container', path: 'Container', property: 'fill',
                  conditions: { Style: ['Primary'], Size: ['Large'] },
-                 token: 'color/surface/primary/disabled' }] };
+                 ...ident('color/surface/primary/disabled') }] };
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
   });
@@ -258,7 +266,7 @@ const twoVariantSet = (
       children: [{
         id: `1:${i * 2 + 2}`, name: leaf, type: 'FRAME', visible: true,
         layout: { mode: 'HORIZONTAL', [figmaProperty]: v.rendered },
-        ...(v.token ? { bindings: [{ property: figmaProperty, token: v.token }] } : {}),
+        ...(v.token ? { bindings: [bind(figmaProperty, v.token)] } : {}),
       }],
     })),
   });
@@ -335,8 +343,8 @@ describe('validate geometry-token-mismatch, per variant bindings', () => {
           id: '1:2', name: 'box#', type: 'FRAME', visible: true,
           layout: { mode: 'HORIZONTAL', cornerRadius: 8 },
           bindings: [
-            { property: 'cornerRadius', token: 'rd-sm' },
-            { property: 'cornerRadius', token: 'rd-lg' },
+            bind('cornerRadius', 'rd-sm'),
+            bind('cornerRadius', 'rd-lg'),
           ],
         }],
       }],
@@ -356,7 +364,7 @@ describe('validate geometry-token-mismatch, per variant bindings', () => {
       anatomyComponentId: 'not-a-variant',
       variantInstances: [{ nodeId: '9:9', name: 'Size=Small', values: { Size: 'Small' } }],
       tokens: [{ part: 'box', path: 'Container/box', property: 'border-radius',
-                 conditions: { Size: ['Large'] }, token: 'rd-lg' }],
+                 conditions: { Size: ['Large'] }, ...ident('rd-lg') }],
       layout: [{ part: 'box#', path: 'Container/box',
                  summary: 'radius 4', values: { radius: 4 } }] };
     const f = validate(spec as never, new Map([['rd-lg', 12]]));
@@ -374,9 +382,9 @@ describe('validate geometry-token-mismatch, per variant bindings', () => {
       variantInstances: [{ nodeId: '9:9', name: 'Size=Small', values: { Size: 'Small' } }],
       tokens: [
         { part: 'row', path: 'Container/row', property: 'gap',
-          conditions: { Size: ['Large'] }, token: 'space-3' },
+          conditions: { Size: ['Large'] }, ...ident('space-3') },
         { part: 'row', path: 'Container/row', property: 'gap',
-          conditions: { Size: ['Small'] }, token: 'space-1' },
+          conditions: { Size: ['Small'] }, ...ident('space-1') },
       ],
       layout: [{ part: 'row#', path: 'Container/row',
                  summary: 'horizontal, gap 4', values: { gap: 4 } }] };

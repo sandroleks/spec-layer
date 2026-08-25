@@ -5,7 +5,14 @@ import { contentHash } from '../src/hash';
 import { resolveTokensForVariant } from '../src/resolve';
 import { extractTokens, variantAxisModel } from '../src/tokens';
 import button from './fixtures/button.json';
-import type { SerializedNode } from '../src/tree';
+import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
+
+/** A reference now carries a full identity, not just a name. These tests are
+ *  not about resolution, so one identity is minted per token NAME -- which is
+ *  exactly what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+const bind = (property: string, token: string): TokenRef => ({ property, ...ident(token) });
 
 const root = button as SerializedNode;
 const meta = { figmaFile: 'FILE1' };
@@ -19,7 +26,7 @@ function makeVariantSet(children: { name: string; token: string }[]): Serialized
       id: `v${id++}`, name: c.name, type: 'COMPONENT', visible: true,
       children: [{
         id: `n${id++}`, name: 'bg', type: 'FRAME', visible: true,
-        bindings: [{ property: 'fills', token: c.token }],
+        bindings: [bind('fills', c.token)],
       }],
     })),
   };
@@ -104,8 +111,8 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
       id: 'root', name: 'C', type: 'COMPONENT_SET', visible: true, key: 'k',
       propertyDefinitions: { Size: { type: 'VARIANT', variantOptions: ['S', 'M'] } },
       children: [
-        { id: 'v0', name: 'Size=S', type: 'COMPONENT', visible: true, bindings: [{ property: 'fills', token: 'tok/a' }] },
-        { id: 'v1', name: 'Size=M', type: 'COMPONENT', visible: true, bindings: [{ property: 'fills', token: 'tok/b' }] },
+        { id: 'v0', name: 'Size=S', type: 'COMPONENT', visible: true, bindings: [bind('fills', 'tok/a')] },
+        { id: 'v1', name: 'Size=M', type: 'COMPONENT', visible: true, bindings: [bind('fills', 'tok/b')] },
       ],
     };
 
@@ -125,8 +132,8 @@ describe('axis model consistency between tokens and variantInstances (B1)', () =
       combos: [{ Variant: 'Size=S' }, { Variant: 'Size=M' }],
     };
     expect(extractTokens(set, collapsed)).toEqual([
-      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=S'] }, token: 'tok/a' },
-      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=M'] }, token: 'tok/b' },
+      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=S'] }, ...ident('tok/a') },
+      { part: 'Container', path: 'Container', property: 'fill', conditions: { Variant: ['Size=M'] }, ...ident('tok/b') },
     ]);
 
     // And the shared-model path still agrees with the default when the model

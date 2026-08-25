@@ -1,4 +1,4 @@
-import type { SerializedNode, PropertyDefinition, TokenRef, LayoutInfo } from '@spec-layer/extractor';
+import type { SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo } from '@spec-layer/extractor';
 
 /**
  * Resolve the reference name/key for an instance's main component. When the main
@@ -12,6 +12,24 @@ export function mainComponentRef(
     return { name: mc.parent.name, key: mc.parent.key };
   }
   return { name: mc.name, key: mc.key };
+}
+
+/** A resolved variable as a reference identity. `collectionId` is spread in only
+ *  when Figma gave one, so an absent collection is an absent key. */
+export function variableRef(v: ResolvedVariable): RefIdentity {
+  return {
+    id: v.id, name: v.name, kind: 'variable', remote: v.remote,
+    ...(v.collectionId ? { collectionId: v.collectionId } : {}),
+  };
+}
+
+/** A resolved style as a reference identity, or null for a GRID style. No node
+ *  property this file reads can produce a grid binding, so a grid style here
+ *  means the id was not what it claimed and dropping it is the honest result. */
+export function styleRef(s: ResolvedStyle): RefIdentity | null {
+  return s.kind === 'grid-style'
+    ? null
+    : { id: s.id, name: s.name, kind: s.kind, remote: s.remote };
 }
 
 /** What Figma says about a variable a node binds. Ids and `remote` come from the
@@ -111,8 +129,10 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     for (const entry of entries) {
       if (!entry?.id) continue;
       const v = await resolver.variable(entry.id);
-      if (v && !bindings.some((b) => b.property === property && b.token === v.name)) {
-        bindings.push({ property, token: v.name });
+      // Deduped on the resolved ID, not on the name: two ids resolving to one
+      // name are two bindings, which is exactly what this change stops losing.
+      if (v && !bindings.some((b) => b.property === property && b.id === v.id)) {
+        bindings.push({ property, ...variableRef(v) });
       }
     }
   }
@@ -123,7 +143,8 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   // and this task stops answering the second by guessing at the first.
   const styleBinding = async (id: string, property: string): Promise<void> => {
     const s = await resolver.style(id);
-    if (s) bindings.push({ property, token: s.name });
+    const ref = s ? styleRef(s) : null;
+    if (ref) bindings.push({ property, ...ref });
   };
   if (node.fillStyleId) await styleBinding(node.fillStyleId, 'fills');
   if (node.strokeStyleId) await styleBinding(node.strokeStyleId, 'strokes');

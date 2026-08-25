@@ -284,7 +284,7 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
 function ruleKey(t: TokenRule): string {
   const axes = Object.keys(t.conditions).sort();
   const canon = JSON.stringify(axes.map((a) => [a, t.conditions[a]]));
-  return `${t.path} ${t.property} ${t.token} ${canon}`;
+  return `${t.path} ${t.property} ${t.name} ${canon}`;
 }
 
 /**
@@ -400,15 +400,15 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
   // nothing while implying the token could not be resolved. The real data is in
   // the `typography` block, so say that instead of emitting an empty map.
   const typographyTokens = new Set(
-    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.token));
+    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.name));
 
   const used: Record<string, YamlValue> = {};
   for (const r of rules) {
-    if (r.token in used) continue;
-    const looked = lookupToken(foundation, r.token) as YamlValue;
+    if (r.name in used) continue;
+    const looked = lookupToken(foundation, r.name) as YamlValue;
     const empty = looked !== null && typeof looked === 'object'
       && Object.keys(looked as Record<string, unknown>).length === 0;
-    used[r.token] = empty && typographyTokens.has(r.token)
+    used[r.name] = empty && typographyTokens.has(r.name)
       ? { kind: 'typography' }
       : looked;
   }
@@ -418,7 +418,7 @@ function tokensOf(spec: IntermediateSpec, foundation: FoundationSpec | undefined
     bindings: rules.map((r) => ({
       path: r.path,
       property: r.property,
-      token: r.token,
+      token: r.name,
       ...(Object.keys(r.conditions).length > 0 ? { when: r.conditions } : {}),
     })),
   };
@@ -545,7 +545,7 @@ function typographyOf(
   foundation: FoundationSpec | undefined,
 ): YamlValue | undefined {
   const names = new Set(
-    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.token));
+    spec.tokens.filter((t) => t.property === 'typography').map((t) => t.name));
   if (names.size === 0) return undefined;
 
   const out: Record<string, YamlValue> = {};
@@ -609,16 +609,16 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   // resolves to.
   const resolved = new Map<string, number>();
   for (const t of spec.tokens) {
-    const looked = lookupToken(opts.foundation, t.token);
+    const looked = lookupToken(opts.foundation, t.name);
     const v = looked.resolved;
     if (typeof v === 'number') {
-      resolved.set(t.token, v);
+      resolved.set(t.name, v);
     } else if (v && typeof v === 'object' && 'resolved' in v
                && typeof (v as { resolved?: unknown }).resolved === 'number') {
       // One level of alias-of-alias: lookupToken flattens a single alias hop
       // into a bare number, but a chain (alias -> alias -> number) still
       // leaves one nested `resolved` key here.
-      resolved.set(t.token, (v as { resolved: number }).resolved);
+      resolved.set(t.name, (v as { resolved: number }).resolved);
     }
   }
   // Projected into fresh literal objects rather than embedding `Finding[]`

@@ -43,7 +43,8 @@ function buttonNode(): SerializedNode {
         type: 'COMPONENT',
         visible: true,
         layout: { mode: 'HORIZONTAL', paddingLeft: 16, paddingRight: 16, itemSpacing: 8 },
-        bindings: [{ property: 'fills', token: 'color/bg/brand' }],
+        bindings: [{ property: 'fills', id: 'VariableID:1', name: 'color/bg/brand',
+                     kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' }],
         children: [
           { id: '1:3', name: 'Label', type: 'TEXT', visible: true },
         ],

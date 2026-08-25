@@ -40,7 +40,7 @@
               "visible": true,
               "mainComponent": { "name": "Icon", "key": "m3-icon" },
               "bindings": [
-                { "property": "fills", "token": "Text Color/Body/Primary" }
+                { "property": "fills", "id": "VariableID:1", "name": "Text Color/Body/Primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
               ]
             },
             {
@@ -49,8 +49,8 @@
               "type": "TEXT",
               "visible": true,
               "bindings": [
-                { "property": "fills", "token": "Text Color/Body/Primary" },
-                { "property": "fontSize", "token": "font-size/fs-100" }
+                { "property": "fills", "id": "VariableID:1", "name": "Text Color/Body/Primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" },
+                { "property": "fontSize", "id": "VariableID:2", "name": "font-size/fs-100", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
               ]
             },
             {
@@ -60,7 +60,7 @@
               "visible": true,
               "mainComponent": { "name": "Icon", "key": "m3-icon" },
               "bindings": [
-                { "property": "fills", "token": "Text Color/Body/Primary" }
+                { "property": "fills", "id": "VariableID:1", "name": "Text Color/Body/Primary", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:1" }
               ]
             }
           ]

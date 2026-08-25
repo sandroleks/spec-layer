@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { extractTokens, variantAxisModel } from '../src/tokens';
 import { resolveTokensForVariant } from '../src/resolve';
-import type { SerializedNode } from '../src/tree';
+import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
+
+/** A reference now carries a full identity, not just a name. These tests are
+ *  not about resolution, so one identity is minted per token NAME -- which is
+ *  exactly what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => (
+  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+const bind = (property: string, token: string): TokenRef => ({ property, ...ident(token) });
 
 /** Deterministic PRNG so a failure is always reproducible from its trial index. */
 function prng(seed: number): () => number {
@@ -45,10 +52,10 @@ function makeSet(
       id: `v${uid++}`,
       name: names.map((a) => `${a}=${combo[a]}`).join(', '),
       type: 'COMPONENT', visible: true,
-      bindings: [{ property: 'fills', token: TOKENS[Math.floor(rnd() * TOKENS.length)] }],
+      bindings: [bind('fills', TOKENS[Math.floor(rnd() * TOKENS.length)])],
       children: PARTS.filter(() => rnd() >= opts.absence).map((p) => ({
         id: `n${uid++}`, name: p, type: 'FRAME', visible: true,
-        bindings: [{ property: 'fills', token: TOKENS[Math.floor(rnd() * TOKENS.length)] }],
+        bindings: [bind('fills', TOKENS[Math.floor(rnd() * TOKENS.length)])],
       })),
     })),
   };
@@ -56,8 +63,8 @@ function makeSet(
 
 /** What this variant node ACTUALLY carries, independent of the minimizer. */
 function groundTruth(variant: SerializedNode): Set<string> {
-  const out = new Set<string>([`Container|fill|${variant.bindings![0].token}`]);
-  for (const c of variant.children ?? []) out.add(`${c.name}|fill|${c.bindings![0].token}`);
+  const out = new Set<string>([`Container|fill|${variant.bindings![0].name}`]);
+  for (const c of variant.children ?? []) out.add(`${c.name}|fill|${c.bindings![0].name}`);
   return out;
 }
 
@@ -94,7 +101,7 @@ describe('extractTokens round-trip invariant', () => {
     // spans {1,2} and Y still spans {p,q} across the two cells that exist.
     const leaf = (id: string) => ({
       id, name: 'Label', type: 'FRAME', visible: true,
-      bindings: [{ property: 'fills', token: 'tok/a' }],
+      bindings: [bind('fills', 'tok/a')],
     });
     const set: SerializedNode = {
       id: 'root', name: 'C', type: 'COMPONENT_SET', visible: true, key: 'k',
