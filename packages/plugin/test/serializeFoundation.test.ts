@@ -237,4 +237,26 @@ describe('serializeFoundation', () => {
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.externals[0].collectionName).toBe('');
   });
+
+  describe('unavailable reads', () => {
+    it('records a variables read that threw instead of reporting an empty file', async () => {
+      const reader = fakeReader({ collections: async () => { throw new Error('nope'); } });
+      const dump = await serializeFoundation(reader, 'FILE1', 'T');
+      expect(dump.collections).toEqual([]);
+      // Without this, a total API failure and a file with no variables at all
+      // produce byte-identical dumps, and the brief reports the second.
+      expect(dump.unavailable).toEqual(['variables']);
+    });
+
+    it('records a text styles read that threw', async () => {
+      const reader = fakeReader({ textStyles: async () => { throw new Error('nope'); } });
+      const dump = await serializeFoundation(reader, 'FILE1', 'T');
+      expect(dump.unavailable).toEqual(['textStyles']);
+    });
+
+    it('leaves the key absent on a clean read', async () => {
+      const dump = await serializeFoundation(fakeReader(), 'FILE1', 'T');
+      expect('unavailable' in dump).toBe(false);
+    });
+  });
 });

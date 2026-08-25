@@ -8,7 +8,7 @@
  */
 import type {
   SerializedFoundation, RawCollection, RawVariable, RawTextStyle, RawExternalRef,
-  RawVariableValue, FoundationVariableType, FoundationMode,
+  RawVariableValue, FoundationVariableType, FoundationMode, FoundationRead,
 } from '@spec-layer/extractor';
 
 export interface ReaderCollection {
@@ -83,11 +83,15 @@ async function readCollectionName(reader: FoundationReader, id: string): Promise
 export async function serializeFoundation(
   reader: FoundationReader, fileKey: string, extractedAt: string,
 ): Promise<SerializedFoundation> {
+  const unavailable: FoundationRead[] = [];
+
   let readerCollections: ReaderCollection[] = [];
   try {
     readerCollections = await reader.collections();
   } catch {
-    /* variables API unavailable — an empty foundation is the honest result */
+    // An empty foundation is no longer "the honest result" on its own: it is
+    // indistinguishable from a file with no variables. Say which one it is.
+    unavailable.push('variables');
   }
 
   const collections: RawCollection[] = [];
@@ -161,7 +165,7 @@ export async function serializeFoundation(
   try {
     readerStyles = await reader.textStyles();
   } catch {
-    /* styles API unavailable */
+    unavailable.push('textStyles');
   }
 
   // Batched across styles AND across each style's bound variables. Style order
@@ -189,5 +193,8 @@ export async function serializeFoundation(
     };
   }));
 
-  return { fileKey, collections, textStyles, externals, extractedAt };
+  return {
+    fileKey, collections, textStyles, externals, extractedAt,
+    ...(unavailable.length > 0 ? { unavailable } : {}),
+  };
 }

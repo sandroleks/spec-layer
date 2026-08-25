@@ -128,3 +128,21 @@ describe('narrowFoundation — purity', () => {
     expect(spec.textStyles).toHaveLength(2);
   });
 });
+
+describe('narrowFoundation — narrowedTo', () => {
+  it('records what a narrowed spec covers', () => {
+    const spec = buildFoundation(dumpTwoCollections());
+    const narrowed = narrowFoundation(spec, { target: 'collection', collectionId: 'sem' })!;
+    // The distinction this exists for: a token absent from THIS spec because the
+    // narrowing excluded its collection is not the same as one absent from the
+    // file, and without this field a resolver cannot tell them apart.
+    expect(narrowed.narrowedTo).toEqual({ target: 'collection', collectionId: 'sem' });
+  });
+
+  it('leaves a whole-file spec unnarrowed', () => {
+    const spec = buildFoundation(dumpTwoCollections());
+    // `in`, not an undefined comparison: `{ narrowedTo: undefined }` would still
+    // read as "narrowed to nothing" for a consumer checking presence.
+    expect('narrowedTo' in spec).toBe(false);
+  });
+});

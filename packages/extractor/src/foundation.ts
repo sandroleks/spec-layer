@@ -52,12 +52,25 @@ export interface RawTextStyle {
 /** An alias target that lives in a library, not in this file's local dump. */
 export interface RawExternalRef { id: string; name: string; collectionName: string }
 
+/** One read serializeFoundation performs. Named so a failure can be reported as
+ *  a fact rather than inferred from an empty result. */
+export type FoundationRead = 'variables' | 'textStyles' | 'effectStyles';
+
 export interface SerializedFoundation {
   fileKey: string;
   collections: RawCollection[];
   textStyles: RawTextStyle[];
   externals: RawExternalRef[];
   extractedAt: string;
+  /**
+   * Which reads failed. Absent on a clean read, never `[]`.
+   *
+   * serializeFoundation catches an API failure and returns an empty foundation,
+   * which makes total failure indistinguishable from a file that genuinely has
+   * no variables. This is the difference, and it is a prerequisite for the
+   * `unavailable` resolution status rather than a nicety.
+   */
+  unavailable?: FoundationRead[];
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +112,14 @@ export interface FoundationSpec {
   collections: FoundationCollection[];
   textStyles: FoundationTextStyle[];
   extractedAt: string;
+  /** Carried straight through from the dump. See SerializedFoundation. */
+  unavailable?: FoundationRead[];
+  /**
+   * Present only on a narrowed spec. Lets a resolver distinguish "excluded by
+   * scope" from "not present locally" — two causes that a lookup returning
+   * nothing collapses into one.
+   */
+  narrowedTo?: FoundationCopyTarget;
 }
 
 export type FoundationScope =
@@ -143,11 +164,11 @@ export function narrowFoundation(
 ): FoundationSpec | null {
   if (target.target === 'textStyles') {
     if (spec.textStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: spec.textStyles };
+    return { ...spec, collections: [], textStyles: spec.textStyles, narrowedTo: target };
   }
   const collection = spec.collections.find((c) => c.id === target.collectionId);
   if (!collection) return null;
-  return { ...spec, collections: [collection], textStyles: [] };
+  return { ...spec, collections: [collection], textStyles: [], narrowedTo: target };
 }
 
 /** Rows per output unit, above which a unit splits by top-level group. */
@@ -332,6 +353,10 @@ export function buildFoundation(dump: SerializedFoundation): FoundationSpec {
     collections,
     textStyles: dump.textStyles.map((s) => ({ ...s, group: groupOf(s.name) })),
     extractedAt: dump.extractedAt,
+    // Spread, not `unavailable: dump.unavailable`: a clean read has no key at
+    // all rather than one holding undefined, matching how every other optional
+    // field in this model behaves.
+    ...(dump.unavailable ? { unavailable: dump.unavailable } : {}),
   };
 }
 
