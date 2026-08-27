@@ -73,4 +73,21 @@ describe('validateLevel1', () => {
       expect(validateLevel1(input).length).toBeGreaterThan(0);
     }
   });
+
+  it('does not throw when reading a property itself throws', () => {
+    // A type guard cannot prevent this: the throw happens during the read. The
+    // guarantee has to be structural, or a validator crashes on exactly the
+    // malformed input it exists to report on.
+    const hostile = {};
+    Object.defineProperty(hostile, 'tokens', {
+      get() { throw new Error('hostile getter'); },
+      enumerable: true,
+    });
+    expect(() => validateLevel1(hostile)).not.toThrow();
+    expect(validateLevel1(hostile).length).toBeGreaterThan(0);
+
+    const proxied = new Proxy({}, { get() { throw new Error('hostile trap'); } });
+    expect(() => validateLevel1(proxied)).not.toThrow();
+    expect(validateLevel1(proxied).length).toBeGreaterThan(0);
+  });
 });

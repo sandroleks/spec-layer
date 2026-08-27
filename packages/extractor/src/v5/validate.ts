@@ -324,20 +324,33 @@ function validateRootSections(artifact: Record<string, unknown>, out: Diagnostic
  * position from array indices.
  */
 export function validateLevel1(artifact: unknown): Diagnostic[] {
-  const out: Diagnostic[] = [];
+  try {
+    const out: Diagnostic[] = [];
 
-  if (!isRecord(artifact)) {
-    out.push(shape(ROOT, 'The artifact root must be an object.'));
+    if (!isRecord(artifact)) {
+      out.push(shape(ROOT, 'The artifact root must be an object.'));
+      return out;
+    }
+
+    validateRootSections(artifact, out);
+
+    if (!Array.isArray(artifact.tokens)) {
+      out.push(shape(ROOT, '`tokens` must be an array.'));
+    } else {
+      artifact.tokens.forEach((token, index) => validateToken(token, index, out));
+    }
+
     return out;
+  } catch (err) {
+    // A per-access type guard cannot prevent an exception from a throwing
+    // getter or Proxy trap — the throw happens during the read itself. The
+    // guarantee has to be enforced structurally here instead.
+    const message = err instanceof Error && err.message
+      ? `The artifact could not be read; accessing its properties threw: ${err.message}`
+      : 'The artifact could not be read; accessing its properties threw.';
+    return [diagnostic('INCONSISTENT_VALUE_SHAPE', {
+      entity_id: 'artifact',
+      message,
+    })];
   }
-
-  validateRootSections(artifact, out);
-
-  if (!Array.isArray(artifact.tokens)) {
-    out.push(shape(ROOT, '`tokens` must be an array.'));
-  } else {
-    artifact.tokens.forEach((token, index) => validateToken(token, index, out));
-  }
-
-  return out;
 }
