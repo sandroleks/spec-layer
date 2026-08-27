@@ -14,7 +14,7 @@
  * A rejection-side fixture exists for every structural or content rule
  * `validateLevel1` implements; see the comment above each group below.
  */
-import type { CanonicalValue, TypedValue } from '../../src/v5/value';
+import type { CanonicalValue, TokenType, TypedValue } from '../../src/v5/value';
 import type { CollectionV5, TokenV5 } from '../../src/v5/entities';
 import type { ArtifactSource, FoundationArtifactV5, SemanticPayload } from '../../src/v5/canonical';
 import { buildEnvelope } from '../../src/v5/canonical';
@@ -309,3 +309,198 @@ export const INVALID_CASES: FixtureCase[] = [
   { name: 'cubic_bezier component is non-finite', artifact: withValue({ kind: 'literal', value: { type: 'cubic_bezier', value: [0, 0, 1, Number.NaN] } }) },
   { name: 'font_family value is not a string', artifact: withValue({ kind: 'literal', value: { type: 'font_family', value: 42 } }) },
 ];
+
+// ---------------------------------------------------------------------------
+// Task 8 — validateLevel2 fixtures.
+//
+// Unlike the mutators above, these return a typed `FoundationArtifactV5`
+// (validateLevel2's own parameter type: it only runs once Level 1 has
+// already accepted the shape), and each clones `OK_ARTIFACT` with
+// `structuredClone` rather than hand-writing a full artifact.
+// ---------------------------------------------------------------------------
+
+/** A representative typed value for each token type, for fixtures that only
+ *  care that a value is well-formed, not what it says. */
+function sampleTypedValue(type: TokenType): TypedValue {
+  switch (type) {
+    case 'color': return { type: 'color', color_space: 'srgb', hex: '#006b62', alpha: 1 };
+    case 'dimension': return { type: 'dimension', number: 16, unit: 'px' };
+    case 'number': return { type: 'number', value: 1 };
+    case 'string': return { type: 'string', value: 'x' };
+    case 'boolean': return { type: 'boolean', value: true };
+    case 'duration': return { type: 'duration', number: 200, unit: 'ms' };
+    case 'cubic_bezier': return { type: 'cubic_bezier', value: [0, 0, 1, 1] };
+    case 'font_family': return { type: 'font_family', value: 'Inter' };
+    default: throw new Error(`no sample value for token type: ${type as string}`);
+  }
+}
+
+/** Replaces the fixture token's light-mode value with an alias whose
+ *  reference targets an id that exists nowhere in the artifact. */
+export function artifactWithAlias(targetId: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.tokens[0].values['1:2/light'] = {
+    kind: 'alias',
+    reference: { target_id: targetId, target_collection_id: null, target_path: [], external: false },
+    resolved: { status: 'unresolved', reason: 'target_not_found', value: null, chain: [] },
+  };
+  return root;
+}
+
+/** Two new tokens, with the given ids, that alias each other under one mode
+ *  of a dedicated collection -- a two-node ring. */
+export function artifactWithCycle(idA: string, idB: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const collectionId = 'VariableCollectionId:cycle';
+  root.collections.push({
+    id: collectionId, name: 'Cycle', path: ['Cycle'],
+    default_mode_id: 'm1', modes: [{ id: 'm1', name: 'm1', order: 0 }],
+  });
+  const aliasTo = (target: string): CanonicalValue => ({
+    kind: 'alias',
+    reference: { target_id: target, target_collection_id: collectionId, target_path: [], external: false },
+    resolved: { status: 'unresolved', reason: 'cycle', value: null, chain: [] },
+  });
+  root.tokens.push(
+    {
+      id: idA, collection_id: collectionId, name: idA, path: [idA], type: 'color',
+      description: '', scopes: [], values: { m1: aliasTo(idB) },
+    },
+    {
+      id: idB, collection_id: collectionId, name: idB, path: [idB], type: 'color',
+      description: '', scopes: [], values: { m1: aliasTo(idA) },
+    },
+  );
+  return root;
+}
+
+/** A new token of `sourceType` that aliases a new token of `targetType`. */
+export function artifactWithTypeMismatch(sourceType: TokenType, targetType: TokenType): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const collectionId = 'VariableCollectionId:mismatch';
+  root.collections.push({
+    id: collectionId, name: 'Mismatch', path: ['Mismatch'],
+    default_mode_id: 'm1', modes: [{ id: 'm1', name: 'm1', order: 0 }],
+  });
+  const targetToken: TokenV5 = {
+    id: 'VariableID:mismatch-target', collection_id: collectionId, name: 'Target', path: ['Target'],
+    type: targetType, description: '', scopes: [],
+    values: { m1: { kind: 'literal', value: sampleTypedValue(targetType) } },
+  };
+  const sourceToken: TokenV5 = {
+    id: 'VariableID:mismatch-source', collection_id: collectionId, name: 'Source', path: ['Source'],
+    type: sourceType, description: '', scopes: [],
+    values: {
+      m1: {
+        kind: 'alias',
+        reference: { target_id: targetToken.id, target_collection_id: collectionId, target_path: [], external: false },
+        resolved: { status: 'resolved', value: sampleTypedValue(targetType), chain: [{ token_id: targetToken.id, mode_id: 'm1' }] },
+      },
+    },
+  };
+  root.tokens.push(targetToken, sourceToken);
+  return root;
+}
+
+/** Deletes the fixture token's value entry for `modeId` outright -- the
+ *  ABSENT case (as opposed to `artifactWithExplicitMissing`, the DECLARED
+ *  case). `modeId` must be one of the fixture collection's declared modes. */
+export function artifactMissingMode(modeId: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  delete (root.tokens[0].values as Record<string, unknown>)[modeId];
+  return root;
+}
+
+/** Sets the fixture token's value entry for `modeId` to an explicit
+ *  `{kind: 'missing'}` record -- the DECLARED case. */
+export function artifactWithExplicitMissing(modeId: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.tokens[0].values[modeId] = { kind: 'missing', reason: 'no_value_for_mode' };
+  return root;
+}
+
+/** A second token carrying the SAME id as the fixture's one token. */
+export function artifactWithDuplicateId(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const duplicate = structuredClone(root.tokens[0]);
+  duplicate.name = 'Duplicate';
+  duplicate.path = ['Duplicate'];
+  root.tokens.push(duplicate);
+  return root;
+}
+
+/** Two new tokens sharing one path, filed under `collectionA` and
+ *  `collectionB` respectively -- a collision when the two are the same
+ *  collection id, and not a collision when they differ. */
+export function artifactWithPathCollision(collectionA: string, collectionB: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const path = ['Surface', 'Primary'];
+  const value: CanonicalValue = { kind: 'literal', value: sampleTypedValue('color') };
+  root.tokens.push(
+    {
+      id: 'VariableID:collide-a', collection_id: collectionA, name: 'Surface/Primary', path: [...path],
+      type: 'color', description: '', scopes: [], values: { '1:2/light': value },
+    },
+    {
+      id: 'VariableID:collide-b', collection_id: collectionB, name: 'Surface/Primary', path: [...path],
+      type: 'color', description: '', scopes: [], values: { '1:2/light': value },
+    },
+  );
+  return root;
+}
+
+/** Two new tokens in the fixture's own collection whose paths are equal only
+ *  after NFC normalization: one precomposed ("Cafe" + U+00E9), one
+ *  decomposed ("Cafe" + U+0065 followed by a combining acute accent,
+ *  U+0301). The two path literals below LOOK identical but are different
+ *  code-unit sequences on disk -- do not "simplify" them to share one
+ *  string constant, that would defeat the fixture. */
+export function artifactWithDecomposedDuplicate(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const collectionId = root.collections[0].id;
+  const value: CanonicalValue = { kind: 'literal', value: sampleTypedValue('string') };
+  const values = { '1:2/light': value, '1:2/dark': value };
+  root.tokens.push(
+    {
+      id: 'VariableID:decomposed-a', collection_id: collectionId, name: 'Cafe (NFC)',
+      path: ['Café'], type: 'string', description: '', scopes: [], values,
+    },
+    {
+      id: 'VariableID:decomposed-b', collection_id: collectionId, name: 'Cafe (NFD)',
+      path: ['Café'], type: 'string', description: '', scopes: [], values,
+    },
+  );
+  return root;
+}
+
+/** A chain of `length` tokens, each aliasing the next under one mode of a
+ *  dedicated collection, terminating in a literal -- long enough to blow a
+ *  recursive walk's call stack, and to make an O(n^2) resolution slow. */
+export function artifactWithChainOfLength(length: number): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const collectionId = 'VariableCollectionId:chain';
+  root.collections.push({
+    id: collectionId, name: 'Chain', path: ['Chain'],
+    default_mode_id: 'm1', modes: [{ id: 'm1', name: 'm1', order: 0 }],
+  });
+  const ids = Array.from({ length }, (_, i) => `VariableID:chain-${i}`);
+  const tokens: TokenV5[] = ids.map((id, i) => {
+    const isLast = i === length - 1;
+    const value: CanonicalValue = isLast
+      ? { kind: 'literal', value: sampleTypedValue('number') }
+      : {
+          kind: 'alias',
+          reference: { target_id: ids[i + 1], target_collection_id: collectionId, target_path: [], external: false },
+          resolved: {
+            status: 'resolved', value: sampleTypedValue('number'),
+            chain: [{ token_id: ids[i + 1], mode_id: 'm1' }],
+          },
+        };
+    return {
+      id, collection_id: collectionId, name: id, path: [id], type: 'number',
+      description: '', scopes: [], values: { m1: value },
+    };
+  });
+  root.tokens.push(...tokens);
+  return root;
+}

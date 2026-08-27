@@ -24,10 +24,12 @@
  * `typeof` / `Array.isArray` guard, because a validator that crashes on
  * malformed input cannot report on the one input where reporting matters.
  */
-import { diagnostic } from './diagnostics';
+import { compareCodeUnits, diagnostic } from './diagnostics';
 import type { Diagnostic } from './diagnostics';
 import { SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS } from './value';
 import type { TokenType, Unit } from './value';
+import type { TokenV5 } from './entities';
+import type { FoundationArtifactV5 } from './canonical';
 
 const ROOT = '<artifact>';
 
@@ -353,4 +355,270 @@ export function validateLevel1(artifact: unknown): Diagnostic[] {
       message,
     })];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Level 2 — referential integrity (§18 Level 2, §10 "Alias graph", §7 modes,
+// §6 identity and paths).
+//
+// Unlike Level 1, `validateLevel2` takes a typed `FoundationArtifactV5`, not
+// `unknown`: it is only meaningful to run once Level 1 has already accepted
+// the shape, so the defensive `isRecord`/`typeof` guarding above has no
+// counterpart down here -- every field this section reads is already the
+// type it claims to be.
+// ---------------------------------------------------------------------------
+
+interface AliasNode { tokenId: string; modeId: string }
+
+type NodeState = 'in_progress' | 'done';
+
+/** get-or-create for the nested per-(token_id, mode_id) traversal state. */
+function nodeStates(store: Map<string, Map<string, NodeState>>, tokenId: string): Map<string, NodeState> {
+  let inner = store.get(tokenId);
+  if (!inner) {
+    inner = new Map();
+    store.set(tokenId, inner);
+  }
+  return inner;
+}
+
+function getNodeState(
+  store: Map<string, Map<string, NodeState>>, tokenId: string, modeId: string,
+): NodeState | undefined {
+  return store.get(tokenId)?.get(modeId);
+}
+
+/** The ring node with the lowest (token_id, mode_id) by code-unit order, so a
+ *  cycle is reported from the same node regardless of which token the walk
+ *  happened to reach it from first -- entry order depends on array position,
+ *  which §16 determinism forbids leaking into output. */
+function lowestRingIndex(ring: AliasNode[]): number {
+  let best = 0;
+  for (let i = 1; i < ring.length; i += 1) {
+    const cmp = compareCodeUnits(ring[i].tokenId, ring[best].tokenId)
+      || compareCodeUnits(ring[i].modeId, ring[best].modeId);
+    if (cmp < 0) best = i;
+  }
+  return best;
+}
+
+/**
+ * Walks the alias graph rooted at every (token, mode) pair holding an alias
+ * value.
+ *
+ * ITERATIVE, with an explicit `path` array standing in for the call stack a
+ * recursive walk would otherwise consume. A recursive depth-first walk blows
+ * the JS call stack at a few thousand hops regardless of algorithmic
+ * complexity -- exactly what `artifactWithChainOfLength(5000)` exists to
+ * catch.
+ *
+ * MEMOIZED on (token_id, mode_id): once a node's outcome is known -- resolved
+ * to a terminal value, unresolved, or part of an already-reported cycle -- it
+ * is marked 'done' and is never walked again. That is what keeps whole-
+ * artifact resolution linear instead of quadratic (§21.3): without it, every
+ * node in an N-long chain would be re-walked from every one of its N
+ * ancestors.
+ *
+ * The alias graph is a FUNCTIONAL graph: every node has out-degree at most 1
+ * (one `reference` per alias value), so "does the walk return to a node
+ * already on the CURRENT path" is the entire cycle test -- no branching DFS
+ * is needed, only a path stack and an O(1) membership check on it.
+ */
+function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
+  const tokensById = new Map(tokens.map((t) => [t.id, t]));
+  const states = new Map<string, Map<string, NodeState>>();
+
+  const markDone = (path: AliasNode[]): void => {
+    for (const node of path) nodeStates(states, node.tokenId).set(node.modeId, 'done');
+  };
+
+  const reportCycle = (path: AliasNode[], ringStart: number): void => {
+    const ring = path.slice(ringStart);
+    const lowest = lowestRingIndex(ring);
+    const rotated = [...ring.slice(lowest), ...ring.slice(0, lowest)];
+    const chain = [...rotated, rotated[0]].map((n) => ({ token_id: n.tokenId, mode_id: n.modeId }));
+    out.push(diagnostic('ALIAS_CYCLE', {
+      entity_id: rotated[0].tokenId,
+      mode_id: rotated[0].modeId,
+      message: `Alias resolution cycles back to itself: ${chain.map((c) => c.token_id).join(' -> ')}.`,
+      details: { chain },
+    }));
+  };
+
+  for (const startToken of tokens) {
+    for (const startModeId of Object.keys(startToken.values)) {
+      if (startToken.values[startModeId].kind !== 'alias') continue;
+      if (getNodeState(states, startToken.id, startModeId) === 'done') continue;
+
+      const path: AliasNode[] = [];
+      const pathIndex = new Map<string, Map<string, number>>();
+      let curTokenId = startToken.id;
+      const curModeId = startModeId;
+
+      while (true) {
+        if (getNodeState(states, curTokenId, curModeId) === 'done') {
+          // A prior walk already determined this node's outcome (and
+          // reported whatever that outcome warranted). The nodes THIS walk
+          // added leading up to it are new, though, and need marking.
+          markDone(path);
+          break;
+        }
+
+        const seenAt = pathIndex.get(curTokenId)?.get(curModeId);
+        if (seenAt !== undefined) {
+          reportCycle(path, seenAt);
+          markDone(path);
+          break;
+        }
+
+        nodeStates(states, curTokenId).set(curModeId, 'in_progress');
+        const inner = pathIndex.get(curTokenId) ?? new Map<string, number>();
+        inner.set(curModeId, path.length);
+        pathIndex.set(curTokenId, inner);
+        path.push({ tokenId: curTokenId, modeId: curModeId });
+
+        const curToken = tokensById.get(curTokenId);
+        const value = curToken?.values[curModeId];
+        if (!curToken || !value || value.kind !== 'alias') {
+          // Terminal: a literal, an explicit `missing` record, or simply no
+          // entry for this mode on this token. Nothing further to resolve.
+          markDone(path);
+          break;
+        }
+
+        const { reference } = value;
+        if (reference.external) {
+          // The target lives in a library this export did not read, so it
+          // cannot be verified against this artifact's own token set.
+          // Level 2 defers to what extraction already recorded rather than
+          // guessing at a library it has no access to.
+          if (value.resolved.status === 'unresolved') {
+            out.push(diagnostic('UNRESOLVED_EXTERNAL_ALIAS', {
+              entity_id: curTokenId,
+              mode_id: curModeId,
+              message: `Alias references an external library that did not resolve: ${reference.source_library_name ?? 'unknown library'}.`,
+            }));
+          }
+          markDone(path);
+          break;
+        }
+
+        const targetId = reference.target_id;
+        const targetToken = targetId === null ? undefined : tokensById.get(targetId);
+        if (!targetToken) {
+          out.push(diagnostic('UNRESOLVED_ALIAS', {
+            entity_id: curTokenId,
+            mode_id: curModeId,
+            message: `Alias reference target does not exist in this artifact: ${JSON.stringify(targetId)}.`,
+          }));
+          markDone(path);
+          break;
+        }
+
+        if (targetToken.type !== curToken.type) {
+          out.push(diagnostic('ALIAS_TYPE_MISMATCH', {
+            entity_id: curTokenId,
+            mode_id: curModeId,
+            message: `Alias on a "${curToken.type}" token targets "${targetToken.id}", which is "${targetToken.type}".`,
+          }));
+        }
+
+        // Mode carries across a hop: which mode of the target applies is a
+        // decision already made and stated by the extractor (§9's
+        // ResolutionStep model keys each hop by BOTH token and mode), so the
+        // walk holds the mode constant rather than re-deriving it.
+        curTokenId = targetToken.id;
+      }
+    }
+  }
+}
+
+/**
+ * §7: every token must carry an entry for every mode its collection
+ * declares -- either a value, or an explicit `{kind: 'missing'}` record
+ * stating so. Omitting the key entirely is the ABSENT case ("An absent mode
+ * value MUST be distinguishable from an explicit null value"); a `missing`
+ * record is the token stating the fact itself, so it is not reported.
+ */
+function checkModeCompleteness(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
+  const collectionsById = new Map(artifact.collections.map((c) => [c.id, c]));
+  for (const token of artifact.tokens) {
+    const collection = collectionsById.get(token.collection_id);
+    if (!collection) continue; // no declared collection to check modes against
+    for (const mode of collection.modes) {
+      if (!(mode.id in token.values)) {
+        out.push(diagnostic('MISSING_MODE_VALUE', {
+          entity_id: token.id,
+          mode_id: mode.id,
+          message: `Token has no value record for mode "${mode.name}" (${mode.id}), and does not declare it explicitly missing.`,
+        }));
+      }
+    }
+  }
+}
+
+/**
+ * §6: id is identity. Two entities -- of any kind -- sharing one stable id
+ * makes that id useless as identity, since a consumer joining on it cannot
+ * tell which entity it means.
+ */
+function checkDuplicateIds(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
+  const allIds = [
+    ...artifact.collections.map((c) => c.id),
+    ...artifact.tokens.map((t) => t.id),
+    ...artifact.styles.typography.map((s) => s.id),
+    ...artifact.styles.effects.map((s) => s.id),
+  ];
+  const counts = new Map<string, number>();
+  for (const id of allIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+
+  const reported = new Set<string>();
+  for (const id of allIds) {
+    const count = counts.get(id) ?? 0;
+    if (count > 1 && !reported.has(id)) {
+      reported.add(id);
+      out.push(diagnostic('DUPLICATE_SOURCE_ID', {
+        entity_id: id,
+        message: `${count} entities share the stable id "${id}".`,
+      }));
+    }
+  }
+}
+
+/**
+ * §6: a normalized-path collision, scoped to `(collection_id, NFC(path))`.
+ * Two collections both holding the same path is the normal, intended shape of
+ * a themed design system -- a collection IS the namespace -- so this is
+ * deliberately NOT a global check; flagging the cross-collection case would
+ * fire on nearly every real file.
+ */
+function checkPathCollisions(tokens: TokenV5[], out: Diagnostic[]): void {
+  const groups = new Map<string, TokenV5[]>();
+  for (const token of tokens) {
+    const key = JSON.stringify([token.collection_id, token.path.map((seg) => seg.normalize('NFC'))]);
+    const group = groups.get(key);
+    if (group) group.push(token); else groups.set(key, [token]);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const ids = group.map((t) => t.id).sort(compareCodeUnits);
+    out.push(diagnostic('PATH_COLLISION', {
+      entity_id: ids[0],
+      message: `${group.length} tokens in collection "${group[0].collection_id}" normalize to the same path: ${JSON.stringify(group[0].path)}.`,
+      details: { collection_id: group[0].collection_id, token_ids: ids },
+    }));
+  }
+}
+
+/**
+ * Level 2 validation — spec §18 "Referential integrity" and §10 "Alias
+ * graph". Assumes `artifact` has already passed `validateLevel1`.
+ */
+export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  walkAliasGraph(artifact.tokens, out);
+  checkModeCompleteness(artifact, out);
+  checkDuplicateIds(artifact, out);
+  checkPathCollisions(artifact.tokens, out);
+  return out;
 }
