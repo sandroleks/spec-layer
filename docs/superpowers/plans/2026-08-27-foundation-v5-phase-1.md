@@ -580,16 +580,36 @@ artifacts. The repo has three roundings today — alpha to 4 (`brief.ts:88`),
 typography to 2 (`brief.ts:695`), the foundation's `text_styles` to none
 (`brief.ts:257`) — which is why two documents disagree about one text style.
 
+**The policy is SIGNIFICANT DIGITS, not decimal places.** An earlier draft of
+this task specified six decimal places, which is wrong and was caught by its own
+tests: `139.9999976158142` at six decimal places is `139.999998`, not `140`. The
+artifacts are *relative*, because Figma stores these as float32 and hands back
+the float64 widening — so the policy has to be relative too. Seven significant
+digits is float32's own decimal precision (~7.2 digits), which is exactly the
+precision the source actually held.
+
+Verified against the corpus: 7 significant digits cleans all four observed
+artifacts (`139.9999976158142`→`140`, `120.00000476837158`→`120`,
+`0.30000001192092896`→`0.3`, `0.03999999910593033`→`0.04`) while preserving
+every value Figma can genuinely express (`0.125`, `0.333333`, `1.005`,
+`-0.005`). Eight digits fails — it leaves `0.30000001`. Six also happens to
+work on these cases but has no principled basis and less headroom.
+
 **Files:**
 - Create: `packages/extractor/src/v5/precision.ts`
 - Create: `packages/extractor/test/v5/precision.test.ts`
 
 **Interfaces:** produces `canonicalNumber(n: number): number`. Consumed by Tasks 3, 4, 6, 9.
 
-**Do not** implement this as `Number(\`${Math.round(Number(\`${n}e6\`))}e-6\`)`.
-That form returns **NaN** for any input JavaScript already prints in
-exponential notation — verified for `1e-7`, `5.5e-7` and `1e21` — and would put
-NaN into the artifact silently.
+Two guards come before the rounding, and both are load-bearing:
+
+- **Integers pass through untouched.** `toPrecision(7)` corrupts them:
+  `Number.MAX_SAFE_INTEGER.toPrecision(7)` is `9.007199e+15`, silently changing
+  the value. `Number.isInteger` also collapses `-0` on the way out.
+- **Magnitudes at or above 2^24 pass through untouched.** That is float32's
+  integer-exact limit; above it float32 cannot represent the value precisely at
+  all, so "cleaning a float32 artifact" is not a meaningful operation and
+  rounding would only destroy real digits.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -606,40 +626,44 @@ describe('canonicalNumber', () => {
     expect(canonicalNumber(0.03999999910593033)).toBe(0.04);
   });
 
-  it('does not reintroduce an artifact through the scaling step', () => {
-    // Math.round(n * 1e6) / 1e6 fails here: the intermediate product is itself
-    // inexact.
-    expect(canonicalNumber(1.005)).toBe(1.005);
-  });
-
   it('keeps a value Figma can genuinely express', () => {
+    // Figma's percent field expresses 12.5%, and letter spacing routinely
+    // carries three decimals. A policy tight enough to erase the artifacts
+    // above must be loose enough to keep these.
     expect(canonicalNumber(0.125)).toBe(0.125);
     expect(canonicalNumber(0.333333)).toBe(0.333333);
+    expect(canonicalNumber(1.005)).toBe(1.005);
+    expect(canonicalNumber(-0.005)).toBe(-0.005);
   });
 
-  it('handles values JavaScript prints in exponential notation', () => {
-    // The naive string-exponent implementation returns NaN for every one of
-    // these, and NaN in the artifact is a fabricated value that no consumer can
-    // detect as one.
-    expect(canonicalNumber(1e-7)).toBe(0);
-    expect(canonicalNumber(5.5e-7)).toBe(1e-6);
-    expect(canonicalNumber(-1e-7)).toBe(0);
+  it('leaves integers alone, including ones toPrecision would corrupt', () => {
+    // MAX_SAFE_INTEGER.toPrecision(7) is "9.007199e+15" -- a different number.
+    expect(canonicalNumber(16)).toBe(16);
+    expect(canonicalNumber(-1)).toBe(-1);
+    expect(canonicalNumber(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
     expect(canonicalNumber(1e21)).toBe(1e21);
+  });
+
+  it('leaves a non-integer above float32 integer-exact range alone', () => {
+    // Above 2^24 float32 cannot hold the value precisely, so there is no
+    // artifact to clean and rounding would only discard real digits.
+    expect(canonicalNumber(16777216.5)).toBe(16777216.5);
     expect(canonicalNumber(1.7976931348623157e308)).toBe(1.7976931348623157e308);
-    expect(canonicalNumber(Number.MIN_VALUE)).toBe(0);
+  });
+
+  it('does not flatten a genuinely tiny number to zero', () => {
+    // A small value is a small number, not an artifact. Under a
+    // decimal-places policy these all collapsed to 0, which is data loss.
+    expect(canonicalNumber(1e-7)).toBe(1e-7);
+    expect(canonicalNumber(5.5e-7)).toBe(5.5e-7);
+    expect(canonicalNumber(-1e-9)).toBe(-1e-9);
+    expect(canonicalNumber(Number.MIN_VALUE)).toBe(Number.MIN_VALUE);
   });
 
   it('normalizes negative zero', () => {
     // -0 compares equal to 0 but serializes as `-0`, so leaving it makes two
     // semantically identical artifacts byte-different.
     expect(Object.is(canonicalNumber(-0), 0)).toBe(true);
-    expect(Object.is(canonicalNumber(-1e-9), 0)).toBe(true);
-  });
-
-  it('leaves integers alone', () => {
-    expect(canonicalNumber(16)).toBe(16);
-    expect(canonicalNumber(-1)).toBe(-1);
-    expect(canonicalNumber(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('passes a non-finite number through so a validator can reject it by name', () => {
@@ -662,49 +686,41 @@ Expected: FAIL — module not found.
 /**
  * The numeric precision policy — spec §16.
  *
- * SIX decimal places, applied to every number that reaches the artifact.
+ * SEVEN SIGNIFICANT DIGITS, applied to every number that reaches the artifact.
  *
- * Why six: Figma stores numbers as doubles derived from percentage fields, so
- * 4% arrives as 0.03999999910593033 and a 140px line height as
- * 139.9999976158142 -- artifacts that must go. But Figma's own percent field
- * expresses 12.5%, and letter spacing routinely carries three decimals, so a
- * policy tight enough to erase the artifacts must be loose enough to keep the
- * data. Every artifact observed in the corpus appears at the 7th place or
- * beyond, leaving four places of headroom.
+ * Significant digits, not decimal places. Figma stores these numbers as float32
+ * and hands back the float64 widening, so the error is RELATIVE: 140 arrives as
+ * 139.9999976158142 and 0.3 as 0.30000001192092896, and no fixed number of
+ * decimal places cleans both. Six decimals leaves 139.999998; eight significant
+ * digits leaves 0.30000001. Seven is float32's own decimal precision (~7.2
+ * digits), which is exactly the precision the source actually held -- so the
+ * policy discards what float32 never carried and keeps everything it did.
  *
- * Why one policy: v4 had three, and its foundation and component documents
- * ended up disagreeing about the same text style.
+ * Why one policy: v4 had three (alpha to 4, typography to 2, foundation text
+ * styles to none), and its foundation and component documents ended up
+ * disagreeing about the same text style.
  *
  * NaN and Infinity pass through UNCHANGED. Mapping them to 0 would put a
  * fabricated number where an unrepresentable value belongs; passing them
  * through lets Level 1 validation reject them by name.
  */
-const PLACES = 6;
+const SIGNIFICANT_DIGITS = 7;
+
+/** 2^24 -- the largest integer float32 represents exactly. At or above it,
+ *  float32 cannot hold the value precisely in the first place, so there is no
+ *  artifact to clean and rounding would only discard real digits. */
+const FLOAT32_EXACT_LIMIT = 16777216;
 
 export function canonicalNumber(n: number): number {
   if (!Number.isFinite(n)) return n;
-  // Integers need no rounding, and this branch also covers every magnitude at
-  // or above 1e21 -- which JavaScript prints exponentially and which is always
-  // integral in double representation, so the string paths below never see one.
+  // Integers first, and not merely as a fast path: `toPrecision` CORRUPTS large
+  // ones -- Number.MAX_SAFE_INTEGER.toPrecision(7) is "9.007199e+15", a
+  // different number. `+ 0` on the way out also collapses -0 to 0, which is
+  // required for byte stability: -0 equals 0 in every comparison but serializes
+  // as `-0`.
   if (Number.isInteger(n)) return n + 0;
-
-  // A non-integer that JS prints exponentially has |n| < 1e-6, which is below
-  // the policy's resolution. `toFixed` states that directly and is exact here;
-  // it is NOT used for the general case because it goes exponential itself at
-  // 1e21 and would reintroduce the same defect at the other end of the range.
-  //
-  // The naive `Number(`${n}e${PLACES}`)` form is what this branch exists to
-  // avoid: for 1e-7 it builds the string "1e-7e6", which parses to NaN.
-  const rounded = /e/i.test(String(n))
-    ? Number(n.toFixed(PLACES))
-    // Scaling through the decimal string, not by multiplying by 1e6: the
-    // multiply-then-divide form reintroduces the artifact it removes for values
-    // like 1.005, because the intermediate product is itself inexact.
-    : Number(`${Math.round(Number(`${n}e${PLACES}`))}e-${PLACES}`);
-
-  // `+ 0` collapses -0 to 0. -0 equals 0 in every comparison but serializes as
-  // `-0`, so leaving it breaks byte stability.
-  return rounded + 0;
+  if (Math.abs(n) >= FLOAT32_EXACT_LIMIT) return n + 0;
+  return Number(n.toPrecision(SIGNIFICANT_DIGITS)) + 0;
 }
 ```
 
@@ -717,7 +733,7 @@ Expected: PASS (7 tests).
 
 ```bash
 git add packages/extractor/src/v5/precision.ts packages/extractor/test/v5/precision.test.ts
-git commit -m "feat(v5): one numeric precision policy, exponential-safe"
+git commit -m "feat(v5): one numeric precision policy at float32 significant precision"
 ```
 
 ---
