@@ -1174,6 +1174,21 @@ describe('diagnostics', () => {
     ]);
   });
 
+  it('is total: findings differing only in message or details still order stably', () => {
+    // Array.sort is stable, so a comparator that returns 0 here would let the
+    // CALLER's order decide -- and the caller's order follows Figma's internal
+    // iteration. Two runs would then produce byte-different artifacts with no
+    // design change behind them.
+    const a = diagnostic('MISSING_MODE_VALUE', { entity_id: 'V:1', message: 'second' });
+    const b = diagnostic('MISSING_MODE_VALUE', { entity_id: 'V:1', message: 'first' });
+    expect(sortDiagnostics([a, b]).map((d) => d.message)).toEqual(['first', 'second']);
+    expect(sortDiagnostics([b, a]).map((d) => d.message)).toEqual(['first', 'second']);
+
+    const c = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 2 } });
+    const d = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 1 } });
+    expect(sortDiagnostics([c, d])).toEqual(sortDiagnostics([d, c]));
+  });
+
   it('reports whether any error is present, for §14.2 exit behaviour', () => {
     expect(hasErrors([diagnostic('CONFUSABLE_NAME', { entity_id: 'V:1', message: 'm' })])).toBe(false);
     expect(hasErrors([diagnostic('ALIAS_CYCLE', { entity_id: 'V:1', message: 'm' })])).toBe(true);
@@ -1327,7 +1342,18 @@ export function sortDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
     SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
     || compareCodeUnits(a.code, b.code)
     || compareCodeUnits(a.entity_id, b.entity_id)
-    || compareCodeUnits(a.mode_id ?? '', b.mode_id ?? ''));
+    || compareCodeUnits(a.mode_id ?? '', b.mode_id ?? '')
+    // Message and details are tie-breakers, not display order. Without them
+    // the comparator is not TOTAL: two findings can agree on severity, code,
+    // entity and mode and differ only in what they say -- one token with two
+    // malformed modes, or two distinct rules reporting the same code against
+    // the same entity. Array.sort is stable, so such a pair would keep
+    // whatever order the caller happened to produce, and the caller's order
+    // follows Figma's internal iteration. That is precisely the leak §16
+    // exists to close, and it would surface as an artifact that differs
+    // between runs with no design change behind it.
+    || compareCodeUnits(a.message, b.message)
+    || compareCodeUnits(JSON.stringify(a.details ?? null), JSON.stringify(b.details ?? null)));
 }
 
 export const hasErrors = (diagnostics: Diagnostic[]): boolean =>
@@ -1349,7 +1375,7 @@ export function promoteToErrors(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/extractor/test/v5/diagnostics.test.ts`
-Expected: PASS (7 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Commit**
 
