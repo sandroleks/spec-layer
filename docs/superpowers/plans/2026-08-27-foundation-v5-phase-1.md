@@ -1395,7 +1395,7 @@ git commit -m "feat(v5): diagnostics vocabulary with dedicated migration codes"
 - Create: `packages/extractor/test/v5/canonical.test.ts`
 
 **Interfaces:**
-- Consumes: `contentHash` from `../hash` — **reuse it**, it already sorts keys recursively before hashing. A second canonicalizer would be a second definition of "the same content".
+- Produces its OWN canonical serializer. **Do NOT reuse `contentHash` from `../hash`.** An earlier draft said to, on the reasoning that a second canonicalizer would be a second definition of "the same content" — but that shared serializer sorts keys with `a.localeCompare(b)` (`hash.ts:13`), which is locale-dependent: the identical payload hashes differently under `LC_ALL=en_US` and `LC_ALL=et_EE`, and `lt_LT` reorders `i`/`y`. The plugin runs in whatever locale the user's browser reports, so reusing it means two designers exporting one file get different hashes — §16 and §21.1.12 both fail. v5 needs a code-unit key sort of its own. `hash.ts` must NOT be changed to fix this: its `canonical` is shared with `specContentHash` and `foundationContentHash`, and moving those flips every committed document's drift badge.
 - Produces: `SCHEMA_VERSION`, `SCHEMA_URI`, `EXTRACTOR_NAME`, `Envelope`, `ArtifactSource`, `SemanticPayload`, `FoundationArtifactV5`, `semanticContentHash()`, `buildEnvelope()`.
 
 **Read before starting:** `version.ts` argues that `EXTRACTOR_VERSION` is an
