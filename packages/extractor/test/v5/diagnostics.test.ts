@@ -57,6 +57,21 @@ describe('diagnostics', () => {
     ]);
   });
 
+  it('is total: findings differing only in message or details still order stably', () => {
+    // Array.sort is stable, so a comparator that returns 0 here would let the
+    // CALLER's order decide -- and the caller's order follows Figma's internal
+    // iteration. Two runs would then produce byte-different artifacts with no
+    // design change behind them.
+    const a = diagnostic('MISSING_MODE_VALUE', { entity_id: 'V:1', message: 'second' });
+    const b = diagnostic('MISSING_MODE_VALUE', { entity_id: 'V:1', message: 'first' });
+    expect(sortDiagnostics([a, b]).map((d) => d.message)).toEqual(['first', 'second']);
+    expect(sortDiagnostics([b, a]).map((d) => d.message)).toEqual(['first', 'second']);
+
+    const c = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 2 } });
+    const d = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 1 } });
+    expect(sortDiagnostics([c, d])).toEqual(sortDiagnostics([d, c]));
+  });
+
   it('reports whether any error is present, for §14.2 exit behaviour', () => {
     expect(hasErrors([diagnostic('CONFUSABLE_NAME', { entity_id: 'V:1', message: 'm' })])).toBe(false);
     expect(hasErrors([diagnostic('ALIAS_CYCLE', { entity_id: 'V:1', message: 'm' })])).toBe(true);

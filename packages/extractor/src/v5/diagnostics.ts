@@ -125,7 +125,18 @@ export function sortDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
     SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
     || compareCodeUnits(a.code, b.code)
     || compareCodeUnits(a.entity_id, b.entity_id)
-    || compareCodeUnits(a.mode_id ?? '', b.mode_id ?? ''));
+    || compareCodeUnits(a.mode_id ?? '', b.mode_id ?? '')
+    // Message and details are tie-breakers, not display order. Without them
+    // the comparator is not TOTAL: two findings can agree on severity, code,
+    // entity and mode and differ only in what they say -- one token with two
+    // malformed modes, or two distinct rules reporting the same code against
+    // the same entity. Array.sort is stable, so such a pair would keep
+    // whatever order the caller happened to produce, and the caller's order
+    // follows Figma's internal iteration. That is precisely the leak §16
+    // exists to close, and it would surface as an artifact that differs
+    // between runs with no design change behind it.
+    || compareCodeUnits(a.message, b.message)
+    || compareCodeUnits(JSON.stringify(a.details ?? null), JSON.stringify(b.details ?? null)));
 }
 
 export const hasErrors = (diagnostics: Diagnostic[]): boolean =>
