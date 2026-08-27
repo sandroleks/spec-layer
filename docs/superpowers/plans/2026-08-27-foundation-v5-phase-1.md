@@ -1755,7 +1755,7 @@ every case through both validators.
 
 Requirements, each pinned by a test above:
 
-- **Never throw.** Every check guards its input with `typeof` / `Array.isArray` first; unrecognized input yields a diagnostic.
+- **Never throw.** Every check guards its input with `typeof` / `Array.isArray` first; unrecognized input yields a diagnostic. Guarding each access is necessary but not sufficient: a property *getter* that throws, or a `Proxy` with a throwing `get` trap, defeats every type guard because the throw happens during the read itself. Wrap the whole function body in one `try`/`catch` that returns a single `INCONSISTENT_VALUE_SHAPE` diagnostic, so the "never throws" guarantee is structural rather than a claim about which accesses were remembered.
 - Anchor every diagnostic to `entity_id`, adding `mode_id` when the fault is in one mode's value.
 - Per token: `id`, `collection_id`, `name`, `path` (non-empty array of strings), `type` in `SUPPORTED_TOKEN_TYPES`, `description` present and a string (empty allowed), `scopes` an array, `values` an object.
 - Per value: `kind` in `SUPPORTED_VALUE_KINDS`; `literal` has `value` with a known `type`; `alias` has `reference` and `resolved`, `resolved.status` gates `value` vs `null`, and **every chain step has both `token_id` and `mode_id`**; `missing` has a `reason`.
@@ -1766,7 +1766,16 @@ Requirements, each pinned by a test above:
 
 `schema/foundation-5.0.0.json`, draft 2020-12, `$id` equal to `SCHEMA_URI`,
 `oneOf` on `kind` for the value union, `$defs.unit` and `$defs.token_type`
-enums. Add the file to the extractor package's `files` array so it ships.
+enums.
+
+**Do NOT add a `files` array to `packages/extractor/package.json`.** An earlier
+draft of this task said to, which was wrong: that package has no `files` array,
+so npm's default already ships the schema along with everything else. Adding one
+listing only the schema REPLACES that default and would drop `src/index.ts` —
+the file `main` points at — from any publish. The package is `private: true`
+today so nothing breaks now, but it leaves a landmine for whoever unsets that.
+The schema is consumed by path from inside the repo; it needs no packaging
+change at all.
 
 - [ ] **Step 7: Write the parity test — this is the anti-drift check**
 
