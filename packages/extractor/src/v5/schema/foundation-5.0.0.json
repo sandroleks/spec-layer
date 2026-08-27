@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-layer.dev/schemas/foundation-context/v5.json",
+  "title": "Foundation Context v5",
+  "description": "Published Level 1 schema for the Foundation Context v5 export contract (spec §5.1, §6, §7, §8, §9, §18 Level 1). This schema is the consumer-facing twin of the hand-written validator at packages/extractor/src/v5/validate.ts, which runs the same checks inside the Figma plugin sandbox where ajv cannot load. Its scope is intentionally the same as that validator's: full field-by-field coverage for tokens and their canonical values, and top-level-shape-only coverage (object/array, not deep field validation) for collections, styles, diagnostics and the envelope. test/v5/schemaParity.test.ts proves the two agree on every shared fixture.",
+  "type": "object",
+  "required": [
+    "spec_layer",
+    "completeness",
+    "collections",
+    "tokens",
+    "styles",
+    "diagnostics",
+    "statistics"
+  ],
+  "properties": {
+    "spec_layer": { "type": "object" },
+    "completeness": { "$ref": "#/$defs/completeness" },
+    "collections": { "type": "array" },
+    "tokens": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/token" }
+    },
+    "styles": {
+      "type": "object",
+      "required": ["typography", "effects"],
+      "properties": {
+        "typography": { "type": "array" },
+        "effects": { "type": "array" }
+      }
+    },
+    "diagnostics": { "type": "array" },
+    "statistics": { "type": "object" }
+  },
+  "$defs": {
+    "completeness": {
+      "type": "object",
+      "required": ["collections", "styles", "unavailable_sources"],
+      "properties": {
+        "collections": { "$ref": "#/$defs/completeness_value" },
+        "styles": { "$ref": "#/$defs/completeness_value" },
+        "unavailable_sources": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "completeness_value": {
+      "type": "string",
+      "enum": ["complete", "partial", "unavailable"]
+    },
+
+    "token": {
+      "type": "object",
+      "required": [
+        "id", "collection_id", "name", "path", "type",
+        "description", "scopes", "values"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "collection_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "type": { "$ref": "#/$defs/token_type" },
+        "description": { "type": "string" },
+        "scopes": { "type": "array" },
+        "values": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/canonical_value" }
+        }
+      }
+    },
+
+    "token_type": {
+      "type": "string",
+      "enum": [
+        "color", "dimension", "number", "string", "boolean",
+        "duration", "cubic_bezier", "font_family"
+      ]
+    },
+    "unit": {
+      "type": "string",
+      "enum": ["px", "rem", "em", "%", "deg", "ms", "s"]
+    },
+
+    "canonical_value": {
+      "oneOf": [
+        { "$ref": "#/$defs/literal_value" },
+        { "$ref": "#/$defs/alias_value" },
+        { "$ref": "#/$defs/missing_value" }
+      ]
+    },
+    "literal_value": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "literal" },
+        "value": { "$ref": "#/$defs/typed_value" }
+      }
+    },
+    "alias_value": {
+      "type": "object",
+      "required": ["kind", "reference", "resolved"],
+      "properties": {
+        "kind": { "const": "alias" },
+        "reference": { "$ref": "#/$defs/alias_reference" },
+        "resolved": { "$ref": "#/$defs/alias_resolution" }
+      }
+    },
+    "missing_value": {
+      "type": "object",
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "missing" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "alias_reference": {
+      "type": "object",
+      "required": ["target_id", "target_collection_id", "target_path", "external"],
+      "properties": {
+        "target_id": { "type": ["string", "null"] },
+        "target_collection_id": { "type": ["string", "null"] },
+        "target_path": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "external": { "type": "boolean" },
+        "source_library_name": { "type": "string" }
+      }
+    },
+
+    "resolution_step": {
+      "type": "object",
+      "required": ["token_id", "mode_id"],
+      "properties": {
+        "token_id": { "type": "string" },
+        "mode_id": { "type": "string" }
+      }
+    },
+
+    "alias_resolution": {
+      "type": "object",
+      "required": ["chain"],
+      "properties": {
+        "chain": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/resolution_step" }
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status", "value"],
+          "properties": {
+            "status": { "const": "resolved" },
+            "value": { "$ref": "#/$defs/typed_value" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["status", "reason", "value"],
+          "properties": {
+            "status": { "const": "unresolved" },
+            "reason": { "type": "string", "minLength": 1 },
+            "value": { "const": null }
+          }
+        }
+      ]
+    },
+
+    "typed_value": {
+      "oneOf": [
+        { "$ref": "#/$defs/color_value" },
+        { "$ref": "#/$defs/dimension_value" },
+        { "$ref": "#/$defs/number_value" },
+        { "$ref": "#/$defs/string_value" },
+        { "$ref": "#/$defs/boolean_value" },
+        { "$ref": "#/$defs/duration_value" },
+        { "$ref": "#/$defs/cubic_bezier_value" },
+        { "$ref": "#/$defs/font_family_value" }
+      ]
+    },
+    "color_value": {
+      "type": "object",
+      "required": ["type", "color_space", "hex", "alpha"],
+      "properties": {
+        "type": { "const": "color" },
+        "color_space": { "const": "srgb" },
+        "hex": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 },
+        "channels": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        }
+      }
+    },
+    "dimension_value": {
+      "type": "object",
+      "required": ["type", "number", "unit"],
+      "properties": {
+        "type": { "const": "dimension" },
+        "number": { "type": "number" },
+        "unit": { "$ref": "#/$defs/unit" }
+      }
+    },
+    "number_value": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "number" },
+        "value": { "type": "number" }
+      }
+    },
+    "string_value": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "string" },
+        "value": { "type": "string" }
+      }
+    },
+    "boolean_value": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "boolean" },
+        "value": { "type": "boolean" }
+      }
+    },
+    "duration_value": {
+      "type": "object",
+      "required": ["type", "number", "unit"],
+      "properties": {
+        "type": { "const": "duration" },
+        "number": { "type": "number" },
+        "unit": { "enum": ["ms", "s"] }
+      }
+    },
+    "cubic_bezier_value": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "cubic_bezier" },
+        "value": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
+        }
+      }
+    },
+    "font_family_value": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "font_family" },
+        "value": { "type": "string" }
+      }
+    }
+  }
+}

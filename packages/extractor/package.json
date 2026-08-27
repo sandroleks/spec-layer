@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "files": [
+    "src/v5/schema/foundation-5.0.0.json"
+  ],
   "dependencies": {
     "js-sha256": "^0.11.0"
   }
