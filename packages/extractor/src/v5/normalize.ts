@@ -80,6 +80,17 @@ export interface V4Foundation {
    * `FoundationSpec.unavailable` (`foundation.ts:137`) so the fact that a
    * read failed is not lost during migration. Absent on a clean read, never
    * `[]` -- matching v4's own convention for the field.
+   *
+   * INPUT CONTRACT HONESTY: No real v4 document carries this field today,
+   * because `foundationBrief` never serializes `FoundationSpec.unavailable`
+   * (confirmed by reading brief.ts lines 209-277). An absent field therefore
+   * reads as `completeness.collections: 'complete'` and emits no
+   * SOURCE_PARTIALLY_UNAVAILABLE diagnostic — which is the only honest reading
+   * of a document that cannot express the fact. Wiring the unavailable field
+   * into the v4 emitter is deferred to a later phase where extraction
+   * changes belong. An input contract that quietly implies a field real
+   * documents do not carry is exactly the kind of fiction this migration exists
+   * to prevent.
    */
   unavailable?: string[];
 }
@@ -417,6 +428,20 @@ function convertAlias(
     ...baseReference, target_id: target.id, target_collection_id: target.collectionId,
   };
 
+  // RULE 1's resolved terminal: unreachable with today's v4 output. Rule 1 (the
+  // `(collection, path)` match above) is structurally live and necessary for
+  // narrowing candidates and computing the target_id/target_collection_id that
+  // feed both branch 2 and the ambiguity check. However, reaching the
+  // `alias.resolved === undefined` case that follows requires an alias with a
+  // `collection` field. Per brief.ts's `valueOf` (lines 100-109), v4 only
+  // emits `collection` on external aliases; external aliases by definition have
+  // `resolved: null` in the internal model, and `valueOf`'s conditional spread
+  // drops the falsy `resolved` field entirely from the brief output. An alias
+  // with a collection therefore always lacks the `resolved` value this check
+  // would need. This terminal is kept because it becomes reachable when v4
+  // qualifies internal cross-collection aliases with collection names too —
+  // backlog item A4. When that day comes, a local token matching the (collection,
+  // path) pair becomes proof of the target's identity.
   if (alias.resolved === undefined) {
     // Today v4 omits `resolved` ONLY for a genuinely external alias (the
     // internal model's `resolved: null`, dropped by `valueOf`'s conditional
