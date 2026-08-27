@@ -14,6 +14,7 @@
  * A rejection-side fixture exists for every structural or content rule
  * `validateLevel1` implements; see the comment above each group below.
  */
+import { SUPPORTED_DURATION_UNITS, SUPPORTED_UNITS } from '../../src/v5/value';
 import type { CanonicalValue, TokenType, TypedValue } from '../../src/v5/value';
 import type { CollectionV5, TokenV5 } from '../../src/v5/entities';
 import type { ArtifactSource, FoundationArtifactV5, SemanticPayload } from '../../src/v5/canonical';
@@ -128,8 +129,18 @@ function withTokenOfType(type: TokenV5['type'], value: TypedValue): Record<strin
 }
 
 // ---------------------------------------------------------------------------
-// VALID_CASES — one per SUPPORTED_TOKEN_TYPES member, plus the non-literal
-// value kinds (alias, resolved and unresolved; missing).
+// VALID_CASES — one per SUPPORTED_TOKEN_TYPES member, one per SUPPORTED_UNITS
+// member, one per SUPPORTED_DURATION_UNITS member, plus the non-literal value
+// kinds (alias, resolved and unresolved; missing).
+//
+// The unit cases are GENERATED from the runtime vocabularies rather than hand-
+// listed. Before this, coverage was `px` and `ms` only: five of the seven units
+// and one of the two duration units never went through either validator, so the
+// published schema and the hand-written validator could disagree about them
+// with every test still green. Generating the cases means adding a member to
+// `SUPPORTED_UNITS` automatically produces a case that both validators must
+// accept, and `schemaParity.test.ts` asserts the resulting coverage is total —
+// the guard is structural, not a list somebody has to remember to extend.
 // ---------------------------------------------------------------------------
 
 const RESOLVED_ALIAS: CanonicalValue = {
@@ -161,11 +172,17 @@ const MISSING_VALUE: CanonicalValue = { kind: 'missing', reason: 'no_value_for_m
 
 export const VALID_CASES: FixtureCase[] = [
   { name: 'minimal valid artifact (color token)', artifact: OK_ARTIFACT },
-  { name: 'dimension token', artifact: withTokenOfType('dimension', { type: 'dimension', number: 16, unit: 'px' }) },
+  ...SUPPORTED_UNITS.map((unit) => ({
+    name: `dimension token with unit "${unit}"`,
+    artifact: withTokenOfType('dimension', { type: 'dimension', number: 16, unit }),
+  })),
   { name: 'number token', artifact: withTokenOfType('number', { type: 'number', value: 400 }) },
   { name: 'string token', artifact: withTokenOfType('string', { type: 'string', value: 'Inter' }) },
   { name: 'boolean token', artifact: withTokenOfType('boolean', { type: 'boolean', value: true }) },
-  { name: 'duration token', artifact: withTokenOfType('duration', { type: 'duration', number: 200, unit: 'ms' }) },
+  ...SUPPORTED_DURATION_UNITS.map((unit) => ({
+    name: `duration token with unit "${unit}"`,
+    artifact: withTokenOfType('duration', { type: 'duration', number: 200, unit }),
+  })),
   { name: 'cubic_bezier token', artifact: withTokenOfType('cubic_bezier', { type: 'cubic_bezier', value: [0.4, 0, 0.2, 1] }) },
   { name: 'font_family token', artifact: withTokenOfType('font_family', { type: 'font_family', value: 'Inter' }) },
   { name: 'resolved alias value', artifact: withValue(RESOLVED_ALIAS) },
@@ -468,6 +485,93 @@ export function artifactWithDecomposedDuplicate(): FoundationArtifactV5 {
     {
       id: 'VariableID:decomposed-b', collection_id: collectionId, name: 'Cafe (NFD)',
       path: ['Café'], type: 'string', description: '', scopes: [], values,
+    },
+  );
+  return root;
+}
+
+/** The fixture token, refiled under a collection id no collection in the
+ *  artifact carries. §18 Level 2 requires collection references to resolve;
+ *  before the fix this ALSO suppressed the mode-completeness check for that
+ *  token, so a dangling reference removed a check instead of adding a
+ *  finding. */
+export function artifactWithDanglingCollectionId(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.tokens[0].collection_id = 'VariableCollectionId:not-here';
+  return root;
+}
+
+/** A collection whose `default_mode_id` names none of its declared modes —
+ *  §7's "The default mode MUST reference a declared mode ID". This is the
+ *  shape `normalizeV4` now deliberately emits when v4 states no usable
+ *  default, so validation MUST reject it. */
+export function artifactWithUndeclaredDefaultMode(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.collections[0].default_mode_id = '1:2/there-is-no-such-mode';
+  return root;
+}
+
+/** The fixture token marked deprecated with a `replacement_id` naming no
+ *  entity in the artifact. */
+export function artifactWithDanglingReplacement(replacementId: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.tokens[0].lifecycle = { status: 'deprecated', replacement_id: replacementId };
+  return root;
+}
+
+/** An effect style whose binding names a token that is not in the artifact.
+ *  Phase 1 emits no styles, so this is hand-built: the check exists now so the
+ *  gap cannot reopen when plan 3 starts populating them. */
+export function artifactWithDanglingStyleBinding(tokenId: string): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  root.styles.effects.push({
+    id: 'EffectStyleId:1', name: 'Card/Shadow', path: ['Card', 'Shadow'],
+    mode_id: null, effects: [],
+    bindings: [{ property: 'effects[0].offset_y', token_id: tokenId }],
+  });
+  return root;
+}
+
+/**
+ * A two-collection alias cycle: token A in collection A aliases token B in
+ * collection B, which aliases A back.
+ *
+ * Mode ids are collection-scoped, so this is the case the walk could not see:
+ * holding the current mode id constant across the hop made
+ * `targetToken.values[curModeId]` undefined, the hop read as terminal, and the
+ * ring was never closed. The SAME ring inside one collection was reported
+ * (see `artifactWithCycle`), so cycle detection silently depended on how the
+ * designer had arranged their collections.
+ */
+export function artifactWithCrossCollectionCycle(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const collA = 'VariableCollectionId:xc-a';
+  const collB = 'VariableCollectionId:xc-b';
+  root.collections.push(
+    {
+      id: collA, name: 'XC A', path: ['XC A'],
+      default_mode_id: 'xc-a/only', modes: [{ id: 'xc-a/only', name: 'only', order: 0 }],
+    },
+    {
+      id: collB, name: 'XC B', path: ['XC B'],
+      default_mode_id: 'xc-b/only', modes: [{ id: 'xc-b/only', name: 'only', order: 0 }],
+    },
+  );
+  const aliasTo = (targetId: string, collectionId: string): CanonicalValue => ({
+    kind: 'alias',
+    reference: {
+      target_id: targetId, target_collection_id: collectionId, target_path: [], external: false,
+    },
+    resolved: { status: 'unresolved', reason: 'cycle', value: null, chain: [] },
+  });
+  root.tokens.push(
+    {
+      id: 'V:xc-a', collection_id: collA, name: 'A', path: ['A'], type: 'color',
+      description: '', scopes: [], values: { 'xc-a/only': aliasTo('V:xc-b', collB) },
+    },
+    {
+      id: 'V:xc-b', collection_id: collB, name: 'B', path: ['B'], type: 'color',
+      description: '', scopes: [], values: { 'xc-b/only': aliasTo('V:xc-a', collA) },
     },
   );
   return root;

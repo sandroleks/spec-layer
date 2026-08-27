@@ -26,9 +26,11 @@
  */
 import { compareCodeUnits, diagnostic } from './diagnostics';
 import type { Diagnostic } from './diagnostics';
-import { SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS } from './value';
+import {
+  SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
+} from './value';
 import type { TokenType, Unit } from './value';
-import type { TokenV5 } from './entities';
+import type { CollectionV5, TokenV5 } from './entities';
 import type { FoundationArtifactV5 } from './canonical';
 
 const ROOT = '<artifact>';
@@ -119,7 +121,10 @@ function validateTypedValue(
       if (!isFiniteNumber(tv.number)) {
         out.push(unsupported(entityId, 'duration.number must be a finite number.', modeId));
       }
-      if (tv.unit !== 'ms' && tv.unit !== 's') {
+      // Reads the runtime vocabulary rather than re-spelling 'ms'/'s' inline,
+      // so this check and the published schema's enum have one source that
+      // schemaParity.test.ts can assert them both against.
+      if (typeof tv.unit !== 'string' || !SUPPORTED_DURATION_UNITS.includes(tv.unit as 'ms' | 's')) {
         out.push(unsupported(entityId, 'duration.unit must be "ms" or "s".', modeId));
       }
       break;
@@ -424,9 +429,44 @@ function lowestRingIndex(ring: AliasNode[]): number {
  * already on the CURRENT path" is the entire cycle test -- no branching DFS
  * is needed, only a path stack and an O(1) membership check on it.
  */
-function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
+function walkAliasGraph(tokens: TokenV5[], collections: CollectionV5[], out: Diagnostic[]): void {
   const tokensById = new Map(tokens.map((t) => [t.id, t]));
+  const collectionsById = new Map(collections.map((c) => [c.id, c]));
   const states = new Map<string, Map<string, NodeState>>();
+
+  /**
+   * The mode the walk continues under after hopping from `fromToken` to
+   * `toToken`, or `undefined` when it cannot be determined.
+   *
+   * Mode ids are collection-scoped, so holding the current mode id constant
+   * across a hop into a DIFFERENT collection was always wrong: the lookup
+   * `targetToken.values[curModeId]` could not match, so the walk treated every
+   * cross-collection hop as terminal. A two-collection alias cycle was
+   * therefore invisible while the same cycle inside one collection was
+   * reported -- the check silently depended on how the designer had arranged
+   * their collections.
+   *
+   * The rule is the target collection's `default_mode_id`: that is the mode
+   * Figma itself resolves a cross-collection alias through when the consuming
+   * context selects none, and it is a fact this artifact already RECORDS
+   * rather than something the validator has to infer. `normalize.ts`'s
+   * `convertAlias` applies the identical rule when it emits chain steps; the
+   * two must not diverge, or validation contradicts the normalizer.
+   *
+   * `undefined` when the target collection is unknown or its default mode
+   * names no declared mode -- in which case the caller reports, and does not
+   * guess a mode.
+   */
+  const modeAfterHop = (
+    fromToken: TokenV5, toToken: TokenV5, curModeId: string,
+  ): string | undefined => {
+    if (toToken.collection_id === fromToken.collection_id) return curModeId;
+    const collection = collectionsById.get(toToken.collection_id);
+    if (collection === undefined) return undefined;
+    return collection.modes.some((m) => m.id === collection.default_mode_id)
+      ? collection.default_mode_id
+      : undefined;
+  };
 
   const markDone = (path: AliasNode[]): void => {
     for (const node of path) nodeStates(states, node.tokenId).set(node.modeId, 'done');
@@ -453,7 +493,7 @@ function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
       const path: AliasNode[] = [];
       const pathIndex = new Map<string, Map<string, number>>();
       let curTokenId = startToken.id;
-      const curModeId = startModeId;
+      let curModeId = startModeId;
 
       while (true) {
         if (getNodeState(states, curTokenId, curModeId) === 'done') {
@@ -523,11 +563,32 @@ function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
           }));
         }
 
-        // Mode carries across a hop: which mode of the target applies is a
-        // decision already made and stated by the extractor (§9's
-        // ResolutionStep model keys each hop by BOTH token and mode), so the
-        // walk holds the mode constant rather than re-deriving it.
+        // Which mode the walk continues under. Constant within one collection,
+        // the target collection's default mode across collections -- see
+        // `modeAfterHop`, which owns the reasoning and is the same rule
+        // normalize.ts's `convertAlias` writes into its chain steps.
+        const nextModeId = modeAfterHop(curToken, targetToken, curModeId);
+        if (nextModeId === undefined) {
+          // The alias target is fine; what does not resolve is the target
+          // collection's default-mode reference. Stopping here WITHOUT a
+          // diagnostic is what the old code effectively did, and it is how a
+          // cross-collection cycle went unreported. Guessing a mode instead
+          // (the source mode's name, the first declared mode) would make the
+          // walk's answer depend on a value the artifact does not state.
+          out.push(diagnostic('UNRESOLVED_REFERENCE', {
+            entity_id: curTokenId,
+            mode_id: curModeId,
+            message: `Alias hops into collection ${JSON.stringify(targetToken.collection_id)}, `
+              + 'whose default_mode_id names no declared mode, so the mode this hop resolves '
+              + 'through cannot be determined.',
+            details: { target_id: targetToken.id, target_collection_id: targetToken.collection_id },
+          }));
+          markDone(path);
+          break;
+        }
+
         curTokenId = targetToken.id;
+        curModeId = nextModeId;
       }
     }
   }
@@ -544,7 +605,12 @@ function checkModeCompleteness(artifact: FoundationArtifactV5, out: Diagnostic[]
   const collectionsById = new Map(artifact.collections.map((c) => [c.id, c]));
   for (const token of artifact.tokens) {
     const collection = collectionsById.get(token.collection_id);
-    if (!collection) continue; // no declared collection to check modes against
+    // A token whose collection is not in the artifact has no declared mode
+    // list to check against, so this check genuinely cannot run for it -- but
+    // it is NOT skipped silently: `checkReferences` reports the dangling
+    // `collection_id` as UNRESOLVED_REFERENCE. That fact has exactly one owner,
+    // there, which is why this does not report it a second time.
+    if (!collection) continue;
     for (const mode of collection.modes) {
       if (!(mode.id in token.values)) {
         out.push(diagnostic('MISSING_MODE_VALUE', {
@@ -611,14 +677,118 @@ function checkPathCollisions(tokens: TokenV5[], out: Diagnostic[]): void {
 }
 
 /**
+ * §18 Level 2's OTHER four reference classes.
+ *
+ * The level requires that "collection, mode, alias, replacement, and binding
+ * references resolve". `walkAliasGraph` covers aliases and
+ * `checkModeCompleteness` covers per-token mode records; nothing covered the
+ * rest, so an artifact with a `collection_id` naming no collection, a
+ * `default_mode_id` naming no declared mode, and a `replacement_id` naming no
+ * token passed BOTH levels clean. Worse, the dangling `collection_id` made
+ * `checkModeCompleteness` skip that token entirely, so a broken reference
+ * SUPPRESSED a check instead of producing a finding.
+ *
+ * Every finding here is `UNRESOLVED_REFERENCE`, never `UNRESOLVED_ALIAS`: see
+ * that code's comment in diagnostics.ts for why the two must stay apart.
+ */
+function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
+  const collectionIds = new Set(artifact.collections.map((c) => c.id));
+  const tokenIds = new Set(artifact.tokens.map((t) => t.id));
+  // Replacement targets are resolved against EVERY entity id rather than
+  // against the same kind as the referrer. §18 requires only that a
+  // replacement "resolves"; requiring a token to be replaced by a token would
+  // be a stricter rule than the spec states, and would fire on the legitimate
+  // case of a token superseded by a composite style.
+  const allEntityIds = new Set([
+    ...collectionIds,
+    ...tokenIds,
+    ...artifact.styles.typography.map((s) => s.id),
+    ...artifact.styles.effects.map((s) => s.id),
+  ]);
+
+  for (const collection of artifact.collections) {
+    // §7: "The default mode MUST reference a declared mode ID." Checked
+    // against the collection's OWN mode list, not a global mode set: mode ids
+    // are collection-scoped, so a default naming another collection's mode is
+    // just as dangling as one naming nothing.
+    if (!collection.modes.some((m) => m.id === collection.default_mode_id)) {
+      out.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: collection.id,
+        message: `Collection default_mode_id ${JSON.stringify(collection.default_mode_id)} names `
+          + `none of the ${collection.modes.length} mode(s) this collection declares.`,
+        details: {
+          default_mode_id: collection.default_mode_id,
+          declared_modes: collection.modes.map((m) => m.id),
+        },
+      }));
+    }
+  }
+
+  for (const token of artifact.tokens) {
+    if (!collectionIds.has(token.collection_id)) {
+      out.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: token.id,
+        message: `Token collection_id ${JSON.stringify(token.collection_id)} names no collection `
+          + 'in this artifact.',
+        details: { collection_id: token.collection_id },
+      }));
+    }
+  }
+
+  // §11/§12/§13: lifecycle lives on tokens and on both style kinds, so the
+  // replacement check walks all three rather than tokens alone. The style
+  // arrays are empty in Phase 1; checking them now is what stops the gap
+  // reopening when plan 3 populates them.
+  const withLifecycle: { id: string; replacement_id: string | null }[] = [
+    ...artifact.tokens,
+    ...artifact.styles.typography,
+    ...artifact.styles.effects,
+  ].flatMap((e) => (e.lifecycle === undefined
+    ? []
+    : [{ id: e.id, replacement_id: e.lifecycle.replacement_id }]));
+
+  for (const { id, replacement_id: replacementId } of withLifecycle) {
+    // `null` is the stated "no replacement", which resolves trivially. Only a
+    // named replacement can dangle.
+    if (replacementId !== null && !allEntityIds.has(replacementId)) {
+      out.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: id,
+        message: `lifecycle.replacement_id ${JSON.stringify(replacementId)} names no entity in `
+          + 'this artifact.',
+        details: { replacement_id: replacementId },
+      }));
+    }
+  }
+
+  // §12: a binding is the explicit link between a scalar token and the
+  // composite property it drives, so a binding naming no token makes the
+  // style's own provenance unreadable. Only effect styles carry `bindings`
+  // today; typography's per-property alias targets are alias references and
+  // belong to the alias walk, not here.
+  for (const style of artifact.styles.effects) {
+    for (const binding of style.bindings ?? []) {
+      if (!tokenIds.has(binding.token_id)) {
+        out.push(diagnostic('UNRESOLVED_REFERENCE', {
+          entity_id: style.id,
+          message: `Style binding for ${JSON.stringify(binding.property)} names token `
+            + `${JSON.stringify(binding.token_id)}, which is not in this artifact.`,
+          details: { property: binding.property, token_id: binding.token_id },
+        }));
+      }
+    }
+  }
+}
+
+/**
  * Level 2 validation — spec §18 "Referential integrity" and §10 "Alias
  * graph". Assumes `artifact` has already passed `validateLevel1`.
  */
 export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
   const out: Diagnostic[] = [];
-  walkAliasGraph(artifact.tokens, out);
+  walkAliasGraph(artifact.tokens, artifact.collections, out);
   checkModeCompleteness(artifact, out);
   checkDuplicateIds(artifact, out);
   checkPathCollisions(artifact.tokens, out);
+  checkReferences(artifact, out);
   return out;
 }

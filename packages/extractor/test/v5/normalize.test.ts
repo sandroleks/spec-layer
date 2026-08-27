@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeV4, parseV4Path, syntheticId,
 } from '../../src/v5/normalize';
+import { validateLevel1, validateLevel2 } from '../../src/v5/validate';
 import type { NormalizeMeta, V4Foundation } from '../../src/v5/normalize';
 import type { CanonicalValue } from '../../src/v5/value';
 
@@ -223,6 +224,97 @@ const V4_WITH_DECOMPOSED_NAME: V4Foundation = {
   ],
 };
 
+// Two modes are DECLARED and the token states a value for only one of them.
+// v4 does this whenever a variable was never given a value in a mode.
+const V4_WITH_UNSTATED_MODE: V4Foundation = {
+  collections: [
+    {
+      name: 'Theme',
+      modes: ['Light', 'Dark'],
+      default_mode: 'Light',
+      tokens: [
+        { name: 'color/bg', type: 'color', values: { Light: '#ffffff' } },
+      ],
+    },
+  ],
+};
+
+// A real v4 foundation brief: `foundationBrief` emits `text_styles` and
+// `effect_styles` whenever the file has any (brief.ts:253-272).
+const V4_WITH_COMPOSITE_STYLES: V4Foundation = {
+  ...V4_MINIMAL,
+  text_styles: [
+    { name: 'Heading/H1', font: { family: 'Inter', style: 'Bold', size: 32 } },
+    { name: 'Body/Default', font: { family: 'Inter', style: 'Regular', size: 16 } },
+  ],
+  effect_styles: [
+    { name: 'Card/Shadow', effects: [] },
+  ],
+};
+
+const V4_WITHOUT_DEFAULT_MODE: V4Foundation = {
+  collections: [
+    {
+      name: 'Theme',
+      modes: ['Light', 'Dark'],
+      tokens: [
+        { name: 'color/bg', type: 'color', values: { Light: '#ffffff', Dark: '#000000' } },
+      ],
+    },
+  ],
+};
+
+const V4_WITH_UNRESOLVABLE_DEFAULT_MODE: V4Foundation = {
+  collections: [
+    {
+      name: 'Theme',
+      modes: ['Light', 'Dark'],
+      // Names a mode the collection does not declare -- v4's own brief emits
+      // `default_mode: undefined` for a deleted mode, but a hand-edited or
+      // older document can carry a stale name outright.
+      default_mode: 'Midnight',
+      tokens: [
+        { name: 'color/bg', type: 'color', values: { Light: '#ffffff', Dark: '#000000' } },
+      ],
+    },
+  ],
+};
+
+const V4_WITH_ZERO_MODE_COLLECTION: V4Foundation = {
+  collections: [
+    { name: 'Empty', modes: [], tokens: [{ name: 'color/bg', type: 'color', values: {} }] },
+  ],
+};
+
+// A cross-collection alias: the consuming token lives in "Semantic" under mode
+// "Value", the target lives in "Primitive" whose modes are named differently,
+// so a name match is impossible and the target collection's default mode is the
+// only stated answer.
+const V4_WITH_CROSS_COLLECTION_ALIAS: V4Foundation = {
+  collections: [
+    {
+      name: 'Semantic',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        {
+          name: 'color/accent',
+          type: 'color',
+          values: { Value: { alias: 'colors/blue/500', resolved: '#1a2b3c' } },
+        },
+      ],
+    },
+    {
+      name: 'Primitive',
+      modes: ['Base', 'Alt'],
+      default_mode: 'Alt',
+      tokens: [
+        { name: 'colors/blue/500', type: 'color', values: { Base: '#1a2b3c', Alt: '#1a2b3c' } },
+      ],
+    },
+  ],
+};
+
 describe('normalizeV4', () => {
   it('collapses all four v4 value shapes into one canonical shape', () => {
     // §21.1.6.
@@ -335,6 +427,120 @@ describe('normalizeV4', () => {
     expect(stats.aliases.total).toBe(
       artifact.tokens.flatMap((t) => Object.values(t.values))
         .filter((v) => v.kind === 'alias').length);
+  });
+
+  // -------------------------------------------------------------------------
+  // §8.2 — one entry per DECLARED mode, or an explicit missing record.
+  // -------------------------------------------------------------------------
+
+  it('records an explicit missing value for a declared mode v4 never stated', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_UNSTATED_MODE, META);
+    const collection = artifact.collections[0];
+    const token = artifact.tokens[0];
+    const darkId = collection.modes.find((m) => m.name === 'Dark')!.id;
+    expect(Object.keys(token.values).sort()).toEqual(collection.modes.map((m) => m.id).sort());
+    expect(token.values[darkId]).toEqual({ kind: 'missing', reason: 'no_value_for_mode' });
+    expect(diagnostics.some((d) => d.code === 'MISSING_MODE_VALUE' && d.mode_id === darkId))
+      .toBe(true);
+  });
+
+  it('produces an artifact that passes its own Level 2 mode-completeness check', () => {
+    // The bug this closes: normalize iterated the modes v4 happened to STATE,
+    // so a declared mode with no v4 entry got no key and no diagnostic --
+    // and then validateLevel2 reported that same artifact as an error. The
+    // normalizer and the validator disagreed about one artifact.
+    for (const input of [V4_WITH_UNSTATED_MODE, V4_WITH_ALL_FOUR_SHAPES, V4_WITH_CROSS_COLLECTION_ALIAS]) {
+      const { artifact } = normalizeV4(input, META);
+      expect(validateLevel1(artifact)).toEqual([]);
+      expect(validateLevel2(artifact).filter((d) => d.code === 'MISSING_MODE_VALUE')).toEqual([]);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Composite styles: not migrated, and not claimed absent either.
+  // -------------------------------------------------------------------------
+
+  it('reports v4 composite styles as unmigrated instead of claiming completeness', () => {
+    // Phase 1 does not migrate text or effect styles (plan 3 owns them), but
+    // `styles.typography: []` plus `completeness.styles: 'complete'` states
+    // that the FILE has none. A consumer could not tell that from three styles
+    // being thrown away.
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_COMPOSITE_STYLES, META);
+    expect(artifact.completeness.styles).toBe('partial');
+    const d = diagnostics.find((x) => x.code === 'SOURCE_PARTIALLY_UNAVAILABLE')!;
+    expect(d.details).toEqual({ typography_not_migrated: 2, effects_not_migrated: 1 });
+    // The payload itself is unchanged -- the honesty is in `completeness`,
+    // which is hashed, so the two exports are different artifacts.
+    expect(artifact.styles).toEqual({ typography: [], effects: [] });
+    expect(artifact.spec_layer.export.content_hash)
+      .not.toBe(normalizeV4(V4_MINIMAL, META).artifact.spec_layer.export.content_hash);
+  });
+
+  it("says 'complete' only when the input genuinely states no composite styles", () => {
+    const { artifact, diagnostics } = normalizeV4(V4_MINIMAL, META);
+    expect(artifact.completeness.styles).toBe('complete');
+    expect(diagnostics.some((d) => d.code === 'SOURCE_PARTIALLY_UNAVAILABLE')).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // The collection default mode is never substituted silently.
+  // -------------------------------------------------------------------------
+
+  it('reports, rather than invents, a default mode v4 does not state', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITHOUT_DEFAULT_MODE, META);
+    const collection = artifact.collections[0];
+    // NOT modes[0]: that would state a default the designer never chose, in a
+    // form no validation level can distinguish from a real one.
+    expect(collection.modes.map((m) => m.id)).not.toContain(collection.default_mode_id);
+    const d = diagnostics.find((x) => x.code === 'UNRESOLVED_REFERENCE')!;
+    expect(d.entity_id).toBe(collection.id);
+    // A visibly invalid artifact plus a diagnostic beats a plausible fake, so
+    // Level 2 must reject what normalize emitted here.
+    expect(validateLevel2(artifact).some((x) => x.code === 'UNRESOLVED_REFERENCE')).toBe(true);
+  });
+
+  it('reports a stated default mode that resolves to no declared mode', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_UNRESOLVABLE_DEFAULT_MODE, META);
+    const d = diagnostics.find((x) => x.code === 'UNRESOLVED_REFERENCE')!;
+    // The STATED value is carried into the details rather than discarded --
+    // silently replacing it with modes[0] threw away the only evidence that
+    // the source said anything at all.
+    expect(d.details?.stated_default_mode).toBe('Midnight');
+    expect(artifact.collections[0].modes.map((m) => m.id))
+      .not.toContain(artifact.collections[0].default_mode_id);
+  });
+
+  it('never puts a token id, or any non-mode id, in a zero-mode collection', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_ZERO_MODE_COLLECTION, META);
+    const collection = artifact.collections[0];
+    expect(collection.modes).toEqual([]);
+    // The old fallback chain ended in `?? id`, putting the COLLECTION's own id
+    // into default_mode_id -- a mode that does not exist, in a shape that
+    // passed both validation levels.
+    expect(collection.default_mode_id).not.toBe(collection.id);
+    expect(collection.default_mode_id).not.toBe(artifact.tokens[0].id);
+    expect(diagnostics.some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(true);
+    expect(validateLevel2(artifact).some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(true);
+  });
+
+  it('resolves a cross-collection hop through the TARGET collection default mode', () => {
+    // Mode ids are collection-scoped, and Figma resolves a cross-collection
+    // alias through the target collection's own mode selection. normalize and
+    // validate must apply one rule here or they answer the same question two
+    // ways -- see convertAlias and walkAliasGraph's modeAfterHop.
+    const { artifact } = normalizeV4(V4_WITH_CROSS_COLLECTION_ALIAS, META);
+    const primitive = artifact.collections.find((c) => c.name === 'Primitive')!;
+    const altId = primitive.modes.find((m) => m.name === 'Alt')!.id;
+    expect(primitive.default_mode_id).toBe(altId);
+    const value = Object.values(artifact.tokens[0].values)[0];
+    expect(value.kind).toBe('alias');
+    if (value.kind === 'alias' && value.resolved.status === 'resolved') {
+      expect(value.resolved.chain).toEqual([{ token_id: artifact.tokens[1].id, mode_id: altId }]);
+    } else {
+      throw new Error('expected a resolved alias');
+    }
+    // And the artifact normalize produced passes its own alias walk.
+    expect(validateLevel2(artifact)).toEqual([]);
   });
 
   it('runs the artifact diagnostics through sortDiagnostics before returning them', () => {

@@ -5,6 +5,9 @@ import {
   artifactWithAlias, artifactWithCycle, artifactWithTypeMismatch,
   artifactMissingMode, artifactWithExplicitMissing, artifactWithDuplicateId,
   artifactWithPathCollision, artifactWithDecomposedDuplicate, artifactWithChainOfLength,
+  artifactWithDanglingCollectionId, artifactWithUndeclaredDefaultMode,
+  artifactWithDanglingReplacement, artifactWithDanglingStyleBinding,
+  artifactWithCrossCollectionCycle,
 } from './fixtures';   // see Step 4
 
 describe('validateLevel1', () => {
@@ -161,6 +164,65 @@ describe('validateLevel2', () => {
   it('reports a collision that appears only after NFC normalization', () => {
     expect(validateLevel2(artifactWithDecomposedDuplicate()).map((d) => d.code))
       .toContain('PATH_COLLISION');
+  });
+
+  it('reports a cycle that spans two collections', () => {
+    // Mode ids are collection-scoped, so a walk that held the mode constant
+    // across a hop found nothing at the target and treated the hop as
+    // terminal -- making a two-collection ring invisible while the identical
+    // ring inside one collection was reported.
+    const found = validateLevel2(artifactWithCrossCollectionCycle());
+    const cycles = found.filter((d) => d.code === 'ALIAS_CYCLE');
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].details?.chain).toEqual([
+      { token_id: 'V:xc-a', mode_id: 'xc-a/only' },
+      { token_id: 'V:xc-b', mode_id: 'xc-b/only' },
+      { token_id: 'V:xc-a', mode_id: 'xc-a/only' },
+    ]);
+  });
+
+  it('reports a token whose collection_id names no collection', () => {
+    // §18 Level 2. Before this, the dangling reference silently made
+    // checkModeCompleteness `continue` past the token, so a broken artifact
+    // came back clean from both levels.
+    const found = validateLevel2(artifactWithDanglingCollectionId());
+    const refs = found.filter((d) => d.code === 'UNRESOLVED_REFERENCE');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].entity_id).toBe('VariableID:3:4');
+    // Not UNRESOLVED_ALIAS: that code means an alias TARGET is missing, and
+    // overloading it would make both meanings unactionable.
+    expect(found.some((d) => d.code === 'UNRESOLVED_ALIAS')).toBe(false);
+  });
+
+  it('reports a collection default_mode_id that names no declared mode', () => {
+    const found = validateLevel2(artifactWithUndeclaredDefaultMode());
+    const refs = found.filter((d) => d.code === 'UNRESOLVED_REFERENCE');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].entity_id).toBe('VariableCollectionId:1:2');
+  });
+
+  it('reports a lifecycle replacement_id that names no entity', () => {
+    expect(validateLevel2(artifactWithDanglingReplacement('VariableID:gone'))
+      .filter((d) => d.code === 'UNRESOLVED_REFERENCE')).toHaveLength(1);
+  });
+
+  it('accepts a null replacement_id as the stated absence it is', () => {
+    // `null` says "no replacement", which resolves trivially. Reporting it
+    // would fire on every deprecated token that has no successor.
+    expect(validateLevel2(artifactWithDanglingReplacement(null as unknown as string))
+      .some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(false);
+  });
+
+  it('reports a style binding whose token_id is not in the artifact', () => {
+    const found = validateLevel2(artifactWithDanglingStyleBinding('VariableID:gone'));
+    const refs = found.filter((d) => d.code === 'UNRESOLVED_REFERENCE');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].entity_id).toBe('EffectStyleId:1');
+  });
+
+  it('accepts a style binding that names a real token', () => {
+    expect(validateLevel2(artifactWithDanglingStyleBinding('VariableID:3:4'))
+      .some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(false);
   });
 
   it('resolves a 5,000-link chain without recursing or going quadratic', () => {

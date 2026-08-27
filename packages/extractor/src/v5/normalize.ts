@@ -93,6 +93,25 @@ export interface V4Foundation {
    * to prevent.
    */
   unavailable?: string[];
+  /**
+   * v4's composite styles, which real foundation briefs DO carry
+   * (`foundationBrief` emits both, `brief.ts:253-272`).
+   *
+   * Declared here, and deliberately NOT modelled field by field: Phase 1 does
+   * not migrate composite styles at all (§22 Phase 3 owns them), so the only
+   * facts this module needs from them are THAT they are present and HOW MANY
+   * there are. Typing their interiors would imply this module reads them.
+   *
+   * They are declared at all because an undeclared field is a silently
+   * DISCARDED field. Before this, an input carrying 99 text styles produced
+   * `styles.typography: []`, `statistics.styles.typography: 0`,
+   * `completeness.styles: 'complete'` and no diagnostic -- an artifact stating
+   * that the file has no text styles, which is a different fact from "99 were
+   * not migrated". `completeness` exists to make that distinction, so the
+   * fields have to reach it.
+   */
+  text_styles?: unknown[];
+  effect_styles?: unknown[];
 }
 
 export interface NormalizeMeta { exportId: string; generatedAt: string }
@@ -178,6 +197,26 @@ function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
 
 const ARTIFACT_ENTITY_ID = '<artifact>';
 
+/**
+ * What goes into `default_mode_id` when v4 states no usable default mode.
+ *
+ * DELIBERATELY not a mode id, and deliberately not `modes[0].id`.
+ *
+ * §7 requires `default_mode_id` to reference a declared mode id, and the field
+ * is not nullable, so an input that does not state a usable default cannot be
+ * represented truthfully at all. Given that, the choice is between a value
+ * downstream validation REJECTS and one it silently ACCEPTS. Substituting
+ * `modes[0]` is the second: it produces an artifact that passes every level
+ * while asserting a default the designer never chose, and a generator reading
+ * it has no way to tell that from a stated one. This sentinel is the first:
+ * `validateLevel2`'s default-mode check reports it as UNRESOLVED_REFERENCE, so
+ * the artifact is visibly incomplete rather than plausibly wrong.
+ *
+ * The accompanying diagnostic from `buildCollections` is what says which of the
+ * two cases (absent, or stated-but-unresolvable) produced it.
+ */
+const UNSTATED_DEFAULT_MODE_ID = '<no-default-mode-stated>';
+
 const V4_TYPE_TO_V5: Record<V4TokenType, TokenType> = {
   color: 'color',
   // v4 carries no `scopes`, so a float can never be stated as a dimension --
@@ -233,11 +272,35 @@ function buildCollections(v4: V4Foundation, diagnostics: Diagnostic[]): Collecti
       return { id: modeId, name: modeName, order };
     });
 
-    const defaultModeName = c.default_mode !== undefined && modeIdByName.has(c.default_mode)
-      ? c.default_mode
-      : c.modes[0];
-    const defaultModeId = (defaultModeName !== undefined ? modeIdByName.get(defaultModeName) : undefined)
-      ?? modes[0]?.id ?? id;
+    // The default mode is either STATED and resolvable, or it is not stated at
+    // all. There is no third, substitutable case: falling through to
+    // `modes[0]` (which this did before) discards a stated-but-unresolvable
+    // value AND invents an unstated one, in both cases with no diagnostic, so
+    // an artifact carrying a designer's real choice and one carrying the
+    // normalizer's guess were byte-identical.
+    const statedDefault = c.default_mode;
+    const statedDefaultId = statedDefault !== undefined
+      ? modeIdByName.get(statedDefault)
+      : undefined;
+    const defaultModeId = statedDefaultId ?? UNSTATED_DEFAULT_MODE_ID;
+
+    if (statedDefaultId === undefined) {
+      diagnostics.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: id,
+        message: statedDefault !== undefined
+          ? `Collection "${name}" states default mode "${statedDefault}", which is not one of `
+            + `the ${c.modes.length} mode(s) it declares. No substitute was chosen: picking one `
+            + 'would state a default the source does not.'
+          : `Collection "${name}" states no default mode, and v5 requires default_mode_id to name `
+            + 'a declared mode. No substitute was chosen: picking one would state a default the '
+            + 'source does not.',
+        details: {
+          ...(statedDefault !== undefined ? { stated_default_mode: statedDefault } : {}),
+          declared_modes: modes.map((m) => m.id),
+          default_mode_id: defaultModeId,
+        },
+      }));
+    }
 
     diagnostics.push(diagnostic('SYNTHETIC_IDENTITY', {
       entity_id: id,
@@ -359,7 +422,24 @@ function unresolvedAliasDiagnosticCode(reason: UnresolvedReason): DiagnosticCode
   if (reason === 'ambiguous_target') return 'AMBIGUOUS_ALIAS_TARGET';
   if (reason === 'cycle') return 'ALIAS_CYCLE';
   if (reason === 'source_library_unavailable') return 'UNRESOLVED_EXTERNAL_ALIAS';
+  // The alias TARGET resolved; what did not is the target collection's
+  // default-mode reference. UNRESOLVED_ALIAS would tell a consumer the wrong
+  // thing -- that someone aliased a variable that is not there.
+  if (reason === 'target_mode_unresolvable') return 'UNRESOLVED_REFERENCE';
   return 'UNRESOLVED_ALIAS';
+}
+
+/**
+ * A collection's `default_mode_id`, but ONLY when it actually names one of that
+ * collection's declared modes (§7). `undefined` otherwise -- including for the
+ * `UNSTATED_DEFAULT_MODE_ID` sentinel, which is the whole reason this is a
+ * function and not a field read: a caller must not be able to pass the sentinel
+ * on into a `mode_id` slot without noticing.
+ */
+function declaredDefaultModeId(build: CollectionBuild | undefined): string | undefined {
+  if (build === undefined) return undefined;
+  const defaultModeId = build.v5.default_mode_id;
+  return build.v5.modes.some((m) => m.id === defaultModeId) ? defaultModeId : undefined;
 }
 
 function unresolvedAlias(
@@ -377,7 +457,7 @@ function unresolvedAlias(
 }
 
 function convertAlias(
-  alias: V4AliasValue, ownerType: V4TokenType, entityId: string, modeId: string, sourceModeName: string,
+  alias: V4AliasValue, ownerType: V4TokenType, entityId: string, modeId: string, ownerCollectionId: string,
   tokenIndex: TokenIndexEntry[], collectionsByV5Id: Map<string, CollectionBuild>, diagnostics: Diagnostic[],
 ): CanonicalValue {
   const targetPath = parseV4Path(alias.alias.normalize('NFC'));
@@ -490,15 +570,50 @@ function convertAlias(
 
   // One visible hop, matching v4's own chain (which is already collapsed to
   // one hop by the time it reaches the brief -- see `resolveValue`'s
-  // "Collapse a chain to one visible hop" comment). The mode replicates
-  // `targetModeId` in foundation.ts: match the source mode's NAME in the
-  // target collection, falling back to that collection's own default.
-  const targetCollection = collectionsByV5Id.get(target.collectionId);
-  const targetModeName = targetCollection?.v4.modes.includes(sourceModeName)
-    ? sourceModeName
-    : targetCollection?.v4.default_mode;
-  const targetModeId = (targetModeName !== undefined ? targetCollection?.modeIdByName.get(targetModeName) : undefined)
-    ?? targetCollection?.v5.default_mode_id ?? target.id;
+  // "Collapse a chain to one visible hop" comment).
+  //
+  // WHICH MODE THE HOP READS. One rule, and it is the SAME rule
+  // `walkAliasGraph` in validate.ts applies:
+  //
+  //  - same collection: the mode carries across unchanged, because it is
+  //    literally the same mode.
+  //  - different collection: the TARGET collection's default mode. Mode ids
+  //    are collection-scoped (see syntheticModeId), so the source mode id does
+  //    not exist in the target at all, and Figma itself resolves a
+  //    cross-collection alias through whichever mode the consuming context
+  //    selects for the target collection, defaulting to that collection's
+  //    default mode.
+  //
+  // This deliberately does NOT replicate v4's `targetModeId`
+  // (foundation.ts:389), which matched the source mode's display NAME in the
+  // target collection first. That is name-based inference -- the thing §10
+  // exists to eliminate -- and it is not what Figma does: two collections
+  // owning a mode called "light" is a naming coincidence, not a relationship.
+  //
+  // The rules MUST stay identical between the two modules. If they diverge,
+  // one fact ("which mode did this hop read?") has two owners with two
+  // answers, and validate.ts ends up reporting normalize.ts's own output as
+  // wrong -- which is precisely the class of bug this fix wave is closing.
+  const targetModeId = target.collectionId === ownerCollectionId
+    ? modeId
+    : declaredDefaultModeId(collectionsByV5Id.get(target.collectionId));
+
+  if (targetModeId === undefined) {
+    // The target token exists and v4 even handed us its value, but the mode
+    // the hop reads it under cannot be named: the target collection declares
+    // no usable default. The previous `?? target.id` fallback wrote the TARGET
+    // TOKEN's id into a `mode_id` slot -- a value of entirely the wrong kind,
+    // which no validation level would catch and which a consumer would read as
+    // a real mode. Reporting is the only honest option; see
+    // `target_mode_unresolvable` in value.ts.
+    return unresolvedAlias(
+      reference, 'target_mode_unresolvable', entityId, modeId,
+      `Alias "${alias.alias}" resolves into collection "${target.collectionName}", which declares `
+        + 'no usable default mode, so the mode this hop reads cannot be stated.',
+      diagnostics,
+      { target_collection_id: target.collectionId },
+    );
+  }
 
   const resolved: AliasResolution = {
     status: 'resolved', value: literal.value, chain: [{ token_id: target.id, mode_id: targetModeId }],
@@ -550,26 +665,47 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     }
 
     const values: Record<string, CanonicalValue> = {};
-    for (const [modeName, raw] of Object.entries(t.values)) {
-      const modeId = collBuild.modeIdByName.get(modeName);
-      // A stale mode name (deleted after this value was recorded) has no
-      // entry in the collection's own mode list -- dropped, same as v4's own
-      // `tokenOf` drops a mode id with no name (`brief.ts:117-123`), rather
-      // than keying a v5 value by a mode this collection no longer declares.
-      if (modeId === undefined) continue;
+    // Iterates the COLLECTION'S DECLARED MODES, not `Object.entries(t.values)`.
+    //
+    // §8.2 requires "one value entry for every declared mode, or an explicit
+    // missing-value record", and iterating the v4 values gave neither for a
+    // mode v4 simply did not mention: no key, and no diagnostic. The artifact
+    // then failed its OWN `validateLevel2` (checkModeCompleteness reports
+    // exactly that gap as MISSING_MODE_VALUE), so normalize and validate
+    // contradicted each other about the same artifact.
+    //
+    // A mode name present in `t.values` but NOT declared by the collection is
+    // stale (the mode was deleted after the value was recorded) and is
+    // therefore not visited at all. That matches v4's own `tokenOf`, which
+    // drops a mode id with no name (`brief.ts:117-123`): keying a v5 value by a
+    // mode this collection no longer declares would assert a mode that does
+    // not exist.
+    for (const mode of collBuild.v5.modes) {
+      const stated = Object.prototype.hasOwnProperty.call(t.values, mode.name);
+      if (!stated) {
+        diagnostics.push(diagnostic('MISSING_MODE_VALUE', {
+          entity_id: id, mode_id: mode.id,
+          message: `v4 states no value for declared mode "${mode.name}"; recorded as explicitly `
+            + 'missing rather than omitted, so an absent value stays distinguishable from an '
+            + 'unexported one (§7).',
+        }));
+        values[mode.id] = { kind: 'missing', reason: 'no_value_for_mode' };
+        continue;
+      }
+      const raw = t.values[mode.name];
       if (isAliasShape(raw)) {
-        values[modeId] = convertAlias(
-          raw, t.type, id, modeId, modeName, tokenIndex, collectionsByV5Id, diagnostics,
+        values[mode.id] = convertAlias(
+          raw, t.type, id, mode.id, collBuild.v5.id, tokenIndex, collectionsByV5Id, diagnostics,
         );
       } else if (isUnresolvedShape(raw)) {
         diagnostics.push(diagnostic('MISSING_MODE_VALUE', {
-          entity_id: id, mode_id: modeId,
+          entity_id: id, mode_id: mode.id,
           message: `v4 recorded no value for this mode (${raw.unresolved}); the source never `
             + 'stated one.',
         }));
-        values[modeId] = { kind: 'missing', reason: 'no_value_for_mode' };
+        values[mode.id] = { kind: 'missing', reason: 'no_value_for_mode' };
       } else {
-        values[modeId] = convertLiteral(raw, t.type, id, modeId, diagnostics);
+        values[mode.id] = convertLiteral(raw, t.type, id, mode.id, diagnostics);
       }
     }
 
@@ -599,13 +735,41 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     }));
   }
 
+  // Composite styles are NOT migrated by Phase 1 (§22 Phase 3 owns them, and
+  // adding them here would be scope creep). What Phase 1 must not do is claim
+  // the input had none.
+  //
+  // `styles.typography: []` plus `completeness.styles: 'complete'` states "this
+  // file has no text styles". For a real v4 brief -- which carries `text_styles`
+  // and `effect_styles` whenever the file has any (`brief.ts:253-272`) -- that
+  // is false, and a consumer cannot tell it from a file that genuinely has
+  // none. `completeness` exists precisely so the two are different artifacts,
+  // and because it is HASHED, the difference also shows up in a semantic diff.
+  const typographyNotMigrated = v4.text_styles?.length ?? 0;
+  const effectsNotMigrated = v4.effect_styles?.length ?? 0;
+  const stylesNotMigrated = typographyNotMigrated + effectsNotMigrated;
+  if (stylesNotMigrated > 0) {
+    diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      entity_id: ARTIFACT_ENTITY_ID,
+      message: `v4 states ${typographyNotMigrated} text style(s) and ${effectsNotMigrated} effect `
+        + 'style(s) that this migration does not carry across: composite styles are not part of '
+        + 'the Phase 1 value model. They are absent from this artifact, not from the source file.',
+      details: {
+        typography_not_migrated: typographyNotMigrated,
+        effects_not_migrated: effectsNotMigrated,
+      },
+    }));
+  }
+
   const completeness: ExtractionCompleteness = {
     collections: unavailableSources.length > 0 ? 'partial' : 'complete',
-    // Phase 1 does not migrate styles at all (populated in plan 3 -- see
-    // entities.ts), so there is nothing style-related to report as
-    // unavailable; an empty `styles` array here is a scope decision, not an
-    // extraction failure.
-    styles: 'complete',
+    // 'complete' ONLY when the input genuinely states no composite styles.
+    // 'partial' rather than 'unavailable' because the collections and tokens in
+    // the same artifact did migrate -- 'unavailable' would overstate the loss.
+    styles: stylesNotMigrated > 0 ? 'partial' : 'complete',
+    // `unavailable_sources` stays empty here on purpose: these styles were read
+    // fine, they are simply not migrated. Listing them as unreadable sources
+    // would misattribute a scope decision to a read failure.
     unavailable_sources: unavailableSources,
   };
 

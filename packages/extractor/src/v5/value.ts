@@ -31,6 +31,12 @@ export const SUPPORTED_TOKEN_TYPES: readonly TokenType[] =
   ['color', 'dimension', 'number', 'string', 'boolean',
    'duration', 'cubic_bezier', 'font_family'] as const;
 export const SUPPORTED_VALUE_KINDS = ['literal', 'alias', 'missing'] as const;
+/** Duration's unit set is a SUBSET of `Unit`, spelled out inline in both
+ *  `DurationValue` below and `$defs.duration_value` in the published schema --
+ *  and it was the one vocabulary with no runtime mirror, so the schema's copy
+ *  had nothing it could be asserted against. Mirrored here for exactly the
+ *  reason the two arrays above are. */
+export const SUPPORTED_DURATION_UNITS: readonly ('ms' | 's')[] = ['ms', 's'] as const;
 
 export interface ColorValue {
   type: 'color';
@@ -93,7 +99,22 @@ export interface AliasReference {
 
 export type UnresolvedReason =
   | 'source_library_unavailable' | 'target_not_found' | 'cycle'
-  | 'type_mismatch' | 'depth_exceeded' | 'ambiguous_target';
+  | 'type_mismatch' | 'depth_exceeded' | 'ambiguous_target'
+  /**
+   * The alias's TARGET was found, but the mode the hop would have to resolve
+   * through could not be identified — the target collection declares no
+   * usable `default_mode_id` (see §7: "The default mode MUST reference a
+   * declared mode ID").
+   *
+   * A `ResolutionStep` requires BOTH a token id and a mode id, so there is no
+   * way to state this hop truthfully. The alternatives were to put some other
+   * id in the `mode_id` slot (a fabricated mode) or to claim `status:
+   * 'resolved'` with an empty chain (a resolution with no stated hops). Both
+   * assert something the source does not support, so the resolution is
+   * reported unresolved instead — the value is still recoverable from the
+   * target token itself, which is where it actually lives.
+   */
+  | 'target_mode_unresolvable';
 
 export type AliasResolution =
   | { status: 'resolved'; value: TypedValue; chain: ResolutionStep[] }

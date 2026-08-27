@@ -6,7 +6,7 @@
  * the v4 `validate.ts`: everything is COMPUTED, and there is nothing below
  * `info` -- a finding nobody should act on should not be emitted.
  *
- * The five codes below the spec table are ADDITIONS, permitted by §14.1's "At
+ * The six codes below the spec table are ADDITIONS, permitted by §14.1's "At
  * minimum". They exist because the alternative was overloading: an earlier
  * draft reported name-derived identity as INFERRED_LIFECYCLE (which is about
  * archive state) and absent unit metadata as UNSUPPORTED_VALUE_TYPE (which is
@@ -40,7 +40,23 @@ export type DiagnosticCode =
   | 'SOURCE_PARTIALLY_UNAVAILABLE'
   /** A colour the source states that cannot be canonicalized without inventing
    *  channels. Emitted instead of clamping or padding it into a plausible one. */
-  | 'INVALID_SOURCE_COLOR';
+  | 'INVALID_SOURCE_COLOR'
+  /**
+   * A NON-ALIAS reference that names no entity in this artifact: a token's
+   * `collection_id`, a collection's `default_mode_id`, a `lifecycle.
+   * replacement_id`, a style binding's `token_id`, or the mode a cross-
+   * collection alias hop would have to resolve through.
+   *
+   * Deliberately NOT reported as `UNRESOLVED_ALIAS`. That code means an alias
+   * TARGET specifically -- §14.1 defines it as "internal alias target is
+   * missing" -- and a consumer that has learned to treat it as "someone
+   * pointed at a deleted variable" would silently mis-read a dangling
+   * collection id as that. Overloading it here would repeat exactly the
+   * mistake the five migration codes above were added to undo. §18 Level 2
+   * names five reference classes ("collection, mode, alias, replacement, and
+   * binding"); this code covers the four that are not aliases.
+   */
+  | 'UNRESOLVED_REFERENCE';
 
 export const DEFAULT_SEVERITY: Record<DiagnosticCode, Severity> = {
   UNRESOLVED_ALIAS: 'error',
@@ -54,6 +70,11 @@ export const DEFAULT_SEVERITY: Record<DiagnosticCode, Severity> = {
   INCONSISTENT_VALUE_SHAPE: 'error',
   AMBIGUOUS_ALIAS_TARGET: 'error',
   INVALID_SOURCE_COLOR: 'error',
+  // Error, and the same severity UNRESOLVED_ALIAS carries: §18 Level 2 makes
+  // no distinction between reference classes, and an artifact whose token
+  // points at a collection that is not there is broken in exactly the way a
+  // dangling alias is -- a consumer joining on the id gets nothing.
+  UNRESOLVED_REFERENCE: 'error',
   SOURCE_PARTIALLY_UNAVAILABLE: 'error',
   // Error, not warning: §18 Level 4 requires every dimension to carry a unit,
   // so an artifact holding units-unknown numbers is genuinely not
