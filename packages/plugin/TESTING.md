@@ -183,11 +183,10 @@ npm run audit
 build stamps it into each connected document as `pluginVersion` via
 `__PLUGIN_VERSION__`. The Figma-published version should match it.
 
-Repository builds currently target the staging proxy in both
+Repository builds target `https://api.spec-layer.com` in both
 `packages/plugin/src/ui/proxy.ts` and `packages/plugin/manifest.json`. Before a
-public production build, change both locations to the production host, build
-again, and rerun this checklist. Do not describe the staging build as the
-public release.
+public production build, verify those locations remain aligned, build again,
+and rerun this checklist.
 
 Use only synthetic or publishable Figma files in screenshots, fixtures, and
 bug reports.

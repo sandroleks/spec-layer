@@ -43,10 +43,9 @@ any of those checks blocks the release; a `*.pages.dev` preview is not enough.
 ## Known Limitations
 
 - Workspace packages are not published to npm.
-- The Worker's in-isolate license limiter is only a best-effort first line of
-  defense. Resolve the Cloudflare WAF rate-rule TODO for `/v1/license/*` in
-  `packages/proxy/README.md` before treating the production proxy as fully
-  release-ready.
+- Verify the active Cloudflare rule `Protect license endpoints` still applies
+  per IP to `starts_with(http.request.uri.path, "/v1/license/")`, blocks after
+  more than 5 requests in 10 seconds, and has a 10-second mitigation timeout.
 - Before publishing, verify that `packages/plugin/src/ui/proxy.ts` and the
   manifest's `networkAccess` both use `https://api.spec-layer.com`, then rebuild
   and rerun the plugin smoke test.

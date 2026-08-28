@@ -73,9 +73,11 @@ cache inside the DO; prompts and prose are never logged.
   bounded by TTL, not retained indefinitely.
 - **License endpoints are format-gated and rate-limited in-isolate.**
   Non-UUID keys are rejected before they reach Lemon Squeezy, and a per-IP
-  limiter caps requests at 20/min. That limiter is best-effort per isolate;
-  the durable backstop is a Cloudflare WAF rate rule on `/v1/license/*`
-  (**operational TODO** — not yet configured in the dashboard).
+  limiter caps requests at 20/min. A production Cloudflare rate limiting rule,
+  `Protect license endpoints`, is also active: per connecting IP it blocks for
+  10 seconds after more than 5 requests in 10 seconds match
+  `starts_with(http.request.uri.path, "/v1/license/")`. Reverify this zone-level
+  rule after any Cloudflare account or zone migration.
 - **Prose and quota endpoints are rate-limited in-isolate.** This is a
   best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
