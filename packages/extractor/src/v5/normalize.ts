@@ -24,6 +24,7 @@ import type {
 import type { CollectionV5, ExtractionCompleteness, ModeV5, TokenV5 } from './entities';
 import { buildEnvelope } from './canonical';
 import type { ArtifactSource, FoundationArtifactV5, SemanticPayload } from './canonical';
+import { computeFoundationStatistics } from './statistics';
 
 // ---------------------------------------------------------------------------
 // The v4 input shape
@@ -895,7 +896,7 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
   // tokens in.
   const sortedDiagnostics = sortDiagnostics(diagnostics);
 
-  const statistics = computeStatistics({
+  const statistics = computeFoundationStatistics({
     collections, tokens, styles: payload.styles, diagnostics: sortedDiagnostics,
   });
 
@@ -907,53 +908,4 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
   };
 
   return { artifact, diagnostics: sortedDiagnostics };
-}
-
-// ---------------------------------------------------------------------------
-// Statistics — §15, computed from the finished artifact
-// ---------------------------------------------------------------------------
-
-/**
- * Computed FROM the already-built payload and diagnostics, never accumulated
- * during the walk above. §15 requires statistics to be derivable from the
- * artifact; computing them from the output is what makes that true by
- * construction rather than by discipline (decision 8, and the same principle
- * Task 8's `validateLevel2` statistics check relies on).
- */
-function computeStatistics(built: {
-  collections: CollectionV5[]; tokens: TokenV5[];
-  styles: { typography: unknown[]; effects: unknown[] }; diagnostics: Diagnostic[];
-}): Record<string, unknown> {
-  const { collections, tokens, styles, diagnostics } = built;
-
-  const modes = collections.reduce((sum, c) => sum + c.modes.length, 0);
-
-  const allValues = tokens.flatMap((t) => Object.values(t.values));
-  const aliasValues = allValues.filter((v) => v.kind === 'alias');
-  const resolvedAliases = aliasValues.filter((v) => v.resolved.status === 'resolved').length;
-
-  const lifecycle = { active: 0, deprecated: 0, archived: 0 };
-  for (const t of tokens) {
-    // Phase 1 never populates `lifecycle` for a migrated token (v4 states
-    // none) -- a token with no lifecycle state is left out of every bucket
-    // rather than assumed active, which would be a claim v4 never made.
-    if (t.lifecycle !== undefined) lifecycle[t.lifecycle.status] += 1;
-  }
-
-  const diagnosticCounts = { error: 0, warning: 0, info: 0 };
-  for (const d of diagnostics) diagnosticCounts[d.severity] += 1;
-
-  return {
-    collections: collections.length,
-    modes,
-    tokens: tokens.length,
-    styles: { typography: styles.typography.length, effects: styles.effects.length },
-    aliases: {
-      total: aliasValues.length,
-      resolved: resolvedAliases,
-      unresolved: aliasValues.length - resolvedAliases,
-    },
-    lifecycle,
-    diagnostics: diagnosticCounts,
-  };
 }

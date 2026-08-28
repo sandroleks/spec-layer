@@ -16,6 +16,7 @@ import {
 import { validateLevel1, validateLevel2 } from '../../src/v5/validate';
 import type { NormalizeMeta, V4Foundation } from '../../src/v5/normalize';
 import type { CanonicalValue } from '../../src/v5/value';
+import { computeFoundationStatistics } from '../../src/v5/statistics';
 
 const META: NormalizeMeta = { exportId: 'fixture-export', generatedAt: '2026-01-01T00:00:00.000Z' };
 
@@ -668,6 +669,12 @@ describe('normalizeV4', () => {
     expect(stats.aliases.total).toBe(
       artifact.tokens.flatMap((t) => Object.values(t.values))
         .filter((v) => v.kind === 'alias').length);
+    expect(artifact.statistics).toEqual(computeFoundationStatistics({
+      collections: artifact.collections,
+      tokens: artifact.tokens,
+      styles: artifact.styles,
+      diagnostics: artifact.diagnostics,
+    }));
   });
 
   // -------------------------------------------------------------------------
