@@ -76,11 +76,50 @@ non-component selection shows an actionable empty state.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
 4. Click the Foundations footer's **Copy for AI** and paste into a plain text
-   editor. Confirm it contains the complete file-wide Foundation vocabulary,
-   regardless of the current source selection, and creates no canvas objects.
+   editor. Confirm `schema_version: 5.0.0`, real collection/mode/token ids,
+   values keyed by mode id, the complete file-wide Foundation vocabulary
+   regardless of current source selection, and no new canvas objects.
 5. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
+
+### Foundation Context v5 Copy matrix
+
+Run this matrix against a development plugin build before releasing a change to
+Foundation extraction or Copy:
+
+1. Copy an ordinary local file twice without editing it. Export ids/timestamps
+   may differ; `spec_layer.export.content_hash` must match. Every declared mode
+   must have its own id-keyed value or explicit `missing` record.
+2. Copy a collection containing a cross-collection alias. The selected
+   collection and every complete transitive dependency collection must appear;
+   no local reference may dangle. A grouped/split frame row must still copy the
+   complete collection and all modes.
+3. Copy a text-style Library row. It must still say legacy `version: 4` and
+   include every requested text style until Phase 3; it must not emit an empty
+   v5 typography array as if the styles were absent.
+4. Test an enabled/readable external library and an unavailable/deprecated one.
+   Stable target metadata stays in the reference when Figma exposes it; the
+   value remains explicitly unresolved and the unavailable source is listed.
+5. Simulate a local variable read failure. A known local id must not be
+   mislabeled external, and collection completeness must be partial or
+   unavailable.
+6. Use two modes with one display name. Both real ids and both values must
+   survive without overwrite.
+7. Check a `GAP` float, a `FONT_WEIGHT` float, and an `ALL_SCOPES` float. Expect
+   `dimension/px`, `number`, and preserved `number` plus a unit-unavailable
+   diagnostic, respectively.
+8. Check a half/precise color. Expect canonical hex plus source channels when
+   hex loses precision. A corrupt-color fixture must produce `missing` plus a
+   diagnostic, never clamped black or white.
+9. Check a multi-hop alias, a cycle, and configured depth exhaustion. The full
+   local chain must name every token/mode pair; unresolved cases must still copy
+   with explicit errors and must not crash the UI.
+10. Copy with existing generated group descriptions, then change only their
+    wording and copy again. Guidelines must update while the semantic content
+    hash stays unchanged.
+11. Exercise the large-payload manual clipboard fallback. Its line-count caveat
+    and modal must remain available for v5 output.
 
 ## Doc frame content
 
@@ -119,8 +158,9 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    component rows. Each copy must read the live source, include saved AI
    guidelines when present, and leave the Section and link data unchanged.
 8. Run **Copy for AI** on a split or grouped Foundation row. Confirm the copy
-   widens to the complete collection and all modes, without including other
-   collections. A text-style row copies only text styles.
+   widens to the complete collection and all modes and includes only additional
+   collections required by transitive local aliases. A text-style row copies
+   only text styles through the temporary legacy v4 path.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
 10. **Detach documentation** leaves the canvas Section but removes its Library

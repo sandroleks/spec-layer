@@ -97,6 +97,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   It places a structured YAML brief on the clipboard rather than creating a
   second Markdown/sidecar output contract.
 
+- Foundation **Copy for AI** now emits Foundation Context schema `5.0.0`
+  directly from the source model. Whole-file and collection copies preserve
+  stable Figma collection/mode/variable ids, mode-id keyed values, source
+  scopes and units, precise RGBA channels, complete mode-aware local alias
+  chains, external-library references, diagnostics, and honest completeness.
+  Collection copies also include complete transitive dependency collections,
+  so local references never dangle merely because the user copied one row.
+
+  Generated group descriptions remain available as a hash-excluded annotation.
+  A text-style-only Library copy temporarily retains the complete v4 style
+  payload until v5 composite typography/effects land in Phase 3.
+
+- Added a reproducible raw Foundation fixture and reviewed direct-v5 golden
+  artifact covering duplicate mode names, exact/default mode resolution,
+  precision colors, units, full chains, cycles, external aliases, missing
+  values, confusable names, and source-style incompleteness.
+
 ### Security
 
 - License hardening: transient Lemon Squeezy errors (rate limits, 5xx,
@@ -109,6 +126,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Bumped the shared extractor compatibility identifier from `1` to `2` for the
+  Foundation v5 extraction/export contract. Existing connected component docs
+  may request one rebuild after upgrading because component and Foundation
+  links intentionally share this opaque compatibility id; their canvas hash
+  projection itself did not change.
 - The Figma plugin adds a Remove key action and clearer License status copy
   that distinguishes a proxy outage from an expired subscription or an
   unactivated key.
