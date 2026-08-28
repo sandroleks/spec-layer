@@ -101,16 +101,13 @@ import {
 import { generateGroupDescriptions, resolveComponentImage } from './ai';
 import { hasColorGroups } from './foundationState';
 import {
-  CHECKOUT_URL,
-  MANAGE_SUB_URL,
-  SITE_URL,
-  STOREFRONT_URL,
   activateLicense as activateLicenseKey,
   deactivateLicense,
   effectiveAuth,
   fetchQuota,
   groupErrorCopy,
   isQuotaExhausted,
+  licenseExternalUrl,
 } from './proxy';
 
 const refs: ShellRefs = mountShell('component');
@@ -1409,13 +1406,7 @@ document.addEventListener('click', (event) => {
 
   const licenseOpen = target.closest<HTMLButtonElement>('[data-license-open]');
   if (licenseOpen?.dataset.licenseOpen) {
-    const urls: Record<string, string> = {
-      upgrade: CHECKOUT_URL,
-      manage: MANAGE_SUB_URL,
-      renew: STOREFRONT_URL,
-      support: SITE_URL,
-    };
-    const url = urls[licenseOpen.dataset.licenseOpen];
+    const url = licenseExternalUrl(licenseOpen.dataset.licenseOpen);
     if (url) send({ type: 'openBrowser', url });
     return;
   }

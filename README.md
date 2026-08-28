@@ -34,7 +34,7 @@ Select a component or component set, choose the sections you want, and the plugi
 - **Usage docs, drafted by AI.** Overview, do's and don'ts, and interaction notes.
 - **Library.** Tracks the components you have documented. When a source component changes, its doc is flagged so you can update it in a click.
 
-Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Any document, or a whole variable collection, can also be copied as a YAML brief for an AI coding agent to read.
+Everything except the AI prose is deterministic: it reads your file and derives the result, with no model involved. Any document, or a whole variable collection, can also be copied as a compact YAML brief for an AI coding agent to read. Foundation briefs retain the canonical v5 content hash and implementation facts without pasting the audit artifact's repeated IDs, envelopes, and diagnostic prose into the prompt.
 
 ## Free and Pro
 

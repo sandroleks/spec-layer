@@ -1,6 +1,6 @@
 ---
 title: Foundation Context v5 — status and handoff
-status: Phase 2 implementation and synthetic acceptance complete; manual and real-source gates open
+status: Phase 2 implementation and real-source review complete; compact AI projection added
 schema_version: 5.0.0
 last_updated: 2026-08-28
 ---
@@ -18,9 +18,10 @@ Phase 2 implementation is on `main`; the implementation/acceptance head is
 
 ## Current product behavior
 
-- Whole-file and collection-row Foundation **Copy for AI** now emit Foundation
-  Context schema `5.0.0` directly from `FoundationSpec` through
-  `buildFoundationArtifactV5`.
+- Whole-file and collection-row Foundation **Copy for AI** first build the full
+  Foundation Context schema `5.0.0` artifact directly from `FoundationSpec`
+  through `buildFoundationArtifactV5`, then derive the compact `profile: ai`
+  clipboard context through `foundationAiContext`.
 - The direct path preserves stable collection, mode, and variable ids; source
   scopes; mode-id keyed values; retained RGBA precision; complete local alias
   chains; external reference metadata; read failures; and completeness.
@@ -34,6 +35,12 @@ Phase 2 implementation is on `main`; the implementation/acceptance head is
   list and lose the requested data.
 - Generated group descriptions are a `guidelines` annotation outside the
   semantic payload and therefore do not alter the content hash.
+- The clipboard profile nests tokens beneath collections, uses readable mode
+  and alias labels, removes empty/derived repetition, replaces diagnostic prose
+  with issue counts, and restores source ids only for ambiguous names. It keeps
+  the canonical semantic hash and does not replace or modify the full artifact.
+- The reviewed Company DS artifact measured 9,989 lines / 350,905 bytes in
+  canonical form and 2,539 lines / 108,357 bytes in the AI profile.
 
 The plugin package version for the published release is `5.0.0`. This is
 separate from Foundation schema `5.0.0` and from `EXTRACTOR_VERSION = '2'`.
@@ -47,6 +54,7 @@ separate from Foundation schema `5.0.0` and from `EXTRACTOR_VERSION = '2'`.
 | `v5/validate.ts` | Level 1 shape validation and independent Level 2 reference/chain replay |
 | `v5/canonical.ts` | Semantic payload, envelope, code-unit canonical JSON, semantic hash |
 | `v5/statistics.ts` | Statistics derived only from finished artifact sections and final diagnostics |
+| `v5/aiContext.ts` | Deterministic prompt-sized projection of a finished artifact; readable references and ambiguity-only ids |
 | `ui/actions.ts` | Whole/collection v5 Copy integration and temporary text-style v4 boundary |
 
 The direct builder constructs a complete provisional artifact, requires Level 1
@@ -118,10 +126,12 @@ Still open:
 
 - The manual Figma matrix in `packages/plugin/TESTING.md` has not yet been run
   against a development build.
-- Real Company DS criteria 1, 2, 4, 5, and 7b remain
-  `gradedBy: pending-real-fixture`.
-- The previously supplied Company DS captures are v4 and contain no stable ids,
-  so they cannot grade the direct identity/reference path.
+- Real Company DS criteria 1, 2, 4, 5, and 7b passed a manual review of the
+  supplied v5 artifact: 6 unique collection ids, 10 unique mode ids, 464 unique
+  token ids, complete mode coverage, 354 resolved aliases, the expected 3
+  unavailable deprecated-library references, and 214 dimensional values with
+  explicit `px` units. The artifact is not committed, so these remain manual
+  evidence rather than a repository golden.
 - A real v5 artifact must not be committed without explicit approval covering
   stable Figma ids, collection/token/library names, descriptions, code syntax,
   generated guidelines, and diagnostics. `source.file_id` should be redacted to
@@ -145,6 +155,9 @@ fill permanent `null` fields and call that complete source data.
 - Keep the extractor and landing schemas byte-identical.
 - Keep `guidelines`, diagnostics, statistics, timestamps, export ids, build ids,
   and source envelope metadata outside `SemanticPayload`.
+- Keep the compact AI profile downstream of the validated artifact and outside
+  every semantic/canvas hash. Do not weaken the canonical schema to save prompt
+  space.
 - Do not replace the source-sized alias limit with the old four-hop ceiling.
 - A rollback reverts the plugin Copy call sites to `foundationBrief`; it does
   not alter schema/hash code or delete the direct fixture.

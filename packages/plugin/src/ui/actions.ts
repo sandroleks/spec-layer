@@ -8,7 +8,8 @@
 
 import {
   extract, ProseProxyError, specContentHash, buildFoundation,
-  buildFoundationArtifactV5, componentBrief, foundationBrief, toYaml, narrowFoundation,
+  buildFoundationArtifactV5, foundationAiContext,
+  componentBrief, foundationBrief, toYaml, narrowFoundation,
 } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
@@ -661,7 +662,7 @@ function generatedGuidelines(
     : undefined;
 }
 
-function foundationV5Yaml(
+function foundationAiYaml(
   spec: FoundationSpec,
   generatedAt: string,
   descriptions: Record<string, Record<string, string>>,
@@ -677,7 +678,11 @@ function foundationV5Yaml(
   });
   const guidelines = generatedGuidelines(descriptions);
   if (guidelines) artifact.guidelines = guidelines;
-  return toYaml(artifact as unknown as YamlValue);
+  // The canonical artifact remains the validated source of truth and owns the
+  // semantic hash. Clipboard context is a separate presentation projection:
+  // expanding every stable id, typed envelope, diagnostic message and derived
+  // statistic made a medium design system cost roughly 10,000 prompt lines.
+  return toYaml(foundationAiContext(artifact) as unknown as YamlValue);
 }
 
 /**
@@ -697,7 +702,7 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
   }
   const generatedAt = new Date().toISOString();
   await deliverBrief(
-    () => foundationV5Yaml(spec, generatedAt, foundationGroupDescriptions),
+    () => foundationAiYaml(spec, generatedAt, foundationGroupDescriptions),
     ui,
   );
 }
@@ -748,7 +753,7 @@ export async function copyFoundationBriefForScope(
     // the stable collection id gives Copy the full collection plus the direct
     // exporter's dependency closure instead of silently hiding rows or modes.
     await deliverBrief(
-      () => foundationV5Yaml(spec, generatedAt, groupDescriptions, scope.collectionId),
+      () => foundationAiYaml(spec, generatedAt, groupDescriptions, scope.collectionId),
       ui,
     );
     return;

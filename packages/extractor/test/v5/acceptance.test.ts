@@ -53,31 +53,31 @@ function valueNamed(name: string, values: ReturnType<typeof normalizeFixture>['a
 describe('Foundation Context v5 phase coverage', () => {
   it('separates implemented engine coverage from real-source grading', () => {
     expect(ACCEPTANCE_COVERAGE[1]).toMatchObject({
-      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+      implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE[2]).toMatchObject({
-      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+      implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE[4]).toMatchObject({
-      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+      implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE[5]).toMatchObject({
-      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+      implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE['7b']).toMatchObject({
-      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+      implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE[3]).toMatchObject({
       implementedBy: 'plan-3', gradedBy: 'plan-3',
     });
   });
 
-  it.todo('1: all six Company DS collections have stable source ids — pending real fixture');
-  it.todo('2: every Company DS mode has a stable source id — pending real fixture');
+  it.todo('1: all six Company DS collections have stable source ids — manual v5 pass; fixture not committed');
+  it.todo('2: every Company DS mode has a stable source id — manual v5 pass; fixture not committed');
   it.todo('3: every token and style has a stable source id — plan 3');
-  it.todo('4: Company DS aliases have complete extracted chains — pending real fixture');
-  it.todo('5: three deprecated refs match real source metadata — pending real fixture');
-  it.todo('7b: Company DS dimensions receive units — pending real fixture');
+  it.todo('4: Company DS aliases have complete extracted chains — manual v5 pass; fixture not committed');
+  it.todo('5: three deprecated refs match real source metadata — manual v5 pass; fixture not committed');
+  it.todo('7b: Company DS dimensions receive units — manual v5 pass; fixture not committed');
   it.todo('9: archived text styles get lifecycle plus INFERRED_LIFECYCLE — plan 3');
   it.todo('10: identical typography mode values are preserved — plan 3');
   it.todo('11: card shadow representations and binding drift are preserved — plan 3');

@@ -76,9 +76,12 @@ non-component selection shows an actionable empty state.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
 4. Click the Foundations footer's **Copy for AI** and paste into a plain text
-   editor. Confirm `schema_version: 5.0.0`, real collection/mode/token ids,
-   values keyed by mode id, the complete file-wide Foundation vocabulary
-   regardless of current source selection, and no new canvas objects.
+   editor. Confirm `kind: foundation`, `version: 5`, `profile: ai`, and a
+   `content_hash`. Collections should own their tokens, values should use
+   readable mode labels, and source ids should appear only to disambiguate a
+   duplicate name. Confirm the complete file-wide Foundation vocabulary is
+   present regardless of current source selection, and no canvas objects are
+   created.
 5. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
@@ -89,8 +92,8 @@ Run this matrix against a development plugin build before releasing a change to
 Foundation extraction or Copy:
 
 1. Copy an ordinary local file twice without editing it. Export ids/timestamps
-   may differ; `spec_layer.export.content_hash` must match. Every declared mode
-   must have its own id-keyed value or explicit `missing` record.
+   are not part of the AI profile; `spec_layer.content_hash` must match. Every
+   declared mode must have its own labelled value or explicit `missing` record.
 2. Copy a collection containing a cross-collection alias. The selected
    collection and every complete transitive dependency collection must appear;
    no local reference may dangle. A grouped/split frame row must still copy the
@@ -99,27 +102,29 @@ Foundation extraction or Copy:
    include every requested text style until Phase 3; it must not emit an empty
    v5 typography array as if the styles were absent.
 4. Test an enabled/readable external library and an unavailable/deprecated one.
-   Stable target metadata stays in the reference when Figma exposes it; the
-   value remains explicitly unresolved and the unavailable source is listed.
+   The readable library/path stays in the alias label when Figma exposes it;
+   the value remains explicitly unresolved and the unavailable source is listed.
 5. Simulate a local variable read failure. A known local id must not be
    mislabeled external, and collection completeness must be partial or
    unavailable.
-6. Use two modes with one display name. Both real ids and both values must
-   survive without overwrite.
+6. Use two modes with one display name. Both values must survive without
+   overwrite, with source ids added to the two otherwise-identical labels.
 7. Check a `GAP` float, a `FONT_WEIGHT` float, and an `ALL_SCOPES` float. Expect
-   `dimension/px`, `number`, and preserved `number` plus a unit-unavailable
-   diagnostic, respectively.
+   `{ number, unit: px }`, a number, and a preserved number plus a
+   `UNIT_METADATA_UNAVAILABLE` issue count, respectively.
 8. Check a half/precise color. Expect canonical hex plus source channels when
    hex loses precision. A corrupt-color fixture must produce `missing` plus a
    diagnostic, never clamped black or white.
 9. Check a multi-hop alias, a cycle, and configured depth exhaustion. The full
-   local chain must name every token/mode pair; unresolved cases must still copy
-   with explicit errors and must not crash the UI.
+   local chain must name every readable token/mode pair; unresolved cases must
+   still copy with explicit reasons and must not crash the UI.
 10. Copy with existing generated group descriptions, then change only their
     wording and copy again. Guidelines must update while the semantic content
     hash stays unchanged.
 11. Exercise the large-payload manual clipboard fallback. Its line-count caveat
-    and modal must remain available for v5 output.
+    and modal must remain available for the compact profile. A representative
+    large artifact should remain below 55% of the canonical artifact's bytes
+    and lines; the automated projection test enforces the same ceiling.
 
 ## Doc frame content
 
@@ -187,10 +192,13 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    and the connection persists across reopen.
 2. An invalid or expired key shows the matching status; an expired key offers
    **Renew Pro**.
-3. **Remove key from this device** deactivates the device and returns the UI to
+3. Click **Upgrade** from the free allowance and **Renew Pro** from the expired
+   state. Both must open
+   `https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6`.
+4. **Remove key from this device** deactivates the device and returns the UI to
    the free plan.
-4. **Manage subscription** opens the billing portal.
-5. If the proxy is unreachable, the saved key remains and the UI reports a
+5. **Manage subscription** opens the billing portal.
+6. If the proxy is unreachable, the saved key remains and the UI reports a
    temporary verification problem rather than falsely marking it expired.
 
 ## Settings, search, keyboard, and visuals

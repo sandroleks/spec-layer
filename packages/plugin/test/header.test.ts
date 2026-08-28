@@ -1,5 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { RING_CIRCUMFERENCE, ringOffset, headerMarkup, HEADER_IDS } from '../src/ui/shell/header';
+// @vitest-environment happy-dom
+import { afterEach, describe, it, expect } from 'vitest';
+import {
+  RING_CIRCUMFERENCE,
+  ringOffset,
+  headerMarkup,
+  HEADER_IDS,
+  renderAllowance,
+} from '../src/ui/shell/header';
+
+afterEach(() => {
+  document.body.innerHTML = '';
+});
 
 describe('ringOffset', () => {
   it('is a full offset at zero, so an empty ring reads as empty', () => {
@@ -36,6 +47,31 @@ describe('headerMarkup', () => {
     const html = headerMarkup();
     expect(html).toContain('aria-label="Open quick search"');
     expect(html).toContain('aria-label="Switch to light theme"');
+  });
+
+  it('renders Upgrade as its own checkout action beside the License summary', () => {
+    document.body.innerHTML = headerMarkup();
+    const summary = document.querySelector<HTMLButtonElement>(`#${HEADER_IDS.allowance}`);
+    const upgrade = document.querySelector<HTMLButtonElement>('[data-license-open="upgrade"]');
+
+    expect(summary).toBeInstanceOf(HTMLButtonElement);
+    expect(upgrade).toBeInstanceOf(HTMLButtonElement);
+    expect(upgrade?.textContent).toBe('Upgrade');
+    expect(upgrade?.getAttribute('aria-label')).toBe('Upgrade to Pro');
+    expect(summary?.contains(upgrade ?? null)).toBe(false);
+  });
+
+  it('shows the checkout action for free plans and hides it for Pro', () => {
+    document.body.innerHTML = headerMarkup();
+    const header = document.querySelector<HTMLElement>('.sl-utility-header');
+    const upgrade = document.querySelector<HTMLButtonElement>('[data-license-open="upgrade"]');
+
+    expect(header).not.toBeNull();
+    renderAllowance(header!, { kind: 'free', remaining: 10, limit: 10, resetsAt: '' });
+    expect(upgrade?.hidden).toBe(false);
+
+    renderAllowance(header!, { kind: 'pro' });
+    expect(upgrade?.hidden).toBe(true);
   });
 
   it('does not repeat the product name, which Figma already shows', () => {

@@ -2,15 +2,26 @@ import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
 
 // Production API. Keep this host aligned with the manifest's network access.
 export const PROXY_URL = 'https://api.spec-layer.com';
-export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout';
+export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6';
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
-// Store landing page — where a lapsed/expired subscriber repurchases Pro. A
-// cancelled Lemon Squeezy subscription is resolved by buying again, not resumed
-// from the customer portal.
-export const STOREFRONT_URL = 'https://speclayer-docs.lemonsqueezy.com';
 // Marketing / author links surfaced as icons in the tab bar.
 export const SITE_URL = 'https://spec-layer.com/';
 export const LINKEDIN_URL = 'https://www.linkedin.com/in/alexkurchev/';
+
+/** One routing table for every external action on the License screen/header. */
+export function licenseExternalUrl(action: string): string | null {
+  switch (action) {
+    case 'upgrade':
+    case 'renew':
+      return CHECKOUT_URL;
+    case 'manage':
+      return MANAGE_SUB_URL;
+    case 'support':
+      return SITE_URL;
+    default:
+      return null;
+  }
+}
 
 export interface ProxyAuth {
   licenseKey: string | null;

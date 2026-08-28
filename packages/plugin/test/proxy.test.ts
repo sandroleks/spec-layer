@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
 import {
   authHeaders, fetchQuota, activateLicense, deactivateLicense, PROXY_URL,
-  effectiveAuth, generationErrorCopy, STOREFRONT_URL, isQuotaExhausted,
+  CHECKOUT_URL, effectiveAuth, generationErrorCopy, isQuotaExhausted,
+  licenseExternalUrl,
 } from '../src/ui/proxy';
 
 describe('authHeaders', () => {
@@ -113,9 +114,19 @@ describe('generationErrorCopy', () => {
   });
 });
 
-describe('STOREFRONT_URL', () => {
-  it('points at the lemonsqueezy store front', () => {
-    expect(STOREFRONT_URL).toMatch(/lemonsqueezy\.com/);
+describe('CHECKOUT_URL', () => {
+  it('pins the live Pro product checkout instead of the broken store route', () => {
+    expect(CHECKOUT_URL).toBe(
+      'https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6',
+    );
+  });
+
+  it('routes every purchase action to the same product-specific checkout', () => {
+    expect(licenseExternalUrl('upgrade')).toBe(CHECKOUT_URL);
+    expect(licenseExternalUrl('renew')).toBe(CHECKOUT_URL);
+    expect(licenseExternalUrl('manage')).toBe('https://app.lemonsqueezy.com/my-orders');
+    expect(licenseExternalUrl('support')).toBe('https://spec-layer.com/');
+    expect(licenseExternalUrl('unknown')).toBeNull();
   });
 });
 

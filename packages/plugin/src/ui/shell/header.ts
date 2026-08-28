@@ -40,11 +40,12 @@ export function headerMarkup(): string {
     `${icon('search', 15)}<span>Search</span>` +
     '</button>' +
 
-    `<button class="sl-ai-allowance" id="${HEADER_IDS.allowance}" type="button" ` +
-    'data-state="loading" aria-label="AI writing: checking your plan. Open License.">' +
-    // The ring and the Pro check share one cell so the control keeps three
-    // grid columns. Both are always present and CSS picks by [data-state],
-    // which keeps renderAllowance a repaint rather than a rebuild.
+    '<div class="sl-ai-allowance" data-state="loading">' +
+    `<button class="sl-allowance-summary" id="${HEADER_IDS.allowance}" type="button" ` +
+    'aria-label="AI writing: checking your plan. Open License.">' +
+    // The ring and the Pro check share one cell. Both are always present and
+    // CSS picks by [data-state], which keeps renderAllowance a repaint rather
+    // than a rebuild.
     '<span class="sl-allowance-status">' +
     '<svg class="sl-allowance-ring" viewBox="0 0 26 26" aria-hidden="true">' +
     '<circle data-track cx="13" cy="13" r="10"></circle>' +
@@ -55,8 +56,12 @@ export function headerMarkup(): string {
     '</span>' +
     '<span class="sl-allowance-copy"><strong>AI writing</strong>' +
     '<small>Checking your plan</small></span>' +
-    '<span class="sl-allowance-action" hidden>Upgrade</span>' +
     '</button>' +
+    // This is deliberately a sibling, not a nested interactive element: the
+    // allowance summary still opens License while Upgrade goes to checkout.
+    '<button class="sl-allowance-action" type="button" data-license-open="upgrade" ' +
+    'aria-label="Upgrade to Pro" hidden>Upgrade</button>' +
+    '</div>' +
 
     `<button class="sl-icon-button" id="${HEADER_IDS.theme}" type="button" ` +
     `aria-label="Switch to light theme">${icon('moon', 16)}</button>` +
@@ -80,18 +85,25 @@ export function renderAllowance(root: HTMLElement, state: AllowanceState): void 
     );
   }
 
+  const control = button.closest<HTMLElement>('.sl-ai-allowance');
+  if (!control) {
+    throw new Error(
+      `renderAllowance: #${HEADER_IDS.allowance} is not inside .sl-ai-allowance.`,
+    );
+  }
+
   const copy = allowanceCopy(state);
-  button.dataset.state = copy.tone;
+  control.dataset.state = copy.tone;
   button.setAttribute('aria-label', copy.ariaLabel);
 
-  const title = button.querySelector('strong');
-  const detail = button.querySelector('small');
+  const title = control.querySelector('strong');
+  const detail = control.querySelector('small');
   if (title) title.textContent = copy.title;
   if (detail) detail.textContent = copy.detail;
 
-  const ring = button.querySelector<SVGCircleElement>('[data-value]');
+  const ring = control.querySelector<SVGCircleElement>('[data-value]');
   if (ring) ring.setAttribute('stroke-dashoffset', String(ringOffset(copy.fillPct)));
 
-  const action = button.querySelector<HTMLElement>('.sl-allowance-action');
+  const action = control.querySelector<HTMLButtonElement>('.sl-allowance-action');
   if (action) action.hidden = !copy.showUpgrade;
 }

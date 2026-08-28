@@ -97,11 +97,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   It places a structured YAML brief on the clipboard rather than creating a
   second Markdown/sidecar output contract.
 
-- Foundation **Copy for AI** now emits Foundation Context schema `5.0.0`
-  directly from the source model. Whole-file and collection copies preserve
-  stable Figma collection/mode/variable ids, mode-id keyed values, source
-  scopes and units, precise RGBA channels, complete mode-aware local alias
-  chains, external-library references, diagnostics, and honest completeness.
+- Foundation extraction now builds Foundation Context schema `5.0.0` directly
+  from the source model. Whole-file and collection copies are backed by that
+  validated artifact and preserve source scopes and units, precise RGBA
+  channels, complete mode-aware local alias chains, external-library
+  references, diagnostics, and honest completeness.
+
+  **Copy for AI** projects the artifact into a compact v5 AI profile instead
+  of pasting the audit representation verbatim. It nests tokens under their
+  collections, uses readable mode and alias labels, omits empty and derived
+  repetition, summarizes diagnostics by code, and includes source ids only
+  when names collide. The canonical semantic content hash stays attached. On
+  the reviewed Company DS export this reduced the clipboard payload from 9,989
+  lines / 351 KB to 2,539 lines / 108 KB without dropping implementation facts.
+
   Collection copies also include complete transitive dependency collections,
   so local references never dangle merely because the user copied one row.
 
@@ -126,6 +135,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Plugin **Upgrade to Pro** and **Renew Pro** actions now open the live,
+  product-specific Lemon Squeezy checkout instead of the broken generic
+  checkout/store routes.
 - Bumped the shared extractor compatibility identifier from `1` to `2` for the
   Foundation v5 extraction/export contract. Existing connected component docs
   may request one rebuild after upgrading because component and Foundation

@@ -100,9 +100,9 @@ statistics: {}
 
 Tokens SHOULD be stored in a flat top-level array and reference a collection by ID. A nested compatibility view MAY also be emitted, but it must not become a second source of truth.
 
-### 5.3 Generated copy annotations
+### 5.3 Generated annotations
 
-Copy for AI MAY add a top-level `guidelines` block:
+The canonical artifact MAY carry a top-level `guidelines` block:
 
 ```yaml
 guidelines:
@@ -116,6 +116,44 @@ This block is generated prose recovered from Spec Layer's canvas documents,
 not measured Figma source data. It is optional, omitted when empty, and MUST be
 excluded from the semantic content hash together with diagnostics, statistics,
 and volatile envelope metadata.
+
+### 5.4 Compact Copy for AI profile
+
+The schema-valid artifact is an audit and interchange contract, not a prompt
+budget. A clipboard consumer MAY derive a compact AI presentation profile from
+an already-built artifact. Spec Layer identifies that projection explicitly:
+
+```yaml
+spec_layer:
+  kind: foundation
+  version: 5
+  profile: ai
+  content_hash: sha256:...
+```
+
+The profile is not validated by the Foundation Context v5 JSON Schema and MUST
+NOT become an input to `semanticContentHash`. Its `content_hash` points back to
+the complete canonical artifact from which it was derived.
+
+The projection MUST preserve implementation-relevant facts: collection and
+token names, declared modes and defaults, token types and scopes, values and
+units, retained colour precision, missing values, readable external aliases,
+resolved values, complete multi-hop lineage, extraction completeness, generated
+guidelines, and diagnostic counts. It MAY:
+
+- nest tokens under collections and replace repeated collection ids;
+- use unique human-readable mode and token labels instead of raw ids;
+- reintroduce source ids only where duplicate names would otherwise collide;
+- state a token's type once rather than repeat it inside every mode value;
+- omit empty descriptions and other absent metadata;
+- omit a one-hop `chain` when the readable alias label already names that same
+  token and selected mode;
+- summarize derived diagnostics by severity/code instead of repeating their
+  prose for every affected mode; and
+- omit derived statistics and volatile export metadata.
+
+The canonical artifact remains the sole source of truth for validation,
+machine diffing, stable source identity, and exact reconstruction.
 
 ## 6. Stable identity and names
 

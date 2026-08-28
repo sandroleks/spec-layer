@@ -68,8 +68,7 @@
   min-width: 0;
   height: var(--sl-control-lg);
   flex: 0 1 auto;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: var(--sl-space-6);
   padding: 0 var(--sl-space-6);
@@ -82,6 +81,21 @@
 
 .sl-ai-allowance:hover {
   background: var(--sl-color-surface-hover);
+}
+
+.sl-allowance-summary {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sl-space-6);
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
 /*
@@ -182,8 +196,8 @@
 }
 
 /*
- * Purely visual: the button carries its own aria-label, so assistive tech never
- * reaches this text and cannot read the separator as a word.
+ * Purely visual: the summary button carries its own aria-label, so assistive
+ * tech never reaches this text and cannot read the separator as a word.
  */
 .sl-allowance-copy > small::before {
   content: "\00b7";
@@ -206,9 +220,19 @@
 }
 
 .sl-allowance-action {
+  flex: 0 0 auto;
+  padding: 0;
   color: var(--sl-color-accent);
+  background: transparent;
+  border: 0;
   font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sl-allowance-action:hover {
+  text-decoration: underline;
 }
 
 .sl-sidebar {

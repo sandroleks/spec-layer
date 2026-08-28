@@ -2,11 +2,11 @@
 export const ACCEPTANCE_COVERAGE = {
   1: {
     criterion: 'six Company DS collections with stable ids',
-    implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   2: {
     criterion: 'every Company DS declared mode has a stable id',
-    implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   3: {
     criterion: 'every token and style has a stable source id',
@@ -14,11 +14,11 @@ export const ACCEPTANCE_COVERAGE = {
   },
   4: {
     criterion: 'Company DS internal aliases resolve with complete chains',
-    implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   5: {
     criterion: 'three Company DS deprecated external refs are unresolved errors',
-    implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   6: {
     criterion: 'every v4 value shape normalizes to one canonical shape',
@@ -30,7 +30,7 @@ export const ACCEPTANCE_COVERAGE = {
   },
   '7b': {
     criterion: 'Company DS dimensional floats receive explicit units',
-    implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   8: {
     criterion: 'the Cyrillic С is preserved and flagged',
