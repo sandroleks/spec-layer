@@ -382,6 +382,113 @@ describe('buildFoundationArtifactV5 — alias graph and scope', () => {
   });
 });
 
+describe('buildFoundationArtifactV5 — composite styles and publication', () => {
+  function styledSource(): SerializedFoundation {
+    const source = dump([collection(
+      'c1', 'Foundation', [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
+      'light', [
+        variable('family', 'type/family', 'STRING', { light: 'Inter', dark: 'Inter' }, ['FONT_FAMILY']),
+        variable('blur', 'effect/blur', 'FLOAT', { light: 8, dark: 12 }, ['EFFECT_FLOAT']),
+      ],
+    )]);
+    source.collections[0].publication = {
+      hiddenFromPublishing: false, publishStatus: 'CURRENT', remote: false,
+    };
+    source.collections[0].variables[0].publication = {
+      hiddenFromPublishing: true, publishStatus: 'CHANGED', remote: false,
+    };
+    source.textStyles = [{
+      id: 'style:text', name: 'Body/M', description: 'Body text.',
+      fontFamily: 'Inter', fontStyle: 'Semi Bold', fontSize: 16,
+      lineHeight: { unit: 'PERCENT', value: 150 },
+      letterSpacing: { unit: 'PIXELS', value: -0.25 },
+      paragraphSpacing: 8, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: { fontFamily: 'type/family' },
+      bindingIds: { fontFamily: 'family' },
+      source: { remote: false, publishStatus: 'CURRENT' },
+    }];
+    source.effectStyles = [{
+      id: 'style:effect', name: 'Elevation/Card', description: '',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 0.2 }, offset: { x: 0, y: 4 },
+        radius: 8, spread: 0,
+      }],
+      bindings: [{ property: 'effects[0].blur', tokenId: 'blur' }],
+      source: { remote: false, publishStatus: 'CURRENT' },
+    }];
+    return source;
+  }
+
+  it('projects composite properties and source publication facts', () => {
+    const artifact = artifactOf(styledSource());
+    expect(artifact.collections[0]).toMatchObject({
+      publication: { published: true, hidden_from_publishing: false },
+      source: { remote: false, library_file_id: null },
+    });
+    expect(artifact.tokens[0].publication).toEqual({
+      published: true, hidden_from_publishing: true,
+    });
+    expect(artifact.styles.typography[0]).toMatchObject({
+      id: 'style:text', path: ['Body', 'M'], source: { remote: false },
+      properties: {
+        font_family: {
+          source: { kind: 'alias', target_id: 'family', target_path: ['type', 'family'] },
+          resolved: { type: 'font_family', value: 'Inter' },
+        },
+        font_weight: { resolved: { type: 'number', value: 600 } },
+        line_height: { resolved: { type: 'dimension', number: 150, unit: '%' } },
+        letter_spacing: { resolved: { type: 'dimension', number: -0.25, unit: 'px' } },
+      },
+    });
+    expect(artifact.styles.effects[0]).toMatchObject({
+      id: 'style:effect', mode_id: null,
+      effects: [{
+        type: 'drop_shadow', visible: true, blend_mode: 'normal',
+        blur: { type: 'dimension', number: 8, unit: 'px' },
+      }],
+      bindings: [{ property: 'effects[0].blur', token_id: 'blur' }],
+    });
+    // The bound blur differs by mode, and a style has no consuming mode. The
+    // exporter must not pick one just to manufacture a drift result.
+    expect(artifact.diagnostics.some((finding) =>
+      finding.code === 'STYLE_BINDING_DRIFT')).toBe(false);
+    expect(validateLevel1(artifact)).toEqual([]);
+  });
+
+  it('reports binding drift only when every mode gives one comparable value', () => {
+    const source = styledSource();
+    source.collections[0].variables[1].valuesByMode = { light: 12, dark: 12 };
+    const artifact = artifactOf(source);
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'STYLE_BINDING_DRIFT', entity_id: 'style:effect',
+      details: expect.objectContaining({ property: 'effects[0].blur', token_id: 'blur' }),
+    }));
+  });
+
+  it('keeps supported effect order and diagnoses newer unsupported layers', () => {
+    const source = styledSource();
+    source.effectStyles[0].effects.unshift({
+      type: 'noise', noiseType: 'monotone', visible: true, blendMode: 'NORMAL',
+      color: { hex: '#ffffff', alpha: 1 }, noiseSize: 1, density: 0.5,
+    });
+    source.effectStyles[0].bindings = [
+      { property: 'effects[1].blur', tokenId: 'blur' },
+    ];
+    const artifact = artifactOf(source);
+    expect(artifact.styles.effects[0].effects.map((effect) => effect.type))
+      .toEqual(['drop_shadow']);
+    expect(artifact.styles.effects[0].bindings).toEqual([
+      { property: 'effects[0].blur', token_id: 'blur' },
+    ]);
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNSUPPORTED_VALUE_TYPE', entity_id: 'style:effect',
+      details: { effect_index: 0, figma_type: 'noise' },
+    }));
+  });
+});
+
 describe('buildFoundationArtifactV5 — completeness, hashes, and validation', () => {
   it('distinguishes complete, partial, and unavailable source states honestly', () => {
     const empty = dump([]);
@@ -402,7 +509,13 @@ describe('buildFoundationArtifactV5 — completeness, hashes, and validation', (
       paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL',
       textDecoration: 'NONE', boundVariables: {},
     }];
-    expect(artifactOf(styles).completeness.styles).toBe('partial');
+    const missingIdentity = artifactOf(styles);
+    expect(missingIdentity.completeness.styles).toBe('partial');
+    expect(missingIdentity.styles.typography).toEqual([]);
+    expect(missingIdentity.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      details: { kind: 'typography', name: 'Body' },
+    }));
     styles.unavailable = ['textStyles', 'effectStyles'];
     expect(artifactOf(styles).completeness.styles).toBe('unavailable');
   });

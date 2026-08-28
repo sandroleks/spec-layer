@@ -560,6 +560,7 @@
             "description": { "type": "string" },
             "properties": { "$ref": "#/$defs/typography_properties" },
             "publication": { "$ref": "#/$defs/publication" },
+            "source": { "$ref": "#/$defs/source_state" },
             "lifecycle": { "$ref": "#/$defs/lifecycle" }
           }
         }
@@ -571,7 +572,7 @@
     },
     "effect": {
       "type": "object",
-      "required": ["type", "visible", "blend_mode"],
+      "required": ["type", "visible"],
       "properties": {
         "type": { "$ref": "#/$defs/effect_kind" },
         "visible": { "type": "boolean" },
@@ -609,6 +610,7 @@
               "items": { "$ref": "#/$defs/style_binding" }
             },
             "publication": { "$ref": "#/$defs/publication" },
+            "source": { "$ref": "#/$defs/source_state" },
             "lifecycle": { "$ref": "#/$defs/lifecycle" }
           }
         }

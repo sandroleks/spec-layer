@@ -98,9 +98,11 @@ Foundation extraction or Copy:
    collection and every complete transitive dependency collection must appear;
    no local reference may dangle. A grouped/split frame row must still copy the
    complete collection and all modes.
-3. Copy a text-style Library row. It must still say legacy `version: 4` and
-   include every requested text style until Phase 3; it must not emit an empty
-   v5 typography array as if the styles were absent.
+3. Copy a text-style Library row. It must say `version: 5`, `profile: ai`,
+   include every requested typography style, and add only collections required
+   by bound property tokens. The canonical backing artifact must retain stable
+   style ids; the compact AI profile exposes `source_id` when names collide.
+   It must not include unrelated collections or effect styles.
 4. Test an enabled/readable external library and an unavailable/deprecated one.
    The readable library/path stays in the alias label when Figma exposes it;
    the value remains explicitly unresolved and the unavailable source is listed.
@@ -165,7 +167,7 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 8. Run **Copy for AI** on a split or grouped Foundation row. Confirm the copy
    widens to the complete collection and all modes and includes only additional
    collections required by transitive local aliases. A text-style row copies
-   only text styles through the temporary legacy v4 path.
+   v5 typography plus only its bound-token dependency collections.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
 10. **Detach documentation** leaves the canvas Section but removes its Library

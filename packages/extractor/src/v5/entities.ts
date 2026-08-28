@@ -5,9 +5,9 @@
  * and every consumer share exactly these declarations, which is the only way
  * the four can be kept in agreement by the compiler rather than by discipline.
  *
- * Typography and effect entities are DEFINED here and POPULATED in plan 3.
- * Phase 1 emits empty arrays for both. They are declared now because the
- * payload has to be typed end to end for anything else to type-check.
+ * Typography and effect entities are populated by the direct Foundation
+ * exporter. The optional metadata stays absent when Figma exposes no truthful
+ * value for it.
  */
 import type {
   CanonicalValue, ColorValue, DimensionValue, TokenType, TypedValue,
@@ -69,6 +69,7 @@ export interface StyleProperty {
 export interface TypographyStyleV5 extends EntityIdentity {
   description: string;
   publication?: PublicationState;
+  source?: SourceState;
   lifecycle?: LifecycleState;
   properties: {
     font_family: StyleProperty;
@@ -88,7 +89,8 @@ export type EffectKind = 'drop_shadow' | 'inner_shadow' | 'layer_blur' | 'backgr
 export interface EffectV5 {
   type: EffectKind;
   visible: boolean;
-  blend_mode: string;
+  /** Shadows expose a blend mode; Figma blur effects do not. */
+  blend_mode?: string;
   color?: ColorValue;
   offset_x?: DimensionValue;
   offset_y?: DimensionValue;
@@ -109,6 +111,7 @@ export interface EffectStyleV5 extends EntityIdentity {
   effects: EffectV5[];
   bindings?: StyleBinding[];
   publication?: PublicationState;
+  source?: SourceState;
   lifecycle?: LifecycleState;
 }
 

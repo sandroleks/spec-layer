@@ -114,14 +114,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Collection copies also include complete transitive dependency collections,
   so local references never dangle merely because the user copied one row.
 
+  Foundation Context v5 now exports composite typography and effect styles
+  with stable Figma style ids, complete supported text properties, ordered
+  shadow/blur layers, and exact per-property variable bindings. Collection and
+  token publication state is retained when Figma exposes it. An effect binding
+  whose token has one mode-independent value now produces
+  `STYLE_BINDING_DRIFT` when the style snapshot disagrees.
+
+  Text-style Library rows now use the same compact v5 AI profile and include
+  only the local token dependency collections required by their property
+  bindings. Figma does not expose a consuming mode, hidden-from-publishing
+  state, or lifecycle record for local styles, so those fields stay absent and
+  style completeness remains explicitly partial instead of being inferred.
+
   Generated group descriptions remain available as a hash-excluded annotation.
-  A text-style-only Library copy temporarily retains the complete v4 style
-  payload until v5 composite typography/effects land in Phase 3.
 
 - Added a reproducible raw Foundation fixture and reviewed direct-v5 golden
   artifact covering duplicate mode names, exact/default mode resolution,
   precision colors, units, full chains, cycles, external aliases, missing
-  values, confusable names, and source-style incompleteness.
+  values, confusable names, stable composite styles, publication state,
+  property bindings, and effect binding drift.
 
 ### Security
 

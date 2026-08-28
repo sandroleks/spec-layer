@@ -29,7 +29,10 @@ interface ParsedFoundationBrief {
       scopes?: string[]; values: Record<string, unknown>;
     }>;
   }>;
-  text_styles?: Array<Record<string, unknown>>;
+  styles?: {
+    typography: Array<Record<string, unknown>>;
+    effects: Array<Record<string, unknown>>;
+  };
   issue_counts?: Record<string, Record<string, number>>;
   guidelines?: Record<string, Record<string, string>>;
 }
@@ -249,11 +252,13 @@ describe('copyFoundationBriefForScope', () => {
     externals: [],
     effectStyles: [],
     textStyles: [{
+      id: 'S:heading-lg',
       name: 'heading/lg', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
       fontSize: 32, lineHeight: { unit: 'AUTO' },
       letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
       paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
       boundVariables: {},
+      source: { remote: false, publishStatus: 'CURRENT' },
     }],
     collections: [
       {
@@ -336,9 +341,35 @@ describe('copyFoundationBriefForScope', () => {
     onFoundationMessage(TWO);
     await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
     const brief = parse();
-    expect((brief.spec_layer as unknown as { version: number }).version).toBe(4);
+    expect(brief.spec_layer).toMatchObject({ version: 5, profile: 'ai' });
     expect(brief.collections).toEqual([]);
-    expect(brief.text_styles).toEqual([expect.objectContaining({ name: 'heading/lg' })]);
+    expect(brief.styles?.typography).toEqual([
+      expect.objectContaining({ name: 'heading/lg' }),
+    ]);
+    expect(brief.styles?.effects).toEqual([]);
+    expect(brief.completeness).toMatchObject({
+      collections: 'partial', styles: 'partial',
+    });
+  });
+
+  it('adds bound-token dependency collections to a text styles copy', async () => {
+    const bound = structuredClone(TWO);
+    bound.collections[1].variables[0].scopes = ['FONT_SIZE'];
+    bound.textStyles[0].bindingIds = { fontSize: 'V2' };
+    bound.textStyles[0].boundVariables = { fontSize: 'space/gap' };
+    onFoundationMessage(bound);
+    await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
+    const brief = parse();
+    expect(brief.collections.map((collection) => collection.name)).toEqual(['Spacing']);
+    expect(brief.collections[0].tokens?.map((token) => token.name)).toEqual(['space/gap']);
+    expect(brief.styles?.typography[0]).toMatchObject({
+      properties: {
+        font_size: {
+          alias: 'Spacing/space/gap',
+          resolved: { type: 'dimension', value: { number: 32, unit: 'px' } },
+        },
+      },
+    });
   });
 
   it('passes only the scoped collection\'s group descriptions', async () => {

@@ -20,6 +20,15 @@ export interface RawRGBA { r: number; g: number; b: number; a: number }
 export type RawVariableValue = RawRGBA | number | string | boolean | RawVariableAlias;
 
 export type FoundationVariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
+export type FoundationPublishStatus = 'UNPUBLISHED' | 'CURRENT' | 'CHANGED';
+
+/** Source publication facts Figma exposes independently. `publishStatus` is
+ * null when the async status read failed; hidden/remote remain usable facts. */
+export interface RawPublicationMetadata {
+  hiddenFromPublishing: boolean;
+  publishStatus: FoundationPublishStatus | null;
+  remote: boolean;
+}
 
 export interface RawVariable {
   id: string;
@@ -31,6 +40,7 @@ export interface RawVariable {
   /** Figma's source scopes, in source order. Optional only for legacy injected
    *  dumps captured before the direct-v5 extraction path. */
   scopes?: string[];
+  publication?: RawPublicationMetadata;
 }
 
 export interface RawCollection {
@@ -42,9 +52,13 @@ export interface RawCollection {
   /** Complete source inventory, including variables whose read failed.
    *  Optional only for legacy injected dumps. */
   variableIds?: string[];
+  publication?: RawPublicationMetadata;
 }
 
 export interface RawTextStyle {
+  /** Stable Figma style id. Optional only for legacy injected dumps captured
+   * before Foundation Context v5 Phase 3. */
+  id?: string;
   name: string;
   description: string;
   fontFamily: string;
@@ -57,22 +71,32 @@ export interface RawTextStyle {
   textCase: string;
   textDecoration: string;
   boundVariables: Record<string, string>;
+  /** Exact source binding ids beside the legacy name projection above. */
+  bindingIds?: Record<string, string>;
+  /** Styles expose remote and publish status, but not a
+   * hidden-from-publishing flag, so they cannot truthfully populate the v5
+   * `publication` pair. */
+  source?: { remote: boolean; publishStatus: FoundationPublishStatus | null };
 }
 
 /**
  * One effect style from the file, with each layer already converted through the
  * shared EffectLayer union.
  *
- * Per-field variable bindings on a style's layers are deliberately NOT resolved
- * here. Node-level inline effects carry them (see extractNodeEffects); a style
- * layer emits its literal values. Resolving them would need `remote` on
- * ReaderVariable and a second resolution path for a case the design does not
- * cover; when that changes, this comment is the place to start.
+ * Literal layers stay in the shared EffectLayer union used by v4/component
+ * briefs. Phase 3 additionally keeps exact source binding ids in `bindings`,
+ * beside rather than inside that legacy projection, so canonical export can
+ * join by stable identity without changing older YAML or canvas hashes.
  */
 export interface RawEffectStyle {
+  /** Stable Figma style id. Optional only for legacy injected dumps. */
+  id?: string;
   name: string;
   description: string;
   effects: EffectLayer[];
+  /** Exact layer/property -> variable relationships. */
+  bindings?: Array<{ property: string; tokenId: string }>;
+  source?: { remote: boolean; publishStatus: FoundationPublishStatus | null };
 }
 
 /** An alias target outside this file's declared local inventory. */
@@ -179,6 +203,7 @@ export interface FoundationVariable {
   codeSyntax: Record<string, string>;
   valuesByMode: Record<string, FoundationValue>;
   provenance: FoundationVariableProvenance;
+  publication?: RawPublicationMetadata;
 }
 
 export interface FoundationCollection {
@@ -187,6 +212,7 @@ export interface FoundationCollection {
   modes: FoundationMode[];
   defaultModeId: string;
   variables: FoundationVariable[];
+  publication?: RawPublicationMetadata;
 }
 
 export interface FoundationTextStyle extends RawTextStyle { group: string }
@@ -748,8 +774,10 @@ export function buildFoundation(
             valuesByMode: provenanceValues,
             staleModeIds,
           },
+          ...(variable.publication ? { publication: variable.publication } : {}),
         };
       }),
+      ...(collection.publication ? { publication: collection.publication } : {}),
     };
   });
 

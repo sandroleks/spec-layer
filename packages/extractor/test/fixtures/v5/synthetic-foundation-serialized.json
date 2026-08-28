@@ -25,6 +25,11 @@
     {
       "id": "CollectionID:primitives",
       "name": "Primitives",
+      "publication": {
+        "hiddenFromPublishing": false,
+        "publishStatus": "CURRENT",
+        "remote": false
+      },
       "defaultModeId": "ModeID:p-light",
       "modes": [
         { "modeId": "ModeID:p-light", "name": "Light" },
@@ -68,6 +73,24 @@
           "valuesByMode": {
             "ModeID:p-light": 8,
             "ModeID:p-dark": 12,
+            "ModeID:p-light-duplicate": 8
+          }
+        },
+        {
+          "id": "VariableID:shadow-blur",
+          "name": "effect/shadow/blur",
+          "resolvedType": "FLOAT",
+          "description": "Shared shadow blur radius.",
+          "codeSyntax": { "WEB": "--effect-shadow-blur" },
+          "scopes": ["EFFECT_FLOAT"],
+          "publication": {
+            "hiddenFromPublishing": false,
+            "publishStatus": "CHANGED",
+            "remote": false
+          },
+          "valuesByMode": {
+            "ModeID:p-light": 8,
+            "ModeID:p-dark": 8,
             "ModeID:p-light-duplicate": 8
           }
         },
@@ -261,6 +284,7 @@
   ],
   "textStyles": [
     {
+      "id": "StyleID:body-regular",
       "name": "Body/Regular",
       "description": "Source style retained for Phase 3.",
       "fontFamily": "Inter",
@@ -272,14 +296,43 @@
       "paragraphIndent": 0,
       "textCase": "ORIGINAL",
       "textDecoration": "NONE",
-      "boundVariables": {}
+      "boundVariables": {
+        "fontFamily": "typography/family/body",
+        "fontWeight": "typography/weight/strong"
+      },
+      "bindingIds": {
+        "fontFamily": "VariableID:font-family",
+        "fontWeight": "VariableID:font-weight"
+      },
+      "source": { "remote": false, "publishStatus": "CURRENT" }
     }
   ],
   "effectStyles": [
     {
+      "id": "StyleID:shadow-card",
       "name": "Shadow/Card",
       "description": "Source effect style retained for Phase 3.",
-      "effects": []
+      "effects": [
+        {
+          "type": "drop-shadow",
+          "visible": true,
+          "blendMode": "NORMAL",
+          "color": { "hex": "#000000", "alpha": 0.2 },
+          "offset": { "x": 0, "y": 4 },
+          "radius": 12,
+          "spread": 0
+        },
+        {
+          "type": "layer-blur",
+          "blurType": "normal",
+          "visible": false,
+          "radius": 2
+        }
+      ],
+      "bindings": [
+        { "property": "effects[0].blur", "tokenId": "VariableID:shadow-blur" }
+      ],
+      "source": { "remote": false, "publishStatus": "CHANGED" }
     }
   ]
 }

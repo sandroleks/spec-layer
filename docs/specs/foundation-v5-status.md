@@ -1,6 +1,6 @@
 ---
 title: Foundation Context v5 — status and handoff
-status: Phase 2 implementation and real-source review complete; compact AI projection added
+status: Phase 3 composite-style implementation complete; manual and real-source gates open
 schema_version: 5.0.0
 last_updated: 2026-08-28
 ---
@@ -9,12 +9,14 @@ last_updated: 2026-08-28
 
 Read this before changing `packages/extractor/src/v5/` or Foundation Copy for
 AI. The normative contract is
-[foundation-context-v5.md](foundation-context-v5.md), and the executed Phase 2
-plan is
-[2026-08-28-foundation-v5-phase-2.md](../superpowers/plans/2026-08-28-foundation-v5-phase-2.md).
+[foundation-context-v5.md](foundation-context-v5.md). The executed plans are
+[Phase 2](../superpowers/plans/2026-08-28-foundation-v5-phase-2.md) and
+[Phase 3](../superpowers/plans/2026-08-28-foundation-v5-phase-3.md).
 
-Phase 2 implementation is on `main`; the implementation/acceptance head is
-`f4dea8a`. Phase 1's v4 normalizer remains supported and independently graded.
+Phase 1's v4 normalizer remains supported and independently graded. Phase 3
+changes canonical/clipboard output, not canvas drift inputs, so the shared
+`EXTRACTOR_VERSION` remains `2` rather than marking every connected component
+document for rebuild.
 
 ## Current product behavior
 
@@ -29,10 +31,19 @@ Phase 2 implementation is on `main`; the implementation/acceptance head is
 - A collection-row copy contains the requested collection plus complete
   transitive local dependency collections. Frame-only group and four-column
   mode limits do not narrow clipboard output.
-- A text-style-only Library-row copy remains on the legacy v4
-  `narrowFoundation -> foundationBrief` path. Phase 2 intentionally emits no v5
-  composite styles, so moving this path early would copy an empty typography
-  list and lose the requested data.
+- Whole-file v5 artifacts now populate composite typography and effect styles
+  with stable style ids, supported resolved properties, ordered shadow/blur
+  layers, and exact property binding ids.
+- A text-style-only Library-row copy now uses the compact v5 profile. It carries
+  all typography styles plus only collections required by bound token
+  dependencies; unrelated collections and effect styles stay out.
+- Collection and token publication is emitted when both Figma publication
+  facts are available. Style source state is emitted, but style publication,
+  lifecycle, and consuming mode stay absent/null because the Plugin API does
+  not expose enough evidence to state them.
+- Effect binding drift is computed only when every mode of the bound token has
+  one identical resolved value. The exporter never picks a default mode for a
+  mode-less style.
 - Generated group descriptions are a `guidelines` annotation outside the
   semantic payload and therefore do not alter the content hash.
 - The clipboard profile nests tokens beneath collections, uses readable mode
@@ -49,13 +60,14 @@ separate from Foundation schema `5.0.0` and from `EXTRACTOR_VERSION = '2'`.
 
 | Boundary | Responsibility |
 |---|---|
+| `serializeFoundation.ts` | Figma API audit boundary; stable style ids, publication reads, and exact property binding ids |
 | `foundation.ts` | Pure source model, stable provenance, scopes, RGBA facts, unavailable inventory, iterative alias graph |
-| `v5/fromFoundation.ts` | Pure synchronous `FoundationSpec -> FoundationArtifactV5` production export |
+| `v5/fromFoundation.ts` | Pure synchronous production export for tokens, composite styles, metadata, and binding drift |
 | `v5/validate.ts` | Level 1 shape validation and independent Level 2 reference/chain replay |
 | `v5/canonical.ts` | Semantic payload, envelope, code-unit canonical JSON, semantic hash |
 | `v5/statistics.ts` | Statistics derived only from finished artifact sections and final diagnostics |
 | `v5/aiContext.ts` | Deterministic prompt-sized projection of a finished artifact; readable references and ambiguity-only ids |
-| `ui/actions.ts` | Whole/collection v5 Copy integration and temporary text-style v4 boundary |
+| `ui/actions.ts` | Whole, collection, and text-style v5 Copy integration |
 
 The direct builder constructs a complete provisional artifact, requires Level 1
 to pass, runs Level 2 once, merges/deduplicates its findings, recomputes final
@@ -83,9 +95,9 @@ snapshot with that terminal. Only Figma's raw-type specializations are allowed:
 `number <-> dimension` and `string <-> font_family`.
 
 External library variables keep their stable target id and whatever target
-path, collection id, and library name Figma exposed. They remain unresolved in
-Phase 2 even when their path collides with a local variable. Missing metadata is
-`null`/empty, not invented.
+path, collection id, and library name Figma exposed. They remain unresolved
+when their remote mode/value graph is unavailable, even when their path
+collides with a local variable. Missing metadata is `null`/empty, not invented.
 
 ## Hash and compatibility boundaries
 
@@ -115,7 +127,8 @@ and its reviewed direct golden independently grade the engine behavior v4 could
 not represent. They cover real ids/mode ids, duplicate display names, exact and
 lossy colors, unit scopes, a three-hop cross-collection chain, a cycle,
 readable/unreadable external aliases, a local path collision, a missing mode
-value, a confusable path, and intentionally unmigrated source styles.
+value, a confusable path, stable typography/effect ids, property bindings,
+ordered effect layers, publication state, and binding drift.
 
 The Phase 1 v4 migration fixture and golden remain unchanged except for the
 shared extractor compatibility stamp. `phaseCoverage.ts` records
@@ -136,17 +149,21 @@ Still open:
   stable Figma ids, collection/token/library names, descriptions, code syntax,
   generated guidelines, and diagnostics. `source.file_id` should be redacted to
   `null` by default; envelope source metadata is outside the semantic hash.
+- Criteria 3, 10, and 11 now pass the synthetic direct engine/golden: styles
+  have stable ids, a bound typography token retains identical per-mode values,
+  and independent effect layers plus explicit binding drift survive. Company DS
+  grading remains open until a reviewed Phase 3 real artifact is available.
+- Criterion 9 cannot be graded from the current Figma Plugin API: local style
+  enumeration exposes neither archived styles nor lifecycle evidence. The
+  exporter leaves lifecycle absent and does not infer archive state from names.
 
-## Phase 3 starting points
+## Phase 4 starting points
 
-Phase 3 owns composite typography and effect-style extraction. Start with a
-Figma API audit for stable style ids, property bindings, publication state,
-remote/library metadata, and lifecycle evidence. Then populate
-`styles.typography` and `styles.effects`, move text-style-only Library Copy to
-v5, and close combined acceptance criterion 3. Criteria 9–11 remain Plan 3.
-
-Fields the plugin API cannot expose must remain explicitly unavailable; do not
-fill permanent `null` fields and call that complete source data.
+Phase 4 owns tooling and adoption: validation/normalization/diff commands,
+consumer-facing fixture publication, CI integration beyond the current library
+tests, and the remaining real-source/manual gates. Keep command tooling outside
+the Figma sandbox and reuse the canonical validator/hash implementation rather
+than creating a second interpretation of v5.
 
 ## Release invariants
 

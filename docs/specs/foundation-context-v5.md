@@ -441,11 +441,17 @@ Requirements:
 
 - Effect order MUST be preserved.
 - Drop shadow, inner shadow, layer blur, and background blur MUST be distinguished.
+- `blend_mode` MUST be present when the source effect exposes one. It MUST be
+  absent for blur effects whose source API has no blend-mode field.
 - All geometry MUST have units.
 - Variable bindings MUST be preserved per effect property when available.
 - If scalar variables and a style describe the same composite effect, their relationship MUST be exported explicitly through `bindings`.
 - The extractor MUST NOT infer that similarly named effects are equivalent.
 - Conflicting resolved values between declared bindings and style values MUST produce a drift diagnostic.
+- `mode_id` MUST be `null` when the source exposes no consuming mode. An
+  exporter MUST NOT substitute a collection default. Binding drift MAY be
+  computed without a mode only when every available value of the bound token
+  is identical.
 
 Example binding metadata:
 
@@ -457,7 +463,7 @@ bindings:
 
 ## 13. Publication and source metadata
 
-Where available, export:
+Where available, export these blocks on collections, tokens, and styles:
 
 ```yaml
 publication:
@@ -471,6 +477,11 @@ source:
 ```
 
 This allows consumers to exclude local experiments, archived styles, or unavailable remote dependencies without relying on display-name patterns.
+
+Metadata pairs MUST remain atomic. For example, when a style API exposes
+publish status but not `hidden_from_publishing`, omit `publication` rather than
+inventing the missing boolean. Unknown source fields remain `null`, and omitted
+lifecycle means unknown—not active.
 
 ## 14. Diagnostics
 
@@ -661,7 +672,7 @@ Using the current Company DS foundation fixture:
 6. Raw color strings and `{hex, alpha}` records normalize to the same canonical color shape.
 7. Dimensional floats receive explicit units without changing their numeric values.
 8. The Cyrillic `С` in the Chip path is preserved and creates `CONFUSABLE_NAME`.
-9. Archived text styles retain their source names and receive `lifecycle.status: archived` plus `INFERRED_LIFECYCLE` when explicit metadata is unavailable.
+9. Archived text styles retain their source names and lifecycle when the source API exposes that evidence. A source that does not expose archived styles or lifecycle MUST leave the field absent and MUST NOT infer it from names.
 10. Identical typography mode values are preserved and MAY create `MODE_VALUES_IDENTICAL` information diagnostics.
 11. Card shadow representations are preserved independently; any explicit binding disagreement creates `STYLE_BINDING_DRIFT`.
 12. Repeated extraction produces the same semantic content hash.
@@ -711,12 +722,14 @@ For a foundation file containing up to 10,000 tokens and 2,000 styles, the extra
 - Preserve resolved snapshots and resolution chains.
 - Implement external-reference diagnostics.
 
-### Phase 3 — Composite styles and lifecycle
+### Phase 3 — Composite styles and source metadata
 
 - Export complete typography properties and bindings.
 - Export ordered effect composites and bindings.
-- Add publication and lifecycle metadata.
-- Add drift, archive-inference, and confusable-name diagnostics.
+- Add publication, source, and lifecycle metadata where the source exposes it.
+- Add binding-drift diagnostics without selecting an unstated consuming mode.
+- Keep lifecycle absent when the source API provides no lifecycle evidence;
+  parsing archive state from names is forbidden.
 
 ### Phase 4 — Tooling and adoption
 

@@ -68,19 +68,22 @@ describe('Foundation Context v5 phase coverage', () => {
       implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
     });
     expect(ACCEPTANCE_COVERAGE[3]).toMatchObject({
-      implementedBy: 'plan-3', gradedBy: 'plan-3',
+      implementedBy: 'plan-3', gradedBy: 'synthetic-direct-v5',
+    });
+    expect(ACCEPTANCE_COVERAGE[9]).toMatchObject({
+      implementedBy: 'blocked-by-figma-plugin-api', gradedBy: 'pending-source-evidence',
     });
   });
 
   it.todo('1: all six Company DS collections have stable source ids — manual v5 pass; fixture not committed');
   it.todo('2: every Company DS mode has a stable source id — manual v5 pass; fixture not committed');
-  it.todo('3: every token and style has a stable source id — plan 3');
+  it.todo('3: every Company DS token and style has a stable source id — synthetic engine pass; real fixture not committed');
   it.todo('4: Company DS aliases have complete extracted chains — manual v5 pass; fixture not committed');
   it.todo('5: three deprecated refs match real source metadata — manual v5 pass; fixture not committed');
   it.todo('7b: Company DS dimensions receive units — manual v5 pass; fixture not committed');
-  it.todo('9: archived text styles get lifecycle plus INFERRED_LIFECYCLE — plan 3');
-  it.todo('10: identical typography mode values are preserved — plan 3');
-  it.todo('11: card shadow representations and binding drift are preserved — plan 3');
+  it.todo('9: archived text styles retain source lifecycle evidence — unavailable in current Figma Plugin API; no name inference');
+  it.todo('10: Company DS identical typography mode values are preserved — synthetic engine pass; real fixture not committed');
+  it.todo('11: Company DS card shadows and binding drift are preserved — synthetic engine pass; real fixture not committed');
 });
 
 describe('Foundation Context v5 direct synthetic golden acceptance', () => {
@@ -178,7 +181,67 @@ describe('Foundation Context v5 direct synthetic golden acceptance', () => {
     });
     expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
       code: 'SOURCE_PARTIALLY_UNAVAILABLE',
-      details: { typography_not_migrated: 1, effects_not_migrated: 1 },
+      details: expect.objectContaining({
+        typography: 1, effects: 1,
+        hidden_from_publishing_unavailable: true,
+        lifecycle_unavailable: true,
+      }),
+    }));
+  });
+
+  it('exports stable composite styles, bindings, publication facts, and honest mode gaps', () => {
+    const { artifact } = directFixture();
+    expect(artifact.tokens.every((token) => !token.id.startsWith('figma-name:'))).toBe(true);
+    expect(artifact.styles.typography.map((style) => style.id))
+      .toEqual(['StyleID:body-regular']);
+    expect(artifact.styles.effects.map((style) => style.id))
+      .toEqual(['StyleID:shadow-card']);
+
+    expect(artifact.collections[0]).toMatchObject({
+      publication: { published: true, hidden_from_publishing: false },
+      source: { remote: false },
+    });
+    expect(artifact.tokens.find((token) => token.id === 'VariableID:shadow-blur'))
+      .toMatchObject({ publication: { published: true, hidden_from_publishing: false } });
+
+    const typography = artifact.styles.typography[0];
+    expect(typography.properties.font_family).toEqual({
+      source: {
+        kind: 'alias', target_id: 'VariableID:font-family',
+        target_path: ['typography', 'family', 'body'],
+      },
+      resolved: { type: 'font_family', value: 'Inter' },
+    });
+    expect(typography.properties.font_weight).toMatchObject({
+      source: { kind: 'alias', target_id: 'VariableID:font-weight' },
+      resolved: { type: 'number', value: 400 },
+    });
+    const family = artifact.tokens.find((token) => token.id === 'VariableID:font-family')!;
+    expect(Object.values(family.values)).toHaveLength(3);
+    expect(new Set(Object.values(family.values).map((value) => JSON.stringify(value))).size)
+      .toBe(1);
+
+    const effect = artifact.styles.effects[0];
+    expect(effect.mode_id).toBeNull();
+    expect(effect.effects).toEqual([
+      expect.objectContaining({
+        type: 'drop_shadow', blend_mode: 'normal',
+        offset_y: { type: 'dimension', number: 4, unit: 'px' },
+        blur: { type: 'dimension', number: 12, unit: 'px' },
+      }),
+      {
+        type: 'layer_blur', visible: false,
+        blur: { type: 'dimension', number: 2, unit: 'px' },
+      },
+    ]);
+    expect(effect.bindings).toEqual([
+      { property: 'effects[0].blur', token_id: 'VariableID:shadow-blur' },
+    ]);
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'STYLE_BINDING_DRIFT', entity_id: 'StyleID:shadow-card',
+      details: expect.objectContaining({
+        property: 'effects[0].blur', token_id: 'VariableID:shadow-blur',
+      }),
     }));
   });
 

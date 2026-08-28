@@ -95,16 +95,25 @@ const resolver: NodeResolver = {
 // ---------------------------------------------------------------------------
 // FoundationReader — wraps the variables/styles APIs for serializeFoundation
 // ---------------------------------------------------------------------------
+async function publishStatusOf(
+  source: { getPublishStatusAsync(): Promise<PublishStatus> },
+): Promise<PublishStatus | null> {
+  try { return await source.getPublishStatusAsync(); } catch { return null; }
+}
+
 const foundationReader: FoundationReader = {
   async collections() {
     const colls = await figma.variables.getLocalVariableCollectionsAsync();
-    return colls.map((c) => ({
+    return Promise.all(colls.map(async (c) => ({
       id: c.id,
       name: c.name,
       modes: c.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
       defaultModeId: c.defaultModeId,
       variableIds: c.variableIds,
-    }));
+      hiddenFromPublishing: c.hiddenFromPublishing,
+      publishStatus: await publishStatusOf(c),
+      remote: c.remote,
+    })));
   },
   async variable(id) {
     const v = await figma.variables.getVariableByIdAsync(id);
@@ -122,11 +131,14 @@ const foundationReader: FoundationReader = {
       valuesByMode: v.valuesByMode as Record<string, never>,
       scopes: [...v.scopes],
       remote: v.remote,
+      hiddenFromPublishing: v.hiddenFromPublishing,
+      publishStatus: await publishStatusOf(v),
     };
   },
   async textStyles() {
     const styles = await figma.getLocalTextStylesAsync();
-    return styles.map((s) => ({
+    return Promise.all(styles.map(async (s) => ({
+      id: s.id,
       name: s.name,
       description: s.description ?? '',
       fontName: { family: s.fontName.family, style: s.fontName.style },
@@ -142,17 +154,22 @@ const foundationReader: FoundationReader = {
           .filter((e): e is [string, VariableAlias] => Boolean(e[1]?.id))
           .map(([k, v]) => [k, { id: v.id }]),
       ),
-    }));
+      remote: s.remote,
+      publishStatus: await publishStatusOf(s),
+    })));
   },
   async effectStyles() {
     const styles = await figma.getLocalEffectStylesAsync();
-    return styles.map((s) => ({
+    return Promise.all(styles.map(async (s) => ({
+      id: s.id,
       name: s.name,
       description: s.description ?? '',
       // Handed to effectLayerOf as-is: it is structurally typed for exactly this,
       // which is what keeps the effect union in the extractor rather than here.
       effects: s.effects as unknown as RawEffect[],
-    }));
+      remote: s.remote,
+      publishStatus: await publishStatusOf(s),
+    })));
   },
   async collectionName(id) {
     const c = await figma.variables.getVariableCollectionByIdAsync(id);

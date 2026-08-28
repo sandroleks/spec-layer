@@ -14,6 +14,12 @@ collections:
       - { id: ModeID:p-light, name: Light, order: 0 }
       - { id: ModeID:p-dark, name: Dark, order: 1 }
       - { id: ModeID:p-light-duplicate, name: Light, order: 2 }
+    publication: { published: true, hidden_from_publishing: false }
+    source:
+      remote: false
+      library_file_id: null
+      library_name: null
+      modified_at: null
   - id: CollectionID:semantic
     name: Semantic
     path: [Semantic]
@@ -81,6 +87,18 @@ tokens:
     values:
       ModeID:p-light: { kind: literal, value: { type: dimension, number: 8, unit: px } }
       ModeID:p-dark: { kind: literal, value: { type: dimension, number: 12, unit: px } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: dimension, number: 8, unit: px } }
+  - id: VariableID:shadow-blur
+    name: effect/shadow/blur
+    path: [effect, shadow, blur]
+    collection_id: CollectionID:primitives
+    type: dimension
+    description: Shared shadow blur radius.
+    scopes: [EFFECT_FLOAT]
+    publication: { published: true, hidden_from_publishing: false }
+    values:
+      ModeID:p-light: { kind: literal, value: { type: dimension, number: 8, unit: px } }
+      ModeID:p-dark: { kind: literal, value: { type: dimension, number: 8, unit: px } }
       ModeID:p-light-duplicate: { kind: literal, value: { type: dimension, number: 8, unit: px } }
   - id: VariableID:font-weight
     name: typography/weight/strong
@@ -406,7 +424,70 @@ tokens:
     values:
       ModeID:s-light: { kind: literal, value: { type: string, value: available } }
       ModeID:s-dark: { kind: missing, reason: no_value_for_mode }
-styles: { typography: [], effects: [] }
+styles:
+  typography:
+    - id: StyleID:body-regular
+      name: Body/Regular
+      path: [Body, Regular]
+      description: Source style retained for Phase 3.
+      source:
+        remote: false
+        library_file_id: null
+        library_name: null
+        modified_at: null
+      properties:
+        font_family:
+          source:
+            kind: alias
+            target_id: VariableID:font-family
+            target_path: [typography, family, body]
+          resolved: { type: font_family, value: Inter }
+        font_weight:
+          source:
+            kind: alias
+            target_id: VariableID:font-weight
+            target_path: [typography, weight, strong]
+          resolved: { type: number, value: 400 }
+        font_size:
+          source: { kind: literal }
+          resolved: { type: dimension, number: 16, unit: px }
+        line_height:
+          source: { kind: literal }
+          resolved: { type: dimension, number: 24, unit: px }
+        letter_spacing:
+          source: { kind: literal }
+          resolved: { type: dimension, number: 0, unit: "%" }
+        paragraph_spacing:
+          source: { kind: literal }
+          resolved: { type: dimension, number: 8, unit: px }
+        paragraph_indent:
+          source: { kind: literal }
+          resolved: { type: dimension, number: 0, unit: px }
+        text_case: original
+        text_decoration: none
+  effects:
+    - id: StyleID:shadow-card
+      name: Shadow/Card
+      path: [Shadow, Card]
+      mode_id: null
+      effects:
+        - type: drop_shadow
+          visible: true
+          blend_mode: normal
+          color: { type: color, color_space: srgb, hex: "#000000", alpha: 0.2 }
+          offset_x: { type: dimension, number: 0, unit: px }
+          offset_y: { type: dimension, number: 4, unit: px }
+          blur: { type: dimension, number: 12, unit: px }
+          spread: { type: dimension, number: 0, unit: px }
+        - type: layer_blur
+          visible: false
+          blur: { type: dimension, number: 2, unit: px }
+      bindings: [{ property: "effects[0].blur", token_id: VariableID:shadow-blur }]
+      source:
+        remote: false
+        library_file_id: null
+        library_name: null
+        modified_at: null
 spec_layer:
   kind: foundation
   schema_version: 5.0.0
@@ -416,7 +497,7 @@ spec_layer:
     id: synthetic-direct-v5-acceptance
     generated_at: 2026-08-28T00:00:00.000Z
     deterministic: true
-    content_hash: sha256:9835eca7679252a37669195586b5982b826206940311d6b99562294933d7aca3
+    content_hash: sha256:39147fd721bde03b8706b3104fb9921f5c35a7fdf14dae39998a5d898d3a1fea
   source:
     provider: figma
     file_id: FILE:synthetic-direct-v5
@@ -447,8 +528,13 @@ diagnostics:
   - code: SOURCE_PARTIALLY_UNAVAILABLE
     severity: error
     entity_id: <artifact>
-    message: Composite styles are present but are not emitted until Foundation Context v5 Phase 3.
-    details: { typography_not_migrated: 1, effects_not_migrated: 1 }
+    message: Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.
+    details:
+      typography: 1
+      effects: 1
+      hidden_from_publishing_unavailable: true
+      lifecycle_unavailable: true
+      consuming_mode_unavailable: true
   - code: UNIT_METADATA_UNAVAILABLE
     severity: error
     entity_id: VariableID:unknown-number
@@ -508,11 +594,20 @@ diagnostics:
     entity_id: VariableID:confusable
     message: Token name "Background/Chip/Сhip (Hover)" contains non-ASCII characters.
     details: { kind: token, name: Background/Chip/Сhip (Hover) }
+  - code: STYLE_BINDING_DRIFT
+    severity: warning
+    entity_id: StyleID:shadow-card
+    message: The effect property snapshot differs from its unambiguous bound token value.
+    details:
+      property: effects[0].blur
+      token_id: VariableID:shadow-blur
+      style_value: { type: dimension, number: 12, unit: px }
+      token_value: { type: dimension, number: 8, unit: px }
 statistics:
   collections: 2
   modes: 5
-  tokens: 17
-  styles: { typography: 0, effects: 0 }
+  tokens: 18
+  styles: { typography: 1, effects: 1 }
   aliases: { total: 13, resolved: 7, unresolved: 6 }
   lifecycle: { active: 0, deprecated: 0, archived: 0 }
-  diagnostics: { error: 13, warning: 1, info: 0 }
+  diagnostics: { error: 13, warning: 2, info: 0 }

@@ -84,7 +84,7 @@ describe('foundationAiContext', () => {
         UNRESOLVED_ALIAS: 2,
         UNRESOLVED_EXTERNAL_ALIAS: 4,
       },
-      warning: { CONFUSABLE_NAME: 1 },
+      warning: { CONFUSABLE_NAME: 1, STYLE_BINDING_DRIFT: 1 },
     });
     const serialized = JSON.stringify(context);
     expect(serialized).not.toContain('Alias resolution cycles back to itself');

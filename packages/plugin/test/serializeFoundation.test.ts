@@ -7,12 +7,14 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
       id: 'v1', name: 'color/blue/500', resolvedType: 'COLOR', description: 'Blue.',
       variableCollectionId: 'c1', codeSyntax: { WEB: '--blue' },
       scopes: ['FRAME_FILL', 'SHAPE_FILL'], remote: false,
+      hiddenFromPublishing: false, publishStatus: 'CURRENT',
       valuesByMode: { m1: { r: 0.5, g: 0.1, b: 0, a: 0.125 } },
     },
     v2: {
       id: 'v2', name: 'bg/brand', resolvedType: 'COLOR', description: '',
       variableCollectionId: 'c1', codeSyntax: {},
       scopes: ['FRAME_FILL'], remote: false,
+      hiddenFromPublishing: true, publishStatus: 'CHANGED',
       valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'v1' } },
     },
   };
@@ -23,11 +25,13 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
         modes: [{ modeId: 'm1', name: 'Value' }],
         defaultModeId: 'm1',
         variableIds: ['v1', 'v2'],
+        hiddenFromPublishing: false, publishStatus: 'CURRENT', remote: false,
       }];
     },
     async variable(id) { return vars[id] ?? null; },
     async textStyles() {
       return [{
+        id: 'S:text-body-m',
         name: 'Body/M', description: 'Body.',
         fontName: { family: 'Inter', style: 'Regular' }, fontSize: 16,
         lineHeight: { unit: 'PIXELS', value: 24 },
@@ -35,6 +39,7 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
         paragraphSpacing: 0, paragraphIndent: 0,
         textCase: 'ORIGINAL', textDecoration: 'NONE',
         boundVariables: { fontSize: { id: 'v1' } },
+        remote: false, publishStatus: 'CURRENT',
       }];
     },
     async effectStyles() { return []; },
@@ -60,14 +65,23 @@ describe('serializeFoundation', () => {
       .toEqual(['FRAME_FILL', 'SHAPE_FILL']);
     expect(dump.collections[0].variables[0].valuesByMode.m1)
       .toEqual({ r: 0.5, g: 0.1, b: 0, a: 0.125 });
+    expect(dump.collections[0].publication).toEqual({
+      hiddenFromPublishing: false, publishStatus: 'CURRENT', remote: false,
+    });
+    expect(dump.collections[0].variables[1].publication).toEqual({
+      hiddenFromPublishing: true, publishStatus: 'CHANGED', remote: false,
+    });
     expect(dump.textStyles[0]).toMatchObject({
-      name: 'Body/M', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      id: 'S:text-body-m', name: 'Body/M',
+      fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      source: { remote: false, publishStatus: 'CURRENT' },
     });
   });
 
   it('resolves a text style bound variable id to its name', async () => {
     const dump = await serializeFoundation(fakeReader(), 'FILE1', 'T');
     expect(dump.textStyles[0].boundVariables).toEqual({ fontSize: 'color/blue/500' });
+    expect(dump.textStyles[0].bindingIds).toEqual({ fontSize: 'v1' });
   });
 
   it('keeps aliases raw for the extractor to resolve', async () => {
@@ -391,11 +405,17 @@ describe('effect styles', () => {
   it('converts each style layer through the shared effect union', async () => {
     const reader = fakeReader({
       effectStyles: async () => [{
+        id: 'S:effect-focus-primary',
         name: 'Focused/Primary', description: '',
         effects: [{
           type: 'DROP_SHADOW', color: { r: 0.447, g: 0.18, b: 0.82, a: 0.2 },
           offset: { x: 0, y: 0 }, radius: 4, spread: 2, visible: true, blendMode: 'NORMAL',
+          boundVariables: {
+            color: { type: 'VARIABLE_ALIAS', id: 'v1' },
+            radius: { type: 'VARIABLE_ALIAS', id: 'v2' },
+          },
         }],
+        remote: false, publishStatus: 'CHANGED',
       }],
     });
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
@@ -403,6 +423,14 @@ describe('effect styles', () => {
       type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
       color: { hex: '#722ed1', alpha: 0.2 }, offset: { x: 0, y: 0 },
       radius: 4, spread: 2,
+    });
+    expect(dump.effectStyles[0]).toMatchObject({
+      id: 'S:effect-focus-primary',
+      bindings: [
+        { property: 'effects[0].color', tokenId: 'v1' },
+        { property: 'effects[0].blur', tokenId: 'v2' },
+      ],
+      source: { remote: false, publishStatus: 'CHANGED' },
     });
   });
 

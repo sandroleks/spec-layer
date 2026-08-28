@@ -400,6 +400,17 @@ describe('validateLevel2', () => {
       .some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(false);
   });
 
+  it('reports a style binding whose property names no exported effect field', () => {
+    const artifact = artifactWithDanglingStyleBinding('VariableID:3:4');
+    artifact.styles.effects[0].bindings![0].property = 'effects[1].offset_y';
+
+    const refs = validateLevel2(artifact)
+      .filter((d) => d.code === 'UNRESOLVED_REFERENCE');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].entity_id).toBe('EffectStyleId:1');
+    expect(refs[0].details?.property).toBe('effects[1].offset_y');
+  });
+
   it('validates typography property alias target ids and paths', () => {
     const missing = artifactWithTypographyAlias('VariableID:gone', ['Gone']);
     const wrongPath = artifactWithTypographyAlias('VariableID:3:4', ['Not', 'The', 'Token']);

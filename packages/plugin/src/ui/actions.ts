@@ -9,7 +9,7 @@
 import {
   extract, ProseProxyError, specContentHash, buildFoundation,
   buildFoundationArtifactV5, foundationAiContext,
-  componentBrief, foundationBrief, toYaml, narrowFoundation,
+  componentBrief, toYaml,
 } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
@@ -622,12 +622,12 @@ export function currentFoundationSpec(): FoundationSpec | null {
  * Render, copy, and report a foundation brief.
  *
  * Shared tail of copyFoundationBrief and copyFoundationBriefForScope: the two
- * differ only in how they build the spec-to-brief options (whole file vs. one
- * narrowed collection), and were otherwise identical down to the 800-line
+ * differ only in how they build the artifact scope (whole file vs. one
+ * Library row), and were otherwise identical down to the 800-line
  * threshold and the error string. `buildYaml` is a thunk rather than an
  * already-built string so this can keep wrapping the brief construction
  * itself in the same try/catch the duplicated code used — a failure in
- * toYaml/foundationBrief is reported the same "could not read"
+ * artifact/YAML construction is reported with the same "could not read"
  * way a copy failure is, exactly as before the extraction.
  */
 async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promise<void> {
@@ -666,15 +666,15 @@ function foundationAiYaml(
   spec: FoundationSpec,
   generatedAt: string,
   descriptions: Record<string, Record<string, string>>,
-  collectionId?: string,
+  scope?:
+    | { target: 'collection'; collectionId: string }
+    | { target: 'textStyles' },
 ): string {
   const { artifact } = buildFoundationArtifactV5(spec, {
     exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
     generatedAt,
     build: pluginBuild(),
-    ...(collectionId
-      ? { scope: { target: 'collection' as const, collectionId } }
-      : {}),
+    ...(scope ? { scope } : {}),
   });
   const guidelines = generatedGuidelines(descriptions);
   if (guidelines) artifact.guidelines = guidelines;
@@ -715,9 +715,8 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
  * ignores the scope selection" reasoning is a doctrine for a file-wide screen,
  * and it should not acquire an escape hatch.
  *
- * Collection rows use direct v5 and include every complete transitive local
- * dependency collection. Text-style rows temporarily retain the v4 projection
- * until the v5 typography phase can emit the content the user requested.
+ * Both row kinds use direct v5 and include the complete local token dependency
+ * closure needed by the requested collection or typography styles.
  */
 export async function copyFoundationBriefForScope(
   scope: FoundationScope,
@@ -753,25 +752,22 @@ export async function copyFoundationBriefForScope(
     // the stable collection id gives Copy the full collection plus the direct
     // exporter's dependency closure instead of silently hiding rows or modes.
     await deliverBrief(
-      () => foundationAiYaml(spec, generatedAt, groupDescriptions, scope.collectionId),
+      () => foundationAiYaml(spec, generatedAt, groupDescriptions, {
+        target: 'collection', collectionId: scope.collectionId,
+      }),
       ui,
     );
     return;
   }
 
-  // Phase 2 intentionally retains v4 for a text-style row. The direct v5
-  // exporter does not populate typography until Phase 3; routing this request
-  // through v5 now would copy an empty style list and mislabel data loss as an
-  // upgrade.
-  const narrowed = narrowFoundation(spec, { target: 'textStyles' });
-  if (!narrowed) {
+  if (spec.textStyles.length === 0) {
     ui.error('This file has no text styles left. Nothing was copied.');
     return;
   }
-  await deliverBrief(() => toYaml(foundationBrief(narrowed, {
-    generatedAt,
-    groupDescriptions,
-  })), ui);
+  await deliverBrief(
+    () => foundationAiYaml(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+    ui,
+  );
 }
 
 /** Set by ui-vnext.ts around the renderFoundation round-trip: true on click, false on

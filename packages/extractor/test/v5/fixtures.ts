@@ -738,7 +738,16 @@ export function artifactWithDanglingStyleBinding(tokenId: string): FoundationArt
   const root = structuredClone(OK_ARTIFACT);
   root.styles.effects.push({
     id: 'EffectStyleId:1', name: 'Card/Shadow', path: ['Card', 'Shadow'],
-    mode_id: null, effects: [],
+    mode_id: null,
+    effects: [{
+      type: 'drop_shadow', visible: true, blend_mode: 'normal',
+      color: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
+      offset_x: { type: 'dimension', number: 0, unit: 'px' },
+      offset_y: { type: 'dimension', number: 4, unit: 'px' },
+      blur: { type: 'dimension', number: 12, unit: 'px' },
+      spread: { type: 'dimension', number: 0, unit: 'px' },
+      show_behind_node: false,
+    }],
     bindings: [{ property: 'effects[0].offset_y', token_id: tokenId }],
   });
   return root;

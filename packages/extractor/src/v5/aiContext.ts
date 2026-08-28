@@ -304,6 +304,12 @@ function styleIdentity(
       published: style.publication.published,
       hidden_from_publishing: style.publication.hidden_from_publishing,
     } } : {}),
+    ...(style.source ? { source: {
+      remote: style.source.remote,
+      ...(style.source.library_name === null
+        ? {}
+        : { library_name: style.source.library_name }),
+    } } : {}),
     ...(lifecycle ? { lifecycle } : {}),
   };
 }
@@ -343,7 +349,7 @@ function compactEffect(style: EffectStyleV5, index: ProjectionIndex): AiValue {
     effects: style.effects.map((effect) => ({
       type: effect.type,
       visible: effect.visible,
-      blend_mode: effect.blend_mode,
+      ...(effect.blend_mode !== undefined ? { blend_mode: effect.blend_mode } : {}),
       ...(effect.color ? { color: compactTypedValue(effect.color, 'color') } : {}),
       ...(effect.offset_x ? { offset_x: compactTypedValue(effect.offset_x, 'dimension') } : {}),
       ...(effect.offset_y ? { offset_y: compactTypedValue(effect.offset_y, 'dimension') } : {}),

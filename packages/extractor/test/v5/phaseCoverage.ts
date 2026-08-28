@@ -10,7 +10,7 @@ export const ACCEPTANCE_COVERAGE = {
   },
   3: {
     criterion: 'every token and style has a stable source id',
-    implementedBy: 'plan-3', gradedBy: 'plan-3',
+    implementedBy: 'plan-3', gradedBy: 'synthetic-direct-v5',
   },
   4: {
     criterion: 'Company DS internal aliases resolve with complete chains',
@@ -37,16 +37,16 @@ export const ACCEPTANCE_COVERAGE = {
     implementedBy: 'plan-1', gradedBy: 'plan-1',
   },
   9: {
-    criterion: 'archived text styles get lifecycle and INFERRED_LIFECYCLE',
-    implementedBy: 'plan-3', gradedBy: 'plan-3',
+    criterion: 'archived text styles retain source lifecycle evidence',
+    implementedBy: 'blocked-by-figma-plugin-api', gradedBy: 'pending-source-evidence',
   },
   10: {
     criterion: 'identical typography mode values are preserved',
-    implementedBy: 'plan-3', gradedBy: 'plan-3',
+    implementedBy: 'plan-3', gradedBy: 'synthetic-direct-v5',
   },
   11: {
     criterion: 'card shadow representations stay independent',
-    implementedBy: 'plan-3', gradedBy: 'plan-3',
+    implementedBy: 'plan-3', gradedBy: 'synthetic-direct-v5',
   },
   12: {
     criterion: 'repeated extraction produces one semantic hash',

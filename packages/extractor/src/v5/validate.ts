@@ -30,7 +30,7 @@ import {
   SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
 } from './value';
 import type { CanonicalValue, TokenType, TypedValue, Unit } from './value';
-import type { TokenV5 } from './entities';
+import type { EffectStyleV5, TokenV5 } from './entities';
 import { canonicalJson } from './canonical';
 import type { FoundationArtifactV5 } from './canonical';
 import { numericValue } from './units';
@@ -463,7 +463,7 @@ function validateTypographyStyle(style: unknown, index: number, out: Diagnostic[
       out.push(shape(entityId, 'typography.properties.text_decoration must be a string.'));
     }
   }
-  validateOptionalEntityMetadata(style, entityId, out);
+  validateOptionalEntityMetadata(style, entityId, out, true);
 }
 
 const EFFECT_KINDS = ['drop_shadow', 'inner_shadow', 'layer_blur', 'background_blur'];
@@ -479,8 +479,8 @@ function validateEffect(effect: unknown, entityId: string, index: number, out: D
   if (typeof effect.visible !== 'boolean') {
     out.push(shape(entityId, `effects[${index}].visible must be a boolean.`));
   }
-  if (typeof effect.blend_mode !== 'string') {
-    out.push(shape(entityId, `effects[${index}].blend_mode must be a string.`));
+  if (effect.blend_mode !== undefined && typeof effect.blend_mode !== 'string') {
+    out.push(shape(entityId, `effects[${index}].blend_mode must be a string when present.`));
   }
   if (effect.color !== undefined) {
     validateTypedValueEnvelope(effect.color, entityId, out, undefined, 'color');
@@ -528,7 +528,7 @@ function validateEffectStyle(style: unknown, index: number, out: Diagnostic[]): 
       });
     }
   }
-  validateOptionalEntityMetadata(style, entityId, out);
+  validateOptionalEntityMetadata(style, entityId, out, true);
 }
 
 /**
@@ -1498,9 +1498,7 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
   }
 
   // §11/§12/§13: lifecycle lives on tokens and on both style kinds, so the
-  // replacement check walks all three rather than tokens alone. The style
-  // arrays are empty in Phase 1; checking them now is what stops the gap
-  // reopening when plan 3 populates them.
+  // replacement check walks all three rather than tokens alone.
   const withLifecycle: { id: string; replacement_id: string | null }[] = [
     ...artifact.tokens,
     ...artifact.styles.typography,
@@ -1528,6 +1526,23 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
   // typography's per-property aliases were checked above.
   for (const style of artifact.styles.effects) {
     for (const binding of style.bindings ?? []) {
+      const property = binding.property.match(
+        /^effects\[(\d+)\]\.(color|offset_x|offset_y|blur|spread)$/,
+      );
+      const effectIndex = property === null ? -1 : Number(property[1]);
+      const effectField = property?.[2] as keyof EffectStyleV5['effects'][number] | undefined;
+      if (
+        property === null
+        || effectField === undefined
+        || style.effects[effectIndex]?.[effectField] === undefined
+      ) {
+        out.push(diagnostic('UNRESOLVED_REFERENCE', {
+          entity_id: style.id,
+          message: `Style binding property ${JSON.stringify(binding.property)} names no `
+            + 'exported scalar effect property.',
+          details: { property: binding.property, token_id: binding.token_id },
+        }));
+      }
       if (!tokenIds.has(binding.token_id)) {
         out.push(diagnostic('UNRESOLVED_REFERENCE', {
           entity_id: style.id,

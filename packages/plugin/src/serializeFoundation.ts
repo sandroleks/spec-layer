@@ -10,7 +10,8 @@ import {
   effectLayerOf,
   type SerializedFoundation, type RawCollection, type RawVariable, type RawTextStyle,
   type RawExternalRef, type RawVariableValue, type FoundationVariableType,
-  type FoundationMode, type FoundationRead, type RawEffectStyle, type RawEffect,
+  type FoundationMode, type FoundationRead, type FoundationPublishStatus,
+  type RawEffectStyle, type RawEffect,
 } from '@spec-layer/extractor';
 
 export interface ReaderCollection {
@@ -19,6 +20,9 @@ export interface ReaderCollection {
   modes: FoundationMode[];
   defaultModeId: string;
   variableIds: string[];
+  hiddenFromPublishing?: boolean;
+  publishStatus?: FoundationPublishStatus | null;
+  remote?: boolean;
 }
 
 export interface ReaderVariable {
@@ -31,9 +35,12 @@ export interface ReaderVariable {
   valuesByMode: Record<string, RawVariableValue>;
   scopes: string[];
   remote: boolean;
+  hiddenFromPublishing?: boolean;
+  publishStatus?: FoundationPublishStatus | null;
 }
 
 export interface ReaderTextStyle {
+  id?: string;
   name: string;
   description: string;
   fontName: { family: string; style: string };
@@ -45,12 +52,17 @@ export interface ReaderTextStyle {
   textCase: string;
   textDecoration: string;
   boundVariables: Record<string, { id: string }>;
+  remote?: boolean;
+  publishStatus?: FoundationPublishStatus | null;
 }
 
 export interface ReaderEffectStyle {
+  id?: string;
   name: string;
   description: string;
   effects: RawEffect[];
+  remote?: boolean;
+  publishStatus?: FoundationPublishStatus | null;
 }
 
 /** Injected Figma surface. main.ts supplies the real one; tests a fake. */
@@ -66,6 +78,34 @@ export interface FoundationReader {
 function isAlias(v: RawVariableValue): v is { type: 'VARIABLE_ALIAS'; id: string } {
   return typeof v === 'object' && v !== null
     && (v as { type?: string }).type === 'VARIABLE_ALIAS';
+}
+
+const EFFECT_BINDING_FIELDS: Record<string, string> = {
+  color: 'color',
+  radius: 'blur',
+  spread: 'spread',
+  offsetX: 'offset_x',
+  offsetY: 'offset_y',
+};
+
+/** Figma's style-level `boundVariables.effects` is a flat id array. The exact
+ * relationship lives on each effect layer, so preserve that layer/property
+ * path before converting the effect to the Figma-free union. */
+function effectBindingIds(effects: RawEffect[]): Array<{ property: string; tokenId: string }> {
+  const bindings: Array<{ property: string; tokenId: string }> = [];
+  effects.forEach((effect, index) => {
+    const raw = effect as Record<string, unknown>;
+    const bound = raw.boundVariables;
+    if (typeof bound !== 'object' || bound === null || Array.isArray(bound)) return;
+    for (const [figmaField, alias] of Object.entries(bound)) {
+      const property = EFFECT_BINDING_FIELDS[figmaField];
+      if (property === undefined || typeof alias !== 'object' || alias === null) continue;
+      const id = (alias as { id?: unknown }).id;
+      if (typeof id !== 'string' || id.length === 0) continue;
+      bindings.push({ property: `effects[${index}].${property}`, tokenId: id });
+    }
+  });
+  return bindings;
 }
 
 /**
@@ -154,6 +194,13 @@ export async function serializeFoundation(
         description: rv.description, codeSyntax: rv.codeSyntax,
         valuesByMode: rv.valuesByMode,
         scopes: [...rv.scopes],
+        ...(typeof rv.hiddenFromPublishing === 'boolean'
+          ? { publication: {
+              hiddenFromPublishing: rv.hiddenFromPublishing,
+              publishStatus: rv.publishStatus ?? null,
+              remote: rv.remote,
+            } }
+          : {}),
       });
     }
     collections.push({
@@ -162,6 +209,13 @@ export async function serializeFoundation(
       defaultModeId: rc.defaultModeId,
       variableIds: [...rc.variableIds],
       variables,
+      ...(typeof rc.hiddenFromPublishing === 'boolean' && typeof rc.remote === 'boolean'
+        ? { publication: {
+            hiddenFromPublishing: rc.hiddenFromPublishing,
+            publishStatus: rc.publishStatus ?? null,
+            remote: rc.remote,
+          } }
+        : {}),
     });
   }
 
@@ -207,24 +261,32 @@ export async function serializeFoundation(
   // holds because `Promise.all` is argument-ordered; each style's
   // `boundVariables` key order holds because the keys are written back by index
   // over the same `entries` array they were read from, so an unresolvable
-  // binding is still dropped (never written as undefined) without shifting the
-  // keys around it.
+  // binding is still dropped from the legacy name map (never written as
+  // undefined) without shifting the keys around it. Its exact source id remains
+  // in `bindingIds` for v5 even when the variable metadata read fails.
   const textStyles: RawTextStyle[] = await Promise.all(readerStyles.map(async (rs) => {
     const entries = Object.entries(rs.boundVariables ?? {})
       .filter((e): e is [string, { id: string }] => Boolean(e[1]?.id));
     const bound = await Promise.all(entries.map(([, ref]) => readVariable(reader, ref.id)));
     const boundVariables: Record<string, string> = {};
+    const bindingIds: Record<string, string> = {};
     entries.forEach(([property], i) => {
       const rv = bound[i];
       if (rv) boundVariables[property] = rv.name;
+      bindingIds[property] = entries[i][1].id;
     });
     return {
+      ...(rs.id !== undefined ? { id: rs.id } : {}),
       name: rs.name, description: rs.description,
       fontFamily: rs.fontName.family, fontStyle: rs.fontName.style,
       fontSize: rs.fontSize, lineHeight: rs.lineHeight, letterSpacing: rs.letterSpacing,
       paragraphSpacing: rs.paragraphSpacing, paragraphIndent: rs.paragraphIndent,
       textCase: rs.textCase, textDecoration: rs.textDecoration,
       boundVariables,
+      ...(Object.keys(bindingIds).length > 0 ? { bindingIds } : {}),
+      ...(typeof rs.remote === 'boolean'
+        ? { source: { remote: rs.remote, publishStatus: rs.publishStatus ?? null } }
+        : {}),
     };
   }));
 
@@ -234,11 +296,19 @@ export async function serializeFoundation(
   } catch {
     markSectionUnavailable('effectStyles', 'figma:effectStyles');
   }
-  const effectStyles: RawEffectStyle[] = readerEffects.map((rs) => ({
-    name: rs.name,
-    description: rs.description,
-    effects: rs.effects.map((e) => effectLayerOf(e)),
-  }));
+  const effectStyles: RawEffectStyle[] = readerEffects.map((rs) => {
+    const bindings = effectBindingIds(rs.effects);
+    return {
+      ...(rs.id !== undefined ? { id: rs.id } : {}),
+      name: rs.name,
+      description: rs.description,
+      effects: rs.effects.map((e) => effectLayerOf(e)),
+      ...(bindings.length > 0 ? { bindings } : {}),
+      ...(typeof rs.remote === 'boolean'
+        ? { source: { remote: rs.remote, publishStatus: rs.publishStatus ?? null } }
+        : {}),
+    };
+  });
 
   return {
     fileKey, ...(fileName !== undefined ? { fileName } : {}),
