@@ -1,7 +1,7 @@
 spec_layer:
   kind: component
   version: 4
-  extractor: "1"
+  extractor: "2"
   generated: 2026-08-18T00:00:00.000Z
 source:
   file_key: FILE1

@@ -6,9 +6,10 @@
  * changed, rebuild your docs". With Markdown retired there is only one contract
  * left, so there is only one version.
  *
- * Bump this when `extract()` can produce different output for an unchanged
- * `SerializedNode` — new fields, changed classification, fixed extraction bugs.
- * Refactors proven output-identical do NOT need a bump.
+ * Bump this when component extraction or Foundation extraction/export can
+ * produce different output for unchanged serialized source data — new fields,
+ * changed classification, fixed extraction bugs. Refactors proven
+ * output-identical do NOT need a bump.
  *
  * Do NOT bump it for renderer-only or plugin-only changes. A doc whose stored
  * version differs from this one is reported as rebuild-required, so a spurious
@@ -17,4 +18,4 @@
  * The value is an opaque identifier compared for equality. It is never ordered
  * with string comparison, so it does not need to look like semver.
  */
-export const EXTRACTOR_VERSION = '1';
+export const EXTRACTOR_VERSION = '2';

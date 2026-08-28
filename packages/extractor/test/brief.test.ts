@@ -192,7 +192,7 @@ describe('foundationBrief', () => {
     const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
     expect(b.spec_layer.kind).toBe('foundation');
     expect(b.spec_layer.version).toBe(4);
-    expect(b.spec_layer.extractor).toBe('1');
+    expect(b.spec_layer.extractor).toBe('2');
   });
 
   it('names the file key as file_key, and omits the source block entirely when unavailable', () => {
