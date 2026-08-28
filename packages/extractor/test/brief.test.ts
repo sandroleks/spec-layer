@@ -4,7 +4,7 @@ import { foundationBrief, componentBrief } from '../src/brief';
 import type { ComponentBriefOptions } from '../src/brief';
 import { toYaml } from '../src/yaml';
 import { buildFoundation, narrowFoundation } from '../src/foundation';
-import type { FoundationSpec, SerializedFoundation } from '../src/foundation';
+import type { FoundationSpec, FoundationVariable, SerializedFoundation } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
 import type { YamlValue } from '../src/yaml';
 import type { RefIdentity } from '../src/tree';
@@ -26,6 +26,10 @@ const identStyle = (name: string, kind: 'text-style' | 'effect-style'): RefIdent
   { id: `S:${name}`, name, kind, remote: false });
 
 const AT = '2026-08-14T10:22:00.000Z';
+
+const provenance = (id: string): FoundationVariable['provenance'] => ({
+  id, scopes: [], valuesByMode: {}, staleModeIds: [],
+});
 
 /** Shape of the parsed brief, just deep enough for these assertions. Typed
  *  rather than `any` so a shape drift fails at compile time, matching the
@@ -49,6 +53,7 @@ const FOUNDATION: FoundationSpec = {
     defaultModeId: 'm1',
     variables: [
       {
+        provenance: provenance('color/bg/brand'),
         name: 'color/bg/brand', group: 'color', resolvedType: 'COLOR',
         description: 'Primary brand surface',
         codeSyntax: { WEB: '--color-bg-brand' },
@@ -58,6 +63,7 @@ const FOUNDATION: FoundationSpec = {
         },
       },
       {
+        provenance: provenance('color/bg/muted'),
         name: 'color/bg/muted', group: 'color', resolvedType: 'COLOR',
         description: '', codeSyntax: {},
         valuesByMode: {
@@ -90,6 +96,7 @@ function oneCollection(): FoundationSpec {
       id: 'c1', name: 'Primitives', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Value' }],
       variables: [{
+        provenance: provenance('color/surface/default'),
         name: 'color/surface/default', group: 'color', resolvedType: 'COLOR',
         description: '', codeSyntax: {},
         valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
@@ -240,6 +247,7 @@ describe('foundationBrief', () => {
       collections: [{
         ...FOUNDATION.collections[0],
         variables: [{
+          provenance: provenance('color/bg/brand'),
           name: 'color/bg/brand', group: 'color', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: {
@@ -1159,6 +1167,7 @@ describe('componentBrief tokens', () => {
         id: 'c1', name: 'Semantic', defaultModeId: 'm2',
         modes: [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }],
         variables: [{
+          provenance: provenance('color/surface/default'),
           name: 'color/surface/default', group: '', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: {
@@ -1185,6 +1194,7 @@ describe('componentBrief tokens', () => {
         id: 'c1', name: 'Semantic', defaultModeId: 'gone',
         modes: [{ modeId: 'm1', name: 'Light' }],
         variables: [{
+          provenance: provenance('color/surface/default'),
           name: 'color/surface/default', group: '', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
@@ -1427,23 +1437,31 @@ function sixKindFoundation(): FoundationSpec {
       id: 'c1', name: 'Kinds', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Mode1' }],
       variables: [
-        { name: 'color/opaque', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        { provenance: provenance('color/opaque'),
+          name: 'color/opaque', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'color', hex: '#112233', alpha: 1 } } },
-        { name: 'color/alpha', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        { provenance: provenance('color/alpha'),
+          name: 'color/alpha', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'color', hex: '#112233', alpha: 0.5 } } },
-        { name: 'number/radius', group: '', resolvedType: 'FLOAT', description: '', codeSyntax: {},
+        { provenance: provenance('number/radius'),
+          name: 'number/radius', group: '', resolvedType: 'FLOAT', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'number', value: 8 } } },
-        { name: 'string/font', group: '', resolvedType: 'STRING', description: '', codeSyntax: {},
+        { provenance: provenance('string/font'),
+          name: 'string/font', group: '', resolvedType: 'STRING', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'string', value: 'Inter' } } },
-        { name: 'boolean/flag', group: '', resolvedType: 'BOOLEAN', description: '', codeSyntax: {},
+        { provenance: provenance('boolean/flag'),
+          name: 'boolean/flag', group: '', resolvedType: 'BOOLEAN', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'boolean', value: true } } },
-        { name: 'alias/internal', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        { provenance: provenance('alias/internal'),
+          name: 'alias/internal', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'alias', targetName: 'color/opaque', targetCollection: 'Kinds',
             external: false, resolved: { kind: 'color', hex: '#112233', alpha: 1 } } } },
-        { name: 'alias/external', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        { provenance: provenance('alias/external'),
+          name: 'alias/external', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'alias', targetName: 'brand/blue', targetCollection: 'Other Library',
             external: true, resolved: null } } },
-        { name: 'unresolved/cycle', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        { provenance: provenance('unresolved/cycle'),
+          name: 'unresolved/cycle', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'unresolved', reason: 'cycle' } } },
       ],
     }],
@@ -1680,11 +1698,13 @@ function aliasFoundation(targetCollection = 'Core Palette'): FoundationSpec {
       modes: [{ modeId: 'm1', name: 'Mode 1' }],
       variables: [
         {
+          provenance: provenance('color/bg/default'),
           name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
         },
         {
+          provenance: provenance('color/bg/alias'),
           name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: {
@@ -1709,11 +1729,13 @@ function localAliasFoundation(): FoundationSpec {
       modes: [{ modeId: 'm1', name: 'Mode 1' }],
       variables: [
         {
+          provenance: provenance('color/bg/default'),
           name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
         },
         {
+          provenance: provenance('color/bg/alias'),
           name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
           description: '', codeSyntax: {},
           valuesByMode: {
@@ -1736,6 +1758,7 @@ function alphaFoundation(alpha: number): FoundationSpec {
       id: 'c1', name: 'Colors', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Mode 1' }],
       variables: [{
+        provenance: provenance('color/overlay'),
         name: 'color/overlay', group: 'color', resolvedType: 'COLOR',
         description: '', codeSyntax: {},
         valuesByMode: { m1: { kind: 'color', hex: '#000000', alpha } },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP } from '../src/colorContrast';
-import type { FoundationSpec, FoundationValue } from '../src/foundation';
+import type { FoundationSpec, FoundationValue, FoundationVariable } from '../src/foundation';
 import * as packageRoot from '../src/index';
 
 describe('colorRole', () => {
@@ -197,6 +197,9 @@ describe('barsCleared', () => {
 });
 
 const hex = (h: string, alpha = 1): FoundationValue => ({ kind: 'color', hex: h, alpha });
+const provenance = (id: string): FoundationVariable['provenance'] => ({
+  id, scopes: [], valuesByMode: {}, staleModeIds: [],
+});
 
 function spec(
   variables: { name: string; valuesByMode: Record<string, FoundationValue> }[],
@@ -210,6 +213,7 @@ function spec(
     collections: [{
       id: 'c1', name: 'Semantic', defaultModeId: 'm1', modes,
       variables: variables.map((v) => ({
+        provenance: provenance(v.name),
         name: v.name, group: '', resolvedType: 'COLOR' as const,
         description: '', codeSyntax: {}, valuesByMode: v.valuesByMode,
       })),
@@ -302,6 +306,7 @@ describe('colorContrast', () => {
   it('ignores non-colour variables', () => {
     const s = spec([{ name: 'color/text/a', valuesByMode: { m1: hex('#ffffff') } }]);
     s.collections[0].variables.push({
+      provenance: provenance('space/4'),
       name: 'space/4', group: '', resolvedType: 'FLOAT',
       description: '', codeSyntax: {}, valuesByMode: { m1: { kind: 'number', value: 16 } },
     });
@@ -469,9 +474,11 @@ describe('colorContrast edge cases', () => {
       id: 'c2', name: 'Primitives', defaultModeId: 'm1',
       modes: [{ modeId: 'm1', name: 'Light' }],
       variables: [
-        { name: 'palette/blue/500', group: '', resolvedType: 'COLOR' as const,
+        { provenance: provenance('palette/blue/500'),
+          name: 'palette/blue/500', group: '', resolvedType: 'COLOR' as const,
           description: '', codeSyntax: {}, valuesByMode: { m1: hex('#0000ff') } },
-        { name: 'palette/red/500', group: '', resolvedType: 'COLOR' as const,
+        { provenance: provenance('palette/red/500'),
+          name: 'palette/red/500', group: '', resolvedType: 'COLOR' as const,
           description: '', codeSyntax: {}, valuesByMode: { m1: hex('#ff0000') } },
       ],
     });

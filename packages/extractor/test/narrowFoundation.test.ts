@@ -83,12 +83,16 @@ describe('narrowFoundation — collection target', () => {
 
   it('keeps aliases into a dropped collection resolvable', () => {
     const spec = buildFoundation(dumpTwoCollections());
+    const beforeLegacy = structuredClone(spec.collections[1].variables[0].valuesByMode);
+    const beforeProvenance = spec.collections[1].variables[0].provenance;
     const out = narrowFoundation(spec, { target: 'collection', collectionId: 'sem' })!;
     const value = out.collections[0].variables[0].valuesByMode.s1;
     expect(value.kind).toBe('alias');
     if (value.kind !== 'alias') throw new Error('expected an alias');
     expect(value.targetName).toBe('color/blue/500');
     expect(value.resolved).toEqual({ kind: 'color', hex: '#0080ff', alpha: 1 });
+    expect(out.collections[0].variables[0].valuesByMode).toEqual(beforeLegacy);
+    expect(out.collections[0].variables[0].provenance).toBe(beforeProvenance);
   });
 
   it('carries file identity through unchanged', () => {

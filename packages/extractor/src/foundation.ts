@@ -7,6 +7,9 @@
  * synchronous and fixture-testable, including alias resolution.
  */
 import type { EffectLayer } from './effects';
+import { canonicalColor } from './v5/color';
+import { compareCodeUnits } from './v5/diagnostics';
+import { canonicalNumber } from './v5/precision';
 
 // ---------------------------------------------------------------------------
 // Raw dump — produced by packages/plugin/src/serializeFoundation.ts
@@ -123,6 +126,51 @@ export type FoundationValue =
       external: boolean; resolved: FoundationValue | null }
   | { kind: 'unresolved'; reason: 'cycle' | 'missing' | 'external' | 'depth' };
 
+export interface FoundationResolutionStep { tokenId: string; modeId: string }
+
+export type FoundationProvenanceLiteral =
+  | { kind: 'color'; hex: string; alpha: number; channels?: [number, number, number] }
+  | { kind: 'number'; value: number }
+  | { kind: 'string'; value: string }
+  | { kind: 'boolean'; value: boolean };
+
+export type FoundationUnresolvedReason =
+  | 'cycle' | 'missing' | 'external' | 'depth' | 'type_mismatch'
+  | 'target_mode_unresolvable' | 'target_mode_value_missing'
+  | 'invalid_source_value';
+
+export type FoundationProvenanceValue =
+  | FoundationProvenanceLiteral
+  | {
+      kind: 'alias';
+      targetId: string;
+      targetName: string;
+      targetPath: string[];
+      targetCollectionId: string | null;
+      targetCollection: string;
+      external: boolean;
+      resolved: FoundationProvenanceLiteral
+        | { kind: 'unresolved'; reason: FoundationUnresolvedReason }
+        | null;
+      chain: FoundationResolutionStep[];
+    }
+  | { kind: 'unresolved'; reason: FoundationUnresolvedReason };
+
+export interface FoundationVariableProvenance {
+  id: string;
+  scopes: string[];
+  valuesByMode: Record<string, FoundationProvenanceValue>;
+  staleModeIds: string[];
+}
+
+export interface FoundationSourceIssue {
+  kind: 'stale_mode_value';
+  collectionId: string;
+  tokenId: string;
+  modeId: string;
+  declaredModeIds: string[];
+}
+
 export interface FoundationVariable {
   name: string;
   group: string;
@@ -130,6 +178,7 @@ export interface FoundationVariable {
   description: string;
   codeSyntax: Record<string, string>;
   valuesByMode: Record<string, FoundationValue>;
+  provenance: FoundationVariableProvenance;
 }
 
 export interface FoundationCollection {
@@ -146,12 +195,15 @@ export interface FoundationEffectStyle extends RawEffectStyle { group: string }
 
 export interface FoundationSpec {
   fileKey: string;
+  fileName?: string;
   collections: FoundationCollection[];
   textStyles: FoundationTextStyle[];
   effectStyles: FoundationEffectStyle[];
   extractedAt: string;
   /** Carried straight through from the dump. See SerializedFoundation. */
   unavailable?: FoundationRead[];
+  unavailableSources?: string[];
+  sourceIssues?: FoundationSourceIssue[];
   /**
    * Present only on a narrowed spec. Lets a resolver distinguish "excluded by
    * scope" from "not present locally" — two causes that a lookup returning
@@ -216,8 +268,6 @@ export function narrowFoundation(
 export const SPLIT_THRESHOLD = 150;
 /** Hard ceiling on rendered mode columns. */
 export const MAX_MODE_COLUMNS = 4;
-/** Alias chain depth ceiling, matching resolveVariableColor in tokenResolve.ts. */
-const MAX_ALIAS_DEPTH = 4;
 
 // ---------------------------------------------------------------------------
 // Building
@@ -327,10 +377,6 @@ export function groupRowsByFolder(rows: FoundationVariableRow[]): FoundationRowG
   return groups;
 }
 
-function hex2(n: number): string {
-  return Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, '0');
-}
-
 function isAlias(v: RawVariableValue): v is RawVariableAlias {
   return typeof v === 'object' && v !== null && (v as RawVariableAlias).type === 'VARIABLE_ALIAS';
 }
@@ -339,15 +385,24 @@ function isRgba(v: RawVariableValue): v is RawRGBA {
   return typeof v === 'object' && v !== null && 'r' in v;
 }
 
-/** Convert one non-alias raw value. Returns null when the shape is unusable. */
-function plainValue(raw: RawVariableValue): FoundationValue | null {
+/** Convert one non-alias source value without losing source precision. */
+function provenanceLiteral(raw: RawVariableValue): FoundationProvenanceValue {
   if (isRgba(raw)) {
-    return { kind: 'color', hex: `#${hex2(raw.r)}${hex2(raw.g)}${hex2(raw.b)}`, alpha: raw.a };
+    const color = canonicalColor(raw);
+    if (!color.ok) return { kind: 'unresolved', reason: 'invalid_source_value' };
+    return {
+      kind: 'color', hex: color.value.hex, alpha: color.value.alpha,
+      ...(color.value.channels ? { channels: color.value.channels } : {}),
+    };
   }
-  if (typeof raw === 'number') return { kind: 'number', value: raw };
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw)
+      ? { kind: 'number', value: canonicalNumber(raw) }
+      : { kind: 'unresolved', reason: 'invalid_source_value' };
+  }
   if (typeof raw === 'string') return { kind: 'string', value: raw };
   if (typeof raw === 'boolean') return { kind: 'boolean', value: raw };
-  return null;
+  return { kind: 'unresolved', reason: 'invalid_source_value' };
 }
 
 interface VarIndexEntry { variable: RawVariable; collection: RawCollection }
@@ -356,107 +411,359 @@ function indexVariables(dump: SerializedFoundation): Map<string, VarIndexEntry> 
   const map = new Map<string, VarIndexEntry>();
   for (const collection of dump.collections) {
     for (const variable of collection.variables) {
-      map.set(variable.id, { variable, collection });
+      // Keep the first source declaration. Duplicate stable ids are diagnosed
+      // by the v5 exporter; silently switching to the last declaration would
+      // make source order change which graph is resolved.
+      if (!map.has(variable.id)) map.set(variable.id, { variable, collection });
     }
   }
   return map;
 }
 
-export function buildFoundation(dump: SerializedFoundation): FoundationSpec {
-  const index = indexVariables(dump);
-  const externals = new Map(dump.externals.map((e) => [e.id, e]));
+const pairKey = (tokenId: string, modeId: string): string =>
+  JSON.stringify([tokenId, modeId]);
 
-  const collections: FoundationCollection[] = dump.collections.map((collection) => ({
-    id: collection.id,
-    name: collection.name,
-    modes: collection.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
-    defaultModeId: collection.defaultModeId,
-    variables: collection.variables.map((variable) => {
-      const valuesByMode: Record<string, FoundationValue> = {};
-      for (const mode of collection.modes) {
-        valuesByMode[mode.modeId] = resolveValue(
-          variable.valuesByMode[mode.modeId], mode.name, index, externals, new Set([variable.id]), 0,
-        );
+type ProvenanceAlias = Extract<FoundationProvenanceValue, { kind: 'alias' }>;
+type ProvenanceResolved = ProvenanceAlias['resolved'];
+
+type AliasHead = Omit<ProvenanceAlias, 'resolved' | 'chain'>;
+
+interface PendingAlias {
+  key: string;
+  head: AliasHead;
+  step: FoundationResolutionStep;
+  targetReadable: boolean;
+}
+
+function pathOf(name: string): string[] {
+  return name.split('/');
+}
+
+/** Select the target mode once, for both provenance and the legacy projection.
+ *  A duplicate exact-name match is ambiguous and therefore unresolved. */
+function targetModeId(
+  sourceCollection: RawCollection,
+  sourceModeId: string,
+  targetCollection: RawCollection,
+): string | undefined {
+  if (sourceCollection.id === targetCollection.id) {
+    return targetCollection.modes.some((mode) => mode.modeId === sourceModeId)
+      ? sourceModeId
+      : undefined;
+  }
+  const sourceMode = sourceCollection.modes.find((mode) => mode.modeId === sourceModeId);
+  if (!sourceMode) return undefined;
+  const exact = targetCollection.modes.filter((mode) => mode.name === sourceMode.name);
+  if (exact.length === 1) return exact[0].modeId;
+  if (exact.length > 1) return undefined;
+  return targetCollection.modes.some((mode) => mode.modeId === targetCollection.defaultModeId)
+    ? targetCollection.defaultModeId
+    : undefined;
+}
+
+function terminalOf(value: FoundationProvenanceValue): {
+  resolved: Exclude<ProvenanceResolved, null>;
+  chain: FoundationResolutionStep[];
+} {
+  if (value.kind !== 'alias') return { resolved: value, chain: [] };
+  return {
+    resolved: value.resolved ?? { kind: 'unresolved', reason: 'external' },
+    chain: value.chain,
+  };
+}
+
+function aliasFromTarget(
+  edge: PendingAlias,
+  targetValue: FoundationProvenanceValue,
+): ProvenanceAlias {
+  const terminal = terminalOf(targetValue);
+  let resolved = terminal.resolved;
+  if (
+    resolved.kind === 'unresolved'
+    && resolved.reason === 'missing'
+    && edge.targetReadable
+  ) {
+    resolved = { kind: 'unresolved', reason: 'target_mode_value_missing' };
+  }
+  return {
+    ...edge.head,
+    resolved,
+    chain: [edge.step, ...terminal.chain],
+  };
+}
+
+function legacyValueOf(value: FoundationProvenanceValue): FoundationValue {
+  switch (value.kind) {
+    case 'color': return { kind: 'color', hex: value.hex, alpha: value.alpha };
+    case 'number': return { kind: 'number', value: value.value };
+    case 'string': return { kind: 'string', value: value.value };
+    case 'boolean': return { kind: 'boolean', value: value.value };
+    case 'unresolved': {
+      const reason = value.reason === 'cycle' || value.reason === 'depth'
+        || value.reason === 'external'
+        ? value.reason
+        : 'missing';
+      return { kind: 'unresolved', reason };
+    }
+    case 'alias':
+      // Legacy buildFoundation returned a bare missing value when the target
+      // entity itself could not be read or found. Keep that render/v4 shape;
+      // the richer alias identity remains available in provenance.
+      if (value.resolved?.kind === 'unresolved' && value.resolved.reason === 'missing') {
+        return { kind: 'unresolved', reason: 'missing' };
       }
       return {
-        name: variable.name,
-        group: groupOf(variable.name),
-        resolvedType: variable.resolvedType,
-        description: variable.description,
-        codeSyntax: variable.codeSyntax,
-        valuesByMode,
+        kind: 'alias',
+        targetName: value.targetName,
+        targetCollection: value.targetCollection,
+        external: value.external,
+        resolved: value.resolved === null ? null : legacyValueOf(value.resolved),
       };
-    }),
-  }));
+    default: {
+      const exhaustive: never = value;
+      return exhaustive;
+    }
+  }
+}
+
+function applyDepthLimit(
+  value: FoundationProvenanceValue,
+  maxAliasDepth: number,
+): FoundationProvenanceValue {
+  if (value.kind !== 'alias' || value.chain.length <= maxAliasDepth) return value;
+  return {
+    ...value,
+    resolved: { kind: 'unresolved', reason: 'depth' },
+    chain: value.chain.slice(0, maxAliasDepth),
+  };
+}
+
+export interface BuildFoundationOptions { maxAliasDepth?: number }
+
+export function buildFoundation(
+  dump: SerializedFoundation,
+  options: BuildFoundationOptions = {},
+): FoundationSpec {
+  const index = indexVariables(dump);
+  const externals = new Map(dump.externals.map((external) => [external.id, external]));
+  const declaredOwners = new Map<string, RawCollection>();
+  for (const collection of dump.collections) {
+    const declaredIds = collection.variableIds
+      ?? collection.variables.map((variable) => variable.id);
+    for (const id of declaredIds) {
+      if (!declaredOwners.has(id)) declaredOwners.set(id, collection);
+    }
+  }
+
+  const pairCount = dump.collections.reduce(
+    (count, collection) => count + collection.variables.length * collection.modes.length,
+    0,
+  );
+  const maxAliasDepth = options.maxAliasDepth ?? Math.max(1, pairCount + 1);
+  if (!Number.isInteger(maxAliasDepth) || maxAliasDepth <= 0) {
+    throw new RangeError('maxAliasDepth must be a positive integer.');
+  }
+
+  const memo = new Map<string, FoundationProvenanceValue>();
+
+  const finishPath = (
+    path: PendingAlias[], terminal: FoundationProvenanceValue,
+  ): FoundationProvenanceValue => {
+    let suffix = terminal;
+    for (let i = path.length - 1; i >= 0; i--) {
+      const resolved = aliasFromTarget(path[i], suffix);
+      memo.set(path[i].key, resolved);
+      suffix = resolved;
+    }
+    return suffix;
+  };
+
+  const resolvePair = (start: VarIndexEntry, startModeId: string): FoundationProvenanceValue => {
+    const startKey = pairKey(start.variable.id, startModeId);
+    const cached = memo.get(startKey);
+    if (cached) return cached;
+
+    const path: PendingAlias[] = [];
+    const pathIndex = new Map<string, number>();
+    let current = start;
+    let currentModeId = startModeId;
+
+    while (true) {
+      const key = pairKey(current.variable.id, currentModeId);
+      const cachedCurrent = memo.get(key);
+      if (cachedCurrent) return finishPath(path, cachedCurrent);
+
+      const cycleAt = pathIndex.get(key);
+      if (cycleAt !== undefined) {
+        const cycleResult = { kind: 'unresolved', reason: 'cycle' } as const;
+        for (let i = cycleAt; i < path.length; i++) {
+          const rotated = [
+            ...path.slice(i), ...path.slice(cycleAt, i),
+          ].map((edge) => edge.step);
+          memo.set(path[i].key, {
+            ...path[i].head,
+            resolved: cycleResult,
+            chain: rotated,
+          });
+        }
+        let suffix = memo.get(path[cycleAt].key)!;
+        for (let i = cycleAt - 1; i >= 0; i--) {
+          suffix = aliasFromTarget(path[i], suffix);
+          memo.set(path[i].key, suffix);
+        }
+        return memo.get(startKey)!;
+      }
+
+      const raw = current.variable.valuesByMode[currentModeId];
+      if (raw === undefined) {
+        const missing = { kind: 'unresolved', reason: 'missing' } as const;
+        memo.set(key, missing);
+        return finishPath(path, missing);
+      }
+      if (!isAlias(raw)) {
+        const literal = provenanceLiteral(raw);
+        memo.set(key, literal);
+        return finishPath(path, literal);
+      }
+
+      const declaredCollection = declaredOwners.get(raw.id);
+      const external = declaredCollection === undefined ? externals.get(raw.id) : undefined;
+      if (external) {
+        const externalAlias: ProvenanceAlias = {
+          kind: 'alias',
+          targetId: raw.id,
+          targetName: external.name ?? raw.id,
+          targetPath: external.name ? pathOf(external.name) : [raw.id],
+          targetCollectionId: external.collectionId,
+          targetCollection: external.collectionName ?? '',
+          external: true,
+          resolved: null,
+          chain: [],
+        };
+        memo.set(key, externalAlias);
+        return finishPath(path, externalAlias);
+      }
+
+      if (!declaredCollection) {
+        const missingAlias: ProvenanceAlias = {
+          kind: 'alias', targetId: raw.id, targetName: raw.id, targetPath: [raw.id],
+          targetCollectionId: null, targetCollection: '', external: false,
+          resolved: { kind: 'unresolved', reason: 'missing' }, chain: [],
+        };
+        memo.set(key, missingAlias);
+        return finishPath(path, missingAlias);
+      }
+
+      const target = index.get(raw.id);
+      const targetMode = targetModeId(current.collection, currentModeId, declaredCollection);
+      const head: AliasHead = {
+        kind: 'alias',
+        targetId: raw.id,
+        targetName: target?.variable.name ?? raw.id,
+        targetPath: target ? pathOf(target.variable.name) : [raw.id],
+        targetCollectionId: declaredCollection.id,
+        targetCollection: declaredCollection.name,
+        external: false,
+      };
+      if (targetMode === undefined) {
+        const unresolved: ProvenanceAlias = {
+          ...head,
+          resolved: { kind: 'unresolved', reason: 'target_mode_unresolvable' },
+          chain: [],
+        };
+        memo.set(key, unresolved);
+        return finishPath(path, unresolved);
+      }
+
+      const step = { tokenId: raw.id, modeId: targetMode };
+      if (!target) {
+        const unreadable: ProvenanceAlias = {
+          ...head,
+          resolved: { kind: 'unresolved', reason: 'missing' },
+          chain: [step],
+        };
+        memo.set(key, unreadable);
+        return finishPath(path, unreadable);
+      }
+      if (current.variable.resolvedType !== target.variable.resolvedType) {
+        const mismatch: ProvenanceAlias = {
+          ...head,
+          resolved: { kind: 'unresolved', reason: 'type_mismatch' },
+          chain: [step],
+        };
+        memo.set(key, mismatch);
+        return finishPath(path, mismatch);
+      }
+
+      pathIndex.set(key, path.length);
+      path.push({
+        key,
+        head,
+        step,
+        targetReadable: true,
+      });
+      current = target;
+      currentModeId = targetMode;
+    }
+  };
+
+  const sourceIssues: FoundationSourceIssue[] = [];
+  const collections: FoundationCollection[] = dump.collections.map((collection) => {
+    const declaredModeIds = collection.modes.map((mode) => mode.modeId);
+    const declaredModes = new Set(declaredModeIds);
+    return {
+      id: collection.id,
+      name: collection.name,
+      modes: collection.modes.map((mode) => ({ modeId: mode.modeId, name: mode.name })),
+      defaultModeId: collection.defaultModeId,
+      variables: collection.variables.map((variable) => {
+        const staleModeIds = Object.keys(variable.valuesByMode)
+          .filter((modeId) => !declaredModes.has(modeId))
+          .sort(compareCodeUnits);
+        for (const modeId of staleModeIds) {
+          sourceIssues.push({
+            kind: 'stale_mode_value', collectionId: collection.id,
+            tokenId: variable.id, modeId, declaredModeIds: [...declaredModeIds],
+          });
+        }
+        const provenanceValues: Record<string, FoundationProvenanceValue> = {};
+        const valuesByMode: Record<string, FoundationValue> = {};
+        const entry = index.get(variable.id) ?? { variable, collection };
+        for (const mode of collection.modes) {
+          const full = resolvePair(entry, mode.modeId);
+          const provenance = applyDepthLimit(full, maxAliasDepth);
+          provenanceValues[mode.modeId] = provenance;
+          valuesByMode[mode.modeId] = legacyValueOf(provenance);
+        }
+        return {
+          name: variable.name,
+          group: groupOf(variable.name),
+          resolvedType: variable.resolvedType,
+          description: variable.description,
+          codeSyntax: variable.codeSyntax,
+          valuesByMode,
+          provenance: {
+            id: variable.id,
+            scopes: [...(variable.scopes ?? [])],
+            valuesByMode: provenanceValues,
+            staleModeIds,
+          },
+        };
+      }),
+    };
+  });
 
   return {
     fileKey: dump.fileKey,
+    ...(dump.fileName !== undefined ? { fileName: dump.fileName } : {}),
     collections,
-    textStyles: dump.textStyles.map((s) => ({ ...s, group: groupOf(s.name) })),
-    effectStyles: dump.effectStyles.map((s) => ({ ...s, group: groupOf(s.name) })),
+    textStyles: dump.textStyles.map((style) => ({ ...style, group: groupOf(style.name) })),
+    effectStyles: dump.effectStyles.map((style) => ({ ...style, group: groupOf(style.name) })),
     extractedAt: dump.extractedAt,
-    // Spread, not `unavailable: dump.unavailable`: a clean read has no key at
-    // all rather than one holding undefined, matching how every other optional
-    // field in this model behaves.
     ...(dump.unavailable ? { unavailable: dump.unavailable } : {}),
+    ...(dump.unavailableSources ? { unavailableSources: dump.unavailableSources } : {}),
+    ...(sourceIssues.length > 0 ? { sourceIssues } : {}),
   };
-}
-
-/** Pick the target collection's mode id: name match on the source mode, else default. */
-function targetModeId(collection: RawCollection, sourceModeName: string): string {
-  const named = collection.modes.find((m) => m.name === sourceModeName);
-  return named ? named.modeId : collection.defaultModeId;
-}
-
-function resolveValue(
-  raw: RawVariableValue | undefined,
-  modeName: string,
-  index: Map<string, VarIndexEntry>,
-  externals: Map<string, RawExternalRef>,
-  seen: Set<string>,
-  depth: number,
-): FoundationValue {
-  if (raw === undefined) return { kind: 'unresolved', reason: 'missing' };
-
-  if (!isAlias(raw)) {
-    const plain = plainValue(raw);
-    return plain ?? { kind: 'unresolved', reason: 'missing' };
-  }
-
-  const local = index.get(raw.id);
-
-  if (!local) {
-    const ext = externals.get(raw.id);
-    if (!ext) return { kind: 'unresolved', reason: 'missing' };
-    return {
-      kind: 'alias', targetName: ext.name ?? raw.id,
-      targetCollection: ext.collectionName ?? '',
-      external: true, resolved: null,
-    };
-  }
-
-  const head = {
-    kind: 'alias' as const,
-    targetName: local.variable.name,
-    targetCollection: local.collection.name,
-    external: false,
-  };
-
-  if (seen.has(raw.id)) return { ...head, resolved: { kind: 'unresolved', reason: 'cycle' } };
-  if (depth >= MAX_ALIAS_DEPTH) return { ...head, resolved: { kind: 'unresolved', reason: 'depth' } };
-
-  const nextModeId = targetModeId(local.collection, modeName);
-  const nextModeName = local.collection.modes.find((m) => m.modeId === nextModeId)?.name ?? modeName;
-  const inner = resolveValue(
-    local.variable.valuesByMode[nextModeId], nextModeName, index, externals,
-    new Set([...seen, raw.id]), depth + 1,
-  );
-
-  // Collapse a chain to one visible hop: the reader sees the immediate target
-  // name and the final value. Intermediate hops are an implementation detail of
-  // the file's own indirection, not something the doc should enumerate.
-  const resolved = inner.kind === 'alias' ? inner.resolved : inner;
-  return { ...head, resolved };
 }
 
 // ---------------------------------------------------------------------------

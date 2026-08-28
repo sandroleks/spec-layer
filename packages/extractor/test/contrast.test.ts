@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { relativeLuminance, contrastRatio, blend, requiredRatio } from '../src/contrast';
 import { resolveTokenColor } from '../src/contrast';
-import type { FoundationSpec } from '../src/foundation';
+import type { FoundationSpec, FoundationVariable } from '../src/foundation';
 
 const near = (a: number, b: number, eps = 0.01) => Math.abs(a - b) < eps;
+const provenance = (id: string): FoundationVariable['provenance'] => ({
+  id, scopes: [], valuesByMode: {}, staleModeIds: [],
+});
 
 describe('relativeLuminance', () => {
   it('is 0 for black and 1 for white', () => {
@@ -71,6 +74,7 @@ const foundation = (vars: Record<string, string>): FoundationSpec => ({
   collections: [{
     id: 'c1', name: 'Core', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Light' }],
     variables: Object.entries(vars).map(([name, hex]) => ({
+      provenance: provenance(name),
       name, group: 'g', resolvedType: 'COLOR' as const, description: '', codeSyntax: {},
       valuesByMode: { m1: { kind: 'color' as const, hex, alpha: 1 } },
     })),

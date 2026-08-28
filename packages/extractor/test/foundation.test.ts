@@ -69,6 +69,76 @@ describe('buildFoundation — non-alias values', () => {
     expect(v.valuesByMode.m1).toEqual({ kind: 'color', hex: '#2563eb', alpha: 1 });
   });
 
+  it('retains stable variable identity and scopes outside the render projection', () => {
+    const dump = dumpOneOfEach();
+    dump.fileName = 'Company DS';
+    dump.unavailableSources = ['Library:1'];
+    dump.collections[0].variables[0].scopes = ['FRAME_FILL', 'SHAPE_FILL'];
+    const spec = buildFoundation(dump);
+    const variable = spec.collections[0].variables[0];
+    expect(spec.fileName).toBe('Company DS');
+    expect(spec.unavailableSources).toEqual(['Library:1']);
+    expect(variable.provenance.id).toBe('v1');
+    expect(variable.provenance.scopes).toEqual(['FRAME_FILL', 'SHAPE_FILL']);
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      modeIds: ['m1'],
+    });
+    expect(JSON.stringify(content)).not.toContain('FRAME_FILL');
+    expect(JSON.stringify(content)).not.toContain('"v1"');
+  });
+
+  it('keeps lossy source color channels, omits redundant ones, and rejects invalid channels', () => {
+    const dump = dumpOneOfEach();
+    dump.collections[0].variables[0].valuesByMode.m1 = {
+      r: 0.5, g: 0.1, b: 0, a: 0.125,
+    };
+    const lossy = buildFoundation(dump).collections[0].variables[0];
+    expect(lossy.provenance.valuesByMode.m1).toEqual({
+      kind: 'color', hex: '#801a00', alpha: 0.125, channels: [0.5, 0.1, 0],
+    });
+    expect(lossy.valuesByMode.m1).toEqual({ kind: 'color', hex: '#801a00', alpha: 0.125 });
+
+    dump.collections[0].variables[0].valuesByMode.m1 = { r: 1, g: 0, b: 0, a: 1 };
+    const exact = buildFoundation(dump).collections[0].variables[0];
+    expect(exact.provenance.valuesByMode.m1).toEqual({
+      kind: 'color', hex: '#ff0000', alpha: 1,
+    });
+
+    dump.collections[0].variables[0].valuesByMode.m1 = { r: 1.2, g: 0, b: 0, a: 1 };
+    const invalid = buildFoundation(dump).collections[0].variables[0];
+    expect(invalid.provenance.valuesByMode.m1)
+      .toEqual({ kind: 'unresolved', reason: 'invalid_source_value' });
+    expect(invalid.valuesByMode.m1).toEqual({ kind: 'unresolved', reason: 'missing' });
+  });
+
+  it('keeps duplicate display-name modes distinct by stable mode id', () => {
+    const dump = dumpOneOfEach();
+    dump.collections[0].modes = [
+      { modeId: 'm1', name: 'Value' }, { modeId: 'm2', name: 'Value' },
+    ];
+    dump.collections[0].variables[1].valuesByMode = { m1: 8, m2: 16 };
+    const variable = buildFoundation(dump).collections[0].variables[1];
+    expect(variable.provenance.valuesByMode).toEqual({
+      m1: { kind: 'number', value: 8 },
+      m2: { kind: 'number', value: 16 },
+    });
+  });
+
+  it('retains stale raw mode ids as source issues without rendering them', () => {
+    const dump = dumpOneOfEach();
+    dump.collections[0].variables[0].valuesByMode.m9 = { r: 1, g: 0, b: 0, a: 1 };
+    const spec = buildFoundation(dump);
+    const variable = spec.collections[0].variables[0];
+    expect(variable.provenance.staleModeIds).toEqual(['m9']);
+    expect(spec.sourceIssues).toEqual([{
+      kind: 'stale_mode_value', collectionId: 'c1', tokenId: 'v1',
+      modeId: 'm9', declaredModeIds: ['m1'],
+    }]);
+    expect('m9' in variable.valuesByMode).toBe(false);
+    expect('m9' in variable.provenance.valuesByMode).toBe(false);
+  });
+
   it('preserves fractional alpha', () => {
     const dump = dumpOneOfEach();
     dump.collections[0].variables[0].valuesByMode.m1 = { r: 0, g: 0, b: 0, a: 0.5 };
@@ -184,6 +254,10 @@ describe('buildFoundation — alias resolution', () => {
     // Light → Light (#0000ff), Dark → Dark (#ffffff)
     expect(bg.valuesByMode.s1).toMatchObject({ resolved: { kind: 'color', hex: '#0000ff', alpha: 1 } });
     expect(bg.valuesByMode.s2).toMatchObject({ resolved: { kind: 'color', hex: '#ffffff', alpha: 1 } });
+    expect(bg.provenance.valuesByMode.s2).toMatchObject({
+      chain: [{ tokenId: 'blue', modeId: 'p2' }],
+      resolved: { kind: 'color', hex: '#ffffff', alpha: 1 },
+    });
   });
 
   it('falls back to the target default mode when no name matches', () => {
@@ -191,6 +265,45 @@ describe('buildFoundation — alias resolution', () => {
     // Primitives has only "Value"; Semantic modes are Light/Dark. Default used.
     expect(spec.collections[1].variables[0].valuesByMode.s1)
       .toMatchObject({ resolved: { kind: 'color', hex: '#0000ff', alpha: 1 } });
+    expect(spec.collections[1].variables[0].provenance.valuesByMode.s1)
+      .toMatchObject({ chain: [{ tokenId: 'blue', modeId: 'p1' }] });
+  });
+
+  it('preserves the source mode id at every same-collection hop', () => {
+    const dump = dumpWithAliases();
+    dump.collections[0].modes = [
+      { modeId: 'p1', name: 'Light' }, { modeId: 'p2', name: 'Dark' },
+    ];
+    dump.collections[0].variables = [
+      { id: 'a', name: 'a', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { type: 'VARIABLE_ALIAS', id: 'b' }, p2: { type: 'VARIABLE_ALIAS', id: 'b' } } },
+      { id: 'b', name: 'b', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { type: 'VARIABLE_ALIAS', id: 'c' }, p2: { type: 'VARIABLE_ALIAS', id: 'c' } } },
+      { id: 'c', name: 'c', resolvedType: 'COLOR', description: '', codeSyntax: {},
+        valuesByMode: { p1: { r: 1, g: 1, b: 1, a: 1 }, p2: { r: 0, g: 0, b: 0, a: 1 } } },
+    ];
+    const value = buildFoundation(dump).collections[0].variables[0]
+      .provenance.valuesByMode.p2;
+    expect(value).toMatchObject({
+      chain: [{ tokenId: 'b', modeId: 'p2' }, { tokenId: 'c', modeId: 'p2' }],
+      resolved: { kind: 'color', hex: '#000000', alpha: 1 },
+    });
+  });
+
+  it('does not pick the first of duplicate exact-name target modes', () => {
+    const dump = dumpWithAliases();
+    dump.collections[0].modes = [
+      { modeId: 'p1', name: 'Light' }, { modeId: 'p2', name: 'Light' },
+    ];
+    dump.collections[0].variables[0].valuesByMode = {
+      p1: { r: 1, g: 0, b: 0, a: 1 }, p2: { r: 0, g: 1, b: 0, a: 1 },
+    };
+    const value = buildFoundation(dump).collections[1].variables[0]
+      .provenance.valuesByMode.s1;
+    expect(value).toMatchObject({
+      resolved: { kind: 'unresolved', reason: 'target_mode_unresolvable' },
+      chain: [],
+    });
   });
 
   it('follows a chain of three hops', () => {
@@ -205,6 +318,11 @@ describe('buildFoundation — alias resolution', () => {
       kind: 'alias', targetName: 'color/mid', targetCollection: 'Primitives',
       external: false, resolved: { kind: 'color', hex: '#0000ff', alpha: 1 },
     });
+    expect(spec.collections[1].variables[0].provenance.valuesByMode.s1)
+      .toMatchObject({
+        chain: [{ tokenId: 'mid', modeId: 'p1' }, { tokenId: 'blue', modeId: 'p1' }],
+        resolved: { kind: 'color', hex: '#0000ff', alpha: 1 },
+      });
   });
 
   it('reports a cycle instead of looping forever', () => {
@@ -214,9 +332,14 @@ describe('buildFoundation — alias resolution', () => {
     const spec = buildFoundation(dump);
     expect(spec.collections[0].variables[0].valuesByMode.p1)
       .toMatchObject({ kind: 'alias', resolved: { kind: 'unresolved', reason: 'cycle' } });
+    expect(spec.collections[0].variables[0].provenance.valuesByMode.p1)
+      .toMatchObject({
+        resolved: { kind: 'unresolved', reason: 'cycle' },
+        chain: [{ tokenId: 'navy', modeId: 'p1' }, { tokenId: 'blue', modeId: 'p1' }],
+      });
   });
 
-  it('reports depth overflow past four hops', () => {
+  it('reports configured depth overflow without imposing the old four-hop ceiling', () => {
     const dump = dumpWithAliases();
     // a → b → c → d → e → value: five hops, over MAX_ALIAS_DEPTH of 4.
     dump.collections[0].variables = [
@@ -232,7 +355,7 @@ describe('buildFoundation — alias resolution', () => {
         valuesByMode: { p1: { r: 1, g: 0, b: 0, a: 1 } } },
     ];
     dump.collections[1].variables[0].valuesByMode.s1 = { type: 'VARIABLE_ALIAS', id: 'a' };
-    const spec = buildFoundation(dump);
+    const spec = buildFoundation(dump, { maxAliasDepth: 4 });
     const value = spec.collections[1].variables[0].valuesByMode.s1;
     expect(value).toMatchObject({ kind: 'alias', targetName: 'a' });
     expect(JSON.stringify(value)).toContain('"reason":"depth"');
@@ -281,6 +404,82 @@ describe('buildFoundation — alias resolution', () => {
     const spec = buildFoundation(dump);
     expect(spec.collections[1].variables[0].valuesByMode.s1)
       .toEqual({ kind: 'unresolved', reason: 'missing' });
+    expect(spec.collections[1].variables[0].provenance.valuesByMode.s1)
+      .toMatchObject({ resolved: { kind: 'unresolved', reason: 'missing' } });
+  });
+
+  it('distinguishes missing target values, invalid defaults, and type mismatches', () => {
+    const missingValue = dumpWithAliases();
+    delete missingValue.collections[0].variables[0].valuesByMode.p1;
+    expect(buildFoundation(missingValue).collections[1].variables[0]
+      .provenance.valuesByMode.s1).toMatchObject({
+      resolved: { kind: 'unresolved', reason: 'target_mode_value_missing' },
+    });
+
+    const invalidDefault = dumpWithAliases();
+    invalidDefault.collections[0].defaultModeId = 'gone';
+    expect(buildFoundation(invalidDefault).collections[1].variables[0]
+      .provenance.valuesByMode.s1).toMatchObject({
+      resolved: { kind: 'unresolved', reason: 'target_mode_unresolvable' },
+    });
+
+    const mismatch = dumpWithAliases();
+    mismatch.collections[0].variables[0].resolvedType = 'FLOAT';
+    expect(buildFoundation(mismatch).collections[1].variables[0]
+      .provenance.valuesByMode.s1).toMatchObject({
+      resolved: { kind: 'unresolved', reason: 'type_mismatch' },
+    });
+  });
+
+  it('keeps an external alias outside the graph even when its path matches locally', () => {
+    const dump = dumpWithAliases();
+    dump.externals = [{
+      id: 'lib-blue', name: 'color/blue/500', collectionId: 'remote-c1',
+      collectionName: 'Core', remote: true, external: true,
+    }];
+    dump.collections[1].variables[0].valuesByMode.s1 = {
+      type: 'VARIABLE_ALIAS', id: 'lib-blue',
+    };
+    const value = buildFoundation(dump).collections[1].variables[0]
+      .provenance.valuesByMode.s1;
+    expect(value).toMatchObject({
+      kind: 'alias', targetId: 'lib-blue', external: true, resolved: null, chain: [],
+    });
+  });
+
+  it('resolves 5,000 hops iteratively and reads each token/mode only a constant number of times', () => {
+    const hopCount = 5_000;
+    let reads = 0;
+    const variables = Array.from({ length: hopCount + 1 }, (_, index) => {
+      const values = index === hopCount
+        ? { m1: { r: 1, g: 0, b: 0, a: 1 } }
+        : { m1: { type: 'VARIABLE_ALIAS' as const, id: `v${index + 1}` } };
+      return {
+        id: `v${index}`, name: `v${index}`, resolvedType: 'COLOR' as const,
+        description: '', codeSyntax: {},
+        valuesByMode: new Proxy(values, {
+          get(target, property, receiver) {
+            if (property === 'm1') reads += 1;
+            return Reflect.get(target, property, receiver);
+          },
+        }),
+      };
+    });
+    const dump: SerializedFoundation = {
+      fileKey: 'F', extractedAt: 'T', externals: [], textStyles: [], effectStyles: [],
+      collections: [{
+        id: 'c1', name: 'Long', defaultModeId: 'm1',
+        modes: [{ modeId: 'm1', name: 'Value' }], variables,
+      }],
+    };
+    const first = buildFoundation(dump).collections[0].variables[0]
+      .provenance.valuesByMode.m1;
+    expect(first).toMatchObject({
+      resolved: { kind: 'color', hex: '#ff0000', alpha: 1 },
+    });
+    if (first.kind !== 'alias') throw new Error('expected alias');
+    expect(first.chain).toHaveLength(hopCount);
+    expect(reads).toBeLessThanOrEqual((hopCount + 1) * 3);
   });
 });
 
