@@ -7,7 +7,9 @@
 **Architecture:** A new `packages/extractor/src/v5/` directory holds the contract: entity types, value model, colour/unit canonicalization, precision policy, diagnostics vocabulary, deterministic hashing, a hand-written validator, and the v4→v5 normalizer. Nothing in `v5/` reads Figma — it operates on already-extracted data, so it is testable without a plugin host. Phase 1 ships **no change to what the plugin emits**: it ships the target shape plus a migration into it, so the real v4 export can be converted and graded before any extraction code moves.
 
 > **EXECUTED AND MERGED, 2026-08-28.** Tasks 0-9 are complete, reviewed, and on
-> `main` at `4a312eb`. Task 10 is still blocked on a real Company DS export.
+> `main` at `4a312eb`. Task 10 was completed during stabilization with the
+> plan's confidentiality-safe synthetic fallback; a real Company DS export is
+> optional private calibration, not committed test data.
 > **For current state, outstanding work, and the invariants that are easy to
 > break, read [../../specs/foundation-v5-status.md](../../specs/foundation-v5-status.md)
 > first** — this plan is the historical record of how Phase 1 was built, and
@@ -82,7 +84,9 @@ Write plan 2 only after plan 1 lands.
 
 1. **No CLI.** §20 deferred. `validate`, `normalize` and `diff` ship as exported library functions; no `bin`, no flag parsing. The plugin remains the only extraction path.
 2. **The component brief aligns to v5 in the same release**, adopting the same envelope, value model, id rules and diagnostics. Phase 1 builds that vocabulary; the component brief adopts it in plan 4 and stays on `BRIEF_VERSION = 4` until then.
-3. **The golden fixture is a real export** the user supplies. Tasks 1-9 are testable without it.
+3. **The golden fixture uses the synthetic fallback from Task 10's
+   confidentiality gate.** The repository may be public, so the committed
+   fixture contains no file key or proprietary design-system data.
 4. **Contrast checking stays dropped.** Removed by decision in brief v3 (`brief.ts:37`) and absent from the spec.
 
 ---
@@ -2128,14 +2132,14 @@ git commit -m "feat(v5): v4 to v5 normalizer with injective ids and stated alias
 
 ---
 
-### Task 10: Grade the real fixture
+### Task 10: Grade the acceptance fixture
 
-**Blocked on** the user committing a real v4 foundation export. Tasks 0-9 are
-not.
+**Completed during stabilization** with a safe synthetic fixture. Tasks 0-9
+were not blocked on it.
 
 **Files:**
-- Create: `packages/extractor/test/fixtures/v5/company-ds-foundation-v4.yaml`
-- Create: `packages/extractor/test/fixtures/v5/company-ds-foundation-v5.yaml`
+- Create: `packages/extractor/test/fixtures/v5/synthetic-foundation-v4.yaml`
+- Create: `packages/extractor/test/fixtures/v5/synthetic-foundation-v5.yaml`
 - Create: `packages/extractor/test/v5/acceptance.test.ts`
 - Create: `packages/extractor/test/v5/phaseCoverage.ts`
 
@@ -2147,7 +2151,8 @@ The export is a real design system. Before `git add`:
 2. Confirm it contains no file keys, tokens, URLs or credentials that should not be in a public repo. v4 emits `source.file_key`; decide explicitly whether that ships or is redacted, and if redacted, redact it in the committed fixture and record that the fixture is modified.
 3. Confirm with the user that this repo is the right home for it. If the repo is or may become public, the answer may be no — in which case build the synthetic equivalent instead and say so here.
 
-Do not skip to Step 2 until all three are done.
+Do not skip to Step 2 until all three are done. For the stabilization run, the
+repository's public-readiness made the synthetic option the safe choice.
 
 - [ ] **Step 2: Commit the raw export verbatim**
 
@@ -2284,7 +2289,9 @@ are dead.
 
 ## Open items for the user
 
-1. **The real export** (Task 10), and the Step 1 confidentiality decision that gates it. Nothing before it is blocked.
+1. **Optional private calibration:** run Task 10 against a real export before
+   Phase 2 if one is available, but do not commit it without repeating the
+   confidentiality gate. The synthetic fixture is the CI acceptance artifact.
 2. **`SCHEMA_URI` — confirmed 2026-08-28.** `https://spec-layer.dev/schemas/foundation-context/v5.json` is the permanent public identifier. It is shared by the JSON Schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
 3. **`extractor.build`** (§5.1) has no source — there is no build-id plumbing in `build:plugin`. Phase 1 emits `null`; wiring a git sha belongs with plan 2.
 4. **`target_mode_id` on `AliasReference`** — implemented as `ResolutionStep` instead, for the reason in the revision note. Say the word if you want the field on the reference as well.

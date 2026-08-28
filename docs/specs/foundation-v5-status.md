@@ -1,6 +1,6 @@
 ---
 title: Foundation Context v5 — status and handoff
-status: Phase 1 complete, merged to main
+status: Phase 1 stabilization complete; Phase 2 planned
 schema_version: 5.0.0
 last_updated: 2026-08-28
 ---
@@ -12,7 +12,8 @@ v5 work as of 2026-08-28, written for someone with no prior context.
 
 - **The contract:** [foundation-context-v5.md](foundation-context-v5.md). Cited throughout as §n.
 - **The Phase 1 plan, as executed:** [../superpowers/plans/2026-08-27-foundation-v5-phase-1.md](../superpowers/plans/2026-08-27-foundation-v5-phase-1.md)
-- **Phase 1 landed on `main` at `4a312eb`.** Not pushed; `main` is 116+ commits ahead of `origin/main`.
+- **Phase 1 landed on `main` at `4a312eb`.** The follow-up stabilization work is
+  backed up on `codex/v5-stabilization`; use that branch for review.
 
 ## What v5 is, and what it is not
 
@@ -56,9 +57,11 @@ deliberate decision. The comment above it will say so.
 | `canonical.ts` | Envelope, `SemanticPayload`, `canonicalJson`, `semanticContentHash` |
 | `validate.ts` | `validateLevel1` (schema validity) and `validateLevel2` (referential integrity) |
 | `normalize.ts` | `normalizeV4` — the v4 → v5 migration |
+| `index.ts` | The supported v5 library surface, re-exported from the package root |
 | `schema/foundation-5.0.0.json` | The published JSON Schema. A consumer artifact, not our validation engine |
 
-103 tests in `packages/extractor/test/v5/`; 1601 repo-wide.
+The acceptance suite also commits a safe synthetic v4 input and its normalized
+v5 golden under `packages/extractor/test/fixtures/v5/`.
 
 ## Four invariants that are easy to break by accident
 
@@ -90,21 +93,33 @@ tokens, so without it those two hash the same.
 
 ## What is outstanding
 
-### Task 10 — blocked on a real export
+### Publish the permanent schema URL
+
+The schema is included in the static landing bundle and protected by byte-parity
+tests, but `spec-layer.dev` does not currently resolve in DNS. Attach that
+custom domain to the Pages project, verify the DNS record, deploy the landing
+bundle, and confirm the permanent URL returns HTTP 200 with the expected `$id`
+and exact release-candidate bytes before any v5 artifact is described as
+publicly resolvable. See `apps/landing/README.md` for the release check.
+
+### Task 10 — Phase 1 criteria graded with a safe synthetic fixture
 Nine of the twelve §21.1 acceptance criteria are `it.todo` in
 `packages/extractor/test/v5/acceptance.test.ts`, behind a manifest test
 (`phaseCoverage.ts`) that asserts which phase owns each, so CI names the gap
 rather than implying it passed. Phase 1 grades criteria 6, 7a, 8 and 12 only.
 
-To unblock: export the real Company DS foundation with the current plugin
-("Copy foundation for AI"), commit the raw v4 YAML verbatim, and normalize it.
-**Read it end to end first** and decide explicitly whether `source.file_key`
-ships or is redacted.
+This repository may be public, so the stabilization work chose the plan's safe
+fallback instead of committing a private Company DS export. The fixture covers
+all six collections, dimensional floats, the Cyrillic `С`, and three
+external references without a file key or proprietary token data. A real export
+remains useful as a private pre-Phase-2 calibration run, but it is no longer a
+Phase 1 CI blocker and should not be committed without a fresh confidentiality
+review.
 
-### Plans 2, 3, 4 — not written
+### Plans 3 and 4 — not written
 | Plan | Scope |
 |---|---|
-| 2 | Stable ids through extraction, mode-id keying, `scopes` on `FoundationVariable`, colour floats surviving `serializeFoundation.ts`, the alias graph, `EXTRACTOR_VERSION` bump |
+| 2 | Written at `docs/superpowers/plans/2026-08-28-foundation-v5-phase-2.md`: stable ids through extraction, mode-id keying, `scopes` on `FoundationVariable`, colour floats surviving `serializeFoundation.ts`, the alias graph, `EXTRACTOR_VERSION` bump |
 | 3 | Composite typography and effect styles with bindings, publication and lifecycle metadata, drift/archive/confusable diagnostics |
 | 4 | `validate`/`normalize`/`diff` as library functions, golden fixtures in CI, and the component brief's own hardening items |
 
@@ -131,11 +146,23 @@ whose *foundation* tasks are dead and must not be implemented.
 - `precision.ts`: non-integers just below 2²⁴ hit a cliff (`16777215.5` → `16777220`). Accepted consequence of the float32 basis; no design value lives there.
 - `color.ts:167`: a rejection reason interpolates raw source values with no length bound. Messages are hash-excluded.
 - `color.ts`: `EPSILON = 1e-6` is not derived from `precision.ts`'s `SIGNIFICANT_DIGITS`, so the two can drift.
-- The schema validates tokens and values field-by-field but only top-level shape for `collections`, `styles`, `diagnostics` and the envelope. Symmetric with the hand-written validator, so not a parity gap — but "Level 1 passes" is a weaker guarantee for those four sections than it looks.
 - No `additionalProperties: false` anywhere in the schema, so unknown keys pass both validators. Possibly correct by design: §19 requires consumers to ignore unknown additive fields.
 - `validateLevel1`'s outer try/catch means a genuine logic error inside the validator surfaces as a malformed-artifact diagnostic rather than a crash. Judged acceptable twice; the message is distinguishable.
 - `parseV4Path` treats a doubled backslash before a slash as literal-backslash plus de-escaped-slash and never splits there. Undocumented reading of a genuinely ambiguous input.
-- Stale v4 mode-name values are still dropped silently, and duplicate v4 mode names collapse to one synthetic mode id with no check covering mode ids.
+
+## Stabilization completed after the original handoff
+
+- The package root exports the supported v5 surface.
+- Level 1 now deeply checks every shape Level 2 reads; Level 2 is total on
+  malformed input and validates token/value types, every alias-chain token/mode
+  reference, typography property aliases, and effect-style mode references.
+- v4 normalization now preserves authoritative external aliases, matches v4's
+  cross-collection mode semantics, reports duplicate mode identities and stale
+  mode-name values, and represents partial collection/style extraction honestly.
+- The source schema and the public static copy at
+  `apps/landing/schemas/foundation-context/v5.json` are byte-identical by test.
+- Phase 1 acceptance criteria 6, 7a, 8 and 12 run against a committed synthetic
+  golden. Criteria owned by later phases remain named todos.
 
 ## Settled decisions — do not reopen
 - **No CLI.** §20 is deferred. `validate`/`normalize`/`diff` ship as library functions. The plugin remains the only extraction path; no Figma REST API work.
