@@ -114,7 +114,7 @@ export type UnresolvedReason =
    * reported unresolved instead — the value is still recoverable from the
    * target token itself, which is where it actually lives.
    */
-  | 'target_mode_unresolvable';
+  | 'target_mode_unresolvable' | 'target_mode_value_missing';
 
 export type AliasResolution =
   | { status: 'resolved'; value: TypedValue; chain: ResolutionStep[] }

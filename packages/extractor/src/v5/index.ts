@@ -15,3 +15,4 @@ export * from './canonical';
 export * from './validate';
 export * from './normalize';
 export * from './statistics';
+export * from './fromFoundation';
