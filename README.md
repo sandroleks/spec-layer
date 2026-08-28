@@ -1,6 +1,6 @@
 # Spec Layer
 
-[![CI](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml)
+[![CI](https://github.com/sandroleks/spec-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/sandroleks/spec-layer/actions/workflows/ci.yml)
 [![Figma Community](https://img.shields.io/badge/Figma-Community-f24e1e?logo=figma&logoColor=white)](https://www.figma.com/community/plugin/1652104411578396548)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-43853d.svg)](https://nodejs.org)
@@ -127,7 +127,8 @@ npm run check:proxy-dry-run # bundle and validate the Worker without deploying
 npm run audit           # full dependency audit, including development tools
 ```
 
-> **Note:** builds from source currently point at the staging proxy (`spec-layer-proxy.spec-layer-test.workers.dev`), in both `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`. Swap both for the production host before cutting a public release.
+Builds from source use the production proxy at `https://api.spec-layer.com`.
+The plugin source and manifest network allowlist must remain aligned.
 
 CI runs the same stages as `npm run check`, adds coverage thresholds, and audits
 the full dependency tree on pushes to `main` and pull requests. The proxy check

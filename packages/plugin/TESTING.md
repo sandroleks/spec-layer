@@ -28,8 +28,8 @@ covers something unit tests cannot reach, roughly highest risk first:
 
 Two things worth knowing before you start:
 
-- The manifest points at the **staging** proxy. Activating a real license here
-  hits staging, not production.
+- The manifest points at the production proxy. Activating a real license here
+  affects the live service.
 - Deploy order matters. The plugin sends `Bearer key:instanceId`; an older
   deployed proxy reads that whole string as the key and silently falls back to
   the free tier. If licensing behaves oddly, confirm the proxy is current
@@ -38,10 +38,9 @@ Two things worth knowing before you start:
 ## Network model
 
 The only network destination the manifest permits is the Spec Layer proxy:
-`https://spec-layer-proxy.spec-layer-test.workers.dev` (currently the
-**staging** Worker). AI writing is generated through this proxy, which enforces
-free-tier quotas and Pro licenses. There is **no Anthropic API key** in the
-plugin: no API key is requested, entered, or stored.
+`https://api.spec-layer.com`. AI writing is generated through this proxy,
+which enforces free-tier quotas and Pro licenses. There is **no Anthropic API
+key** in the plugin: no API key is requested, entered, or stored.
 
 Free users start with 20 generations for 30 days and then receive 10 per UTC
 month. Pro has no fixed monthly cap for normal individual use, subject to fair

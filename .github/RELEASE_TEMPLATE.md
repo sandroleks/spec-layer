@@ -47,11 +47,10 @@ any of those checks blocks the release; a `*.pages.dev` preview is not enough.
   defense. Resolve the Cloudflare WAF rate-rule TODO for `/v1/license/*` in
   `packages/proxy/README.md` before treating the production proxy as fully
   release-ready.
-- Repository builds point at the staging proxy. A public release candidate is
-  not ready until the host has been changed in both
-  `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`, rebuilt,
-  and reverified.
+- Before publishing, verify that `packages/plugin/src/ui/proxy.ts` and the
+  manifest's `networkAccess` both use `https://api.spec-layer.com`, then rebuild
+  and rerun the plugin smoke test.
 
 ## Full Changelog
 
-See [CHANGELOG.md](https://github.com/SamsonHD/spec-layer/blob/main/CHANGELOG.md).
+See [CHANGELOG.md](https://github.com/sandroleks/spec-layer/blob/main/CHANGELOG.md).

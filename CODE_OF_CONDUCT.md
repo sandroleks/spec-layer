@@ -15,6 +15,6 @@ Harassment, discrimination, threats, sexualized attention, publishing private in
 
 ## Enforcement
 
-Report unacceptable behavior privately to maintainer [@SamsonHD](https://github.com/SamsonHD) using the private contact methods listed on that GitHub profile. The maintainer will review reports promptly, protect reporter privacy where possible, and may edit or remove contributions, issue warnings, temporarily restrict participation, or permanently ban participants according to the severity and pattern of behavior.
+Report unacceptable behavior privately to maintainer [@sandroleks](https://github.com/sandroleks) using the private contact methods listed on that GitHub profile. The maintainer will review reports promptly, protect reporter privacy where possible, and may edit or remove contributions, issue warnings, temporarily restrict participation, or permanently ban participants according to the severity and pattern of behavior.
 
 This policy is adapted from the Contributor Covenant, version 2.1: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html

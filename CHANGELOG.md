@@ -164,5 +164,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Workspace packages are private implementation modules and are not published to npm.
 - GitHub synchronization, drift detection, and an MCP server remain roadmap items.
 
-[1.0.0]: https://github.com/SamsonHD/spec-layer/releases/tag/v1.0.0
-[0.1.0]: https://github.com/SamsonHD/spec-layer/releases/tag/v0.1.0
+[1.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v1.0.0
+[0.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v0.1.0

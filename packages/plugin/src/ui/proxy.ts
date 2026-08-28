@@ -1,10 +1,7 @@
 import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
 
-// Staging environment. The `spec-layer-test` workers.dev account IS the staging
-// target for now; manifest allowedDomains/devAllowedDomains both point here on
-// purpose. Swap this (and the manifest hosts) for a production domain before a
-// public release.
-export const PROXY_URL = 'https://spec-layer-proxy.spec-layer-test.workers.dev';
+// Production API. Keep this host aligned with the manifest's network access.
+export const PROXY_URL = 'https://api.spec-layer.com';
 export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout';
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // Store landing page — where a lapsed/expired subscriber repurchases Pro. A

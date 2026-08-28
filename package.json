@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SamsonHD/spec-layer.git"
+    "url": "git+https://github.com/sandroleks/spec-layer.git"
   },
   "bugs": {
-    "url": "https://github.com/SamsonHD/spec-layer/issues"
+    "url": "https://github.com/sandroleks/spec-layer/issues"
   },
-  "homepage": "https://github.com/SamsonHD/spec-layer#readme",
+  "homepage": "https://github.com/sandroleks/spec-layer#readme",
   "engines": {
     "node": ">=22.0.0"
   },
