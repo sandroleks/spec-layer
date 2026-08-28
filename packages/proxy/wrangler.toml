@@ -3,6 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-07-01"
 account_id = "f3ea0f8b485b5b11e917f415c224b1cb"
 
+routes = [{ pattern = "api.spec-layer.com", custom_domain = true }]
+
 kv_namespaces = [
   { binding = "LICENSE_CACHE", id = "46fbd911b2194babbf2019fd4d0b412a" }
 ]
