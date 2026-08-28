@@ -2,6 +2,7 @@ name = "spec-layer-proxy"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
 account_id = "f3ea0f8b485b5b11e917f415c224b1cb"
+workers_dev = true
 
 routes = [{ pattern = "api.spec-layer.com", custom_domain = true }]
 
