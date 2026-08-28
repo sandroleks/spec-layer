@@ -1536,7 +1536,7 @@ import type {
 } from './entities';
 
 export const SCHEMA_VERSION = '5.0.0';
-export const SCHEMA_URI = 'https://spec-layer.dev/schemas/foundation-context/v5.json';
+export const SCHEMA_URI = 'https://spec-layer.com/schemas/foundation-context/v5.json';
 export const EXTRACTOR_NAME = 'spec-layer-foundation';
 
 export interface ArtifactSource {
@@ -2292,7 +2292,7 @@ are dead.
 1. **Optional private calibration:** run Task 10 against a real export before
    Phase 2 if one is available, but do not commit it without repeating the
    confidentiality gate. The synthetic fixture is the CI acceptance artifact.
-2. **`SCHEMA_URI` — confirmed 2026-08-28.** `https://spec-layer.dev/schemas/foundation-context/v5.json` is the permanent public identifier. It is shared by the JSON Schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
+2. **`SCHEMA_URI` — confirmed 2026-08-28 before public release.** `https://spec-layer.com/schemas/foundation-context/v5.json` is the permanent public identifier. It is shared by the JSON Schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
 3. **`extractor.build`** (§5.1) has no source — there is no build-id plumbing in `build:plugin`. Phase 1 emits `null`; wiring a git sha belongs with plan 2.
 4. **`target_mode_id` on `AliasReference`** — implemented as `ResolutionStep` instead, for the reason in the revision note. Say the word if you want the field on the reference as well.
 

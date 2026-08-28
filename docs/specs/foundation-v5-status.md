@@ -93,14 +93,15 @@ tokens, so without it those two hash the same.
 
 ## What is outstanding
 
-### Publish the permanent schema URL
+### Keep the permanent schema URL release-ready
 
 The schema is included in the static landing bundle and protected by byte-parity
-tests, but `spec-layer.dev` does not currently resolve in DNS. Attach that
-custom domain to the Pages project, verify the DNS record, deploy the landing
-bundle, and confirm the permanent URL returns HTTP 200 with the expected `$id`
-and exact release-candidate bytes before any v5 artifact is described as
-publicly resolvable. See `apps/landing/README.md` for the release check.
+tests. Its permanent URI uses the existing `spec-layer.com` Pages custom domain;
+the unregistered alternate domain was rejected before public release.
+After every landing deployment, confirm the permanent URL returns HTTP 200 JSON
+with the expected `$id` and exact release-candidate bytes before any v5 artifact
+is described as publicly resolvable. See `apps/landing/README.md` for the release
+check.
 
 ### Task 10 — Phase 1 criteria graded with a safe synthetic fixture
 Nine of the twelve §21.1 acceptance criteria are `it.todo` in
@@ -168,7 +169,7 @@ whose *foundation* tasks are dead and must not be implemented.
 - **No CLI.** §20 is deferred. `validate`/`normalize`/`diff` ship as library functions. The plugin remains the only extraction path; no Figma REST API work.
 - **The component brief aligns to v5** in the same release (plan 4). It still emits `BRIEF_VERSION = 4` today.
 - **Contrast checking stays out.** Removed from the brief by decision in v3 (`brief.ts:37`) because its failure list grew with the file and dominated a payload whose job is to hand an agent a token vocabulary. It is not in the v5 spec.
-- **`SCHEMA_URI` is `https://spec-layer.dev/schemas/foundation-context/v5.json`**, confirmed permanent 2026-08-28. Shared by the schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
+- **`SCHEMA_URI` is `https://spec-layer.com/schemas/foundation-context/v5.json`**, confirmed permanent 2026-08-28 before public release. Shared by the schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
 - **`extractor.version` stays an opaque non-semver identifier**, separate from `schema_version`. `version.ts` explains why, and §5.1 requires them kept apart.
 - **`target_mode_id` lives in `ResolutionStep`, not on `AliasReference`.** A Figma `VARIABLE_ALIAS` points at a variable and carries no mode; the mode is a resolution decision, and putting it on the reference would state it as source data and duplicate the first chain step.
 

@@ -56,7 +56,7 @@ Every export MUST have a top-level envelope:
 spec_layer:
   kind: foundation
   schema_version: "5.0.0"
-  schema_uri: "https://spec-layer.dev/schemas/foundation-context/v5.json"
+  schema_uri: "https://spec-layer.com/schemas/foundation-context/v5.json"
   extractor:
     name: spec-layer-foundation
     version: "2.0.0"

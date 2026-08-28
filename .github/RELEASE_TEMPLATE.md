@@ -37,7 +37,7 @@ for AI behavior on a synthetic or publishable file.
 
 If the release publishes or relies on Foundation v5 artifacts, also verify the
 custom domain, DNS, HTTP 200 response, exact `$id`, and committed-file parity
-for `https://spec-layer.dev/schemas/foundation-context/v5.json`. A failure in
+for `https://spec-layer.com/schemas/foundation-context/v5.json`. A failure in
 any of those checks blocks the release; a `*.pages.dev` preview is not enough.
 
 ## Known Limitations

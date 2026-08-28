@@ -237,7 +237,7 @@ styles: { typography: [], effects: [] }
 spec_layer:
   kind: foundation
   schema_version: 5.0.0
-  schema_uri: https://spec-layer.dev/schemas/foundation-context/v5.json
+  schema_uri: https://spec-layer.com/schemas/foundation-context/v5.json
   extractor: { name: spec-layer-foundation, version: "1", build: null }
   export:
     id: synthetic-v5-acceptance

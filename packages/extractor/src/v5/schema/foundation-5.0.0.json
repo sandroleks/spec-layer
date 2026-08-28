@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://spec-layer.dev/schemas/foundation-context/v5.json",
+  "$id": "https://spec-layer.com/schemas/foundation-context/v5.json",
   "title": "Foundation Context v5",
   "description": "Published Level 1 schema for the Foundation Context v5 export contract (spec §5.1, §6, §7, §8, §9, §18 Level 1). This schema is the consumer-facing twin of the hand-written validator at packages/extractor/src/v5/validate.ts, which runs the same checks inside the Figma plugin sandbox where ajv cannot load. Collections, modes, tokens, styles, lifecycle records and bindings are validated deeply enough that any artifact accepted here is safe to pass to Level 2 referential validation. test/v5/schemaParity.test.ts proves the two agree on every shared fixture.",
   "type": "object",

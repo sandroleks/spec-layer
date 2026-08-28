@@ -27,13 +27,13 @@ The Foundation v5 schema is committed at
 is:
 
 ```text
-https://spec-layer.dev/schemas/foundation-context/v5.json
+https://spec-layer.com/schemas/foundation-context/v5.json
 ```
 
 A successful Pages upload does not by itself prove that permanent URI works.
 Before a release that publishes or relies on v5 artifacts:
 
-1. Confirm `spec-layer.dev` is attached as a Cloudflare Pages custom domain and
+1. Confirm `spec-layer.com` is attached as a Cloudflare Pages custom domain and
    its DNS record is active.
 2. Fetch the live URI and confirm it returns HTTP 200 with JSON whose `$id` is
    exactly the permanent URI above.
