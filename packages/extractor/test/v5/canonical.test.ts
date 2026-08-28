@@ -158,6 +158,37 @@ describe('semanticContentHash', () => {
     expect(semanticContentHash(changed)).not.toBe(semanticContentHash(COMPLETE));
   });
 
+  it('moves for stable identity, scopes, source channels, alias lineage, and completeness', () => {
+    const mutations: Array<(payload: SemanticPayload) => void> = [
+      (payload) => { payload.tokens[0].id = 'VariableID:changed'; },
+      (payload) => { payload.tokens[0].scopes = ['SHAPE_FILL']; },
+      (payload) => {
+        const value = payload.tokens[0].values['1:2/light'];
+        if (value.kind !== 'literal' || value.value.type !== 'color') {
+          throw new Error('fixture must carry a literal color');
+        }
+        value.value.channels = [0, 0.419, 0.381];
+      },
+      (payload) => {
+        const value = payload.tokens[0].values['1:2/dark'];
+        if (value.kind !== 'alias') throw new Error('fixture must carry an alias');
+        value.reference.target_id = 'VariableID:different-target';
+      },
+      (payload) => {
+        const value = payload.tokens[0].values['1:2/dark'];
+        if (value.kind !== 'alias') throw new Error('fixture must carry an alias');
+        value.resolved.chain[0].mode_id = '1:2/light';
+      },
+      (payload) => { payload.completeness.collections = 'partial'; },
+    ];
+
+    for (const mutate of mutations) {
+      const changed = structuredClone(NESTED);
+      mutate(changed);
+      expect(semanticContentHash(changed)).not.toBe(semanticContentHash(NESTED));
+    }
+  });
+
   it('ignores every envelope and annotation field outside SemanticPayload', () => {
     const base = {
       ...COMPLETE,

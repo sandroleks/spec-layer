@@ -17,6 +17,8 @@ import { validateLevel1, validateLevel2 } from '../../src/v5/validate';
 import type { NormalizeMeta, V4Foundation } from '../../src/v5/normalize';
 import type { CanonicalValue } from '../../src/v5/value';
 import { computeFoundationStatistics } from '../../src/v5/statistics';
+import { buildFoundation, type SerializedFoundation } from '../../src/foundation';
+import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
 
 const META: NormalizeMeta = { exportId: 'fixture-export', generatedAt: '2026-01-01T00:00:00.000Z' };
 
@@ -660,6 +662,43 @@ describe('normalizeV4', () => {
     const b = normalizeV4(V4_MINIMAL, { exportId: 'two', generatedAt: '2026-12-31T00:00:00.000Z' });
     expect(a.artifact.spec_layer.export.content_hash)
       .toBe(b.artifact.spec_layer.export.content_hash);
+  });
+
+  it('keeps the direct v5 path separate from v4 migration', () => {
+    const source: SerializedFoundation = {
+      fileKey: 'FILE:direct', fileName: 'Direct', extractedAt: 'T',
+      externals: [], textStyles: [], effectStyles: [],
+      collections: [{
+        id: 'CollectionID:direct', name: 'Colors', defaultModeId: 'ModeID:value',
+        modes: [{ modeId: 'ModeID:value', name: 'Value' }],
+        variables: [{
+          id: 'VariableID:direct', name: 'color/precise', resolvedType: 'COLOR',
+          description: '', codeSyntax: {}, scopes: ['FRAME_FILL'],
+          valuesByMode: {
+            'ModeID:value': { r: 0.5001, g: 0.1001, b: 0.0001, a: 0.125 },
+          },
+        }],
+      }],
+    };
+    const direct = buildFoundationArtifactV5(buildFoundation(source), {
+      exportId: 'direct', generatedAt: '2026-08-28T00:00:00.000Z', build: '2',
+    }).artifact;
+    expect(direct.collections[0].id).toBe('CollectionID:direct');
+    expect(direct.tokens[0]).toMatchObject({
+      id: 'VariableID:direct', scopes: ['FRAME_FILL'],
+    });
+    const value = direct.tokens[0].values['ModeID:value'];
+    expect(value.kind).toBe('literal');
+    if (value.kind !== 'literal' || value.value.type !== 'color') {
+      throw new Error('direct fixture must produce a color literal');
+    }
+    expect(value.value.channels).toEqual([0.5001, 0.1001, 0.0001]);
+
+    // The compatibility normalizer still does exactly the opposite: it can
+    // only mint synthetic ids from v4 display names because v4 never had the
+    // source identities or channels above.
+    expect(normalizeV4(V4_MINIMAL, META).artifact.tokens[0].id)
+      .toBe(syntheticId('token', 'Semantic', ['color', 'bg', 'brand']));
   });
 
   it('emits statistics computed from the finished artifact', () => {

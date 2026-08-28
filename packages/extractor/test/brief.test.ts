@@ -210,6 +210,36 @@ describe('foundationBrief', () => {
     expect(y.collections[0].tokens[0].values).toEqual({ Light: '#2563EB', Dark: '#3B82F6' });
   });
 
+  it('keeps v5 identity, scopes, channels, and full chains out of the legacy v4 projection', () => {
+    const enriched = structuredClone(FOUNDATION);
+    const variable = enriched.collections[0].variables[0];
+    variable.provenance.id = 'VariableID:v5-only-marker';
+    variable.provenance.scopes = ['FRAME_FILL', 'SHAPE_FILL'];
+    variable.provenance.valuesByMode.m1 = {
+      kind: 'alias', targetId: 'VariableID:target-only-marker',
+      targetName: 'target/only/marker', targetPath: ['target', 'only', 'marker'],
+      targetCollectionId: 'CollectionID:v5-only-marker',
+      targetCollection: 'Primitives', external: false,
+      resolved: { kind: 'color', hex: '#2563EB', alpha: 1, channels: [0.145, 0.388, 0.921] },
+      chain: [
+        { tokenId: 'VariableID:hop-only-marker', modeId: 'ModeID:hop-only-marker' },
+        { tokenId: 'VariableID:terminal-only-marker', modeId: 'ModeID:terminal-only-marker' },
+      ],
+    };
+
+    const brief = foundationBrief(enriched, { generatedAt: AT });
+    const serialized = JSON.stringify(brief);
+    expect((brief as Record<string, Record<string, unknown>>).spec_layer.version).toBe(4);
+    expect(parseBrief(brief).collections[0].tokens[0].values)
+      .toEqual({ Light: '#2563EB', Dark: '#3B82F6' });
+    for (const marker of [
+      'v5-only-marker', 'target-only-marker', 'hop-only-marker',
+      'terminal-only-marker', 'FRAME_FILL', 'channels', 'chain',
+    ]) {
+      expect(serialized).not.toContain(marker);
+    }
+  });
+
   it('emits code only when codeSyntax is populated', () => {
     const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
     expect(y.collections[0].tokens[0].code).toEqual({ WEB: '--color-bg-brand' });

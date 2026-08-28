@@ -60,8 +60,8 @@ export type RefKind = 'variable' | 'paint-style' | 'text-style' | 'effect-style'
  * per-field effect bindings, so all three answer the same questions the same way.
  */
 export interface RefIdentity {
-  /** Figma id. Drives resolution. Never emitted: the brief's rule is that
-   *  internal ids stay inside. */
+  /** Figma id. Drives resolution. Never emitted by the legacy component-v4
+   *  brief; Foundation v5 has a separate stable-identity export contract. */
   id: string;
   /** Display and join identity, as `token` was. */
   name: string;

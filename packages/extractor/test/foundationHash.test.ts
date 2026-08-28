@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildFoundation, type SerializedFoundation, type FoundationScope } from '../src/foundation';
+import {
+  buildFoundation, unitContent,
+  type FoundationScope, type FoundationSpec, type SerializedFoundation,
+} from '../src/foundation';
 import { foundationContentHash } from '../src/hash';
 
 function dump(): SerializedFoundation {
@@ -360,4 +363,85 @@ it('is unchanged by FoundationSpec fields that reach no rendered row', () => {
   } as unknown as typeof spec;
 
   expect(foundationContentHash(widened, SEMANTIC)).toBe(before);
+});
+
+describe('foundationContentHash — enriched v5 provenance stays outside canvas drift', () => {
+  function expectCanvasStable(before: FoundationSpec, after: FoundationSpec): void {
+    const beforeUnit = unitContent(before, SEMANTIC);
+    const afterUnit = unitContent(after, SEMANTIC);
+    expect(afterUnit).toEqual(beforeUnit);
+    expect(JSON.stringify(beforeUnit)).not.toContain('provenance');
+    expect(JSON.stringify(afterUnit)).not.toContain('sourceIssues');
+    expect(foundationContentHash(after, SEMANTIC))
+      .toBe(foundationContentHash(before, SEMANTIC));
+  }
+
+  it('ignores token identity, scopes, preserved channels, and source availability facts', () => {
+    const before = buildFoundation(dump());
+
+    const identity = structuredClone(before);
+    identity.collections[0].variables[0].provenance.id = 'VariableID:other';
+    expectCanvasStable(before, identity);
+
+    const scopes = structuredClone(before);
+    scopes.collections[0].variables[0].provenance.scopes = ['FRAME_FILL', 'SHAPE_FILL'];
+    expectCanvasStable(before, scopes);
+
+    const channels = structuredClone(before);
+    const channelValue = channels.collections[0].variables[0].provenance.valuesByMode.s1;
+    if (channelValue.kind !== 'color') throw new Error('fixture must carry a color value');
+    channelValue.channels = [0.145001, 0.388001, 0.921001];
+    expectCanvasStable(before, channels);
+
+    const availability = structuredClone(before);
+    availability.unavailableSources = ['Remote color library'];
+    availability.sourceIssues = [{
+      kind: 'stale_mode_value', collectionId: 'c1', tokenId: 'bg',
+      modeId: 'deleted', declaredModeIds: ['s1', 's2'],
+    }];
+    expectCanvasStable(before, availability);
+  });
+
+  it('ignores alias target identity, path, collection, and full-chain provenance', () => {
+    const before = buildFoundation(dump());
+    const after = structuredClone(before);
+    const baseResolved = { kind: 'color', hex: '#2563eb', alpha: 1 } as const;
+    before.collections[0].variables[0].provenance.valuesByMode.s1 = {
+      kind: 'alias', targetId: 'VariableID:old', targetName: 'primitive/brand',
+      targetPath: ['primitive', 'brand'], targetCollectionId: 'CollectionID:old',
+      targetCollection: 'Primitives', external: false, resolved: baseResolved,
+      chain: [{ tokenId: 'VariableID:old', modeId: 'mode:old' }],
+    };
+    after.collections[0].variables[0].provenance.valuesByMode.s1 = {
+      kind: 'alias', targetId: 'VariableID:new', targetName: 'primitive/brand',
+      targetPath: ['renamed', 'path'], targetCollectionId: 'CollectionID:new',
+      targetCollection: 'Primitives', external: false, resolved: baseResolved,
+      chain: [
+        { tokenId: 'VariableID:new', modeId: 'mode:new' },
+        { tokenId: 'VariableID:terminal', modeId: 'mode:terminal' },
+      ],
+    };
+    expectCanvasStable(before, after);
+  });
+
+  it('still moves for every rendered row fact', () => {
+    const base = buildFoundation(dump());
+    const mutations: Array<(spec: FoundationSpec) => void> = [
+      (spec) => { spec.collections[0].name = 'Renamed'; },
+      (spec) => { spec.collections[0].modes[0].name = 'Day'; },
+      (spec) => { spec.collections[0].variables[0].name = 'bg/primary'; },
+      (spec) => { spec.collections[0].variables[0].description = 'Changed.'; },
+      (spec) => {
+        spec.collections[0].variables[0].valuesByMode.s1 = {
+          kind: 'color', hex: '#2563eb', alpha: 0.5,
+        };
+      },
+    ];
+    for (const mutate of mutations) {
+      const changed = structuredClone(base);
+      mutate(changed);
+      expect(foundationContentHash(changed, SEMANTIC))
+        .not.toBe(foundationContentHash(base, SEMANTIC));
+    }
+  });
 });

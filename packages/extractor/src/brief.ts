@@ -3,9 +3,10 @@
  *
  * These are the product's only export contract now that Markdown is retired,
  * so they are deliberately a PROJECTION of the internal types rather than a
- * dump of them: internal ids, minimized token conditions, and rendering
- * concerns stay inside, and the shapes here can stay stable while the
- * extractor's internals change.
+ * dump of them: the legacy component/foundation-v4 projections keep internal
+ * ids, minimized token conditions, and rendering concerns inside, and their
+ * shapes stay stable while the extractor's internals change. Foundation v5 is
+ * a separate direct export whose contract intentionally includes stable ids.
  */
 
 import type { FoundationSpec, FoundationValue, FoundationVariable } from './foundation';
@@ -116,9 +117,9 @@ function tokenOf(variable: FoundationVariable, modeName: (id: string) => string 
   for (const [modeId, value] of Object.entries(variable.valuesByMode)) {
     // A modeId with no entry in collection.modes is stale (its mode was
     // deleted after this value was recorded). Drop the column rather than
-    // keying it by the raw Figma modeId: this payload's rule is that internal
-    // ids stay inside, matching how unitContent() in foundation.ts drops a
-    // stale mode id instead of producing a blank or id-keyed column.
+    // keying it by the raw Figma modeId: this legacy foundation-v4 payload's
+    // rule is that internal ids stay inside, matching how unitContent() in
+    // foundation.ts drops a stale id instead of producing an id-keyed column.
     const name = modeName(modeId);
     if (name === undefined) continue;
     values[name] = valueOf(value);
@@ -136,10 +137,10 @@ function tokenOf(variable: FoundationVariable, modeName: (id: string) => string 
 /**
  * Effect layers, projected for emission: every field-level binding becomes
  * its token NAME instead of the `RefIdentity` Figma gave it. `RefIdentity.id`
- * (tree.ts) is explicit that the brief's rule is that internal ids stay
- * inside, and `remote`/`collectionId` are provenance a consumer acting on the
- * brief has no use for -- so a `bindings.<field>` entry projects down to a
- * bare string, matching this block's own design-spec example.
+ * (tree.ts) is explicit that the legacy component-v4 brief keeps internal ids
+ * inside, and `remote`/`collectionId` are provenance a consumer acting on that
+ * brief has no use for -- so a `bindings.<field>` entry projects down to a bare
+ * string, matching this block's own design-spec example.
  *
  * A bare name, not `{ token, kind }` the way `tokens.bindings` (see
  * `tokensOf`) does it. `tokens.bindings` carries `kind` alongside `token`
