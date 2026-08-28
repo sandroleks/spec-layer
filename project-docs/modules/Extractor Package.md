@@ -4,12 +4,17 @@ tags:
   - module
   - extraction
   - deterministic
-status: living
+status: archived
 updated: 2026-08-28
 source: packages/extractor
 ---
 
 # Extractor package
+
+> [!warning] Archived package overview
+> This page mixes current Foundation notes with retired Markdown architecture.
+> Use `docs/plugin-knowledge-map.md`, `docs/specs/`, and source for current
+> behavior. See [[ARCHIVE-NOTICE]].
 
 `@spec-layer/extractor` is the pure transformation core. It consumes plain JSON-like structures and produces component specifications, foundation projections, hashes, Markdown, and AI prompt contracts.
 
@@ -174,4 +179,3 @@ The contract itself is `docs/specs/foundation-context-v5.md`.
 - [[Markdown Specification]]
 - [[Data Flows]]
 - [[Source Catalog]]
-

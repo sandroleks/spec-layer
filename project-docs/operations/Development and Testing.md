@@ -4,11 +4,15 @@ tags:
   - development
   - testing
   - ci
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Development and testing
+
+> [!warning] Archived snapshot
+> Commands for the deleted web app and Node 20 are obsolete. Use `package.json`,
+> CI, and `packages/plugin/TESTING.md`. See [[ARCHIVE-NOTICE]].
 
 ## Requirements
 
@@ -107,4 +111,3 @@ CI permissions are read-only for repository contents.
 - [[Deployment and Release]]
 - [[Source Catalog]]
 - [[Security and Privacy]]
-

@@ -4,11 +4,15 @@ tags:
   - security
   - privacy
   - threat-model
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Security and privacy
+
+> [!warning] Archived threat model
+> The local web-app boundary below no longer exists. Use root `SECURITY.md`, the
+> landing policies, and `packages/proxy/README.md`. See [[ARCHIVE-NOTICE]].
 
 ## Trust boundaries
 
@@ -133,4 +137,3 @@ Use GitHub private vulnerability reporting. Never place real credentials or priv
 3. Plan removal of legacy bare-key authentication after old clients age out.
 4. Keep the web server loopback-only or add a real public security model.
 5. Consider pruning historical quota month keys and bounding Durable Object state further.
-

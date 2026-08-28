@@ -14,7 +14,7 @@ body:
     id: reproduce
     attributes:
       label: Reproduction steps
-      placeholder: Include a minimal component fixture or Markdown file when possible.
+      placeholder: Include a minimal serialized fixture, Copy-for-AI YAML excerpt, or synthetic Figma example when possible.
     validations:
       required: true
   - type: input
@@ -27,7 +27,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Node, operating system, browser, and Figma desktop version where relevant.
+      description: Node 22 version, operating system, and Figma desktop version where relevant.
     validations:
       required: true
   - type: checkboxes
@@ -35,5 +35,5 @@ body:
     attributes:
       label: Data safety
       options:
-        - label: I removed API keys, private Figma links, customer names, and proprietary design-system data.
+        - label: I removed API and license keys, private Figma links, customer names, rendered images, and proprietary design-system data.
           required: true

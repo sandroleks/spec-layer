@@ -4,11 +4,15 @@ tags:
   - network
   - integrations
   - architecture
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Network and external services
+
+> [!warning] Archived snapshot
+> The legacy app network paths on this page no longer exist. See
+> [[ARCHIVE-NOTICE]] and `docs/plugin-knowledge-map.md` for the current boundary.
 
 ## Complete network map
 
@@ -135,4 +139,3 @@ The legacy browser UI calls relative `/api/*` routes on the loopback Next.js ser
 - [[Proxy API]]
 - [[Legacy Web API]]
 - [[Security and Privacy]]
-

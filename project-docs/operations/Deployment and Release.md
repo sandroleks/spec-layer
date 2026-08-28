@@ -4,11 +4,16 @@ tags:
   - operations
   - deployment
   - release
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Deployment and release
+
+> [!warning] Archived snapshot
+> This page predates the plugin-only product boundary and Node 22/Wrangler
+> validation. Use `README.md`, `.github/RELEASE_TEMPLATE.md`, and
+> `packages/plugin/TESTING.md`. See [[ARCHIVE-NOTICE]].
 
 The repository has three independently released surfaces: the Cloudflare Worker, the Figma plugin, and the static landing site. The legacy web app is primarily run locally.
 
@@ -99,4 +104,3 @@ The app builds with Next.js and can be started locally. It should remain bound t
 - Spec format changes need explicit compatibility handling.
 - Landing rollback is static.
 - Rotating `FIGMA_ID_SALT` is not a normal rollback; it resets free identities.
-

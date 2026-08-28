@@ -4,12 +4,17 @@ tags:
   - module
   - marketing
   - static-site
-status: living
-updated: 2026-07-27
+status: archived
+updated: 2026-08-28
 source: apps/landing
 ---
 
 # Landing site
+
+> [!warning] Archived snapshot
+> This page is retained for the July 2026 architecture record. Use
+> `apps/landing/README.md` and the site files for current deployment truth. See
+> [[ARCHIVE-NOTICE]].
 
 `apps/landing` is a static marketing and policy site with no build step.
 
@@ -46,4 +51,3 @@ Monthly and yearly Lemon Squeezy checkout URLs are constants in the main script 
 The documented target is Cloudflare Pages project `speclayer-landing`.
 
 See [[Deployment and Release]].
-

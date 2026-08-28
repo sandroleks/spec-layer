@@ -3,11 +3,16 @@ title: Product Overview
 tags:
   - product
   - architecture
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Product overview
+
+> [!warning] Archived snapshot
+> Markdown/ZIP output and the local docs app described here were retired in
+> August 2026. The current portable surface is Copy for AI YAML. See
+> [[ARCHIVE-NOTICE]].
 
 Spec Layer is a local-first Figma-to-documentation toolkit. Its primary product is a Figma plugin that reads a component or component set, deterministically derives structural information, optionally asks an AI model for judgment-oriented prose, and produces documentation directly on the Figma canvas or as Markdown.
 

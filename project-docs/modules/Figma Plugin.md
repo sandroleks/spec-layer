@@ -4,12 +4,16 @@ tags:
   - module
   - figma
   - plugin
-status: living
+status: archived
 updated: 2026-07-27
 source: packages/plugin
 ---
 
 # Figma plugin
+
+> [!warning] Archived snapshot
+> Markdown/ZIP downloads described below were removed. The current vNext
+> workflow uses canvas Sections and Copy for AI YAML. See [[ARCHIVE-NOTICE]].
 
 `@spec-layer/plugin` is the primary product. It runs as a Figma plugin with a privileged main thread and a browser-like iframe UI.
 
@@ -174,4 +178,3 @@ The plugin package version is injected as `__PLUGIN_VERSION__` and stored in gen
 - [[Data and Storage]]
 - [[Security and Privacy]]
 - [[Development and Testing]]
-

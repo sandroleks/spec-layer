@@ -13,7 +13,7 @@
   },
   "homepage": "https://github.com/SamsonHD/spec-layer#readme",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
   },
   "workspaces": [
     "packages/*"
@@ -25,16 +25,18 @@
     "typecheck": "tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "build:plugin": "node packages/plugin/build.mjs",
+    "audit": "npm audit",
     "audit:production": "npm audit --omit=dev",
-    "audit:active": "npm audit --omit=dev --workspace @spec-layer/extractor --workspace @spec-layer/plugin --workspace @spec-layer/proxy",
     "check:nul": "node scripts/check-nul-bytes.mjs",
-    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin && npm run check:sandbox",
-    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin && npm run check:sandbox && npm run audit:production",
-    "check:sandbox": "node scripts/check-main-sandbox.mjs"
+    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin && npm run check:sandbox && npm run check:proxy-dry-run",
+    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin && npm run check:sandbox && npm run check:proxy-dry-run && npm run audit",
+    "check:sandbox": "node scripts/check-main-sandbox.mjs",
+    "check:proxy-dry-run": "npm run check:deploy --workspace @spec-layer/proxy"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
-    "minimatch": "^10.2.6"
+    "brace-expansion": "^5.0.9",
+    "minimatch": "^10.2.6",
+    "nanoid": "^3.3.18"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

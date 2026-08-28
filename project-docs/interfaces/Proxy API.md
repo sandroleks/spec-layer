@@ -4,12 +4,17 @@ tags:
   - api
   - proxy
   - network
-status: living
-updated: 2026-07-27
+status: archived
+updated: 2026-08-28
 source: packages/proxy/src/handlers.ts
 ---
 
 # Proxy API
+
+> [!warning] Archived snapshot
+> This page is retained for the July 2026 architecture record. Use
+> `packages/proxy/README.md` and production source for the current API. See
+> [[ARCHIVE-NOTICE]].
 
 Base URL in current plugin builds:
 
@@ -147,4 +152,3 @@ Returns `204` with CORS headers. Preflight performs no identity or license work.
 ## Quota behavior
 
 See [[Proxy Worker]] for limits and persistence.
-

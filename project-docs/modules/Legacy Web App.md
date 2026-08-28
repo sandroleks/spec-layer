@@ -4,12 +4,16 @@ tags:
   - module
   - nextjs
   - legacy
-status: legacy
+status: retired
 updated: 2026-07-27
 source: apps/web
 ---
 
 # Legacy web app
+
+> [!warning] Retired and deleted
+> `apps/web` was removed in August 2026 and is no longer built, tested, or
+> supported. This page is historical only. See [[ARCHIVE-NOTICE]].
 
 `md-ds` is a Next.js App Router application for browsing and editing a filesystem-backed Markdown design system. It remains built and tested but is no longer the primary product direction.
 
@@ -112,4 +116,3 @@ The root architecture note says 1,000 ZIP entries, but current route code sets `
 - [[Data and Storage]]
 - [[Configuration and Secrets]]
 - [[Known Constraints and Technical Debt]]
-

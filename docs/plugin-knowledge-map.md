@@ -1,6 +1,6 @@
 # Plugin knowledge map
 
-Updated: 2026-08-25
+Updated: 2026-08-28
 
 This is the current orientation guide for the Figma plugin and its supporting
 packages. Historical design decisions remain in `docs/superpowers/`; current
@@ -9,8 +9,10 @@ runtime truth belongs in production source, `ARCHITECTURE.md`, and this map.
 ## Product boundary
 
 Spec Layer turns selected components and file-level Foundations into connected
-documentation Sections on the Figma canvas. Component documents can also be
-downloaded as a ZIP containing Markdown and a `.spec-data` sidecar.
+documentation Sections on the Figma canvas. **Copy for AI** produces a YAML
+brief on the clipboard: from a component or scoped Foundation row in Library,
+or for the complete file-wide token vocabulary from Foundations. Markdown and
+ZIP output have been retired.
 
 Structural extraction is deterministic and local. AI writing is optional. The
 plugin sends a derived component summary and, when small enough, a rendered
@@ -63,8 +65,8 @@ The command palette searches workflows and connected Library documents.
 `screens/` renders workflow markup; `shell/` owns persistent navigation and
 header behavior.
 
-`ui.ts`, `dom.ts`, and `render.ts` are the previous tabbed UI. They are frozen
-as a temporary rollback path and should receive no new product behavior.
+The previous tabbed UI and its adapters (`ui.ts`, `dom.ts`, `render.ts`, and
+`ui/state.ts`) have been deleted; there is no legacy runtime or build fallback.
 
 ## Connected-document model
 
@@ -132,16 +134,13 @@ overrides when a semantic role can express the state.
 
 - `npm run build:plugin` builds the plugin. One UI, one bundle: the old UI and
   its `UI_LEGACY` flag are gone.
-- `npm run check` runs lint, type checking, tests, and the plugin build.
-- `npm run check:ci` adds coverage and the full production dependency audit.
-- `npm run audit:active` narrows an advisory to the three shipped workspaces.
+- `npm run check` runs lint, type checking, tests, the plugin build, sandbox
+  validation, and a Wrangler proxy deployment dry-run.
+- `npm run check:ci` uses coverage in place of the ordinary test pass and adds
+  the full dependency audit, including development tooling.
+- `npm run audit` runs that full audit directly.
 
 The manual release gate is `packages/plugin/TESTING.md`.
-
-The legacy entry point, its adapters, and its build and test paths are gone:
-`dom.ts`, `render.ts` and `ui/state.ts` were deleted along with the `Refs`-taking
-functions in `actions.ts` and the license/quota copy helpers in `ui/proxy.ts`
-that only the old UI called.
 
 ## Invariants
 

@@ -4,11 +4,15 @@ tags:
   - storage
   - persistence
   - data
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Data and storage
+
+> [!warning] Archived snapshot
+> The local Markdown tree, sidecars, cache, and docs-app stores below were
+> removed with `apps/web`. See [[ARCHIVE-NOTICE]].
 
 ## Storage overview
 
@@ -137,4 +141,3 @@ License cache keys are SHA-256 based and never contain raw keys. Entries store a
 - [[Legacy Web App]]
 - [[Proxy Worker]]
 - [[Security and Privacy]]
-

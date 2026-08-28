@@ -4,7 +4,7 @@ Thanks for improving Spec Layer. Keep changes focused, testable, and safe for a 
 
 ## Setup
 
-Requirements: Node.js 20.9 or newer, npm, and Figma Desktop for plugin testing.
+Requirements: Node.js 22 or newer, npm 10 or newer, and Figma Desktop for plugin testing.
 
 ```bash
 npm ci
@@ -18,8 +18,9 @@ Build the Figma plugin with `npm run build:plugin`, then import `packages/plugin
 - Add or update automated tests for behavior changes. Bug fixes should include a regression test.
 - Run the complete quality gate before opening a pull request: `npm run check`.
 - Keep package boundaries intact: `extractor` owns pure transformation, `plugin` owns Figma I/O, and `proxy` owns the AI relay, quotas, and licensing.
-- Do not commit `.spec-data`, `.spec-cache`, `.ds-config.json`, or environment files.
-- Use synthetic fixtures. Never submit API keys, private Figma file keys, customer names, proprietary tokens, or internal component data.
+- Do not commit environment files, API keys, license keys, or local credentials.
+- Use synthetic fixtures. Never submit private Figma file keys, customer names,
+  rendered component images, proprietary tokens, or internal component data.
 - Avoid unrelated formatting or refactoring in the same pull request.
 
 ## Pull requests

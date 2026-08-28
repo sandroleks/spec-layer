@@ -4,12 +4,16 @@ tags:
   - module
   - markdown
   - format
-status: living
+status: retired
 updated: 2026-07-27
 source: packages/format
 ---
 
 # Format package
+
+> [!warning] Retired and deleted
+> `packages/format` was removed in August 2026 with the strict Markdown output
+> contract. This page is historical only. See [[ARCHIVE-NOTICE]].
 
 `@spec-layer/format` is the smallest workspace and the owner of the portable Markdown envelope. It has no Figma or application runtime dependency.
 
@@ -60,4 +64,3 @@ Runtime dependency: `yaml`.
 - [[Markdown Specification]]
 - [[Extractor Package]]
 - [[Legacy Web App]]
-

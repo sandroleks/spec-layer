@@ -18,9 +18,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a library shows its target with no value, since a library's modes
   cannot be mapped onto local ones.
 
-  Foundation frames are tracked like component docs. They appear in **My
-  Library** with the same In sync, Update available, Manually edited, and
-  Source missing states, and support Update, Detach, and Remove.
+  Foundation frames are tracked like component docs. They appear in
+  **Library** with the same In sync, Update available, Manually edited, and
+  Source missing states, and support Update documentation, Copy for AI,
+  Detach documentation, and Remove connection.
   Regenerating replaces a frame in place rather than adding a second
   copy, including when the frame lives on another page. Renaming a
   collection reports the doc as out of date rather than as missing.
@@ -87,15 +88,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   build shows the same animated loader as a component doc, switching to
   real progress ("Creating frame 3 of 5") once frames start landing.
 
-  The tab now says how many frames a build will make, on the button and
-  on any row that splits, so a two-row selection producing five frames is
-  visible before the click rather than after it. A finished build also
-  reports its result, which it previously computed and then immediately
-  erased.
+  The tab now says how many frames a build will make in its included summary
+  and on any row that splits, while the action keeps the stable **Create docs**
+  label. A finished build also reports its result, which it previously
+  computed and then immediately erased.
 
-  This covers the on-canvas half. Foundation Markdown and the docs-app
-  pages are a separate piece of work, so a foundation doc offers no
-  Markdown download yet.
+  Foundation sources and connected Library rows also offer **Copy for AI**.
+  It places a structured YAML brief on the clipboard rather than creating a
+  second Markdown/sidecar output contract.
 
 ### Security
 
@@ -109,9 +109,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- The Figma plugin adds a Remove key action and clearer Settings status
-  copy that distinguishes a proxy outage from an expired subscription or
-  an unactivated key.
+- The Figma plugin adds a Remove key action and clearer License status copy
+  that distinguishes a proxy outage from an expired subscription or an
+  unactivated key.
+- The repository now requires Node.js 22, matching Wrangler and Miniflare.
+  CI validates a full dependency audit and bundles the proxy with
+  `wrangler deploy --dry-run` without uploading it.
+
+### Removed
+
+- Retired the local Next.js docs app, the `@spec-layer/format` package, the
+  strict Markdown specification, Markdown/ZIP downloads, and the old **Send
+  to docs** path. The supported product is the Figma plugin, its proxy, and
+  the landing site; **Copy for AI** is the portable context surface.
 
 ## [1.0.0] - 2026-06-15
 

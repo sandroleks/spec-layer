@@ -1,8 +1,14 @@
-# Foundation frames manual Figma pass
+# Foundation frames — historical focused Figma pass
 
 **Branch:** foundations-1.0
 **Plan:** Task 10: Manual Figma pass for generation
-**Status:** Checklist created. Testing deferred to human owner.
+**Status:** Historical focused checklist. Use `packages/plugin/TESTING.md` as
+the current release gate; retain this file for deeper Foundation layout
+coverage.
+
+This checklist predates the current vNext navigation and Copy for AI wording.
+Where labels differ, the built plugin and `packages/plugin/TESTING.md` are
+authoritative; the Figma-host and layout assertions below remain useful.
 
 Record pass/fail and findings inline for each item below. If an item fails, note whether it was fixed during this pass or deferred to a later task.
 

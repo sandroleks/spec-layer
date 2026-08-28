@@ -4,11 +4,15 @@ tags:
   - reference
   - modules
   - source
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Source catalog
+
+> [!warning] Archived snapshot
+> This catalog includes files and directories deleted in August 2026. Use
+> `docs/plugin-knowledge-map.md` and the repository tree. See [[ARCHIVE-NOTICE]].
 
 This is a file-level map of production source. Test files mirror these modules and are intentionally summarized by package rather than listed one by one.
 

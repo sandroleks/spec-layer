@@ -4,12 +4,17 @@ tags:
   - interface
   - figma
   - messages
-status: living
+status: archived
 updated: 2026-07-27
 source: packages/plugin/src/messages.ts
 ---
 
 # Plugin message protocol
+
+> [!warning] Archived snapshot
+> This table predates the removal of Markdown download messages and later vNext
+> protocol work. Treat `packages/plugin/src/messages.ts` as authoritative. See
+> [[ARCHIVE-NOTICE]].
 
 The Figma main thread and iframe communicate with `postMessage`. `MainToUi` and `UiToMain` are discriminated unions in `packages/plugin/src/messages.ts`.
 
@@ -102,4 +107,3 @@ The composite key prevents two collections with the same folder label from colli
 ## Trust note
 
 Types improve internal correctness but do not validate runtime messages by themselves. Both runtimes are bundled from the same codebase, so the protocol assumes a trusted plugin bundle.
-

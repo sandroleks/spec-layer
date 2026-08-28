@@ -3,7 +3,7 @@
 [![CI](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/SamsonHD/spec-layer/actions/workflows/ci.yml)
 [![Figma Community](https://img.shields.io/badge/Figma-Community-f24e1e?logo=figma&logoColor=white)](https://www.figma.com/community/plugin/1652104411578396548)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20.9-43853d.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-43853d.svg)](https://nodejs.org)
 
 A Figma plugin that turns your components into spec and guideline frames, right on the canvas. Measurements, states, anatomy, tokens, and AI-written usage docs in one click.
 
@@ -44,25 +44,38 @@ Every spec feature is free, with no account needed.
 |---|---|---|
 | Measurements, states, anatomy, tokens, theming | Yes | Yes |
 | On-canvas doc frames and Copy for AI | Yes | Yes |
-| AI writing | 20 free uses in your first month, then 10 a month | Unlimited for normal individual use |
+| AI writing | 20 free uses in your first month, then 10 a month | No fixed monthly cap for normal individual use |
 | Priority support | | Yes |
 
 Pro is $7.99/month, or a yearly plan at two months free. Buy it on the [landing page](https://speclayer-landing.pages.dev) and your license key arrives by email. Paste it into the plugin's License page. One key covers your individual use across your files. Payments are handled by Lemon Squeezy as merchant of record.
 
 Some honest detail on the numbers:
 
-- One generation is one successful AI call for a component. Failed calls never count.
-- Regenerating docs for an unchanged component hits the cache and costs nothing.
+- One generation is one successful upstream AI response. Failed upstream calls never count.
+- Retrying the same unchanged request within 24 hours hits the idempotency cache
+  and does not consume another generation.
 - Deterministic sections never consume a generation.
-- "Unlimited" means normal individual use. Automated, shared, or exceptionally high-volume usage may be limited under the fair-use policy, and you get contacted before anything is limited.
+- Pro's no-fixed-cap allowance is for normal individual use. Automated, shared,
+  or exceptionally high-volume usage may be limited under the fair-use policy,
+  and you get contacted before anything is limited.
 
 ## What leaves your Figma file
 
 The deterministic sections run entirely inside the plugin. Nothing leaves your file.
 
-When you generate AI prose, two things are sent to the Spec Layer proxy and from there to Anthropic: a structured summary of the selected component, and a rendered image of it. Generated results are cached by content hash so an unchanged component does not get sent twice.
+When you generate AI prose, a structured summary of the selected component and,
+when it fits the export limits, a rendered image are sent to the Spec Layer
+proxy and from there to Anthropic. If image export fails or is too large, the
+request falls back to text only. Generated responses are cached for 24 hours
+under a content-derived key so an immediate retry does not send the same
+request twice.
 
-You do not supply an API key. License keys are stored hashed on the server, never in the clear and never in a URL. See [apps/landing/privacy.html](apps/landing/privacy.html) and [apps/landing/security.html](apps/landing/security.html) for the published policies, and [SECURITY.md](SECURITY.md) to report a vulnerability.
+You do not supply an API key. The plugin keeps an activated license in Figma's
+local plugin storage; the proxy sends it to Lemon Squeezy for validation and
+uses SHA-256 digests, not raw license keys, for its own cache keys, quota
+identities, and logs. See [apps/landing/privacy.html](apps/landing/privacy.html)
+and [apps/landing/security.html](apps/landing/security.html) for the published
+policies, and [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Install
 
@@ -95,11 +108,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data flow and trust boundari
 
 ## Development
 
-Requires Node.js 20.9 or newer, npm 10 or newer, and Figma desktop for plugin development.
+Requires Node.js 22 or newer, npm 10 or newer, and Figma desktop for plugin development.
 
 ```bash
 npm ci
-npm run check           # lint, typecheck, NUL scan, tests, plugin build, sandbox scan
+npm run check           # lint, typecheck, tests, plugin build, sandbox and proxy bundle checks
 ```
 
 Individual steps:
@@ -110,13 +123,16 @@ npm run typecheck       # all TypeScript workspaces
 npm test                # Vitest suite
 npm run test:coverage   # with coverage thresholds
 npm run build:plugin    # Figma plugin bundle
+npm run check:proxy-dry-run # bundle and validate the Worker without deploying
+npm run audit           # full dependency audit, including development tools
 ```
 
 > **Note:** builds from source currently point at the staging proxy (`spec-layer-proxy.spec-layer-test.workers.dev`), in both `packages/plugin/src/ui/proxy.ts` and the manifest's `networkAccess`. Swap both for the production host before cutting a public release.
 
 CI runs the same stages as `npm run check`, adds coverage thresholds, and audits
-the full production dependency tree on pushes to `main` and pull requests.
-`npm run audit:active` narrows an advisory to the three shipped workspaces.
+the full dependency tree on pushes to `main` and pull requests. The proxy check
+uses Wrangler's `deploy --dry-run`; it builds and validates the Worker but never
+uploads it.
 
 ## Repository layout
 
@@ -132,7 +148,9 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Content safety
 
-Do not commit API keys, private Figma URLs, customer data, proprietary component exports, `.ds-config.json`, or `.spec-cache` / `.spec-data` sidecars. A pre-commit hook in `.githooks/` scans for common key formats, but it is a backstop, not a guarantee.
+Do not commit API keys, license keys, private Figma URLs, customer data, or
+proprietary component exports. A pre-commit hook in `.githooks/` scans for
+common key formats, but it is a backstop, not a guarantee.
 
 Bug reports and test fixtures must use synthetic or explicitly publishable data.
 

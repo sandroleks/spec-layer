@@ -4,11 +4,15 @@ tags:
   - architecture
   - runtime
   - monorepo
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # System architecture
+
+> [!warning] Archived snapshot
+> This topology includes deleted web, format, and Markdown-spec surfaces. See
+> [[ARCHIVE-NOTICE]] and `docs/plugin-knowledge-map.md` for current runtime truth.
 
 Spec Layer is an npm-workspaces monorepo with several runtime areas connected by data contracts rather than a shared server application.
 

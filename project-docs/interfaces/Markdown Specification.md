@@ -6,12 +6,17 @@ tags:
   - contract
   - markdown
   - format
-status: normative
+status: retired
 updated: 2026-07-27
 source: spec/SPEC.md
 ---
 
 # Markdown specification
+
+> [!warning] Retired and deleted
+> `spec/SPEC.md`, the strict Markdown contract, and its writers were removed in
+> August 2026. Copy for AI YAML is the current context surface. See
+> [[ARCHIVE-NOTICE]].
 
 The normative contract is `spec/SPEC.md`, titled **Spec Layer Format v0.2**. Writers emit `spec_version: "0.2"`; `"0.1"` files stay readable. This note is an architectural summary; update the normative file first when changing the format.
 
@@ -107,4 +112,3 @@ Format changes require synchronized updates to:
 - fixtures/golden outputs;
 - consumers in plugin and web;
 - compatibility and release notes.
-

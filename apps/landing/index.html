@@ -309,8 +309,8 @@
         <div class="feature-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
         </div>
-        <h3>My Library</h3>
-        <p>Track the components you've documented and update their docs in a click when they change.</p>
+        <h3>Library</h3>
+        <p>Track component and Foundation docs, then update them in place when their sources change.</p>
       </div>
     </div>
   </div>
@@ -336,7 +336,7 @@
         <div class="price-note">No account needed</div>
         <ul>
           <li><strong>Every spec feature, free forever.</strong> Measurements, states matrix, anatomy, variant diffs, token and theming tables</li>
-          <li>On-canvas doc frames and export</li>
+          <li>On-canvas documentation and Copy for AI</li>
           <li>10 AI generations a month, 20 in your first month</li>
         </ul>
         <a class="btn btn-secondary" href="https://www.figma.com/community/plugin/1652104411578396548" target="_blank" rel="noopener">Open in Figma</a>
@@ -348,7 +348,7 @@
         <div class="price-note" id="price-note">Billed monthly, cancel anytime</div>
         <ul>
           <li>Everything in Free</li>
-          <li><strong>Unlimited AI generation</strong> for normal individual use</li>
+          <li><strong>No fixed monthly AI cap</strong> for normal individual use</li>
           <li>Priority support</li>
         </ul>
         <a class="btn btn-primary" id="checkout-btn" href="https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6" target="_blank" rel="noopener">Get Pro</a>
@@ -369,7 +369,7 @@
       <summary>How does the license work?</summary>
       <div class="answer"><div class="answer-inner">
         Buy Pro and your license key arrives by email. Open the plugin in Figma,
-        go to Settings, paste the key, and you're on Pro. One key covers your
+        open License, paste the key, and you're on Pro. One key covers your
         individual use across your files.
       </div></div>
     </details>
@@ -377,10 +377,11 @@
     <details>
       <summary>What counts as an AI generation?</summary>
       <div class="answer"><div class="answer-inner">
-        One successful AI call for a component. Regenerating docs for an
-        unchanged component hits the cache and costs nothing. Failed calls
-        never count against your quota. Everything deterministic (measurements,
-        states, anatomy, tokens) is free and doesn't use generations at all.
+        One successful upstream AI response. Retrying the same unchanged
+        request within 24 hours hits the idempotency cache and does not consume
+        another generation. Failed upstream calls do not count. Everything
+        deterministic (measurements, states, anatomy, tokens) is free and does
+        not use generations at all.
       </div></div>
     </details>
 
@@ -394,11 +395,12 @@
     </details>
 
     <details>
-      <summary>Is Pro really unlimited?</summary>
+      <summary>Does Pro have a monthly cap?</summary>
       <div class="answer"><div class="answer-inner">
-        For normal individual use, yes. Documenting your whole library in one
-        sitting is fine. Safeguards only kick in on automated or shared usage
-        patterns, and we'll always contact you before limiting anything.
+        There is no fixed monthly cap for normal individual use. Documenting
+        your whole library in one sitting is fine. Safeguards apply to
+        automated, shared, or exceptionally high-volume usage, and we'll
+        contact you before limiting anything.
       </div></div>
     </details>
   </div>

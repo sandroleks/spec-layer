@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "scripts": {
+    "check:deploy": "wrangler deploy --dry-run --config wrangler.toml"
+  },
   "dependencies": {
     "@spec-layer/extractor": "*",
     "js-sha256": "^0.11.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260701.0",
-    "wrangler": "^4.0.0"
+    "@cloudflare/workers-types": "^5.20260828.1",
+    "wrangler": "^4.127.0"
   }
 }

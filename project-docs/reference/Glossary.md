@@ -3,11 +3,15 @@ title: Glossary
 tags:
   - reference
   - glossary
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Glossary
+
+> [!warning] Archived snapshot
+> Terms for the deleted Markdown specification and web app are historical. See
+> [[ARCHIVE-NOTICE]] for the current product boundary.
 
 | Term | Meaning |
 |---|---|
@@ -36,4 +40,3 @@ updated: 2026-07-27
 | Source drift | Deterministic source content changed since a doc was generated |
 | Spec Layer v0.1 | Strict Markdown/frontmatter contract in `spec/SPEC.md` |
 | State matrix | Grid of variant/state combinations rendered in a doc frame |
-

@@ -1,7 +1,7 @@
 # @spec-layer/proxy
 
-The license + AI proxy for the Spec Layer Figma plugin (spec §6.1). A
-Cloudflare Worker that sits between the plugin and the Anthropic API: it
+The license + AI proxy for the Spec Layer Figma plugin. A Cloudflare Worker
+that sits between the plugin and the Anthropic API: it
 validates Lemon Squeezy licenses, enforces free/pro quotas server-side, and
 holds the Anthropic key so the plugin never sees it.
 
@@ -46,7 +46,8 @@ endpoint and caches the status).
 
 - Free: 20 generations within 30 days of first sight, then 10 per UTC
   calendar month. Only uncached, successful generations count.
-- Pro: unlimited; flagged for review at ≥1,000/month (`fair_use_flag` log).
+- Pro: no fixed monthly quota for normal individual use; flagged for fair-use
+  review at ≥1,000/month (`fair_use_flag` log).
 - Quota engine rate limit: 10 uncached generation reservations/min per
   identity, both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
@@ -100,7 +101,7 @@ cache inside the DO; prompts and prose are never logged.
 
 | Name | Kind | Purpose |
 |---|---|---|
-| `LICENSE_CACHE` | KV namespace | License status cache (`lic:<key>`) |
+| `LICENSE_CACHE` | KV namespace | License status cache keyed by a SHA-256 digest |
 | `QUOTA` | Durable Object → `QuotaDO` | Per-identity quota state |
 | `ANTHROPIC_API_KEY` | secret | Upstream auth |
 | `FIGMA_ID_SALT` | secret | Salted hashing of Figma user IDs. Rotating it resets all free-tier quotas — don't rotate casually. |
@@ -133,6 +134,7 @@ curl -s https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User
 ```bash
 npx vitest run packages/proxy      # from the repo root
 npm run typecheck
+npm run check:proxy-dry-run        # bundle and validate without uploading
 ```
 
 All business logic is in pure, dependency-injected modules

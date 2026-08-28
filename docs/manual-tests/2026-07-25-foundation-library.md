@@ -1,10 +1,16 @@
-# Foundation docs in My Library manual Figma pass
+# Foundation docs in Library — historical focused pass
 
 **Branch:** foundations-1.0
 **Plan:** Task 14: Update, Detach, Remove, and the final pass
-**Status:** Checklist created. Testing deferred to human owner.
+**Status:** Historical focused checklist. Use `packages/plugin/TESTING.md` as
+the current release gate; retain this file for deeper Foundation regression
+coverage.
 
-Run this together with `2026-07-25-foundation-frames.md` in one session. That checklist covers generating foundation frames; this one covers what happens to them afterwards in the My Library tab. Generate a set of frames first, then work through the items below against them.
+Run this together with `2026-07-25-foundation-frames.md` in one session. That
+checklist covers generating foundation frames; this one covers what happens to
+them afterwards in Library. It predates the retirement of Markdown downloads,
+so current **Copy for AI** behavior takes precedence wherever the old wording
+disagrees.
 
 Record pass/fail and findings inline for each item. If an item fails, note whether it was fixed during this pass or deferred.
 
@@ -54,7 +60,13 @@ For most items below you need a file with at least one variable collection holdi
 
 ### Row actions
 
-- [ ] **The overflow menu offers the right actions.** A foundation row's overflow menu offers Update, Detach, and Remove. It must NOT offer `Download .md`, because foundation markdown does not exist yet and is a later phase. It must NOT offer `Go to source`, because a foundation doc has no source node to jump to.
+- [ ] **The overflow menu offers the right actions.** A foundation row's overflow menu offers Update documentation, Copy for AI, Detach documentation, and Remove connection. It must not offer a Markdown download. It must not offer View source component, because a foundation document has no source node to jump to.
+      Screenshot:
+
+- [ ] **Copy for AI uses the live Foundation scope.** Copy from a collection row
+      includes the complete collection and all modes even when its documentation
+      was split across Sections. Copy from a text-style row includes only text
+      styles. Neither action changes the canvas or downloads a file.
       Screenshot:
 
 - [ ] **Update rebuilds in place.** Update rebuilds the frame at the same position, on the same page, as a single frame. The registry does not gain a duplicate row.

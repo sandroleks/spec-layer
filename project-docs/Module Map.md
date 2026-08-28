@@ -3,11 +3,15 @@ title: Module Map
 tags:
   - modules
   - monorepo
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Module map
+
+> [!warning] Archived snapshot
+> This map includes packages and output paths deleted in August 2026. See
+> [[ARCHIVE-NOTICE]] and `docs/plugin-knowledge-map.md` for the current map.
 
 ## Workspace packages
 

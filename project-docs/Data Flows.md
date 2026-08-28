@@ -3,11 +3,15 @@ title: Data Flows
 tags:
   - architecture
   - data-flow
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Data flows
+
+> [!warning] Archived snapshot
+> This page predates the August 2026 removal of the web app, format package,
+> Markdown/ZIP output, and Send to docs. See [[ARCHIVE-NOTICE]].
 
 ## Component extraction and canvas generation
 

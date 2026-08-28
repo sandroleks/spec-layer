@@ -94,7 +94,8 @@ Neither stores a license key in the clear.
 ## Verification
 
 The root `npm run check` command runs lint, TypeScript checks, a NUL-byte scan,
-unit tests, the plugin build, and a scan asserting the main-thread bundle
-touches no browser globals the Figma sandbox does not provide. GitHub Actions
-adds coverage thresholds and audits the full production dependency tree.
-`npm run audit:active` narrows an advisory to the three shipped workspaces.
+unit tests, the plugin build, a scan asserting the main-thread bundle touches
+no unsupported browser globals, and a Wrangler deployment dry-run that bundles
+the proxy without uploading it. GitHub Actions uses the coverage test pass and
+audits the full dependency tree, including development tooling. Run that audit
+directly with `npm run audit`.

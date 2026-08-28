@@ -8,10 +8,11 @@
 - [ ] `npm run lint`
 - [ ] `npm run typecheck`
 - [ ] `npm test`
-- [ ] `npm run build`
 - [ ] `npm run build:plugin`
-- [ ] No API keys, private Figma links, customer data, generated inbox files, or local configuration are included.
+- [ ] `npm run check:proxy-dry-run`
+- [ ] `npm run audit`
+- [ ] No API keys, license keys, private Figma links, customer data, or proprietary component exports are included.
 
 ## Screenshots or fixtures
 
-Include only when behavior or rendered output changes. Use synthetic data.
+Include only when behavior or rendered output changes. Use synthetic or explicitly publishable data.

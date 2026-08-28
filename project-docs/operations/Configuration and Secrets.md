@@ -4,11 +4,15 @@ tags:
   - operations
   - configuration
   - secrets
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Configuration and secrets
+
+> [!warning] Archived snapshot
+> This page includes deleted app configuration and an obsolete Node requirement.
+> Use root `package.json`, Worker config, and [[ARCHIVE-NOTICE]] for current truth.
 
 ## Root workspace
 
@@ -150,4 +154,3 @@ The monthly and yearly checkout URLs are JavaScript constants in `apps/landing/i
 - [[Data and Storage]]
 - [[Security and Privacy]]
 - [[Deployment and Release]]
-

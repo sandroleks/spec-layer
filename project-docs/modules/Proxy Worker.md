@@ -5,12 +5,17 @@ tags:
   - proxy
   - cloudflare
   - licensing
-status: living
-updated: 2026-07-27
+status: archived
+updated: 2026-08-28
 source: packages/proxy
 ---
 
 # Proxy Worker
+
+> [!warning] Archived snapshot
+> This page is retained for the July 2026 architecture record. Use
+> `packages/proxy/README.md` and production source for current behavior. See
+> [[ARCHIVE-NOTICE]].
 
 `@spec-layer/proxy` is a Cloudflare Worker that is authoritative for plugin AI access, quota state, and Pro license validation.
 
@@ -126,4 +131,3 @@ Prompts and generated prose should not be logged.
 - [[Network and External Services]]
 - [[Security and Privacy]]
 - [[Deployment and Release]]
-

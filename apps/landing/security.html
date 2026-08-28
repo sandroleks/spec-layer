@@ -39,7 +39,7 @@
 <main>
   <div class="wrap">
     <h1>Security & responsible disclosure</h1>
-    <p class="meta">Last updated 23 July 2026</p>
+    <p class="meta">Last updated 28 August 2026</p>
     <p>
       We take the security of Spec Layer seriously. If you believe you have found a
       security vulnerability in the Spec Layer plugin or its backend, we want to hear
@@ -75,10 +75,12 @@
       This policy covers the Spec Layer Figma plugin and the backend it talks to. The
       backend runs on Cloudflare Workers, a managed runtime that Cloudflare keeps
       patched, so there is no server or operating system for us to maintain. Our
-      Anthropic API key is held server-side and never reaches the plugin, prompts and
-      generated text are never logged, and license keys are stored only as salted
-      hashes. Payments are handled by Lemon Squeezy as merchant of record, so we never
-      handle payment card data.
+      Anthropic API key is held server-side and never reaches the plugin. Prompts,
+      rendered images, and generated text are never logged. The Worker receives a raw
+      license key only to validate it with Lemon Squeezy; its own cache keys, quota
+      identities, and logs use unsalted SHA-256 digests. Free-tier Figma identifiers use
+      a separate salted SHA-256 digest. Payments are handled by Lemon Squeezy as merchant
+      of record, so we never handle payment card data.
     </p>
     <h2>Safe harbor</h2>
     <p>

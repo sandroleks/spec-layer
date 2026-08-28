@@ -4,11 +4,15 @@ tags:
   - reference
   - technical-debt
   - constraints
-status: living
+status: archived
 updated: 2026-07-27
 ---
 
 # Known constraints and technical debt
+
+> [!warning] Archived snapshot
+> Several items below describe already-retired web, Markdown, and download
+> surfaces. Do not treat them as the current backlog. See [[ARCHIVE-NOTICE]].
 
 ## Release and infrastructure
 
@@ -129,4 +133,3 @@ The legacy app's `.spec-cache` has no explicit TTL/size policy. Prompt version c
 5. Plan a compatibility sunset for bare license keys.
 6. Decide whether foundation Markdown is a product requirement before extending the strict format.
 7. Add bounded cleanup for proxy month history and local AI cache.
-

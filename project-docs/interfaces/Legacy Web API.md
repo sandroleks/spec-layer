@@ -4,12 +4,16 @@ tags:
   - api
   - nextjs
   - legacy
-status: legacy
+status: retired
 updated: 2026-07-27
 source: apps/web/src/app/api
 ---
 
 # Legacy web API
+
+> [!warning] Retired and deleted
+> `apps/web` and every route described here were removed in August 2026. This
+> page is historical only. See [[ARCHIVE-NOTICE]].
 
 All routes are Next.js App Router handlers under `/api`. They are intended for a trusted loopback deployment.
 
@@ -99,4 +103,3 @@ Mutation routes generally implement `OPTIONS` and return `204`. CORS headers are
 
 > [!danger]
 > These routes have no user authentication, tenant isolation, project authorization, or public-deployment secret model. Do not expose the server through a tunnel or permissive reverse proxy.
-

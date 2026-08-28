@@ -7,16 +7,21 @@ tags:
   - spec-layer
   - documentation
   - index
-status: living
-updated: 2026-07-27
+status: archived
+updated: 2026-08-28
 ---
 
 # Spec Layer project documentation
 
-> [!abstract]
-> This folder is an Obsidian-ready documentation vault for the Spec Layer repository. It documents the current codebase, including its architecture, packages, runtime boundaries, network calls, proxy, storage, security, development workflow, and deployment model.
+> [!warning] Archived architecture snapshot
+> This Obsidian vault is a mixed-era historical archive, primarily describing
+> the repository as it existed on 27 July 2026, with a few later Foundation
+> notes. It is retained for context, not as runtime or release truth. In
+> August 2026, `apps/web`, `packages/format`, `spec`, Markdown/ZIP output, and
+> **Send to docs** were retired. Start with `docs/plugin-knowledge-map.md`,
+> `README.md`, `SECURITY.md`, and production source for current behavior.
 
-## Start here
+## Historical index
 
 - [[Product Overview]] explains what the product does and which parts are current or legacy.
 - [[System Architecture]] shows the runtime areas and dependency boundaries.
@@ -64,15 +69,18 @@ updated: 2026-07-27
 |---|---|---|---|
 | Figma plugin | `packages/plugin` | Primary product: extracts components and builds documentation in Figma | Active |
 | Extractor | `packages/extractor` | Pure transformation from serialized Figma data to specifications | Active |
-| Format | `packages/format` | Markdown/frontmatter contract and parsing | Active |
 | AI and license proxy | `packages/proxy` | Cloudflare Worker for Anthropic, quota, and Lemon Squeezy licensing | Active |
 | Landing site | `apps/landing` | Static marketing, pricing, and policy pages | Active |
-| Local docs app | `apps/web` | Local Markdown browser/editor and importer | Legacy |
-| Formal specification | `spec` | Public Markdown format definition | Active contract |
+| Format | `packages/format` | Former Markdown/frontmatter package | Retired and deleted |
+| Local docs app | `apps/web` | Former local Markdown browser/editor and importer | Retired and deleted |
+| Formal specification | `spec` | Former Markdown format definition | Retired and deleted |
 | Existing project notes | `docs` | Backlog, copy, and product notes | Supporting material |
 
 ## Documentation conventions
 
 These notes use Obsidian wikilinks, YAML properties, Mermaid diagrams, and callouts. Open the `project-docs` directory as an Obsidian vault, or read the files in any Markdown viewer.
 
-Source paths are repository-relative. Statements marked **current behavior** are verified against source as of `2026-07-27`. The repository contains older prose that still mentions a plugin-to-docs-app delivery endpoint; the current plugin instead downloads local Markdown/ZIP files and does not call the local app.
+Source paths are repository-relative. Statements marked **current behavior**
+mean current as of `2026-07-27`, not current today. The supported portable
+context surface is **Copy for AI**, which places a YAML brief on the clipboard;
+there is no current Markdown/ZIP download or plugin-to-web-app delivery path.
