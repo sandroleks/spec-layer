@@ -30,7 +30,7 @@ import {
   SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
 } from './value';
 import type { TokenType, Unit } from './value';
-import type { CollectionV5, TokenV5 } from './entities';
+import type { TokenV5 } from './entities';
 import type { FoundationArtifactV5 } from './canonical';
 
 const ROOT = '<artifact>';
@@ -153,6 +153,7 @@ function validateTypedValue(
  *  decides shape (INCONSISTENT_VALUE_SHAPE) vs. content (UNSUPPORTED_VALUE_TYPE). */
 function validateTypedValueEnvelope(
   value: unknown, entityId: string, out: Diagnostic[], modeId?: string,
+  expectedType?: TokenType,
 ): void {
   if (!isRecord(value)) {
     out.push(shape(entityId, 'A typed value must be an object.', modeId));
@@ -162,6 +163,13 @@ function validateTypedValueEnvelope(
   if (typeof type !== 'string' || !SUPPORTED_TOKEN_TYPES.includes(type as TokenType)) {
     out.push(shape(entityId, `Typed value has an unrecognized or missing "type" discriminant: ${JSON.stringify(type)}.`, modeId));
     return;
+  }
+  if (expectedType !== undefined && type !== expectedType) {
+    out.push(shape(
+      entityId,
+      `Expected a "${expectedType}" typed value, but the value declares "${type}".`,
+      modeId,
+    ));
   }
   validateTypedValue(type as TokenType, value, entityId, out, modeId);
 }
@@ -190,10 +198,13 @@ function validateAliasReference(ref: Record<string, unknown>, entityId: string, 
   }
 }
 
-function validateAliasResolution(resolved: Record<string, unknown>, entityId: string, out: Diagnostic[], modeId?: string): void {
+function validateAliasResolution(
+  resolved: Record<string, unknown>, entityId: string, out: Diagnostic[],
+  modeId?: string, expectedType?: TokenType,
+): void {
   const { status } = resolved;
   if (status === 'resolved') {
-    validateTypedValueEnvelope(resolved.value, entityId, out, modeId);
+    validateTypedValueEnvelope(resolved.value, entityId, out, modeId, expectedType);
   } else if (status === 'unresolved') {
     if (!isNonEmptyString(resolved.reason)) {
       out.push(shape(entityId, 'An unresolved alias must carry a non-empty reason.', modeId));
@@ -213,7 +224,9 @@ function validateAliasResolution(resolved: Record<string, unknown>, entityId: st
 }
 
 /** A single mode's `CanonicalValue` (§9): the `kind` discriminant, dispatched. */
-function validateValue(value: unknown, entityId: string, modeId: string, out: Diagnostic[]): void {
+function validateValue(
+  value: unknown, entityId: string, modeId: string, out: Diagnostic[], expectedType?: TokenType,
+): void {
   if (!isRecord(value)) {
     out.push(shape(entityId, 'A token value must be an object, not a bare primitive.', modeId));
     return;
@@ -225,7 +238,7 @@ function validateValue(value: unknown, entityId: string, modeId: string, out: Di
   }
 
   if (kind === 'literal') {
-    validateTypedValueEnvelope(value.value, entityId, out, modeId);
+    validateTypedValueEnvelope(value.value, entityId, out, modeId, expectedType);
   } else if (kind === 'alias') {
     if (!isRecord(value.reference)) {
       out.push(shape(entityId, 'An alias value must carry a reference object.', modeId));
@@ -235,13 +248,112 @@ function validateValue(value: unknown, entityId: string, modeId: string, out: Di
     if (!isRecord(value.resolved)) {
       out.push(shape(entityId, 'An alias value must carry a resolved object.', modeId));
     } else {
-      validateAliasResolution(value.resolved, entityId, out, modeId);
+      validateAliasResolution(value.resolved, entityId, out, modeId, expectedType);
     }
   } else if (kind === 'missing') {
     if (!isNonEmptyString(value.reason)) {
       out.push(shape(entityId, 'A missing value must carry a non-empty reason.', modeId));
     }
   }
+}
+
+function validateIdentity(
+  entity: Record<string, unknown>, entityId: string, kind: string, out: Diagnostic[],
+): void {
+  if (!isNonEmptyString(entity.id)) {
+    out.push(shape(entityId, `${kind}.id must be a non-empty string.`));
+  }
+  if (typeof entity.name !== 'string') {
+    out.push(shape(entityId, `${kind}.name must be a string.`));
+  }
+  if (!isStringArray(entity.path) || entity.path.length === 0) {
+    out.push(shape(entityId, `${kind}.path must be a non-empty array of strings.`));
+  }
+  if (entity.suggested_code_name !== undefined && typeof entity.suggested_code_name !== 'string') {
+    out.push(shape(entityId, `${kind}.suggested_code_name must be a string when present.`));
+  }
+}
+
+function validatePublication(value: unknown, entityId: string, out: Diagnostic[]): void {
+  if (
+    !isRecord(value)
+    || typeof value.published !== 'boolean'
+    || typeof value.hidden_from_publishing !== 'boolean'
+  ) {
+    out.push(shape(
+      entityId,
+      'publication must state boolean published and hidden_from_publishing fields.',
+    ));
+  }
+}
+
+function validateLifecycle(value: unknown, entityId: string, out: Diagnostic[]): void {
+  if (!isRecord(value)) {
+    out.push(shape(entityId, 'lifecycle must be an object when present.'));
+    return;
+  }
+  if (!['active', 'deprecated', 'archived'].includes(value.status as string)) {
+    out.push(shape(entityId, 'lifecycle.status must be active, deprecated, or archived.'));
+  }
+  if (!(value.replacement_id === null || typeof value.replacement_id === 'string')) {
+    out.push(shape(entityId, 'lifecycle.replacement_id must be a string or null.'));
+  }
+}
+
+function validateSource(value: unknown, entityId: string, out: Diagnostic[]): void {
+  if (!isRecord(value)) {
+    out.push(shape(entityId, 'source must be an object when present.'));
+    return;
+  }
+  if (typeof value.remote !== 'boolean') {
+    out.push(shape(entityId, 'source.remote must be a boolean.'));
+  }
+  for (const field of ['library_file_id', 'library_name', 'modified_at']) {
+    if (!(value[field] === null || typeof value[field] === 'string')) {
+      out.push(shape(entityId, `source.${field} must be a string or null.`));
+    }
+  }
+}
+
+function validateOptionalEntityMetadata(
+  entity: Record<string, unknown>, entityId: string, out: Diagnostic[],
+  includeSource = false, includeLifecycle = true,
+): void {
+  if (entity.publication !== undefined) validatePublication(entity.publication, entityId, out);
+  if (includeLifecycle && entity.lifecycle !== undefined) validateLifecycle(entity.lifecycle, entityId, out);
+  if (includeSource && entity.source !== undefined) validateSource(entity.source, entityId, out);
+}
+
+function validateCollection(collection: unknown, index: number, out: Diagnostic[]): void {
+  if (!isRecord(collection)) {
+    out.push(shape(`collections[${index}]`, 'A collection must be an object.'));
+    return;
+  }
+  const entityId = isNonEmptyString(collection.id) ? collection.id : `collections[${index}]`;
+  validateIdentity(collection, entityId, 'collection', out);
+  if (!isNonEmptyString(collection.default_mode_id)) {
+    out.push(shape(entityId, 'collection.default_mode_id must be a non-empty string.'));
+  }
+  if (!Array.isArray(collection.modes)) {
+    out.push(shape(entityId, 'collection.modes must be an array.'));
+  } else {
+    collection.modes.forEach((mode, modeIndex) => {
+      if (!isRecord(mode)) {
+        out.push(shape(entityId, `collection.modes[${modeIndex}] must be an object.`));
+        return;
+      }
+      if (!isNonEmptyString(mode.id)) {
+        out.push(shape(entityId, `collection.modes[${modeIndex}].id must be a non-empty string.`));
+      }
+      if (typeof mode.name !== 'string') {
+        out.push(shape(entityId, `collection.modes[${modeIndex}].name must be a string.`));
+      }
+      if (!isFiniteNumber(mode.order)) {
+        out.push(shape(entityId, `collection.modes[${modeIndex}].order must be a finite number.`));
+      }
+    });
+  }
+  validateOptionalEntityMetadata(collection, entityId, out, true, false);
 }
 
 /** §8 — one token record. Structural checks only; cross-references (does
@@ -267,31 +379,162 @@ function validateToken(token: unknown, index: number, out: Diagnostic[]): void {
   if (!isStringArray(token.path) || token.path.length === 0) {
     out.push(shape(entityId, 'token.path must be a non-empty array of strings.'));
   }
+  if (token.suggested_code_name !== undefined && typeof token.suggested_code_name !== 'string') {
+    out.push(shape(entityId, 'token.suggested_code_name must be a string when present.'));
+  }
+  let tokenType: TokenType | undefined;
   if (typeof token.type !== 'string') {
     out.push(shape(entityId, 'token.type must be a string.'));
   } else if (!SUPPORTED_TOKEN_TYPES.includes(token.type as TokenType)) {
     out.push(shape(entityId, `token.type is not a recognized token type: ${JSON.stringify(token.type)}.`));
+  } else {
+    tokenType = token.type as TokenType;
   }
   if (typeof token.description !== 'string') {
     out.push(shape(entityId, 'token.description must be present and a string (an empty string is allowed).'));
   }
-  if (!Array.isArray(token.scopes)) {
-    out.push(shape(entityId, 'token.scopes must be an array.'));
+  if (!isStringArray(token.scopes)) {
+    out.push(shape(entityId, 'token.scopes must be an array of strings.'));
   }
+  validateOptionalEntityMetadata(token, entityId, out);
   if (!isRecord(token.values)) {
     out.push(shape(entityId, 'token.values must be an object keyed by mode id.'));
     return;
   }
 
   for (const [modeId, value] of Object.entries(token.values)) {
-    validateValue(value, entityId, modeId, out);
+    validateValue(value, entityId, modeId, out, tokenType);
   }
 }
 
+function validateStyleProperty(
+  property: unknown, entityId: string, propertyName: string, out: Diagnostic[],
+): void {
+  if (!isRecord(property)) {
+    out.push(shape(entityId, `typography.properties.${propertyName} must be an object.`));
+    return;
+  }
+  const { source } = property;
+  if (!isRecord(source)) {
+    out.push(shape(entityId, `typography.properties.${propertyName}.source must be an object.`));
+  } else if (source.kind === 'alias') {
+    if (!(source.target_id === null || typeof source.target_id === 'string')) {
+      out.push(shape(entityId, `typography.properties.${propertyName}.source.target_id must be a string or null.`));
+    }
+    if (!isStringArray(source.target_path)) {
+      out.push(shape(entityId, `typography.properties.${propertyName}.source.target_path must be an array of strings.`));
+    }
+  } else if (source.kind !== 'literal') {
+    out.push(shape(entityId, `typography.properties.${propertyName}.source.kind must be literal or alias.`));
+  }
+
+  if (property.resolved !== null) {
+    validateTypedValueEnvelope(property.resolved, entityId, out);
+  }
+}
+
+const TYPOGRAPHY_STYLE_PROPERTIES = [
+  'font_family', 'font_weight', 'font_size', 'line_height', 'letter_spacing',
+  'paragraph_spacing', 'paragraph_indent',
+] as const;
+
+function validateTypographyStyle(style: unknown, index: number, out: Diagnostic[]): void {
+  if (!isRecord(style)) {
+    out.push(shape(`styles.typography[${index}]`, 'A typography style must be an object.'));
+    return;
+  }
+  const entityId = isNonEmptyString(style.id) ? style.id : `styles.typography[${index}]`;
+  validateIdentity(style, entityId, 'typography style', out);
+  if (typeof style.description !== 'string') {
+    out.push(shape(entityId, 'typography.description must be a string.'));
+  }
+  if (!isRecord(style.properties)) {
+    out.push(shape(entityId, 'typography.properties must be an object.'));
+  } else {
+    for (const propertyName of TYPOGRAPHY_STYLE_PROPERTIES) {
+      validateStyleProperty(style.properties[propertyName], entityId, propertyName, out);
+    }
+    if (typeof style.properties.text_case !== 'string') {
+      out.push(shape(entityId, 'typography.properties.text_case must be a string.'));
+    }
+    if (typeof style.properties.text_decoration !== 'string') {
+      out.push(shape(entityId, 'typography.properties.text_decoration must be a string.'));
+    }
+  }
+  validateOptionalEntityMetadata(style, entityId, out);
+}
+
+const EFFECT_KINDS = ['drop_shadow', 'inner_shadow', 'layer_blur', 'background_blur'];
+
+function validateEffect(effect: unknown, entityId: string, index: number, out: Diagnostic[]): void {
+  if (!isRecord(effect)) {
+    out.push(shape(entityId, `effects[${index}] must be an object.`));
+    return;
+  }
+  if (!EFFECT_KINDS.includes(effect.type as string)) {
+    out.push(shape(entityId, `effects[${index}].type is not a recognized effect kind.`));
+  }
+  if (typeof effect.visible !== 'boolean') {
+    out.push(shape(entityId, `effects[${index}].visible must be a boolean.`));
+  }
+  if (typeof effect.blend_mode !== 'string') {
+    out.push(shape(entityId, `effects[${index}].blend_mode must be a string.`));
+  }
+  if (effect.color !== undefined) {
+    validateTypedValueEnvelope(effect.color, entityId, out, undefined, 'color');
+  }
+  for (const field of ['offset_x', 'offset_y', 'blur', 'spread']) {
+    if (effect[field] !== undefined) {
+      validateTypedValueEnvelope(effect[field], entityId, out, undefined, 'dimension');
+    }
+  }
+  if (effect.show_behind_node !== undefined && typeof effect.show_behind_node !== 'boolean') {
+    out.push(shape(entityId, `effects[${index}].show_behind_node must be a boolean when present.`));
+  }
+}
+
+function validateEffectStyle(style: unknown, index: number, out: Diagnostic[]): void {
+  if (!isRecord(style)) {
+    out.push(shape(`styles.effects[${index}]`, 'An effect style must be an object.'));
+    return;
+  }
+  const entityId = isNonEmptyString(style.id) ? style.id : `styles.effects[${index}]`;
+  validateIdentity(style, entityId, 'effect style', out);
+  if (!(style.mode_id === null || typeof style.mode_id === 'string')) {
+    out.push(shape(entityId, 'effect style.mode_id must be a string or null.'));
+  }
+  if (!Array.isArray(style.effects)) {
+    out.push(shape(entityId, 'effect style.effects must be an array.'));
+  } else {
+    style.effects.forEach((effect, effectIndex) => validateEffect(effect, entityId, effectIndex, out));
+  }
+  if (style.bindings !== undefined) {
+    if (!Array.isArray(style.bindings)) {
+      out.push(shape(entityId, 'effect style.bindings must be an array when present.'));
+    } else {
+      style.bindings.forEach((binding, bindingIndex) => {
+        if (
+          !isRecord(binding)
+          || !isNonEmptyString(binding.property)
+          || !isNonEmptyString(binding.token_id)
+        ) {
+          out.push(shape(
+            entityId,
+            `effect style.bindings[${bindingIndex}] must carry non-empty property and token_id strings.`,
+          ));
+        }
+      });
+    }
+  }
+  validateOptionalEntityMetadata(style, entityId, out);
+}
+
 /**
- * §5.2 — the top-level sections every artifact must expose. Only container
- * shape is checked here (object vs. array vs. absent); `tokens` is the one
- * section given full field-by-field treatment, per this task's scope.
+ * §5.2 — the top-level sections every artifact must expose. This validates
+ * their containers plus every nested field Level 2 dereferences.
+ * That invariant is what makes "Level 1 accepted" a safe precondition for
+ * Level 2 rather than a promise that malformed collections or styles can
+ * violate at runtime.
  */
 const COMPLETENESS_VALUES = ['complete', 'partial', 'unavailable'];
 
@@ -310,9 +553,14 @@ function validateRootSections(artifact: Record<string, unknown>, out: Diagnostic
   }
   if (!Array.isArray(artifact.collections)) {
     out.push(shape(ROOT, '`collections` must be an array.'));
+  } else {
+    artifact.collections.forEach((collection, index) => validateCollection(collection, index, out));
   }
   if (!isRecord(artifact.styles) || !Array.isArray(artifact.styles.typography) || !Array.isArray(artifact.styles.effects)) {
     out.push(shape(ROOT, '`styles` must be an object with `typography` and `effects` arrays.'));
+  } else {
+    artifact.styles.typography.forEach((style, index) => validateTypographyStyle(style, index, out));
+    artifact.styles.effects.forEach((style, index) => validateEffectStyle(style, index, out));
   }
   if (!Array.isArray(artifact.diagnostics)) {
     out.push(shape(ROOT, '`diagnostics` must be an array.'));
@@ -393,6 +641,184 @@ function getNodeState(
   return store.get(tokenId)?.get(modeId);
 }
 
+function equalStringArrays(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/**
+ * Verifies the alias metadata and the recorded resolution snapshot against the
+ * artifact's stable identities. This is deliberately separate from the graph
+ * walk: a chain is provenance to validate, not an instruction the validator
+ * may silently repair by resolving a different mode itself.
+ */
+function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
+  const tokensById = new Map(artifact.tokens.map((token) => [token.id, token]));
+  const collectionsById = new Map(artifact.collections.map((collection) => [collection.id, collection]));
+
+  for (const token of artifact.tokens) {
+    for (const [modeId, value] of Object.entries(token.values)) {
+      if (value.kind !== 'alias') continue;
+      const { reference, resolved } = value;
+      const chainCode = reference.external
+        ? 'UNRESOLVED_EXTERNAL_ALIAS' as const
+        : 'UNRESOLVED_ALIAS' as const;
+
+      for (let chainIndex = 0; chainIndex < resolved.chain.length; chainIndex += 1) {
+        const step = resolved.chain[chainIndex];
+        const stepToken = tokensById.get(step.token_id);
+        if (stepToken === undefined) {
+          out.push(diagnostic(chainCode, {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias resolution chain step ${chainIndex} names token ${JSON.stringify(step.token_id)}, which is not in this artifact.`,
+            details: { chain_index: chainIndex, token_id: step.token_id, mode_id: step.mode_id },
+          }));
+          continue;
+        }
+
+        const stepCollection = collectionsById.get(stepToken.collection_id);
+        if (stepCollection === undefined) {
+          out.push(diagnostic(chainCode, {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias resolution chain step ${chainIndex} names token ${JSON.stringify(step.token_id)}, whose collection does not resolve.`,
+            details: {
+              chain_index: chainIndex, token_id: step.token_id,
+              mode_id: step.mode_id, collection_id: stepToken.collection_id,
+            },
+          }));
+          continue;
+        }
+        if (!stepCollection.modes.some((mode) => mode.id === step.mode_id)) {
+          out.push(diagnostic(chainCode, {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias resolution chain step ${chainIndex} names mode ${JSON.stringify(step.mode_id)}, which is not declared by token ${JSON.stringify(step.token_id)}'s collection.`,
+            details: { chain_index: chainIndex, token_id: step.token_id, mode_id: step.mode_id },
+          }));
+          continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(stepToken.values, step.mode_id)) {
+          out.push(diagnostic(chainCode, {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias resolution chain step ${chainIndex} names a token/mode pair with no value record.`,
+            details: { chain_index: chainIndex, token_id: step.token_id, mode_id: step.mode_id },
+          }));
+        }
+      }
+
+      if (reference.external) {
+        if (resolved.status === 'unresolved') {
+          out.push(diagnostic('UNRESOLVED_EXTERNAL_ALIAS', {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias references an external library that did not resolve: ${reference.source_library_name ?? 'unknown library'}.`,
+            details: { reason: resolved.reason },
+          }));
+        }
+        continue;
+      }
+
+      const targetToken = reference.target_id === null
+        ? undefined
+        : tokensById.get(reference.target_id);
+      if (targetToken === undefined) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Alias reference target does not exist in this artifact: ${JSON.stringify(reference.target_id)}.`,
+          details: { target_id: reference.target_id },
+        }));
+        continue;
+      }
+
+      if (resolved.status === 'unresolved') {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Internal alias is recorded as unresolved (${resolved.reason}).`,
+          details: { target_id: targetToken.id, reason: resolved.reason },
+        }));
+      }
+
+      if (reference.target_collection_id === null) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: 'Internal alias has a target token id but no target_collection_id.',
+          details: { target_id: targetToken.id },
+        }));
+      } else if (!collectionsById.has(reference.target_collection_id)) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Internal alias target_collection_id ${JSON.stringify(reference.target_collection_id)} names no collection in this artifact.`,
+          details: { target_id: targetToken.id, target_collection_id: reference.target_collection_id },
+        }));
+      } else if (reference.target_collection_id !== targetToken.collection_id) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Internal alias target_collection_id ${JSON.stringify(reference.target_collection_id)} does not match target token ${JSON.stringify(targetToken.id)}'s collection ${JSON.stringify(targetToken.collection_id)}.`,
+          details: {
+            target_id: targetToken.id,
+            target_collection_id: reference.target_collection_id,
+            actual_collection_id: targetToken.collection_id,
+          },
+        }));
+      }
+
+      if (!equalStringArrays(reference.target_path, targetToken.path)) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Internal alias target_path does not match target token ${JSON.stringify(targetToken.id)}'s path.`,
+          details: { target_id: targetToken.id, target_path: reference.target_path, actual_path: targetToken.path },
+        }));
+      }
+
+      if (targetToken.type !== token.type) {
+        out.push(diagnostic('ALIAS_TYPE_MISMATCH', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Alias on a "${token.type}" token targets "${targetToken.id}", which is "${targetToken.type}".`,
+        }));
+      }
+
+      const firstStep = resolved.chain[0];
+      if (resolved.status === 'resolved' && firstStep === undefined) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: 'A resolved internal alias must record its direct target as the first resolution-chain step.',
+          details: { target_id: targetToken.id },
+        }));
+      } else if (firstStep !== undefined) {
+        if (firstStep.token_id !== targetToken.id) {
+          out.push(diagnostic('UNRESOLVED_ALIAS', {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Alias resolution chain starts at ${JSON.stringify(firstStep.token_id)}, not its referenced target ${JSON.stringify(targetToken.id)}.`,
+            details: { target_id: targetToken.id, first_chain_token_id: firstStep.token_id },
+          }));
+        }
+        if (
+          targetToken.collection_id === token.collection_id
+          && firstStep.mode_id !== modeId
+        ) {
+          out.push(diagnostic('UNRESOLVED_ALIAS', {
+            entity_id: token.id,
+            mode_id: modeId,
+            message: `Same-collection alias chain starts in mode ${JSON.stringify(firstStep.mode_id)} instead of preserving source mode ${JSON.stringify(modeId)}.`,
+            details: { target_id: targetToken.id, chain_mode_id: firstStep.mode_id },
+          }));
+        }
+      }
+    }
+  }
+}
+
 /** The ring node with the lowest (token_id, mode_id) by code-unit order, so a
  *  cycle is reported from the same node regardless of which token the walk
  *  happened to reach it from first -- entry order depends on array position,
@@ -429,43 +855,26 @@ function lowestRingIndex(ring: AliasNode[]): number {
  * already on the CURRENT path" is the entire cycle test -- no branching DFS
  * is needed, only a path stack and an O(1) membership check on it.
  */
-function walkAliasGraph(tokens: TokenV5[], collections: CollectionV5[], out: Diagnostic[]): void {
+function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
   const tokensById = new Map(tokens.map((t) => [t.id, t]));
-  const collectionsById = new Map(collections.map((c) => [c.id, c]));
   const states = new Map<string, Map<string, NodeState>>();
 
   /**
-   * The mode the walk continues under after hopping from `fromToken` to
-   * `toToken`, or `undefined` when it cannot be determined.
-   *
-   * Mode ids are collection-scoped, so holding the current mode id constant
-   * across a hop into a DIFFERENT collection was always wrong: the lookup
-   * `targetToken.values[curModeId]` could not match, so the walk treated every
-   * cross-collection hop as terminal. A two-collection alias cycle was
-   * therefore invisible while the same cycle inside one collection was
-   * reported -- the check silently depended on how the designer had arranged
-   * their collections.
-   *
-   * The rule is the target collection's `default_mode_id`: that is the mode
-   * Figma itself resolves a cross-collection alias through when the consuming
-   * context selects none, and it is a fact this artifact already RECORDS
-   * rather than something the validator has to infer. `normalize.ts`'s
-   * `convertAlias` applies the identical rule when it emits chain steps; the
-   * two must not diverge, or validation contradicts the normalizer.
-   *
-   * `undefined` when the target collection is unknown or its default mode
-   * names no declared mode -- in which case the caller reports, and does not
-   * guess a mode.
+   * The mode the walk continues under after a hop. Mode ids are
+   * collection-scoped: inside one collection the current id carries through,
+   * while a cross-collection hop MUST use the mode recorded in the resolution
+   * chain. Recomputing the target default here loses migrations where v4
+   * selected a same-named target mode before falling back to the default. The
+   * chain is the artifact's provenance for that decision; validation checks
+   * it rather than replacing it with a second resolution algorithm.
    */
   const modeAfterHop = (
     fromToken: TokenV5, toToken: TokenV5, curModeId: string,
+    value: Extract<TokenV5['values'][string], { kind: 'alias' }>,
   ): string | undefined => {
     if (toToken.collection_id === fromToken.collection_id) return curModeId;
-    const collection = collectionsById.get(toToken.collection_id);
-    if (collection === undefined) return undefined;
-    return collection.modes.some((m) => m.id === collection.default_mode_id)
-      ? collection.default_mode_id
-      : undefined;
+    const firstStep = value.resolved.chain[0];
+    return firstStep?.token_id === toToken.id ? firstStep.mode_id : undefined;
   };
 
   const markDone = (path: AliasNode[]): void => {
@@ -528,17 +937,8 @@ function walkAliasGraph(tokens: TokenV5[], collections: CollectionV5[], out: Dia
 
         const { reference } = value;
         if (reference.external) {
-          // The target lives in a library this export did not read, so it
-          // cannot be verified against this artifact's own token set.
-          // Level 2 defers to what extraction already recorded rather than
-          // guessing at a library it has no access to.
-          if (value.resolved.status === 'unresolved') {
-            out.push(diagnostic('UNRESOLVED_EXTERNAL_ALIAS', {
-              entity_id: curTokenId,
-              mode_id: curModeId,
-              message: `Alias references an external library that did not resolve: ${reference.source_library_name ?? 'unknown library'}.`,
-            }));
-          }
+          // External resolution is checked by `checkAliasProvenance`; the
+          // local graph cannot walk into a library that is absent here.
           markDone(path);
           break;
         }
@@ -546,43 +946,21 @@ function walkAliasGraph(tokens: TokenV5[], collections: CollectionV5[], out: Dia
         const targetId = reference.target_id;
         const targetToken = targetId === null ? undefined : tokensById.get(targetId);
         if (!targetToken) {
-          out.push(diagnostic('UNRESOLVED_ALIAS', {
-            entity_id: curTokenId,
-            mode_id: curModeId,
-            message: `Alias reference target does not exist in this artifact: ${JSON.stringify(targetId)}.`,
-          }));
+          // `checkAliasProvenance` owns the actionable dangling-target
+          // diagnostic; this walker owns cycle detection only.
           markDone(path);
           break;
-        }
-
-        if (targetToken.type !== curToken.type) {
-          out.push(diagnostic('ALIAS_TYPE_MISMATCH', {
-            entity_id: curTokenId,
-            mode_id: curModeId,
-            message: `Alias on a "${curToken.type}" token targets "${targetToken.id}", which is "${targetToken.type}".`,
-          }));
         }
 
         // Which mode the walk continues under. Constant within one collection,
         // the target collection's default mode across collections -- see
         // `modeAfterHop`, which owns the reasoning and is the same rule
         // normalize.ts's `convertAlias` writes into its chain steps.
-        const nextModeId = modeAfterHop(curToken, targetToken, curModeId);
+        const nextModeId = modeAfterHop(curToken, targetToken, curModeId, value);
         if (nextModeId === undefined) {
-          // The alias target is fine; what does not resolve is the target
-          // collection's default-mode reference. Stopping here WITHOUT a
-          // diagnostic is what the old code effectively did, and it is how a
-          // cross-collection cycle went unreported. Guessing a mode instead
-          // (the source mode's name, the first declared mode) would make the
-          // walk's answer depend on a value the artifact does not state.
-          out.push(diagnostic('UNRESOLVED_REFERENCE', {
-            entity_id: curTokenId,
-            mode_id: curModeId,
-            message: `Alias hops into collection ${JSON.stringify(targetToken.collection_id)}, `
-              + 'whose default_mode_id names no declared mode, so the mode this hop resolves '
-              + 'through cannot be determined.',
-            details: { target_id: targetToken.id, target_collection_id: targetToken.collection_id },
-          }));
+          // No authoritative cross-collection mode was recorded. Provenance
+          // validation reports that; the graph must not guess one merely to
+          // keep walking.
           markDone(path);
           break;
         }
@@ -649,6 +1027,26 @@ function checkDuplicateIds(artifact: FoundationArtifactV5, out: Diagnostic[]): v
       }));
     }
   }
+
+  // Mode ids are collection-scoped, so the same id in two collections is
+  // valid. Repeating one inside a collection is not: default_mode_id and
+  // resolution-chain references would identify two records at once.
+  for (const collection of artifact.collections) {
+    const modeCounts = new Map<string, number>();
+    for (const mode of collection.modes) {
+      modeCounts.set(mode.id, (modeCounts.get(mode.id) ?? 0) + 1);
+    }
+    for (const [modeId, count] of modeCounts) {
+      if (count > 1) {
+        out.push(diagnostic('DUPLICATE_SOURCE_ID', {
+          entity_id: collection.id,
+          mode_id: modeId,
+          message: `${count} modes in collection "${collection.id}" share the id "${modeId}".`,
+          details: { collection_id: collection.id, mode_id: modeId, count },
+        }));
+      }
+    }
+  }
 }
 
 /**
@@ -692,7 +1090,9 @@ function checkPathCollisions(tokens: TokenV5[], out: Diagnostic[]): void {
  * that code's comment in diagnostics.ts for why the two must stay apart.
  */
 function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
-  const collectionIds = new Set(artifact.collections.map((c) => c.id));
+  const collectionsById = new Map(artifact.collections.map((collection) => [collection.id, collection]));
+  const collectionIds = new Set(collectionsById.keys());
+  const tokensById = new Map(artifact.tokens.map((token) => [token.id, token]));
   const tokenIds = new Set(artifact.tokens.map((t) => t.id));
   // Replacement targets are resolved against EVERY entity id rather than
   // against the same kind as the referrer. §18 requires only that a
@@ -732,6 +1132,84 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
           + 'in this artifact.',
         details: { collection_id: token.collection_id },
       }));
+      continue;
+    }
+    const collection = collectionsById.get(token.collection_id)!;
+    const declaredModeIds = new Set(collection.modes.map((mode) => mode.id));
+    for (const modeId of Object.keys(token.values)) {
+      if (!declaredModeIds.has(modeId)) {
+        out.push(diagnostic('UNRESOLVED_REFERENCE', {
+          entity_id: token.id,
+          mode_id: modeId,
+          message: `Token value key ${JSON.stringify(modeId)} names no mode declared by its collection.`,
+          details: { collection_id: token.collection_id, mode_id: modeId },
+        }));
+      }
+    }
+  }
+
+  // §11: typography properties carry their variable binding in `source`.
+  // These aliases are not TokenV5 values, so `walkAliasGraph` cannot see them;
+  // validate their stable target identity and path explicitly here.
+  for (const style of artifact.styles.typography) {
+    for (const propertyName of TYPOGRAPHY_STYLE_PROPERTIES) {
+      const source = style.properties[propertyName].source;
+      if (source.kind !== 'alias') continue;
+      const targetToken = source.target_id === null
+        ? undefined
+        : tokensById.get(source.target_id);
+      if (targetToken === undefined) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: style.id,
+          message: `Typography property ${JSON.stringify(propertyName)} aliases a token that is `
+            + `not in this artifact: ${JSON.stringify(source.target_id)}.`,
+          details: { property: propertyName, target_id: source.target_id },
+        }));
+        continue;
+      }
+      if (!equalStringArrays(source.target_path, targetToken.path)) {
+        out.push(diagnostic('UNRESOLVED_ALIAS', {
+          entity_id: style.id,
+          message: `Typography property ${JSON.stringify(propertyName)} target_path does not `
+            + `match token ${JSON.stringify(targetToken.id)}'s path.`,
+          details: {
+            property: propertyName, target_id: targetToken.id,
+            target_path: source.target_path, actual_path: targetToken.path,
+          },
+        }));
+      }
+    }
+  }
+
+  // §12: an effect style's mode is a reference just like a token value key.
+  // Mode ids are collection-scoped, so an id repeated across collections is
+  // valid in isolation but ambiguous when a style carries no collection id to
+  // qualify it.
+  const modeOwners = new Map<string, string[]>();
+  for (const collection of artifact.collections) {
+    for (const mode of collection.modes) {
+      const owners = modeOwners.get(mode.id) ?? [];
+      owners.push(collection.id);
+      modeOwners.set(mode.id, owners);
+    }
+  }
+  for (const style of artifact.styles.effects) {
+    if (style.mode_id === null) continue;
+    const owners = modeOwners.get(style.mode_id) ?? [];
+    if (owners.length === 0) {
+      out.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: style.id,
+        message: `Effect style mode_id ${JSON.stringify(style.mode_id)} names no declared mode `
+          + 'in this artifact.',
+        details: { mode_id: style.mode_id },
+      }));
+    } else if (owners.length > 1) {
+      out.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: style.id,
+        message: `Effect style mode_id ${JSON.stringify(style.mode_id)} is ambiguous across `
+          + `${owners.length} declared mode records.`,
+        details: { mode_id: style.mode_id, collection_ids: owners },
+      }));
     }
   }
 
@@ -762,9 +1240,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
 
   // §12: a binding is the explicit link between a scalar token and the
   // composite property it drives, so a binding naming no token makes the
-  // style's own provenance unreadable. Only effect styles carry `bindings`
-  // today; typography's per-property alias targets are alias references and
-  // belong to the alias walk, not here.
+  // style's own provenance unreadable. Only effect styles carry `bindings`;
+  // typography's per-property aliases were checked above.
   for (const style of artifact.styles.effects) {
     for (const binding of style.bindings ?? []) {
       if (!tokenIds.has(binding.token_id)) {
@@ -784,11 +1261,23 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
  * graph". Assumes `artifact` has already passed `validateLevel1`.
  */
 export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
-  const out: Diagnostic[] = [];
-  walkAliasGraph(artifact.tokens, artifact.collections, out);
-  checkModeCompleteness(artifact, out);
-  checkDuplicateIds(artifact, out);
-  checkPathCollisions(artifact.tokens, out);
-  checkReferences(artifact, out);
-  return out;
+  try {
+    const out: Diagnostic[] = [];
+    checkAliasProvenance(artifact, out);
+    walkAliasGraph(artifact.tokens, out);
+    checkModeCompleteness(artifact, out);
+    checkDuplicateIds(artifact, out);
+    checkPathCollisions(artifact.tokens, out);
+    checkReferences(artifact, out);
+    return out;
+  } catch (err) {
+    // The public API stays total even when a caller ignores the documented
+    // Level-1-first sequence and defeats the TypeScript boundary with unknown
+    // JSON. Valid Level 1 output should never reach this fallback; it is the
+    // final guard against hostile getters and unchecked casts.
+    const message = err instanceof Error && err.message
+      ? `Level 2 could not read the artifact: ${err.message}`
+      : 'Level 2 could not read the artifact.';
+    return [shape(ROOT, message)];
+  }
 }

@@ -1,0 +1,369 @@
+completeness: { collections: complete, styles: complete, unavailable_sources: [] }
+collections:
+  - id: figma-name:collection:Primitives
+    name: Primitives
+    path: [Primitives]
+    default_mode_id: figma-name:collection:Primitives/Light
+    modes:
+      - { id: figma-name:collection:Primitives/Light, name: Light, order: 0 }
+      - { id: figma-name:collection:Primitives/Dark, name: Dark, order: 1 }
+  - id: figma-name:collection:Semantic
+    name: Semantic
+    path: [Semantic]
+    default_mode_id: figma-name:collection:Semantic/Light
+    modes:
+      - { id: figma-name:collection:Semantic/Light, name: Light, order: 0 }
+      - { id: figma-name:collection:Semantic/Dark, name: Dark, order: 1 }
+  - id: figma-name:collection:Spacing
+    name: Spacing
+    path: [Spacing]
+    default_mode_id: figma-name:collection:Spacing/Value
+    modes: [{ id: figma-name:collection:Spacing/Value, name: Value, order: 0 }]
+  - id: figma-name:collection:Motion
+    name: Motion
+    path: [Motion]
+    default_mode_id: figma-name:collection:Motion/Value
+    modes: [{ id: figma-name:collection:Motion/Value, name: Value, order: 0 }]
+  - id: figma-name:collection:Typography
+    name: Typography
+    path: [Typography]
+    default_mode_id: figma-name:collection:Typography/Value
+    modes: [{ id: figma-name:collection:Typography/Value, name: Value, order: 0 }]
+  - id: figma-name:collection:Components
+    name: Components
+    path: [Components]
+    default_mode_id: figma-name:collection:Components/Value
+    modes: [{ id: figma-name:collection:Components/Value, name: Value, order: 0 }]
+tokens:
+  - id: figma-name:token:Primitives/color/teal/500
+    name: color/teal/500
+    path: [color, teal, "500"]
+    collection_id: figma-name:collection:Primitives
+    type: color
+    description: Synthetic opaque colour.
+    scopes: []
+    values:
+      figma-name:collection:Primitives/Light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#006b62", alpha: 1 }
+      figma-name:collection:Primitives/Dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#006b62", alpha: 1 }
+  - id: figma-name:token:Primitives/color/overlay
+    name: color/overlay
+    path: [color, overlay]
+    collection_id: figma-name:collection:Primitives
+    type: color
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Primitives/Light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#000000", alpha: 0.125 }
+      figma-name:collection:Primitives/Dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 0.125 }
+  - id: figma-name:token:Semantic/color/background/brand
+    name: color/background/brand
+    path: [color, background, brand]
+    collection_id: figma-name:collection:Semantic
+    type: color
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Semantic/Light:
+        kind: alias
+        reference:
+          target_path: [color, teal, "500"]
+          external: false
+          target_id: figma-name:token:Primitives/color/teal/500
+          target_collection_id: figma-name:collection:Primitives
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#006b62", alpha: 1 }
+          chain:
+            - token_id: figma-name:token:Primitives/color/teal/500
+              mode_id: figma-name:collection:Primitives/Light
+      figma-name:collection:Semantic/Dark:
+        kind: alias
+        reference:
+          target_path: [color, teal, "500"]
+          external: false
+          target_id: figma-name:token:Primitives/color/teal/500
+          target_collection_id: figma-name:collection:Primitives
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#006b62", alpha: 1 }
+          chain:
+            - token_id: figma-name:token:Primitives/color/teal/500
+              mode_id: figma-name:collection:Primitives/Dark
+  - id: figma-name:token:Semantic/color/legacy/one
+    name: color/legacy/one
+    path: [color, legacy, one]
+    collection_id: figma-name:collection:Semantic
+    type: color
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Semantic/Light:
+        kind: alias
+        reference:
+          target_path: [legacy, one]
+          external: true
+          source_library_name: Legacy colors
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+      figma-name:collection:Semantic/Dark:
+        kind: alias
+        reference:
+          target_path: [legacy, one]
+          external: true
+          source_library_name: Legacy colors
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+  - id: figma-name:token:Semantic/color/legacy/two
+    name: color/legacy/two
+    path: [color, legacy, two]
+    collection_id: figma-name:collection:Semantic
+    type: color
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Semantic/Light:
+        kind: alias
+        reference:
+          target_path: [legacy, two]
+          external: true
+          source_library_name: Legacy colors
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+      figma-name:collection:Semantic/Dark:
+        kind: alias
+        reference:
+          target_path: [legacy, two]
+          external: true
+          source_library_name: Legacy colors
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+  - id: figma-name:token:Semantic/color/legacy/three
+    name: color/legacy/three
+    path: [color, legacy, three]
+    collection_id: figma-name:collection:Semantic
+    type: color
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Semantic/Light:
+        kind: alias
+        reference:
+          target_path: [legacy, three]
+          external: true
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+      figma-name:collection:Semantic/Dark:
+        kind: alias
+        reference:
+          target_path: [legacy, three]
+          external: true
+          target_id: null
+          target_collection_id: null
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+  - id: figma-name:token:Spacing/spacing/400
+    name: spacing/400
+    path: [spacing, "400"]
+    collection_id: figma-name:collection:Spacing
+    type: number
+    description: Synthetic spacing value; v4 carries no unit scope.
+    scopes: []
+    values:
+      figma-name:collection:Spacing/Value: { kind: literal, value: { type: number, value: 16 } }
+  - id: figma-name:token:Motion/duration/fast
+    name: duration/fast
+    path: [duration, fast]
+    collection_id: figma-name:collection:Motion
+    type: number
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Motion/Value: { kind: literal, value: { type: number, value: 120 } }
+  - id: figma-name:token:Typography/font/family/body
+    name: font/family/body
+    path: [font, family, body]
+    collection_id: figma-name:collection:Typography
+    type: string
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Typography/Value: { kind: literal, value: { type: string, value: Inter } }
+  - id: figma-name:token:Components/Background/Chip/%D0%A1hip%20(Hover)
+    name: Background/Chip/Сhip (Hover)
+    path: [Background, Chip, Сhip (Hover)]
+    collection_id: figma-name:collection:Components
+    type: boolean
+    description: ""
+    scopes: []
+    values:
+      figma-name:collection:Components/Value: { kind: literal, value: { type: boolean, value: true } }
+styles: { typography: [], effects: [] }
+spec_layer:
+  kind: foundation
+  schema_version: 5.0.0
+  schema_uri: https://spec-layer.dev/schemas/foundation-context/v5.json
+  extractor: { name: spec-layer-foundation, version: "1", build: null }
+  export:
+    id: synthetic-v5-acceptance
+    generated_at: 2026-08-28T00:00:00.000Z
+    deterministic: true
+    content_hash: sha256:34aad420e65ab7f345462c2c09fd8c6dedc82412e50a605d778dbbc5cddbf65b
+  source:
+    provider: figma
+    file_id: null
+    file_name: null
+    file_version: null
+    library_enabled: false
+diagnostics:
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: error
+    entity_id: figma-name:token:Motion/duration/fast
+    mode_id: figma-name:collection:Motion/Value
+    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: error
+    entity_id: figma-name:token:Spacing/spacing/400
+    mode_id: figma-name:collection:Spacing/Value
+    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/one
+    mode_id: figma-name:collection:Semantic/Dark
+    message: Alias "legacy/one" names a target in external library "Legacy colors", which this export could not read.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/one
+    mode_id: figma-name:collection:Semantic/Light
+    message: Alias "legacy/one" names a target in external library "Legacy colors", which this export could not read.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/three
+    mode_id: figma-name:collection:Semantic/Dark
+    message: Alias "legacy/three" names a target in an unnamed external library, which this export could not read.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/three
+    mode_id: figma-name:collection:Semantic/Light
+    message: Alias "legacy/three" names a target in an unnamed external library, which this export could not read.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/two
+    mode_id: figma-name:collection:Semantic/Dark
+    message: Alias "legacy/two" names a target in external library "Legacy colors", which this export could not read.
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: figma-name:token:Semantic/color/legacy/two
+    mode_id: figma-name:collection:Semantic/Light
+    message: Alias "legacy/two" names a target in external library "Legacy colors", which this export could not read.
+  - code: CONFUSABLE_NAME
+    severity: warning
+    entity_id: figma-name:token:Components/Background/Chip/%D0%A1hip%20(Hover)
+    message: Token name "Background/Chip/Сhip (Hover)" contains non-ASCII characters. Preserved as-is, never replaced with a generated name.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Components
+    message: Collection "Components"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Motion
+    message: Collection "Motion"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Primitives
+    message: Collection "Primitives"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Semantic
+    message: Collection "Semantic"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Spacing
+    message: Collection "Spacing"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:collection:Typography
+    message: Collection "Typography"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Components/Background/Chip/%D0%A1hip%20(Hover)
+    message: Token "Background/Chip/Сhip (Hover)"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Motion/duration/fast
+    message: Token "duration/fast"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Primitives/color/overlay
+    message: Token "color/overlay"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Primitives/color/teal/500
+    message: Token "color/teal/500"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Semantic/color/background/brand
+    message: Token "color/background/brand"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Semantic/color/legacy/one
+    message: Token "color/legacy/one"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Semantic/color/legacy/three
+    message: Token "color/legacy/three"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Semantic/color/legacy/two
+    message: Token "color/legacy/two"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Spacing/spacing/400
+    message: Token "spacing/400"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: SYNTHETIC_IDENTITY
+    severity: warning
+    entity_id: figma-name:token:Typography/font/family/body
+    message: Token "font/family/body"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+statistics:
+  collections: 6
+  modes: 8
+  tokens: 10
+  styles: { typography: 0, effects: 0 }
+  aliases: { total: 8, resolved: 2, unresolved: 6 }
+  lifecycle: { active: 0, deprecated: 0, archived: 0 }
+  diagnostics: { error: 8, warning: 17, info: 0 }

@@ -112,6 +112,94 @@ const V4_WITH_QUALIFIED_ALIAS: V4Foundation = {
   ],
 };
 
+// An external alias without library-name metadata. Its path happens to match a
+// local token, which must not turn the external reference into a local one.
+const V4_WITH_UNNAMED_EXTERNAL_ALIAS: V4Foundation = {
+  collections: [
+    {
+      name: 'Semantic',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        {
+          name: 'color/accent',
+          type: 'color',
+          values: { Value: { alias: 'blue/500', external: true } },
+        },
+      ],
+    },
+    {
+      name: 'Local colors',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        { name: 'blue/500', type: 'color', values: { Value: '#1a2b3c' } },
+      ],
+    },
+  ],
+};
+
+// `resolveValue` collapses this source -> bridge -> external chain to the
+// visible local hop with `resolved: null`; `valueOf` then omits that falsy
+// snapshot. This is a real v4 shape, not a hand-authored ambiguity: the direct
+// target exists locally, while the terminal external source remains unreadable.
+const V4_WITH_LOCAL_THEN_EXTERNAL_ALIAS: V4Foundation = {
+  collections: [
+    {
+      name: 'Semantic',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        {
+          name: 'color/accent',
+          type: 'color',
+          values: { Value: { alias: 'color/bridge' } },
+        },
+        {
+          name: 'color/bridge',
+          type: 'color',
+          values: {
+            Value: {
+              alias: 'legacy/accent', external: true, collection: 'Legacy colors',
+            },
+          },
+        },
+      ],
+    },
+  ],
+};
+
+// A forward-compatible qualified local alias: a collection label narrows the
+// local lookup, while the explicit external flag remains authoritative.
+const V4_WITH_LOCAL_QUALIFIED_ALIAS: V4Foundation = {
+  collections: [
+    {
+      name: 'Semantic',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        {
+          name: 'color/accent',
+          type: 'color',
+          values: {
+            Value: {
+              alias: 'blue/500', external: false, collection: 'Colors', resolved: '#1a2b3c',
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Colors',
+      modes: ['Value'],
+      default_mode: 'Value',
+      tokens: [
+        { name: 'blue/500', type: 'color', values: { Value: '#1a2b3c' } },
+      ],
+    },
+  ],
+};
+
 // A bare, unqualified alias whose target path is unique across the whole
 // file -- accepted per decision 3 step 2.
 const V4_WITH_UNIQUE_NAME_ALIAS: V4Foundation = {
@@ -315,6 +403,94 @@ const V4_WITH_CROSS_COLLECTION_ALIAS: V4Foundation = {
   ],
 };
 
+// v4's resolver prefers a target mode with the source mode's display name,
+// before falling back to the target default. The values must differ so a chain
+// that incorrectly says Light beside v4's Dark snapshot cannot pass unnoticed.
+const V4_WITH_MATCHING_CROSS_COLLECTION_MODES: V4Foundation = {
+  collections: [
+    {
+      name: 'Semantic',
+      modes: ['Light', 'Dark'],
+      default_mode: 'Light',
+      tokens: [
+        {
+          name: 'color/accent',
+          type: 'color',
+          values: {
+            Light: { alias: 'blue/500', resolved: '#ffffff' },
+            Dark: { alias: 'blue/500', resolved: '#000000' },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Primitive',
+      modes: ['Light', 'Dark'],
+      // Deliberately Light: a default-only normalizer records the wrong mode
+      // for Semantic/Dark even though the embedded snapshot is dark.
+      default_mode: 'Light',
+      tokens: [
+        {
+          name: 'blue/500',
+          type: 'color',
+          values: { Light: '#ffffff', Dark: '#000000' },
+        },
+      ],
+    },
+  ],
+};
+
+const V4_COLLECTION_SCOPED_COPY: V4Foundation = {
+  ...V4_MINIMAL,
+  scope: {
+    collections: ['Semantic'],
+    text_styles: 'excluded',
+    effect_styles: 'excluded',
+  },
+};
+
+const V4_TEXT_STYLE_SCOPED_COPY: V4Foundation = {
+  collections: [],
+  scope: {
+    collections: 'excluded',
+    text_styles: 'included',
+    effect_styles: 'excluded',
+  },
+  text_styles: [
+    { name: 'Heading/H1', font: { family: 'Inter', style: 'Bold', size: 32 } },
+  ],
+};
+
+const V4_WITH_DUPLICATE_MODE_NAMES: V4Foundation = {
+  collections: [
+    {
+      name: 'Theme',
+      modes: ['Light', 'Light'],
+      default_mode: 'Light',
+      tokens: [
+        { name: 'color/bg', type: 'color', values: { Light: '#ffffff' } },
+      ],
+    },
+  ],
+};
+
+const V4_WITH_STALE_MODE_VALUE: V4Foundation = {
+  collections: [
+    {
+      name: 'Theme',
+      modes: ['Light'],
+      default_mode: 'Light',
+      tokens: [
+        {
+          name: 'color/bg',
+          type: 'color',
+          values: { Light: '#ffffff', Deleted: '#000000' },
+        },
+      ],
+    },
+  ],
+};
+
 describe('normalizeV4', () => {
   it('collapses all four v4 value shapes into one canonical shape', () => {
     // §21.1.6.
@@ -364,10 +540,75 @@ describe('normalizeV4', () => {
     expect(diagnostics.map((d) => d.code)).toContain('INVALID_SOURCE_COLOR');
   });
 
-  it('resolves a bare v4 alias by collection and path when both are available', () => {
-    const { artifact } = normalizeV4(V4_WITH_QUALIFIED_ALIAS, META);
+  it('keeps a named external alias external despite a same-name local collection and token', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_QUALIFIED_ALIAS, META);
     const value = Object.values(artifact.tokens[0].values)[0];
     expect(value.kind).toBe('alias');
+    if (value.kind === 'alias') {
+      expect(value.reference).toMatchObject({
+        external: true,
+        source_library_name: 'Colors',
+        target_id: null,
+        target_collection_id: null,
+      });
+      expect(value.resolved.status).toBe('unresolved');
+    }
+    expect(diagnostics.map((d) => d.code)).toContain('UNRESOLVED_EXTERNAL_ALIAS');
+  });
+
+  it('keeps an unnamed external alias external despite a unique local path match', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_UNNAMED_EXTERNAL_ALIAS, META);
+    const value = Object.values(artifact.tokens[0].values)[0];
+    expect(value.kind).toBe('alias');
+    if (value.kind === 'alias') {
+      expect(value.reference).toEqual({
+        target_path: ['blue', '500'],
+        external: true,
+        target_id: null,
+        target_collection_id: null,
+      });
+      expect(value.resolved).toMatchObject({
+        status: 'unresolved', reason: 'source_library_unavailable',
+      });
+    }
+    expect(diagnostics.map((d) => d.code)).toContain('UNRESOLVED_EXTERNAL_ALIAS');
+  });
+
+  it('preserves the unavailable-library cause for a local alias that ends externally', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_LOCAL_THEN_EXTERNAL_ALIAS, META);
+    const source = artifact.tokens.find((token) => token.name === 'color/accent')!;
+    const bridge = artifact.tokens.find((token) => token.name === 'color/bridge')!;
+    const value = Object.values(source.values)[0];
+    expect(value.kind).toBe('alias');
+    if (value.kind === 'alias') {
+      expect(value.reference).toMatchObject({
+        external: false,
+        target_id: bridge.id,
+        target_collection_id: bridge.collection_id,
+      });
+      expect(value.resolved).toMatchObject({
+        status: 'unresolved', reason: 'source_library_unavailable',
+      });
+    }
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNRESOLVED_EXTERNAL_ALIAS', entity_id: source.id,
+    }));
+  });
+
+  it('uses a collection label to qualify a local alias without making it external', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_LOCAL_QUALIFIED_ALIAS, META);
+    const value = Object.values(artifact.tokens[0].values)[0];
+    expect(value.kind).toBe('alias');
+    if (value.kind === 'alias') {
+      expect(value.reference).toMatchObject({
+        external: false,
+        target_id: artifact.tokens[1].id,
+        target_collection_id: artifact.collections[1].id,
+      });
+      expect('source_library_name' in value.reference).toBe(false);
+      expect(value.resolved.status).toBe('resolved');
+    }
+    expect(diagnostics.map((d) => d.code)).not.toContain('UNRESOLVED_EXTERNAL_ALIAS');
   });
 
   it('accepts a name-only alias match ONLY when it is unique', () => {
@@ -483,6 +724,38 @@ describe('normalizeV4', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Real v4 scope blocks survive through v5 completeness.
+  // -------------------------------------------------------------------------
+
+  it('does not present a collection-scoped v4 copy as a complete whole-file artifact', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_COLLECTION_SCOPED_COPY, META);
+    expect(artifact.completeness).toMatchObject({
+      collections: 'partial',
+      styles: 'unavailable',
+    });
+    expect('scope' in artifact).toBe(false);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      details: expect.objectContaining({
+        scope_kind: 'collections', included_collections: ['Semantic'],
+      }),
+    }));
+  });
+
+  it('does not present a text-style-scoped v4 copy as complete for collections or styles', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_TEXT_STYLE_SCOPED_COPY, META);
+    expect(artifact.completeness).toMatchObject({
+      collections: 'unavailable',
+      styles: 'partial',
+    });
+    expect('scope' in artifact).toBe(false);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      details: expect.objectContaining({ scope_kind: 'text_styles' }),
+    }));
+  });
+
+  // -------------------------------------------------------------------------
   // The collection default mode is never substituted silently.
   // -------------------------------------------------------------------------
 
@@ -523,11 +796,9 @@ describe('normalizeV4', () => {
     expect(validateLevel2(artifact).some((d) => d.code === 'UNRESOLVED_REFERENCE')).toBe(true);
   });
 
-  it('resolves a cross-collection hop through the TARGET collection default mode', () => {
-    // Mode ids are collection-scoped, and Figma resolves a cross-collection
-    // alias through the target collection's own mode selection. normalize and
-    // validate must apply one rule here or they answer the same question two
-    // ways -- see convertAlias and walkAliasGraph's modeAfterHop.
+  it('falls back to the target default for a cross-collection hop with no matching mode name', () => {
+    // Semantic/Value has no display-name match in Primitive/Base|Alt, so this
+    // exercises the second half of v4's same-name-then-default rule.
     const { artifact } = normalizeV4(V4_WITH_CROSS_COLLECTION_ALIAS, META);
     const primitive = artifact.collections.find((c) => c.name === 'Primitive')!;
     const altId = primitive.modes.find((m) => m.name === 'Alt')!.id;
@@ -541,6 +812,53 @@ describe('normalizeV4', () => {
     }
     // And the artifact normalize produced passes its own alias walk.
     expect(validateLevel2(artifact)).toEqual([]);
+  });
+
+  it('records the exact same-name target mode v4 used for a cross-collection snapshot', () => {
+    const { artifact } = normalizeV4(V4_WITH_MATCHING_CROSS_COLLECTION_MODES, META);
+    const semantic = artifact.collections.find((c) => c.name === 'Semantic')!;
+    const primitive = artifact.collections.find((c) => c.name === 'Primitive')!;
+    const sourceDarkId = semantic.modes.find((m) => m.name === 'Dark')!.id;
+    const targetDarkId = primitive.modes.find((m) => m.name === 'Dark')!.id;
+    const targetLightId = primitive.modes.find((m) => m.name === 'Light')!.id;
+    expect(primitive.default_mode_id).toBe(targetLightId);
+
+    const value = artifact.tokens[0].values[sourceDarkId];
+    expect(value.kind).toBe('alias');
+    if (value.kind === 'alias' && value.resolved.status === 'resolved') {
+      expect(value.resolved.value).toMatchObject({ type: 'color', hex: '#000000' });
+      expect(value.resolved.chain).toEqual([
+        { token_id: artifact.tokens[1].id, mode_id: targetDarkId },
+      ]);
+    } else {
+      throw new Error('expected Semantic/Dark to be a resolved alias');
+    }
+  });
+
+  it('reports duplicate v4 mode names that mint one synthetic mode id', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_DUPLICATE_MODE_NAMES, META);
+    const [first, second] = artifact.collections[0].modes;
+    expect(first.name).toBe('Light');
+    expect(second.name).toBe('Light');
+    expect(first.id).toBe(second.id);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: 'DUPLICATE_SOURCE_ID',
+      entity_id: first.id,
+      details: expect.objectContaining({ mode_name: 'Light', occurrences: 2 }),
+    }));
+  });
+
+  it('reports a stale value keyed by a mode the collection does not declare', () => {
+    const { artifact, diagnostics } = normalizeV4(V4_WITH_STALE_MODE_VALUE, META);
+    const collection = artifact.collections[0];
+    const token = artifact.tokens[0];
+    expect(Object.keys(token.values)).toEqual([collection.modes[0].id]);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNRESOLVED_REFERENCE',
+      entity_id: token.id,
+      mode_id: `${collection.id}/Deleted`,
+      details: expect.objectContaining({ stale_mode_name: 'Deleted' }),
+    }));
   });
 
   it('runs the artifact diagnostics through sortDiagnostics before returning them', () => {

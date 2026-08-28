@@ -128,6 +128,55 @@ function withTokenOfType(type: TokenV5['type'], value: TypedValue): Record<strin
   });
 }
 
+function withValidStyles(
+  mutate?: (styles: Record<string, unknown>) => void,
+): Record<string, unknown> {
+  const root = clone();
+  const literalProperty = (resolved: TypedValue) => ({
+    source: { kind: 'literal' }, resolved,
+  });
+  const styles: Record<string, unknown> = {
+    typography: [{
+      id: 'TypographyStyleId:1',
+      name: 'Heading/XL',
+      path: ['Heading', 'XL'],
+      description: '',
+      lifecycle: { status: 'active', replacement_id: null },
+      properties: {
+        font_family: literalProperty({ type: 'font_family', value: 'Inter' }),
+        font_weight: literalProperty({ type: 'number', value: 700 }),
+        font_size: literalProperty({ type: 'dimension', number: 42, unit: 'px' }),
+        line_height: literalProperty({ type: 'dimension', number: 50, unit: 'px' }),
+        letter_spacing: literalProperty({ type: 'dimension', number: 0, unit: '%' }),
+        paragraph_spacing: literalProperty({ type: 'dimension', number: 0, unit: 'px' }),
+        paragraph_indent: literalProperty({ type: 'dimension', number: 0, unit: 'px' }),
+        text_case: 'original',
+        text_decoration: 'none',
+      },
+    }],
+    effects: [{
+      id: 'EffectStyleId:1',
+      name: 'Shadow/Card',
+      path: ['Shadow', 'Card'],
+      mode_id: '1:2/light',
+      lifecycle: { status: 'active', replacement_id: null },
+      effects: [{
+        type: 'drop_shadow', visible: true, blend_mode: 'normal',
+        color: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
+        offset_x: { type: 'dimension', number: 0, unit: 'px' },
+        offset_y: { type: 'dimension', number: 2, unit: 'px' },
+        blur: { type: 'dimension', number: 8, unit: 'px' },
+        spread: { type: 'dimension', number: 0, unit: 'px' },
+        show_behind_node: false,
+      }],
+      bindings: [{ property: 'effects[0].color', token_id: 'VariableID:3:4' }],
+    }],
+  };
+  mutate?.(styles);
+  root.styles = styles;
+  return root;
+}
+
 // ---------------------------------------------------------------------------
 // VALID_CASES — one per SUPPORTED_TOKEN_TYPES member, one per SUPPORTED_UNITS
 // member, one per SUPPORTED_DURATION_UNITS member, plus the non-literal value
@@ -172,6 +221,7 @@ const MISSING_VALUE: CanonicalValue = { kind: 'missing', reason: 'no_value_for_m
 
 export const VALID_CASES: FixtureCase[] = [
   { name: 'minimal valid artifact (color token)', artifact: OK_ARTIFACT },
+  { name: 'valid typography and effect styles', artifact: withValidStyles() },
   ...SUPPORTED_UNITS.map((unit) => ({
     name: `dimension token with unit "${unit}"`,
     artifact: withTokenOfType('dimension', { type: 'dimension', number: 16, unit }),
@@ -213,7 +263,18 @@ export const INVALID_CASES: FixtureCase[] = [
   { name: 'root completeness has an unrecognized value', artifact: withRoot((r) => { (r.completeness as Record<string, unknown>).collections = 'bogus'; }) },
   { name: 'root completeness.unavailable_sources not an array of strings', artifact: withRoot((r) => { (r.completeness as Record<string, unknown>).unavailable_sources = [1, 2]; }) },
   { name: 'root collections not an array', artifact: withRoot((r) => { r.collections = {}; }) },
+  { name: 'collection entry is not an object', artifact: withRoot((r) => { (r.collections as unknown[])[0] = null; }) },
+  { name: 'collection mode entry is not an object', artifact: withRoot((r) => { ((r.collections as Record<string, unknown>[])[0].modes as unknown[])[0] = null; }) },
+  { name: 'collection mode order is not a number', artifact: withRoot((r) => { (((r.collections as Record<string, unknown>[])[0].modes as Record<string, unknown>[])[0]).order = 'first'; }) },
+  { name: 'collection publication is malformed', artifact: withRoot((r) => { (r.collections as Record<string, unknown>[])[0].publication = { published: true }; }) },
+  { name: 'collection source is malformed', artifact: withRoot((r) => { (r.collections as Record<string, unknown>[])[0].source = null; }) },
   { name: 'root styles.typography not an array', artifact: withRoot((r) => { (r.styles as Record<string, unknown>).typography = 'x'; }) },
+  { name: 'typography style entry is not an object', artifact: withValidStyles((s) => { (s.typography as unknown[])[0] = null; }) },
+  { name: 'typography lifecycle is malformed', artifact: withValidStyles((s) => { ((s.typography as Record<string, unknown>[])[0]).lifecycle = 'active'; }) },
+  { name: 'typography property is malformed', artifact: withValidStyles((s) => { ((((s.typography as Record<string, unknown>[])[0]).properties as Record<string, unknown>)).font_size = null; }) },
+  { name: 'effect style entry is not an object', artifact: withValidStyles((s) => { (s.effects as unknown[])[0] = null; }) },
+  { name: 'effect style lifecycle is malformed', artifact: withValidStyles((s) => { ((s.effects as Record<string, unknown>[])[0]).lifecycle = { status: 'retired', replacement_id: null }; }) },
+  { name: 'effect style binding is malformed', artifact: withValidStyles((s) => { (((s.effects as Record<string, unknown>[])[0]).bindings as unknown[])[0] = null; }) },
   { name: 'root diagnostics not an array', artifact: withRoot((r) => { r.diagnostics = {}; }) },
   { name: 'root statistics not an object', artifact: withRoot((r) => { r.statistics = []; }) },
   { name: 'root tokens not an array', artifact: withRoot((r) => { r.tokens = {}; }) },
@@ -228,6 +289,8 @@ export const INVALID_CASES: FixtureCase[] = [
   { name: 'token type outside the token-type vocabulary', artifact: withToken((t) => { t.type = 'colour'; }) },
   { name: 'token missing description', artifact: withToken((t) => { delete t.description; }) },
   { name: 'token scopes not an array', artifact: withToken((t) => { t.scopes = 'x'; }) },
+  { name: 'token scopes contain a non-string', artifact: withToken((t) => { t.scopes = ['FRAME_FILL', 1]; }) },
+  { name: 'token lifecycle is malformed', artifact: withToken((t) => { t.lifecycle = { status: 'active' }; }) },
   { name: 'token values not an object', artifact: withToken((t) => { t.values = 'x'; }) },
 
   // -- §9 value kind: not a well-formed discriminated object --
@@ -238,6 +301,10 @@ export const INVALID_CASES: FixtureCase[] = [
   {
     name: 'typed value has an unrecognized type discriminant',
     artifact: withValue({ kind: 'literal', value: { type: 'colour', value: 1 } }),
+  },
+  {
+    name: 'literal typed value disagrees with token.type',
+    artifact: withValue({ kind: 'literal', value: { type: 'number', value: 1 } }),
   },
   { name: 'alias value missing its reference', artifact: withValue({ kind: 'alias', resolved: (RESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).resolved }) },
   { name: 'alias value missing its resolved', artifact: withValue({ kind: 'alias', reference: (RESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).reference }) },
@@ -271,6 +338,17 @@ export const INVALID_CASES: FixtureCase[] = [
       kind: 'alias',
       reference: (RESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).reference,
       resolved: { status: 'resolved', value: 'not-a-typed-value', chain: [] },
+    }),
+  },
+  {
+    name: 'resolved alias typed value disagrees with token.type',
+    artifact: withValue({
+      kind: 'alias',
+      reference: (RESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).reference,
+      resolved: {
+        status: 'resolved', value: { type: 'number', value: 1 },
+        chain: [{ token_id: 'VariableID:color-teal-500', mode_id: '1:2/light' }],
+      },
     }),
   },
   {
@@ -375,7 +453,7 @@ export function artifactWithCycle(idA: string, idB: string): FoundationArtifactV
   });
   const aliasTo = (target: string): CanonicalValue => ({
     kind: 'alias',
-    reference: { target_id: target, target_collection_id: collectionId, target_path: [], external: false },
+    reference: { target_id: target, target_collection_id: collectionId, target_path: [target], external: false },
     resolved: { status: 'unresolved', reason: 'cycle', value: null, chain: [] },
   });
   root.tokens.push(
@@ -410,7 +488,12 @@ export function artifactWithTypeMismatch(sourceType: TokenType, targetType: Toke
     values: {
       m1: {
         kind: 'alias',
-        reference: { target_id: targetToken.id, target_collection_id: collectionId, target_path: [], external: false },
+        reference: {
+          target_id: targetToken.id,
+          target_collection_id: collectionId,
+          target_path: targetToken.path,
+          external: false,
+        },
         resolved: { status: 'resolved', value: sampleTypedValue(targetType), chain: [{ token_id: targetToken.id, mode_id: 'm1' }] },
       },
     },
@@ -532,6 +615,65 @@ export function artifactWithDanglingStyleBinding(tokenId: string): FoundationArt
   return root;
 }
 
+/** A valid typography style whose font-family property aliases `targetId`.
+ *  Level 2 must resolve both that stable id and the recorded target path; token
+ *  alias traversal cannot see aliases nested under style properties. */
+export function artifactWithTypographyAlias(
+  targetId: string | null, targetPath: string[],
+): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const literalProperty = (resolved: TypedValue) => ({
+    source: { kind: 'literal' as const }, resolved,
+  });
+  root.styles.typography.push({
+    id: 'TypographyStyleId:alias',
+    name: 'Heading/Alias',
+    path: ['Heading', 'Alias'],
+    description: '',
+    properties: {
+      font_family: {
+        source: { kind: 'alias', target_id: targetId, target_path: targetPath },
+        resolved: { type: 'font_family', value: 'Inter' },
+      },
+      font_weight: literalProperty({ type: 'number', value: 700 }),
+      font_size: literalProperty({ type: 'dimension', number: 32, unit: 'px' }),
+      line_height: literalProperty({ type: 'dimension', number: 40, unit: 'px' }),
+      letter_spacing: literalProperty({ type: 'dimension', number: 0, unit: '%' }),
+      paragraph_spacing: literalProperty({ type: 'dimension', number: 0, unit: 'px' }),
+      paragraph_indent: literalProperty({ type: 'dimension', number: 0, unit: 'px' }),
+      text_case: 'original',
+      text_decoration: 'none',
+    },
+  });
+  return root;
+}
+
+/** One effect style carrying `modeId`. When `ambiguous` is true, a second
+ *  collection declares the same collection-scoped mode id, leaving the style's
+ *  unqualified reference with two possible owners. */
+export function artifactWithEffectMode(
+  modeId: string, ambiguous = false,
+): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  if (ambiguous) {
+    root.collections.push({
+      id: 'VariableCollectionId:second-mode-owner',
+      name: 'Second mode owner',
+      path: ['Second mode owner'],
+      default_mode_id: modeId,
+      modes: [{ id: modeId, name: 'same id', order: 0 }],
+    });
+  }
+  root.styles.effects.push({
+    id: 'EffectStyleId:mode',
+    name: 'Shadow/Mode',
+    path: ['Shadow', 'Mode'],
+    mode_id: modeId,
+    effects: [],
+  });
+  return root;
+}
+
 /**
  * A two-collection alias cycle: token A in collection A aliases token B in
  * collection B, which aliases A back.
@@ -550,28 +692,49 @@ export function artifactWithCrossCollectionCycle(): FoundationArtifactV5 {
   root.collections.push(
     {
       id: collA, name: 'XC A', path: ['XC A'],
-      default_mode_id: 'xc-a/only', modes: [{ id: 'xc-a/only', name: 'only', order: 0 }],
+      default_mode_id: 'xc-a/default',
+      modes: [
+        { id: 'xc-a/default', name: 'default', order: 0 },
+        { id: 'xc-a/only', name: 'only', order: 1 },
+      ],
     },
     {
       id: collB, name: 'XC B', path: ['XC B'],
-      default_mode_id: 'xc-b/only', modes: [{ id: 'xc-b/only', name: 'only', order: 0 }],
+      default_mode_id: 'xc-b/default',
+      modes: [
+        { id: 'xc-b/default', name: 'default', order: 0 },
+        { id: 'xc-b/only', name: 'only', order: 1 },
+      ],
     },
   );
-  const aliasTo = (targetId: string, collectionId: string): CanonicalValue => ({
+  const aliasTo = (
+    targetId: string, collectionId: string, targetPath: string[], targetModeId: string,
+  ): CanonicalValue => ({
     kind: 'alias',
     reference: {
-      target_id: targetId, target_collection_id: collectionId, target_path: [], external: false,
+      target_id: targetId, target_collection_id: collectionId, target_path: targetPath, external: false,
     },
-    resolved: { status: 'unresolved', reason: 'cycle', value: null, chain: [] },
+    resolved: {
+      status: 'unresolved', reason: 'cycle', value: null,
+      chain: [{ token_id: targetId, mode_id: targetModeId }],
+    },
   });
   root.tokens.push(
     {
       id: 'V:xc-a', collection_id: collA, name: 'A', path: ['A'], type: 'color',
-      description: '', scopes: [], values: { 'xc-a/only': aliasTo('V:xc-b', collB) },
+      description: '', scopes: [],
+      values: {
+        'xc-a/default': { kind: 'missing', reason: 'no_value_for_mode' },
+        'xc-a/only': aliasTo('V:xc-b', collB, ['B'], 'xc-b/only'),
+      },
     },
     {
       id: 'V:xc-b', collection_id: collB, name: 'B', path: ['B'], type: 'color',
-      description: '', scopes: [], values: { 'xc-b/only': aliasTo('V:xc-a', collA) },
+      description: '', scopes: [],
+      values: {
+        'xc-b/default': { kind: 'missing', reason: 'no_value_for_mode' },
+        'xc-b/only': aliasTo('V:xc-a', collA, ['A'], 'xc-a/only'),
+      },
     },
   );
   return root;
@@ -594,7 +757,10 @@ export function artifactWithChainOfLength(length: number): FoundationArtifactV5 
       ? { kind: 'literal', value: sampleTypedValue('number') }
       : {
           kind: 'alias',
-          reference: { target_id: ids[i + 1], target_collection_id: collectionId, target_path: [], external: false },
+          reference: {
+            target_id: ids[i + 1], target_collection_id: collectionId,
+            target_path: [ids[i + 1]], external: false,
+          },
           resolved: {
             status: 'resolved', value: sampleTypedValue('number'),
             chain: [{ token_id: ids[i + 1], mode_id: 'm1' }],

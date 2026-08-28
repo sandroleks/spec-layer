@@ -6,7 +6,8 @@
  * to one of FOUR shapes (a bare string, a bare number, a `{hex, alpha}`
  * object, or an `{alias, resolved?}` object). v4 has no stable ids at all —
  * its own rule was that internal Figma ids stay inside the extractor
- * (`brief.ts:120`) — no `scopes`, no publication state, no lifecycle, and its
+ * (`brief.ts:120`) — no per-token Figma `scopes` (distinct from a narrowed
+ * copy's top-level scope block), no publication state, no lifecycle, and its
  * aliases are bare names. Every one of those losses becomes a dedicated
  * diagnostic below rather than a silent guess.
  */
@@ -36,9 +37,10 @@ export interface V4AliasValue {
   alias: string;
   /** The concrete value the alias pointed to, already collapsed to one hop
    *  by v4's own resolution (`resolveValue` in foundation.ts). ABSENT when
-   *  v4 could not read the target at all -- which today only happens for an
-   *  external alias (`collection` set, `resolved: null` in the internal
-   *  model, dropped by `valueOf`'s conditional spread). */
+   *  v4 could not read the terminal target at all. That happens both on a
+   *  direct external alias and on a local alias whose collapsed downstream
+   *  chain ends externally: both carry `resolved: null` internally, which
+   *  `valueOf` drops through its conditional spread. */
   resolved?: V4Value;
   external?: boolean;
   /** The alias's target collection. v4 emits this ONLY for external aliases
@@ -71,8 +73,30 @@ export interface V4Collection {
   tokens: V4Token[];
 }
 
+/**
+ * The two scope blocks a real v4 foundation brief can carry (`scopeOf` in
+ * brief.ts). A collection-scoped copy contains one selected collection and no
+ * styles; a text-style-scoped copy contains text styles and no collections or
+ * effect styles. v5 deliberately has no equivalent payload field, so
+ * normalization retains this fact through `completeness` plus a diagnostic
+ * rather than adding an out-of-schema `scope` key.
+ */
+export type V4FoundationScope =
+  | {
+      collections: string[];
+      text_styles: 'excluded';
+      effect_styles: 'excluded';
+    }
+  | {
+      collections: 'excluded';
+      text_styles: 'included';
+      effect_styles: 'excluded';
+    };
+
 export interface V4Foundation {
   source?: { file_key?: string };
+  /** Present only on a narrowed v4 copy; absent on a whole-file brief. */
+  scope?: V4FoundationScope;
   collections: V4Collection[];
   /**
    * Source labels v4 could not read (a collection or library name, e.g.
@@ -272,6 +296,27 @@ function buildCollections(v4: V4Foundation, diagnostics: Diagnostic[]): Collecti
       return { id: modeId, name: modeName, order };
     });
 
+    // v4 has mode display names but no mode ids. Two modes with the same name
+    // therefore mint the same synthetic id, and a token's name-keyed `values`
+    // object cannot distinguish them either. Keep the source declarations in
+    // the artifact (an ordinal id would fabricate identities v4 never stated),
+    // but report the collision instead of silently letting the map collapse it.
+    const modeNameCounts = new Map<string, number>();
+    for (const modeName of c.modes) {
+      modeNameCounts.set(modeName, (modeNameCounts.get(modeName) ?? 0) + 1);
+    }
+    for (const [modeName, occurrences] of modeNameCounts) {
+      if (occurrences < 2) continue;
+      const modeId = syntheticModeId(id, modeName);
+      diagnostics.push(diagnostic('DUPLICATE_SOURCE_ID', {
+        entity_id: modeId,
+        message: `Collection "${name}" declares ${occurrences} modes named "${modeName}"; `
+          + `without v4 mode ids they all mint the same synthetic id "${modeId}" and cannot be `
+          + 'distinguished.',
+        details: { collection_id: id, mode_name: modeName, occurrences },
+      }));
+    }
+
     // The default mode is either STATED and resolvable, or it is not stated at
     // all. There is no third, substitutable case: falling through to
     // `modes[0]` (which this did before) discards a stated-but-unresolvable
@@ -457,10 +502,36 @@ function unresolvedAlias(
 }
 
 function convertAlias(
-  alias: V4AliasValue, ownerType: V4TokenType, entityId: string, modeId: string, ownerCollectionId: string,
+  alias: V4AliasValue, ownerType: V4TokenType, entityId: string, modeId: string,
+  ownerModeName: string, ownerCollectionId: string,
   tokenIndex: TokenIndexEntry[], collectionsByV5Id: Map<string, CollectionBuild>, diagnostics: Diagnostic[],
 ): CanonicalValue {
   const targetPath = parseV4Path(alias.alias.normalize('NFC'));
+  const external = alias.external === true;
+  const baseReference = {
+    target_path: targetPath,
+    external,
+    ...(external && alias.collection !== undefined
+      ? { source_library_name: alias.collection }
+      : {}),
+  };
+
+  // `external` is source provenance in its own right; a collection label is
+  // optional display metadata, not the externality discriminator. Never look
+  // an external reference up in the local index: an unnamed external can share
+  // a path with a local token, and a named library can share its name too, but
+  // neither coincidence makes the local variable the external target.
+  if (external) {
+    return unresolvedAlias(
+      { ...baseReference, target_id: null, target_collection_id: null },
+      'source_library_unavailable', entityId, modeId,
+      alias.collection !== undefined
+        ? `Alias "${alias.alias}" names a target in external library "${alias.collection}", which this export could not read.`
+        : `Alias "${alias.alias}" names a target in an unnamed external library, which this export could not read.`,
+      diagnostics,
+    );
+  }
+
   const byPath = tokenIndex.filter((t) => arraysEqual(t.path, targetPath));
   // Decision 3, step 1: match on (collection, path) ONLY when v4 states a
   // collection -- never fall back to the unqualified pool in that case, or a
@@ -469,13 +540,6 @@ function convertAlias(
   const candidates = collectionName !== undefined
     ? byPath.filter((t) => t.collectionName === collectionName)
     : byPath;
-
-  const external = alias.collection !== undefined;
-  const baseReference = {
-    target_path: targetPath,
-    external,
-    ...(alias.collection !== undefined ? { source_library_name: alias.collection } : {}),
-  };
 
   // Decision 3, step 3: two or more matches is reported, never resolved by
   // picking the first one.
@@ -493,13 +557,10 @@ function convertAlias(
   const target = candidates[0];
 
   if (target === undefined) {
-    const reason: UnresolvedReason = external ? 'source_library_unavailable' : 'target_not_found';
     return unresolvedAlias(
       { ...baseReference, target_id: null, target_collection_id: null },
-      reason, entityId, modeId,
-      external
-        ? `Alias "${alias.alias}" names a target in "${alias.collection}", a source this export could not read.`
-        : `Alias "${alias.alias}" names no token this export could find.`,
+      'target_not_found', entityId, modeId,
+      `Alias "${alias.alias}" names no token this export could find.`,
       diagnostics,
     );
   }
@@ -508,33 +569,16 @@ function convertAlias(
     ...baseReference, target_id: target.id, target_collection_id: target.collectionId,
   };
 
-  // RULE 1's resolved terminal: unreachable with today's v4 output. Rule 1 (the
-  // `(collection, path)` match above) is structurally live and necessary for
-  // narrowing candidates and computing the target_id/target_collection_id that
-  // feed both branch 2 and the ambiguity check. However, reaching the
-  // `alias.resolved === undefined` case that follows requires an alias with a
-  // `collection` field. Per brief.ts's `valueOf` (lines 100-109), v4 only
-  // emits `collection` on external aliases; external aliases by definition have
-  // `resolved: null` in the internal model, and `valueOf`'s conditional spread
-  // drops the falsy `resolved` field entirely from the brief output. An alias
-  // with a collection therefore always lacks the `resolved` value this check
-  // would need. This terminal is kept because it becomes reachable when v4
-  // qualifies internal cross-collection aliases with collection names too —
-  // backlog item A4. When that day comes, a local token matching the (collection,
-  // path) pair becomes proof of the target's identity.
   if (alias.resolved === undefined) {
-    // Today v4 omits `resolved` ONLY for a genuinely external alias (the
-    // internal model's `resolved: null`, dropped by `valueOf`'s conditional
-    // spread). We know structurally which local token the name/collection
-    // pair WOULD match, but claiming that local token IS the target would be
-    // fabrication: an external reference points at a variable in a
-    // different file, and a same-named local token need not be the same
-    // entity. So the reference names it (for lineage) while resolution
-    // stays unresolved.
+    // A direct external alias returned before local lookup. Real v4 also
+    // reaches this branch for a LOCAL alias whose collapsed downstream chain
+    // terminates externally: resolveValue propagates the terminal `null`, and
+    // valueOf omits the falsy `resolved` field. The direct local target is still
+    // identifiable above, but the unavailable library beyond it is not.
     return unresolvedAlias(
       reference, 'source_library_unavailable', entityId, modeId,
-      `Alias "${alias.alias}" matched a token by name, but v4 recorded no value for it `
-        + '(its source was unreadable at export time).',
+      `Alias "${alias.alias}" matched a local token, but its v4 resolution snapshot is absent `
+        + 'because the collapsed downstream chain ended in an unavailable external library.',
       diagnostics,
     );
   }
@@ -572,31 +616,24 @@ function convertAlias(
   // one hop by the time it reaches the brief -- see `resolveValue`'s
   // "Collapse a chain to one visible hop" comment).
   //
-  // WHICH MODE THE HOP READS. One rule, and it is the SAME rule
-  // `walkAliasGraph` in validate.ts applies:
+  // WHICH MODE THE HOP READS. This mirrors v4's `targetModeId` in
+  // foundation.ts exactly, because `alias.resolved` above is a snapshot v4
+  // produced with that rule:
   //
   //  - same collection: the mode carries across unchanged, because it is
   //    literally the same mode.
-  //  - different collection: the TARGET collection's default mode. Mode ids
-  //    are collection-scoped (see syntheticModeId), so the source mode id does
-  //    not exist in the target at all, and Figma itself resolves a
-  //    cross-collection alias through whichever mode the consuming context
-  //    selects for the target collection, defaulting to that collection's
-  //    default mode.
+  //  - different collection: first the TARGET mode whose display name equals
+  //    the source mode's display name, then the target default as fallback.
   //
-  // This deliberately does NOT replicate v4's `targetModeId`
-  // (foundation.ts:389), which matched the source mode's display NAME in the
-  // target collection first. That is name-based inference -- the thing §10
-  // exists to eliminate -- and it is not what Figma does: two collections
-  // owning a mode called "light" is a naming coincidence, not a relationship.
-  //
-  // The rules MUST stay identical between the two modules. If they diverge,
-  // one fact ("which mode did this hop read?") has two owners with two
-  // answers, and validate.ts ends up reporting normalize.ts's own output as
-  // wrong -- which is precisely the class of bug this fix wave is closing.
+  // Matching display names is lossy provenance, but it already happened in
+  // v4 before this function received the flattened snapshot. Recording some
+  // other mode in the chain would make the lineage disagree with the value in
+  // that same alias record.
+  const targetCollection = collectionsByV5Id.get(target.collectionId);
   const targetModeId = target.collectionId === ownerCollectionId
     ? modeId
-    : declaredDefaultModeId(collectionsByV5Id.get(target.collectionId));
+    : targetCollection?.modeIdByName.get(ownerModeName)
+      ?? declaredDefaultModeId(targetCollection);
 
   if (targetModeId === undefined) {
     // The target token exists and v4 even handed us its value, but the mode
@@ -609,7 +646,8 @@ function convertAlias(
     return unresolvedAlias(
       reference, 'target_mode_unresolvable', entityId, modeId,
       `Alias "${alias.alias}" resolves into collection "${target.collectionName}", which declares `
-        + 'no usable default mode, so the mode this hop reads cannot be stated.',
+        + `neither a mode named "${ownerModeName}" nor a usable default mode, so the mode this `
+        + 'hop reads cannot be stated.',
       diagnostics,
       { target_collection_id: target.collectionId },
     );
@@ -676,10 +714,9 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     //
     // A mode name present in `t.values` but NOT declared by the collection is
     // stale (the mode was deleted after the value was recorded) and is
-    // therefore not visited at all. That matches v4's own `tokenOf`, which
-    // drops a mode id with no name (`brief.ts:117-123`): keying a v5 value by a
-    // mode this collection no longer declares would assert a mode that does
-    // not exist.
+    // therefore not converted in this loop. It is reported explicitly below;
+    // keying a v5 value by a mode this collection no longer declares would
+    // assert a mode that does not exist.
     for (const mode of collBuild.v5.modes) {
       const stated = Object.prototype.hasOwnProperty.call(t.values, mode.name);
       if (!stated) {
@@ -695,7 +732,8 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
       const raw = t.values[mode.name];
       if (isAliasShape(raw)) {
         values[mode.id] = convertAlias(
-          raw, t.type, id, mode.id, collBuild.v5.id, tokenIndex, collectionsByV5Id, diagnostics,
+          raw, t.type, id, mode.id, mode.name, collBuild.v5.id,
+          tokenIndex, collectionsByV5Id, diagnostics,
         );
       } else if (isUnresolvedShape(raw)) {
         diagnostics.push(diagnostic('MISSING_MODE_VALUE', {
@@ -707,6 +745,28 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
       } else {
         values[mode.id] = convertLiteral(raw, t.type, id, mode.id, diagnostics);
       }
+    }
+
+    // A value keyed by a mode name the collection does not declare cannot be
+    // represented in v5: putting it in `values` would create a dangling mode
+    // reference, while attaching it to a declared mode would invent a match.
+    // v4's current emitter normally drops this case, but older or hand-edited
+    // briefs can carry it. Report the discarded source value explicitly.
+    const declaredModeNames = new Set(collBuild.v4.modes);
+    for (const staleModeName of Object.keys(t.values)) {
+      if (declaredModeNames.has(staleModeName)) continue;
+      const staleModeId = syntheticModeId(collBuild.v5.id, staleModeName);
+      diagnostics.push(diagnostic('UNRESOLVED_REFERENCE', {
+        entity_id: id,
+        mode_id: staleModeId,
+        message: `v4 carries a value for undeclared mode "${staleModeName}". The value was not `
+          + 'attached to any declared mode, because doing so would fabricate a mode reference.',
+        details: {
+          collection_id: collBuild.v5.id,
+          stale_mode_name: staleModeName,
+          declared_mode_names: collBuild.v4.modes,
+        },
+      }));
     }
 
     return {
@@ -761,15 +821,52 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     }));
   }
 
+  // A real v4 narrowed copy says so explicitly. Because v5 has no scope field,
+  // `complete` would erase that distinction and present a one-collection or
+  // text-styles-only copy as a whole-file artifact. Preserve the fact in the
+  // hashed completeness block and accompany it with actionable prose.
+  if (v4.scope !== undefined) {
+    if (Array.isArray(v4.scope.collections)) {
+      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+        entity_id: ARTIFACT_ENTITY_ID,
+        message: `This v4 input is scoped to ${v4.scope.collections.length} collection(s); `
+          + 'unselected collections and all styles are outside the copy, so it is not a '
+          + 'complete whole-file artifact.',
+        details: {
+          scope_kind: 'collections',
+          included_collections: v4.scope.collections,
+          text_styles: v4.scope.text_styles,
+          effect_styles: v4.scope.effect_styles,
+        },
+      }));
+    } else {
+      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+        entity_id: ARTIFACT_ENTITY_ID,
+        message: 'This v4 input is scoped to text styles; collections and effect styles are '
+          + 'outside the copy, so it is not a complete whole-file artifact.',
+        details: {
+          scope_kind: 'text_styles',
+          collections: v4.scope.collections,
+          text_styles: v4.scope.text_styles,
+          effect_styles: v4.scope.effect_styles,
+        },
+      }));
+    }
+  }
+
   const completeness: ExtractionCompleteness = {
-    collections: unavailableSources.length > 0 ? 'partial' : 'complete',
-    // 'complete' ONLY when the input genuinely states no composite styles.
-    // 'partial' rather than 'unavailable' because the collections and tokens in
-    // the same artifact did migrate -- 'unavailable' would overstate the loss.
-    styles: stylesNotMigrated > 0 ? 'partial' : 'complete',
-    // `unavailable_sources` stays empty here on purpose: these styles were read
-    // fine, they are simply not migrated. Listing them as unreadable sources
-    // would misattribute a scope decision to a read failure.
+    collections: v4.scope !== undefined
+      ? (Array.isArray(v4.scope.collections) ? 'partial' : 'unavailable')
+      : unavailableSources.length > 0 ? 'partial' : 'complete',
+    // A whole-file input is 'complete' ONLY when it genuinely states no
+    // composite styles. A scoped input follows the coverage its scope block
+    // states: neither style family covered is unavailable; text styles covered
+    // but effect styles excluded is partial.
+    styles: v4.scope !== undefined
+      ? (v4.scope.text_styles === 'included' ? 'partial' : 'unavailable')
+      : stylesNotMigrated > 0 ? 'partial' : 'complete',
+    // Style non-migration and intentional scoping do not add entries here:
+    // those are not failed sources. Only v4's actual `unavailable` reads do.
     unavailable_sources: unavailableSources,
   };
 

@@ -1,0 +1,76 @@
+# Synthetic, publishable substitute for the private Company DS acceptance input.
+# It contains no Figma file key, customer name, URL, credential, or proprietary
+# token value. The shape is the real v4 `foundationBrief` contract.
+collections:
+  - name: Primitives
+    modes: [Light, Dark]
+    default_mode: Light
+    tokens:
+      - name: color/teal/500
+        type: color
+        description: Synthetic opaque colour.
+        values:
+          Light: "#006b62"
+          Dark: { hex: "#006b62", alpha: 1 }
+      - name: color/overlay
+        type: color
+        values:
+          Light: { hex: "#000000", alpha: 0.125 }
+          Dark: { hex: "#ffffff", alpha: 0.125 }
+  - name: Semantic
+    modes: [Light, Dark]
+    default_mode: Light
+    tokens:
+      - name: color/background/brand
+        type: color
+        values:
+          Light: { alias: color/teal/500, resolved: "#006b62" }
+          Dark: { alias: color/teal/500, resolved: { hex: "#006b62", alpha: 1 } }
+      - name: color/legacy/one
+        type: color
+        values:
+          Light: { alias: legacy/one, external: true, collection: "Legacy colors" }
+          Dark: { alias: legacy/one, external: true, collection: "Legacy colors" }
+      - name: color/legacy/two
+        type: color
+        values:
+          Light: { alias: legacy/two, external: true, collection: "Legacy colors" }
+          Dark: { alias: legacy/two, external: true, collection: "Legacy colors" }
+      - name: color/legacy/three
+        type: color
+        values:
+          Light: { alias: legacy/three, external: true }
+          Dark: { alias: legacy/three, external: true }
+  - name: Spacing
+    modes: [Value]
+    default_mode: Value
+    tokens:
+      - name: spacing/400
+        type: float
+        description: Synthetic spacing value; v4 carries no unit scope.
+        values:
+          Value: 16
+  - name: Motion
+    modes: [Value]
+    default_mode: Value
+    tokens:
+      - name: duration/fast
+        type: float
+        values:
+          Value: 120
+  - name: Typography
+    modes: [Value]
+    default_mode: Value
+    tokens:
+      - name: font/family/body
+        type: string
+        values:
+          Value: Inter
+  - name: Components
+    modes: [Value]
+    default_mode: Value
+    tokens:
+      - name: Background/Chip/Сhip (Hover)
+        type: boolean
+        values:
+          Value: true

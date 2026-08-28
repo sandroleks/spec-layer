@@ -10,11 +10,16 @@ import {
 } from '../../src/v5/value';
 import { VALID_CASES, INVALID_CASES } from './fixtures';
 
-const schema = JSON.parse(
-  readFileSync('packages/extractor/src/v5/schema/foundation-5.0.0.json', 'utf8'),
-) as Record<string, unknown>;
+const schemaText = readFileSync(
+  'packages/extractor/src/v5/schema/foundation-5.0.0.json', 'utf8',
+);
+const schema = JSON.parse(schemaText) as Record<string, unknown>;
 
-const ajv = addFormats(new Ajv2020({ allErrors: true, strict: true }));
+// The token/value type correlation deliberately reuses small $defs across
+// eight type branches. Keeping refs as callable validators avoids Ajv
+// inlining the entire canonical-value union into every branch and makes this
+// consumer-facing schema compile in constant-sized generated code.
+const ajv = addFormats(new Ajv2020({ allErrors: true, strict: true, inlineRefs: false }));
 const compiled = ajv.compile(schema);
 
 const defs = schema.$defs as Record<string, Record<string, unknown>>;
@@ -46,6 +51,11 @@ describe('schema parity', () => {
     // in practice.
     expect(() => ajv.compile(schema)).not.toThrow();
     expect(schema.$id).toBe(SCHEMA_URI);
+  });
+
+  it('keeps the public landing copy byte-identical to the package schema', () => {
+    expect(readFileSync('apps/landing/schemas/foundation-context/v5.json', 'utf8'))
+      .toBe(schemaText);
   });
 
   it('keeps every schema enum identical to its runtime vocabulary', () => {
