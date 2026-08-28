@@ -2278,7 +2278,7 @@ are dead.
 ## Open items for the user
 
 1. **The real export** (Task 10), and the Step 1 confidentiality decision that gates it. Nothing before it is blocked.
-2. **`SCHEMA_URI`** is written as `https://spec-layer.dev/schemas/foundation-context/v5.json`. It ships inside every artifact, so it must be a URL you control and intend to serve. Confirm or replace before Task 6.
+2. **`SCHEMA_URI` — confirmed 2026-08-28.** `https://spec-layer.dev/schemas/foundation-context/v5.json` is the permanent public identifier. It is shared by the JSON Schema `$id` and every artifact's `schema_uri`; changing it after artifacts ship is a contract break.
 3. **`extractor.build`** (§5.1) has no source — there is no build-id plumbing in `build:plugin`. Phase 1 emits `null`; wiring a git sha belongs with plan 2.
 4. **`target_mode_id` on `AliasReference`** — implemented as `ResolutionStep` instead, for the reason in the revision note. Say the word if you want the field on the reference as well.
 
