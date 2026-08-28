@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import {
-  normalizeV4, toYaml, validateLevel1, validateLevel2,
-  type CanonicalValue, type V4Foundation, type YamlValue,
+  buildFoundation, buildFoundationArtifactV5, normalizeV4, toYaml,
+  validateLevel1, validateLevel2,
+  type CanonicalValue, type SerializedFoundation, type V4Foundation, type YamlValue,
 } from '../../src/index';
 import { ACCEPTANCE_COVERAGE } from './phaseCoverage';
 
@@ -19,9 +20,28 @@ const META = {
   generatedAt: '2026-08-28T00:00:00.000Z',
 };
 
+const DIRECT_INPUT_PATH = fileURLToPath(
+  new URL('../fixtures/v5/synthetic-foundation-serialized.json', import.meta.url),
+);
+const DIRECT_GOLDEN_PATH = fileURLToPath(
+  new URL('../fixtures/v5/synthetic-foundation-direct-v5.yaml', import.meta.url),
+);
+const DIRECT_META = {
+  exportId: 'synthetic-direct-v5-acceptance',
+  generatedAt: '2026-08-28T00:00:00.000Z',
+  build: null,
+};
+
 function normalizeFixture() {
   const v4 = load(readFileSync(INPUT_PATH, 'utf8')) as V4Foundation;
   return normalizeV4(v4, META);
+}
+
+function directFixture() {
+  const serialized = JSON.parse(
+    readFileSync(DIRECT_INPUT_PATH, 'utf8'),
+  ) as SerializedFoundation;
+  return buildFoundationArtifactV5(buildFoundation(serialized), DIRECT_META);
 }
 
 function valueNamed(name: string, values: ReturnType<typeof normalizeFixture>['artifact']['tokens']): CanonicalValue[] {
@@ -31,22 +51,159 @@ function valueNamed(name: string, values: ReturnType<typeof normalizeFixture>['a
 }
 
 describe('Foundation Context v5 phase coverage', () => {
-  it('states which acceptance criteria Phase 1 does not grade', () => {
-    const ungraded = Object.entries(ACCEPTANCE_COVERAGE)
-      .filter(([, value]) => value.gradedBy !== 'plan-1')
-      .map(([key]) => key);
-    expect(new Set(ungraded)).toEqual(new Set(['1', '2', '3', '4', '5', '7b', '9', '10', '11']));
+  it('separates implemented engine coverage from real-source grading', () => {
+    expect(ACCEPTANCE_COVERAGE[1]).toMatchObject({
+      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    });
+    expect(ACCEPTANCE_COVERAGE[2]).toMatchObject({
+      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    });
+    expect(ACCEPTANCE_COVERAGE[4]).toMatchObject({
+      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    });
+    expect(ACCEPTANCE_COVERAGE[5]).toMatchObject({
+      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    });
+    expect(ACCEPTANCE_COVERAGE['7b']).toMatchObject({
+      implementedBy: 'plan-2', gradedBy: 'pending-real-fixture',
+    });
+    expect(ACCEPTANCE_COVERAGE[3]).toMatchObject({
+      implementedBy: 'plan-3', gradedBy: 'plan-3',
+    });
   });
 
-  it.todo('1: all six collections have stable source ids — plan 2');
-  it.todo('2: every declared mode has a stable source id — plan 2');
-  it.todo('3: every token and style has a stable source id — plan 2');
-  it.todo('4: internal aliases resolve with complete extracted chains — plan 2');
-  it.todo('5: three deprecated external refs are graded against real source metadata — plan 2');
-  it.todo('7b: dimensional floats receive explicit units from extracted scopes — plan 2');
+  it.todo('1: all six Company DS collections have stable source ids — pending real fixture');
+  it.todo('2: every Company DS mode has a stable source id — pending real fixture');
+  it.todo('3: every token and style has a stable source id — plan 3');
+  it.todo('4: Company DS aliases have complete extracted chains — pending real fixture');
+  it.todo('5: three deprecated refs match real source metadata — pending real fixture');
+  it.todo('7b: Company DS dimensions receive units — pending real fixture');
   it.todo('9: archived text styles get lifecycle plus INFERRED_LIFECYCLE — plan 3');
   it.todo('10: identical typography mode values are preserved — plan 3');
   it.todo('11: card shadow representations and binding drift are preserved — plan 3');
+});
+
+describe('Foundation Context v5 direct synthetic golden acceptance', () => {
+  it('preserves raw identity, mode keys, units, precision, and full chain policy', () => {
+    const { artifact } = directFixture();
+    const token = (id: string) => {
+      const found = artifact.tokens.find((candidate) => candidate.id === id);
+      if (!found) throw new Error(`Direct acceptance fixture has no token ${id}.`);
+      return found;
+    };
+
+    expect(validateLevel1(artifact)).toEqual([]);
+    expect(artifact.collections.map((collection) => collection.id)).toEqual([
+      'CollectionID:primitives', 'CollectionID:semantic',
+    ]);
+    expect(artifact.collections.flatMap((collection) => collection.modes)
+      .every((mode) => mode.id.startsWith('ModeID:'))).toBe(true);
+    const primitiveLightModes = artifact.collections[0].modes
+      .filter((mode) => mode.name === 'Light');
+    expect(primitiveLightModes.map((mode) => mode.id)).toEqual([
+      'ModeID:p-light', 'ModeID:p-light-duplicate',
+    ]);
+    expect(artifact.tokens.every((candidate) => !candidate.id.startsWith('figma-name:')))
+      .toBe(true);
+    expect(Object.keys(token('VariableID:chain-owner').values))
+      .toEqual(['ModeID:s-light', 'ModeID:s-dark']);
+
+    expect(token('VariableID:gap')).toMatchObject({ type: 'dimension' });
+    expect(token('VariableID:gap').values['ModeID:p-dark']).toEqual({
+      kind: 'literal', value: { type: 'dimension', number: 12, unit: 'px' },
+    });
+    expect(token('VariableID:font-weight')).toMatchObject({ type: 'number' });
+    expect(token('VariableID:font-family')).toMatchObject({ type: 'font_family' });
+    expect(token('VariableID:unknown-number')).toMatchObject({ type: 'number' });
+    expect(artifact.diagnostics.some((finding) =>
+      finding.code === 'UNIT_METADATA_UNAVAILABLE'
+      && finding.entity_id === 'VariableID:unknown-number')).toBe(true);
+
+    const exact = token('VariableID:color-exact').values['ModeID:p-light'];
+    const lossy = token('VariableID:color-lossy').values['ModeID:p-light'];
+    expect(exact).toMatchObject({ kind: 'literal', value: { hex: '#ff0000' } });
+    if (exact.kind !== 'literal' || exact.value.type !== 'color') {
+      throw new Error('Exact fixture color must be a literal.');
+    }
+    expect('channels' in exact.value).toBe(false);
+    expect(lossy).toMatchObject({
+      kind: 'literal',
+      value: { channels: [0.5001, 0.1001, 0.0001], alpha: 0.125 },
+    });
+
+    expect(token('VariableID:chain-owner').values['ModeID:s-dark']).toMatchObject({
+      reference: { target_id: 'VariableID:chain-bridge' },
+      resolved: {
+        status: 'resolved',
+        chain: [
+          { token_id: 'VariableID:chain-bridge', mode_id: 'ModeID:p-dark' },
+          { token_id: 'VariableID:chain-middle', mode_id: 'ModeID:p-dark' },
+          { token_id: 'VariableID:chain-terminal', mode_id: 'ModeID:p-dark' },
+        ],
+      },
+    });
+    expect(token('VariableID:declared-missing').values['ModeID:s-dark'])
+      .toEqual({ kind: 'missing', reason: 'no_value_for_mode' });
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'CONFUSABLE_NAME', entity_id: 'VariableID:confusable',
+    }));
+  });
+
+  it('keeps external identities external and states incomplete sources/styles', () => {
+    const { artifact } = directFixture();
+    const readable = artifact.tokens.find((token) =>
+      token.id === 'VariableID:external-owner-readable')!.values['ModeID:s-dark'];
+    const unreadable = artifact.tokens.find((token) =>
+      token.id === 'VariableID:external-owner-unreadable')!.values['ModeID:s-dark'];
+    expect(readable).toMatchObject({
+      reference: {
+        target_id: 'VariableID:external-readable',
+        target_path: ['color', 'shared'], external: true,
+        source_library_name: 'Deprecated Core',
+      },
+      resolved: { status: 'unresolved', chain: [] },
+    });
+    expect(unreadable).toMatchObject({
+      reference: {
+        target_id: 'VariableID:external-unreadable', target_path: [], external: true,
+      },
+    });
+    expect(artifact.tokens.some((token) => token.id === 'VariableID:local-collision'))
+      .toBe(true);
+    expect(artifact.completeness).toEqual({
+      collections: 'partial', styles: 'partial',
+      unavailable_sources: [
+        'Deprecated Core', 'VariableID:external-unreadable', 'permission:styles-metadata',
+      ],
+    });
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      details: { typography_not_migrated: 1, effects_not_migrated: 1 },
+    }));
+  });
+
+  it('produces stable diagnostics/hash and matches the reviewed direct golden', () => {
+    const first = directFixture();
+    const second = directFixture();
+    expect(first.artifact.spec_layer.export.content_hash)
+      .toBe(second.artifact.spec_layer.export.content_hash);
+
+    const level2 = (artifact: typeof first.artifact) => validateLevel2(artifact)
+      .map(({ code, entity_id, mode_id, details }) => ({
+        code, entity_id, mode_id: mode_id ?? null, details: details ?? null,
+      }));
+    expect(level2(first.artifact)).toEqual(level2(second.artifact));
+    expect(level2(first.artifact).map((finding) => finding.code))
+      .toEqual(expect.arrayContaining([
+        'ALIAS_CYCLE', 'UNRESOLVED_ALIAS', 'UNRESOLVED_EXTERNAL_ALIAS',
+      ]));
+
+    const yaml = `${toYaml(first.artifact as unknown as YamlValue).trimEnd()}\n`;
+    if (process.env.UPDATE_V5_DIRECT_GOLDEN === '1') {
+      writeFileSync(DIRECT_GOLDEN_PATH, yaml);
+    }
+    expect(yaml).toBe(readFileSync(DIRECT_GOLDEN_PATH, 'utf8'));
+  });
 });
 
 describe('Foundation Context v5 synthetic golden acceptance', () => {

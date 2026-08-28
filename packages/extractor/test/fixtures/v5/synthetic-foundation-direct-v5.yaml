@@ -1,0 +1,518 @@
+completeness:
+  collections: partial
+  styles: partial
+  unavailable_sources:
+    - Deprecated Core
+    - VariableID:external-unreadable
+    - permission:styles-metadata
+collections:
+  - id: CollectionID:primitives
+    name: Primitives
+    path: [Primitives]
+    default_mode_id: ModeID:p-light
+    modes:
+      - { id: ModeID:p-light, name: Light, order: 0 }
+      - { id: ModeID:p-dark, name: Dark, order: 1 }
+      - { id: ModeID:p-light-duplicate, name: Light, order: 2 }
+  - id: CollectionID:semantic
+    name: Semantic
+    path: [Semantic]
+    default_mode_id: ModeID:s-light
+    modes:
+      - { id: ModeID:s-light, name: Light, order: 0 }
+      - { id: ModeID:s-dark, name: Dark, order: 1 }
+tokens:
+  - id: VariableID:color-exact
+    name: color/exact/red
+    path: [color, exact, red]
+    collection_id: CollectionID:primitives
+    type: color
+    description: Exactly representable source channels.
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:p-light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ff0000", alpha: 1 }
+      ModeID:p-dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ff0000", alpha: 1 }
+      ModeID:p-light-duplicate:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ff0000", alpha: 1 }
+  - id: VariableID:color-lossy
+    name: color/lossy/teal
+    path: [color, lossy, teal]
+    collection_id: CollectionID:primitives
+    type: color
+    description: Channels carry precision beyond hex.
+    scopes: [FRAME_FILL, SHAPE_FILL]
+    values:
+      ModeID:p-light:
+        kind: literal
+        value:
+          type: color
+          color_space: srgb
+          hex: "#801a00"
+          alpha: 0.125
+          channels: [0.5001, 0.1001, 0.0001]
+      ModeID:p-dark:
+        kind: literal
+        value:
+          type: color
+          color_space: srgb
+          hex: "#4080bf"
+          alpha: 0.875
+          channels: [0.2501, 0.5001, 0.7501]
+      ModeID:p-light-duplicate:
+        kind: literal
+        value:
+          type: color
+          color_space: srgb
+          hex: "#801a00"
+          alpha: 0.125
+          channels: [0.5001, 0.1001, 0.0001]
+  - id: VariableID:gap
+    name: spacing/gap
+    path: [spacing, gap]
+    collection_id: CollectionID:primitives
+    type: dimension
+    description: ""
+    scopes: [GAP]
+    values:
+      ModeID:p-light: { kind: literal, value: { type: dimension, number: 8, unit: px } }
+      ModeID:p-dark: { kind: literal, value: { type: dimension, number: 12, unit: px } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: dimension, number: 8, unit: px } }
+  - id: VariableID:font-weight
+    name: typography/weight/strong
+    path: [typography, weight, strong]
+    collection_id: CollectionID:primitives
+    type: number
+    description: ""
+    scopes: [FONT_WEIGHT]
+    values:
+      ModeID:p-light: { kind: literal, value: { type: number, value: 600 } }
+      ModeID:p-dark: { kind: literal, value: { type: number, value: 700 } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: number, value: 600 } }
+  - id: VariableID:unknown-number
+    name: number/unknown-scope
+    path: [number, unknown-scope]
+    collection_id: CollectionID:primitives
+    type: number
+    description: ""
+    scopes: [ALL_SCOPES]
+    values:
+      ModeID:p-light: { kind: literal, value: { type: number, value: 1.5 } }
+      ModeID:p-dark: { kind: literal, value: { type: number, value: 2.5 } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: number, value: 1.5 } }
+  - id: VariableID:font-family
+    name: typography/family/body
+    path: [typography, family, body]
+    collection_id: CollectionID:primitives
+    type: font_family
+    description: ""
+    scopes: [FONT_FAMILY]
+    values:
+      ModeID:p-light: { kind: literal, value: { type: font_family, value: Inter } }
+      ModeID:p-dark: { kind: literal, value: { type: font_family, value: Inter } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: font_family, value: Inter } }
+  - id: VariableID:chain-terminal
+    name: color/chain/terminal
+    path: [color, chain, terminal]
+    collection_id: CollectionID:primitives
+    type: color
+    description: ""
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:p-light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+      ModeID:p-dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+      ModeID:p-light-duplicate:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+  - id: VariableID:chain-middle
+    name: color/chain/middle
+    path: [color, chain, middle]
+    collection_id: CollectionID:primitives
+    type: color
+    description: ""
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:p-light:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-terminal
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, terminal]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+          chain: [{ token_id: VariableID:chain-terminal, mode_id: ModeID:p-light }]
+      ModeID:p-dark:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-terminal
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, terminal]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+          chain: [{ token_id: VariableID:chain-terminal, mode_id: ModeID:p-dark }]
+      ModeID:p-light-duplicate:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-terminal
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, terminal]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+          chain:
+            - token_id: VariableID:chain-terminal
+              mode_id: ModeID:p-light-duplicate
+  - id: VariableID:chain-bridge
+    name: color/chain/bridge
+    path: [color, chain, bridge]
+    collection_id: CollectionID:primitives
+    type: color
+    description: ""
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:p-light:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-middle
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, middle]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+          chain:
+            - { token_id: VariableID:chain-middle, mode_id: ModeID:p-light }
+            - { token_id: VariableID:chain-terminal, mode_id: ModeID:p-light }
+      ModeID:p-dark:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-middle
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, middle]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+          chain:
+            - { token_id: VariableID:chain-middle, mode_id: ModeID:p-dark }
+            - { token_id: VariableID:chain-terminal, mode_id: ModeID:p-dark }
+      ModeID:p-light-duplicate:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-middle
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, middle]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+          chain:
+            - { token_id: VariableID:chain-middle, mode_id: ModeID:p-light-duplicate }
+            - token_id: VariableID:chain-terminal
+              mode_id: ModeID:p-light-duplicate
+  - id: VariableID:cycle-a
+    name: cycle/a
+    path: [cycle, a]
+    collection_id: CollectionID:primitives
+    type: color
+    description: ""
+    scopes: []
+    values:
+      ModeID:p-light:
+        kind: alias
+        reference:
+          target_id: VariableID:cycle-b
+          target_collection_id: CollectionID:primitives
+          target_path: [cycle, b]
+          external: false
+        resolved:
+          status: unresolved
+          reason: cycle
+          value: null
+          chain:
+            - { token_id: VariableID:cycle-b, mode_id: ModeID:p-light }
+            - { token_id: VariableID:cycle-a, mode_id: ModeID:p-light }
+      ModeID:p-dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+      ModeID:p-light-duplicate:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+  - id: VariableID:cycle-b
+    name: cycle/b
+    path: [cycle, b]
+    collection_id: CollectionID:primitives
+    type: color
+    description: ""
+    scopes: []
+    values:
+      ModeID:p-light:
+        kind: alias
+        reference:
+          target_id: VariableID:cycle-a
+          target_collection_id: CollectionID:primitives
+          target_path: [cycle, a]
+          external: false
+        resolved:
+          status: unresolved
+          reason: cycle
+          value: null
+          chain:
+            - { token_id: VariableID:cycle-a, mode_id: ModeID:p-light }
+            - { token_id: VariableID:cycle-b, mode_id: ModeID:p-light }
+      ModeID:p-dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+      ModeID:p-light-duplicate:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+  - id: VariableID:local-collision
+    name: color/shared
+    path: [color, shared]
+    collection_id: CollectionID:primitives
+    type: color
+    description: Local token with the readable external path.
+    scopes: []
+    values:
+      ModeID:p-light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#0000ff", alpha: 1 }
+      ModeID:p-dark:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#0000ff", alpha: 1 }
+      ModeID:p-light-duplicate: { kind: missing, reason: no_value_for_mode }
+  - id: VariableID:confusable
+    name: Background/Chip/Сhip (Hover)
+    path: [Background, Chip, Сhip (Hover)]
+    collection_id: CollectionID:primitives
+    type: boolean
+    description: Contains Cyrillic capital Es.
+    scopes: []
+    values:
+      ModeID:p-light: { kind: literal, value: { type: boolean, value: true } }
+      ModeID:p-dark: { kind: literal, value: { type: boolean, value: false } }
+      ModeID:p-light-duplicate: { kind: literal, value: { type: boolean, value: true } }
+  - id: VariableID:chain-owner
+    name: color/surface/primary
+    path: [color, surface, primary]
+    collection_id: CollectionID:semantic
+    type: color
+    description: Three-hop semantic alias.
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:s-light:
+        kind: literal
+        value: { type: color, color_space: srgb, hex: "#ffffff", alpha: 1 }
+      ModeID:s-dark:
+        kind: alias
+        reference:
+          target_id: VariableID:chain-bridge
+          target_collection_id: CollectionID:primitives
+          target_path: [color, chain, bridge]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: color, color_space: srgb, hex: "#000000", alpha: 1 }
+          chain:
+            - { token_id: VariableID:chain-bridge, mode_id: ModeID:p-dark }
+            - { token_id: VariableID:chain-middle, mode_id: ModeID:p-dark }
+            - { token_id: VariableID:chain-terminal, mode_id: ModeID:p-dark }
+  - id: VariableID:external-owner-readable
+    name: color/legacy/readable
+    path: [color, legacy, readable]
+    collection_id: CollectionID:semantic
+    type: color
+    description: ""
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:s-light:
+        kind: alias
+        reference:
+          target_id: VariableID:external-readable
+          target_collection_id: CollectionID:external-core
+          target_path: [color, shared]
+          external: true
+          source_library_name: Deprecated Core
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+      ModeID:s-dark:
+        kind: alias
+        reference:
+          target_id: VariableID:external-readable
+          target_collection_id: CollectionID:external-core
+          target_path: [color, shared]
+          external: true
+          source_library_name: Deprecated Core
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+  - id: VariableID:external-owner-unreadable
+    name: color/legacy/unreadable
+    path: [color, legacy, unreadable]
+    collection_id: CollectionID:semantic
+    type: color
+    description: ""
+    scopes: [FRAME_FILL]
+    values:
+      ModeID:s-light:
+        kind: alias
+        reference:
+          target_id: VariableID:external-unreadable
+          target_collection_id: null
+          target_path: []
+          external: true
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+      ModeID:s-dark:
+        kind: alias
+        reference:
+          target_id: VariableID:external-unreadable
+          target_collection_id: null
+          target_path: []
+          external: true
+        resolved:
+          status: unresolved
+          reason: source_library_unavailable
+          value: null
+          chain: []
+  - id: VariableID:declared-missing
+    name: string/declared-missing
+    path: [string, declared-missing]
+    collection_id: CollectionID:semantic
+    type: string
+    description: Dark is intentionally absent.
+    scopes: [TEXT_CONTENT]
+    values:
+      ModeID:s-light: { kind: literal, value: { type: string, value: available } }
+      ModeID:s-dark: { kind: missing, reason: no_value_for_mode }
+styles: { typography: [], effects: [] }
+spec_layer:
+  kind: foundation
+  schema_version: 5.0.0
+  schema_uri: https://spec-layer.com/schemas/foundation-context/v5.json
+  extractor: { name: spec-layer-foundation, version: "2", build: null }
+  export:
+    id: synthetic-direct-v5-acceptance
+    generated_at: 2026-08-28T00:00:00.000Z
+    deterministic: true
+    content_hash: sha256:9835eca7679252a37669195586b5982b826206940311d6b99562294933d7aca3
+  source:
+    provider: figma
+    file_id: FILE:synthetic-direct-v5
+    file_name: Synthetic Direct Foundation
+    file_version: null
+    library_enabled: null
+diagnostics:
+  - code: ALIAS_CYCLE
+    severity: error
+    entity_id: VariableID:cycle-a
+    mode_id: ModeID:p-light
+    message: "Alias resolution cycles back to itself: VariableID:cycle-a -> VariableID:cycle-b -> VariableID:cycle-a."
+    details:
+      chain:
+        - { token_id: VariableID:cycle-a, mode_id: ModeID:p-light }
+        - { token_id: VariableID:cycle-b, mode_id: ModeID:p-light }
+        - { token_id: VariableID:cycle-a, mode_id: ModeID:p-light }
+  - code: MISSING_MODE_VALUE
+    severity: error
+    entity_id: VariableID:declared-missing
+    mode_id: ModeID:s-dark
+    message: The source states no value for this declared mode.
+  - code: MISSING_MODE_VALUE
+    severity: error
+    entity_id: VariableID:local-collision
+    mode_id: ModeID:p-light-duplicate
+    message: The source states no value for this declared mode.
+  - code: SOURCE_PARTIALLY_UNAVAILABLE
+    severity: error
+    entity_id: <artifact>
+    message: Composite styles are present but are not emitted until Foundation Context v5 Phase 3.
+    details: { typography_not_migrated: 1, effects_not_migrated: 1 }
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: error
+    entity_id: VariableID:unknown-number
+    mode_id: ModeID:p-dark
+    message: The numeric source value is retained, but its scopes do not state one unit.
+    details: { scopes: [ALL_SCOPES] }
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: error
+    entity_id: VariableID:unknown-number
+    mode_id: ModeID:p-light
+    message: The numeric source value is retained, but its scopes do not state one unit.
+    details: { scopes: [ALL_SCOPES] }
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: error
+    entity_id: VariableID:unknown-number
+    mode_id: ModeID:p-light-duplicate
+    message: The numeric source value is retained, but its scopes do not state one unit.
+    details: { scopes: [ALL_SCOPES] }
+  - code: UNRESOLVED_ALIAS
+    severity: error
+    entity_id: VariableID:cycle-a
+    mode_id: ModeID:p-light
+    message: Internal alias is recorded as unresolved (cycle).
+    details: { target_id: VariableID:cycle-b, reason: cycle }
+  - code: UNRESOLVED_ALIAS
+    severity: error
+    entity_id: VariableID:cycle-b
+    mode_id: ModeID:p-light
+    message: Internal alias is recorded as unresolved (cycle).
+    details: { target_id: VariableID:cycle-a, reason: cycle }
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: VariableID:external-owner-readable
+    mode_id: ModeID:s-dark
+    message: "Alias references an external library that did not resolve: Deprecated Core."
+    details: { reason: source_library_unavailable }
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: VariableID:external-owner-readable
+    mode_id: ModeID:s-light
+    message: "Alias references an external library that did not resolve: Deprecated Core."
+    details: { reason: source_library_unavailable }
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: VariableID:external-owner-unreadable
+    mode_id: ModeID:s-dark
+    message: "Alias references an external library that did not resolve: unknown library."
+    details: { reason: source_library_unavailable }
+  - code: UNRESOLVED_EXTERNAL_ALIAS
+    severity: error
+    entity_id: VariableID:external-owner-unreadable
+    mode_id: ModeID:s-light
+    message: "Alias references an external library that did not resolve: unknown library."
+    details: { reason: source_library_unavailable }
+  - code: CONFUSABLE_NAME
+    severity: warning
+    entity_id: VariableID:confusable
+    message: Token name "Background/Chip/Сhip (Hover)" contains non-ASCII characters.
+    details: { kind: token, name: Background/Chip/Сhip (Hover) }
+statistics:
+  collections: 2
+  modes: 5
+  tokens: 17
+  styles: { typography: 0, effects: 0 }
+  aliases: { total: 13, resolved: 7, unresolved: 6 }
+  lifecycle: { active: 0, deprecated: 0, archived: 0 }
+  diagnostics: { error: 13, warning: 1, info: 0 }

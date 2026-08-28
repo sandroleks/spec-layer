@@ -238,7 +238,7 @@ spec_layer:
   kind: foundation
   schema_version: 5.0.0
   schema_uri: https://spec-layer.com/schemas/foundation-context/v5.json
-  extractor: { name: spec-layer-foundation, version: "1", build: null }
+  extractor: { name: spec-layer-foundation, version: "2", build: null }
   export:
     id: synthetic-v5-acceptance
     generated_at: 2026-08-28T00:00:00.000Z

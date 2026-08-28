@@ -1,0 +1,285 @@
+{
+  "fileKey": "FILE:synthetic-direct-v5",
+  "fileName": "Synthetic Direct Foundation",
+  "extractedAt": "2026-08-28T00:00:00.000Z",
+  "unavailableSources": ["permission:styles-metadata"],
+  "externals": [
+    {
+      "id": "VariableID:external-readable",
+      "name": "color/shared",
+      "collectionId": "CollectionID:external-core",
+      "collectionName": "Deprecated Core",
+      "remote": true,
+      "external": true
+    },
+    {
+      "id": "VariableID:external-unreadable",
+      "name": null,
+      "collectionId": null,
+      "collectionName": null,
+      "remote": null,
+      "external": true
+    }
+  ],
+  "collections": [
+    {
+      "id": "CollectionID:primitives",
+      "name": "Primitives",
+      "defaultModeId": "ModeID:p-light",
+      "modes": [
+        { "modeId": "ModeID:p-light", "name": "Light" },
+        { "modeId": "ModeID:p-dark", "name": "Dark" },
+        { "modeId": "ModeID:p-light-duplicate", "name": "Light" }
+      ],
+      "variables": [
+        {
+          "id": "VariableID:color-exact",
+          "name": "color/exact/red",
+          "resolvedType": "COLOR",
+          "description": "Exactly representable source channels.",
+          "codeSyntax": { "WEB": "--color-exact-red" },
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:p-light": { "r": 1, "g": 0, "b": 0, "a": 1 },
+            "ModeID:p-dark": { "r": 1, "g": 0, "b": 0, "a": 1 },
+            "ModeID:p-light-duplicate": { "r": 1, "g": 0, "b": 0, "a": 1 }
+          }
+        },
+        {
+          "id": "VariableID:color-lossy",
+          "name": "color/lossy/teal",
+          "resolvedType": "COLOR",
+          "description": "Channels carry precision beyond hex.",
+          "codeSyntax": {},
+          "scopes": ["SHAPE_FILL", "FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:p-light": { "r": 0.5001, "g": 0.1001, "b": 0.0001, "a": 0.125 },
+            "ModeID:p-dark": { "r": 0.2501, "g": 0.5001, "b": 0.7501, "a": 0.875 },
+            "ModeID:p-light-duplicate": { "r": 0.5001, "g": 0.1001, "b": 0.0001, "a": 0.125 }
+          }
+        },
+        {
+          "id": "VariableID:gap",
+          "name": "spacing/gap",
+          "resolvedType": "FLOAT",
+          "description": "",
+          "codeSyntax": { "WEB": "--spacing-gap" },
+          "scopes": ["GAP"],
+          "valuesByMode": {
+            "ModeID:p-light": 8,
+            "ModeID:p-dark": 12,
+            "ModeID:p-light-duplicate": 8
+          }
+        },
+        {
+          "id": "VariableID:font-weight",
+          "name": "typography/weight/strong",
+          "resolvedType": "FLOAT",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FONT_WEIGHT"],
+          "valuesByMode": {
+            "ModeID:p-light": 600,
+            "ModeID:p-dark": 700,
+            "ModeID:p-light-duplicate": 600
+          }
+        },
+        {
+          "id": "VariableID:unknown-number",
+          "name": "number/unknown-scope",
+          "resolvedType": "FLOAT",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["ALL_SCOPES"],
+          "valuesByMode": {
+            "ModeID:p-light": 1.5,
+            "ModeID:p-dark": 2.5,
+            "ModeID:p-light-duplicate": 1.5
+          }
+        },
+        {
+          "id": "VariableID:font-family",
+          "name": "typography/family/body",
+          "resolvedType": "STRING",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FONT_FAMILY"],
+          "valuesByMode": {
+            "ModeID:p-light": "Inter",
+            "ModeID:p-dark": "Inter",
+            "ModeID:p-light-duplicate": "Inter"
+          }
+        },
+        {
+          "id": "VariableID:chain-terminal",
+          "name": "color/chain/terminal",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:p-light": { "r": 1, "g": 1, "b": 1, "a": 1 },
+            "ModeID:p-dark": { "r": 0, "g": 0, "b": 0, "a": 1 },
+            "ModeID:p-light-duplicate": { "r": 1, "g": 1, "b": 1, "a": 1 }
+          }
+        },
+        {
+          "id": "VariableID:chain-middle",
+          "name": "color/chain/middle",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:p-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-terminal" },
+            "ModeID:p-dark": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-terminal" },
+            "ModeID:p-light-duplicate": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-terminal" }
+          }
+        },
+        {
+          "id": "VariableID:chain-bridge",
+          "name": "color/chain/bridge",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:p-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-middle" },
+            "ModeID:p-dark": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-middle" },
+            "ModeID:p-light-duplicate": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-middle" }
+          }
+        },
+        {
+          "id": "VariableID:cycle-a",
+          "name": "cycle/a",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:p-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:cycle-b" },
+            "ModeID:p-dark": { "r": 0, "g": 0, "b": 0, "a": 1 },
+            "ModeID:p-light-duplicate": { "r": 1, "g": 1, "b": 1, "a": 1 }
+          }
+        },
+        {
+          "id": "VariableID:cycle-b",
+          "name": "cycle/b",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:p-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:cycle-a" },
+            "ModeID:p-dark": { "r": 0, "g": 0, "b": 0, "a": 1 },
+            "ModeID:p-light-duplicate": { "r": 1, "g": 1, "b": 1, "a": 1 }
+          }
+        },
+        {
+          "id": "VariableID:local-collision",
+          "name": "color/shared",
+          "resolvedType": "COLOR",
+          "description": "Local token with the readable external path.",
+          "codeSyntax": {},
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:p-light": { "r": 0, "g": 0, "b": 1, "a": 1 },
+            "ModeID:p-dark": { "r": 0, "g": 0, "b": 1, "a": 1 }
+          }
+        },
+        {
+          "id": "VariableID:confusable",
+          "name": "Background/Chip/Сhip (Hover)",
+          "resolvedType": "BOOLEAN",
+          "description": "Contains Cyrillic capital Es.",
+          "codeSyntax": {},
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:p-light": true,
+            "ModeID:p-dark": false,
+            "ModeID:p-light-duplicate": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "CollectionID:semantic",
+      "name": "Semantic",
+      "defaultModeId": "ModeID:s-light",
+      "modes": [
+        { "modeId": "ModeID:s-light", "name": "Light" },
+        { "modeId": "ModeID:s-dark", "name": "Dark" }
+      ],
+      "variables": [
+        {
+          "id": "VariableID:chain-owner",
+          "name": "color/surface/primary",
+          "resolvedType": "COLOR",
+          "description": "Three-hop semantic alias.",
+          "codeSyntax": { "WEB": "--color-surface-primary" },
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:s-light": { "r": 1, "g": 1, "b": 1, "a": 1 },
+            "ModeID:s-dark": { "type": "VARIABLE_ALIAS", "id": "VariableID:chain-bridge" }
+          }
+        },
+        {
+          "id": "VariableID:external-owner-readable",
+          "name": "color/legacy/readable",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:s-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:external-readable" },
+            "ModeID:s-dark": { "type": "VARIABLE_ALIAS", "id": "VariableID:external-readable" }
+          }
+        },
+        {
+          "id": "VariableID:external-owner-unreadable",
+          "name": "color/legacy/unreadable",
+          "resolvedType": "COLOR",
+          "description": "",
+          "codeSyntax": {},
+          "scopes": ["FRAME_FILL"],
+          "valuesByMode": {
+            "ModeID:s-light": { "type": "VARIABLE_ALIAS", "id": "VariableID:external-unreadable" },
+            "ModeID:s-dark": { "type": "VARIABLE_ALIAS", "id": "VariableID:external-unreadable" }
+          }
+        },
+        {
+          "id": "VariableID:declared-missing",
+          "name": "string/declared-missing",
+          "resolvedType": "STRING",
+          "description": "Dark is intentionally absent.",
+          "codeSyntax": {},
+          "scopes": ["TEXT_CONTENT"],
+          "valuesByMode": { "ModeID:s-light": "available" }
+        }
+      ]
+    }
+  ],
+  "textStyles": [
+    {
+      "name": "Body/Regular",
+      "description": "Source style retained for Phase 3.",
+      "fontFamily": "Inter",
+      "fontStyle": "Regular",
+      "fontSize": 16,
+      "lineHeight": { "unit": "PIXELS", "value": 24 },
+      "letterSpacing": { "unit": "PERCENT", "value": 0 },
+      "paragraphSpacing": 8,
+      "paragraphIndent": 0,
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE",
+      "boundVariables": {}
+    }
+  ],
+  "effectStyles": [
+    {
+      "name": "Shadow/Card",
+      "description": "Source effect style retained for Phase 3.",
+      "effects": []
+    }
+  ]
+}
