@@ -6,11 +6,14 @@
  * handlers call into render for banners/phase updates.
  */
 
-import { extract, ProseProxyError, specContentHash, buildFoundation, componentBrief, foundationBrief, toYaml, narrowFoundation } from '@spec-layer/extractor';
+import {
+  extract, ProseProxyError, specContentHash, buildFoundation,
+  buildFoundationArtifactV5, componentBrief, foundationBrief, toYaml, narrowFoundation,
+} from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
-  FoundationScope, FoundationCopyTarget,
+  FoundationScope, FoundationGuidelinesV5, YamlValue,
 } from '@spec-layer/extractor';
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
@@ -24,6 +27,11 @@ import {
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
+
+declare const __PLUGIN_VERSION__: string;
+
+const pluginBuild = (): string | null =>
+  typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : null;
 
 // ---------------------------------------------------------------------------
 // State
@@ -638,11 +646,45 @@ async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promis
   }
 }
 
+function generatedGuidelines(
+  descriptions: Record<string, Record<string, string>>,
+): FoundationGuidelinesV5 | undefined {
+  const nonEmpty = Object.fromEntries(
+    Object.entries(descriptions)
+      .map(([collection, folders]) => [collection, Object.fromEntries(
+        Object.entries(folders).filter(([, description]) => description.length > 0),
+      )])
+      .filter(([, folders]) => Object.keys(folders).length > 0),
+  );
+  return Object.keys(nonEmpty).length > 0
+    ? { origin: 'generated', group_descriptions: nonEmpty }
+    : undefined;
+}
+
+function foundationV5Yaml(
+  spec: FoundationSpec,
+  generatedAt: string,
+  descriptions: Record<string, Record<string, string>>,
+  collectionId?: string,
+): string {
+  const { artifact } = buildFoundationArtifactV5(spec, {
+    exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
+    generatedAt,
+    build: pluginBuild(),
+    ...(collectionId
+      ? { scope: { target: 'collection' as const, collectionId } }
+      : {}),
+  });
+  const guidelines = generatedGuidelines(descriptions);
+  if (guidelines) artifact.guidelines = guidelines;
+  return toYaml(artifact as unknown as YamlValue);
+}
+
 /**
- * Copy the whole file's foundation as a YAML brief.
+ * Copy the whole file as a Foundation Context v5 YAML artifact.
  *
  * Deliberately ignores the scope selection that foundation DOCUMENT generation
- * respects: the brief exists to give an agent a complete token vocabulary, and
+ * respects: the artifact gives an agent a complete token vocabulary, and
  * a partial one produces exactly the invented token names the brief is meant
  * to prevent.
  */
@@ -653,43 +695,24 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
     ui.error('Read the foundations first, then copy.');
     return;
   }
-  await deliverBrief(() => toYaml(foundationBrief(spec, {
-    generatedAt: new Date().toISOString(),
-    groupDescriptions: foundationGroupDescriptions,
-    // No contrast. The brief exists to hand an agent a token vocabulary, and a
-    // WCAG check is measured over every colour pair, so its failure list grows
-    // with the file and crowds out the tokens. Contrast is a thing to LOOK at:
-    // it stays on the foundation FRAME, which draws its matrices when the doc's
-    // includeContrast is on.
-  })), ui);
+  const generatedAt = new Date().toISOString();
+  await deliverBrief(
+    () => foundationV5Yaml(spec, generatedAt, foundationGroupDescriptions),
+    ui,
+  );
 }
 
 /**
- * Reduce a document's stored scope to what a Copy covers.
- *
- * This is the ONE place `group` and `modeIds` are dropped. They exist because a
- * frame renders at most MAX_MODE_COLUMNS columns and splits above
- * SPLIT_THRESHOLD rows; the clipboard has neither limit, and inheriting them
- * would hide whole token families and modes from the agent reading the brief.
- * Do not "restore fidelity" here: the widening is the intent.
- */
-function copyTargetOf(scope: FoundationScope): FoundationCopyTarget {
-  return scope.target === 'collection'
-    ? { target: 'collection', collectionId: scope.collectionId }
-    : { target: 'textStyles' };
-}
-
-/**
- * Copy one library row's foundation as a YAML brief.
+ * Copy one library row's foundation.
  *
  * The sibling of copyFoundationBrief, which covers the whole file. Two
  * functions rather than one with a flag: the whole-file path's "deliberately
  * ignores the scope selection" reasoning is a doctrine for a file-wide screen,
  * and it should not acquire an escape hatch.
  *
- * Aliases into collections this narrowing drops still carry their resolved
- * concrete values, since resolution happened in buildFoundation, upstream of
- * any narrowing. That is what makes a scoped brief safe to hand an agent.
+ * Collection rows use direct v5 and include every complete transitive local
+ * dependency collection. Text-style rows temporarily retain the v4 projection
+ * until the v5 typography phase can emit the content the user requested.
  */
 export async function copyFoundationBriefForScope(
   scope: FoundationScope,
@@ -704,11 +727,9 @@ export async function copyFoundationBriefForScope(
     ui.error("Still reading this file's variables. Try again in a moment.");
     return;
   }
-  const narrowed = narrowFoundation(spec, copyTargetOf(scope));
-  if (!narrowed) {
-    ui.error(scope.target === 'collection'
-      ? 'That collection is no longer in this file. Nothing was copied.'
-      : 'This file has no text styles left. Nothing was copied.');
+  if (scope.target === 'collection'
+    && !spec.collections.some((collection) => collection.id === scope.collectionId)) {
+    ui.error('That collection is no longer in this file. Nothing was copied.');
     return;
   }
   // Filtered, not passed whole: group descriptions are keyed by collection
@@ -721,11 +742,30 @@ export async function copyFoundationBriefForScope(
           .filter(([name]) => name === scope.collectionName),
       )
     : {};
+  const generatedAt = new Date().toISOString();
+  if (scope.target === 'collection') {
+    // `group` and `modeIds` are frame-only split/column limits. Passing only
+    // the stable collection id gives Copy the full collection plus the direct
+    // exporter's dependency closure instead of silently hiding rows or modes.
+    await deliverBrief(
+      () => foundationV5Yaml(spec, generatedAt, groupDescriptions, scope.collectionId),
+      ui,
+    );
+    return;
+  }
+
+  // Phase 2 intentionally retains v4 for a text-style row. The direct v5
+  // exporter does not populate typography until Phase 3; routing this request
+  // through v5 now would copy an empty style list and mislabel data loss as an
+  // upgrade.
+  const narrowed = narrowFoundation(spec, { target: 'textStyles' });
+  if (!narrowed) {
+    ui.error('This file has no text styles left. Nothing was copied.');
+    return;
+  }
   await deliverBrief(() => toYaml(foundationBrief(narrowed, {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     groupDescriptions,
-    // No contrast here either, for the reason copyFoundationBrief gives: a
-    // scoped copy is still a token vocabulary, not an audit.
   })), ui);
 }
 

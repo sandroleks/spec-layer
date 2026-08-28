@@ -16,8 +16,25 @@ const { copyFoundationBrief, copyFoundationBriefForScope, onFoundationMessage, s
  *  rather than `any` so a shape drift fails at compile time, matching the
  *  convention in packages/extractor/test/brief.test.ts and copyBrief.test.ts. */
 interface ParsedFoundationBrief {
-  spec_layer: { kind: string };
-  collections: Array<{ tokens: Array<{ name: string }> }>;
+  spec_layer: {
+    kind: string; schema_version?: string;
+    extractor?: { build: string | null };
+    export?: { content_hash: string };
+  };
+  completeness?: {
+    collections: string; styles: string; unavailable_sources: string[];
+  };
+  collections: Array<{
+    id?: string; name: string;
+    modes?: Array<{ id: string; name: string }>;
+    tokens?: Array<{ name: string }>;
+  }>;
+  tokens?: Array<{
+    id: string; name: string; collection_id: string; type: string;
+    scopes: string[]; values: Record<string, Record<string, unknown>>;
+  }>;
+  text_styles?: Array<Record<string, unknown>>;
+  diagnostics?: Array<{ code: string }>;
   guidelines?: { origin: string; group_descriptions: Record<string, Record<string, string>> };
 }
 
@@ -30,17 +47,52 @@ function presenter() {
 
 const DUMP: SerializedFoundation = {
   fileKey: 'F1',
+  fileName: 'Company DS',
   extractedAt: '2026-08-14T00:00:00.000Z',
-  externals: [],
+  externals: [{
+    id: 'V:external', name: 'color/shared', collectionId: 'C:remote',
+    collectionName: 'Remote Core', remote: true, external: true,
+  }],
   textStyles: [],
   effectStyles: [],
   collections: [{
     id: 'C1', name: 'Color', defaultModeId: 'm1',
     modes: [{ modeId: 'm1', name: 'Light' }],
-    variables: [{
-      id: 'V1', name: 'color/bg/brand', resolvedType: 'COLOR', description: '',
-      codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
-    }],
+    variables: [
+      {
+        id: 'V1', name: 'color/bg/brand', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, scopes: ['FRAME_FILL'],
+        valuesByMode: { m1: { r: 0.1401, g: 0.3901, b: 0.9201, a: 0.125 } },
+      },
+      {
+        id: 'V:gap', name: 'space/gap', resolvedType: 'FLOAT', description: '',
+        codeSyntax: {}, scopes: ['GAP'], valuesByMode: { m1: 8 },
+      },
+      {
+        id: 'V:unknown-unit', name: 'number/unknown', resolvedType: 'FLOAT', description: '',
+        codeSyntax: {}, scopes: [], valuesByMode: { m1: 3 },
+      },
+      {
+        id: 'V:terminal', name: 'color/terminal', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, valuesByMode: { m1: { r: 1, g: 0, b: 0, a: 1 } },
+      },
+      {
+        id: 'V:middle', name: 'color/middle', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'V:terminal' } },
+      },
+      {
+        id: 'V:owner', name: 'color/owner', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'V:middle' } },
+      },
+      {
+        id: 'V:local-shared', name: 'color/shared', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
+      },
+      {
+        id: 'V:external-owner', name: 'color/external', resolvedType: 'COLOR', description: '',
+        codeSyntax: {}, valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'V:external' } },
+      },
+    ],
   }],
 };
 
@@ -59,12 +111,56 @@ describe('copyFoundationBrief', () => {
     expect(ui.error).toHaveBeenCalled();
   });
 
-  it('copies parseable YAML with a foundation envelope', async () => {
+  it('copies parseable Foundation Context v5 with real ids and mode-id values', async () => {
     onFoundationMessage(DUMP);
     await copyFoundationBrief(presenter());
     const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
     expect(y.spec_layer.kind).toBe('foundation');
-    expect(y.collections[0].tokens[0].name).toBe('color/bg/brand');
+    expect(y.spec_layer.schema_version).toBe('5.0.0');
+    expect(y.spec_layer.extractor?.build).toBeNull();
+    expect(y.collections[0]).toMatchObject({
+      id: 'C1', modes: [{ id: 'm1', name: 'Light' }],
+    });
+    expect(y.tokens?.[0]).toMatchObject({
+      id: 'V1', name: 'color/bg/brand', collection_id: 'C1', scopes: ['FRAME_FILL'],
+    });
+    expect(Object.keys(y.tokens?.[0].values ?? {})).toEqual(['m1']);
+  });
+
+  it('carries dimensions, unit diagnostics, precise channels, and full/external aliases', async () => {
+    onFoundationMessage(DUMP);
+    await copyFoundationBrief(presenter());
+    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
+    const token = (id: string) => {
+      const found = y.tokens?.find((item) => item.id === id);
+      if (!found) throw new Error(`Copied artifact is missing token ${id}.`);
+      return found;
+    };
+    expect(token('V:gap')).toMatchObject({ type: 'dimension' });
+    expect(token('V:gap').values.m1).toMatchObject({
+      kind: 'literal', value: { type: 'dimension', number: 8, unit: 'px' },
+    });
+    expect(token('V:unknown-unit')).toMatchObject({ type: 'number' });
+    expect(y.diagnostics?.map((finding) => finding.code))
+      .toContain('UNIT_METADATA_UNAVAILABLE');
+    expect(token('V1').values.m1).toMatchObject({
+      value: { type: 'color', channels: [0.1401, 0.3901, 0.9201], alpha: 0.125 },
+    });
+    expect(token('V:owner').values.m1).toMatchObject({
+      resolved: {
+        chain: [
+          { token_id: 'V:middle', mode_id: 'm1' },
+          { token_id: 'V:terminal', mode_id: 'm1' },
+        ],
+      },
+    });
+    expect(token('V:external-owner').values.m1).toMatchObject({
+      reference: {
+        target_id: 'V:external', target_path: ['color', 'shared'], external: true,
+        source_library_name: 'Remote Core',
+      },
+      resolved: { status: 'unresolved', chain: [] },
+    });
   });
 
   it('omits guidelines when no foundation doc on canvas carries group descriptions', async () => {
@@ -82,6 +178,18 @@ describe('copyFoundationBrief', () => {
     expect(y.guidelines?.group_descriptions).toEqual({
       Color: { 'color/bg': 'Backgrounds behind content.' },
     });
+  });
+
+  it('keeps generated guidelines outside the semantic content hash', async () => {
+    onFoundationMessage(DUMP, { Color: { color: 'First wording.' } });
+    await copyFoundationBrief(presenter());
+    const first = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
+    setFoundationGroupDescriptions({ Color: { color: 'Changed wording.' } });
+    await copyFoundationBrief(presenter());
+    const second = load(copyText.mock.calls[1][0]) as ParsedFoundationBrief;
+    expect(second.guidelines?.group_descriptions.Color.color).toBe('Changed wording.');
+    expect(second.spec_layer.export?.content_hash)
+      .toBe(first.spec_layer.export?.content_hash);
   });
 
   /**
@@ -199,7 +307,11 @@ describe('copyFoundationBriefForScope', () => {
     await copyFoundationBriefForScope(COLOR_SCOPE, ui);
     const brief = parse();
     expect(brief.collections).toHaveLength(1);
-    expect(brief.collections[0].tokens.map((t) => t.name)).toEqual(['color/bg/brand']);
+    expect(brief.collections[0].id).toBe('C1');
+    expect(brief.tokens?.map((token) => token.name)).toEqual(['color/bg/brand']);
+    expect(brief.completeness).toMatchObject({
+      collections: 'partial', styles: 'unavailable',
+    });
     expect(ui.info).toHaveBeenCalled();
     expect(ui.error).not.toHaveBeenCalled();
   });
@@ -211,14 +323,39 @@ describe('copyFoundationBriefForScope', () => {
       presenter(),
     );
     const brief = parse();
-    expect(brief.collections[0].tokens.map((t) => t.name)).toEqual(['color/bg/brand']);
+    expect(brief.tokens?.map((token) => token.name)).toEqual(['color/bg/brand']);
+  });
+
+  it('adds complete transitive dependency collections to a collection copy', async () => {
+    const dependent = structuredClone(TWO);
+    dependent.collections[0].variables.push({
+      id: 'V3', name: 'space/semantic-gap', resolvedType: 'FLOAT', description: '',
+      codeSyntax: {}, scopes: ['GAP'],
+      valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'V2' } },
+    });
+    dependent.collections[1].variables[0].scopes = ['GAP'];
+    onFoundationMessage(dependent);
+    await copyFoundationBriefForScope(
+      { ...COLOR_SCOPE, group: 'color', modeIds: [] },
+      presenter(),
+    );
+    const brief = parse();
+    expect(brief.collections.map((collection) => collection.id)).toEqual(['C1', 'C2']);
+    expect(brief.tokens?.map((token) => token.id)).toEqual(['V1', 'V3', 'V2']);
+    expect(brief.tokens?.find((token) => token.id === 'V3')?.values.m1)
+      .toMatchObject({
+        reference: { target_id: 'V2', target_collection_id: 'C2' },
+        resolved: { chain: [{ token_id: 'V2', mode_id: 'n1' }] },
+      });
   });
 
   it('copies every text style for a text styles scope', async () => {
     onFoundationMessage(TWO);
     await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
     const brief = parse();
+    expect((brief.spec_layer as unknown as { version: number }).version).toBe(4);
     expect(brief.collections).toEqual([]);
+    expect(brief.text_styles).toEqual([expect.objectContaining({ name: 'heading/lg' })]);
   });
 
   it('passes only the scoped collection\'s group descriptions', async () => {
@@ -262,5 +399,16 @@ describe('copyFoundationBriefForScope', () => {
     onFoundationMessage(TWO);
     await copyFoundationBrief(presenter());
     expect(parse().collections).toHaveLength(2);
+  });
+
+  it('carries failed source reads into v5 completeness', async () => {
+    onFoundationMessage({
+      ...TWO, unavailable: ['variables'], unavailableSources: ['figma:variables'],
+    });
+    await copyFoundationBrief(presenter());
+    expect(parse().completeness).toEqual({
+      collections: 'partial', styles: 'partial',
+      unavailable_sources: ['figma:variables'],
+    });
   });
 });
