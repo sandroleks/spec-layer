@@ -496,9 +496,25 @@ export function artifactWithTypeMismatch(sourceType: TokenType, targetType: Toke
     type: targetType, description: '', scopes: [],
     values: { m1: { kind: 'literal', value: sampleTypedValue(targetType) } },
   };
+  const targetValue = sampleTypedValue(targetType);
+  const specializedSnapshot = (): TypedValue => {
+    if (sourceType === 'dimension' && targetValue.type === 'number') {
+      return { type: 'dimension', number: targetValue.value, unit: 'px' };
+    }
+    if (sourceType === 'number' && targetValue.type === 'dimension') {
+      return { type: 'number', value: targetValue.number };
+    }
+    if (sourceType === 'font_family' && targetValue.type === 'string') {
+      return { type: 'font_family', value: targetValue.value };
+    }
+    if (sourceType === 'string' && targetValue.type === 'font_family') {
+      return { type: 'string', value: targetValue.value };
+    }
+    return sourceType === targetType ? targetValue : sampleTypedValue(sourceType);
+  };
   const sourceToken: TokenV5 = {
     id: 'VariableID:mismatch-source', collection_id: collectionId, name: 'Source', path: ['Source'],
-    type: sourceType, description: '', scopes: [],
+    type: sourceType, description: '', scopes: sourceType === 'dimension' ? ['GAP'] : [],
     values: {
       m1: {
         kind: 'alias',
@@ -508,11 +524,110 @@ export function artifactWithTypeMismatch(sourceType: TokenType, targetType: Toke
           target_path: targetToken.path,
           external: false,
         },
-        resolved: { status: 'resolved', value: sampleTypedValue(targetType), chain: [{ token_id: targetToken.id, mode_id: 'm1' }] },
+        resolved: { status: 'resolved', value: specializedSnapshot(), chain: [{ token_id: targetToken.id, mode_id: 'm1' }] },
       },
     },
   };
   root.tokens.push(targetToken, sourceToken);
+  return root;
+}
+
+/**
+ * A valid two-hop, two-collection chain. Semantic/Day has no matching target
+ * mode and therefore falls back to the primitive default; Semantic/Dark uses
+ * the exact-name primitive Dark mode. The dimension owner intentionally
+ * targets number primitives to exercise the allowed FLOAT specialization.
+ */
+export function artifactWithReplayChain(): FoundationArtifactV5 {
+  const root = structuredClone(OK_ARTIFACT);
+  const primitiveCollectionId = 'VariableCollectionId:replay-primitives';
+  const semanticCollectionId = 'VariableCollectionId:replay-semantic';
+  root.collections.push(
+    {
+      id: primitiveCollectionId, name: 'Replay primitives', path: ['Replay primitives'],
+      default_mode_id: 'p-default',
+      modes: [
+        { id: 'p-default', name: 'Light', order: 0 },
+        { id: 'p-dark', name: 'Dark', order: 1 },
+      ],
+    },
+    {
+      id: semanticCollectionId, name: 'Replay semantic', path: ['Replay semantic'],
+      default_mode_id: 's-day',
+      modes: [
+        { id: 's-day', name: 'Day', order: 0 },
+        { id: 's-dark', name: 'Dark', order: 1 },
+      ],
+    },
+  );
+
+  const number = (value: number): CanonicalValue => ({
+    kind: 'literal', value: { type: 'number', value },
+  });
+  const alias = (
+    targetId: string,
+    targetPath: string[],
+    resolvedNumber: number,
+    chain: { token_id: string; mode_id: string }[],
+  ): CanonicalValue => ({
+    kind: 'alias',
+    reference: {
+      target_id: targetId, target_collection_id: primitiveCollectionId,
+      target_path: targetPath, external: false,
+    },
+    resolved: {
+      status: 'resolved',
+      value: { type: 'number', value: resolvedNumber },
+      chain,
+    },
+  });
+
+  const terminal: TokenV5 = {
+    id: 'VariableID:replay-terminal', collection_id: primitiveCollectionId,
+    name: 'space/base', path: ['space', 'base'], type: 'number',
+    description: '', scopes: [],
+    values: { 'p-default': number(8), 'p-dark': number(12) },
+  };
+  const middle: TokenV5 = {
+    id: 'VariableID:replay-middle', collection_id: primitiveCollectionId,
+    name: 'space/middle', path: ['space', 'middle'], type: 'number',
+    description: '', scopes: [],
+    values: {
+      'p-default': alias(
+        terminal.id, terminal.path, 8,
+        [{ token_id: terminal.id, mode_id: 'p-default' }],
+      ),
+      'p-dark': alias(
+        terminal.id, terminal.path, 12,
+        [{ token_id: terminal.id, mode_id: 'p-dark' }],
+      ),
+    },
+  };
+  const surfaceAlias = (
+    numberValue: number,
+    targetModeId: string,
+  ): CanonicalValue => ({
+    kind: 'alias',
+    reference: {
+      target_id: middle.id, target_collection_id: primitiveCollectionId,
+      target_path: middle.path, external: false,
+    },
+    resolved: {
+      status: 'resolved',
+      value: { type: 'dimension', number: numberValue, unit: 'px' },
+      chain: [
+        { token_id: middle.id, mode_id: targetModeId },
+        { token_id: terminal.id, mode_id: targetModeId },
+      ],
+    },
+  });
+  const surface: TokenV5 = {
+    id: 'VariableID:replay-surface', collection_id: semanticCollectionId,
+    name: 'space/surface', path: ['space', 'surface'], type: 'dimension',
+    description: '', scopes: ['GAP'],
+    values: { 's-day': surfaceAlias(8, 'p-default'), 's-dark': surfaceAlias(12, 'p-dark') },
+  };
+  root.tokens.push(terminal, middle, surface);
   return root;
 }
 

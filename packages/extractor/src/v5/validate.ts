@@ -29,9 +29,11 @@ import type { Diagnostic } from './diagnostics';
 import {
   SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
 } from './value';
-import type { TokenType, Unit } from './value';
+import type { CanonicalValue, TokenType, TypedValue, Unit } from './value';
 import type { TokenV5 } from './entities';
+import { canonicalJson } from './canonical';
 import type { FoundationArtifactV5 } from './canonical';
+import { numericValue } from './units';
 
 const ROOT = '<artifact>';
 
@@ -665,15 +667,304 @@ function equalStringArrays(a: readonly string[], b: readonly string[]): boolean 
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+interface ValidationIndexes {
+  tokensById: Map<string, TokenV5>;
+  collectionsById: Map<string, FoundationArtifactV5['collections'][number]>;
+}
+
+type AliasValue = Extract<CanonicalValue, { kind: 'alias' }>;
+
+/**
+ * Independently replays Figma's mode choice. It deliberately does not consult
+ * either alias's recorded chain: a bad mode-selection implementation must not
+ * be able to validate its own output merely because every nested record repeats
+ * the same wrong choice.
+ */
+function expectedTargetMode(
+  sourceToken: TokenV5,
+  sourceModeId: string,
+  targetToken: TokenV5,
+  indexes: ValidationIndexes,
+): string | undefined {
+  const sourceCollection = indexes.collectionsById.get(sourceToken.collection_id);
+  const targetCollection = indexes.collectionsById.get(targetToken.collection_id);
+  const sourceMode = sourceCollection?.modes.find((mode) => mode.id === sourceModeId);
+  if (!sourceCollection || !targetCollection || !sourceMode) return undefined;
+
+  if (sourceCollection.id === targetCollection.id) {
+    return targetCollection.modes.some((mode) => mode.id === sourceModeId)
+      ? sourceModeId
+      : undefined;
+  }
+
+  const exact = targetCollection.modes.filter((mode) => mode.name === sourceMode.name);
+  if (exact.length === 1) return exact[0].id;
+  if (exact.length > 1) return undefined;
+  return targetCollection.modes.some((mode) => mode.id === targetCollection.default_mode_id)
+    ? targetCollection.default_mode_id
+    : undefined;
+}
+
+function aliasTypesCompatible(owner: TokenType, target: TokenType): boolean {
+  if (owner === target) return true;
+  // Figma aliases enforce raw FLOAT/STRING compatibility. Scope evidence can
+  // specialize those sources into v5 dimension/font_family tokens; these are
+  // the only cross-v5-type pairs accepted here, not general coercion rules.
+  return (owner === 'number' && target === 'dimension')
+    || (owner === 'dimension' && target === 'number')
+    || (owner === 'string' && target === 'font_family')
+    || (owner === 'font_family' && target === 'string');
+}
+
+function scalarOf(value: TypedValue): number | string | undefined {
+  if (value.type === 'number') return value.value;
+  if (value.type === 'dimension') return value.number;
+  if (value.type === 'string' || value.type === 'font_family') return value.value;
+  return undefined;
+}
+
+function snapshotMatchesTerminal(
+  snapshot: TypedValue,
+  terminal: TypedValue,
+  owner: TokenV5,
+): boolean {
+  if (snapshot.type === terminal.type) return canonicalJson(snapshot) === canonicalJson(terminal);
+
+  if ((snapshot.type === 'dimension' && terminal.type === 'number')
+    || (snapshot.type === 'number' && terminal.type === 'dimension')) {
+    const scalar = scalarOf(terminal);
+    if (typeof scalar !== 'number') return false;
+    if (snapshot.type === 'dimension') {
+      const specialized = numericValue(scalar, owner.scopes);
+      return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
+    }
+    return snapshot.value === scalar;
+  }
+
+  if ((snapshot.type === 'font_family' && terminal.type === 'string')
+    || (snapshot.type === 'string' && terminal.type === 'font_family')) {
+    return scalarOf(snapshot) === scalarOf(terminal);
+  }
+  return false;
+}
+
+function provenanceFinding(
+  out: Diagnostic[],
+  token: TokenV5,
+  modeId: string,
+  message: string,
+  details: Record<string, unknown>,
+  external = false,
+): void {
+  out.push(diagnostic(external ? 'UNRESOLVED_EXTERNAL_ALIAS' : 'UNRESOLVED_ALIAS', {
+    entity_id: token.id, mode_id: modeId, message, details,
+  }));
+}
+
+/** Validate one chain against independently replayed reference/mode choices. */
+function checkChainTruth(
+  rootToken: TokenV5,
+  rootModeId: string,
+  rootValue: AliasValue,
+  indexes: ValidationIndexes,
+  out: Diagnostic[],
+): void {
+  const { resolved } = rootValue;
+  if (rootValue.reference.external) {
+    if (resolved.status === 'resolved') {
+      provenanceFinding(
+        out, rootToken, rootModeId,
+        'An external alias cannot claim a resolved snapshot while its target is absent.',
+        { fault: 'external_claims_resolved' }, true,
+      );
+    }
+    if (resolved.chain.length > 0) {
+      provenanceFinding(
+        out, rootToken, rootModeId,
+        'An external alias cannot carry a local resolution chain.',
+        { fault: 'external_claims_local_chain', chain_length: resolved.chain.length }, true,
+      );
+    }
+    return;
+  }
+
+  let currentToken = rootToken;
+  let currentModeId = rootModeId;
+  let currentValue = rootValue;
+  let chainIndex = 0;
+  const seen = new Set<string>();
+
+  while (true) {
+    const pair = canonicalJson([currentToken.id, currentModeId]);
+    if (seen.has(pair)) {
+      if (resolved.status === 'resolved') {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A chain recorded as resolved enters an alias cycle before reaching a literal.',
+          { fault: 'resolved_chain_cycle', chain_index: chainIndex },
+        );
+      }
+      return;
+    }
+    seen.add(pair);
+
+    const targetId = currentValue.reference.target_id;
+    const targetToken = targetId === null ? undefined : indexes.tokensById.get(targetId);
+    if (!targetToken) {
+      if (resolved.status === 'resolved') {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolved chain reaches an alias target that is absent from the artifact.',
+          { fault: 'resolved_chain_missing_target', chain_index: chainIndex, target_id: targetId },
+        );
+      }
+      return;
+    }
+
+    const targetModeId = expectedTargetMode(
+      currentToken, currentModeId, targetToken, indexes,
+    );
+    if (targetModeId === undefined) {
+      if (resolved.status === 'resolved' || chainIndex < resolved.chain.length) {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'The chain claims a hop for which no authoritative target mode can be selected.',
+          {
+            fault: 'target_mode_unresolvable', chain_index: chainIndex,
+            source_token_id: currentToken.id, source_mode_id: currentModeId,
+            target_id: targetToken.id,
+          },
+        );
+      }
+      return;
+    }
+
+    const actualStep = resolved.chain[chainIndex];
+    if (actualStep === undefined) {
+      if (resolved.status === 'resolved') {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolved chain ends before recording every alias hop.',
+          {
+            fault: 'chain_ended_early', chain_index: chainIndex,
+            expected_token_id: targetToken.id, expected_mode_id: targetModeId,
+          },
+        );
+      }
+      return;
+    }
+    if (actualStep.token_id !== targetToken.id || actualStep.mode_id !== targetModeId) {
+      provenanceFinding(
+        out, rootToken, rootModeId,
+        'A resolution-chain step does not match the independently replayed alias target and mode.',
+        {
+          fault: 'chain_step_mismatch', chain_index: chainIndex,
+          expected_token_id: targetToken.id, expected_mode_id: targetModeId,
+          actual_token_id: actualStep.token_id, actual_mode_id: actualStep.mode_id,
+        },
+      );
+    }
+    chainIndex += 1;
+
+    const targetValue = targetToken.values[targetModeId];
+    if (targetValue === undefined || targetValue.kind === 'missing') {
+      if (resolved.status === 'resolved') {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolved chain terminates at a missing value rather than a literal.',
+          {
+            fault: 'resolved_chain_missing_value', chain_index: chainIndex - 1,
+            token_id: targetToken.id, mode_id: targetModeId,
+          },
+        );
+      }
+      if (chainIndex < resolved.chain.length) {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolution chain continues after a missing terminal value.',
+          { fault: 'extra_step_after_missing', chain_index: chainIndex },
+        );
+      }
+      return;
+    }
+
+    if (targetValue.kind === 'literal') {
+      if (chainIndex < resolved.chain.length) {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolution chain contains an extra step after its terminal literal.',
+          { fault: 'extra_step_after_literal', chain_index: chainIndex },
+        );
+      }
+      if (resolved.status === 'resolved'
+        && !snapshotMatchesTerminal(resolved.value, targetValue.value, rootToken)) {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'The resolved snapshot does not equal the terminal literal under the owner token type.',
+          {
+            fault: 'terminal_snapshot_mismatch', terminal_token_id: targetToken.id,
+            terminal_mode_id: targetModeId,
+          },
+        );
+      }
+      return;
+    }
+
+    if (targetValue.reference.external) {
+      if (resolved.status === 'resolved') {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A resolved local chain terminates at an unresolved external alias.',
+          {
+            fault: 'resolved_chain_external_terminal',
+            token_id: targetToken.id, mode_id: targetModeId,
+          },
+        );
+      }
+      if (chainIndex < resolved.chain.length) {
+        provenanceFinding(
+          out, rootToken, rootModeId,
+          'A local resolution chain continues through an external alias.',
+          { fault: 'extra_step_after_external', chain_index: chainIndex },
+        );
+      }
+      return;
+    }
+    if (resolved.status === 'resolved' && targetValue.resolved.status === 'unresolved') {
+      provenanceFinding(
+        out, rootToken, rootModeId,
+        'A chain recorded as resolved passes through an alias recorded as unresolved.',
+        {
+          fault: 'resolved_chain_unresolved_alias',
+          token_id: targetToken.id, mode_id: targetModeId,
+          reason: targetValue.resolved.reason,
+        },
+      );
+      return;
+    }
+
+    // An unresolved root may state only the honest prefix available before a
+    // depth/source failure. Validate every supplied adjacency, but do not
+    // invent or require a terminal it explicitly says it did not reach.
+    if (resolved.status === 'unresolved' && chainIndex >= resolved.chain.length) return;
+
+    currentToken = targetToken;
+    currentModeId = targetModeId;
+    currentValue = targetValue;
+  }
+}
+
 /**
  * Verifies the alias metadata and the recorded resolution snapshot against the
- * artifact's stable identities. This is deliberately separate from the graph
- * walk: a chain is provenance to validate, not an instruction the validator
- * may silently repair by resolving a different mode itself.
+ * artifact's stable identities, then independently replays every supplied
+ * chain. This is deliberately separate from the graph walk: chain provenance
+ * is validated as data, never used as the resolver's source of truth.
  */
 function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
-  const tokensById = new Map(artifact.tokens.map((token) => [token.id, token]));
-  const collectionsById = new Map(artifact.collections.map((collection) => [collection.id, collection]));
+  const indexes: ValidationIndexes = {
+    tokensById: new Map(artifact.tokens.map((token) => [token.id, token])),
+    collectionsById: new Map(artifact.collections.map((collection) => [collection.id, collection])),
+  };
 
   for (const token of artifact.tokens) {
     for (const [modeId, value] of Object.entries(token.values)) {
@@ -685,7 +976,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
 
       for (let chainIndex = 0; chainIndex < resolved.chain.length; chainIndex += 1) {
         const step = resolved.chain[chainIndex];
-        const stepToken = tokensById.get(step.token_id);
+        const stepToken = indexes.tokensById.get(step.token_id);
         if (stepToken === undefined) {
           out.push(diagnostic(chainCode, {
             entity_id: token.id,
@@ -696,7 +987,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
           continue;
         }
 
-        const stepCollection = collectionsById.get(stepToken.collection_id);
+        const stepCollection = indexes.collectionsById.get(stepToken.collection_id);
         if (stepCollection === undefined) {
           out.push(diagnostic(chainCode, {
             entity_id: token.id,
@@ -737,12 +1028,13 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
             details: { reason: resolved.reason },
           }));
         }
+        checkChainTruth(token, modeId, value, indexes, out);
         continue;
       }
 
       const targetToken = reference.target_id === null
         ? undefined
-        : tokensById.get(reference.target_id);
+        : indexes.tokensById.get(reference.target_id);
       if (targetToken === undefined) {
         out.push(diagnostic('UNRESOLVED_ALIAS', {
           entity_id: token.id,
@@ -750,6 +1042,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
           message: `Alias reference target does not exist in this artifact: ${JSON.stringify(reference.target_id)}.`,
           details: { target_id: reference.target_id },
         }));
+        checkChainTruth(token, modeId, value, indexes, out);
         continue;
       }
 
@@ -769,7 +1062,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
           message: 'Internal alias has a target token id but no target_collection_id.',
           details: { target_id: targetToken.id },
         }));
-      } else if (!collectionsById.has(reference.target_collection_id)) {
+      } else if (!indexes.collectionsById.has(reference.target_collection_id)) {
         out.push(diagnostic('UNRESOLVED_ALIAS', {
           entity_id: token.id,
           mode_id: modeId,
@@ -798,7 +1091,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
         }));
       }
 
-      if (targetToken.type !== token.type) {
+      if (!aliasTypesCompatible(token.type, targetToken.type)) {
         out.push(diagnostic('ALIAS_TYPE_MISMATCH', {
           entity_id: token.id,
           mode_id: modeId,
@@ -806,35 +1099,7 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
         }));
       }
 
-      const firstStep = resolved.chain[0];
-      if (resolved.status === 'resolved' && firstStep === undefined) {
-        out.push(diagnostic('UNRESOLVED_ALIAS', {
-          entity_id: token.id,
-          mode_id: modeId,
-          message: 'A resolved internal alias must record its direct target as the first resolution-chain step.',
-          details: { target_id: targetToken.id },
-        }));
-      } else if (firstStep !== undefined) {
-        if (firstStep.token_id !== targetToken.id) {
-          out.push(diagnostic('UNRESOLVED_ALIAS', {
-            entity_id: token.id,
-            mode_id: modeId,
-            message: `Alias resolution chain starts at ${JSON.stringify(firstStep.token_id)}, not its referenced target ${JSON.stringify(targetToken.id)}.`,
-            details: { target_id: targetToken.id, first_chain_token_id: firstStep.token_id },
-          }));
-        }
-        if (
-          targetToken.collection_id === token.collection_id
-          && firstStep.mode_id !== modeId
-        ) {
-          out.push(diagnostic('UNRESOLVED_ALIAS', {
-            entity_id: token.id,
-            mode_id: modeId,
-            message: `Same-collection alias chain starts in mode ${JSON.stringify(firstStep.mode_id)} instead of preserving source mode ${JSON.stringify(modeId)}.`,
-            details: { target_id: targetToken.id, chain_mode_id: firstStep.mode_id },
-          }));
-        }
-      }
+      checkChainTruth(token, modeId, value, indexes, out);
     }
   }
 }
@@ -875,26 +1140,26 @@ function lowestRingIndex(ring: AliasNode[]): number {
  * already on the CURRENT path" is the entire cycle test -- no branching DFS
  * is needed, only a path stack and an O(1) membership check on it.
  */
-function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
+function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
+  const tokens = artifact.tokens;
   const tokensById = new Map(tokens.map((t) => [t.id, t]));
+  const indexes: ValidationIndexes = {
+    tokensById,
+    collectionsById: new Map(artifact.collections.map((collection) => [collection.id, collection])),
+  };
   const states = new Map<string, Map<string, NodeState>>();
 
   /**
    * The mode the walk continues under after a hop. Mode ids are
-   * collection-scoped: inside one collection the current id carries through,
-   * while a cross-collection hop MUST use the mode recorded in the resolution
-   * chain. Recomputing the target default here loses migrations where v4
-   * selected a same-named target mode before falling back to the default. The
-   * chain is the artifact's provenance for that decision; validation checks
-   * it rather than replacing it with a second resolution algorithm.
+   * collection-scoped and selected independently from source/target mode
+   * metadata. The recorded chain is evidence to validate, never an instruction
+   * used to make a bad chain self-consistent.
    */
   const modeAfterHop = (
     fromToken: TokenV5, toToken: TokenV5, curModeId: string,
-    value: Extract<TokenV5['values'][string], { kind: 'alias' }>,
+    _value: Extract<TokenV5['values'][string], { kind: 'alias' }>,
   ): string | undefined => {
-    if (toToken.collection_id === fromToken.collection_id) return curModeId;
-    const firstStep = value.resolved.chain[0];
-    return firstStep?.token_id === toToken.id ? firstStep.mode_id : undefined;
+    return expectedTargetMode(fromToken, curModeId, toToken, indexes);
   };
 
   const markDone = (path: AliasNode[]): void => {
@@ -972,10 +1237,9 @@ function walkAliasGraph(tokens: TokenV5[], out: Diagnostic[]): void {
           break;
         }
 
-        // Which mode the walk continues under. Constant within one collection,
-        // the target collection's default mode across collections -- see
-        // `modeAfterHop`, which owns the reasoning and is the same rule
-        // normalize.ts's `convertAlias` writes into its chain steps.
+        // Which mode the walk continues under. See `modeAfterHop`; this is
+        // replayed from artifact collection metadata, not copied from the
+        // alias's own asserted provenance.
         const nextModeId = modeAfterHop(curToken, targetToken, curModeId, value);
         if (nextModeId === undefined) {
           // No authoritative cross-collection mode was recorded. Provenance
@@ -1284,7 +1548,7 @@ export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
   try {
     const out: Diagnostic[] = [];
     checkAliasProvenance(artifact, out);
-    walkAliasGraph(artifact.tokens, out);
+    walkAliasGraph(artifact, out);
     checkModeCompleteness(artifact, out);
     checkDuplicateIds(artifact, out);
     checkPathCollisions(artifact.tokens, out);

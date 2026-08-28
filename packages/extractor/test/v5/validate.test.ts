@@ -8,6 +8,7 @@ import {
   artifactWithDanglingCollectionId, artifactWithUndeclaredDefaultMode,
   artifactWithDanglingReplacement, artifactWithDanglingStyleBinding,
   artifactWithCrossCollectionCycle, artifactWithTypographyAlias, artifactWithEffectMode,
+  artifactWithReplayChain,
 } from './fixtures';   // see Step 4
 
 describe('validateLevel1', () => {
@@ -177,6 +178,128 @@ describe('validateLevel2', () => {
 
   it('accepts consistent internal alias provenance', () => {
     expect(validateLevel2(artifactWithTypeMismatch('color', 'color'))).toEqual([]);
+  });
+
+  it('independently replays complete chains, exact-name modes, defaults, and owner specializations', () => {
+    expect(validateLevel1(artifactWithReplayChain())).toEqual([]);
+    expect(validateLevel2(artifactWithReplayChain())).toEqual([]);
+    expect(validateLevel2(artifactWithTypeMismatch('dimension', 'number'))).toEqual([]);
+    expect(validateLevel2(artifactWithTypeMismatch('number', 'dimension'))).toEqual([]);
+    expect(validateLevel2(artifactWithTypeMismatch('font_family', 'string'))).toEqual([]);
+    expect(validateLevel2(artifactWithTypeMismatch('string', 'font_family'))).toEqual([]);
+    for (const artifact of [
+      artifactWithTypeMismatch('color', 'number'),
+      artifactWithTypeMismatch('boolean', 'string'),
+    ]) {
+      expect(validateLevel2(artifact).map((finding) => finding.code))
+        .toContain('ALIAS_TYPE_MISMATCH');
+    }
+  });
+
+  it('rejects skipped, reordered, wrong-mode, and extra chain steps', () => {
+    const aliases = (artifact: ReturnType<typeof artifactWithReplayChain>) => {
+      const surface = artifact.tokens.find((token) => token.id === 'VariableID:replay-surface')!;
+      const dark = surface.values['s-dark'];
+      if (dark.kind !== 'alias') throw new Error('fixture must carry a dark alias');
+      return dark;
+    };
+
+    const skipped = artifactWithReplayChain();
+    aliases(skipped).resolved.chain.splice(0, 1);
+
+    const reordered = artifactWithReplayChain();
+    aliases(reordered).resolved.chain.reverse();
+
+    const wrongExactMode = artifactWithReplayChain();
+    aliases(wrongExactMode).resolved.chain[0].mode_id = 'p-default';
+
+    const wrongFallbackMode = artifactWithReplayChain();
+    const day = wrongFallbackMode.tokens
+      .find((token) => token.id === 'VariableID:replay-surface')!.values['s-day'];
+    if (day.kind !== 'alias') throw new Error('fixture must carry a day alias');
+    day.resolved.chain[0].mode_id = 'p-dark';
+
+    const sameCollectionWrongMode = artifactWithReplayChain();
+    const middleDark = sameCollectionWrongMode.tokens
+      .find((token) => token.id === 'VariableID:replay-middle')!.values['p-dark'];
+    if (middleDark.kind !== 'alias') throw new Error('fixture must carry a middle alias');
+    middleDark.resolved.chain[0].mode_id = 'p-default';
+
+    const extra = artifactWithReplayChain();
+    aliases(extra).resolved.chain.push({
+      token_id: 'VariableID:replay-terminal', mode_id: 'p-dark',
+    });
+
+    for (const artifact of [
+      skipped, reordered, wrongExactMode, wrongFallbackMode,
+      sameCollectionWrongMode, extra,
+    ]) {
+      expect(validateLevel2(artifact).map((finding) => finding.code))
+        .toContain('UNRESOLVED_ALIAS');
+    }
+  });
+
+  it('rejects ambiguous exact-name replay even when nested chains repeat the same wrong choice', () => {
+    const artifact = artifactWithReplayChain();
+    const primitives = artifact.collections
+      .find((collection) => collection.id === 'VariableCollectionId:replay-primitives')!;
+    primitives.modes.push({ id: 'p-dark-duplicate', name: 'Dark', order: 2 });
+    const terminal = artifact.tokens
+      .find((token) => token.id === 'VariableID:replay-terminal')!;
+    const middle = artifact.tokens
+      .find((token) => token.id === 'VariableID:replay-middle')!;
+    terminal.values['p-dark-duplicate'] = structuredClone(terminal.values['p-dark']);
+    middle.values['p-dark-duplicate'] = structuredClone(middle.values['p-dark']);
+    const repeated = middle.values['p-dark'];
+    if (repeated.kind !== 'alias') throw new Error('fixture must carry a middle alias');
+    repeated.resolved.chain[0].mode_id = 'p-default';
+
+    expect(validateLevel2(artifact).map((finding) => finding.code))
+      .toContain('UNRESOLVED_ALIAS');
+  });
+
+  it('rejects disagreeing terminal snapshots and non-literal terminals', () => {
+    const mismatch = artifactWithReplayChain();
+    const mismatchValue = mismatch.tokens
+      .find((token) => token.id === 'VariableID:replay-surface')!.values['s-dark'];
+    if (mismatchValue.kind !== 'alias' || mismatchValue.resolved.status !== 'resolved'
+      || mismatchValue.resolved.value.type !== 'dimension') {
+      throw new Error('fixture must carry a resolved dimension alias');
+    }
+    mismatchValue.resolved.value.number = 99;
+
+    const unsupportedUnit = artifactWithReplayChain();
+    const unsupportedUnitValue = unsupportedUnit.tokens
+      .find((token) => token.id === 'VariableID:replay-surface')!.values['s-dark'];
+    if (unsupportedUnitValue.kind !== 'alias'
+      || unsupportedUnitValue.resolved.status !== 'resolved'
+      || unsupportedUnitValue.resolved.value.type !== 'dimension') {
+      throw new Error('fixture must carry a resolved dimension alias');
+    }
+    unsupportedUnitValue.resolved.value.unit = '%';
+
+    const missingTerminal = artifactWithReplayChain();
+    missingTerminal.tokens.find((token) => token.id === 'VariableID:replay-terminal')!
+      .values['p-dark'] = { kind: 'missing', reason: 'source_unavailable' };
+
+    for (const artifact of [mismatch, unsupportedUnit, missingTerminal]) {
+      expect(validateLevel2(artifact).map((finding) => finding.code))
+        .toContain('UNRESOLVED_ALIAS');
+    }
+  });
+
+  it('rejects external aliases that claim resolved snapshots or local chains', () => {
+    const artifact = artifactWithAlias('VariableID:external');
+    const value = artifact.tokens[0].values['1:2/light'];
+    if (value.kind !== 'alias') throw new Error('fixture must carry an alias');
+    value.reference.external = true;
+    value.resolved = {
+      status: 'resolved',
+      value: { type: 'color', color_space: 'srgb', hex: '#006b62', alpha: 1 },
+      chain: [{ token_id: 'VariableID:3:4', mode_id: '1:2/light' }],
+    };
+    expect(validateLevel2(artifact).map((finding) => finding.code))
+      .toContain('UNRESOLVED_EXTERNAL_ALIAS');
   });
 
   it('reports a token with no record for a declared mode', () => {
@@ -377,12 +500,12 @@ describe('validateLevel2', () => {
     expect(duplicate?.entity_id).toBe('VariableCollectionId:1:2');
   });
 
-  it('resolves a 5,000-link chain without recursing or going quadratic', () => {
+  it('walks a 5,000-link graph without recursion and diagnoses truncated chain claims', () => {
     // §21.3 forbids quadratic resolution, and a recursive DFS at this depth
     // exceeds the JS call stack regardless of complexity. Traversal must be
     // iterative with an explicit stack AND memoized.
     const found = validateLevel2(artifactWithChainOfLength(5000));
     expect(found.some((d) => d.code === 'ALIAS_CYCLE')).toBe(false);
-    expect(found.some((d) => d.code === 'UNRESOLVED_ALIAS')).toBe(false);
+    expect(found.some((d) => d.code === 'UNRESOLVED_ALIAS')).toBe(true);
   });
 });
