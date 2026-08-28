@@ -14,7 +14,7 @@ const COMPLETE: SemanticPayload = {
 
 const SOURCE = {
   provider: 'figma' as const, file_id: 'F:1', file_name: 'DS',
-  file_version: null, library_enabled: true,
+  file_version: null, library_enabled: null,
 };
 
 const META = {
@@ -157,6 +157,34 @@ describe('semanticContentHash', () => {
     };
     expect(semanticContentHash(changed)).not.toBe(semanticContentHash(COMPLETE));
   });
+
+  it('ignores every envelope and annotation field outside SemanticPayload', () => {
+    const base = {
+      ...COMPLETE,
+      spec_layer: buildEnvelope(COMPLETE, META),
+      diagnostics: [{ code: 'MISSING_DESCRIPTION', message: 'first wording' }],
+      statistics: { tokens: 0 },
+      guidelines: {
+        origin: 'generated',
+        group_descriptions: { Semantic: { Color: 'Use these roles.' } },
+      },
+    };
+    const changed = {
+      ...base,
+      spec_layer: buildEnvelope(COMPLETE, {
+        exportId: 'different', generatedAt: '2030-01-01T00:00:00.000Z',
+        build: 'different-build',
+        source: { ...SOURCE, library_enabled: true },
+      }),
+      diagnostics: [{ code: 'MISSING_DESCRIPTION', message: 'reworded' }],
+      statistics: { tokens: 999 },
+      guidelines: {
+        origin: 'generated',
+        group_descriptions: { Semantic: { Color: 'Different generated prose.' } },
+      },
+    };
+    expect(semanticContentHash(base)).toBe(semanticContentHash(changed));
+  });
 });
 
 describe('buildEnvelope', () => {
@@ -182,5 +210,6 @@ describe('buildEnvelope', () => {
     // §5.1 forbids placeholder strings. v4's fileKeyOf already refuses to emit
     // the literal 'unknown' for the same reason.
     expect(buildEnvelope(COMPLETE, META).source.file_version).toBeNull();
+    expect(buildEnvelope(COMPLETE, META).source.library_enabled).toBeNull();
   });
 });

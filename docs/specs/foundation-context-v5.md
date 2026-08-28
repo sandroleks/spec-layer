@@ -71,7 +71,7 @@ spec_layer:
     file_id: "stable-file-id"
     file_name: "Company Foundations"
     file_version: "figma-version-id-if-available"
-    library_enabled: true
+    library_enabled: null
 ```
 
 Requirements:
@@ -81,6 +81,8 @@ Requirements:
 - Timestamps MUST use ISO 8601 UTC strings.
 - `content_hash` MUST exclude volatile fields such as `generated_at` and `export.id`.
 - If a source field is unavailable, it MUST be `null` or omitted according to the schema; placeholder strings are forbidden.
+- `source.library_enabled` is `null` when the source API does not expose the
+  file's library-publication state. `null` means unknown, never disabled.
 
 ### 5.2 Top-level sections
 
@@ -97,6 +99,23 @@ statistics: {}
 ```
 
 Tokens SHOULD be stored in a flat top-level array and reference a collection by ID. A nested compatibility view MAY also be emitted, but it must not become a second source of truth.
+
+### 5.3 Generated copy annotations
+
+Copy for AI MAY add a top-level `guidelines` block:
+
+```yaml
+guidelines:
+  origin: generated
+  group_descriptions:
+    Semantic:
+      Background: "Surface color roles."
+```
+
+This block is generated prose recovered from Spec Layer's canvas documents,
+not measured Figma source data. It is optional, omitted when empty, and MUST be
+excluded from the semantic content hash together with diagnostics, statistics,
+and volatile envelope metadata.
 
 ## 6. Stable identity and names
 

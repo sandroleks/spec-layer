@@ -39,9 +39,25 @@
       }
     },
     "diagnostics": { "type": "array" },
-    "statistics": { "type": "object" }
+    "statistics": { "type": "object" },
+    "guidelines": { "$ref": "#/$defs/guidelines" }
   },
   "$defs": {
+    "guidelines": {
+      "type": "object",
+      "required": ["origin", "group_descriptions"],
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "const": "generated" },
+        "group_descriptions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
     "entity_identity": {
       "type": "object",
       "required": ["id", "name", "path"],

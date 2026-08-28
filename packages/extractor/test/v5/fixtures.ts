@@ -25,7 +25,7 @@ const SOURCE: ArtifactSource = {
   file_id: 'F:1',
   file_name: 'Company Foundations',
   file_version: null,
-  library_enabled: true,
+  library_enabled: null,
 };
 
 const COLLECTION: CollectionV5 = {
@@ -221,6 +221,15 @@ const MISSING_VALUE: CanonicalValue = { kind: 'missing', reason: 'no_value_for_m
 
 export const VALID_CASES: FixtureCase[] = [
   { name: 'minimal valid artifact (color token)', artifact: OK_ARTIFACT },
+  {
+    name: 'generated group descriptions annotation',
+    artifact: withRoot((root) => {
+      root.guidelines = {
+        origin: 'generated',
+        group_descriptions: { Semantic: { Background: 'Surface color roles.' } },
+      };
+    }),
+  },
   { name: 'valid typography and effect styles', artifact: withValidStyles() },
   ...SUPPORTED_UNITS.map((unit) => ({
     name: `dimension token with unit "${unit}"`,
@@ -277,6 +286,11 @@ export const INVALID_CASES: FixtureCase[] = [
   { name: 'effect style binding is malformed', artifact: withValidStyles((s) => { (((s.effects as Record<string, unknown>[])[0]).bindings as unknown[])[0] = null; }) },
   { name: 'root diagnostics not an array', artifact: withRoot((r) => { r.diagnostics = {}; }) },
   { name: 'root statistics not an object', artifact: withRoot((r) => { r.statistics = []; }) },
+  { name: 'root guidelines is not an object', artifact: withRoot((r) => { r.guidelines = 'generated'; }) },
+  { name: 'root guidelines is missing its nested map', artifact: withRoot((r) => { r.guidelines = { origin: 'generated' }; }) },
+  { name: 'root guidelines has a non-string description', artifact: withRoot((r) => {
+    r.guidelines = { origin: 'generated', group_descriptions: { Semantic: { Background: 42 } } };
+  }) },
   { name: 'root tokens not an array', artifact: withRoot((r) => { r.tokens = {}; }) },
 
   // -- §8.1/§8.2 token record fields --

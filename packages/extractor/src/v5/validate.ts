@@ -568,6 +568,26 @@ function validateRootSections(artifact: Record<string, unknown>, out: Diagnostic
   if (!isRecord(artifact.statistics)) {
     out.push(shape(ROOT, '`statistics` must be an object.'));
   }
+  if (artifact.guidelines !== undefined) {
+    const guidelines = artifact.guidelines;
+    if (!isRecord(guidelines) || guidelines.origin !== 'generated'
+      || !isRecord(guidelines.group_descriptions)) {
+      out.push(shape(
+        ROOT,
+        '`guidelines` must state origin "generated" and a group_descriptions object.',
+      ));
+    } else {
+      for (const [collectionName, folders] of Object.entries(guidelines.group_descriptions)) {
+        if (!isRecord(folders)
+          || Object.values(folders).some((description) => typeof description !== 'string')) {
+          out.push(shape(
+            ROOT,
+            `guidelines.group_descriptions[${JSON.stringify(collectionName)}] must map folder names to strings.`,
+          ));
+        }
+      }
+    }
+  }
 }
 
 /**

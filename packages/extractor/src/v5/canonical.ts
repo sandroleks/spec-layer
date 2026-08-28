@@ -48,7 +48,9 @@ export interface ArtifactSource {
   file_id: string | null;
   file_name: string | null;
   file_version: string | null;
-  library_enabled: boolean;
+  /** null when the source API does not expose whether this file publishes a
+   *  library. null is unknown; it never means disabled. */
+  library_enabled: boolean | null;
 }
 
 export interface Envelope {
@@ -88,10 +90,19 @@ export interface SemanticPayload {
   styles: { typography: TypographyStyleV5[]; effects: EffectStyleV5[] };
 }
 
+/** Generated prose carried through Copy for AI. This is a canvas annotation,
+ *  not measured design-system data, so it deliberately stays outside
+ *  SemanticPayload and the semantic content hash. */
+export interface FoundationGuidelinesV5 {
+  origin: 'generated';
+  group_descriptions: Record<string, Record<string, string>>;
+}
+
 export interface FoundationArtifactV5 extends SemanticPayload {
   spec_layer: Envelope;
   diagnostics: Diagnostic[];
   statistics: Record<string, unknown>;
+  guidelines?: FoundationGuidelinesV5;
 }
 
 /**
