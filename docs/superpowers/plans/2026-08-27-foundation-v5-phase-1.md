@@ -6,6 +6,13 @@
 
 **Architecture:** A new `packages/extractor/src/v5/` directory holds the contract: entity types, value model, colour/unit canonicalization, precision policy, diagnostics vocabulary, deterministic hashing, a hand-written validator, and the v4→v5 normalizer. Nothing in `v5/` reads Figma — it operates on already-extracted data, so it is testable without a plugin host. Phase 1 ships **no change to what the plugin emits**: it ships the target shape plus a migration into it, so the real v4 export can be converted and graded before any extraction code moves.
 
+> **EXECUTED AND MERGED, 2026-08-28.** Tasks 0-9 are complete, reviewed, and on
+> `main` at `4a312eb`. Task 10 is still blocked on a real Company DS export.
+> **For current state, outstanding work, and the invariants that are easy to
+> break, read [../../specs/foundation-v5-status.md](../../specs/foundation-v5-status.md)
+> first** — this plan is the historical record of how Phase 1 was built, and
+> several of its task briefs were corrected mid-execution.
+
 **Tech Stack:** TypeScript, vitest, `js-sha256` (the extractor's only runtime dependency). `ajv` is added as a **devDependency** for schema cross-validation in tests only.
 
 ---

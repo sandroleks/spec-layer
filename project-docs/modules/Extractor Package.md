@@ -5,7 +5,7 @@ tags:
   - extraction
   - deterministic
 status: living
-updated: 2026-07-27
+updated: 2026-08-28
 source: packages/extractor
 ---
 
@@ -123,6 +123,10 @@ flowchart LR
 
 `foundationContentHash` hashes the rendered foundation unit. AI folder descriptions remain outside the source-drift hash but remain covered by the plugin's self-edit hash.
 
+There is now a THIRD hash, `semanticContentHash` in `src/v5/canonical.ts`, and the three must not be conflated: the two above answer "did the drawn document change?" and drive the on-canvas update badge, while the v5 one answers "did the design data change between two exported artifacts?". Changing either of the first two flips every committed document to "update available".
+
+`contentHash`'s canonicalizer sorts object keys with `localeCompare`, which is locale-dependent. It is fine for the two drift hashes, which are compared only against a baseline computed on the same machine, but it cannot underwrite a byte-stability guarantee. `src/v5/` therefore has its own code-unit serializer (`canonicalJson`) and must never route through `contentHash`.
+
 ## Markdown rendering
 
 `renderSpec` emits the strict Spec Layer v0.1 section order, frontmatter, deterministic tables, optional prose, related links, and optional extraction gaps.
@@ -147,6 +151,22 @@ The proxy route is preferred in the Figma plugin. The legacy web app uses the sa
 ## Testing strategy
 
 Every deterministic module has fixture-based unit tests. Golden Markdown output is stored in `test/fixtures`. Foundation tests cover alias cycles, dangling references, splits, projections, and hash behavior.
+
+## Foundation Context v5 (`src/v5/`)
+
+A second, newer export contract for the foundation half of Copy for AI, built in
+`src/v5/` alongside — not replacing — the v4 `brief.ts` projections. Phase 1 is
+complete and changes nothing about what the plugin emits: it defines the target
+shape (canonical discriminated values, explicit units and colour space, stable
+identity, structured diagnostics, deterministic hashing, a published JSON Schema,
+two-level validation) plus a v4-to-v5 normalizer. Nothing in `src/v5/` reads
+Figma, so every module runs under vitest with no host.
+
+Its governing rule is that a value the source did not state is represented as
+not-stated plus a diagnostic — never a plausible default. Read
+`docs/specs/foundation-v5-status.md` before changing anything under `src/v5/`;
+it carries the invariants, the outstanding work, and the decisions not to reopen.
+The contract itself is `docs/specs/foundation-context-v5.md`.
 
 ## Related notes
 
