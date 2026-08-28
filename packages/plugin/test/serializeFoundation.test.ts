@@ -6,11 +6,13 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
     v1: {
       id: 'v1', name: 'color/blue/500', resolvedType: 'COLOR', description: 'Blue.',
       variableCollectionId: 'c1', codeSyntax: { WEB: '--blue' },
-      valuesByMode: { m1: { r: 0, g: 0, b: 1, a: 1 } },
+      scopes: ['FRAME_FILL', 'SHAPE_FILL'], remote: false,
+      valuesByMode: { m1: { r: 0.5, g: 0.1, b: 0, a: 0.125 } },
     },
     v2: {
       id: 'v2', name: 'bg/brand', resolvedType: 'COLOR', description: '',
       variableCollectionId: 'c1', codeSyntax: {},
+      scopes: ['FRAME_FILL'], remote: false,
       valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'v1' } },
     },
   };
@@ -42,13 +44,22 @@ function fakeReader(over: Partial<FoundationReader> = {}): FoundationReader {
 
 describe('serializeFoundation', () => {
   it('dumps collections, variables, and text styles', async () => {
-    const dump = await serializeFoundation(fakeReader(), 'FILE1', '2026-07-25T00:00:00.000Z');
+    const dump = await serializeFoundation(
+      fakeReader(), 'FILE1', '2026-07-25T00:00:00.000Z', 'Company DS',
+    );
     expect(dump.fileKey).toBe('FILE1');
+    expect(dump.fileName).toBe('Company DS');
     expect(dump.extractedAt).toBe('2026-07-25T00:00:00.000Z');
     expect(dump.collections).toHaveLength(1);
     expect(dump.collections[0].variables.map((v) => v.name))
       .toEqual(['color/blue/500', 'bg/brand']);
     expect(dump.collections[0].variables[0].codeSyntax).toEqual({ WEB: '--blue' });
+    expect(dump.collections[0].variableIds).toEqual(['v1', 'v2']);
+    expect(dump.collections[0].modes).toEqual([{ modeId: 'm1', name: 'Value' }]);
+    expect(dump.collections[0].variables[0].scopes)
+      .toEqual(['FRAME_FILL', 'SHAPE_FILL']);
+    expect(dump.collections[0].variables[0].valuesByMode.m1)
+      .toEqual({ r: 0.5, g: 0.1, b: 0, a: 0.125 });
     expect(dump.textStyles[0]).toMatchObject({
       name: 'Body/M', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
     });
@@ -65,6 +76,35 @@ describe('serializeFoundation', () => {
       .toEqual({ type: 'VARIABLE_ALIAS', id: 'v1' });
   });
 
+  it('keeps mode ids and value keys distinct when display names collide', async () => {
+    const base = fakeReader();
+    const reader = fakeReader({
+      async collections() {
+        return [{
+          id: 'c1', name: 'Primitives',
+          modes: [
+            { modeId: 'm1', name: 'Value' },
+            { modeId: 'm2', name: 'Value' },
+          ],
+          defaultModeId: 'm1', variableIds: ['v1'],
+        }];
+      },
+      async variable(id) {
+        const value = await base.variable(id);
+        return value ? {
+          ...value,
+          valuesByMode: {
+            m1: { r: 0.5, g: 0.1, b: 0, a: 0.125 },
+            m2: { r: 0, g: 0.1, b: 0.5, a: 1 },
+          },
+        } : null;
+      },
+    });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.collections[0].modes.map((mode) => mode.modeId)).toEqual(['m1', 'm2']);
+    expect(Object.keys(dump.collections[0].variables[0].valuesByMode)).toEqual(['m1', 'm2']);
+  });
+
   it('records an alias target that is not local as an external ref', async () => {
     const reader = fakeReader({
       async variable(id: string): Promise<ReaderVariable | null> {
@@ -72,6 +112,7 @@ describe('serializeFoundation', () => {
           return {
             id: 'v1', name: 'x', resolvedType: 'COLOR', description: '',
             variableCollectionId: 'c1', codeSyntax: {},
+            scopes: ['FRAME_FILL'], remote: false,
             valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'remote' } },
           };
         }
@@ -80,6 +121,7 @@ describe('serializeFoundation', () => {
           return {
             id: 'remote', name: 'core/blue', resolvedType: 'COLOR', description: '',
             variableCollectionId: 'remoteColl', codeSyntax: {}, valuesByMode: {},
+            scopes: ['FRAME_FILL'], remote: true,
           };
         }
         return null;
@@ -88,8 +130,12 @@ describe('serializeFoundation', () => {
     });
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.externals).toEqual([
-      { id: 'remote', name: 'core/blue', collectionName: 'Core Library' },
+      {
+        id: 'remote', name: 'core/blue', collectionId: 'remoteColl',
+        collectionName: 'Core Library', remote: true, external: true,
+      },
     ]);
+    expect(dump.unavailableSources).toEqual(['Core Library', 'v2']);
   });
 
   it('does not list a local variable as external', async () => {
@@ -107,6 +153,9 @@ describe('serializeFoundation', () => {
     // key, so also check the key is genuinely absent.
     expect(dump.textStyles[0].boundVariables).toEqual({});
     expect('fontSize' in dump.textStyles[0].boundVariables).toBe(false);
+    expect(dump.collections[0].variableIds).toEqual(['v1', 'v2']);
+    expect(dump.unavailable).toEqual(['variables']);
+    expect(dump.unavailableSources).toEqual(['v1', 'v2']);
   });
 
   it('returns an empty dump when the variables API is unavailable', async () => {
@@ -117,6 +166,7 @@ describe('serializeFoundation', () => {
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.collections).toEqual([]);
     expect(dump.textStyles).toEqual([]);
+    expect(dump.unavailableSources).toEqual(['figma:textStyles', 'figma:variables']);
   });
 
   it('treats an alias into a later collection as local, not external', async () => {
@@ -128,11 +178,13 @@ describe('serializeFoundation', () => {
       a1: {
         id: 'a1', name: 'a1name', resolvedType: 'COLOR', description: '',
         variableCollectionId: 'c1', codeSyntax: {},
+        scopes: ['FRAME_FILL'], remote: false,
         valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'b1' } },
       },
       b1: {
         id: 'b1', name: 'b1name', resolvedType: 'COLOR', description: '',
         variableCollectionId: 'c2', codeSyntax: {},
+        scopes: ['FRAME_FILL'], remote: false,
         valuesByMode: { m2: { r: 1, g: 1, b: 1, a: 1 } },
       },
     };
@@ -162,6 +214,69 @@ describe('serializeFoundation', () => {
     expect(dump.collections).toHaveLength(2);
     expect(dump.collections[0].variables.map((v) => v.name)).toEqual(['a1name']);
     expect(dump.collections[1].variables.map((v) => v.name)).toEqual(['b1name']);
+  });
+
+  it('keeps a declared local alias target local even when its read fails', async () => {
+    const base = fakeReader();
+    const reader = fakeReader({
+      async variable(id) {
+        if (id === 'v2') return null;
+        const value = await base.variable(id);
+        if (!value || id !== 'v1') return value;
+        return {
+          ...value,
+          valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'v2' } },
+        };
+      },
+    });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.externals).toEqual([]);
+    expect(dump.unavailableSources).toContain('v2');
+  });
+
+  it('retains an unreadable non-local alias target by stable id', async () => {
+    const base = fakeReader();
+    const reader = fakeReader({
+      async variable(id) {
+        if (id === 'remote') return null;
+        const value = await base.variable(id);
+        if (!value || id !== 'v1') return value;
+        return {
+          ...value,
+          valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'remote' } },
+        };
+      },
+    });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.externals).toEqual([{
+      id: 'remote', name: null, collectionId: null, collectionName: null,
+      remote: null, external: true,
+    }]);
+    expect(dump.unavailableSources).toContain('remote');
+  });
+
+  it('does not reclassify an external target because its path matches a local token', async () => {
+    const base = fakeReader();
+    const reader = fakeReader({
+      async variable(id) {
+        if (id === 'remote') {
+          return {
+            id, name: 'color/blue/500', resolvedType: 'COLOR', description: '',
+            variableCollectionId: 'remoteColl', codeSyntax: {}, valuesByMode: {},
+            scopes: ['FRAME_FILL'], remote: true,
+          };
+        }
+        const value = await base.variable(id);
+        if (!value || id !== 'v2') return value;
+        return {
+          ...value,
+          valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'remote' } },
+        };
+      },
+      async collectionName() { return 'Core'; },
+    });
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.externals.map((external) => external.id)).toEqual(['remote']);
   });
 
   it('keeps variables in variableIds order when the batched reads finish out of order', async () => {
@@ -195,6 +310,7 @@ describe('serializeFoundation', () => {
             resolve(id === 'v3' ? null : {
               id, name: `${id}-name`, resolvedType: 'COLOR', description: '',
               variableCollectionId: 'c1', codeSyntax: {},
+              scopes: ['FRAME_FILL'], remote: false,
               valuesByMode: { m1: { r: 0, g: 0, b: 0, a: 1 } },
             });
           }, delay);
@@ -225,6 +341,7 @@ describe('serializeFoundation', () => {
           return {
             id: 'v1', name: 'x', resolvedType: 'COLOR', description: '',
             variableCollectionId: 'c1', codeSyntax: {},
+            scopes: ['FRAME_FILL'], remote: false,
             valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'remote' } },
           };
         }
@@ -232,13 +349,15 @@ describe('serializeFoundation', () => {
           return {
             id: 'remote', name: 'core/blue', resolvedType: 'COLOR', description: '',
             variableCollectionId: 'gone', codeSyntax: {}, valuesByMode: {},
+            scopes: ['FRAME_FILL'], remote: true,
           };
         }
         return null;
       },
     });
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
-    expect(dump.externals[0].collectionName).toBe('');
+    expect(dump.externals[0].collectionName).toBeNull();
+    expect(dump.unavailableSources).toEqual(['remote', 'v2']);
   });
 
   describe('unavailable reads', () => {
@@ -249,17 +368,21 @@ describe('serializeFoundation', () => {
       // Without this, a total API failure and a file with no variables at all
       // produce byte-identical dumps, and the brief reports the second.
       expect(dump.unavailable).toEqual(['variables']);
+      expect(dump.unavailableSources).toEqual(['figma:variables']);
     });
 
     it('records a text styles read that threw', async () => {
       const reader = fakeReader({ textStyles: async () => { throw new Error('nope'); } });
       const dump = await serializeFoundation(reader, 'FILE1', 'T');
       expect(dump.unavailable).toEqual(['textStyles']);
+      expect(dump.unavailableSources).toEqual(['figma:textStyles']);
     });
 
     it('leaves the key absent on a clean read', async () => {
       const dump = await serializeFoundation(fakeReader(), 'FILE1', 'T');
       expect('unavailable' in dump).toBe(false);
+      expect('unavailableSources' in dump).toBe(false);
+      expect('fileName' in dump).toBe(false);
     });
   });
 });
@@ -288,5 +411,6 @@ describe('effect styles', () => {
     const dump = await serializeFoundation(reader, 'FILE1', 'T');
     expect(dump.effectStyles).toEqual([]);
     expect(dump.unavailable).toEqual(['effectStyles']);
+    expect(dump.unavailableSources).toEqual(['figma:effectStyles']);
   });
 });

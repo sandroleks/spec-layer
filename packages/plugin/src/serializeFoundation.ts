@@ -29,6 +29,8 @@ export interface ReaderVariable {
   variableCollectionId: string;
   codeSyntax: Record<string, string>;
   valuesByMode: Record<string, RawVariableValue>;
+  scopes: string[];
+  remote: boolean;
 }
 
 export interface ReaderTextStyle {
@@ -83,16 +85,21 @@ async function readVariable(
 }
 
 /** Collection name for an external alias target. Absent method, missing
- *  collection, or a throw all mean the same thing here: no name. */
-async function readCollectionName(reader: FoundationReader, id: string): Promise<string> {
-  if (!reader.collectionName) return '';
-  try { return (await reader.collectionName(id)) ?? ''; } catch { return ''; }
+ *  collection, or a throw all mean the same thing here: unavailable metadata. */
+async function readCollectionName(reader: FoundationReader, id: string): Promise<string | null> {
+  if (!reader.collectionName) return null;
+  try { return (await reader.collectionName(id)) ?? null; } catch { return null; }
 }
 
 export async function serializeFoundation(
-  reader: FoundationReader, fileKey: string, extractedAt: string,
+  reader: FoundationReader, fileKey: string, extractedAt: string, fileName?: string,
 ): Promise<SerializedFoundation> {
   const unavailable: FoundationRead[] = [];
+  const unavailableSources = new Set<string>();
+  const markSectionUnavailable = (section: FoundationRead, source: string): void => {
+    if (!unavailable.includes(section)) unavailable.push(section);
+    unavailableSources.add(source);
+  };
 
   let readerCollections: ReaderCollection[] = [];
   try {
@@ -100,11 +107,13 @@ export async function serializeFoundation(
   } catch {
     // An empty foundation is no longer "the honest result" on its own: it is
     // indistinguishable from a file with no variables. Say which one it is.
-    unavailable.push('variables');
+    markSectionUnavailable('variables', 'figma:variables');
   }
 
   const collections: RawCollection[] = [];
-  const localIds = new Set<string>();
+  const declaredLocalIds = new Set(
+    readerCollections.flatMap((collection) => collection.variableIds),
+  );
   // Alias targets seen while walking, resolved to externals after we know which
   // ids are local. Keyed by id so a target aliased from ten places costs one hop.
   const aliasTargets = new Set<string>();
@@ -120,8 +129,8 @@ export async function serializeFoundation(
   // `readPerCollection[i][j]` is always the result for
   // `readerCollections[i].variableIds[j]` no matter which read finishes first.
   // The two loops below walk those arrays by index, so the walk that fills
-  // `variables` (and, with it, the insertion order of `localIds` and
-  // `aliasTargets`) is byte-for-byte the walk the sequential version did.
+  // `variables` (and, with it, the insertion order of `aliasTargets`) is
+  // byte-for-byte the walk the sequential version did.
   const readPerCollection = await Promise.all(
     readerCollections.map((rc) => Promise.all(
       rc.variableIds.map((id) => readVariable(reader, id)),
@@ -131,9 +140,12 @@ export async function serializeFoundation(
   for (let i = 0; i < readerCollections.length; i++) {
     const rc = readerCollections[i];
     const variables: RawVariable[] = [];
-    for (const rv of readPerCollection[i]) {
-      if (!rv) continue;
-      localIds.add(rv.id);
+    for (let j = 0; j < readPerCollection[i].length; j++) {
+      const rv = readPerCollection[i][j];
+      if (!rv) {
+        markSectionUnavailable('variables', rc.variableIds[j]);
+        continue;
+      }
       for (const value of Object.values(rv.valuesByMode)) {
         if (isAlias(value)) aliasTargets.add(value.id);
       }
@@ -141,18 +153,21 @@ export async function serializeFoundation(
         id: rv.id, name: rv.name, resolvedType: rv.resolvedType,
         description: rv.description, codeSyntax: rv.codeSyntax,
         valuesByMode: rv.valuesByMode,
+        scopes: [...rv.scopes],
       });
     }
     collections.push({
       id: rc.id, name: rc.name,
       modes: rc.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
       defaultModeId: rc.defaultModeId,
+      variableIds: [...rc.variableIds],
       variables,
     });
   }
 
-  // One hop per non-local alias target: capture its name and collection name
-  // only. A remote variable's valuesByMode is keyed by the REMOTE collection's
+  // One metadata hop per non-local alias target: capture stable identity and
+  // provenance, but never values. A remote variable's valuesByMode is keyed by
+  // the REMOTE collection's
   // mode ids, which cannot be mapped onto local modes, so any value we read
   // would be a guess about mode correspondence. The arrow is real; the value
   // is honestly absent.
@@ -160,21 +175,32 @@ export async function serializeFoundation(
   // Batched the same way, and in the Set's insertion order (which is the walk
   // order above), so `externals` comes out in exactly the sequence the
   // sequential version produced.
-  const externalIds = [...aliasTargets].filter((id) => !localIds.has(id));
-  const externalVars = (await Promise.all(externalIds.map((id) => readVariable(reader, id))))
-    .filter((rv): rv is ReaderVariable => rv !== null);
+  const externalIds = [...aliasTargets].filter((id) => !declaredLocalIds.has(id));
+  const externalVars = await Promise.all(externalIds.map((id) => readVariable(reader, id)));
   const externalCollectionNames = await Promise.all(
-    externalVars.map((rv) => readCollectionName(reader, rv.variableCollectionId)),
+    externalVars.map((rv) => rv
+      ? readCollectionName(reader, rv.variableCollectionId)
+      : Promise.resolve(null)),
   );
-  const externals: RawExternalRef[] = externalVars.map((rv, i) => ({
-    id: rv.id, name: rv.name, collectionName: externalCollectionNames[i],
-  }));
+  const externals: RawExternalRef[] = externalIds.map((id, i) => {
+    const rv = externalVars[i];
+    const collectionName = externalCollectionNames[i];
+    unavailableSources.add(collectionName ?? id);
+    return {
+      id,
+      name: rv?.name ?? null,
+      collectionId: rv?.variableCollectionId ?? null,
+      collectionName,
+      remote: rv?.remote ?? null,
+      external: true,
+    };
+  });
 
   let readerStyles: ReaderTextStyle[] = [];
   try {
     readerStyles = await reader.textStyles();
   } catch {
-    unavailable.push('textStyles');
+    markSectionUnavailable('textStyles', 'figma:textStyles');
   }
 
   // Batched across styles AND across each style's bound variables. Style order
@@ -206,7 +232,7 @@ export async function serializeFoundation(
   try {
     readerEffects = await reader.effectStyles();
   } catch {
-    unavailable.push('effectStyles');
+    markSectionUnavailable('effectStyles', 'figma:effectStyles');
   }
   const effectStyles: RawEffectStyle[] = readerEffects.map((rs) => ({
     name: rs.name,
@@ -215,7 +241,11 @@ export async function serializeFoundation(
   }));
 
   return {
-    fileKey, collections, textStyles, effectStyles, externals, extractedAt,
+    fileKey, ...(fileName !== undefined ? { fileName } : {}),
+    collections, textStyles, effectStyles, externals, extractedAt,
     ...(unavailable.length > 0 ? { unavailable } : {}),
+    ...(unavailableSources.size > 0
+      ? { unavailableSources: [...unavailableSources].sort() }
+      : {}),
   };
 }

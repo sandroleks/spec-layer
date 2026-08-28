@@ -120,6 +120,8 @@ const foundationReader: FoundationReader = {
         Object.entries(v.codeSyntax ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
       ),
       valuesByMode: v.valuesByMode as Record<string, never>,
+      scopes: [...v.scopes],
+      remote: v.remote,
     };
   },
   async textStyles() {
@@ -183,7 +185,9 @@ let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = nu
 
 async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
   if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
-  const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+  const dump = await serializeFoundation(
+    foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+  );
   foundationCache = { fileKey, dump };
   return dump;
 }
@@ -743,7 +747,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         if (foundationSpec || foundationExtractionFailed) return foundationSpec;
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+          const dump = await serializeFoundation(
+            foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+          );
           foundationSpec = buildFoundation(dump);
         } catch {
           foundationExtractionFailed = true;
@@ -847,7 +853,7 @@ figma.ui.onmessage = async (raw: unknown) => {
       try {
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
-          foundationReader, fileKey, new Date().toISOString(),
+          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
         );
         // This is the Foundations tab's own fetch — both its first load and
         // its "Refresh sources" button — so it is also the one place a user
@@ -905,7 +911,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // here keeps the generated frames faithful to the file as it is now.
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
-          foundationReader, fileKey, new Date().toISOString(),
+          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
         );
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
@@ -1092,7 +1098,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
 
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(foundationReader, fileKey, new Date().toISOString());
+        const dump = await serializeFoundation(
+          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+        );
         const spec = buildFoundation(dump);
 
         // Retarget a renamed/re-created collection by name before giving up,

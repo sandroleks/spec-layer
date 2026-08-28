@@ -263,7 +263,10 @@ describe('buildFoundation — alias resolution', () => {
 
   it('marks a library target as external with a real name and no value', () => {
     const dump = dumpWithAliases();
-    dump.externals = [{ id: 'lib1', name: 'core/blue/500', collectionName: 'Core Library' }];
+    dump.externals = [{
+      id: 'lib1', name: 'core/blue/500', collectionId: 'remote-c1',
+      collectionName: 'Core Library', remote: true, external: true,
+    }];
     dump.collections[1].variables[0].valuesByMode.s1 = { type: 'VARIABLE_ALIAS', id: 'lib1' };
     const spec = buildFoundation(dump);
     expect(spec.collections[1].variables[0].valuesByMode.s1).toEqual({

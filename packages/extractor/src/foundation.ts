@@ -25,6 +25,9 @@ export interface RawVariable {
   description: string;
   codeSyntax: Record<string, string>;
   valuesByMode: Record<string, RawVariableValue>;
+  /** Figma's source scopes, in source order. Optional only for legacy injected
+   *  dumps captured before the direct-v5 extraction path. */
+  scopes?: string[];
 }
 
 export interface RawCollection {
@@ -33,6 +36,9 @@ export interface RawCollection {
   modes: FoundationMode[];
   defaultModeId: string;
   variables: RawVariable[];
+  /** Complete source inventory, including variables whose read failed.
+   *  Optional only for legacy injected dumps. */
+  variableIds?: string[];
 }
 
 export interface RawTextStyle {
@@ -66,8 +72,15 @@ export interface RawEffectStyle {
   effects: EffectLayer[];
 }
 
-/** An alias target that lives in a library, not in this file's local dump. */
-export interface RawExternalRef { id: string; name: string; collectionName: string }
+/** An alias target outside this file's declared local inventory. */
+export interface RawExternalRef {
+  id: string;
+  name: string | null;
+  collectionId: string | null;
+  collectionName: string | null;
+  remote: boolean | null;
+  external: true;
+}
 
 /** One read serializeFoundation performs. Named so a failure can be reported as
  *  a fact rather than inferred from an empty result. */
@@ -75,6 +88,7 @@ export type FoundationRead = 'variables' | 'textStyles' | 'effectStyles';
 
 export interface SerializedFoundation {
   fileKey: string;
+  fileName?: string;
   collections: RawCollection[];
   textStyles: RawTextStyle[];
   effectStyles: RawEffectStyle[];
@@ -89,6 +103,9 @@ export interface SerializedFoundation {
    * `unavailable` resolution status rather than a nicety.
    */
   unavailable?: FoundationRead[];
+  /** Stable source ids/names that could not be read. Absent on a complete
+   *  read, never an empty array. */
+  unavailableSources?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +429,8 @@ function resolveValue(
     const ext = externals.get(raw.id);
     if (!ext) return { kind: 'unresolved', reason: 'missing' };
     return {
-      kind: 'alias', targetName: ext.name, targetCollection: ext.collectionName,
+      kind: 'alias', targetName: ext.name ?? raw.id,
+      targetCollection: ext.collectionName ?? '',
       external: true, resolved: null,
     };
   }
