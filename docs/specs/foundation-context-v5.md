@@ -513,7 +513,7 @@ At minimum:
 | `PATH_COLLISION` | error | Two entities normalize to the same collection path. |
 | `UNSUPPORTED_VALUE_TYPE` | error | A source value cannot be represented. |
 | `INCONSISTENT_VALUE_SHAPE` | error | Legacy compatibility output contains mixed shapes. |
-| `STYLE_BINDING_DRIFT` | warning | Bound token value and style property differ. |
+| `STYLE_BINDING_DRIFT` | warning | An unambiguous bound token value and composite style property differ. |
 | `CONFUSABLE_NAME` | warning | A name contains non-ASCII/confusable characters. |
 | `INFERRED_LIFECYCLE` | warning | Lifecycle was inferred from a name. |
 | `DEPRECATED_REFERENCE` | warning | An active entity references a deprecated entity. |
@@ -674,7 +674,7 @@ Using the current Company DS foundation fixture:
 8. The Cyrillic `С` in the Chip path is preserved and creates `CONFUSABLE_NAME`.
 9. Archived text styles retain their source names and lifecycle when the source API exposes that evidence. A source that does not expose archived styles or lifecycle MUST leave the field absent and MUST NOT infer it from names.
 10. Identical typography mode values are preserved and MAY create `MODE_VALUES_IDENTICAL` information diagnostics.
-11. Card shadow representations are preserved independently; any explicit binding disagreement creates `STYLE_BINDING_DRIFT`.
+11. Typography and effect representations are preserved independently. A binding disagreement creates `STYLE_BINDING_DRIFT` only when every source mode resolves to one identical value; the extractor MUST NOT select an unstated consuming mode.
 12. Repeated extraction produces the same semantic content hash.
 
 ### 21.2 Automated tests

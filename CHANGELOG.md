@@ -129,6 +129,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
   Generated group descriptions remain available as a hash-excluded annotation.
 
+- Component **Copy for AI** now emits Component Context v5. Component bindings
+  join to Foundation definitions by stable Figma id rather than display name,
+  and each copy embeds only its referenced variables/styles plus complete local
+  alias dependencies. It also carries the whole Foundation hash so an agent can
+  match a component to Foundation context already in the conversation.
+
+  Component v5 retains exact anatomy paths, structured default-variant layout,
+  inline effect binding ids, hardcoded values, deterministic validation, and
+  saved guidelines. Export timestamps, build ids, generated prose, diagnostic
+  wording, and unrelated Foundation changes stay outside the component semantic
+  hash. The legacy component brief v4 remains available to existing consumers
+  and canvas drift hashes are unchanged.
+
+  Typography bindings now produce `STYLE_BINDING_DRIFT` under the same
+  mode-independent rule as effect bindings, surfacing stale Figma style/token
+  relationships without guessing a consuming mode.
+
 - Added a reproducible raw Foundation fixture and reviewed direct-v5 golden
   artifact covering duplicate mode names, exact/default mode resolution,
   precision colors, units, full chains, cycles, external aliases, missing

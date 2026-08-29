@@ -9,7 +9,7 @@
 import {
   extract, ProseProxyError, specContentHash, buildFoundation,
   buildFoundationArtifactV5, foundationAiContext,
-  componentBrief, toYaml,
+  buildComponentArtifactV5, componentAiContext, toYaml,
 } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
@@ -518,11 +518,24 @@ export async function copyBriefFromSource(
   ui.clear();
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
-    const yaml = toYaml(componentBrief(spec, {
-      generatedAt: new Date().toISOString(),
-      ...(foundationSpec ? { foundation: foundationSpec } : {}),
+    const generatedAt = new Date().toISOString();
+    const foundation = foundationSpec
+      ? buildFoundationArtifactV5(foundationSpec, {
+          exportId: `foundation:${foundationSpec.fileKey && foundationSpec.fileKey !== 'unknown'
+            ? foundationSpec.fileKey
+            : 'local'}:${generatedAt}`,
+          generatedAt,
+          build: pluginBuild(),
+        }).artifact
+      : undefined;
+    const artifact = buildComponentArtifactV5(spec, {
+      exportId: `component:${src.node.id}:${generatedAt}`,
+      generatedAt,
+      build: pluginBuild(),
+      ...(foundation ? { foundation } : {}),
       prose,
-    }));
+    });
+    const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';

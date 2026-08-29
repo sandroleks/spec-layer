@@ -130,6 +130,7 @@ function typographyBinding(
 function typographyStyleOf(
   style: FoundationTextStyle,
   normalizedPaths: Map<string, string[]>,
+  tokensById: Map<string, TokenV5>,
   diagnostics: Diagnostic[],
 ): TypographyStyleV5 | null {
   if (!style.id) {
@@ -182,44 +183,78 @@ function typographyStyleOf(
   }
   const letterUnit = style.letterSpacing.unit === 'PIXELS' ? 'px' as const : '%' as const;
   const binding = (property: string): string | undefined => typographyBinding(style, property);
+  const properties: TypographyStyleV5['properties'] = {
+    font_family: styleProperty(
+      { type: 'font_family', value: style.fontFamily },
+      binding('font_family'), normalizedPaths,
+    ),
+    font_weight: styleProperty(
+      weight === null ? null : { type: 'number', value: weight },
+      binding('font_weight'), normalizedPaths,
+    ),
+    font_size: styleProperty(
+      { type: 'dimension', number: canonicalNumber(style.fontSize), unit: 'px' },
+      binding('font_size'), normalizedPaths,
+    ),
+    line_height: styleProperty(lineHeight, binding('line_height'), normalizedPaths),
+    letter_spacing: styleProperty(
+      {
+        type: 'dimension', number: canonicalNumber(style.letterSpacing.value),
+        unit: letterUnit,
+      },
+      binding('letter_spacing'), normalizedPaths,
+    ),
+    paragraph_spacing: styleProperty(
+      { type: 'dimension', number: canonicalNumber(style.paragraphSpacing), unit: 'px' },
+      binding('paragraph_spacing'), normalizedPaths,
+    ),
+    paragraph_indent: styleProperty(
+      { type: 'dimension', number: canonicalNumber(style.paragraphIndent), unit: 'px' },
+      binding('paragraph_indent'), normalizedPaths,
+    ),
+    text_case: style.textCase.toLowerCase(),
+    text_decoration: style.textDecoration.toLowerCase(),
+  };
+
+  const scalarProperties = [
+    'font_family', 'font_weight', 'font_size', 'line_height',
+    'letter_spacing', 'paragraph_spacing', 'paragraph_indent',
+  ] as const;
+  for (const propertyName of scalarProperties) {
+    const property = properties[propertyName];
+    if (property.source.kind !== 'alias' || property.source.target_id === null
+      || property.resolved === null) continue;
+    const token = tokensById.get(property.source.target_id);
+    if (token === undefined) continue;
+    const snapshots = Object.values(token.values).map(resolvedValueOf);
+    if (snapshots.length === 0 || snapshots.some((value) => value === null)) continue;
+    const unique = new Map<string, TypedValue>();
+    for (const snapshot of snapshots as TypedValue[]) {
+      unique.set(canonicalJson(snapshot), snapshot);
+    }
+    // Text styles expose no consuming mode. As with effects, compare only
+    // when every source mode states one identical value.
+    if (unique.size !== 1) continue;
+    const tokenValue = [...unique.values()][0];
+    if (canonicalJson(tokenValue) === canonicalJson(property.resolved)) continue;
+    diagnostics.push(diagnostic('STYLE_BINDING_DRIFT', {
+      entity_id: style.id,
+      message: 'The typography property snapshot differs from its unambiguous bound token value.',
+      details: {
+        property: propertyName,
+        token_id: property.source.target_id,
+        style_value: property.resolved,
+        token_value: tokenValue,
+      },
+    }));
+  }
   return {
     id: style.id,
     name: nfc(style.name),
     path: stylePath(style.name),
     description: style.description,
     ...(source ? { source } : {}),
-    properties: {
-      font_family: styleProperty(
-        { type: 'font_family', value: style.fontFamily },
-        binding('font_family'), normalizedPaths,
-      ),
-      font_weight: styleProperty(
-        weight === null ? null : { type: 'number', value: weight },
-        binding('font_weight'), normalizedPaths,
-      ),
-      font_size: styleProperty(
-        { type: 'dimension', number: canonicalNumber(style.fontSize), unit: 'px' },
-        binding('font_size'), normalizedPaths,
-      ),
-      line_height: styleProperty(lineHeight, binding('line_height'), normalizedPaths),
-      letter_spacing: styleProperty(
-        {
-          type: 'dimension', number: canonicalNumber(style.letterSpacing.value),
-          unit: letterUnit,
-        },
-        binding('letter_spacing'), normalizedPaths,
-      ),
-      paragraph_spacing: styleProperty(
-        { type: 'dimension', number: canonicalNumber(style.paragraphSpacing), unit: 'px' },
-        binding('paragraph_spacing'), normalizedPaths,
-      ),
-      paragraph_indent: styleProperty(
-        { type: 'dimension', number: canonicalNumber(style.paragraphIndent), unit: 'px' },
-        binding('paragraph_indent'), normalizedPaths,
-      ),
-      text_case: style.textCase.toLowerCase(),
-      text_decoration: style.textDecoration.toLowerCase(),
-    },
+    properties,
   };
 }
 
@@ -918,7 +953,9 @@ export function buildFoundationArtifactV5(
   const tokensById = new Map(tokens.map((token) => [token.id, token]));
   const typography = meta.scope?.target !== 'collection'
     ? foundation.textStyles.flatMap((style) => {
-        const projected = typographyStyleOf(style, normalizedPaths, diagnostics);
+        const projected = typographyStyleOf(
+          style, normalizedPaths, tokensById, diagnostics,
+        );
         return projected === null ? [] : [projected];
       })
     : [];

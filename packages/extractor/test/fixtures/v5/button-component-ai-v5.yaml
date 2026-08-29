@@ -1,0 +1,167 @@
+spec_layer:
+  kind: component
+  version: 5
+  profile: ai
+  content_hash: sha256:9582c10bb19851958592d38df1ba9446be7c4585b9dca8d570b0764c91baf389
+  foundation_hash: sha256:ecdeee34463e3cad7c68883b916992a3e23097c9cc84e64b22b7c88ce73759d1
+  source: { provider: figma, file_name: Design System }
+source: { node_id: 1:100, node_name: Button, component_key: m3-button }
+component: { name: Button, related: [Icon] }
+api:
+  variants:
+    Style: { options: [Filled, Outlined], default: Filled }
+  states: [Enabled, Hovered, Disabled]
+  booleans: { Show icon: { default: false } }
+  slots: { Label: { type: text, default: Button } }
+anatomy:
+  - { part: container, path: Container/container, type: FRAME }
+  - { part: label, path: Container/label, type: TEXT }
+  - { part: icon, path: Container/icon, type: INSTANCE, component: Icon }
+layout:
+  scope: default_variant
+  items:
+    - path: Container/container
+      summary: horizontal, padding 10/24/10/24, gap 8
+      values: { gap: 8 }
+references:
+  used:
+    - source_id: VariableID:1
+      name: md.sys.color.primary
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:1
+      status: resolved
+    - source_id: VariableID:5
+      name: md.sys.color.primary-hover
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:1
+      status: resolved
+    - source_id: VariableID:2
+      name: md.sys.shape.corner.full
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:1
+      status: resolved
+    - source_id: VariableID:4
+      name: md.sys.color.outline
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:1
+      status: resolved
+    - source_id: VariableID:3
+      name: md.sys.color.on-primary
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:1
+      status: resolved
+  bindings:
+    - path: Container/container
+      property: fill
+      source_id: VariableID:1
+      kind: variable
+      when: { Style: [Filled], State: [Enabled] }
+    - path: Container/container
+      property: fill
+      source_id: VariableID:5
+      kind: variable
+      when: { State: [Hovered] }
+    - path: Container/container
+      property: border-radius
+      source_id: VariableID:2
+      kind: variable
+    - path: Container/container
+      property: border
+      source_id: VariableID:4
+      kind: variable
+      when: { Style: [Outlined] }
+    - path: Container/label
+      property: fill
+      source_id: VariableID:3
+      kind: variable
+      when: { Style: [Filled] }
+    - path: Container/label
+      property: fill
+      source_id: VariableID:1
+      kind: variable
+      when: { Style: [Outlined] }
+  foundation:
+    dependency_hash: sha256:6c65ce623fcc15fb4abc9d4ac5ce43bfceb35f21ffb6c18ba8af5efe6afaae9a
+    completeness: { collections: complete, styles: complete, unavailable_sources: [] }
+    collections:
+      - name: Material tokens
+        source_id: VariableCollectionId:1
+        default_mode: Default
+        modes: [Default]
+        tokens:
+          - name: md.sys.color.primary
+            source_id: VariableID:1
+            type: color
+            scopes: [FRAME_FILL, SHAPE_FILL]
+            values: { Default: "#6750a4" }
+          - name: md.sys.shape.corner.full
+            source_id: VariableID:2
+            type: dimension
+            scopes: [CORNER_RADIUS]
+            values: { Default: { number: 999, unit: px } }
+          - name: md.sys.color.on-primary
+            source_id: VariableID:3
+            type: color
+            scopes: [FRAME_FILL, SHAPE_FILL]
+            values: { Default: "#ffffff" }
+          - name: md.sys.color.outline
+            source_id: VariableID:4
+            type: color
+            scopes: [STROKE_COLOR]
+            values: { Default: "#79747e" }
+          - name: md.sys.color.primary-hover
+            source_id: VariableID:5
+            type: color
+            scopes: [FRAME_FILL, SHAPE_FILL]
+            values: { Default: "#5b438f" }
+    styles: { typography: [], effects: [] }
+unbound:
+  - path: Container/container
+    property: gap
+    issue: hardcoded-value
+    value: 8
+  - path: Container/container
+    property: padding-x
+    issue: hardcoded-value
+    value: 24
+  - path: Container/container
+    property: padding-y
+    issue: hardcoded-value
+    value: 10
+  - path: Container/label
+    property: typography
+    issue: missing-token-binding
+  - path: Container/debug-overlay
+    property: fill
+    issue: hardcoded-color
+validation:
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: gap
+    message: gap is a hardcoded 8 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: padding-x
+    message: padding-x is a hardcoded 24 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/container
+    property: padding-y
+    message: padding-y is a hardcoded 10 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/label
+    property: typography
+    message: typography is not bound to a token.
+  - id: unbound-value
+    severity: warning
+    path: Container/debug-overlay
+    property: fill
+    message: fill is not bound to a token.

@@ -1,8 +1,8 @@
 ---
 title: Foundation Context v5 — status and handoff
-status: Phase 3 composite-style implementation complete; manual and real-source gates open
+status: Phase 4 component adoption implemented; tooling and real-source gates open
 schema_version: 5.0.0
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 ---
 
 # Foundation Context v5 — status and handoff
@@ -11,7 +11,9 @@ Read this before changing `packages/extractor/src/v5/` or Foundation Copy for
 AI. The normative contract is
 [foundation-context-v5.md](foundation-context-v5.md). The executed plans are
 [Phase 2](../superpowers/plans/2026-08-28-foundation-v5-phase-2.md) and
-[Phase 3](../superpowers/plans/2026-08-28-foundation-v5-phase-3.md).
+[Phase 3](../superpowers/plans/2026-08-28-foundation-v5-phase-3.md). Component
+adoption is recorded in the
+[Component Context v5 plan](../superpowers/plans/2026-08-29-component-context-v5.md).
 
 Phase 1's v4 normalizer remains supported and independently graded. Phase 3
 changes canonical/clipboard output, not canvas drift inputs, so the shared
@@ -41,9 +43,9 @@ document for rebuild.
   facts are available. Style source state is emitted, but style publication,
   lifecycle, and consuming mode stay absent/null because the Plugin API does
   not expose enough evidence to state them.
-- Effect binding drift is computed only when every mode of the bound token has
-  one identical resolved value. The exporter never picks a default mode for a
-  mode-less style.
+- Composite typography and effect binding drift is computed only when every
+  mode of the bound token has one identical resolved value. The exporter never
+  picks a default mode for a mode-less style.
 - Generated group descriptions are a `guidelines` annotation outside the
   semantic payload and therefore do not alter the content hash.
 - The clipboard profile nests tokens beneath collections, uses readable mode
@@ -159,11 +161,13 @@ Still open:
 
 ## Phase 4 starting points
 
-Phase 4 owns tooling and adoption: validation/normalization/diff commands,
-consumer-facing fixture publication, CI integration beyond the current library
-tests, and the remaining real-source/manual gates. Keep command tooling outside
-the Figma sandbox and reuse the canonical validator/hash implementation rather
-than creating a second interpretation of v5.
+Phase 4 component adoption is implemented: component Copy now joins Foundation
+v5 by exact id and embeds a validated dependency closure. Remaining Phase 4
+work is command tooling and external adoption: validation/normalization/diff
+commands, consumer-facing fixture publication, CI integration beyond the
+current library tests, and the remaining real-source/manual gates. Keep command
+tooling outside the Figma sandbox and reuse the canonical validator/hash
+implementation rather than creating a second interpretation of v5.
 
 ## Release invariants
 
@@ -176,7 +180,9 @@ than creating a second interpretation of v5.
   every semantic/canvas hash. Do not weaken the canonical schema to save prompt
   space.
 - Do not replace the source-sized alias limit with the old four-hop ceiling.
-- A rollback reverts the plugin Copy call sites to `foundationBrief`; it does
-  not alter schema/hash code or delete the direct fixture.
+- A Foundation rollback reverts its plugin Copy call sites to
+  `foundationBrief`; a component rollback reverts its Copy call site to
+  `componentBrief`. Neither rollback alters schema/hash code or deletes the
+  direct fixtures.
 - Before a v5 release, verify the permanent schema URL returns the committed
   schema bytes and complete the manual matrix in `packages/plugin/TESTING.md`.

@@ -19,8 +19,9 @@ an AI coding agent.
 - **Foundation documentation.** Turn variable collections and text styles into
   readable token tables and colour references.
 - **Copy for AI.** Copy a component or Foundation as compact YAML with the facts
-  an implementation agent needs. Foundation copies retain the canonical v5
-  content hash without repeating audit-only data throughout the prompt.
+  an implementation agent needs. Foundation and component copies retain their
+  canonical v5 content hashes; component copies include only the exact token
+  and style dependency closure they use.
 - **Library and updates.** Track generated documents, detect source changes, and
   rebuild outdated frames in one click.
 - **Optional AI writing.** Draft overviews, usage guidance, do's and don'ts, and

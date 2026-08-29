@@ -66,6 +66,12 @@ export interface FoundationAiToken {
   values: Record<string, AiValue>;
 }
 
+export interface FoundationAiContextOptions {
+  /** Component Context embeds a dependency slice and joins it by stable Figma
+   * ids. Whole-Foundation Copy keeps the quieter ambiguity-only behavior. */
+  includeSourceIds?: boolean;
+}
+
 interface ProjectionIndex {
   collectionById: Map<string, CollectionV5>;
   tokenById: Map<string, TokenV5>;
@@ -252,6 +258,7 @@ function compactToken(
   token: TokenV5,
   collection: CollectionV5,
   index: ProjectionIndex,
+  includeSourceIds: boolean,
 ): FoundationAiToken {
   const modeLabels = index.modeLabelByCollectionAndId.get(collection.id) ?? new Map();
   const values: Record<string, AiValue> = {};
@@ -261,7 +268,9 @@ function compactToken(
   const lifecycle = compactLifecycle(token.lifecycle, index);
   return {
     name: token.name,
-    ...(index.ambiguousEntityIds.has(token.id) ? { source_id: token.id } : {}),
+    ...(includeSourceIds || index.ambiguousEntityIds.has(token.id)
+      ? { source_id: token.id }
+      : {}),
     ...(token.suggested_code_name ? { suggested_code_name: token.suggested_code_name } : {}),
     type: token.type,
     ...(token.description.length > 0 ? { description: token.description } : {}),
@@ -294,11 +303,14 @@ function compactStyleProperty(property: StyleProperty, index: ProjectionIndex): 
 function styleIdentity(
   style: TypographyStyleV5 | EffectStyleV5,
   index: ProjectionIndex,
+  includeSourceIds: boolean,
 ): Record<string, AiValue | undefined> {
   const lifecycle = compactLifecycle(style.lifecycle, index);
   return {
     name: style.name,
-    ...(index.ambiguousEntityIds.has(style.id) ? { source_id: style.id } : {}),
+    ...(includeSourceIds || index.ambiguousEntityIds.has(style.id)
+      ? { source_id: style.id }
+      : {}),
     ...(style.suggested_code_name ? { suggested_code_name: style.suggested_code_name } : {}),
     ...(style.publication ? { publication: {
       published: style.publication.published,
@@ -317,9 +329,10 @@ function styleIdentity(
 function compactTypography(
   style: TypographyStyleV5,
   index: ProjectionIndex,
+  includeSourceIds: boolean,
 ): AiValue {
   return {
-    ...styleIdentity(style, index),
+    ...styleIdentity(style, index, includeSourceIds),
     ...(style.description.length > 0 ? { description: style.description } : {}),
     properties: {
       font_family: compactStyleProperty(style.properties.font_family, index),
@@ -335,7 +348,11 @@ function compactTypography(
   };
 }
 
-function compactEffect(style: EffectStyleV5, index: ProjectionIndex): AiValue {
+function compactEffect(
+  style: EffectStyleV5,
+  index: ProjectionIndex,
+  includeSourceIds: boolean,
+): AiValue {
   const modeMatches = [...index.collectionById.values()].flatMap((collection) => {
     const label = index.modeLabelByCollectionAndId.get(collection.id)?.get(style.mode_id ?? '');
     return label === undefined ? [] : [label];
@@ -344,7 +361,7 @@ function compactEffect(style: EffectStyleV5, index: ProjectionIndex): AiValue {
     ? null
     : modeMatches.length === 1 ? modeMatches[0] : style.mode_id;
   return {
-    ...styleIdentity(style, index),
+    ...styleIdentity(style, index, includeSourceIds),
     mode,
     effects: style.effects.map((effect) => ({
       type: effect.type,
@@ -382,7 +399,11 @@ function issueCounts(artifact: FoundationArtifactV5): Record<string, Record<stri
 }
 
 /** Build the deterministic, clipboard-sized projection of a canonical v5 artifact. */
-export function foundationAiContext(artifact: FoundationArtifactV5): FoundationAiContext {
+export function foundationAiContext(
+  artifact: FoundationArtifactV5,
+  options: FoundationAiContextOptions = {},
+): FoundationAiContext {
+  const includeSourceIds = options.includeSourceIds === true;
   const index = buildIndex(artifact);
   const tokensByCollection = new Map<string, TokenV5[]>();
   for (const token of artifact.tokens) {
@@ -396,7 +417,9 @@ export function foundationAiContext(artifact: FoundationArtifactV5): FoundationA
     const modeLabels = index.modeLabelByCollectionAndId.get(collection.id) ?? new Map();
     return {
       name: collection.name,
-      ...(index.ambiguousEntityIds.has(collection.id) ? { source_id: collection.id } : {}),
+      ...(includeSourceIds || index.ambiguousEntityIds.has(collection.id)
+        ? { source_id: collection.id }
+        : {}),
       ...(collection.suggested_code_name
         ? { suggested_code_name: collection.suggested_code_name }
         : {}),
@@ -409,7 +432,9 @@ export function foundationAiContext(artifact: FoundationArtifactV5): FoundationA
       } } : {}),
       default_mode: modeLabels.get(collection.default_mode_id) ?? collection.default_mode_id,
       modes: collection.modes.map((mode) => modeLabels.get(mode.id) ?? mode.name),
-      tokens: tokens.map((token) => compactToken(token, collection, index)),
+      tokens: tokens.map((token) => compactToken(
+        token, collection, index, includeSourceIds,
+      )),
     };
   });
 
@@ -430,8 +455,12 @@ export function foundationAiContext(artifact: FoundationArtifactV5): FoundationA
     completeness: artifact.completeness,
     collections,
     styles: {
-      typography: artifact.styles.typography.map((style) => compactTypography(style, index)),
-      effects: artifact.styles.effects.map((style) => compactEffect(style, index)),
+      typography: artifact.styles.typography.map((style) => compactTypography(
+        style, index, includeSourceIds,
+      )),
+      effects: artifact.styles.effects.map((style) => compactEffect(
+        style, index, includeSourceIds,
+      )),
     },
     ...(counts ? { issue_counts: counts } : {}),
     ...(artifact.guidelines

@@ -22,23 +22,25 @@ npx wrangler pages deploy apps/landing --project-name speclayer-landing
 
 First run creates the project and prints the `*.pages.dev` URL.
 
-The Foundation v5 schema is committed at
-`apps/landing/schemas/foundation-context/v5.json` and its permanent public URI
-is:
+The v5 schemas are committed at
+`apps/landing/schemas/foundation-context/v5.json` and
+`apps/landing/schemas/component-context/v5.json`. Their permanent public URIs
+are:
 
 ```text
 https://spec-layer.com/schemas/foundation-context/v5.json
+https://spec-layer.com/schemas/component-context/v5.json
 ```
 
-A successful Pages upload does not by itself prove that permanent URI works.
+A successful Pages upload does not by itself prove that either permanent URI works.
 Before a release that publishes or relies on v5 artifacts:
 
 1. Confirm `spec-layer.com` is attached as a Cloudflare Pages custom domain and
    its DNS record is active.
-2. Fetch the live URI and confirm it returns HTTP 200 with JSON whose `$id` is
-   exactly the permanent URI above.
-3. Compare the live response with the committed file so the schema served at
-   the permanent URI is the release candidate, not an older deployment.
+2. Fetch both live URIs and confirm each returns HTTP 200 with JSON whose `$id`
+   is exactly its permanent URI above.
+3. Compare both live responses with their committed files so the schemas served
+   at the permanent URIs are the release candidates, not older deployments.
 
 The `*.pages.dev` preview is useful for staging, but it is not a substitute for
 custom-domain, DNS, and live-URL verification. Any DNS, HTTP status, `$id`, or

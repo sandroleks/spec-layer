@@ -162,8 +162,13 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 6. Delete a source component or remove a documented Foundation scope. Confirm
    **Source missing** and that Update and **Copy for AI** are not offered.
 7. Run **Copy for AI** on in-sync, update-available, and manually edited
-   component rows. Each copy must read the live source, include saved AI
-   guidelines when present, and leave the Section and link data unchanged.
+   component rows. Each copy must say `kind: component`, `version: 5`, and
+   `profile: ai`; read the live source; include saved AI guidelines when
+   present; and leave the Section and link data unchanged. Every binding must
+   carry a stable `source_id`. The embedded Foundation block must contain only
+   referenced variables/styles and their complete local alias dependencies,
+   while `foundation_hash` matches a whole-file Foundation copy from the same
+   read.
 8. Run **Copy for AI** on a split or grouped Foundation row. Confirm the copy
    widens to the complete collection and all modes and includes only additional
    collections required by transitive local aliases. A text-style row copies

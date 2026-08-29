@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-layer.com/schemas/component-context/v5.json",
+  "title": "Component Context v5",
+  "description": "Canonical Component Context v5 artifact. Component facts are extracted from Figma; references join to a scoped Foundation Context v5 semantic payload by stable source id.",
+  "type": "object",
+  "required": ["spec_layer", "component", "anatomy", "references", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_layer": { "$ref": "#/$defs/envelope" },
+    "foundation_content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "foundation_dependency_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "foundation_diagnostics": { "type": "array", "items": { "type": "object" } },
+    "component": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "related": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "api": { "type": "object" },
+    "anatomy": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } },
+    "layout": { "type": "object" },
+    "references": { "$ref": "#/$defs/references" },
+    "effects_inline": { "type": "array" },
+    "unbound": { "type": "array" },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "validation": { "type": "array" },
+    "guidelines": { "type": "object" }
+  },
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "required": ["kind", "schema_version", "schema_uri", "extractor", "export", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "component" },
+        "schema_version": { "const": "5.0.0" },
+        "schema_uri": { "const": "https://spec-layer.com/schemas/component-context/v5.json" },
+        "extractor": {
+          "type": "object",
+          "required": ["name", "version", "build"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "const": "spec-layer-component" },
+            "version": { "type": "string" },
+            "build": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+          }
+        },
+        "export": {
+          "type": "object",
+          "required": ["id", "generated_at", "deterministic", "content_hash"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "generated_at": { "type": "string" },
+            "deterministic": { "const": true },
+            "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "provider", "file_id", "file_name", "file_version", "library_enabled",
+            "node_id", "node_name", "component_key"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "const": "figma" },
+            "file_id": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "file_name": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "file_version": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "library_enabled": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
+            "node_id": { "type": "string", "minLength": 1 },
+            "node_name": { "type": "string" },
+            "component_key": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+          }
+        }
+      }
+    },
+    "anatomy_node": {
+      "type": "object",
+      "required": ["part", "path", "type"],
+      "properties": {
+        "part": { "type": "string" },
+        "path": { "type": "string" },
+        "type": { "type": "string" },
+        "component": { "type": "string" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } }
+      }
+    },
+    "reference_status": {
+      "enum": [
+        "resolved", "external", "unavailable", "not_in_snapshot",
+        "not_extracted", "no_foundation"
+      ]
+    },
+    "reference_kind": {
+      "enum": ["variable", "paint-style", "text-style", "effect-style"]
+    },
+    "used_reference": {
+      "type": "object",
+      "required": ["source_id", "name", "kind", "remote", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "kind": { "$ref": "#/$defs/reference_kind" },
+        "remote": { "type": "boolean" },
+        "collection_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/reference_status" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "required": ["path", "property", "source_id", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "property": { "type": "string" },
+        "source_id": { "type": "string", "minLength": 1 },
+        "kind": { "$ref": "#/$defs/reference_kind" },
+        "when": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "foundation_semantic_payload": {
+      "type": "object",
+      "required": ["completeness", "collections", "tokens", "styles"],
+      "additionalProperties": false,
+      "properties": {
+        "completeness": {
+          "$ref": "https://spec-layer.com/schemas/foundation-context/v5.json#/$defs/completeness"
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "$ref": "https://spec-layer.com/schemas/foundation-context/v5.json#/$defs/collection"
+          }
+        },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "$ref": "https://spec-layer.com/schemas/foundation-context/v5.json#/$defs/token"
+          }
+        },
+        "styles": {
+          "type": "object",
+          "required": ["typography", "effects"],
+          "additionalProperties": false,
+          "properties": {
+            "typography": {
+              "type": "array",
+              "items": {
+                "$ref": "https://spec-layer.com/schemas/foundation-context/v5.json#/$defs/typography_style"
+              }
+            },
+            "effects": {
+              "type": "array",
+              "items": {
+                "$ref": "https://spec-layer.com/schemas/foundation-context/v5.json#/$defs/effect_style"
+              }
+            }
+          }
+        }
+      }
+    },
+    "references": {
+      "type": "object",
+      "required": ["used", "bindings"],
+      "additionalProperties": false,
+      "properties": {
+        "used": { "type": "array", "items": { "$ref": "#/$defs/used_reference" } },
+        "bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } },
+        "foundation": { "$ref": "#/$defs/foundation_semantic_payload" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "entity_id", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "enum": ["UNRESOLVED_REFERENCE", "INCONSISTENT_REFERENCE"] },
+        "severity": { "enum": ["error", "warning"] },
+        "entity_id": { "type": "string" },
+        "message": { "type": "string" },
+        "details": { "type": "object" }
+      }
+    }
+  }
+}

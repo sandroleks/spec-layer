@@ -467,6 +467,28 @@ describe('buildFoundationArtifactV5 — composite styles and publication', () =>
     }));
   });
 
+  it('reports typography binding drift without choosing a mode', () => {
+    const source = styledSource();
+    source.collections[0].variables.push(variable(
+      'weight', 'type/weight/500', 'FLOAT', { light: 500, dark: 500 }, ['FONT_WEIGHT'],
+    ));
+    source.textStyles[0].fontStyle = 'Regular';
+    source.textStyles[0].bindingIds = {
+      ...source.textStyles[0].bindingIds,
+      fontWeight: 'weight',
+    };
+
+    const artifact = artifactOf(source);
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'STYLE_BINDING_DRIFT', entity_id: 'style:text',
+      details: expect.objectContaining({
+        property: 'font_weight', token_id: 'weight',
+        style_value: { type: 'number', value: 400 },
+        token_value: { type: 'number', value: 500 },
+      }),
+    }));
+  });
+
   it('keeps supported effect order and diagnoses newer unsupported layers', () => {
     const source = styledSource();
     source.effectStyles[0].effects.unshift({

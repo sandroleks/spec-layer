@@ -113,8 +113,10 @@ function geometryOf(l: LayoutSummary): { property: string; value: number }[] {
 
 export function validate(
   spec: IntermediateSpec,
-  /** token name -> resolved numeric value, at the mode the brief reports. */
+  /** token name (legacy) or stable source id (v5) -> resolved numeric value,
+   * at the mode the brief reports. */
   resolved: Map<string, number>,
+  resolutionKey: 'name' | 'id' = 'name',
 ): Finding[] {
   const findings: Finding[] = [];
 
@@ -198,7 +200,7 @@ export function validate(
       );
       if (applicable.length !== 1) continue;
       const rule = applicable[0];
-      const target = resolved.get(rule.name);
+      const target = resolved.get(resolutionKey === 'id' ? rule.id : rule.name);
       if (target === undefined || target === value) continue;
       findings.push({
         id: 'geometry-token-mismatch', severity: 'warning',
