@@ -143,13 +143,13 @@ describe('copyBriefFromSource', () => {
     const boundNode = {
       id: '1:100', name: 'Button', type: 'COMPONENT', visible: true, key: 'k',
       bindings: [],
-      children: [{
-        id: '1:101', name: 'Container', type: 'FRAME', visible: true, children: [],
+      children: ['Container A', 'Container B'].map((name, index) => ({
+        id: `1:${101 + index}`, name, type: 'FRAME', visible: true, children: [],
         bindings: [{
           property: 'itemSpacing', id: 'VariableID:gap', name: 'space/gap',
           kind: 'variable', remote: false, collectionId: 'CollectionID:space',
         }],
-      }],
+      })),
     } as never;
 
     await copyBriefFromSource(createState(), { ...SRC, node: boundNode }, null, presenter());
@@ -157,6 +157,9 @@ describe('copyBriefFromSource', () => {
       spec_layer: { foundation_hash: string };
       references: {
         used: Array<{ source_id: string; status: string }>;
+        bindings: Array<{
+          path?: string; paths?: string[]; property: string; source_id: string;
+        }>;
         foundation: {
           collections: Array<{ source_id: string; tokens: Array<{ source_id: string }> }>;
         };
@@ -166,6 +169,10 @@ describe('copyBriefFromSource', () => {
     expect(y.references.used).toEqual([expect.objectContaining({
       source_id: 'VariableID:gap', status: 'resolved',
     })]);
+    expect(y.references.bindings).toContainEqual(expect.objectContaining({
+      paths: ['Button/Container A', 'Button/Container B'],
+      property: 'gap', source_id: 'VariableID:gap',
+    }));
     expect(y.references.foundation.collections[0]).toMatchObject({
       source_id: 'CollectionID:space',
       tokens: [expect.objectContaining({ source_id: 'VariableID:gap' })],

@@ -168,7 +168,8 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    carry a stable `source_id`. The embedded Foundation block must contain only
    referenced variables/styles and their complete local alias dependencies,
    while `foundation_hash` matches a whole-file Foundation copy from the same
-   read.
+   read. A rule used once carries `path`; otherwise-identical rules used on
+   multiple nodes carry one ordered `paths` list with every exact path.
 8. Run **Copy for AI** on a split or grouped Foundation row. Confirm the copy
    widens to the complete collection and all modes and includes only additional
    collections required by transitive local aliases. A text-style row copies

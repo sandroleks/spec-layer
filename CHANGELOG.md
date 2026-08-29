@@ -142,6 +142,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   hash. The legacy component brief v4 remains available to existing consumers
   and canvas drift hashes are unchanged.
 
+  The compact profile groups otherwise-identical binding rules under an
+  ordered `paths` list. Single-use rules keep `path`, and canonical bindings
+  remain ungrouped, so this reduces repeated nested-instance output without
+  changing fidelity or semantic hashes.
+
   Typography bindings now produce `STYLE_BINDING_DRIFT` under the same
   mode-independent rule as effect bindings, surfacing stale Figma style/token
   relationships without guessing a consuming mode.

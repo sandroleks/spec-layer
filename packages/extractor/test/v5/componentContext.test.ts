@@ -8,7 +8,8 @@ import type { FoundationArtifactV5, SemanticPayload } from '../../src/v5/canonic
 import { buildEnvelope } from '../../src/v5/canonical';
 import {
   buildComponentArtifactV5, componentAiContext,
-  componentFoundationDependencies, validateComponentArtifactV5,
+  componentFoundationDependencies, componentSemanticContentHash,
+  validateComponentArtifactV5,
 } from '../../src/v5/componentContext';
 
 const SOURCE = {
@@ -280,6 +281,44 @@ describe('Component Context v5', () => {
       'VariableID:base', 'VariableID:semantic',
     ]);
     expect(dependency.issue_counts.error.UNIT_METADATA_UNAVAILABLE).toBe(1);
+  });
+
+  it('groups otherwise-identical AI bindings by path without changing canonical bindings', () => {
+    const first = rule(
+      'VariableID:semantic', 'space/component', 'variable', 'fill', 'CollectionID:space',
+    );
+    first.path = 'Container/Icon A';
+    first.conditions = { type: ['Primary'], disabled: ['False'] };
+    const second = structuredClone(first);
+    second.path = 'Container/Icon B';
+    const differentCondition = structuredClone(first);
+    differentCondition.path = 'Container/Icon C';
+    differentCondition.conditions = { type: ['Primary'], disabled: ['True'] };
+    const artifact = buildComponentArtifactV5(
+      spec([first, second, differentCondition]), { ...META, foundation: foundation() },
+    );
+    const canonicalHash = artifact.spec_layer.export.content_hash;
+
+    expect(artifact.references.bindings.map((binding) => binding.path)).toEqual([
+      'Container/Icon A', 'Container/Icon B', 'Container/Icon C',
+    ]);
+    const ai = componentAiContext(artifact);
+    expect(ai.references.bindings).toEqual([
+      {
+        paths: ['Container/Icon A', 'Container/Icon B'],
+        property: 'fill', source_id: 'VariableID:semantic', kind: 'variable',
+        when: { type: ['Primary'], disabled: ['False'] },
+      },
+      {
+        path: 'Container/Icon C',
+        property: 'fill', source_id: 'VariableID:semantic', kind: 'variable',
+        when: { type: ['Primary'], disabled: ['True'] },
+      },
+    ]);
+    expect(artifact.references.bindings.map((binding) => binding.path)).toEqual([
+      'Container/Icon A', 'Container/Icon B', 'Container/Icon C',
+    ]);
+    expect(componentSemanticContentHash(artifact)).toBe(canonicalHash);
   });
 
   it('states no-foundation and unavailable references instead of resolving by name', () => {

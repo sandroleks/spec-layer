@@ -77,6 +77,8 @@ style projection for the dependency slice.
 - Carry component and dependency content hashes separately.
 - Keep component API, anatomy, layout, inline effects, hardcoded gaps,
   validation, and saved guidelines.
+- Group otherwise-identical clipboard rules under ordered `paths` while
+  retaining one exact `path` per canonical binding.
 - Embed Foundation dependency collections/styles through the existing compact
   v5 projection, forcing stable ids so references remain exactly joinable.
 
@@ -111,3 +113,5 @@ style projection for the dependency slice.
 7. Missing or external definitions are stated, never silently replaced.
 8. Existing component canvas hashes and legacy v4 golden output remain
    byte-for-byte unchanged.
+9. Repeated clipboard rules group paths only when property, source id, resource
+   kind, and minimized conditions are identical; grouping never moves hashes.

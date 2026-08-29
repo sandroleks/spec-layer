@@ -32,7 +32,9 @@ local alias/style dependency closure, validates the joins, and hashes only that
 scoped semantic payload. The AI profile carries the whole Foundation hash for
 conversation matching but embeds only the component's self-contained dependency
 slice. Anatomy and inline effect bindings retain exact path/source identities;
-saved AI guidelines and diagnostic wording remain outside the semantic hash.
+the compact projection groups otherwise-identical rules under ordered `paths`
+without changing canonical bindings or hashes. Saved AI guidelines and
+diagnostic wording remain outside the semantic hash.
 
 `unitContent(spec, scope)` returns everything one foundation document renders and nothing it does not: its collection name, group, mode columns, rows, the names of any modes left out, and the part numbering of a split unit. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline, and the property has to hold in both directions to be worth anything.
 

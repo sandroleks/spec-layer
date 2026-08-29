@@ -155,7 +155,12 @@ spec_layer:
   foundation_hash: sha256:...
 references:
   used: ...
-  bindings: ...
+  bindings:
+    - paths: [Container/iconLeft/Vector, Container/iconRight/Vector]
+      property: fill
+      source_id: VariableID:...
+      kind: variable
+      when: { disabled: ["True"] }
   foundation:
     dependency_hash: sha256:...
     completeness: ...
@@ -165,6 +170,10 @@ references:
 
 The embedded Foundation projection forces `source_id` on every dependency,
 while whole-Foundation Copy continues its quieter ambiguity-only id policy.
+Canonical bindings always retain one exact `path`. The AI projection emits
+that singular `path` when a rule occurs once and an ordered `paths` list when
+multiple bindings have identical property, source id, resource kind, and
+conditions. Grouping is presentation-only and cannot alter the component hash.
 Repeated diagnostics become `issue_counts`; actionable component validation
 retains its concise messages.
 

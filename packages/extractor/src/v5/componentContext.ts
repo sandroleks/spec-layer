@@ -68,6 +68,15 @@ export interface ComponentBindingV5 {
   when?: Record<string, string[]>;
 }
 
+type ComponentAiBindingFactsV5 = Omit<ComponentBindingV5, 'path'>;
+
+/** Clipboard-only binding shape. Canonical artifacts always retain one exact
+ * `path` per binding; the AI profile groups only otherwise-identical bindings. */
+export type ComponentAiBindingV5 = ComponentAiBindingFactsV5 & (
+  | { path: string; paths?: never }
+  | { paths: string[]; path?: never }
+);
+
 export interface ComponentReferenceSetV5 {
   used: ComponentReferenceV5[];
   bindings: ComponentBindingV5[];
@@ -151,7 +160,7 @@ export interface ComponentAiContextV5 {
   layout?: YamlValue;
   references: {
     used: ComponentReferenceV5[];
-    bindings: ComponentBindingV5[];
+    bindings: ComponentAiBindingV5[];
     foundation: YamlValue;
   };
   effects_inline?: YamlValue;
@@ -685,6 +694,31 @@ function componentIssueCounts(
   ));
 }
 
+/** Group repeated clipboard rules without changing their meaning or the
+ * canonical artifact. Group order follows the first binding occurrence and
+ * path order follows canonical binding order. */
+function compactComponentBindings(
+  bindings: ComponentBindingV5[],
+): ComponentAiBindingV5[] {
+  const groups = new Map<string, {
+    facts: ComponentAiBindingFactsV5;
+    paths: string[];
+  }>();
+  for (const binding of bindings) {
+    const { path, ...facts } = binding;
+    const key = canonicalJson(facts);
+    const group = groups.get(key);
+    if (group) {
+      group.paths.push(path);
+    } else {
+      groups.set(key, { facts, paths: [path] });
+    }
+  }
+  return [...groups.values()].map(({ facts, paths }) => paths.length === 1
+    ? { path: paths[0]!, ...facts }
+    : { paths, ...facts });
+}
+
 /** Compact clipboard projection of a finished canonical component artifact. */
 export function componentAiContext(
   artifact: ComponentArtifactV5,
@@ -756,7 +790,7 @@ export function componentAiContext(
     ...(artifact.layout !== undefined ? { layout: artifact.layout } : {}),
     references: {
       used: artifact.references.used,
-      bindings: artifact.references.bindings,
+      bindings: compactComponentBindings(artifact.references.bindings),
       foundation,
     },
     ...(artifact.effects_inline !== undefined
