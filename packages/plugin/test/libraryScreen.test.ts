@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { FoundationSelection, FoundationSpec } from '@spec-layer/extractor';
 import { foundationScrollMarkup } from '../src/ui/screens/foundations';
 import { ICON_PATHS } from '../src/ui/shell/icons';
+import type { PublishState } from '../src/ui/publish';
 import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
   libraryScrollMarkup,
+  publishSectionMarkup,
   rowMenuTop,
   type LibraryRowPresentation,
   type LibraryScreenPresentation,
@@ -522,5 +524,73 @@ describe('footer work status', () => {
     // The list's bottom clearance is what keeps the floating card off the last
     // row at the end of a scroll; it tracks the same footer height.
     expect(rule('.sl-library-list')).toMatch(/padding:\s*0 0 68px/);
+  });
+});
+
+describe('publish section', () => {
+  function publishState(overrides: Partial<PublishState> = {}): PublishState {
+    return {
+      status: 'idle',
+      message: null,
+      libraryId: null,
+      pullKey: null,
+      lastPublishedAt: null,
+      ...overrides,
+    };
+  }
+
+  it('renders the publish button and honest description when idle', () => {
+    const markup = publishSectionMarkup(publishState(), false);
+    expect(markup).toContain('<h2>Publish for developers</h2>');
+    expect(markup).toContain(
+      "Publishes this library's AI context so developers can pull it with the spec-layer CLI.",
+    );
+    expect(markup).toContain('Publishing replaces the previously published version.');
+    expect(markup).toContain('Anyone with the key can pull it.');
+    expect(markup).toContain('data-publish>Publish library</button>');
+    // No key yet, so no command box and no rotate action.
+    expect(markup).not.toContain('data-publish-copy-command');
+    expect(markup).not.toContain('data-publish-rotate');
+    expect(markup).not.toContain('—');
+  });
+
+  it('shows the setup command copy button and rotate action once a key exists', () => {
+    const markup = publishSectionMarkup(
+      publishState({ libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', pullKey: 'sl_' + 'b'.repeat(48) }),
+      false,
+    );
+    expect(markup).toContain('data-publish-copy-command');
+    expect(markup).toContain('Copy setup command');
+    expect(markup).toContain('data-publish-rotate');
+    expect(markup).toContain('Rotate key');
+    expect(markup).toContain('Rotating invalidates the current key for everyone.');
+    expect(markup).toContain(
+      'SPEC_LAYER_KEY=sl_' + 'b'.repeat(48) + ' npx spec-layer pull --id lib_aaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+  });
+
+  it('disables the publish button while collecting or uploading', () => {
+    expect(publishSectionMarkup(publishState({ status: 'collecting' }), true))
+      .toContain('data-publish disabled');
+    expect(publishSectionMarkup(publishState({ status: 'uploading' }), true))
+      .toContain('data-publish disabled');
+    expect(publishSectionMarkup(publishState(), false))
+      .not.toContain('data-publish disabled');
+  });
+
+  it('renders the error message when state.status is error', () => {
+    const markup = publishSectionMarkup(
+      publishState({ status: 'error', message: 'Publishing needs an active Pro license.' }),
+      false,
+    );
+    expect(markup).toContain('sl-publish-status is-error');
+    expect(markup).toContain('Publishing needs an active Pro license.');
+
+    const okMarkup = publishSectionMarkup(
+      publishState({ status: 'done', message: 'Published. Anyone with the key can pull this version.' }),
+      false,
+    );
+    expect(okMarkup).not.toContain('is-error');
+    expect(okMarkup).toContain('Published. Anyone with the key can pull this version.');
   });
 });

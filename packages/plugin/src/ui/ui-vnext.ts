@@ -40,7 +40,7 @@ import {
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { renderLibraryScreen } from './screens/library';
+import { renderLibraryScreen, publishSectionMarkup } from './screens/library';
 import { globalSearchMarkup } from './screens/search';
 import {
   applyGroupBulk,
@@ -109,6 +109,17 @@ import {
   isQuotaExhausted,
   licenseExternalUrl,
 } from './proxy';
+import { copyText, renderManualCopyModal } from './clipboard';
+import {
+  onPublishClick,
+  onPublishInfo,
+  onPublishSources,
+  onPublishSourcesError,
+  onRotateClick,
+  publishState,
+  setPublishHost,
+  setupCommand,
+} from './publish';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -154,6 +165,7 @@ let libraryMenuDocId: string | null = null;
 let libraryMenuRestore: HTMLElement | null = null;
 let libraryRefreshing = false;
 let libraryRequested = false;
+let publishInfoRequested = false;
 let componentProgressTimer: ReturnType<typeof setInterval> | null = null;
 let foundationProgressTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -209,6 +221,13 @@ setFoundationHost({
     }
   },
   stopProgress: stopFoundationProgress,
+});
+
+setPublishHost({
+  repaint: () => {
+    if (view === 'library') paint();
+  },
+  send,
 });
 
 /**
@@ -329,6 +348,14 @@ function paint(): void {
           updatingDocId: update?.currentDocId ?? null,
           progress,
         });
+        // Appended after renderLibraryScreen rebuilds the footer's innerHTML
+        // wholesale, so this never needs its own diffing: the publish
+        // controller owns this state independently of the row/filter model.
+        const pState = publishState();
+        refs.footer.insertAdjacentHTML(
+          'beforeend',
+          publishSectionMarkup(pState, pState.status === 'collecting' || pState.status === 'uploading'),
+        );
       }
       return;
     case 'license': {
@@ -357,6 +384,10 @@ function navigateToView(
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
   if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
+  if (view === 'library' && !publishInfoRequested) {
+    publishInfoRequested = true;
+    send({ type: 'requestPublishInfo' });
+  }
   if (view === 'settings' && !settingsFontsRequested) {
     settingsFontsRequested = true;
     send({ type: 'requestFonts' });
@@ -1319,6 +1350,32 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  if (target.closest('[data-publish]')) {
+    onPublishClick(
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+    );
+    return;
+  }
+
+  if (target.closest('[data-publish-copy-command]')) {
+    const { libraryId, pullKey } = publishState();
+    if (libraryId && pullKey) {
+      const command = setupCommand(libraryId, pullKey);
+      void copyText(command).then((tier) => {
+        if (tier === 'manual') renderManualCopyModal(command);
+        else nativeNotify('Copied.');
+      });
+    }
+    return;
+  }
+
+  if (target.closest('[data-publish-rotate]')) {
+    void onRotateClick(
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+    );
+    return;
+  }
+
   const libraryDisclosure = target.closest<HTMLButtonElement>('[data-library-disclosure]');
   if (libraryDisclosure?.dataset.libraryDisclosure) {
     const docId = libraryDisclosure.dataset.libraryDisclosure;
@@ -2246,6 +2303,21 @@ window.onmessage = (event: MessageEvent): void => {
       ) {
         finishLibraryOperation(msg.message);
       }
+      return;
+
+    case 'publishSources':
+      void onPublishSources(
+        msg,
+        effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      );
+      return;
+
+    case 'publishSourcesError':
+      onPublishSourcesError(msg.message);
+      return;
+
+    case 'publishInfo':
+      onPublishInfo(msg);
       return;
 
     case 'docDetached':

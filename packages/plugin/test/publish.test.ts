@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { SerializedFoundation } from '@spec-layer/extractor';
-import type { PublishComponentSource } from '../src/messages';
+import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
   buildPublishBundle, publishBundle, rotatePullKey, setupCommand,
-  type PublishSources,
+  type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
 
@@ -358,5 +358,237 @@ describe('setupCommand', () => {
   it('produces the exact one-liner', () => {
     expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48)))
       .toBe('SPEC_LAYER_KEY=sl_' + 'b'.repeat(48) + ' npx spec-layer pull --id lib_aaaaaaaaaaaaaaaaaaaaaaaa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Publish controller — module state driving the Library screen's "Publish for
+// developers" section. Each test starts from a fresh module instance
+// (vi.resetModules + a dynamic re-import) rather than a hand-rolled reset
+// helper, the same approach copyFoundation.test.ts uses for actions.ts: a
+// reset export would put test scaffolding in production code for one
+// assertion's sake.
+// ---------------------------------------------------------------------------
+
+describe('publish controller', () => {
+  const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  function sourcesMsg(overrides: Partial<PublishSourcesMsg> = {}): PublishSourcesMsg {
+    return {
+      type: 'publishSources',
+      foundation: null,
+      groupDescriptions: {},
+      components: [componentSource('doc-button', 'Button', '1:100', 'k-button')],
+      skipped: [],
+      fileKey: 'F1',
+      fileName: 'Design System',
+      ...overrides,
+    };
+  }
+
+  let publish: typeof import('../src/ui/publish');
+  let sent: UiToMain[];
+  let repaintCount: number;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    publish = await import('../src/ui/publish');
+    sent = [];
+    repaintCount = 0;
+    publish.setPublishHost({
+      repaint: () => { repaintCount += 1; },
+      send: (msg) => { sent.push(msg); },
+    });
+  });
+
+  it('onPublishClick moves to collecting and requests sources', () => {
+    publish.onPublishClick(AUTH);
+    expect(publish.publishState().status).toBe('collecting');
+    expect(publish.publishState().message).toBeNull();
+    expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+    expect(repaintCount).toBe(1);
+
+    // A second click while already collecting is a no-op: no extra request,
+    // no extra repaint, and the status is untouched.
+    publish.onPublishClick(AUTH);
+    expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+    expect(repaintCount).toBe(1);
+  });
+
+  it('blocks publish when sources arrive with skipped components', async () => {
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn();
+    await publish.onPublishSources(
+      sourcesMsg({ skipped: [{ name: 'Button', reason: 'missing binding' }] }),
+      AUTH,
+      fetcher,
+    );
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Nothing was published. 1 component could not be read: Button. Fix or remove those docs, then publish again.',
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(state.libraryId).toBeNull();
+    expect(state.pullKey).toBeNull();
+  });
+
+  it('publishes fresh sources and stores the new key', async () => {
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
+      expect('libraryId' in body).toBe(false);
+      return jsonResponse(201, {
+        libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
+      });
+    });
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('done');
+    expect(state.libraryId).toBe('lib_new');
+    expect(state.pullKey).toBe('sl_pull');
+    expect(state.lastPublishedAt).toBe('2026-09-01T00:00:01.000Z');
+    expect(state.message).toBe('Published. Anyone with the key can pull this version.');
+    expect(sent).toContainEqual({
+      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_new', pullKey: 'sl_pull',
+    });
+  });
+
+  it('republishes with the known libraryId', async () => {
+    publish.onPublishClick(AUTH);
+    const createFetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_existing', pullKey: 'sl_pull_1', publishedAt: '2026-09-01T00:00:01.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, createFetcher);
+    expect(publish.publishState().libraryId).toBe('lib_existing');
+
+    publish.onPublishClick(AUTH);
+    const updateFetcher = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
+      expect(body.libraryId).toBe('lib_existing');
+      return jsonResponse(200, { libraryId: 'lib_existing', publishedAt: '2026-09-01T00:00:02.000Z' });
+    });
+    await publish.onPublishSources(sourcesMsg(), AUTH, updateFetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('done');
+    expect(state.libraryId).toBe('lib_existing');
+    // The pull key never changes on an update: only a create or a rotate mint
+    // a new one.
+    expect(state.pullKey).toBe('sl_pull_1');
+    expect(state.message).toBe('Published. Developers get this version on their next pull.');
+    expect(updateFetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries as a fresh create when the republish target is gone', async () => {
+    publish.onPublishClick(AUTH);
+    const createFetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_old', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, createFetcher);
+    expect(publish.publishState().libraryId).toBe('lib_old');
+
+    publish.onPublishClick(AUTH);
+    let call = 0;
+    const fetcher = vi.fn(async (_url, init) => {
+      call += 1;
+      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
+      if (call === 1) {
+        expect(body.libraryId).toBe('lib_old');
+        return jsonResponse(404, {});
+      }
+      expect('libraryId' in body).toBe(false);
+      return jsonResponse(201, {
+        libraryId: 'lib_new', pullKey: 'sl_new', publishedAt: '2026-09-01T00:00:02.000Z',
+      });
+    });
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('done');
+    expect(state.libraryId).toBe('lib_new');
+    expect(state.pullKey).toBe('sl_new');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(sent.filter((msg) => msg.type === 'setPublishInfo')).toHaveLength(2);
+    expect(sent.at(-1)).toEqual({
+      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_new', pullKey: 'sl_new',
+    });
+  });
+
+  it('surfaces publish errors verbatim in state', async () => {
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async () => jsonResponse(500, {}));
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe('Publishing failed with HTTP 500.');
+  });
+
+  it('onPublishSourcesError sets an honest error, without touching any stored key', () => {
+    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_1', pullKey: 'sl_1' });
+    publish.onPublishSourcesError('the selection has no components');
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Could not read the library. Nothing was published. the selection has no components',
+    );
+    // A failed source read leaves any already-known library identity intact.
+    expect(state.libraryId).toBe('lib_1');
+    expect(state.pullKey).toBe('sl_1');
+  });
+
+  it('onPublishInfo seeds libraryId/pullKey only while idle', () => {
+    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_seed', pullKey: 'sl_seed' });
+    expect(publish.publishState().libraryId).toBe('lib_seed');
+    expect(publish.publishState().pullKey).toBe('sl_seed');
+    expect(repaintCount).toBeGreaterThan(0);
+
+    // Once a publish has started this session, a slow/stale publishInfo reply
+    // must not clobber what already happened.
+    publish.onPublishClick(AUTH);
+    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_other', pullKey: 'sl_other' });
+    expect(publish.publishState().libraryId).toBe('lib_seed');
+    expect(publish.publishState().pullKey).toBe('sl_seed');
+  });
+
+  it('onRotateClick replaces the stored key', async () => {
+    publish.onPublishClick(AUTH);
+    const createFetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_1', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, createFetcher);
+
+    const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_rotated' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    const state = publish.publishState();
+    expect(state.pullKey).toBe('sl_rotated');
+    expect(state.libraryId).toBe('lib_1');
+    expect(state.message).toBe(
+      'Key rotated. The old key no longer works. Share the new command with your developers.',
+    );
+    expect(sent).toContainEqual({
+      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_1', pullKey: 'sl_rotated',
+    });
+  });
+
+  it('onRotateClick surfaces a rotate failure without losing the current key', async () => {
+    publish.onPublishClick(AUTH);
+    const createFetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_1', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, createFetcher);
+
+    const rotateFetcher = vi.fn(async () => jsonResponse(401, {}));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe('Rotating the key needs an active Pro license.');
+    expect(state.pullKey).toBe('sl_old');
   });
 });
