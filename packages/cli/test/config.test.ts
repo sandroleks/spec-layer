@@ -108,6 +108,49 @@ describe('resolveOptions precedence', () => {
     const resultDefault = resolveOptions('/some/cwd', {}, {}, stub);
     expect(resultDefault.outDir).toBe(DEFAULT_OUT_DIR);
   });
+
+  it('config.libraryId beats manifest when no --id flag', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'from-config', outDir: '.speclayer' });
+      const manifestLibraryId = (_outDir: string) => 'from-manifest';
+      const result = resolveOptions(tmpDir, {}, {}, manifestLibraryId);
+      expect(result.libraryId).toBe('from-config');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--id flag still beats config', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'from-config', outDir: '.speclayer' });
+      const manifestLibraryId = (_outDir: string) => 'from-manifest';
+      const result = resolveOptions(tmpDir, { id: 'from-flag' }, {}, manifestLibraryId);
+      expect(result.libraryId).toBe('from-flag');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('config.outDir is passed to manifestLibraryId and resolved correctly', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      // Only set outDir in config, not libraryId, so manifestLibraryId gets called
+      writeConfig(tmpDir, { outDir: '.custom-output' });
+      let loaderCalledWith: string | null = null;
+      const manifestLibraryId = (outDir: string) => {
+        loaderCalledWith = outDir;
+        return 'from-manifest';
+      };
+      const result = resolveOptions(tmpDir, {}, {}, manifestLibraryId);
+      expect(result.outDir).toBe('.custom-output');
+      expect(result.libraryId).toBe('from-manifest');
+      expect(loaderCalledWith).toBe(join(tmpDir, '.custom-output'));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('config file round trip', () => {
@@ -136,6 +179,13 @@ describe('config file round trip', () => {
   it('readConfig throws a readable error on invalid json', () => {
     // Create a speclayer.json with invalid JSON
     writeFileSync(join(tmpDir, 'speclayer.json'), '{invalid json}');
+
+    expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
+  });
+
+  it('readConfig throws a readable error when config is not an object', () => {
+    // Create a speclayer.json with valid JSON that is not an object (array)
+    writeFileSync(join(tmpDir, 'speclayer.json'), '[]');
 
     expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
   });
