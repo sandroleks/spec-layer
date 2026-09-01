@@ -424,10 +424,14 @@ const PUBLISH_DESCRIPTION =
   'Publishing replaces the previously published version. Anyone with the key can pull it.';
 
 /**
- * "Publish for developers" footer section: a button that starts a publish,
- * the setup command once a library exists, and the last status line. Kept as
- * its own function (rather than folded into libraryFooterMarkup) since the
- * host appends it to the footer independently of the row/filter model.
+ * "Publish for developers" section: a button that starts a publish, the
+ * setup command once a library exists, and the last status line. Kept as its
+ * own function (rather than folded into libraryFooterMarkup) since the host
+ * appends it into the Library screen's scroll body, after the list,
+ * independently of the row/filter model — not into the footer. The footer
+ * (.sl-screen-footer) is a fixed-height band in the screen grid; a
+ * variable-height section rendered there would grow past that band on every
+ * Library visit and reflow the scroll viewport out from under the cursor.
  */
 export function publishSectionMarkup(state: PublishState, busy: boolean): string {
   const keySection = state.pullKey && state.libraryId

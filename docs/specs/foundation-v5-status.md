@@ -166,13 +166,16 @@ v5 by exact id and embeds a validated dependency closure. Delivery is also
 shipped: the plugin publishes a library's canonical v5 artifacts and their
 ai-profile YAML to `api.spec-layer.com`, and the `spec-layer` CLI (`init`,
 `pull`, `status`) writes them into a repo without re-deriving or re-validating
-v5 output. Remaining Phase 4 work is command tooling and external adoption:
-`validate`, `normalize`, and `diff` commands, consumer-facing fixture
-publication, CI integration beyond the current library tests, and the
-remaining real-source/manual gates. Keep command tooling outside the Figma
-sandbox and, when `validate`/`normalize`/`diff` land, put them in
-`packages/cli` reusing the canonical validator/hash implementation rather than
-creating a second interpretation of v5.
+v5 output. A republish always stamps a fresh export id and `generatedAt`, so
+`bundle.json` and `manifest.json` change on every re-pull even when the
+underlying content is unchanged, while the `ai` YAML files and the semantic
+content hashes stay stable. Remaining Phase 4 work is command tooling and
+external adoption: `validate`, `normalize`, and `diff` commands,
+consumer-facing fixture publication, CI integration beyond the current
+library tests, and the remaining real-source/manual gates. Keep command
+tooling outside the Figma sandbox and, when `validate`/`normalize`/`diff`
+land, put them in `packages/cli` reusing the canonical validator/hash
+implementation rather than creating a second interpretation of v5.
 
 ## Release invariants
 
