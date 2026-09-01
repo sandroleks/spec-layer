@@ -1,0 +1,12 @@
+{
+  "name": "spec-layer",
+  "version": "0.1.0",
+  "description": "Pull design-system context published by the Spec Layer Figma plugin",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "spec-layer": "dist/cli.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=22.0.0" },
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": { "esbuild": "^0.28.1" }
+}
