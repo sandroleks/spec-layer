@@ -47,12 +47,24 @@ export function writeBundleFiles(opts: {
         aiPath: 'ai/foundation.yaml',
       });
     }
-    const used = new Map<string, number>();
+    const usedSlugs = new Set<string>();
+    const nextSuffix = new Map<string, number>();
     for (const component of opts.bundle.components) {
       const base = slugify(component.name);
-      const count = (used.get(base) ?? 0) + 1;
-      used.set(base, count);
-      const aiPath = `ai/components/${count === 1 ? base : `${base}-${count}`}.yaml`;
+      let slug = base;
+      if (usedSlugs.has(slug)) {
+        let n = (nextSuffix.get(base) ?? 1) + 1;
+        slug = `${base}-${n}`;
+        while (usedSlugs.has(slug)) {
+          n += 1;
+          slug = `${base}-${n}`;
+        }
+        nextSuffix.set(base, n);
+      } else {
+        nextSuffix.set(base, 1);
+      }
+      usedSlugs.add(slug);
+      const aiPath = `ai/components/${slug}.yaml`;
       put(aiPath, component.ai);
       artifacts.push({
         kind: 'component', name: component.name,
