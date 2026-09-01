@@ -157,6 +157,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   values, confusable names, stable composite styles, publication state,
   property bindings, and effect binding drift.
 
+- Publish for developers: Pro users publish the library's Copy for AI context
+  to api.spec-layer.com from the Library screen; a new `spec-layer` CLI
+  (`npx spec-layer pull`) writes the canonical v5 bundle and per-artifact
+  ai-profile YAML into a repo, with `status` for freshness checks and key
+  rotation for revoking access.
+
 ### Security
 
 - License hardening: transient Lemon Squeezy errors (rate limits, 5xx,

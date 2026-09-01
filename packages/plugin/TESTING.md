@@ -209,6 +209,21 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 6. If the proxy is unreachable, the saved key remains and the UI reports a
    temporary verification problem rather than falsely marking it expired.
 
+## Publish and pull
+
+- [ ] Publish (Pro license, file with foundation + 2 component docs): Library
+      screen shows the setup command; response arrived in under 30s.
+- [ ] Pull: run the copied setup command in an empty directory; `.speclayer/`
+      contains bundle.json, manifest.json, ai/foundation.yaml, and one YAML per
+      component; the YAML matches what Copy for AI puts on the clipboard.
+- [ ] Republish after editing a token: `spec-layer status` exits 2 and names
+      the new publish time; `spec-layer pull` then `status` exits 0.
+- [ ] Rotate key: old command fails with the rotated-key message; new command
+      pulls.
+- [ ] Free license: publish shows the Pro copy and publishes nothing.
+- [ ] Broken source: delete a doc's source component, publish; the error names
+      the component and nothing was published.
+
 ## Settings, search, keyboard, and visuals
 
 1. Test every frame-theme preset. **Custom** reveals color and font controls;

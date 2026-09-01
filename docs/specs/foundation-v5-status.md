@@ -162,12 +162,17 @@ Still open:
 ## Phase 4 starting points
 
 Phase 4 component adoption is implemented: component Copy now joins Foundation
-v5 by exact id and embeds a validated dependency closure. Remaining Phase 4
-work is command tooling and external adoption: validation/normalization/diff
-commands, consumer-facing fixture publication, CI integration beyond the
-current library tests, and the remaining real-source/manual gates. Keep command
-tooling outside the Figma sandbox and reuse the canonical validator/hash
-implementation rather than creating a second interpretation of v5.
+v5 by exact id and embeds a validated dependency closure. Delivery is also
+shipped: the plugin publishes a library's canonical v5 artifacts and their
+ai-profile YAML to `api.spec-layer.com`, and the `spec-layer` CLI (`init`,
+`pull`, `status`) writes them into a repo without re-deriving or re-validating
+v5 output. Remaining Phase 4 work is command tooling and external adoption:
+`validate`, `normalize`, and `diff` commands, consumer-facing fixture
+publication, CI integration beyond the current library tests, and the
+remaining real-source/manual gates. Keep command tooling outside the Figma
+sandbox and, when `validate`/`normalize`/`diff` land, put them in
+`packages/cli` reusing the canonical validator/hash implementation rather than
+creating a second interpretation of v5.
 
 ## Release invariants
 

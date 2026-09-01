@@ -1,6 +1,6 @@
 # Architecture
 
-Spec Layer is an npm-workspaces monorepo with three runtime areas: the pure extractor, the Figma plugin, and the AI proxy.
+Spec Layer is an npm-workspaces monorepo with three runtime areas: the pure extractor, the Figma plugin, and the AI proxy. A fourth workspace, the `spec-layer` CLI, delivers what the plugin publishes; it holds no extraction or serialization logic of its own.
 
 ## Data Flow
 
@@ -84,6 +84,71 @@ image URLs and caller-defined Anthropic options are rejected. Durable Objects
 serialize quota updates per hashed identity. Per-isolate IP throttles blunt
 simple abuse, while deployment-level rate rules remain the production
 backstop.
+
+`packages/proxy/src/libraries.ts` adds three Pro-only `/v1/libraries` routes
+that store and serve a published library bundle without ever deriving it: the
+proxy is a blind blob store keyed by license identity, not a second
+implementation of v5 extraction.
+
+- `POST /v1/libraries` (Pro license required): publishes a bundle. Omitting
+  `libraryId` creates a new library, checked against a per-license cap of
+  `LIBRARY_LIMIT` (10); a returned 201 carries the only copy of the pull key
+  the server ever hands back (`sl_` + 24 random bytes as hex). Passing an
+  owned `libraryId` overwrites it in place (200) and does not return a key,
+  since the key does not change. The bundle body is capped at
+  `MAX_BUNDLE_CHARS` (5,000,000 characters).
+- `GET /v1/libraries/:libraryId` (pull key required, `Authorization: Bearer
+  sl_...`): returns the stored bundle verbatim, with `ETag` and
+  `X-Published-At` headers; an `If-None-Match` matching the current
+  `bundleHash` gets a bare 304.
+- `POST /v1/libraries/:libraryId/rotate` (Pro license required, caller must
+  own the library): issues a new pull key and invalidates the old one
+  immediately.
+
+KV layout, all under the `libraryStore` binding:
+
+- `lib:<libraryId>:meta` — a `LibraryMeta` JSON record: `keyHash` (sha256 of
+  the pull key; the key itself is never stored), `licenseId`, `publishedAt`,
+  `bundleHash`, `size`, `fileName`.
+- `lib:<libraryId>:bundle` — the published bundle JSON, served as-is to a
+  pull request.
+- `libowner:<licenseId>` — a JSON array of `libraryId`s that license has
+  published, used to enforce `LIBRARY_LIMIT`.
+
+**Transport invariant:** the plugin's publish step assembles the bundle
+through the same extractor calls Copy for AI uses (`buildFoundationArtifactV5`
+/ `buildComponentArtifactV5` plus their `*AiContext` projections), so every
+published bundle carries both the canonical v5 artifact and its ai-profile
+YAML side by side. The proxy stores and returns that bundle unmodified, and
+the `spec-layer` CLI only parses and writes it to disk — neither ever
+re-derives, re-validates, or re-projects v5 output from source data.
+
+### `spec-layer` (`packages/cli/`)
+
+A pull-only delivery CLI published to npm as `spec-layer` (`npx spec-layer
+pull`), not a workspace dependency of the extractor or the plugin. It has zero
+runtime dependencies and no dependency on `@spec-layer/extractor`: it treats
+the bundle it receives as opaque JSON with a known shape (`parseBundle` checks
+structure only) and never touches Figma or extraction code. Three commands:
+
+- `init --id lib_...` writes `speclayer.json` (library id, output directory)
+  so later commands need no flags.
+- `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
+  to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, one
+  `ai/foundation.yaml` when the library has a Foundation, one
+  `ai/components/<slug>.yaml` per component (collision-safe slugs), and a
+  `manifest.json` indexing every artifact by content hash and ai-file path.
+  Writes stage into `<outDir>.partial` and rename into place, so a failed pull
+  never leaves a half-written directory.
+- `status` re-requests the bundle with the manifest's stored hash as an
+  `If-None-Match` etag: a 304 means up to date (exit 0); a fresh body means
+  the local pull is behind (exit 2) without writing anything, leaving `pull`
+  to do the actual update.
+
+The pull key is never written to disk; every command reads it from
+`SPEC_LAYER_KEY` or `--key`. The setup command the plugin shows after
+publishing (`SPEC_LAYER_KEY=<key> npx spec-layer pull --id <libraryId>`)
+is the only place the key and the library id are meant to travel together.
 
 ## Storage
 
