@@ -348,11 +348,20 @@ function paint(): void {
           updatingDocId: update?.currentDocId ?? null,
           progress,
         });
-        // Appended after renderLibraryScreen rebuilds the footer's innerHTML
-        // wholesale, so this never needs its own diffing: the publish
-        // controller owns this state independently of the row/filter model.
+        // Appended into the SCROLL body, after renderLibraryScreen rebuilds
+        // its innerHTML wholesale, so this never needs its own diffing: the
+        // publish controller owns this state independently of the row/filter
+        // model. Deliberately NOT appended to refs.footer: .sl-screen-footer
+        // is a fixed-height band in the screen grid's content-sized row (see
+        // .sl-footer-progress in patterns.css for the exact bug class), and a
+        // variable-height section rendered unconditionally there would grow
+        // it past that fixed band on every Library visit, shrinking the
+        // scroll viewport and reflowing the whole list out from under the
+        // cursor. Flowing after the list inside .sl-screen-scroll instead
+        // means its height is free to vary with state without touching the
+        // footer or the list above it.
         const pState = publishState();
-        refs.footer.insertAdjacentHTML(
+        refs.scroll.insertAdjacentHTML(
           'beforeend',
           publishSectionMarkup(pState, pState.status === 'collecting' || pState.status === 'uploading'),
         );

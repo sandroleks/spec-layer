@@ -593,4 +593,26 @@ describe('publish section', () => {
     expect(okMarkup).not.toContain('is-error');
     expect(okMarkup).toContain('Published. Anyone with the key can pull this version.');
   });
+
+  // Regression coverage for the layout bug this section used to cause: it was
+  // appended into .sl-screen-footer, a fixed-height band in the screen
+  // grid's content-sized row, which grew past that band on every Library
+  // visit and shrank the scroll viewport (see patterns.css's
+  // .sl-footer-progress comment for the exact bug class). ui-vnext.ts now
+  // appends publishSectionMarkup's output into the SCROLL body instead
+  // (refs.scroll, after the row list) — that DOM wiring lives outside this
+  // module's pure markup functions and outside jsdom-free unit tests, so it
+  // isn't asserted here directly. What IS cheaply testable from these pure
+  // functions is that neither footer/scroll markup builder ever embeds the
+  // section itself, so a future edit can't silently reintroduce it into the
+  // footer's own string.
+  it('is never part of libraryFooterMarkup\'s or libraryScrollMarkup\'s own output', () => {
+    const footer = libraryFooterMarkup(model());
+    expect(footer).not.toContain('sl-publish-section');
+    expect(footer).not.toContain('data-publish');
+
+    const scroll = libraryScrollMarkup(model());
+    expect(scroll).not.toContain('sl-publish-section');
+    expect(scroll).not.toContain('data-publish');
+  });
 });
