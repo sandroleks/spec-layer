@@ -8,7 +8,6 @@
 
 import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
-import { setupCommand, type PublishState } from '../publish';
 import type {
   LibraryFilter,
   LibraryModel,
@@ -409,6 +408,15 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   return (
     progress +
     '<div class="sl-footer-actions">' +
+    /*
+     * Never disabled, unlike the two beside it. It navigates: it opens the
+     * Publish for developers screen and starts nothing, so a refresh or a
+     * batch update in flight is no reason to withhold it, and the publish
+     * screen's own primary is what disables itself while publishing.
+     */
+    '<button class="sl-button sl-library-publish" data-tone="secondary" ' +
+    'type="button" data-publish-open>' +
+    `${icon('upload', 15)}<span>Publish</span></button>` +
     '<button class="sl-button sl-library-refresh" data-tone="secondary" ' +
     `type="button" data-library-refresh${busy ? ' disabled' : ''}>` +
     `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
@@ -416,50 +424,6 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
     `${icon('fileCheck', 15)}<span>${batchLabel}</span></button>` +
     '</div>'
-  );
-}
-
-const PUBLISH_DESCRIPTION =
-  "Publishes this library's AI context so developers can pull it with the spec-layer CLI. " +
-  'Publishing replaces the previously published version. Anyone with the key can pull it.';
-
-/**
- * "Publish for developers" section: a button that starts a publish, the
- * setup command once a library exists, and the last status line. Kept as its
- * own function (rather than folded into libraryFooterMarkup) since the host
- * appends it into the Library screen's scroll body, after the list,
- * independently of the row/filter model — not into the footer. The footer
- * (.sl-screen-footer) is a fixed-height band in the screen grid; a
- * variable-height section rendered there would grow past that band on every
- * Library visit and reflow the scroll viewport out from under the cursor.
- */
-export function publishSectionMarkup(state: PublishState, busy: boolean): string {
-  const keySection = state.pullKey && state.libraryId
-    ? (
-      '<div class="sl-publish-command">' +
-      `<code>${esc(setupCommand(state.libraryId, state.pullKey))}</code>` +
-      '</div>' +
-      '<div class="sl-publish-command-actions">' +
-      '<button class="sl-button" data-tone="secondary" type="button" ' +
-      'data-publish-copy-command>Copy setup command</button>' +
-      '<button class="sl-button" data-tone="secondary" type="button" ' +
-      'data-publish-rotate>Rotate key</button>' +
-      '</div>' +
-      '<p class="sl-publish-hint">Rotating invalidates the current key for everyone.</p>'
-    )
-    : '';
-  const statusLine = state.message
-    ? `<p class="sl-publish-status${state.status === 'error' ? ' is-error' : ''}">${esc(state.message)}</p>`
-    : '';
-  return (
-    '<section class="sl-publish-section">' +
-    '<h2>Publish for developers</h2>' +
-    `<p>${PUBLISH_DESCRIPTION}</p>` +
-    '<button class="sl-button" type="button" ' +
-    `data-publish${busy ? ' disabled' : ''}>Publish library</button>` +
-    keySection +
-    statusLine +
-    '</section>'
   );
 }
 

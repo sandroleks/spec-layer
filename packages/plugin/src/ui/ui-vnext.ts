@@ -40,7 +40,8 @@ import {
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { renderLibraryScreen, publishSectionMarkup } from './screens/library';
+import { renderLibraryScreen } from './screens/library';
+import { renderPublishScreen } from './screens/publish';
 import { globalSearchMarkup } from './screens/search';
 import {
   applyGroupBulk,
@@ -160,6 +161,17 @@ const libraryBaseline = new Map<string, string>();
 // hash comparison against a doc built by an older extractor is meaningless.
 const libraryExtractorVersion = new Map<string, string | undefined>();
 let libraryFilter: LibraryFilter = 'all';
+/**
+ * Which of the Library's two screens is showing.
+ *
+ * Library-local rather than a sixth PluginView: the rail is a closed set of
+ * five workflow destinations and sidebar.ts holds an exhaustive
+ * Record<PluginView, IconName>, so a 'publish' view would have to claim a rail
+ * slot beside Component, Foundations, and Library. Publishing is not their
+ * peer, it is something you do to the library you are looking at. Keeping
+ * `view` at 'library' also keeps the rail correctly highlighted for free.
+ */
+let libraryPane: 'list' | 'publish' = 'list';
 let libraryExpandedDocId: string | null = null;
 let libraryMenuDocId: string | null = null;
 let libraryMenuRestore: HTMLElement | null = null;
@@ -317,6 +329,10 @@ function paint(): void {
       return;
     case 'library':
       {
+        if (libraryPane === 'publish') {
+          renderPublishScreen(refs, publishState());
+          return;
+        }
         const model = currentLibraryModel();
         const update = libraryOperation?.kind === 'update' ? libraryOperation : null;
         const pendingChecks = model.allRows.some((row) => row.status === 'pending');
@@ -348,23 +364,6 @@ function paint(): void {
           updatingDocId: update?.currentDocId ?? null,
           progress,
         });
-        // Appended into the SCROLL body, after renderLibraryScreen rebuilds
-        // its innerHTML wholesale, so this never needs its own diffing: the
-        // publish controller owns this state independently of the row/filter
-        // model. Deliberately NOT appended to refs.footer: .sl-screen-footer
-        // is a fixed-height band in the screen grid's content-sized row (see
-        // .sl-footer-progress in patterns.css for the exact bug class), and a
-        // variable-height section rendered unconditionally there would grow
-        // it past that fixed band on every Library visit, shrinking the
-        // scroll viewport and reflowing the whole list out from under the
-        // cursor. Flowing after the list inside .sl-screen-scroll instead
-        // means its height is free to vary with state without touching the
-        // footer or the list above it.
-        const pState = publishState();
-        refs.scroll.insertAdjacentHTML(
-          'beforeend',
-          publishSectionMarkup(pState, pState.status === 'collecting' || pState.status === 'uploading'),
-        );
       }
       return;
     case 'license': {
@@ -392,6 +391,10 @@ function navigateToView(
   closeFontMenu();
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
+  // Arriving at the Library always lands on the list. Leaving the publish
+  // screen by the rail and coming back to a stale publish screen would hide
+  // the documents behind a screen the user did not ask for again.
+  if (view === 'library') libraryPane = 'list';
   if (view === 'library' && options.refreshLibrary !== false) refreshLibrary();
   if (view === 'library' && !publishInfoRequested) {
     publishInfoRequested = true;
@@ -1216,6 +1219,22 @@ function toggle<T>(set: Set<T>, value: T): void {
   else set.add(value);
 }
 
+/**
+ * Cross between the Library's list and its publish screen.
+ *
+ * Not paintAndFocus: that restores the scrollTop it captured, which belongs to
+ * the pane being left, so the screen being opened would arrive already
+ * scrolled by an unrelated amount. Any open row menu is dropped too, since it
+ * is positioned against a list that is about to stop being rendered.
+ */
+function setLibraryPane(next: 'list' | 'publish', focusSelector: string): void {
+  libraryPane = next;
+  libraryMenuDocId = null;
+  libraryMenuRestore = null;
+  paint();
+  document.querySelector<HTMLElement>(focusSelector)?.focus({ preventScroll: true });
+}
+
 function paintAndFocus(selector: string): void {
   const scrollTop = refs.scroll.scrollTop;
   paint();
@@ -1356,6 +1375,16 @@ document.addEventListener('click', (event) => {
         .map((row) => row.docId),
       true,
     );
+    return;
+  }
+
+  if (target.closest('[data-publish-open]')) {
+    setLibraryPane('publish', '[data-publish-back]');
+    return;
+  }
+
+  if (target.closest('[data-publish-back]')) {
+    setLibraryPane('list', '[data-publish-open]');
     return;
   }
 
@@ -1909,6 +1938,21 @@ document.addEventListener('keydown', (event) => {
       const current = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
       items[nextSearchIndex(current, event.key, items.length)]?.focus();
     }
+    return;
+  }
+
+  /*
+   * Escape backs out of the publish screen.
+   *
+   * Last of the Escape handlers on purpose. The modal, global search, the font
+   * menu, and an open row menu each claim Escape first and return, so this
+   * only ever sees the key when nothing is layered over the screen. The row
+   * menu cannot be open here anyway (setLibraryPane drops it), but ordering
+   * this by luck rather than by structure is how that stops being true.
+   */
+  if (event.key === 'Escape' && view === 'library' && libraryPane === 'publish') {
+    event.preventDefault();
+    setLibraryPane('list', '[data-publish-open]');
   }
 });
 

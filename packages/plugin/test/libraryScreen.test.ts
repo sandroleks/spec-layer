@@ -3,12 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { FoundationSelection, FoundationSpec } from '@spec-layer/extractor';
 import { foundationScrollMarkup } from '../src/ui/screens/foundations';
 import { ICON_PATHS } from '../src/ui/shell/icons';
-import type { PublishState } from '../src/ui/publish';
 import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
   libraryScrollMarkup,
-  publishSectionMarkup,
   rowMenuTop,
   type LibraryRowPresentation,
   type LibraryScreenPresentation,
@@ -300,7 +298,9 @@ describe('library screen presentation', () => {
       // same one. It used to swap refresh/alertCircle/check as the state moved.
       expect(state.split('sl-library-update-all')[1]).toContain(ICON_PATHS.fileCheck);
       expect(state).not.toContain(ICON_PATHS.alertCircle);
-      expect(state.match(/<svg/g)).toHaveLength(2);
+      // Three actions now: Publish, Refresh library, Update all docs. Each
+      // draws exactly one glyph, in every state.
+      expect(state.match(/<svg/g)).toHaveLength(3);
     }
   });
 
@@ -527,92 +527,79 @@ describe('footer work status', () => {
   });
 });
 
-describe('publish section', () => {
-  function publishState(overrides: Partial<PublishState> = {}): PublishState {
-    return {
-      status: 'idle',
-      message: null,
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      ...overrides,
-    };
-  }
+describe('library footer publish action', () => {
+  const STATES: Array<[string, Partial<LibraryScreenPresentation>]> = [
+    ['idle', {}],
+    ['refreshing', { refreshing: true }],
+    ['updating all', { updatingAll: true }],
+    ['checks incomplete', { checksIncomplete: true }],
+    ['nothing to update', { rows: [], allRows: [] }],
+  ];
 
-  it('renders the publish button and honest description when idle', () => {
-    const markup = publishSectionMarkup(publishState(), false);
-    expect(markup).toContain('<h2>Publish for developers</h2>');
-    expect(markup).toContain(
-      "Publishes this library's AI context so developers can pull it with the spec-layer CLI.",
-    );
-    expect(markup).toContain('Publishing replaces the previously published version.');
-    expect(markup).toContain('Anyone with the key can pull it.');
-    expect(markup).toContain('data-publish>Publish library</button>');
-    // No key yet, so no command box and no rotate action.
-    expect(markup).not.toContain('data-publish-copy-command');
-    expect(markup).not.toContain('data-publish-rotate');
-    expect(markup).not.toContain('—');
+  it('offers a way to the publish screen in every state', () => {
+    for (const [, overrides] of STATES) {
+      const footer = libraryFooterMarkup(model(overrides));
+      expect(footer).toContain('data-publish-open');
+      expect(footer).toContain('<span>Publish</span>');
+    }
   });
 
-  it('shows the setup command copy button and rotate action once a key exists', () => {
-    const markup = publishSectionMarkup(
-      publishState({ libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', pullKey: 'sl_' + 'b'.repeat(48) }),
-      false,
-    );
-    expect(markup).toContain('data-publish-copy-command');
-    expect(markup).toContain('Copy setup command');
-    expect(markup).toContain('data-publish-rotate');
-    expect(markup).toContain('Rotate key');
-    expect(markup).toContain('Rotating invalidates the current key for everyone.');
-    expect(markup).toContain(
-      'SPEC_LAYER_KEY=sl_' + 'b'.repeat(48) + ' npx spec-layer pull --id lib_aaaaaaaaaaaaaaaaaaaaaaaa',
-    );
+  /**
+   * It navigates rather than publishing, so nothing in flight is a reason to
+   * withhold it. The publish screen's own primary is what disables itself
+   * while a publish runs.
+   */
+  it('is never disabled, even while the other two are', () => {
+    for (const [label, overrides] of STATES) {
+      const footer = libraryFooterMarkup(model(overrides));
+      const button = /<button[^>]*data-publish-open[^>]*>/.exec(footer)?.[0] ?? '';
+      expect(button, label).not.toContain('disabled');
+    }
+    // Guard the guard: the state above really does disable its neighbours.
+    expect(libraryFooterMarkup(model({ refreshing: true })))
+      .toContain('data-library-refresh disabled');
   });
 
-  it('disables the publish button while collecting or uploading', () => {
-    expect(publishSectionMarkup(publishState({ status: 'collecting' }), true))
-      .toContain('data-publish disabled');
-    expect(publishSectionMarkup(publishState({ status: 'uploading' }), true))
-      .toContain('data-publish disabled');
-    expect(publishSectionMarkup(publishState(), false))
-      .not.toContain('data-publish disabled');
-  });
-
-  it('renders the error message when state.status is error', () => {
-    const markup = publishSectionMarkup(
-      publishState({ status: 'error', message: 'Publishing needs an active Pro license.' }),
-      false,
-    );
-    expect(markup).toContain('sl-publish-status is-error');
-    expect(markup).toContain('Publishing needs an active Pro license.');
-
-    const okMarkup = publishSectionMarkup(
-      publishState({ status: 'done', message: 'Published. Anyone with the key can pull this version.' }),
-      false,
-    );
-    expect(okMarkup).not.toContain('is-error');
-    expect(okMarkup).toContain('Published. Anyone with the key can pull this version.');
-  });
-
-  // Regression coverage for the layout bug this section used to cause: it was
-  // appended into .sl-screen-footer, a fixed-height band in the screen
-  // grid's content-sized row, which grew past that band on every Library
-  // visit and shrank the scroll viewport (see patterns.css's
-  // .sl-footer-progress comment for the exact bug class). ui-vnext.ts now
-  // appends publishSectionMarkup's output into the SCROLL body instead
-  // (refs.scroll, after the row list) — that DOM wiring lives outside this
-  // module's pure markup functions and outside jsdom-free unit tests, so it
-  // isn't asserted here directly. What IS cheaply testable from these pure
-  // functions is that neither footer/scroll markup builder ever embeds the
-  // section itself, so a future edit can't silently reintroduce it into the
-  // footer's own string.
-  it('is never part of libraryFooterMarkup\'s or libraryScrollMarkup\'s own output', () => {
+  /**
+   * One button, one glyph, naming the act (button-icon contract in
+   * design-system/components.css). Three buttons now share this row, so no two
+   * may claim the same pictogram: circular arrows are Refresh's, the checked
+   * page is Update all docs', and the arrow out of a tray is publishing's.
+   */
+  it('wears a glyph no other button in the row claims', () => {
     const footer = libraryFooterMarkup(model());
-    expect(footer).not.toContain('sl-publish-section');
-    expect(footer).not.toContain('data-publish');
+    expect(footer).toContain(ICON_PATHS.upload);
+    expect(footer.split(ICON_PATHS.upload).length - 1).toBe(1);
+    expect(refreshArrows(footer)).toBe(1);
+    expect(footer.split(ICON_PATHS.fileCheck).length - 1).toBe(1);
+    // Three actions, three glyphs, no repeats.
+    expect(footer.split('<svg').length - 1).toBe(3);
+  });
 
-    const scroll = libraryScrollMarkup(model());
-    expect(scroll).not.toContain('sl-publish-section');
-    expect(scroll).not.toContain('data-publish');
+  /**
+   * Regression coverage for where this content used to live. The section that
+   * held the description, the setup command, and the publish button was
+   * appended into the Library's scroll body after the row list, having first
+   * been tried in .sl-screen-footer, which is a fixed-height band in the
+   * screen grid (see patterns.css's .sl-footer-progress comment for the bug
+   * class). Both are now the publish screen's problem, and neither Library
+   * markup builder should ever grow that content back.
+   */
+  it('keeps the publish CONTENT out of the library screen entirely', () => {
+    for (const markup of [libraryFooterMarkup(model()), libraryScrollMarkup(model())]) {
+      expect(markup).not.toContain('sl-publish-section');
+      expect(markup).not.toContain('sl-publish-body');
+      expect(markup).not.toContain('sl-publish-command');
+      expect(markup).not.toContain('data-publish-copy-command');
+      expect(markup).not.toContain('data-publish-rotate');
+      // The act itself belongs to the publish screen's footer primary.
+      expect(markup).not.toContain('data-publish>');
+      expect(markup).not.toContain('data-publish ');
+    }
+    expect(libraryScrollMarkup(model())).not.toContain('data-publish-open');
+  });
+
+  it('keeps the plugin voice in the new label', () => {
+    expect(libraryFooterMarkup(model())).not.toContain('—');
   });
 });
