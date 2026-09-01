@@ -31,7 +31,7 @@ import { copyText, renderManualCopyModal } from './clipboard';
 
 declare const __PLUGIN_VERSION__: string;
 
-const pluginBuild = (): string | null =>
+export const pluginBuild = (): string | null =>
   typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : null;
 
 // ---------------------------------------------------------------------------
@@ -660,7 +660,7 @@ async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promis
   }
 }
 
-function generatedGuidelines(
+export function generatedGuidelines(
   descriptions: Record<string, Record<string, string>>,
 ): FoundationGuidelinesV5 | undefined {
   const nonEmpty = Object.fromEntries(
