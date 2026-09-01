@@ -91,21 +91,22 @@ export function publishScrollMarkup(state: PublishState): string {
       '<div class="sl-publish-command-actions">' +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-publish-copy-command>Copy setup command</button>' +
-      '</div>' +
       /*
-       * Rotating is not a peer of copying. One is the action you take every
-       * time; the other cuts off every developer already pulling this library.
-       * Side by side in matching secondary buttons they read as equals, so
-       * this borrows the treatment license.ts gives "Remove key from this
-       * device": quiet tone, danger colour, its own consequence beneath it
-       * rather than a warning stranded under both buttons.
+       * Copying is the action taken every time; rotating cuts off every
+       * developer already pulling this library. Both are real buttons in one
+       * row, so the weighting is carried by colour rather than by placement:
+       * `is-danger` sets only the label colour, which composes with the
+       * secondary tone's surface and border instead of replacing them the way
+       * `data-tone="danger"` would. Second in the row, since copy is what the
+       * user came for.
        */
-      '<div class="sl-publish-rotate">' +
-      '<button class="sl-button is-danger" data-tone="quiet" type="button" ' +
+      '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
       'data-publish-rotate>Rotate key</button>' +
-      '<p class="sl-publish-hint">Invalidates the current key for everyone ' +
-      'using it.</p>' +
       '</div>' +
+      // Names the action, since it sits under a row of two: the consequence
+      // belongs to rotating, not to the copy button beside it.
+      '<p class="sl-publish-hint">Rotating invalidates the current key for ' +
+      'everyone using it.</p>' +
       '</section>'
     )
     : '';

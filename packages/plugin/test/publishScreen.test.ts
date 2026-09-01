@@ -110,23 +110,39 @@ describe('publish screen body', () => {
   });
 
   /**
-   * Copying is the action you take every time; rotating cuts off every
-   * developer already pulling this library. Rendering both as matching
-   * secondary buttons made them read as equals, and the consequence was
-   * stranded in one line under the pair. This mirrors what license.ts does for
-   * "Remove key from this device".
+   * Rotating sits beside copying as a real button, flagged by colour rather
+   * than by placement. `is-danger` sets only the label colour, so it composes
+   * with the secondary tone's surface and border; `data-tone="danger"` would
+   * replace them with a filled red block and out-shout the footer's primary.
    */
-  it('demotes rotating below copying and attaches its consequence', () => {
+  it('puts rotate beside copy as a secondary button in danger colour', () => {
     const markup = publishScrollMarkup(PUBLISHED);
     const copy = /<button[^>]*data-publish-copy-command[^>]*>/.exec(markup)?.[0] ?? '';
     const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(markup)?.[0] ?? '';
     expect(copy).toContain('data-tone="secondary"');
-    expect(rotate).toContain('data-tone="quiet"');
+    expect(rotate).toContain('data-tone="secondary"');
     expect(rotate).toContain('is-danger');
-    // The consequence follows the rotate button, not the pair of buttons.
-    expect(markup.indexOf('Invalidates the current key for everyone using it.'))
+    expect(rotate).not.toContain('data-tone="danger"');
+    // Both live in the one actions row, copy first.
+    const row = /<div class="sl-publish-command-actions">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
+    expect(row).toContain('data-publish-copy-command');
+    expect(row).toContain('data-publish-rotate');
+    expect(row.indexOf('data-publish-copy-command'))
+      .toBeLessThan(row.indexOf('data-publish-rotate'));
+  });
+
+  /**
+   * The hint sits under a row of two buttons, so it has to name the action it
+   * belongs to. Unnamed it reads as a consequence of the pair, and copying a
+   * command invalidates nothing.
+   */
+  it('names rotating in the consequence under the two-button row', () => {
+    const markup = publishScrollMarkup(PUBLISHED);
+    expect(markup).toContain(
+      'Rotating invalidates the current key for everyone using it.',
+    );
+    expect(markup.indexOf('sl-publish-hint'))
       .toBeGreaterThan(markup.indexOf('data-publish-rotate'));
-    expect(markup).toContain('sl-publish-rotate');
   });
 
   /**
@@ -335,13 +351,5 @@ describe('publish screen styling', () => {
     expect(margin).toContain('--sl-line-height-tight');
     expect(margin).toContain('--sl-control-sm');
     expect(margin).not.toMatch(/\d+px/);
-  });
-
-  /** A quiet button paints no background, so its label is what must align. */
-  it('pulls the quiet rotate button back onto the body column', () => {
-    const escaped = new RegExp(
-      '\\n\\.sl-publish-rotate > \\.sl-button\\s*\\{([^}]*)\\}',
-    ).exec(css)?.[1] ?? '';
-    expect(escaped).toMatch(/margin-left:\s*calc\(var\(--sl-space-12\) \* -1\)/);
   });
 });

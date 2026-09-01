@@ -188,10 +188,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   of three sentences above it, and names what a publish actually sends: the
   foundation document and every connected component document. The setup command
   now wraps so the whole command is visible, rather than scrolling the `npx
-  spec-layer pull` half out of sight behind a scrollbar. **Rotate key** is no
-  longer a peer of **Copy setup command**: it reads as the destructive action it
-  is, with its consequence attached to it. Before the first publish, the screen
-  says where the key will come from.
+  spec-layer pull` half out of sight behind a scrollbar. **Rotate key** sits
+  beside **Copy setup command** as a secondary button in the danger colour, so
+  it reads as the destructive action it is without being buried, and the line
+  beneath the two now names rotating rather than appearing to describe both.
+  Before the first publish, the screen says where the key will come from.
 - Plugin **Upgrade to Pro** and **Renew Pro** actions now open the live,
   product-specific Lemon Squeezy checkout instead of the broken generic
   checkout/store routes.

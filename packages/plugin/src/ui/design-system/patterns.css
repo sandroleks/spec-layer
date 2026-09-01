@@ -1204,21 +1204,6 @@
   margin-top: var(--sl-space-8);
 }
 
-/* Separated from Copy setup command: this is a consequence, not a peer. */
-.sl-publish-rotate {
-  margin-top: var(--sl-space-14);
-}
-
-/*
- * A quiet button paints no background, so the eye aligns its TEXT with the
- * column, not its box. Left at the box edge, the label sat one button padding
- * (12px) inside every heading and paragraph above it. Pulling the box out by
- * that padding lines the label up while keeping the hover target full size.
- */
-.sl-publish-rotate > .sl-button {
-  margin-left: calc(var(--sl-space-12) * -1);
-}
-
 /*
  * Back control, before .sl-page-header-copy, centred on the TITLE'S LINE rather
  * than on the header's top edge.
