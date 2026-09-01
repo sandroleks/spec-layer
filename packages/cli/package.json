@@ -4,9 +4,33 @@
   "description": "Pull design-system context published by the Spec Layer Figma plugin",
   "license": "MIT",
   "type": "module",
-  "bin": { "spec-layer": "dist/cli.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=22.0.0" },
-  "scripts": { "build": "node build.mjs" },
-  "devDependencies": { "esbuild": "^0.28.1" }
+  "bin": {
+    "spec-layer": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SamsonHD/spec-layer.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://spec-layer.com",
+  "keywords": [
+    "figma",
+    "design-system",
+    "design-tokens",
+    "documentation",
+    "ai-context"
+  ]
 }
