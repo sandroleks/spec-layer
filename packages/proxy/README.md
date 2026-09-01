@@ -42,6 +42,43 @@ Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
 endpoint and caches the status).
 
+### `POST /v1/libraries`
+
+Pro license required. Body: `{ "libraryId"?: "lib_...", "bundle": <library
+bundle> }`. The bundle must carry `schema: "spec-layer-library-bundle"`, a
+string `version`, and a `components` array; the proxy validates that shape and
+nothing else. It never derives, re-validates, or re-projects v5 output.
+
+Omitting `libraryId` creates a library (201) and returns
+`{ libraryId, pullKey, publishedAt }`. That response is the only copy of the
+pull key the server ever hands back; only its SHA-256 is stored. Publishing is
+capped at `LIBRARY_LIMIT` (10) libraries per license.
+
+Passing an owned `libraryId` overwrites the bundle in place (200) and returns
+`{ libraryId, publishedAt }` with no key, since the key does not change.
+
+Errors: `400` invalid JSON or bundle shape, `401` unauthenticated or license
+not active, `403 {"error":"not_owner"}` or
+`403 {"error":"library_limit","limit":10}`, `404` unknown `libraryId`,
+`413 {"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate
+limited per IP.
+
+### `GET /v1/libraries/:libraryId`
+
+Pull key required: `Authorization: Bearer sl_...`. Returns the stored bundle
+verbatim with `ETag: "<bundleHash>"` and `X-Published-At`. An `If-None-Match`
+matching the current hash gets a bare `304`, which is how `spec-layer status`
+decides whether a local pull is behind.
+
+Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
+`404 {"error":"not_found"}`, `429`.
+
+### `POST /v1/libraries/:libraryId/rotate`
+
+Pro license required, and the caller must own the library. Returns
+`{ pullKey }` and invalidates the previous key immediately. Errors: `401`,
+`403 {"error":"not_owner"}`, `404`, `429`.
+
 ## Quota rules
 
 - Free: 20 generations within 30 days of first sight, then 10 per UTC
@@ -86,6 +123,17 @@ cache inside the DO; prompts and prose are never logged.
 - **Salt rotation resets free identities.** Changing `FIGMA_ID_SALT` renames
   every free identity's Durable Object: quotas reset and every user
   re-enters the boost window. Rotate only with that intent.
+- **Published libraries live in the license-cache namespace, permanently.**
+  `lib:<id>:bundle`, `lib:<id>:meta`, and `libowner:<licenseId>` are written
+  with no `expirationTtl` into the KV namespace bound as `LICENSE_CACHE`.
+  Recreating or clearing that namespace to "reset the cache" destroys every
+  published library, and the pull keys cannot be recovered: only their
+  SHA-256 digests were ever stored. Every affected user has to republish and
+  redistribute a new setup command.
+- **KV writes are eventually consistent.** A publish immediately followed by
+  a pull from another region can serve the previous bundle for up to about a
+  minute. Republish tests should allow for that before treating a stale
+  `status` result as a bug.
 - **Cancellations propagate within 24h.** A refunded/cancelled subscription
   keeps Pro access until its cache entry (24h TTL) expires — a deliberate
   trade-off for staying available during Lemon Squeezy outages.
@@ -103,7 +151,7 @@ cache inside the DO; prompts and prose are never logged.
 
 | Name | Kind | Purpose |
 |---|---|---|
-| `LICENSE_CACHE` | KV namespace | License status cache keyed by a SHA-256 digest |
+| `LICENSE_CACHE` | KV namespace | Two unrelated datasets. License status cache keyed by a SHA-256 digest (30-day TTL), **and** durable library storage under `lib:` / `libowner:` keys with no expiry. Despite the name, this namespace is not disposable. |
 | `QUOTA` | Durable Object → `QuotaDO` | Per-identity quota state |
 | `ANTHROPIC_API_KEY` | secret | Upstream auth |
 | `FIGMA_ID_SALT` | secret | Salted hashing of Figma user IDs. Rotating it resets all free-tier quotas — don't rotate casually. |
@@ -112,7 +160,7 @@ cache inside the DO; prompts and prose are never logged.
 
 ```bash
 cd packages/proxy
-npx wrangler kv namespace create LICENSE_CACHE   # paste the id into wrangler.toml
+npx wrangler kv namespace create LICENSE_CACHE   # FIRST DEPLOY ONLY; paste the id into wrangler.toml
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put FIGMA_ID_SALT            # long random string
 npx wrangler deploy
