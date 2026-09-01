@@ -1162,35 +1162,50 @@
 }
 
 /*
- * "Publish for developers" (see publishSectionMarkup in screens/library.ts).
- * Appended into .sl-screen-scroll, after the row list, by ui-vnext.ts's
- * library render — deliberately NOT into .sl-screen-footer. That footer is a
- * fixed-height band in the screen grid's content-sized row (.sl-footer-height,
- * see .sl-screen-footer and .sl-footer-progress above): the exact bug
- * .sl-footer-progress's comment documents, where any row landing inside the
- * footer grid itself grows it and shrinks the scroll viewport out from under
- * the cursor. This section's height varies with state (button alone, or
- * button + command box + status line), so it has to live somewhere that can
- * grow freely — the scroll body, like every other row above it.
+ * The Publish for developers screen's body (see screens/publish.ts).
+ *
+ * This block used to style a section appended after the Library's row list,
+ * and it carried a top border to divide itself from that list. As a screen
+ * body it is the only thing in the scroll region, so that border would be a
+ * stray line under the page header and the top margin a gap before nothing.
+ *
+ * Its height still varies with state (lede alone, or lede + command box +
+ * actions + hint + status line), which is why the content stays here in
+ * .sl-screen-scroll and only the single primary sits in .sl-screen-footer.
+ * That footer is a fixed-height band in the screen grid's content-sized row
+ * (see .sl-screen-footer and .sl-footer-progress above): anything
+ * variable-height landing inside the footer grid grows it and shrinks the
+ * scroll viewport out from under the cursor.
  */
-.sl-publish-section {
+.sl-publish-body {
   min-width: 0;
-  margin: var(--sl-space-16) var(--sl-space-14) 0;
-  padding-top: var(--sl-space-16);
-  border-top: 1px solid var(--sl-color-border-muted);
+  padding: var(--sl-space-4) var(--sl-space-14) var(--sl-space-16);
 }
 
-.sl-publish-section > h2 {
-  margin: 0;
-  padding: 0 0 var(--sl-space-4);
-  font-size: var(--sl-font-size-support);
-  font-weight: var(--sl-font-weight-semibold);
-}
-
-.sl-publish-section > p {
+.sl-publish-lede {
   margin: 0 0 var(--sl-space-10);
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-support);
+}
+
+/*
+ * Back control, sitting before .sl-page-header-copy. The page header is
+ * `align-items: flex-start`, so an icon button would hang above the h1's
+ * optical centre; the small top margin drops it onto the title's line.
+ */
+.sl-publish-back {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+/*
+ * The header's own `justify-content: space-between` would push the title away
+ * from the back control, to opposite ends of the row. On this screen the two
+ * are one unit, so the row packs from the start instead.
+ */
+.sl-publish-screen .sl-page-header {
+  justify-content: flex-start;
+  gap: var(--sl-space-6);
 }
 
 /* A one-line command a developer copies whole, so it scrolls horizontally

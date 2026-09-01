@@ -1,0 +1,220 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import type { PublishState } from '../src/ui/publish';
+import { ICON_PATHS } from '../src/ui/shell/icons';
+import {
+  publishFooterMarkup,
+  publishHeaderMarkup,
+  publishScrollMarkup,
+} from '../src/ui/screens/publish';
+
+const LIBRARY_ID = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+const PULL_KEY = `sl_${'b'.repeat(48)}`;
+
+function state(overrides: Partial<PublishState> = {}): PublishState {
+  return {
+    status: 'idle',
+    message: null,
+    libraryId: null,
+    pullKey: null,
+    lastPublishedAt: null,
+    ...overrides,
+  };
+}
+
+const PUBLISHED = state({
+  status: 'done',
+  message: 'Published. Developers get this version on their next pull.',
+  libraryId: LIBRARY_ID,
+  pullKey: PULL_KEY,
+  lastPublishedAt: '2026-09-01T00:00:00.000Z',
+});
+
+const ALL_STATES: PublishState['status'][] = [
+  'idle',
+  'collecting',
+  'uploading',
+  'done',
+  'error',
+];
+
+describe('publish screen header', () => {
+  it('titles the screen and offers a labelled way back to the Library', () => {
+    const markup = publishHeaderMarkup();
+    expect(markup).toContain('<h1>Publish for developers</h1>');
+    expect(markup).toContain('data-publish-back');
+    // Icon-only, so the accessible name is the only name it has.
+    expect(markup).toContain('aria-label="Back to Library"');
+    expect(markup).toContain(ICON_PATHS.chevronLeft);
+  });
+
+  /**
+   * The `<small>` eyebrow means "what kind of thing the h1 names" ("Selected
+   * component" above a component's name). Reusing it as a "Library" breadcrumb
+   * would put navigation in a slot that already means something else, which is
+   * the one-slot-two-categories mistake the button-icon contract exists to
+   * prevent. The back control carries the navigation instead.
+   */
+  it('does not overload the header eyebrow with navigation', () => {
+    expect(publishHeaderMarkup()).not.toContain('<small>');
+  });
+});
+
+describe('publish screen body', () => {
+  it('states honestly what publishing does, before anything is published', () => {
+    const markup = publishScrollMarkup(state());
+    expect(markup).toContain(
+      "Publishes this library's AI context so developers can pull it with the spec-layer CLI.",
+    );
+    expect(markup).toContain('Publishing replaces the previously published version.');
+    expect(markup).toContain('Anyone with the key can pull it.');
+    // No key yet, so no command box and no rotate action.
+    expect(markup).not.toContain('data-publish-copy-command');
+    expect(markup).not.toContain('data-publish-rotate');
+  });
+
+  it('shows the setup command, copy, and rotate once a key exists', () => {
+    const markup = publishScrollMarkup(PUBLISHED);
+    expect(markup).toContain('data-publish-copy-command');
+    expect(markup).toContain('Copy setup command');
+    expect(markup).toContain('data-publish-rotate');
+    expect(markup).toContain('Rotate key');
+    expect(markup).toContain('Rotating invalidates the current key for everyone.');
+    expect(markup).toContain(
+      `SPEC_LAYER_KEY=${PULL_KEY} npx spec-layer pull --id ${LIBRARY_ID}`,
+    );
+  });
+
+  /**
+   * Both halves are needed to build a runnable command. Rendering a box with
+   * half of it filled in would print a command that cannot work, which is the
+   * fabrication the extraction invariants forbid everywhere else.
+   */
+  it('withholds the command box when either half of it is unknown', () => {
+    expect(publishScrollMarkup(state({ libraryId: LIBRARY_ID })))
+      .not.toContain('sl-publish-command');
+    expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
+      .not.toContain('sl-publish-command');
+    expect(publishScrollMarkup(PUBLISHED)).toContain('sl-publish-command');
+  });
+
+  it('tones the status line by status and leaves the body without one when silent', () => {
+    const failed = publishScrollMarkup(
+      state({ status: 'error', message: 'Publishing needs an active Pro license.' }),
+    );
+    expect(failed).toContain('sl-publish-status is-error');
+    expect(failed).toContain('Publishing needs an active Pro license.');
+
+    expect(publishScrollMarkup(PUBLISHED)).not.toContain('is-error');
+    expect(publishScrollMarkup(PUBLISHED))
+      .toContain('Published. Developers get this version on their next pull.');
+
+    expect(publishScrollMarkup(state())).not.toContain('sl-publish-status');
+  });
+
+  it('escapes a message and a key rather than trusting them as markup', () => {
+    const markup = publishScrollMarkup(
+      state({ status: 'error', message: 'Failed <b>badly</b> & loudly' }),
+    );
+    expect(markup).toContain('Failed &lt;b&gt;badly&lt;/b&gt; &amp; loudly');
+    expect(markup).not.toContain('<b>badly</b>');
+  });
+
+  /** The publish action itself is the footer's, not the body's. */
+  it('leaves the publish action to the footer', () => {
+    for (const status of ALL_STATES) {
+      expect(publishScrollMarkup(state({ status }))).not.toContain('data-publish>');
+      expect(publishScrollMarkup(state({ status }))).not.toContain('data-publish ');
+    }
+  });
+});
+
+describe('publish screen footer', () => {
+  it('names the act and the object it acts on', () => {
+    const markup = publishFooterMarkup(state());
+    expect(markup).toContain('data-publish>');
+    expect(markup).toContain('Publish library');
+    expect(markup).toContain('data-tone="primary"');
+  });
+
+  /**
+   * Busy is the present participle plus an ellipsis: the same button working,
+   * not a new action. See docs/plugin-voice-and-copy.md, "Footer actions".
+   */
+  it('reports work in the label and disables the button while it runs', () => {
+    for (const status of ['collecting', 'uploading'] as const) {
+      const markup = publishFooterMarkup(state({ status }));
+      expect(markup).toContain('data-publish disabled');
+      expect(markup).toContain('Publishing…');
+      expect(markup).not.toContain('Publish library');
+    }
+    for (const status of ['idle', 'done', 'error'] as const) {
+      const markup = publishFooterMarkup(state({ status }));
+      expect(markup).not.toContain('disabled');
+      expect(markup).toContain('Publish library');
+    }
+  });
+
+  /**
+   * One button, one glyph, naming the act, never changing with state. See the
+   * button-icon contract in design-system/components.css: the Library primary
+   * used to swap an action glyph for a warning and then a status as its state
+   * changed, and a footer button that drops its glyph while busy leaves the row
+   * half-drawn.
+   */
+  it('keeps one glyph in every state', () => {
+    for (const status of ALL_STATES) {
+      const markup = publishFooterMarkup(state({ status }));
+      expect(markup).toContain(ICON_PATHS.upload);
+      expect(markup.split('<svg').length - 1).toBe(1);
+    }
+  });
+
+  /**
+   * Progress labels carry no ellipsis: `sl-work-dots` animates one after them,
+   * so a written one prints twice. The BUTTON label keeps its ellipsis, since
+   * it has no dots of its own.
+   */
+  it('reports an in-flight publish in a progress line, and only then', () => {
+    expect(publishFooterMarkup(state({ status: 'collecting' })))
+      .toContain('<strong>Collecting sources</strong>');
+    expect(publishFooterMarkup(state({ status: 'uploading' })))
+      .toContain('<strong>Uploading library</strong>');
+    for (const status of ['idle', 'done', 'error'] as const) {
+      expect(publishFooterMarkup(state({ status })))
+        .not.toContain('sl-footer-progress');
+    }
+  });
+
+  it('keeps the plugin voice: no em dashes anywhere on the screen', () => {
+    const all = [
+      publishHeaderMarkup(),
+      ...ALL_STATES.map((status) => publishScrollMarkup(state({ status }))),
+      publishScrollMarkup(PUBLISHED),
+      ...ALL_STATES.map((status) => publishFooterMarkup(state({ status }))),
+    ].join('');
+    expect(all).not.toContain('—');
+  });
+});
+
+describe('publish screen styling', () => {
+  const css = readFileSync(
+    new URL('../src/ui/design-system/patterns.css', import.meta.url),
+    'utf-8',
+  );
+  const rule = (selector: string) =>
+    new RegExp(`\\n\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+  /**
+   * The old `.sl-publish-section` had a top border and margin because it was
+   * appended after the Library's row list and needed separating from it. As a
+   * screen body it is the only thing there, so a rule dividing it from nothing
+   * is just a stray line under the page header.
+   */
+  it('styles a screen body, not a section appended after a list', () => {
+    expect(rule('.sl-publish-section')).toBe('');
+    const body = rule('.sl-publish-body');
+    expect(body).not.toBe('');
+    expect(body).not.toMatch(/border-top/);
+  });
+});
