@@ -26,9 +26,28 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-const PUBLISH_DESCRIPTION =
-  "Publishes this library's AI context so developers can pull it with the spec-layer CLI. " +
-  'Publishing replaces the previously published version. Anyone with the key can pull it.';
+/**
+ * Two groups, because this screen holds two different concerns: what leaving
+ * this file means, and the key a developer needs. They used to be one grey
+ * paragraph, which buried "anyone with the key can pull it" as the third
+ * sentence of a run-on, forty pixels above the key it is about.
+ */
+const WHAT_GETS_PUBLISHED =
+  "This library's AI context: the foundation document and every connected " +
+  'component document. Publishing replaces the version published before it.';
+
+const DEVELOPER_SETUP =
+  'Developers run this in their repo to pull the library with the spec-layer ' +
+  'CLI. Anyone with the key can pull it.';
+
+/**
+ * Shown only before the first publish, where the Developer setup group would
+ * otherwise be. Without it the screen names an act, offers a button, and says
+ * nothing about where the key a developer needs comes from.
+ */
+const BEFORE_FIRST_PUBLISH =
+  'Publishing creates the key and setup command developers need. They appear ' +
+  'here once it has run.';
 
 /** Statuses where a publish is in flight, so the primary is working. */
 function isBusy(state: PublishState): boolean {
@@ -59,19 +78,35 @@ export function publishHeaderMarkup(): string {
  */
 export function publishScrollMarkup(state: PublishState): string {
   // Both halves are needed for a command a developer can actually run. Half a
-  // command is a command that fails, so it is withheld rather than guessed.
-  const keySection = state.pullKey && state.libraryId
+  // command is a command that fails, so the whole group is withheld rather
+  // than guessed at.
+  const setup = state.pullKey && state.libraryId
     ? (
+      '<section class="sl-publish-group">' +
+      '<div class="sl-settings-section-heading"><h2>Developer setup</h2>' +
+      `<p>${DEVELOPER_SETUP}</p></div>` +
       '<div class="sl-publish-command">' +
       `<code>${esc(setupCommand(state.libraryId, state.pullKey))}</code>` +
       '</div>' +
       '<div class="sl-publish-command-actions">' +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-publish-copy-command>Copy setup command</button>' +
-      '<button class="sl-button" data-tone="secondary" type="button" ' +
-      'data-publish-rotate>Rotate key</button>' +
       '</div>' +
-      '<p class="sl-publish-hint">Rotating invalidates the current key for everyone.</p>'
+      /*
+       * Rotating is not a peer of copying. One is the action you take every
+       * time; the other cuts off every developer already pulling this library.
+       * Side by side in matching secondary buttons they read as equals, so
+       * this borrows the treatment license.ts gives "Remove key from this
+       * device": quiet tone, danger colour, its own consequence beneath it
+       * rather than a warning stranded under both buttons.
+       */
+      '<div class="sl-publish-rotate">' +
+      '<button class="sl-button is-danger" data-tone="quiet" type="button" ' +
+      'data-publish-rotate>Rotate key</button>' +
+      '<p class="sl-publish-hint">Invalidates the current key for everyone ' +
+      'using it.</p>' +
+      '</div>' +
+      '</section>'
     )
     : '';
   const statusLine = state.message
@@ -79,8 +114,15 @@ export function publishScrollMarkup(state: PublishState): string {
     : '';
   return (
     '<div class="sl-publish-body">' +
-    `<p class="sl-publish-lede">${PUBLISH_DESCRIPTION}</p>` +
-    keySection +
+    '<section class="sl-publish-group">' +
+    '<div class="sl-settings-section-heading"><h2>What gets published</h2>' +
+    `<p>${WHAT_GETS_PUBLISHED}</p>` +
+    (setup ? '' : `<p>${BEFORE_FIRST_PUBLISH}</p>`) +
+    '</div>' +
+    '</section>' +
+    setup +
+    // Last, not inside either group: the message reports whichever action ran
+    // last, and both Publish (the footer) and Rotate key (above) can set it.
     statusLine +
     '</div>'
   );

@@ -1182,10 +1182,41 @@
   padding: var(--sl-space-4) var(--sl-space-14) var(--sl-space-16);
 }
 
-.sl-publish-lede {
-  margin: 0 0 var(--sl-space-10);
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-support);
+/*
+ * Two groups: what publishing does, and the key developers need. The rule
+ * between them appears only when the second one does, so a library that has
+ * never been published shows one group and no stray divider.
+ */
+.sl-publish-group + .sl-publish-group {
+  margin-top: var(--sl-space-16);
+  padding-top: var(--sl-space-16);
+  border-top: 1px solid var(--sl-color-border-muted);
+}
+
+/*
+ * The shared heading block's `p` has `margin: 0`, which was safe while every
+ * screen using it rendered exactly one paragraph. This screen renders a second
+ * one before the first publish, so the two need separating. Scoped here rather
+ * than added to `.sl-settings-section-heading p`, which Settings and License
+ * also use.
+ */
+.sl-publish-group .sl-settings-section-heading p + p {
+  margin-top: var(--sl-space-8);
+}
+
+/* Separated from Copy setup command: this is a consequence, not a peer. */
+.sl-publish-rotate {
+  margin-top: var(--sl-space-14);
+}
+
+/*
+ * A quiet button paints no background, so the eye aligns its TEXT with the
+ * column, not its box. Left at the box edge, the label sat one button padding
+ * (12px) inside every heading and paragraph above it. Pulling the box out by
+ * that padding lines the label up while keeping the hover target full size.
+ */
+.sl-publish-rotate > .sl-button {
+  margin-left: calc(var(--sl-space-12) * -1);
 }
 
 /*
@@ -1208,8 +1239,20 @@
   gap: var(--sl-space-6);
 }
 
-/* A one-line command a developer copies whole, so it scrolls horizontally
-   rather than wrapping mid-flag or getting clipped silently. */
+/*
+ * The command a developer copies whole.
+ *
+ * This used to scroll horizontally on one line, to avoid wrapping mid-flag.
+ * As a section at the bottom of the Library list that was the lesser evil; on
+ * its own screen it was the worse one. The visible slice was the start of the
+ * key, so the reader met a truncated secret with no verb attached, and the
+ * `npx spec-layer pull` half that says what the thing DOES sat off-screen
+ * behind a scrollbar that is easy to miss in a 480px panel.
+ *
+ * So it wraps instead, and the whole command is visible at once. Wrapping
+ * inserts no characters, so selecting it by hand still copies a runnable
+ * command, and the Copy setup command button below is the path that matters.
+ */
 .sl-publish-command {
   min-width: 0;
   margin-top: var(--sl-space-10);
@@ -1221,11 +1264,23 @@
 
 .sl-publish-command > code {
   display: block;
-  overflow-x: auto;
   color: var(--sl-color-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--sl-font-size-support);
-  white-space: pre;
+  line-height: var(--sl-line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /*
+   * Defensive, not a fix for anything observed here: SF Mono, which
+   * `ui-monospace` resolves to on macOS, leaves `--` as two hyphens (measured).
+   * But `ui-monospace` is whatever the user's OS calls a monospace font, and
+   * several popular ones (Fira Code, JetBrains Mono, Iosevka) ligate `--` into
+   * a single long dash. This command carries a `--id` flag, so on one of those
+   * a developer would read an em dash where two hyphens belong and typing back
+   * what they read would fail. The characters are always right; this keeps the
+   * glyphs from saying otherwise.
+   */
+  font-variant-ligatures: none;
 }
 
 .sl-publish-command-actions {
@@ -1237,13 +1292,19 @@
 }
 
 .sl-publish-hint {
-  margin: var(--sl-space-6) 0 0;
+  margin: var(--sl-space-4) 0 0;
   color: var(--sl-color-text-quiet);
   font-size: var(--sl-font-size-caption);
 }
 
+/*
+ * Reports whichever action ran last, so it follows both groups. It needs the
+ * same air between it and the group above as the groups have between them;
+ * at a tighter margin it read as a second line of the rotate consequence,
+ * being another small grey sentence directly beneath one.
+ */
 .sl-publish-status {
-  margin: var(--sl-space-10) 0 0;
+  margin: var(--sl-space-16) 0 0;
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-support);
 }

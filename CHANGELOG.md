@@ -182,6 +182,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   old section never did: the footer shows "Collecting sources" and then
   "Uploading library" while the primary reads "Publishing…". Nothing about what
   gets published, the bundle, or the pull key changed.
+
+  The screen's content is grouped into **What gets published** and **Developer
+  setup**, which puts "anyone with the key can pull it" beside the key instead
+  of three sentences above it, and names what a publish actually sends: the
+  foundation document and every connected component document. The setup command
+  now wraps so the whole command is visible, rather than scrolling the `npx
+  spec-layer pull` half out of sight behind a scrollbar. **Rotate key** is no
+  longer a peer of **Copy setup command**: it reads as the destructive action it
+  is, with its consequence attached to it. Before the first publish, the screen
+  says where the key will come from.
 - Plugin **Upgrade to Pro** and **Renew Pro** actions now open the live,
   product-specific Lemon Squeezy checkout instead of the broken generic
   checkout/store routes.

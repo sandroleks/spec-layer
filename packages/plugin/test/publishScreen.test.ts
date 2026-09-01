@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { PublishState } from '../src/ui/publish';
+import { setupCommand, type PublishState } from '../src/ui/publish';
 import { ICON_PATHS } from '../src/ui/shell/icons';
 import {
   publishFooterMarkup,
@@ -61,28 +61,81 @@ describe('publish screen header', () => {
 });
 
 describe('publish screen body', () => {
-  it('states honestly what publishing does, before anything is published', () => {
+  it('names what publishing sends, before anything is published', () => {
     const markup = publishScrollMarkup(state());
+    expect(markup).toContain('<h2>What gets published</h2>');
     expect(markup).toContain(
-      "Publishes this library's AI context so developers can pull it with the spec-layer CLI.",
+      "This library's AI context: the foundation document and every connected "
+      + 'component document.',
     );
-    expect(markup).toContain('Publishing replaces the previously published version.');
-    expect(markup).toContain('Anyone with the key can pull it.');
-    // No key yet, so no command box and no rotate action.
+    expect(markup).toContain('Publishing replaces the version published before it.');
+    // No key yet, so the whole Developer setup group is absent - and the
+    // screen says where the key will come from rather than leaving a void.
+    expect(markup).not.toContain('Developer setup');
+    expect(markup).toContain(
+      'Publishing creates the key and setup command developers need.',
+    );
     expect(markup).not.toContain('data-publish-copy-command');
     expect(markup).not.toContain('data-publish-rotate');
   });
 
+  it('drops the where-the-key-comes-from line once there is a key', () => {
+    expect(publishScrollMarkup(PUBLISHED))
+      .not.toContain('They appear here once it has run.');
+  });
+
   it('shows the setup command, copy, and rotate once a key exists', () => {
     const markup = publishScrollMarkup(PUBLISHED);
+    expect(markup).toContain('<h2>Developer setup</h2>');
     expect(markup).toContain('data-publish-copy-command');
     expect(markup).toContain('Copy setup command');
     expect(markup).toContain('data-publish-rotate');
     expect(markup).toContain('Rotate key');
-    expect(markup).toContain('Rotating invalidates the current key for everyone.');
     expect(markup).toContain(
       `SPEC_LAYER_KEY=${PULL_KEY} npx spec-layer pull --id ${LIBRARY_ID}`,
     );
+  });
+
+  /**
+   * "Anyone with the key can pull it" is the sentence on this screen with a
+   * consequence attached. It used to be the third sentence of the opening
+   * paragraph, well above the key. It belongs with the key.
+   */
+  it('keeps the key warning in the group that shows the key', () => {
+    const markup = publishScrollMarkup(PUBLISHED);
+    const setupAt = markup.indexOf('Developer setup');
+    const warningAt = markup.indexOf('Anyone with the key can pull it.');
+    expect(warningAt).toBeGreaterThan(setupAt);
+    expect(publishScrollMarkup(state())).not.toContain('Anyone with the key can pull it.');
+  });
+
+  /**
+   * Copying is the action you take every time; rotating cuts off every
+   * developer already pulling this library. Rendering both as matching
+   * secondary buttons made them read as equals, and the consequence was
+   * stranded in one line under the pair. This mirrors what license.ts does for
+   * "Remove key from this device".
+   */
+  it('demotes rotating below copying and attaches its consequence', () => {
+    const markup = publishScrollMarkup(PUBLISHED);
+    const copy = /<button[^>]*data-publish-copy-command[^>]*>/.exec(markup)?.[0] ?? '';
+    const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(copy).toContain('data-tone="secondary"');
+    expect(rotate).toContain('data-tone="quiet"');
+    expect(rotate).toContain('is-danger');
+    // The consequence follows the rotate button, not the pair of buttons.
+    expect(markup.indexOf('Invalidates the current key for everyone using it.'))
+      .toBeGreaterThan(markup.indexOf('data-publish-rotate'));
+    expect(markup).toContain('sl-publish-rotate');
+  });
+
+  /**
+   * The screen holds two concerns, and the rule between them is only earned
+   * when both are on screen.
+   */
+  it('groups the two concerns, and draws no divider when there is only one', () => {
+    expect(publishScrollMarkup(PUBLISHED).split('sl-publish-group').length - 1).toBe(2);
+    expect(publishScrollMarkup(state()).split('sl-publish-group').length - 1).toBe(1);
   });
 
   /**
@@ -96,6 +149,17 @@ describe('publish screen body', () => {
     expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
       .not.toContain('sl-publish-command');
     expect(publishScrollMarkup(PUBLISHED)).toContain('sl-publish-command');
+  });
+
+  /**
+   * The message reports whichever action ran last, and both the footer's
+   * Publish and this screen's Rotate key can set it, so it belongs after both
+   * groups rather than inside either one.
+   */
+  it('puts the status line after both groups', () => {
+    const markup = publishScrollMarkup(PUBLISHED);
+    expect(markup.indexOf('sl-publish-status'))
+      .toBeGreaterThan(markup.lastIndexOf('sl-publish-group'));
   });
 
   it('tones the status line by status and leaves the body without one when silent', () => {
@@ -216,5 +280,52 @@ describe('publish screen styling', () => {
     const body = rule('.sl-publish-body');
     expect(body).not.toBe('');
     expect(body).not.toMatch(/border-top/);
+  });
+
+  /**
+   * The divider is between groups, so one group cannot draw half of one.
+   *
+   * `rule` escapes only the leading dot, so a selector with a combinator needs
+   * its own escaped lookup rather than being passed through it.
+   */
+  it('hangs the group divider on the adjacency, not on the group', () => {
+    const escaped = (selector: string) => new RegExp(
+      `\\n${selector.replace(/[.+*?^$(){}|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`,
+    ).exec(css)?.[1] ?? '';
+    expect(rule('.sl-publish-group')).toBe('');
+    expect(escaped('.sl-publish-group + .sl-publish-group')).toMatch(/border-top/);
+  });
+
+  /**
+   * The command wraps rather than scrolling. Scrolling showed the start of the
+   * key and hid the `npx spec-layer pull` half that says what it does, behind
+   * a scrollbar that is easy to miss in a 480px panel.
+   */
+  it('shows the whole command instead of scrolling half of it out of view', () => {
+    const code = rule('.sl-publish-command > code');
+    expect(code).toMatch(/white-space:\s*pre-wrap/);
+    expect(code).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(code).not.toMatch(/overflow-x/);
+  });
+
+  /**
+   * Defensive. SF Mono (macOS's `ui-monospace`) does not ligate `--`, but
+   * `ui-monospace` is whatever the user's OS provides, and Fira Code,
+   * JetBrains Mono and Iosevka all fuse `--` into one long dash. The command
+   * carries a `--id` flag, so on one of those a developer would read an em
+   * dash where two hyphens belong and typing back what they read would fail.
+   */
+  it('turns off ligatures so the command\'s -- flag cannot render as a dash', () => {
+    expect(setupCommand(LIBRARY_ID, PULL_KEY)).toContain('--id');
+    expect(rule('.sl-publish-command > code'))
+      .toMatch(/font-variant-ligatures:\s*none/);
+  });
+
+  /** A quiet button paints no background, so its label is what must align. */
+  it('pulls the quiet rotate button back onto the body column', () => {
+    const escaped = new RegExp(
+      '\\n\\.sl-publish-rotate > \\.sl-button\\s*\\{([^}]*)\\}',
+    ).exec(css)?.[1] ?? '';
+    expect(escaped).toMatch(/margin-left:\s*calc\(var\(--sl-space-12\) \* -1\)/);
   });
 });
