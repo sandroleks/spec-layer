@@ -1,18 +1,14 @@
-import { sha256 } from 'js-sha256';
 import {
   FOUNDATION_SYSTEM_PROMPT,
   PROSE_SYSTEM_PROMPT,
   proseFewShot,
 } from '@spec-layer/extractor';
-import { identityFromHeaders } from './identity';
+import { identityFromHeaders, licenseIdentityId } from './identity';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
-/** Quota/DO identity for a license — hashed so the raw key never reaches DO names or logs. */
-export function licenseIdentityId(key: string): string {
-  return `lic:${sha256(key)}`;
-}
+export { licenseIdentityId };
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
@@ -31,6 +27,9 @@ export interface HandlerDeps {
   log(event: string, fields: Record<string, unknown>): void;
   licenseLimiter: SlidingWindowLimiter;
   requestLimiter: SlidingWindowLimiter;
+  /** Library bundle storage. Wired to the same KV namespace as licenseCache
+   *  today; a separate dep so a dedicated namespace later is a one-line change. */
+  libraryStore: KVLike;
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>

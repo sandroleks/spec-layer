@@ -62,6 +62,9 @@ const worker = {
       log: (event, fields) => console.log(JSON.stringify({ event, ...fields })),
       licenseLimiter,
       requestLimiter,
+      // Same KV namespace as licenseCache today; a dedicated namespace later
+      // is a one-line change once library volume warrants it.
+      libraryStore: env.LICENSE_CACHE,
     };
     return route(req, deps);
   },

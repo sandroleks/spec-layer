@@ -63,6 +63,7 @@ function deps(overrides: Partial<Parameters<typeof handleProse>[1]> = {}) {
     log: vi.fn(),
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
+    libraryStore: new MemKV(),
     _anthropic: anthropic,
     ...overrides,
   };

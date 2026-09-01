@@ -5,6 +5,11 @@ export function hashFigmaId(figmaId: string, salt: string): string {
   return sha256(`${salt}:${figmaId}`);
 }
 
+/** Quota/DO identity for a license — hashed so the raw key never reaches DO names or logs. */
+export function licenseIdentityId(key: string): string {
+  return `lic:${sha256(key)}`;
+}
+
 export type Identity =
   | { kind: 'license'; key: string; instanceId: string | null }
   | { kind: 'free'; id: string };

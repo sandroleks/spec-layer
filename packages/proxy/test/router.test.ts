@@ -37,6 +37,7 @@ const baseDeps = () => ({
   log: vi.fn(),
   licenseLimiter: new SlidingWindowLimiter(20, 60_000),
   requestLimiter: new SlidingWindowLimiter(60, 60_000),
+  libraryStore: new MemKV(),
 });
 
 describe('route', () => {
