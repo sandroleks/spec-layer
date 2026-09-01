@@ -6,6 +6,7 @@
  * archived prototype screenshots in docs/plugin-ui-vnext/prototype/.
  *
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
+ *   ui-harness.html?view=library&pane=publish&publish=published
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
@@ -33,6 +34,8 @@ import { createComponentSelection, renderComponentScreen } from './screens/compo
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen } from './screens/library';
+import { renderPublishScreen } from './screens/publish';
+import type { PublishState } from './publish';
 import { globalSearchMarkup } from './screens/search';
 import {
   renderLicenseScreen,
@@ -474,7 +477,61 @@ if (view === 'library') {
   let refreshing = param('state', 'expanded') === 'refreshing';
   let updatingAll = param('state', 'expanded') === 'updating';
 
+  /*
+   * The Library's publish screen.
+   *
+   * Synthetic id and key, in the real formats (`lib_` + 24 hex, `sl_` + 48
+   * hex) so the setup command has the real shape and width. Never a live key:
+   * fixtures are synthetic or explicitly publishable, and a pull key in a
+   * dev-only file is still a pull key.
+   */
+  const PUBLISH_FIXTURES: Record<string, PublishState> = {
+    idle: {
+      status: 'idle',
+      message: null,
+      libraryId: null,
+      pullKey: null,
+      lastPublishedAt: null,
+    },
+    collecting: {
+      status: 'collecting',
+      message: null,
+      libraryId: null,
+      pullKey: null,
+      lastPublishedAt: null,
+    },
+    uploading: {
+      status: 'uploading',
+      message: null,
+      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+      pullKey: `sl_${'0f'.repeat(24)}`,
+      lastPublishedAt: '2026-08-30T09:12:00.000Z',
+    },
+    published: {
+      status: 'done',
+      message: 'Published. Developers get this version on their next pull.',
+      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+      pullKey: `sl_${'0f'.repeat(24)}`,
+      lastPublishedAt: '2026-09-01T09:12:00.000Z',
+    },
+    error: {
+      status: 'error',
+      message: 'Publishing needs an active Pro license.',
+      libraryId: null,
+      pullKey: null,
+      lastPublishedAt: null,
+    },
+  };
+  let libraryPane: 'list' | 'publish' =
+    param('pane', 'list') === 'publish' ? 'publish' : 'list';
+  const publishFixture =
+    PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
+
   const renderLibraryFixture = () => {
+    if (libraryPane === 'publish') {
+      renderPublishScreen(refs, publishFixture);
+      return;
+    }
     const model = buildLibraryModel(entries, {
       drift,
       filter: libraryFilter,
@@ -506,9 +563,31 @@ if (view === 'library') {
   };
   renderLibraryFixture();
 
+  /** Mirrors ui-vnext.ts's setLibraryPane, including where focus lands. */
+  const setPane = (next: 'list' | 'publish', focusSelector: string) => {
+    libraryPane = next;
+    menuDocId = null;
+    renderLibraryFixture();
+    document.querySelector<HTMLElement>(focusSelector)?.focus({ preventScroll: true });
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || libraryPane !== 'publish') return;
+    event.preventDefault();
+    setPane('list', '[data-publish-open]');
+  });
+
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest('[data-publish-open]')) {
+      setPane('publish', '[data-publish-back]');
+      return;
+    }
+    if (target.closest('[data-publish-back]')) {
+      setPane('list', '[data-publish-open]');
+      return;
+    }
     const filterButton = target.closest<HTMLButtonElement>('[data-library-filter]');
     if (filterButton?.dataset.libraryFilter) {
       libraryFilter = filterButton.dataset.libraryFilter as LibraryFilter;

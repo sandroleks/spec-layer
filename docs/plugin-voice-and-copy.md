@@ -60,7 +60,16 @@ storage unit ("Create 8 frames"), and a batch scope ("Update all 3").
 | --- | --- | --- |
 | Selected component | `Download` | `Create docs` |
 | Foundations | `Refresh sources` | `Create docs` |
-| Library | `Refresh library` | `Update all docs` |
+| Library | `Publish`, `Refresh library` | `Update all docs` |
+| Publish for developers | none | `Publish library` |
+
+6. **A footer action that only navigates still names an act, not a place.** The
+   Library's `Publish` opens the Publish for developers screen and starts
+   nothing. It is not "Developer access" or "Publishing options": the user came
+   to publish, and naming the destination instead would make the row read as
+   three different categories again. It is the one footer action that is never
+   disabled, because nothing in flight is a reason to withhold a screen, and
+   the act it names is confirmed by `Publish library` once you are there.
 
 Glyphs are a separate contract (one button, one glyph, held through every
 state); see `docs/plugin-ui-vnext/design-system/README.md`.

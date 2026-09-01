@@ -211,8 +211,21 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 
 ## Publish and pull
 
-- [ ] Publish (Pro license, file with foundation + 2 component docs): Library
-      screen shows the setup command; response arrived in under 30s.
+Publishing lives on its own screen now, behind the Library footer's **Publish**
+action. The rows below start there.
+
+- [ ] Reaching it: the Library footer shows three buttons that fit without
+      wrapping in the widest state (trigger a failed source check so the primary
+      reads "Refresh to retry"). **Publish** stays enabled during a refresh and
+      during Update all docs, unlike the two beside it.
+- [ ] The screen: **Publish** opens "Publish for developers" with the rail still
+      on Library. The back control and Escape both return to the list, and the
+      list is where it was, not scrolled. Leaving by the rail and returning to
+      Library lands on the list, not the publish screen.
+- [ ] Publish (Pro license, file with foundation + 2 component docs): the footer
+      reports "Collecting sources" then "Uploading library" while it runs and
+      the primary reads "Publishing…"; the screen then shows the setup command.
+      Response arrived in under 30s.
 - [ ] Pull: run the copied setup command in an empty directory; `.speclayer/`
       contains bundle.json, manifest.json, ai/foundation.yaml, and one YAML per
       component; the YAML matches what Copy for AI puts on the clipboard.
@@ -220,7 +233,8 @@ set that has at least two variant axes and a hardcoded paint. Check that:
       the new publish time; `spec-layer pull` then `status` exits 0.
 - [ ] Rotate key: old command fails with the rotated-key message; new command
       pulls.
-- [ ] Free license: publish shows the Pro copy and publishes nothing.
+- [ ] Free license: publish shows the Pro copy and publishes nothing. The
+      Library footer's **Publish** still opens the screen.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
 

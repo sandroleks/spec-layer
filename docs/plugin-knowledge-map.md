@@ -60,6 +60,13 @@ mounts a shared shell and owns five workflows:
 4. Settings.
 5. License.
 
+The Library has a second screen behind it: Publish for developers, reached from
+the Library footer's `Publish` action and rendered by `screens/publish.ts`. It
+is deliberately not a sixth rail destination, so `PluginView` stays five
+entries and `sidebar.ts` keeps its exhaustive icon map. `ui-vnext.ts` tracks
+which of the two is showing in a Library-local `libraryPane` flag, which means
+the rail stays on Library while publishing.
+
 The command palette searches workflows and connected Library documents.
 `actions.ts` owns reusable operations; `viewModel/` derives display state;
 `screens/` renders workflow markup; `shell/` owns persistent navigation and

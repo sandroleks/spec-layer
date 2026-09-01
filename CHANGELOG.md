@@ -175,6 +175,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Publish for developers** is its own screen instead of a section at the
+  bottom of the Library's document list. A **Publish** action in the Library
+  footer opens it; the rail stays on Library, and the back control or Escape
+  returns to the list. The screen also reports a publish in flight, which the
+  old section never did: the footer shows "Collecting sources" and then
+  "Uploading library" while the primary reads "Publishing…". Nothing about what
+  gets published, the bundle, or the pull key changed.
 - Plugin **Upgrade to Pro** and **Renew Pro** actions now open the live,
   product-specific Lemon Squeezy checkout instead of the broken generic
   checkout/store routes.
