@@ -4,6 +4,7 @@ import {
   proseFewShot,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId } from './identity';
+import { handlePublish, handlePull, handleRotate } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
@@ -331,10 +332,10 @@ const CORS_HEADERS: Record<string, string> = {
   // no cookies) is the correct and safe setting here.
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, If-None-Match',
   // Without this, the plugin iframe cannot read the quota headers at all.
   'Access-Control-Expose-Headers':
-    'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At',
+    'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -350,6 +351,11 @@ async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
   if (req.method === 'GET' && pathname === '/v1/quota') return handleQuota(req, deps);
   if (req.method === 'POST' && pathname === '/v1/license/activate') return handleActivate(req, deps);
   if (req.method === 'POST' && pathname === '/v1/license/deactivate') return handleDeactivate(req, deps);
+  if (req.method === 'POST' && pathname === '/v1/libraries') return handlePublish(req, deps);
+  const pull = /^\/v1\/libraries\/(lib_[0-9a-f]{24})$/.exec(pathname);
+  if (req.method === 'GET' && pull) return handlePull(req, deps, pull[1]);
+  const rotate = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/rotate$/.exec(pathname);
+  if (req.method === 'POST' && rotate) return handleRotate(req, deps, rotate[1]);
   return json(404, { error: 'not_found' });
 }
 

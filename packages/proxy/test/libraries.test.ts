@@ -3,6 +3,7 @@ import { sha256 } from 'js-sha256';
 import {
   handlePublish,
   handlePull,
+  handleRotate,
   newLibraryId,
   newPullKey,
   LIBRARY_ID_RE,
@@ -43,6 +44,13 @@ function pullReq(libraryId: string, key: string, etag?: string) {
   return new Request(`https://proxy.test/v1/libraries/${libraryId}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${key}`, ...(etag ? { 'If-None-Match': etag } : {}) },
+  });
+}
+
+function rotateReq(libraryId: string, key = UUID_KEY) {
+  return new Request(`https://proxy.test/v1/libraries/${libraryId}/rotate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}` },
   });
 }
 
@@ -327,5 +335,61 @@ describe('handlePull', () => {
     expect(first.status).toBe(200);
     const second = await handlePull(req(), d, libraryId);
     expect(second.status).toBe(429);
+  });
+});
+
+describe('handleRotate', () => {
+  it('rotates the key: old key stops pulling, new key pulls', async () => {
+    const { deps: d, libraryId, pullKey: oldKey } = await publishedLibrary();
+    const metaBefore = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`)) as string) as LibraryMeta;
+
+    const res = await handleRotate(rotateReq(libraryId), d, libraryId);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { pullKey: string };
+    expect(body.pullKey).toMatch(PULL_KEY_RE);
+    expect(body.pullKey).not.toBe(oldKey);
+
+    const oldPull = await handlePull(pullReq(libraryId, oldKey), d, libraryId);
+    expect(oldPull.status).toBe(401);
+    expect(await oldPull.json()).toEqual({ error: 'invalid_key' });
+
+    const newPull = await handlePull(pullReq(libraryId, body.pullKey), d, libraryId);
+    expect(newPull.status).toBe(200);
+    expect(await newPull.text()).toBe(JSON.stringify(BUNDLE));
+
+    const metaAfter = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`)) as string) as LibraryMeta;
+    expect(metaAfter.bundleHash).toBe(metaBefore.bundleHash);
+    expect(metaAfter.publishedAt).toBe(metaBefore.publishedAt);
+    expect(metaAfter.keyHash).toBe(sha256(body.pullKey));
+  });
+
+  it('rejects a non-owner license', async () => {
+    const d = deps();
+    await seedPro(d, UUID_KEY);
+    await seedPro(d, OTHER_UUID_KEY);
+    const publishRes = await handlePublish(publishReq({ bundle: BUNDLE }, UUID_KEY), d);
+    const { libraryId } = await publishRes.json() as { libraryId: string };
+
+    const res = await handleRotate(rotateReq(libraryId, OTHER_UUID_KEY), d, libraryId);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'not_owner' });
+  });
+
+  it('rejects a lapsed license', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    await seedFree(d);
+    const res = await handleRotate(rotateReq(libraryId), d, libraryId);
+    expect(res.status).toBe(401);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe('license_not_active');
+  });
+
+  it('404s an unknown library', async () => {
+    const d = deps();
+    await seedPro(d);
+    const unknownLibId = 'lib_' + '0'.repeat(24);
+    const res = await handleRotate(rotateReq(unknownLibId), d, unknownLibId);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
   });
 });

@@ -106,6 +106,21 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   return json(201, { libraryId, pullKey, publishedAt });
 }
 
+export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.licenseLimiter.allow(`librot:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  const caller = await proCaller(req, deps);
+  if (caller instanceof Response) return caller;
+  const metaRaw = await deps.libraryStore.get(`lib:${libraryId}:meta`);
+  if (metaRaw === null) return json(404, { error: 'not_found' });
+  const meta = JSON.parse(metaRaw) as LibraryMeta;
+  if (meta.licenseId !== caller.licenseId) return json(403, { error: 'not_owner' });
+  const pullKey = newPullKey();
+  await deps.libraryStore.put(`lib:${libraryId}:meta`, JSON.stringify({ ...meta, keyHash: sha256(pullKey) }));
+  deps.log('library_rotate', { libraryId });
+  return json(200, { pullKey });
+}
+
 export async function handlePull(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });

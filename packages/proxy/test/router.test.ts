@@ -154,6 +154,42 @@ describe('route', () => {
     expect(res.status).toBe(404);
   });
 
+  it('routes POST /v1/libraries to publish', async () => {
+    const res = await route(new Request('https://p.test/v1/libraries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bundle: {} }),
+    }), baseDeps());
+    // Unauthenticated -> 401, NOT 404: proves the route matched handlePublish.
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthenticated' });
+  });
+
+  it('routes GET /v1/libraries/lib_<24hex> to pull', async () => {
+    const libraryId = `lib_${'0'.repeat(24)}`;
+    const res = await route(new Request(`https://p.test/v1/libraries/${libraryId}`, {
+      headers: { Authorization: 'Bearer nope' },
+    }), baseDeps());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_key' });
+  });
+
+  it('routes POST /v1/libraries/lib_<24hex>/rotate to rotate', async () => {
+    const libraryId = `lib_${'0'.repeat(24)}`;
+    const res = await route(new Request(`https://p.test/v1/libraries/${libraryId}/rotate`, {
+      method: 'POST',
+    }), baseDeps());
+    // Unauthenticated -> 401, NOT 404: proves the route matched handleRotate.
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthenticated' });
+  });
+
+  it('404s a malformed library id path', async () => {
+    const res = await route(new Request('https://p.test/v1/libraries/nope'), baseDeps());
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
+  });
+
   it('502s activation cleanly when LS is unreachable (with CORS)', async () => {
     const d = baseDeps();
     d.fetcher = vi.fn(async () => { throw new Error('ls down'); }) as unknown as typeof fetch;
@@ -231,5 +267,14 @@ describe('CORS', () => {
     const res = await route(new Request('https://p.test/nope'), baseDeps());
     expect(res.status).toBe(404);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('exposes ETag and X-Published-At through CORS', async () => {
+    // Any routed response carries the same CORS envelope; a 404 is enough
+    // to prove the exposed-headers list includes the library pull headers.
+    const res = await route(new Request('https://p.test/nope'), baseDeps());
+    const exposed = res.headers.get('Access-Control-Expose-Headers');
+    expect(exposed).toContain('ETag');
+    expect(exposed).toContain('X-Published-At');
   });
 });
