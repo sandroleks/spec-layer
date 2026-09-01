@@ -105,3 +105,28 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   deps.log('library_publish', { libraryId, size: stored.length, created: true });
   return json(201, { libraryId, pullKey, publishedAt });
 }
+
+export async function handlePull(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  const auth = req.headers.get('Authorization') ?? '';
+  const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!PULL_KEY_RE.test(key)) return json(401, { error: 'invalid_key' });
+  const metaRaw = await deps.libraryStore.get(`lib:${libraryId}:meta`);
+  if (metaRaw === null) return json(404, { error: 'not_found' });
+  const meta = JSON.parse(metaRaw) as LibraryMeta;
+  // Digest-vs-digest comparison: timing over two fixed-length hashes reveals
+  // nothing about the key itself, so plain equality is safe here.
+  if (sha256(key) !== meta.keyHash) return json(401, { error: 'invalid_key' });
+  const headers: Record<string, string> = {
+    ETag: `"${meta.bundleHash}"`,
+    'X-Published-At': meta.publishedAt,
+    'content-type': 'application/json',
+  };
+  if (req.headers.get('If-None-Match') === `"${meta.bundleHash}"`) {
+    return new Response(null, { status: 304, headers });
+  }
+  const bundle = await deps.libraryStore.get(`lib:${libraryId}:bundle`);
+  if (bundle === null) return json(404, { error: 'not_found' });
+  return new Response(bundle, { status: 200, headers });
+}

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { sha256 } from 'js-sha256';
 import {
   handlePublish,
+  handlePull,
   newLibraryId,
   newPullKey,
   LIBRARY_ID_RE,
@@ -36,6 +37,24 @@ function publishReq(body: unknown, key = UUID_KEY) {
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify(body),
   });
+}
+
+function pullReq(libraryId: string, key: string, etag?: string) {
+  return new Request(`https://proxy.test/v1/libraries/${libraryId}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${key}`, ...(etag ? { 'If-None-Match': etag } : {}) },
+  });
+}
+
+/** Helper that publishes a library and returns the deps, libraryId, and pullKey. */
+async function publishedLibrary(
+  d: HandlerDeps = deps(),
+  key = UUID_KEY,
+) {
+  await seedPro(d, key);
+  const res = await handlePublish(publishReq({ bundle: BUNDLE }, key), d);
+  const body = await res.json() as { libraryId: string; pullKey: string };
+  return { deps: d, libraryId: body.libraryId, pullKey: body.pullKey };
 }
 
 function deps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
@@ -219,6 +238,94 @@ describe('handlePublish', () => {
     const first = await handlePublish(req(), d);
     expect(first.status).toBe(201);
     const second = await handlePublish(req(), d);
+    expect(second.status).toBe(429);
+  });
+});
+
+describe('handlePull', () => {
+  it('returns the stored bundle bytes verbatim with ETag and X-Published-At', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const res = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe(JSON.stringify(BUNDLE));
+    expect(res.headers.get('ETag')).toBe(`"${sha256(JSON.stringify(BUNDLE))}"`);
+    expect(res.headers.get('X-Published-At')).toBe(new Date(d.now()).toISOString());
+    expect(res.headers.get('content-type')).toBe('application/json');
+  });
+
+  it('returns 304 with headers and empty body on a matching If-None-Match', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const etag = `"${sha256(JSON.stringify(BUNDLE))}"`;
+    const res = await handlePull(pullReq(libraryId, pullKey, etag), d, libraryId);
+    expect(res.status).toBe(304);
+    const text = await res.text();
+    expect(text).toBe('');
+    expect(res.headers.get('ETag')).toBe(etag);
+    expect(res.headers.get('X-Published-At')).toBe(new Date(d.now()).toISOString());
+    expect(res.headers.get('content-type')).toBe('application/json');
+  });
+
+  it('returns the full body when If-None-Match does not match', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const wrongEtag = '"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"';
+    const res = await handlePull(pullReq(libraryId, pullKey, wrongEtag), d, libraryId);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe(JSON.stringify(BUNDLE));
+  });
+
+  it('rejects a malformed key', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePull(pullReq(libraryId, 'Bearer nope'), d, libraryId);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_key' });
+  });
+
+  it('rejects a well-formed wrong key', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const wrongKey = 'sl_' + '0'.repeat(48);
+    const res = await handlePull(pullReq(libraryId, wrongKey), d, libraryId);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_key' });
+  });
+
+  it('404s an unknown library id', async () => {
+    const d = deps();
+    const unknownLibId = 'lib_' + '0'.repeat(24);
+    const someKey = 'sl_' + '0'.repeat(48);
+    const res = await handlePull(pullReq(unknownLibId, someKey), d, unknownLibId);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
+  });
+
+  it('still serves pulls after the license lapses', async () => {
+    const d = deps();
+    await seedPro(d);
+    const publishRes = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    const publishBody = await publishRes.json() as { libraryId: string; pullKey: string };
+    const { libraryId, pullKey } = publishBody;
+
+    // Flip the license fixture to free (expired) by re-seeding
+    await seedFree(d);
+    const pullRes = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(pullRes.status).toBe(200);
+    const text = await pullRes.text();
+    expect(text).toBe(JSON.stringify(BUNDLE));
+  });
+
+  it('rate limits pulls per IP', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(1, 60_000) });
+    const { libraryId, pullKey } = await publishedLibrary(d);
+
+    const req = () => {
+      const r = pullReq(libraryId, pullKey);
+      r.headers.set('CF-Connecting-IP', '5.6.7.8');
+      return r;
+    };
+    const first = await handlePull(req(), d, libraryId);
+    expect(first.status).toBe(200);
+    const second = await handlePull(req(), d, libraryId);
     expect(second.status).toBe(429);
   });
 });
