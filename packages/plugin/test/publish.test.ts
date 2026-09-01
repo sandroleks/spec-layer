@@ -191,25 +191,18 @@ describe('publishBundle', () => {
       .toEqual({ kind: 'gone' });
   });
 
-  it('maps license errors to plugin-voice copy', async () => {
+  it('maps 401 license errors to plugin-voice copy', async () => {
     const fetcher = vi.fn(async () => jsonResponse(401, { error: 'license_not_active' }));
     const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs an active Pro license.' });
+  });
 
-    // Assert NO em dash in any error message this module can produce.
-    const allMessages = [
-      publishErrorCopyFixture(401, {}),
-      publishErrorCopyFixture(429, {}),
-      publishErrorCopyFixture(500, {}),
-      publishErrorCopyFixture(413, { error: 'bundle_too_large', size: 900, limit: 500 }),
-      publishErrorCopyFixture(403, { error: 'library_limit', limit: 3 }),
-      'Publishing needs an active Pro license.',
-      'Could not reach the publish service. Check your connection and try again.',
-      'Rotating the key needs an active Pro license.',
-    ];
-    for (const message of allMessages) {
-      expect(message).not.toContain('—');
-    }
+  it('maps 429 rate limiting to copy', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(429, {}));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error', message: 'Too many requests just now. Give it a minute.',
+    });
   });
 
   it('maps bundle_too_large with the sizes', async () => {
@@ -220,6 +213,23 @@ describe('publishBundle', () => {
     expect(outcome).toEqual({
       kind: 'error',
       message: 'This library is larger than the publish limit (120000 of 100000 characters).',
+    });
+  });
+
+  it('maps library_limit (403) with the count', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 3 }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'This license already publishes 3 libraries, which is the limit.',
+    });
+  });
+
+  it('maps an unmapped status to a generic HTTP message', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(500, {}));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error', message: 'Publishing failed with HTTP 500.',
     });
   });
 
@@ -240,17 +250,6 @@ describe('publishBundle', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
-
-// Re-derive the same error copy the module produces, for the em-dash sweep
-// above, without exporting an internal function purely for a test import.
-function publishErrorCopyFixture(status: number, body: Record<string, unknown>): string {
-  const error = typeof body.error === 'string' ? body.error : '';
-  if (status === 401) return 'Publishing needs an active Pro license.';
-  if (error === 'bundle_too_large') return `This library is larger than the publish limit (${String(body.size)} of ${String(body.limit)} characters).`;
-  if (error === 'library_limit') return `This license already publishes ${String(body.limit)} libraries, which is the limit.`;
-  if (status === 429) return 'Too many requests just now. Give it a minute.';
-  return `Publishing failed with HTTP ${status}.`;
-}
 
 describe('rotatePullKey', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
@@ -286,6 +285,72 @@ describe('rotatePullKey', () => {
       kind: 'error', message: 'Rotating the key needs an active Pro license.',
     });
     expect(unusedFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('voice: no em dashes in error copy', () => {
+  const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
+  const NO_AUTH: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  /**
+   * Drives every publishBundle/rotatePullKey branch that can produce an
+   * error message through the REAL functions with stubbed fetch responses,
+   * so an em dash introduced into publish.ts's own copy fails this test
+   * instead of a hand-copied duplicate of that copy.
+   */
+  it('collects every real error message and finds no em dash', async () => {
+    const bundle = buildPublishBundle(baseSources(), GENERATED_AT);
+    const messages: string[] = [];
+
+    const publishCases: Array<{ auth: ProxyAuth; libraryId: string | null; fetcher: typeof fetch }> = [
+      // 401 license_not_active
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(401, { error: 'license_not_active' })) },
+      // 429 rate limited
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(429, {})) },
+      // 403 library_limit with a limit value
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 5 })) },
+      // 413 bundle_too_large with sizes
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(413, { error: 'bundle_too_large', size: 999, limit: 500 })) },
+      // unmapped status
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(500, {})) },
+      // network throw
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => { throw new Error('offline'); }) },
+      // missing auth, never reaches the network
+      { auth: NO_AUTH, libraryId: null, fetcher: vi.fn() },
+    ];
+    for (const testCase of publishCases) {
+      const outcome = await publishBundle(bundle, testCase);
+      if (outcome.kind === 'error') messages.push(outcome.message);
+    }
+
+    // 404/not_owner on republish maps to `gone`, which carries no message, so
+    // it contributes nothing to this sweep by construction.
+
+    const rotateCases: Array<{ auth: ProxyAuth; fetcher: typeof fetch }> = [
+      { auth: AUTH, fetcher: vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) } as unknown as Response)) },
+      { auth: AUTH, fetcher: vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) } as unknown as Response)) },
+      { auth: AUTH, fetcher: vi.fn(async () => { throw new Error('offline'); }) },
+      { auth: NO_AUTH, fetcher: vi.fn() },
+    ];
+    for (const testCase of rotateCases) {
+      const outcome = await rotatePullKey('lib_1', testCase.auth, testCase.fetcher);
+      if (outcome.kind === 'error') messages.push(outcome.message);
+    }
+
+    // Every branch above produces a kind: 'error' outcome, so the sweep is
+    // proof the loops above actually ran rather than silently matching zero.
+    expect(messages.length).toBe(publishCases.length + rotateCases.length);
+    for (const message of messages) {
+      expect(message).not.toContain('—');
+    }
   });
 });
 
