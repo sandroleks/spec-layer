@@ -54,6 +54,16 @@ export interface LibraryEntry {
   foundationScope?: FoundationScope;
 }
 
+/** One documented component's live source, collected for a library publish.
+ *  `name` is the live source node's name (not the doc's stored label), since
+ *  publish needs the current component identity, not a possibly-stale one. */
+export interface PublishComponentSource {
+  docId: string;
+  name: string;
+  node: SerializedNode;
+  prose: ProseDrafts | null;
+}
+
 export type MainToUi =
   | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource;
       /** The Figma file's name (`figma.root.name`), which only the main thread
@@ -118,7 +128,22 @@ export type MainToUi =
   | { type: 'foundationDone'; created: number; replaced: number; docId?: string;
       groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'foundationFrameError'; message: string; created: number }
-  | { type: 'docProse'; docId: string; prose: ProseDrafts | null };
+  | { type: 'docProse'; docId: string; prose: ProseDrafts | null }
+  /** Everything a library publish needs, collected in one pass: the live
+   *  foundation dump, its merged group descriptions, one entry per documented
+   *  component source (deduped so two docs for one source publish once), and
+   *  anything skipped along with why. `fileKey`/`fileName` travel with it for
+   *  the same reason as on `selection`/`driftSource`. */
+  | { type: 'publishSources'; foundation: SerializedFoundation | null;
+      groupDescriptions: Record<string, Record<string, string>>;
+      components: PublishComponentSource[];
+      skipped: Array<{ name: string; reason: string }>;
+      fileKey: string; fileName: string }
+  | { type: 'publishSourcesError'; message: string }
+  /** Reply for `requestPublishInfo`: the last library/pull identity persisted
+   *  for this file via `setPublishInfo`, or nulls when nothing has been
+   *  published from this file yet. */
+  | { type: 'publishInfo'; fileKey: string; libraryId: string | null; pullKey: string | null };
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -152,4 +177,7 @@ export type UiToMain =
    *  each unit's own keys out of it and stores them on that doc. */
   | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
       groupDescriptions?: Record<string, string> }
-  | { type: 'updateFoundationDoc'; docId: string };
+  | { type: 'updateFoundationDoc'; docId: string }
+  | { type: 'requestPublishSources' }
+  | { type: 'requestPublishInfo' }
+  | { type: 'setPublishInfo'; fileKey: string; libraryId: string; pullKey: string };

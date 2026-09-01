@@ -1,7 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
-import type { MainToUi, UiToMain, LibraryEntry } from './messages';
+import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
@@ -1340,6 +1340,77 @@ figma.ui.onmessage = async (raw: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       }
+      break;
+    }
+
+    case 'requestPublishSources': {
+      try {
+        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        let foundation: SerializedFoundation | null = null;
+        try { foundation = await foundationFor(fileKey); } catch { foundation = null; }
+        const groupDescriptions = await liveFoundationGroupDescriptions();
+        const reg = readRegistry();
+        const components: PublishComponentSource[] = [];
+        const skipped: Array<{ name: string; reason: string }> = [];
+        const seenSources = new Set<string>();
+        for (const docId of reg.docIds) {
+          let section: SectionNode | null = null;
+          try {
+            const n = await figma.getNodeByIdAsync(docId);
+            section = n && n.type === 'SECTION' ? (n as SectionNode) : null;
+          } catch { section = null; }
+          if (!section) continue;
+          const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+          if (!data || isFoundationLink(data)) continue;
+          // Two docs for one source publish one context, not two.
+          if (seenSources.has(data.sourceNodeId)) continue;
+          seenSources.add(data.sourceNodeId);
+          let src: BaseNode | null = null;
+          try { src = await figma.getNodeByIdAsync(data.sourceNodeId); } catch { src = null; }
+          if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
+            skipped.push({ name: section.name, reason: 'The source component is gone.' });
+            continue;
+          }
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const node = await serializeNode(src as any, resolver);
+            components.push({ docId, name: node.name, node, prose: parseProse(section.getPluginData(DOC_PROSE_KEY)) });
+          } catch (err) {
+            skipped.push({ name: src.name, reason: err instanceof Error ? err.message : String(err) });
+          }
+        }
+        figma.ui.postMessage({
+          type: 'publishSources', foundation, groupDescriptions, components, skipped,
+          fileKey, fileName: figma.root.name,
+        } as MainToUi);
+      } catch (err) {
+        figma.ui.postMessage({
+          type: 'publishSourcesError', message: err instanceof Error ? err.message : String(err),
+        } as MainToUi);
+      }
+      break;
+    }
+
+    case 'requestPublishInfo': {
+      const { fileKey } = resolveFileKey(figma.fileKey, null);
+      type PublishInfoRecord = { libraryId?: string; pullKey?: string };
+      let info: PublishInfoRecord | null = null;
+      try {
+        const raw = await figma.clientStorage.getAsync(`publishInfo:${fileKey}`) as string | undefined;
+        info = raw ? (JSON.parse(raw) as PublishInfoRecord) : null;
+      } catch { info = null; }
+      figma.ui.postMessage({
+        type: 'publishInfo', fileKey,
+        libraryId: info?.libraryId ?? null, pullKey: info?.pullKey ?? null,
+      } as MainToUi);
+      break;
+    }
+
+    case 'setPublishInfo': {
+      await figma.clientStorage.setAsync(
+        `publishInfo:${msg.fileKey}`,
+        JSON.stringify({ libraryId: msg.libraryId, pullKey: msg.pullKey }),
+      );
       break;
     }
   }
