@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runInit, runPull, runStatus, type Io } from '../src/commands';
@@ -136,6 +136,16 @@ describe('runPull', () => {
     expect(err).toMatch(/spec-layer init/);
   });
 
+  it('errors with a plain message, not a thrown stack trace, on a corrupt speclayer.json', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), '{ not json');
+    const io = makeIo();
+
+    const code = await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io);
+
+    expect(code).toBe(1);
+    expect(io.errLines).toEqual(['speclayer.json is not valid JSON. Fix or delete it, then retry.']);
+  });
+
   it('propagates api errors with exit 1 and no partial directory', async () => {
     runInit(cwd, { id: 'lib_abc' }, makeIo());
     const io = makeIo();
@@ -209,5 +219,15 @@ describe('runStatus', () => {
 
     expect(code).toBe(2);
     expect(io.errLines.join('\n')).toMatch(/No local pull/);
+  });
+
+  it('errors with a plain message, not a thrown stack trace, on a corrupt speclayer.json', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), '{ not json');
+    const io = makeIo();
+
+    const code = await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io);
+
+    expect(code).toBe(1);
+    expect(io.errLines).toEqual(['speclayer.json is not valid JSON. Fix or delete it, then retry.']);
   });
 });

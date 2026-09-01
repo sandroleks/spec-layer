@@ -25,7 +25,16 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
 function resolved(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io,
 ): (ResolvedOptions & { libraryId: string; key: string }) | null {
-  const opts = resolveOptions(cwd, flags, env, manifestLibraryId);
+  let opts: ResolvedOptions;
+  try {
+    opts = resolveOptions(cwd, flags, env, manifestLibraryId);
+  } catch (err) {
+    // resolveOptions reads speclayer.json via readConfig, which throws on
+    // corrupt JSON. Surface the message as plain text rather than letting it
+    // escape uncaught up through cli.ts.
+    io.err(err instanceof Error ? err.message : String(err));
+    return null;
+  }
   if (!opts.libraryId) {
     io.err('No library id. Pass --id lib_..., or run spec-layer init first.');
     return null;
