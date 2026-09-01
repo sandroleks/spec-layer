@@ -285,7 +285,7 @@ describe('handlePull', () => {
 
   it('rejects a malformed key', async () => {
     const { deps: d, libraryId } = await publishedLibrary();
-    const res = await handlePull(pullReq(libraryId, 'Bearer nope'), d, libraryId);
+    const res = await handlePull(pullReq(libraryId, 'nope'), d, libraryId);
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'invalid_key' });
   });
