@@ -65,6 +65,14 @@ export const ICON_PATHS = {
   download:
     '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
     '<path d="M7 11l5 5l5-5"/><path d="M12 4l0 12"/>',
+  /**
+   * Publishing: the mirror of `download`, sharing its tray so the pair reads
+   * as one axis. Arrow out of the tray is "sends this away", which is exactly
+   * what a publish does and what `download` does not.
+   */
+  upload:
+    '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
+    '<path d="M7 9l5-5l5 5"/><path d="M12 4l0 12"/>',
   puzzle:
     '<path d="M4 7h3a1 1 0 0 0 1-1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-1a2 2 0 0 0-4 0v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a2 2 0 0 0 0-4h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1"/>',
   /** Foundation row: a collection whose variables are all COLOR. */
@@ -119,6 +127,8 @@ export const ICON_PATHS = {
   dots:
     '<path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/>',
   x: '<path d="M6 6l12 12"/><path d="M18 6l-12 12"/>',
+  /** Back out of a sub-screen. Mirror of `chevronRight`. */
+  chevronLeft: '<path d="M15 6l-6 6l6 6"/>',
   chevronRight: '<path d="M9 6l6 6l-6 6"/>',
   /** Copy a brief to the clipboard. */
   copy:
