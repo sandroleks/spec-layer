@@ -321,6 +321,22 @@ describe('publish screen styling', () => {
       .toMatch(/font-variant-ligatures:\s*none/);
   });
 
+  /**
+   * The header is `align-items: flex-start`, which keeps every screen's h1 at
+   * the same y, so a taller control placed beside it centres below the title.
+   * The lift has to be derived from the type and control tokens, not typed as a
+   * px: a hard number silently stops aligning the moment either one changes.
+   */
+  it('centres the back control on the title line using tokens, not a magic px', () => {
+    const back = rule('.sl-publish-back');
+    expect(back).toMatch(/height:\s*var\(--sl-control-sm\)/);
+    const margin = /margin-top:\s*calc\(([^;]*)\)/.exec(back)?.[1] ?? '';
+    expect(margin).toContain('--sl-font-size-display');
+    expect(margin).toContain('--sl-line-height-tight');
+    expect(margin).toContain('--sl-control-sm');
+    expect(margin).not.toMatch(/\d+px/);
+  });
+
   /** A quiet button paints no background, so its label is what must align. */
   it('pulls the quiet rotate button back onto the body column', () => {
     const escaped = new RegExp(

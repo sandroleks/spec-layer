@@ -1220,13 +1220,32 @@
 }
 
 /*
- * Back control, sitting before .sl-page-header-copy. The page header is
- * `align-items: flex-start`, so an icon button would hang above the h1's
- * optical centre; the small top margin drops it onto the title's line.
+ * Back control, before .sl-page-header-copy, centred on the TITLE'S LINE rather
+ * than on the header's top edge.
+ *
+ * The page header is `align-items: flex-start` so screens carrying an eyebrow
+ * or a subtitle keep their block top-aligned, which is also what puts every
+ * screen's h1 at the same y. The back control has to meet that h1 where it
+ * already is rather than move it: switching this header to `align-items:
+ * center` would drop the title 13px and make it jump on the way in from the
+ * Library.
+ *
+ * Top-aligned, though, a 36px control against a 23px line box is centred 6.5px
+ * low, so the chevron read as sitting under the title instead of beside it. It
+ * takes the small control size and lifts itself by half the difference between
+ * the h1's line box and its own box. Both terms are tokens, so changing the
+ * display type or the control scale keeps this aligned rather than needing a
+ * fresh magic number, and the smaller box also stops the hover fill from
+ * out-weighing the title it sits next to. The h1 is `white-space: nowrap`, so
+ * there is only ever one line box to centre on.
  */
 .sl-publish-back {
   flex: 0 0 auto;
-  margin-top: 1px;
+  width: var(--sl-control-sm);
+  height: var(--sl-control-sm);
+  margin-top: calc(
+    (var(--sl-font-size-display) * var(--sl-line-height-tight) - var(--sl-control-sm)) / 2
+  );
 }
 
 /*
