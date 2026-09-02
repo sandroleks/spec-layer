@@ -102,6 +102,9 @@ bundle, effectively zero runtime dependencies (built-in `fetch`,
   the existing manifest, so the plugin's one-line setup command works in a
   bare repo. The pull key is never written to config; it comes from
   `SPEC_LAYER_KEY` or `--key`, and init says so.
+
+  > Superseded by `2026-09-02-cli-stored-pull-key-design.md`. The key is now
+  > stored in `speclayer.local.json`, gitignored, at mode 0600.
 - `spec-layer pull` - fetches the bundle and writes:
   - `.speclayer/bundle.json` - the canonical validated v5 bundle,
     byte-for-byte as published.

@@ -305,6 +305,14 @@ function git(cwd: string, args: string[]): number | null {
   if (res.error || res.status === null) return null;
   return res.status;
 }
+```
+
+> This plan treated a missing `git` binary the same as no repository at all.
+> That was overruled during execution (Task 4 review); see the "2026-09-02,
+> during implementation" note in `2026-09-02-cli-stored-pull-key-design.md`'s
+> Gitignore handling section for what shipped instead.
+
+```ts
 
 /**
  * Make sure git ignores `fileName` in `cwd` before a secret is written there.

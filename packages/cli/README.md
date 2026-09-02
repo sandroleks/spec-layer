@@ -11,18 +11,22 @@ and writes it to disk.
 ## Quick start
 
 After publishing a library from the plugin's Library screen, it shows a setup
-command. Run it in your repository:
+command. Run it once in your repository:
 
 ```bash
-SPEC_LAYER_KEY=sl_... npx spec-layer pull --id lib_...
+npx spec-layer setup --id lib_... --key sl_...
 ```
 
-That writes `.speclayer/` and is enough on its own. To avoid repeating the
-library id, record it once:
+That records the library id, stores the key in a gitignored
+`speclayer.local.json`, and writes `.speclayer/`. Every later command needs no
+flags at all:
 
 ```bash
-npx spec-layer init --id lib_...
+npx spec-layer pull
 ```
+
+`init` still writes the config without a key or a network call, for a repo
+that supplies the key from the environment instead.
 
 ## Installing, or not
 
@@ -114,11 +118,32 @@ name, `show` refuses to guess and points you at `list`.
 
 ## The pull key
 
-Every command that talks to the server reads the pull key from `SPEC_LAYER_KEY`
-or `--key`. It is never written to disk, and `speclayer.json` never contains
-it. Treat it as a secret: it grants read access to the published bundle. If it
-leaks, rotate it from the plugin's Library screen. The old key stops working
-once the change propagates, which can take up to about a minute.
+`spec-layer setup` stores the key in `speclayer.local.json` next to
+`speclayer.json`, at mode `0600`, and makes sure git ignores it before writing
+it. Every later command in that directory needs no key.
+
+Commands that talk to the server resolve the key in this order:
+
+1. `--key sl_...`
+2. `SPEC_LAYER_KEY` in the environment
+3. `speclayer.local.json`, when it was issued for the same library
+
+Environment sits above the file so CI can supply a key without touching the
+working tree. A stored key issued for a different library is ignored, and the
+CLI says which library it belongs to rather than letting the server answer 401.
+
+Treat the key as a secret: it grants read access to the published bundle.
+`speclayer.local.json` is gitignored, never printed by any command, and never
+copied into `speclayer.json`, `bundle.json`, `manifest.json`, or anything under
+the output directory. If it leaks, rotate it from the plugin's Library screen,
+then run the new setup command. The old key stops working once the change
+propagates, which can take up to about a minute.
+
+Outside a git working tree, the key is still stored and the CLI says it left
+`.gitignore` alone. Inside one, `setup` refuses to write the key whenever it
+cannot confirm the file will be ignored, whether because `.gitignore` can't be
+written or because git itself couldn't be run, and prints the line to add
+instead.
 
 ## What `pull` writes
 

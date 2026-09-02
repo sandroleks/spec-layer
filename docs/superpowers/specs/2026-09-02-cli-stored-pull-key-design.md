@@ -147,17 +147,32 @@ git honours a nested `.gitignore` for its own directory. Create the file when
 absent, and append with a leading newline when the existing file does not end
 in one.
 
-Three outcomes:
+Outcomes:
 
 | Situation | Behaviour |
 |---|---|
-| Not a git working tree, or no `git` on `PATH` | Skip the step, say so, write the key. There is nothing to leak into. |
-| Git repo, entry added or already covered | Report which, continue. |
+| git ran and reported this isn't a working tree | Skip the step, say `.gitignore` was left alone, write the key. |
+| git could not be run at all, and no `.git` directory is present | Same as above: there is genuinely no repository to leak into. |
+| git could not be run at all, but a `.git` directory is present | Refuse to write the key. It cannot confirm the file would be ignored inside what looks like a real working tree. Print the exact line to add and exit nonzero. |
+| Git repo, entry added, already covered, or `.gitignore` created | Report which, continue. |
 | Git repo, `.gitignore` not writable | Refuse to write the key. Print the exact line to add and exit nonzero. |
 
-The refusal is the deliberately awkward case. Writing an un-ignored secret
-into a git working tree and warning about it would put the burden on the
-developer noticing a line of output.
+The two refusal rows are the deliberately awkward case. Writing an un-ignored
+secret into a git working tree and warning about it would put the burden on
+the developer noticing a line of output.
+
+> **2026-09-02, during implementation:** this table originally collapsed "git
+> could not be run" into the same outcome as "not a git working tree,"
+> reasoning that a non-repository has nothing to leak into. Review during
+> Task 4 found the hole that reasoning missed: a directory with a `.git`
+> entry but no `git` executable on `PATH` (a slim container, a sandbox) is a
+> real working tree, and the old logic both printed a false reassurance
+> ("Not a git repository, so .gitignore was left alone") and then wrote a
+> plaintext key into it with nothing ignoring it. The human partner overruled
+> the original position for that one case: a present `.git` directory with an
+> unrunnable `git` now refuses to write the key instead of writing it
+> unverified. `packages/cli/src/gitignore.ts` (the `no-git` outcome) is the
+> shipped behaviour; this section now matches it.
 
 ## Rotation and replacement
 

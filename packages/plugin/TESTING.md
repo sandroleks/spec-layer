@@ -229,6 +229,18 @@ action. The rows below start there.
 - [ ] Pull: run the copied setup command in an empty directory; `.speclayer/`
       contains bundle.json, manifest.json, ai/foundation.yaml, and one YAML per
       component; the YAML matches what Copy for AI puts on the clipboard.
+- [ ] Stored key: run the copied setup command in an empty directory inside a
+      git repository. The output names speclayer.json, the .gitignore entry and
+      the stored key, and never prints the key itself. `git status` shows no
+      untracked speclayer.local.json. `spec-layer pull` and `spec-layer status`
+      then both work with nothing in the environment.
+- [ ] Stored key, no git: run the same command in a directory that is not a git
+      working tree. It stores the key, says it left .gitignore alone, and pulls.
+- [ ] Stored key after a rotation: rotate in the plugin, then run
+      `spec-layer pull` in the directory holding the old stored key. It fails
+      with the message pointing back at the setup command. Re-pasting the new
+      setup command reports that it replaced the stored key, and the next pull
+      succeeds.
 - [ ] Republish after editing a token: `spec-layer status` exits 2 and names
       the new publish time; `spec-layer pull` then `status` exits 0.
 - [ ] Rotate key: old command fails with the rotated-key message within about

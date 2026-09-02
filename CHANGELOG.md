@@ -8,6 +8,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- `spec-layer setup`, one command for a developer's first run in a repo. It
+  writes `speclayer.json`, makes sure git ignores `speclayer.local.json`,
+  stores the pull key there at mode `0600`, and pulls. Every later `pull` and
+  `status` in that directory needs no key, so the plugin's copied setup
+  command is now something a developer runs once rather than a line they keep
+  pasting. Keys resolve `--key`, then `SPEC_LAYER_KEY`, then the stored file,
+  so CI overrides the working tree without editing it. A stored key issued for
+  another library is ignored and named, instead of reaching the server and
+  coming back as a rotated-key error.
+
+  This reverses a stated property: the key used to be documented as never
+  written to disk. That claim did not remove the secret, it relocated it into
+  shell history and hand-edited shell profiles, which are worse homes than a
+  mode `0600` file the tool ignores in git and can point at in an error
+  message. Outside a git working tree the key is still stored, and the CLI
+  says it left `.gitignore` alone. Inside one, setup refuses to store the key
+  whenever it cannot confirm `.gitignore` will ignore it, whether because the
+  file can't be written or because git itself couldn't be run, rather than
+  leaving an un-ignored secret in a working tree.
+
 - Foundation export. A new **Foundations** tab in the Figma plugin
   documents the file's variable collections and local text styles, with
   no selection required. It mirrors the file's own structure rather than
