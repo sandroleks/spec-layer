@@ -357,7 +357,13 @@ describe('voice: no em dashes in error copy', () => {
 describe('setupCommand', () => {
   it('produces the exact one-liner', () => {
     expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48)))
-      .toBe('SPEC_LAYER_KEY=sl_' + 'b'.repeat(48) + ' npx spec-layer pull --id lib_aaaaaaaaaaaaaaaaaaaaaaaa');
+      .toBe('npx spec-layer setup --id lib_aaaaaaaaaaaaaaaaaaaaaaaa --key sl_' + 'b'.repeat(48));
+  });
+
+  // The voice rules forbid em dashes anywhere in plugin UI copy, and this
+  // string is rendered into the publish screen.
+  it('carries no em dash', () => {
+    expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48))).not.toContain('—');
   });
 });
 

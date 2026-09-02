@@ -37,8 +37,9 @@ const WHAT_GETS_PUBLISHED =
   'component document. Publishing replaces the version published before it.';
 
 const DEVELOPER_SETUP =
-  'Developers run this in their repo to pull the library with the spec-layer ' +
-  'CLI. Anyone with the key can pull it.';
+  'Developers run this in their repo. It stores the pull key so later pulls '
+  + 'need no key, adds that file to .gitignore, and pulls the library. Anyone '
+  + 'with the key can pull it.';
 
 /**
  * Shown only before the first publish, where the Developer setup group would

@@ -148,7 +148,7 @@ export async function rotatePullKey(
 }
 
 export function setupCommand(libraryId: string, pullKey: string): string {
-  return `SPEC_LAYER_KEY=${pullKey} npx spec-layer pull --id ${libraryId}`;
+  return `npx spec-layer setup --id ${libraryId} --key ${pullKey}`;
 }
 
 // ---------------------------------------------------------------------------

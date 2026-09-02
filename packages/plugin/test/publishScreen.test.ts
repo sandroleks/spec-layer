@@ -101,7 +101,7 @@ describe('publish screen body', () => {
     expect(markup).toContain('data-publish-rotate');
     expect(markup).toContain('Rotate key');
     expect(markup).toContain(
-      `SPEC_LAYER_KEY=${PULL_KEY} npx spec-layer pull --id ${LIBRARY_ID}`,
+      `npx spec-layer setup --id ${LIBRARY_ID} --key ${PULL_KEY}`,
     );
   });
 
@@ -459,7 +459,7 @@ describe('publish screen on a free plan', () => {
     expect(markup).toContain('<h2>Developer setup</h2>');
     expect(markup).toContain('data-publish-copy-command');
     expect(markup).toContain(
-      `SPEC_LAYER_KEY=${PULL_KEY} npx spec-layer pull --id ${LIBRARY_ID}`,
+      `npx spec-layer setup --id ${LIBRARY_ID} --key ${PULL_KEY}`,
     );
     expect(markup).not.toContain('data-publish-rotate');
     expect(markup).not.toContain('Rotate key');
