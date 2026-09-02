@@ -101,17 +101,19 @@ plugin source and manifest network allowlist aligned when changing that host.
 ### The CLI
 
 Publishing a library from the plugin's **Library** screen shows a setup command
-to run in your repository. It needs no install step of its own:
+to run in your repository:
 
 ```bash
 SPEC_LAYER_KEY=sl_... npx spec-layer pull --id lib_...
 ```
 
-That writes `.speclayer/`. The CLI is delivery only: it never talks to Figma,
-re-derives nothing, and has no runtime dependencies. `init` records the library
-id, `status` checks freshness without writing, and `list` and `show` read the
-last pull. See the [CLI README](packages/cli/README.md) for every command,
-partial pulls, and CI usage.
+`npx` needs no install step of its own, though a repo that pulls on a schedule
+should pin the CLI as a dev dependency. That writes `.speclayer/`. The CLI is
+delivery only: it never talks to Figma, re-derives nothing, and has no runtime
+dependencies. `init` records the library id, `status` checks freshness without
+writing, and `list` and `show` read the last pull. See the
+[CLI README](packages/cli/README.md) for every command, partial pulls, and what
+`pull` writes.
 
 ## Development
 

@@ -24,6 +24,31 @@ library id, record it once:
 npx spec-layer init --id lib_...
 ```
 
+## Installing, or not
+
+`npx` needs no install step: it fetches the package and runs it. That is the
+right choice for trying this once, and for a repo that pulls by hand.
+
+Two cases want a real install instead. On a cold cache `npx` has to fetch the
+package first, and confirming that is a prompt you do not want in an
+unattended run. `--yes` answers it up front:
+
+```bash
+npx --yes spec-layer status
+```
+
+And a repo that pulls on a schedule should pin the version rather than
+resolving the latest release on every run, so a CLI update never changes a
+build you did not touch:
+
+```bash
+npm install --save-dev spec-layer
+```
+
+`npx spec-layer` then runs the pinned local copy, no `--yes` needed. Pinning
+also keeps `.speclayer/manifest.json` on one format: 0.1.0 wrote no
+`selection` field, and 0.2.0 does.
+
 ## Commands
 
 | Command | What it does |
