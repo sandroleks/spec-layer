@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
+    "deploy": "wrangler deploy --config wrangler.toml",
     "check:deploy": "wrangler deploy --dry-run --config wrangler.toml"
   },
   "dependencies": {
