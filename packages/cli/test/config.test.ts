@@ -240,3 +240,48 @@ describe('api origin normalization', () => {
     expect(resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://example.test//' }, none).api).toBe('https://example.test');
   });
 });
+
+describe('resolveOptions key sources', () => {
+  let cwd: string;
+  const stub = (_outDir: string) => null;
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+  const STORED = `sl_${'s'.repeat(48)}`;
+
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-cfg-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  const writeStored = (libraryId: string, key: string) => {
+    writeFileSync(join(cwd, 'speclayer.local.json'), JSON.stringify({ libraryId, key }));
+  };
+
+  it('uses the stored key when neither flag nor env has one', () => {
+    writeStored(LIB, STORED);
+    const result = resolveOptions(cwd, { id: LIB }, {}, stub);
+    expect(result.key).toBe(STORED);
+    expect(result.storedKeyFor).toBeUndefined();
+  });
+
+  it('lets --key and SPEC_LAYER_KEY beat the stored key', () => {
+    writeStored(LIB, STORED);
+    expect(resolveOptions(cwd, { id: LIB, key: 'from-flag' }, {}, stub).key).toBe('from-flag');
+    expect(resolveOptions(cwd, { id: LIB }, { SPEC_LAYER_KEY: 'from-env' }, stub).key).toBe('from-env');
+  });
+
+  it('ignores a stored key issued for another library and reports which', () => {
+    writeStored('lib_ffffffffffffffffffffffff', STORED);
+    const result = resolveOptions(cwd, { id: LIB }, {}, stub);
+    expect(result.key).toBeNull();
+    expect(result.storedKeyFor).toBe('lib_ffffffffffffffffffffffff');
+  });
+
+  // A corrupt credential file must not break a run that never needed it.
+  it('does not read the credential file when a key is already supplied', () => {
+    writeFileSync(join(cwd, 'speclayer.local.json'), '{ not json');
+    expect(resolveOptions(cwd, { id: LIB, key: 'from-flag' }, {}, stub).key).toBe('from-flag');
+    expect(() => resolveOptions(cwd, { id: LIB }, {}, stub)).toThrow(/setup command/);
+  });
+
+  it('returns a null key with no file at all', () => {
+    expect(resolveOptions(cwd, { id: LIB }, {}, stub).key).toBeNull();
+  });
+});

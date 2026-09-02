@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Selection } from './selection';
+import { readCredentials } from './credentials';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
@@ -54,6 +55,11 @@ export interface ResolvedOptions {
   libraryId: string | null; outDir: string; api: string; key: string | null;
   /** The config's include block, when it has one, for pull to fall back on. */
   include?: Selection;
+  /**
+   * Set when a credential file exists but was issued for another library, so
+   * the caller can say that instead of reporting a plain missing key.
+   */
+  storedKeyFor?: string;
 }
 
 export function resolveOptions(
@@ -65,12 +71,27 @@ export function resolveOptions(
   const config = readConfig(cwd);
   const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
   const libraryId = flags.id ?? config?.libraryId ?? manifestLibraryId(join(cwd, outDir));
+
+  // Read the credential file only when nothing else supplies a key, so a
+  // corrupt file cannot break a run that passed --key or set SPEC_LAYER_KEY.
+  const supplied = flags.key ?? env.SPEC_LAYER_KEY ?? null;
+  let storedKey: string | null = null;
+  let storedKeyFor: string | undefined;
+  if (!supplied) {
+    const stored = readCredentials(cwd);
+    if (stored) {
+      if (libraryId && stored.libraryId === libraryId) storedKey = stored.key;
+      else storedKeyFor = stored.libraryId;
+    }
+  }
+
   return {
     libraryId,
     outDir,
     // A trailing slash would build "//v1/..." paths the proxy router 404s on.
     api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
-    key: flags.key ?? env.SPEC_LAYER_KEY ?? null,
+    key: supplied ?? storedKey,
     ...(config?.include ? { include: config.include } : {}),
+    ...(storedKeyFor ? { storedKeyFor } : {}),
   };
 }
