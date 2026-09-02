@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { parseBundle, type BundleV1 } from './bundle';
-import { readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, type ResolvedOptions } from './config';
+import {
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, type CliConfig, type ResolvedOptions,
+} from './config';
 import { fetchBundle } from './api';
 import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
 import {
@@ -70,7 +72,13 @@ function resolved(
     return null;
   }
   if (!opts.libraryId) {
-    io.err('No library id. Pass --id lib_..., or run spec-layer init first.');
+    // A credential file naming a library is the answer to the question being
+    // asked, so say so rather than sending the reader off to find the id they
+    // already have on disk.
+    io.err(opts.storedKeyFor
+      ? `No library id. ${CREDENTIALS_NAME} holds a key for library ${opts.storedKeyFor}. `
+        + `Pass --id ${opts.storedKeyFor}, or run spec-layer init first.`
+      : 'No library id. Pass --id lib_..., or run spec-layer init first.');
     return null;
   }
   if (!opts.key) {
@@ -134,8 +142,22 @@ export async function runSetup(
     return 1;
   }
 
-  const outDir = flags.out ?? DEFAULT_OUT_DIR;
-  writeConfig(cwd, { libraryId: flags.id, outDir, ...(include ? { include } : {}) });
+  // Unlike `init`, `setup` defaults from the committed config rather than
+  // overwriting it. `init` is the first-run command and overwriting is the
+  // point of it; `setup` is also the rotation path, and the command the plugin
+  // hands out carries neither --out nor a selection, so re-pasting it must not
+  // silently reset a chosen output directory or an include block and leave the
+  // old directory stale. That difference is deliberate, which is why these two
+  // blocks are not extracted into a shared helper.
+  //
+  // A corrupt speclayer.json tells us nothing to preserve, and setup
+  // overwriting it is the repair path, so it falls back to the defaults rather
+  // than failing the run.
+  let existing: CliConfig | null = null;
+  try { existing = readConfig(cwd); } catch { existing = null; }
+  const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
+  const keptInclude = include ?? existing?.include ?? null;
+  writeConfig(cwd, { libraryId: flags.id, outDir, ...(keptInclude ? { include: keptInclude } : {}) });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
@@ -147,6 +169,10 @@ export async function runSetup(
     case 'no-git':
       io.err(`Could not run git, so it could not confirm ${CREDENTIALS_NAME} would be ignored. The key was not written.`);
       io.err(`Add this line to .gitignore, then run the command again:\n${ignored.line}`);
+      return 1;
+    case 'still-not-ignored':
+      io.err(`${ignored.line} is listed in .gitignore, but git still does not ignore it, so the key was not written.`);
+      io.err(`The most likely reason is that ${ignored.line} is already tracked. Run this, then run the command again:\ngit rm --cached ${ignored.line}`);
       return 1;
     case 'created':
       io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
@@ -161,8 +187,11 @@ export async function runSetup(
       io.out('Not a git repository, so .gitignore was left alone.');
       break;
     default: {
+      // Compile-time exhaustiveness only. Returning `exhaustive` would set
+      // process.exitCode to a non-number if a future kind ever reached here.
       const exhaustive: never = ignored;
-      return exhaustive;
+      void exhaustive;
+      return 1;
     }
   }
 

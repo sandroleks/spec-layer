@@ -74,13 +74,20 @@ export function resolveOptions(
 
   // Read the credential file only when nothing else supplies a key, so a
   // corrupt file cannot break a run that passed --key or set SPEC_LAYER_KEY.
-  const supplied = flags.key ?? env.SPEC_LAYER_KEY ?? null;
+  //
+  // `||` rather than `??`: an exported but empty SPEC_LAYER_KEY (a CI secret
+  // that resolved to nothing, a stale shell profile line) is no key at all. A
+  // `??` here would disagree with the falsy check below, read a perfectly good
+  // stored key off disk, and then discard it for the empty string.
+  const supplied = flags.key || env.SPEC_LAYER_KEY || null;
   let storedKey: string | null = null;
   let storedKeyFor: string | undefined;
   if (!supplied) {
     const stored = readCredentials(cwd);
     if (stored) {
-      if (libraryId && stored.libraryId === libraryId) storedKey = stored.key;
+      // An empty stored key is normalised the same way, so `key` is null when
+      // there is no usable key rather than an empty string that reads as one.
+      if (libraryId && stored.libraryId === libraryId) storedKey = stored.key || null;
       else storedKeyFor = stored.libraryId;
     }
   }

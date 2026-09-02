@@ -284,4 +284,28 @@ describe('resolveOptions key sources', () => {
   it('returns a null key with no file at all', () => {
     expect(resolveOptions(cwd, { id: LIB }, {}, stub).key).toBeNull();
   });
+
+  /**
+   * An exported but empty SPEC_LAYER_KEY (a CI secret that resolved to
+   * nothing, a stale shell profile line) used to read the stored key off disk
+   * and then discard it for the empty string, reporting no key at all.
+   */
+  it('treats an empty SPEC_LAYER_KEY as absent and still uses the stored key', () => {
+    writeStored(LIB, STORED);
+    expect(resolveOptions(cwd, { id: LIB }, { SPEC_LAYER_KEY: '' }, stub).key).toBe(STORED);
+  });
+
+  it('treats an empty --key as absent and still uses the stored key', () => {
+    writeStored(LIB, STORED);
+    expect(resolveOptions(cwd, { id: LIB, key: '' }, {}, stub).key).toBe(STORED);
+  });
+
+  it('returns a null key for an empty SPEC_LAYER_KEY with no stored file', () => {
+    expect(resolveOptions(cwd, { id: LIB }, { SPEC_LAYER_KEY: '' }, stub).key).toBeNull();
+  });
+
+  it('reports a null key rather than an empty one when the stored key is empty', () => {
+    writeStored(LIB, '');
+    expect(resolveOptions(cwd, { id: LIB }, {}, stub).key).toBeNull();
+  });
 });

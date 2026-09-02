@@ -688,6 +688,89 @@ describe('runSetup', () => {
     expect(readConfig(cwd)).toMatchObject({ libraryId: LIB });
   });
 
+  /**
+   * The tracked-file hole: `check-ignore` never reports a tracked file as
+   * ignored, so appending the entry is not proof the file stays out of a
+   * commit. Reachable from a sequence the design blesses: setup outside a
+   * repo, `git init && git add -A && git commit`, then rotate and re-paste.
+   */
+  it('writes no key when the credential file is already tracked', async () => {
+    // First run with no repo at all: the key is stored, .gitignore untouched.
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, makeIo(), stub200())).toBe(0);
+    gitInit();
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com',
+      GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com',
+    };
+    for (const args of [['add', 'speclayer.local.json'], ['commit', '-q', '-m', 'oops']]) {
+      expect(spawnSync('git', args, { cwd, env, stdio: 'ignore' }).status).toBe(0);
+    }
+    const io = makeIo();
+    const rotated = `sl_${'b'.repeat(48)}`;
+
+    const code = await runSetup(cwd, { id: LIB, key: rotated }, {}, io, stub200());
+
+    expect(code).toBe(1);
+    // The tracked file keeps its old contents: no new key was written.
+    expect(stored().key).toBe(KEY);
+    const errors = io.errLines.join('\n');
+    expect(errors).toMatch(/git rm --cached speclayer\.local\.json/);
+    expect(errors).toMatch(/already tracked/);
+    expect(errors).not.toContain(rotated);
+  });
+
+  /**
+   * Re-pasting the plugin's command is the documented rotation flow, and that
+   * command carries neither --out nor a selection. Overwriting the config
+   * wholesale silently moved a developer's output back to .speclayer/ and
+   * dropped their include block.
+   */
+  it('preserves a committed outDir and include on a re-run with no flags', async () => {
+    gitInit();
+    expect(await runSetup(
+      cwd, { id: LIB, key: KEY, out: 'design-context', component: ['Button'] }, {}, makeIo(), stub200(),
+    )).toBe(0);
+    const io = makeIo();
+    const rotated = `sl_${'b'.repeat(48)}`;
+
+    expect(await runSetup(cwd, { id: LIB, key: rotated }, {}, io, stub200())).toBe(0);
+
+    expect(readConfig(cwd)).toEqual({
+      libraryId: LIB, outDir: 'design-context',
+      include: { foundation: true, components: ['Button'] },
+    });
+    expect(io.outLines.join('\n')).toContain('design-context');
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+  });
+
+  it('lets an explicit --out and selection flag override a committed config', async () => {
+    gitInit();
+    expect(await runSetup(
+      cwd, { id: LIB, key: KEY, out: 'design-context', component: ['Button'] }, {}, makeIo(), stub200(),
+    )).toBe(0);
+
+    expect(await runSetup(
+      cwd, { id: LIB, key: KEY, out: 'other', only: 'foundation' }, {}, makeIo(), stub200(),
+    )).toBe(0);
+
+    expect(readConfig(cwd)).toEqual({
+      libraryId: LIB, outDir: 'other', include: { foundation: true, components: [] },
+    });
+  });
+
+  // A corrupt speclayer.json has nothing to preserve, and setup overwriting it
+  // is the repair path, so it must not become a hard failure.
+  it('repairs a corrupt speclayer.json rather than failing', async () => {
+    gitInit();
+    writeFileSync(join(cwd, 'speclayer.json'), '{ not json');
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+
+    expect(readConfig(cwd)).toMatchObject({ libraryId: LIB, outDir: '.speclayer' });
+  });
+
   it('honours --out and the selection flags like init does', async () => {
     gitInit();
     const io = makeIo();
@@ -699,6 +782,31 @@ describe('runSetup', () => {
       outDir: 'design-context', include: { foundation: true, components: [] },
     });
     expect(existsSync(join(cwd, 'design-context', 'manifest.json'))).toBe(true);
+  });
+
+  /**
+   * The exhaustiveness guard is a compile-time check, but if a future
+   * IgnoreResult kind ever reached it, returning the `never` binding set
+   * process.exitCode to an object and threw in cli.ts. It must refuse.
+   */
+  it('returns 1 and writes no key for an unknown gitignore outcome', async () => {
+    gitInit();
+    vi.resetModules();
+    vi.doMock('../src/gitignore', () => ({
+      ensureIgnored: () => ({ kind: 'a-kind-from-a-later-release', line: 'speclayer.local.json' }),
+    }));
+    try {
+      const { runSetup: setupWithUnknownKind } = await import('../src/commands');
+      const io = makeIo();
+
+      const code = await setupWithUnknownKind(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+
+      expect(code).toBe(1);
+      expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+    } finally {
+      vi.doUnmock('../src/gitignore');
+      vi.resetModules();
+    }
   });
 
   it('never prints the key', async () => {
@@ -722,6 +830,29 @@ describe('stored key errors', () => {
     expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/setup command/);
     expect(io.errLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+  });
+
+  // The credential file names the library, so reporting "no library id"
+  // without mentioning it sends the reader off to find what is already there.
+  it('names the stored library when nothing else supplies an id', async () => {
+    writeFileSync(
+      join(cwd, 'speclayer.local.json'),
+      JSON.stringify({ libraryId: LIB, key: `sl_${'a'.repeat(48)}` }),
+    );
+    const io = makeIo();
+
+    expect(await runPull(cwd, {}, {}, io, stub200())).toBe(1);
+
+    const errors = io.errLines.join('\n');
+    expect(errors).toMatch(/No library id/);
+    expect(errors).toContain('speclayer.local.json');
+    expect(errors).toContain(`--id ${LIB}`);
+  });
+
+  it('keeps the plain no-id message when nothing names a library', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, {}, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toBe('No library id. Pass --id lib_..., or run spec-layer init first.');
   });
 
   it('says which library a mismatched stored key belongs to', async () => {
