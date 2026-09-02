@@ -179,6 +179,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A component containing a text layer with non-uniform character fills can be
+  documented again. Figma returns `figma.mixed` (a symbol) from `fills`,
+  `strokes`, `fillStyleId` and `strokeStyleId` when a text node's ranges
+  differ, so recolouring one word of one label made `fills ?? []` yield a
+  symbol and `.some()` throw. Serialization recurses through `Promise.all`, so
+  a single such layer aborted the whole component: the panel fell back to "No
+  component selected" and the component's Library row read "Check unavailable",
+  neither of which named a cause. Mixed paints are now read as no paint this
+  pass can speak for, so no unbound-paint gap or hex is claimed for them, and a
+  mixed style id is no longer handed to Figma as an id to look up. Whether a
+  paint counts as styled is unchanged, so no existing document's drift baseline
+  moves and no rebuild is requested.
+- The two silent `catch` blocks behind those states now log the error they
+  swallow, and an unresolved drift source logs what the stored node id
+  actually resolved to.
 - Publish identity now lives in the file, not in one shared slot. Because
   `figma.fileKey` is undefined for a Community plugin, every file used to
   share the `publishInfo:unknown` record, so publishing from one file could

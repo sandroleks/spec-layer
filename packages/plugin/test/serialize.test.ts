@@ -319,6 +319,91 @@ describe('text metrics and fill alpha', () => {
   });
 });
 
+// Figma returns figma.mixed (a symbol) from `fills`, `strokes`, `fillStyleId`
+// and `strokeStyleId` when a TEXT node's character ranges are not uniform --
+// recolour one word of a label and every one of these stops being the type the
+// signature claims. `fills ?? []` does not catch a symbol, so `.some()` threw
+// `TypeError: not a function`, and because serializeNode recurses through
+// Promise.all, ONE such text node aborted the whole component set: the panel
+// showed "No component selected" and its library row showed "Check
+// unavailable", neither of which names a cause. Observed on a 44-variant set
+// that had documented cleanly days earlier.
+describe('mixed values from non-uniform text ranges', () => {
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+  const mixed = Symbol('figma.mixed');
+
+  it('survives a TEXT node with mixed fills', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Label', type: 'TEXT', fills: mixed,
+    } as never, resolver);
+    expect(n.name).toBe('Label');
+  });
+
+  it('survives mixed strokes, fillStyleId and strokeStyleId', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Label', type: 'TEXT',
+      fills: mixed, strokes: mixed, fillStyleId: mixed, strokeStyleId: mixed,
+    } as never, resolver);
+    expect(n.name).toBe('Label');
+  });
+
+  // The reason this is not simply "treat mixed as []": a mixed fill is not the
+  // absence of a fill. Claiming hasUnboundPaint would invent a gap verdict for
+  // paints nobody read, and claiming unboundFill would invent a hex.
+  it('claims no paint verdict it cannot support', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Label', type: 'TEXT', fills: mixed, boundVariables: {},
+    } as never, resolver);
+    expect(n.hasUnboundPaint).toBeUndefined();
+    expect(n.unboundFill).toBeUndefined();
+    expect(n.hasUnboundGradient).toBeUndefined();
+  });
+
+  // A mixed fillStyleId is truthy, so `Boolean(node.fillStyleId)` read it as
+  // "this paint is bound to a style" -- a fabricated binding claim, and the
+  // reason a typeof guard is the fix rather than a null check.
+  it('does not report a style binding from a mixed style id', async () => {
+    const styleResolver = {
+      ...resolver,
+      style: async (id: unknown) => ({ id: String(id), name: 'color/primary', remote: false, kind: 'paint-style' as const }),
+    };
+    const n = await serializeNode({
+      id: '1', name: 'Label', type: 'TEXT', fillStyleId: mixed,
+    } as never, styleResolver);
+    expect(n.bindings ?? []).toEqual([]);
+  });
+
+  // A text node CAN have uniform fills and mixed style ranges (two ranges, two
+  // paint styles, same colour). That node never threw, so it may already have a
+  // committed document -- and hasUnboundPaint feeds a gap that specContentHash
+  // covers. Narrowing the mixed id to '' here would flip this verdict to true
+  // and make every such document falsely report an update, so "is it styled"
+  // deliberately stays raw truthiness while "which id can I look up" does not.
+  it('keeps the paint verdict of a uniform fill under a mixed style id', async () => {
+    const n = await serializeNode({
+      id: '1', name: 'Label', type: 'TEXT',
+      fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }],
+      fillStyleId: mixed,
+      boundVariables: {},
+    } as never, resolver);
+    expect(n.hasUnboundPaint).toBeUndefined();
+    expect(n.unboundFill).toBeUndefined();
+  });
+
+  // The regression that actually bit: the parent must not be lost.
+  it('keeps the surrounding tree when one descendant is mixed', async () => {
+    const set = {
+      id: '1:1', name: 'BuildingBlocks/DropdownList', type: 'COMPONENT_SET', visible: true,
+      children: [{
+        id: '1:2', name: 'State=Default', type: 'COMPONENT', visible: true,
+        children: [{ id: '1:3', name: 'Label', type: 'TEXT', visible: true, fills: mixed }],
+      }],
+    };
+    const out = await serializeNode(set as never, resolver);
+    expect(out.children?.[0].children?.[0].name).toBe('Label');
+  });
+});
+
 describe('NodeResolver identity', () => {
   it('carries remote from Figma rather than inferring it from a lookup', async () => {
     const r = {

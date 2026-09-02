@@ -83,10 +83,14 @@ interface RawNode {
   type: string;
   visible?: boolean;
   key?: string;
-  fills?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }>;
-  fillStyleId?: string;
-  strokes?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }>;
-  strokeStyleId?: string;
+  // `| symbol` for the same reason fontSize/fontName carry it below: Figma
+  // returns figma.mixed from all four of these when a TEXT node's character
+  // ranges are not uniform. Typing them as a bare array/string is what let
+  // `fills.some(...)` ship and throw in Figma while tsc stayed silent.
+  fills?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }> | symbol;
+  fillStyleId?: string | symbol;
+  strokes?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }> | symbol;
+  strokeStyleId?: string | symbol;
   // The whole effect object, not just its type. Reading only `.length` is what
   // made a shadow with a variable-bound colour and hardcoded radius, offset and
   // spread count as fully bound while silently dropping every geometry value.
@@ -159,8 +163,24 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     const ref = s ? styleRef(s) : null;
     if (ref) bindings.push({ property, ...ref });
   };
-  if (node.fillStyleId) await styleBinding(node.fillStyleId, 'fills');
-  if (node.strokeStyleId) await styleBinding(node.strokeStyleId, 'strokes');
+  // Two different questions, deliberately kept apart.
+  //
+  // "Which id can I look up" must be a string: handing figma.mixed (a symbol)
+  // to getStyleByIdAsync asks Figma about an id that does not exist.
+  //
+  // "Is this paint styled at all" stays the raw truthiness it has always been,
+  // because a mixed style id means SOME range is style-bound, which is the
+  // opposite of a hardcoded unbound paint -- and because narrowing it here
+  // would flip hasUnboundPaint to true for a text node with uniform fills and
+  // mixed style ranges. That node never crashed, so it may already have a
+  // committed document, and specContentHash covers the gap that verdict feeds.
+  // Moving it would make every such document falsely report an update.
+  const fillStyleId = typeof node.fillStyleId === 'string' ? node.fillStyleId : '';
+  const strokeStyleId = typeof node.strokeStyleId === 'string' ? node.strokeStyleId : '';
+  const fillStyled = Boolean(node.fillStyleId);
+  const strokeStyled = Boolean(node.strokeStyleId);
+  if (fillStyleId) await styleBinding(fillStyleId, 'fills');
+  if (strokeStyleId) await styleBinding(strokeStyleId, 'strokes');
   if (typeof node.textStyleId === 'string' && node.textStyleId) {
     await styleBinding(node.textStyleId, 'typography');
   }
@@ -172,9 +192,14 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const to2 = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
   const hex = (c: { r: number; g: number; b: number }) => `#${to2(c.r)}${to2(c.g)}${to2(c.b)}`;
 
-  const fills = node.fills ?? [];
+  // Array.isArray, not `?? []`: figma.mixed is a symbol, so it is neither null
+  // nor undefined and slipped through into `.some()`. Mixed reads as "no paint
+  // this pass can speak for", which is why no verdict below fires for it -- a
+  // multi-colour label has fills, and claiming hasUnboundPaint or a hex for it
+  // would be inventing a gap and a value nobody read.
+  const fills = Array.isArray(node.fills) ? node.fills : [];
   const hasSolidFill = fills.some((f) => f.type === 'SOLID');
-  const fillsBound = 'fills' in bv || Boolean(node.fillStyleId);
+  const fillsBound = 'fills' in bv || fillStyled;
   const hasUnboundPaint = hasSolidFill && !fillsBound ? true : undefined;
   const solidFill = hasUnboundPaint ? fills.find((f) => f.type === 'SOLID' && f.color) : undefined;
   const unboundFill = solidFill?.color ? hex(solidFill.color) : undefined;
@@ -182,11 +207,11 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   // Gradients and images can't bind to a colour variable, only to a style, so a
   // style id is the only thing that makes them intentional.
   const hasGradient = fills.some((f) => f.type.startsWith('GRADIENT_') || f.type === 'IMAGE');
-  const hasUnboundGradient = hasGradient && !node.fillStyleId ? true : undefined;
+  const hasUnboundGradient = hasGradient && !fillStyled ? true : undefined;
 
-  const strokes = node.strokes ?? [];
+  const strokes = Array.isArray(node.strokes) ? node.strokes : [];
   const hasSolidStroke = strokes.some((s) => s.type === 'SOLID');
-  const strokesBound = 'strokes' in bv || Boolean(node.strokeStyleId);
+  const strokesBound = 'strokes' in bv || strokeStyled;
   const hasUnboundStroke = hasSolidStroke && !strokesBound ? true : undefined;
   const solidStroke = hasUnboundStroke ? strokes.find((s) => s.type === 'SOLID' && s.color) : undefined;
   const unboundStroke = solidStroke?.color ? hex(solidStroke.color) : undefined;

@@ -252,12 +252,6 @@ async function postSelection(): Promise<void> {
   const component = findComponent(figma.currentPage.selection);
 
   if (!component) {
-    // TEMP diagnostic: separates "the walk found no component" from the
-    // serialization failure below, which reaches the SAME empty state.
-    console.log(
-      '[Spec Layer] no component in selection, selection was',
-      figma.currentPage.selection.map((n) => `${n.type}:${n.name}`).join(', ') || '(nothing)',
-    );
     figma.notify('Select a component or component set');
     if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
@@ -287,12 +281,6 @@ async function postSelection(): Promise<void> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const node = await serializeNode(component as any, resolver);
-    // TEMP diagnostic: sizes the tree that has to cross the sandbox bridge, so
-    // a failure in postMessage below can be told apart from one in serializeNode.
-    console.log(
-      '[Spec Layer] serialized', component.type, component.name,
-      'approx bytes', JSON.stringify(node).length,
-    );
     if (seq !== selectionSeq) return; // a newer selection superseded this one
     const msg: MainToUi = {
       type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
@@ -1310,8 +1298,8 @@ figma.ui.onmessage = async (raw: unknown) => {
       try {
         const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
-          // TEMP diagnostic: both branches of this case report the same
-          // "Check unavailable" row, so the row alone cannot say which fired.
+          // Both branches of this case render the same "Check unavailable" row,
+          // so without these two logs the row cannot say which one fired.
           console.error(
             '[Spec Layer] drift source unresolved', msg.docId, msg.sourceNodeId,
             'resolved to', src ? src.type : 'null',
@@ -1321,11 +1309,6 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
-        // TEMP diagnostic: same bridge-size question as postSelection.
-        console.log(
-          '[Spec Layer] drift serialized', src.type, src.name,
-          'approx bytes', JSON.stringify(node).length,
-        );
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
       } catch (err) {
