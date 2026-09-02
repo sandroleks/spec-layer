@@ -10,6 +10,7 @@ import {
   foundationUnitTitle, groupRowsByFolder, colorContrast,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation, type RawEffect,
+  type ProseDrafts,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
@@ -23,6 +24,7 @@ import {
   serializeProse, parseProse, mergeFoundationGroupDescriptions,
   type DocLinkData, type FoundationDocLink, type DocRegistry,
 } from './docLink';
+import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -375,23 +377,25 @@ figma.on('selectionchange', () => {
   void postSelection().catch(() => {/* handled inside */});
 });
 
-// Collect a node subtree's TEXT characters in document order (DFS). Used to
-// compute the self-hash that detects hand-edits to a generated Section.
-function collectText(node: BaseNode): string[] {
-  const out: string[] = [];
-  const visit = (n: BaseNode): void => {
-    if (n.type === 'TEXT') out.push((n as TextNode).characters);
-    // Do NOT descend into embedded component instances (variant slots, matrix
-    // cells, anatomy preview): their text mirrors the SOURCE component, so
-    // including it would make a source-side text change read as a hand-edit to
-    // the doc. Only the doc's own generated/editable text should be hashed.
-    if (n.type === 'INSTANCE') return;
-    if ('children' in n) {
-      for (const c of (n as BaseNode & ChildrenMixin).children) visit(c);
-    }
-  };
-  visit(node);
-  return out;
+/**
+ * The generated lane's text: everything selfHash covers. Editorial slots are
+ * skipped because an Update keeps them, so an edit there is not something the
+ * user can lose. Instances are skipped because their text mirrors the source
+ * component. See canvasProse.ts for the lane rule and its tests.
+ */
+function collectGeneratedLane(node: BaseNode): string[] {
+  return collectGeneratedText(node as unknown as ProseNodeLike);
+}
+
+/**
+ * The guidelines a doc currently carries: what its canvas says, with the
+ * stored blob filling any slot the canvas does not render.
+ */
+function docProse(section: SectionNode): ProseDrafts | null {
+  return mergeProse(
+    parseProse(section.getPluginData(DOC_PROSE_KEY)),
+    readCanvasProse(section as unknown as ProseNodeLike),
+  );
 }
 
 // The PageNode a node lives on, or null. Walks parents until a PAGE.
@@ -717,7 +721,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           v: 1,
           sourceNodeId: msg.nodeId,
           contentHash: msg.contentHash,
-          selfHash: textContentHash(collectText(section)),
+          selfHash: textContentHash(collectGeneratedLane(section)),
           config: msg.config,
           generatedAt: Date.now(),
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
@@ -810,7 +814,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // never drops a valid doc's registry id regardless of which branch
         // below builds its LibraryEntry.
         alive.add(docId);
-        const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
+        const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
         const page = pageOf(section);
 
         if (isFoundationLink(data)) {
@@ -1051,7 +1055,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           // Stamp the durable link BEFORE removing any predecessor, so a
           // failure mid-way never leaves an unstamped orphan replacing a good
           // doc (mirrors the component doc path in renderDocFrame above).
-          data.selfHash = textContentHash(collectText(section));
+          data.selfHash = textContentHash(collectGeneratedLane(section));
           section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
 
           if (prior) {
@@ -1216,7 +1220,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         section.x = prior.x;
         section.y = prior.y;
 
-        data.selfHash = textContentHash(collectText(section));
+        data.selfHash = textContentHash(collectGeneratedLane(section));
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
 
         // Point of no return, matching the component path (renderDocFrame
@@ -1335,7 +1339,7 @@ figma.ui.onmessage = async (raw: unknown) => {
       figma.ui.postMessage({
         type: 'docProse',
         docId: msg.docId,
-        prose: section ? parseProse(section.getPluginData(DOC_PROSE_KEY)) : null,
+        prose: section ? docProse(section) : null,
       } as MainToUi);
       break;
     }
@@ -1366,11 +1370,14 @@ figma.ui.onmessage = async (raw: unknown) => {
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'The source component is gone, so this doc can no longer be rebuilt.' } as MainToUi);
           break;
         }
-        const selfEdited = textContentHash(collectText(section)) !== data.selfHash;
+        const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name, config: data.config, selfEdited, intent: msg.intent } as MainToUi);
+        figma.ui.postMessage({
+          type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,
+          config: data.config, selfEdited, prose: docProse(section), intent: msg.intent,
+        } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
@@ -1409,7 +1416,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const node = await serializeNode(src as any, resolver);
-            components.push({ docId, name: node.name, node, prose: parseProse(section.getPluginData(DOC_PROSE_KEY)) });
+            components.push({ docId, name: node.name, node, prose: docProse(section) });
           } catch (err) {
             skipped.push({ name: src.name, reason: err instanceof Error ? err.message : String(err) });
           }

@@ -102,7 +102,11 @@ export type MainToUi =
    *  Drift itself is unaffected, since specContentHash excludes the name. */
   | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string }
   | { type: 'driftError'; docId: string }
-  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; intent: DocSourceIntent }
+  /** `prose` is what the doc currently says in its writing sections: the
+   *  canvas read back through its editorial tags, falling back to the stored
+   *  DOC_PROSE_KEY blob for anything the canvas does not show. Update builds
+   *  from this and never regenerates. */
+  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; prose: ProseDrafts | null; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
   /** `groupDescriptions` merges every foundation doc link's stored group
    *  descriptions found on canvas, keyed by collection name then folder path.

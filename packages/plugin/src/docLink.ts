@@ -137,7 +137,12 @@ export interface ComponentDocLink {
   kind?: 'component';
   sourceNodeId: string;
   contentHash: string;   // specContentHash of the source at generation (drift baseline)
-  selfHash: string;      // textContentHash of the built Section (hand-edit baseline)
+  /** Hash of the built Section's GENERATED text (hand-edit baseline). Text
+   *  inside editorial slots is excluded: an Update reads those back and keeps
+   *  them, so only an edit outside them is something Update would destroy.
+   *  Docs rendered before slot tagging have no slots, so their hash covers
+   *  all text, which is exactly what their stored value was computed over. */
+  selfHash: string;
   config: DocConfig;
   generatedAt: number;
   pluginVersion: string;
