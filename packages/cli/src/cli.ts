@@ -1,21 +1,33 @@
 import { parseArgs } from 'node:util';
-import { runInit, runPull, runStatus, type Io } from './commands';
+import { runInit, runPull, runStatus, runList, runShow, type Flags, type Io } from './commands';
 
 const USAGE = `spec-layer <command>
 
 Commands:
-  init    --id lib_... [--out DIR]        write speclayer.json
-  pull    [--id lib_...] [--key sl_...]   fetch the library into DIR (default .speclayer)
-  status  [--id lib_...] [--key sl_...]   check freshness; exits 2 when behind
+  init    --id lib_... [--out DIR] [selection]   write speclayer.json
+  pull    [--id lib_...] [--key sl_...] [selection]
+                                                 fetch the library into DIR (default .speclayer)
+  status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
+  list                                           list every artifact in the last pull
+  show    foundation | component NAME [--canonical]
+                                                 print one artifact's AI YAML (or canonical JSON)
+
+Selection (pull and init; flags replace the include block in speclayer.json):
+  --only foundation | components   write just the foundation, or just components
+  --component NAME                 write only this component (repeatable, matched by slug)
 
 Options:
   --api URL   override the API origin (default https://api.spec-layer.com)
 The pull key comes from --key or the SPEC_LAYER_KEY environment variable.`;
 
-const io: Io = { out: (l) => console.log(l), err: (l) => console.error(l) };
+const io: Io = {
+  out: (l) => console.log(l),
+  err: (l) => console.error(l),
+  write: (t) => { process.stdout.write(t); },
+};
 
 async function main(): Promise<number> {
-  let values: Record<string, string | undefined>;
+  let values: Flags;
   let positionals: string[];
   try {
     ({ values, positionals } = parseArgs({
@@ -25,6 +37,9 @@ async function main(): Promise<number> {
         out: { type: 'string' },
         key: { type: 'string' },
         api: { type: 'string' },
+        only: { type: 'string' },
+        component: { type: 'string', multiple: true },
+        canonical: { type: 'boolean' },
       },
     }));
   } catch {
@@ -40,6 +55,8 @@ async function main(): Promise<number> {
     if (command === 'init') return runInit(cwd, values, io);
     if (command === 'pull') return await runPull(cwd, values, process.env, io);
     if (command === 'status') return await runStatus(cwd, values, process.env, io);
+    if (command === 'list') return runList(cwd, values, io);
+    if (command === 'show') return runShow(cwd, values, positionals.slice(1), io);
     io.err(USAGE);
     return 1;
   } catch (err) {

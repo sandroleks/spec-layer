@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR } from '../src/config';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -188,5 +188,55 @@ describe('config file round trip', () => {
     writeFileSync(join(tmpDir, 'speclayer.json'), '[]');
 
     expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
+  });
+});
+
+describe('config include block', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'sl-cli-config-'));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reads include with foundation and components', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_abc', outDir: '.speclayer',
+      include: { foundation: false, components: ['Button'] },
+    }));
+    expect(readConfig(tmpDir)?.include).toEqual({ foundation: false, components: ['Button'] });
+  });
+
+  it('defaults include.foundation to true and include.components to null when omitted', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', include: {} }));
+    expect(readConfig(tmpDir)?.include).toEqual({ foundation: true, components: null });
+  });
+
+  it('leaves include undefined when the block is absent', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer' });
+    expect(readConfig(tmpDir)?.include).toBeUndefined();
+  });
+
+  it('rejects a malformed include block with the standard message', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', include: { components: 'Button' } }));
+    expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
+  });
+
+  it('writeConfig persists include and omits it when not given', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: true, components: ['Card'] } });
+    expect(JSON.parse(readFileSync(join(tmpDir, 'speclayer.json'), 'utf8')))
+      .toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: true, components: ['Card'] } });
+
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer' });
+    expect(JSON.parse(readFileSync(join(tmpDir, 'speclayer.json'), 'utf8'))).not.toHaveProperty('include');
+  });
+});
+
+describe('api origin normalization', () => {
+  it('strips a trailing slash from --api and SPEC_LAYER_API so paths do not double up', () => {
+    const none = (_outDir: string) => null;
+    expect(resolveOptions('/some/cwd', { api: 'https://example.test/' }, {}, none).api).toBe('https://example.test');
+    expect(resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://example.test//' }, none).api).toBe('https://example.test');
   });
 });
