@@ -16,6 +16,11 @@ export interface KVLike {
   delete(key: string): Promise<void>;
 }
 
+/** Library storage additionally counts owned libraries by key prefix. */
+export interface LibraryStore extends KVLike {
+  list(opts: { prefix: string }): Promise<{ keys: Array<{ name: string }> }>;
+}
+
 export interface LicenseDeps { fetcher: typeof fetch; cache: KVLike; now: () => number }
 
 export type LicenseReason = 'invalid' | 'expired' | 'inactive' | 'unreachable';

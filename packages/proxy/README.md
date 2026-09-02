@@ -57,8 +57,9 @@ capped at `LIBRARY_LIMIT` (10) libraries per license.
 Passing an owned `libraryId` overwrites the bundle in place (200) and returns
 `{ libraryId, publishedAt }` with no key, since the key does not change.
 
-Errors: `400` invalid JSON or bundle shape, `401` unauthenticated or license
-not active, `403 {"error":"not_owner"}` or
+Errors: `400` invalid JSON or bundle shape, `400
+{"error":"unsupported bundle version","version":"2.0.0"}` for a bundle major
+this proxy does not know, `401` unauthenticated or license not active, `403 {"error":"not_owner"}` or
 `403 {"error":"library_limit","limit":10}`, `404` unknown `libraryId`,
 `413 {"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate
 limited per IP.
@@ -76,7 +77,8 @@ Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 ### `POST /v1/libraries/:libraryId/rotate`
 
 Pro license required, and the caller must own the library. Returns
-`{ pullKey }` and invalidates the previous key immediately. Errors: `401`,
+`{ pullKey }`. The previous key stops working once the KV write propagates,
+up to about a minute. Errors: `401`,
 `403 {"error":"not_owner"}`, `404`, `429`.
 
 ## Quota rules
@@ -124,7 +126,8 @@ cache inside the DO; prompts and prose are never logged.
   every free identity's Durable Object: quotas reset and every user
   re-enters the boost window. Rotate only with that intent.
 - **Published libraries live in the license-cache namespace, permanently.**
-  `lib:<id>:bundle`, `lib:<id>:meta`, and `libowner:<licenseId>` are written
+  `lib:<id>:bundle`, `lib:<id>:meta`, `lib:<id>:key`, and
+  `libowner:<licenseId>:<id>` are written
   with no `expirationTtl` into the KV namespace bound as `LICENSE_CACHE`.
   Recreating or clearing that namespace to "reset the cache" destroys every
   published library, and the pull keys cannot be recovered: only their
@@ -151,7 +154,7 @@ cache inside the DO; prompts and prose are never logged.
 
 | Name | Kind | Purpose |
 |---|---|---|
-| `LICENSE_CACHE` | KV namespace | Two unrelated datasets. License status cache keyed by a SHA-256 digest (30-day TTL), **and** durable library storage under `lib:` / `libowner:` keys with no expiry. Despite the name, this namespace is not disposable. |
+| `LICENSE_CACHE` | KV namespace | Two unrelated datasets. License status cache keyed by a SHA-256 digest (30-day TTL), **and** durable library storage under `lib:` / `libowner:` keys with no expiry (see ARCHITECTURE.md for the record layout). Despite the name, this namespace is not disposable. |
 | `QUOTA` | Durable Object → `QuotaDO` | Per-identity quota state |
 | `ANTHROPIC_API_KEY` | secret | Upstream auth |
 | `FIGMA_ID_SALT` | secret | Salted hashing of Figma user IDs. Rotating it resets all free-tier quotas — don't rotate casually. |

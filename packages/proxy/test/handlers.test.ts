@@ -12,6 +12,9 @@ class MemKV {
   async get(k: string) { return this.map.get(k) ?? null; }
   async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
   async delete(k: string) { this.map.delete(k); }
+  async list(opts: { prefix: string }) {
+    return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
+  }
 }
 
 /** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */

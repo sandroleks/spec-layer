@@ -8,7 +8,7 @@ import {
   newPullKey,
   LIBRARY_ID_RE,
   PULL_KEY_RE,
-  MAX_BUNDLE_CHARS,
+  MAX_BUNDLE_BYTES,
   LIBRARY_LIMIT,
   type LibraryMeta,
 } from '../src/libraries';
@@ -23,7 +23,12 @@ class MemKV {
   async get(k: string) { return this.map.get(k) ?? null; }
   async put(k: string, v: string, _opts?: { expirationTtl?: number }) { this.map.set(k, v); }
   async delete(k: string) { this.map.delete(k); }
+  async list(opts: { prefix: string }) {
+    return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
+  }
 }
+
+const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
 
 const BUNDLE = {
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'Test File',
@@ -140,12 +145,15 @@ describe('handlePublish', () => {
     const metaRaw = await d.libraryStore.get(`lib:${body.libraryId}:meta`);
     expect(metaRaw).not.toBeNull();
     const meta = JSON.parse(metaRaw as string) as LibraryMeta;
-    expect(meta.keyHash).toBe(sha256(body.pullKey));
+    // The key digest has its own record so rotate and republish never write the same value.
+    expect(meta.keyHash).toBeUndefined();
+    expect(await d.libraryStore.get(`lib:${body.libraryId}:key`)).toBe(sha256(body.pullKey));
     expect(meta.licenseId).toBe(`lic:${sha256(UUID_KEY)}`);
     expect(meta.bundleHash).toBe(sha256(JSON.stringify(BUNDLE)));
 
-    const ownerRaw = await d.libraryStore.get(`libowner:lic:${sha256(UUID_KEY)}`);
-    expect(JSON.parse(ownerRaw as string)).toEqual([body.libraryId]);
+    // One ownership record per library, so concurrent creates never overwrite a list.
+    expect(await d.libraryStore.get(`libowner:lic:${sha256(UUID_KEY)}:${body.libraryId}`)).not.toBeNull();
+    expect(await d.libraryStore.get(`libowner:lic:${sha256(UUID_KEY)}`)).toBeNull();
 
     // The raw pull key must never appear in any stored KV value.
     for (const value of d.libraryStore.map.values()) {
@@ -169,13 +177,15 @@ describe('handlePublish', () => {
 
     const metaRaw = await d.libraryStore.get(`lib:${libraryId}:meta`);
     const meta = JSON.parse(metaRaw as string) as LibraryMeta;
-    expect(meta.keyHash).toBe(sha256(pullKey));
+    expect(meta.keyHash).toBeUndefined();
+    expect(await d.libraryStore.get(`lib:${libraryId}:key`)).toBe(sha256(pullKey));
 
     const storedBundle = await d.libraryStore.get(`lib:${libraryId}:bundle`);
     expect(storedBundle).toBe(JSON.stringify(updatedBundle));
 
-    const ownerRaw = await d.libraryStore.get(`libowner:lic:${sha256(UUID_KEY)}`);
-    expect(JSON.parse(ownerRaw as string)).toHaveLength(1);
+    // A republish adds no ownership record: still exactly one for this license.
+    const { keys } = await d.libraryStore.list({ prefix: `libowner:lic:${sha256(UUID_KEY)}:` });
+    expect(keys).toHaveLength(1);
   });
 
   it('rejects republish to a library owned by another license', async () => {
@@ -208,31 +218,91 @@ describe('handlePublish', () => {
     expect(body.error).toBe('invalid bundle');
   });
 
-  it('rejects an oversized bundle', async () => {
+  it('rejects an oversized bundle, measuring the body in bytes', async () => {
     const d = deps();
     await seedPro(d);
     const bigBundle = {
       ...BUNDLE,
-      components: [{ ...BUNDLE.components[0], ai: 'x'.repeat(MAX_BUNDLE_CHARS) }],
+      components: [{ ...BUNDLE.components[0], ai: 'x'.repeat(MAX_BUNDLE_BYTES) }],
     };
     const res = await handlePublish(publishReq({ bundle: bigBundle }), d);
     expect(res.status).toBe(413);
     const body = await res.json() as { error: string; size: number; limit: number };
     expect(body.error).toBe('bundle_too_large');
-    expect(body.size).toBeGreaterThan(MAX_BUNDLE_CHARS);
-    expect(body.limit).toBe(MAX_BUNDLE_CHARS);
+    expect(body.size).toBe(byteLength(JSON.stringify({ bundle: bigBundle })));
+    expect(body.limit).toBe(MAX_BUNDLE_BYTES);
+  });
+
+  it('measures multi-byte text in bytes on both the header check and the body check', async () => {
+    // 1.8M three-byte characters: under the cap in UTF-16 code units, over it in bytes.
+    const bundle = { ...BUNDLE, components: [{ ...BUNDLE.components[0], ai: '\u6f22'.repeat(1_800_000) }] };
+    const payload = JSON.stringify({ bundle });
+    const d = deps();
+    await seedPro(d);
+    const withHeader = new Request('https://proxy.test/v1/libraries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${UUID_KEY}`, 'content-length': String(byteLength(payload)) },
+      body: payload,
+    });
+    const res = await handlePublish(withHeader, d);
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'bundle_too_large', size: byteLength(payload), limit: MAX_BUNDLE_BYTES });
+
+    // The same text at a size that is over the cap in bytes but with no header still 413s with bytes.
+    const noHeader = new Request('https://proxy.test/v1/libraries', {
+      method: 'POST', headers: { Authorization: `Bearer ${UUID_KEY}` }, body: payload,
+    });
+    const res2 = await handlePublish(noHeader, d);
+    expect(res2.status).toBe(413);
+    expect(((await res2.json()) as { size: number }).size).toBe(byteLength(payload));
+  });
+
+  it('rejects an unsupported bundle version', async () => {
+    const d = deps();
+    await seedPro(d);
+    const res = await handlePublish(publishReq({ bundle: { ...BUNDLE, version: '2.0.0' } }), d);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'unsupported bundle version', version: '2.0.0' });
+  });
+
+  it('rejects a bundle without extractorVersion, the same way the CLI would', async () => {
+    const d = deps();
+    await seedPro(d);
+    const { extractorVersion: _e, ...noExtractor } = BUNDLE;
+    const res = await handlePublish(publishReq({ bundle: noExtractor }), d);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid bundle' });
   });
 
   it('caps libraries per license', async () => {
     const d = deps();
     await seedPro(d);
     const licenseId = `lic:${sha256(UUID_KEY)}`;
-    const preseeded = Array.from({ length: LIBRARY_LIMIT }, (_, i) => `lib_${String(i).padStart(24, '0')}`);
-    await d.libraryStore.put(`libowner:${licenseId}`, JSON.stringify(preseeded));
+    for (let i = 0; i < LIBRARY_LIMIT; i += 1) {
+      await d.libraryStore.put(`libowner:${licenseId}:lib_${String(i).padStart(24, '0')}`, '1');
+    }
 
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'library_limit', limit: LIBRARY_LIMIT });
+  });
+
+  it('migrates a legacy owner array to per-library keys and counts both', async () => {
+    const d = deps();
+    await seedPro(d);
+    const licenseId = `lic:${sha256(UUID_KEY)}`;
+    const legacy = Array.from({ length: LIBRARY_LIMIT - 1 }, (_, i) => `lib_${String(i).padStart(24, '0')}`);
+    await d.libraryStore.put(`libowner:${licenseId}`, JSON.stringify(legacy));
+
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(res.status).toBe(201);
+    const { libraryId } = await res.json() as { libraryId: string };
+    for (const id of legacy) expect(await d.libraryStore.get(`libowner:${licenseId}:${id}`)).not.toBeNull();
+    expect(await d.libraryStore.get(`libowner:${licenseId}:${libraryId}`)).not.toBeNull();
+    expect(await d.libraryStore.get(`libowner:${licenseId}`)).toBeNull();
+
+    const full = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(full.status).toBe(403);
   });
 
   it('rate limits per IP', async () => {
@@ -357,10 +427,25 @@ describe('handleRotate', () => {
     expect(newPull.status).toBe(200);
     expect(await newPull.text()).toBe(JSON.stringify(BUNDLE));
 
+    // Rotate touches only the key record, so it can never clobber a concurrent republish's meta.
     const metaAfter = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`)) as string) as LibraryMeta;
-    expect(metaAfter.bundleHash).toBe(metaBefore.bundleHash);
-    expect(metaAfter.publishedAt).toBe(metaBefore.publishedAt);
-    expect(metaAfter.keyHash).toBe(sha256(body.pullKey));
+    expect(metaAfter).toEqual(metaBefore);
+    expect(await d.libraryStore.get(`lib:${libraryId}:key`)).toBe(sha256(body.pullKey));
+  });
+
+  it('still authenticates a library published before the key record existed', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const meta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`)) as string) as LibraryMeta;
+    await d.libraryStore.put(`lib:${libraryId}:meta`, JSON.stringify({ ...meta, keyHash: sha256(pullKey) }));
+    await d.libraryStore.delete(`lib:${libraryId}:key`);
+
+    const pull = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(pull.status).toBe(200);
+
+    const rotated = await handleRotate(rotateReq(libraryId), d, libraryId);
+    const { pullKey: next } = await rotated.json() as { pullKey: string };
+    expect((await handlePull(pullReq(libraryId, pullKey), d, libraryId)).status).toBe(401);
+    expect((await handlePull(pullReq(libraryId, next), d, libraryId)).status).toBe(200);
   });
 
   it('rejects a non-owner license', async () => {

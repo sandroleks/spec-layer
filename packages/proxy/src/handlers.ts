@@ -5,7 +5,7 @@ import {
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId } from './identity';
 import { handlePublish, handlePull, handleRotate } from './libraries';
-import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult } from './license';
+import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
@@ -30,7 +30,7 @@ export interface HandlerDeps {
   requestLimiter: SlidingWindowLimiter;
   /** Library bundle storage. Wired to the same KV namespace as licenseCache
    *  today; a separate dep so a dedicated namespace later is a one-line change. */
-  libraryStore: KVLike;
+  libraryStore: LibraryStore;
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
