@@ -119,8 +119,10 @@ name, `show` refuses to guess and points you at `list`.
 ## The pull key
 
 `spec-layer setup` stores the key in `speclayer.local.json` next to
-`speclayer.json`, at mode `0600`, and makes sure git ignores it before writing
-it. Every later command in that directory needs no key.
+`speclayer.json` and makes sure git ignores it before writing it. Every later
+command in that directory needs no key. On POSIX systems the file is written
+at mode `0600`; on Windows there is no equivalent permission bit, so it
+inherits whatever the directory allows.
 
 Commands that talk to the server resolve the key in this order:
 
@@ -139,11 +141,26 @@ the output directory. If it leaks, rotate it from the plugin's Library screen,
 then run the new setup command. The old key stops working once the change
 propagates, which can take up to about a minute.
 
+Re-running `setup` replaces the stored key and keeps the rest of your setup:
+with no `--out` and no selection flag it preserves the output directory and the
+`include` block already in `speclayer.json` rather than resetting them to the
+defaults. Pass `--out` or a selection flag to change them. (`init` still
+overwrites `speclayer.json` outright, which is what a first run is for.)
+
 Outside a git working tree, the key is still stored and the CLI says it left
 `.gitignore` alone. Inside one, `setup` refuses to write the key whenever it
-cannot confirm the file will be ignored, whether because `.gitignore` can't be
-written or because git itself couldn't be run, and prints the line to add
-instead.
+cannot confirm the file will be ignored, and says what to do instead. Three
+cases refuse:
+
+- `.gitignore` cannot be written.
+- git itself could not be run, anywhere inside a working tree.
+- the entry is in `.gitignore`, but git still does not ignore the file. That
+  almost always means `speclayer.local.json` is already tracked, and the CLI
+  names `git rm --cached speclayer.local.json` as the way out.
+
+git decides in every case. The entry sitting in `.gitignore` is not taken as
+proof, because `git check-ignore` does not report a tracked file as ignored no
+matter what the ignore rules say.
 
 ## What `pull` writes
 

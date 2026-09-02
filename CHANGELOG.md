@@ -25,8 +25,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   message. Outside a git working tree the key is still stored, and the CLI
   says it left `.gitignore` alone. Inside one, setup refuses to store the key
   whenever it cannot confirm `.gitignore` will ignore it, whether because the
-  file can't be written or because git itself couldn't be run, rather than
-  leaving an un-ignored secret in a working tree.
+  file can't be written, because git itself couldn't be run anywhere inside
+  the working tree, or because the entry is there and git still does not
+  ignore the file, rather than leaving an un-ignored secret in a working tree.
+  That last case is almost always a `speclayer.local.json` that is already
+  tracked, which `git check-ignore` reports as un-ignored no matter what the
+  ignore rules say, so every success is confirmed with git after the write
+  instead of assumed from it, and the refusal names
+  `git rm --cached speclayer.local.json` as the way out.
+
+  Re-running setup replaces the stored key and keeps the rest of the setup.
+  With no `--out` and no selection flag it preserves the output directory and
+  the `include` block already in `speclayer.json`, so the rotation flow of
+  re-pasting the plugin's command no longer resets a committed config back to
+  `.speclayer/` and leaves the old directory stale. `init` still overwrites,
+  which is what a first run is for.
 
 - Foundation export. A new **Foundations** tab in the Figma plugin
   documents the file's variable collections and local text styles, with

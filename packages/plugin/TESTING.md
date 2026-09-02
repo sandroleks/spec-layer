@@ -236,6 +236,12 @@ action. The rows below start there.
       then both work with nothing in the environment.
 - [ ] Stored key, no git: run the same command in a directory that is not a git
       working tree. It stores the key, says it left .gitignore alone, and pulls.
+- [ ] Stored key, already tracked: after the no-git run above, `git init` in
+      that directory, then `git add -A && git commit -m tracked` so
+      speclayer.local.json is tracked. Re-paste the setup command: it refuses,
+      says the entry is in .gitignore but git still does not ignore the file,
+      names `git rm --cached speclayer.local.json`, and the stored key is
+      unchanged. Run that command, re-paste again, and it stores the key.
 - [ ] Stored key after a rotation: rotate in the plugin, then run
       `spec-layer pull` in the directory holding the old stored key. It fails
       with the message pointing back at the setup command. Re-pasting the new

@@ -152,12 +152,13 @@ Outcomes:
 | Situation | Behaviour |
 |---|---|
 | git ran and reported this isn't a working tree | Skip the step, say `.gitignore` was left alone, write the key. |
-| git could not be run at all, and no `.git` directory is present | Same as above: there is genuinely no repository to leak into. |
-| git could not be run at all, but a `.git` directory is present | Refuse to write the key. It cannot confirm the file would be ignored inside what looks like a real working tree. Print the exact line to add and exit nonzero. |
-| Git repo, entry added, already covered, or `.gitignore` created | Report which, continue. |
+| git could not be run at all, and no `.git` entry is present in `cwd` or any ancestor | Same as above: there is genuinely no repository to leak into. |
+| git could not be run at all, but a `.git` entry is present in `cwd` or any ancestor | Refuse to write the key. It cannot confirm the file would be ignored inside what looks like a real working tree. Print the exact line to add and exit nonzero. |
+| Git repo, entry added, already covered, or `.gitignore` created, and `check-ignore` then confirms it | Report which, continue. |
+| Git repo, entry present in `.gitignore` but `check-ignore` still does not report the file as ignored | Refuse to write the key. Say the entry is there but git does not ignore the file, name "already tracked" as the likely reason, and print `git rm --cached speclayer.local.json`. Exit nonzero. |
 | Git repo, `.gitignore` not writable | Refuse to write the key. Print the exact line to add and exit nonzero. |
 
-The two refusal rows are the deliberately awkward case. Writing an un-ignored
+The three refusal rows are the deliberately awkward case. Writing an un-ignored
 secret into a git working tree and warning about it would put the burden on
 the developer noticing a line of output.
 
@@ -173,6 +174,43 @@ the developer noticing a line of output.
 > unrunnable `git` now refuses to write the key instead of writing it
 > unverified. `packages/cli/src/gitignore.ts` (the `no-git` outcome) is the
 > shipped behaviour; this section now matches it.
+>
+> **2026-09-02, whole-branch review:** the same claim had two more holes, both
+> now closed in `gitignore.ts` and reflected in the table above.
+>
+> First, `git check-ignore -q` does not report a **tracked** file as ignored,
+> whatever `.gitignore` says. So appending the entry was never proof: the
+> append path reported success while writing a key into a file the next
+> `git commit -a` would publish, and it re-appended the comment and the entry
+> on every run, since `check-ignore` never started returning 0. That is
+> reachable from a sequence this document blesses: `setup` outside a
+> repository (key stored, `.gitignore` left alone, by design), then
+> `git init && git add -A && git commit`, then a rotation and a re-paste.
+> Every success is now confirmed by a second `check-ignore` after the write,
+> the write is skipped when the exact line is already present, and the failure
+> is its own outcome (`still-not-ignored`) that refuses like the others and
+> names `git rm --cached` instead of claiming an outcome git denies.
+>
+> Second, the missing-git rows said "a `.git` directory is present", which the
+> code checked in `cwd` only. Running the pasted command from a package
+> subdirectory of a monorepo found no `.git` there and concluded there was no
+> repository, then wrote a plaintext key inside a real working tree. The check
+> now walks from `cwd` to the filesystem root, so those rows are about the
+> whole ancestor chain rather than one directory. It stays on `node:fs`, since
+> git is unavailable by definition on that path, and it still treats a `.git`
+> *file* as a working tree, which is how linked worktrees and submodules
+> present themselves.
+>
+> Two smaller corrections in the same pass. `rev-parse --is-inside-work-tree`
+> exits 0 while printing `false` inside a bare repository, so reading only the
+> exit status created an inert `.gitignore` in the git directory and reported
+> "Created .gitignore" for it; stdout is now captured and must read `true`.
+> And step 1 of `setup` above no longer honours `--out` and the selection
+> flags "exactly as `init` does": `setup` is also the rotation path, and the
+> command the plugin hands out carries neither flag, so re-pasting it now
+> defaults both from the committed `speclayer.json` rather than resetting a
+> chosen output directory and dropping an `include` block. `init` still
+> overwrites, on purpose.
 
 ## Rotation and replacement
 
