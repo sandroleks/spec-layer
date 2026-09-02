@@ -108,14 +108,27 @@ npx spec-layer setup --id lib_... --key sl_...
 ```
 
 That records the library id, stores the key in a gitignored
-`speclayer.local.json`, and writes `.speclayer/`, so a later `npx spec-layer
-pull` needs no flags. `npx` needs no install step of its own, though a repo
-that pulls on a schedule should pin the CLI as a dev dependency. The CLI is
-delivery only: it never talks to Figma, re-derives nothing, and has no runtime
-dependencies. `init` records the library id without a key, `status` checks
-freshness without writing, and `list` and `show` read the last pull. See the
-[CLI README](packages/cli/README.md) for every command, partial pulls, and what
-`pull` writes.
+`speclayer.local.json`, and writes `.speclayer/`, so every later command needs
+no flags. `npx` needs no install step of its own, though a repo that pulls on a
+schedule should pin the CLI as a dev dependency. The CLI is delivery only: it
+never talks to Figma, re-derives nothing, and has no runtime dependencies.
+
+| Command | What it does | Network |
+|---|---|---|
+| `setup --id lib_... --key sl_...` | Records the id, stores the key, then pulls. The command the plugin copies. Needs 0.3.0 or later. | yes |
+| `init --id lib_...` | Writes `speclayer.json` only. No key. | no |
+| `pull` | Fetches the library and writes it into the output directory, default `.speclayer/`. | yes |
+| `status` | Checks freshness without writing. Exits `2` when the local copy is behind. | yes |
+| `list` | Lists every artifact in the last pull, with its file path. | no |
+| `show foundation` / `show component NAME` | Prints one artifact's AI YAML, or its canonical JSON with `--canonical`. | no |
+
+Every command takes `--out DIR` to point at a different output directory, and
+the three that reach the network also take `--api URL` to override the API
+origin. `setup`, `init` and `pull` additionally take a selection (`--only foundation`, `--only components`, or repeatable
+`--component NAME`) to narrow what lands on disk. The pull key resolves from
+`--key`, then `SPEC_LAYER_KEY`, then `speclayer.local.json`. See the
+[CLI README](packages/cli/README.md) for the full flag reference, partial pulls,
+and what `pull` writes.
 
 ## Development
 
