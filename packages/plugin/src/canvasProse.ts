@@ -200,10 +200,27 @@ const OPTIONAL_KEYS = [
   'interactions', 'designConsiderations', 'contentConsiderations',
 ] as const;
 
+/** True when at least one field carries real content: a non-blank string
+ *  after trimming, or a non-empty array. An object with only empty strings
+ *  and empty arrays (e.g. an anatomy legend on canvas with no descriptions)
+ *  is not content — it must not read as "this doc has prose". */
+function hasContent(p: ProseDrafts): boolean {
+  for (const value of Object.values(p)) {
+    if (typeof value === 'string') {
+      if (value.trim() !== '') return true;
+    } else if (Array.isArray(value)) {
+      if (value.length > 0) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Canvas wins per field; stored fills whatever the canvas does not show. A
  * section the config does not render leaves no tags, so its stored text
- * survives. Null only when neither side has anything at all.
+ * survives. Null when neither side has anything at all, or when the merge
+ * itself carries no real content (e.g. canvas contributed only an empty
+ * anatomyParts array and stored was null).
  */
 export function mergeProse(stored: ProseDrafts | null, canvas: CanvasProse): ProseDrafts | null {
   if (!stored && Object.keys(canvas).length === 0) return null;
@@ -217,7 +234,7 @@ export function mergeProse(stored: ProseDrafts | null, canvas: CanvasProse): Pro
     const value = canvas[key] ?? stored?.[key];
     if (value !== undefined) (out as unknown as Record<string, unknown>)[key] = value;
   }
-  return out;
+  return hasContent(out) ? out : null;
 }
 
 /**

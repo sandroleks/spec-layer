@@ -232,6 +232,22 @@ describe('mergeProse', () => {
     expect(merged).toEqual({ definition: 'Only this.', accessibility: '', dos: [], donts: [] });
     expect(merged && 'variantsSummary' in merged).toBe(false);
   });
+
+  it('returns null when the only content is an empty anatomyParts array', () => {
+    expect(mergeProse(null, { anatomyParts: [] })).toBeNull();
+  });
+
+  it('returns null when the only content is an empty dos array', () => {
+    expect(mergeProse(null, { dos: [] })).toBeNull();
+  });
+
+  it('returns null when the only content is a blank definition', () => {
+    expect(mergeProse(null, { definition: '  ' })).toBeNull();
+  });
+
+  it('is not null once an array field actually has an item', () => {
+    expect(mergeProse(null, { dos: ['x'] })).not.toBeNull();
+  });
 });
 
 // --- collectGeneratedText ---------------------------------------------------

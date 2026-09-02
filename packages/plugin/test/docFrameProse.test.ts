@@ -38,14 +38,6 @@ const SECTIONS = new Set<SectionId>([
   'definition', 'accessibility', 'dosDonts', 'interactions', 'contentConsiderations', 'anatomy',
 ]);
 
-// makeBulletRow (pre-existing, outside this task's scope) discards the bold
-// runs a caller already parsed and re-derives styling from the already-plain
-// bullet text, so a **bold** lead-in inside a bulleted prose line never
-// survives rendering. The words round-trip; only the emphasis markers are
-// lost. Tracked separately from the editorial-tagging work here.
-const accessibilityReadback =
-  '- Keyboard: focusable and activates on Enter\n### Screen readers\nThe label is announced.';
-
 async function build(p: ProseDrafts | null): Promise<FakeSection> {
   const model = buildDocModel(spec, p, SECTIONS, new Set(), { measureViews: [] });
   const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null);
@@ -64,7 +56,7 @@ describe('docFrame editorial tags', () => {
       // The lead sentence is lifted into the header, so the definition comes
       // back as lead + body on separate lines. Same words, same order.
       definition: 'A button.\nUse it for the main action on a screen.',
-      accessibility: accessibilityReadback,
+      accessibility: prose.accessibility,
       dos: prose.dos,
       donts: prose.donts,
       interactions: prose.interactions,
@@ -85,7 +77,11 @@ describe('docFrame editorial tags', () => {
     // descriptions) even without prose. Seeing a legend row on canvas is
     // itself a signal per readCanvasProse's anatomyPart handling ("an empty
     // list is a real answer"), so anatomyParts reads back as [], not absent.
-    expect(readCanvasProse(asNode(await build(null)))).toEqual({ anatomyParts: [] });
+    const read = readCanvasProse(asNode(await build(null)));
+    expect(read).toEqual({ anatomyParts: [] });
+    // But that lone empty array carries no real content, so the two modules
+    // must agree: merging it against no stored prose is still "no prose".
+    expect(mergeProse(null, read)).toBeNull();
   });
 
   it('keeps editorial text out of the generated lane', async () => {

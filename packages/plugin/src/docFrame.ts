@@ -147,6 +147,24 @@ function splitMarker(text: string): { marker: string; rest: string } {
   return { marker: '•', rest: text };
 }
 
+/** Drop `count` leading characters from a run list, discarding runs it fully
+ *  consumes and slicing the first run it only partly consumes. Used to carry
+ *  a bullet's parsed runs past the marker split without re-parsing already
+ *  plain text. */
+function dropLeading(runs: TextRun[], count: number): TextRun[] {
+  const out: TextRun[] = [];
+  let remaining = count;
+  for (const run of runs) {
+    if (remaining >= run.text.length) {
+      remaining -= run.text.length;
+      continue;
+    }
+    out.push(remaining > 0 ? { ...run, text: run.text.slice(remaining) } : run);
+    remaining = 0;
+  }
+  return out;
+}
+
 /** Render a single bullet as marker-column + wrapping content row. */
 function makeBulletRow(bullet: Bullet): FrameNode {
   const placeholder = emphasisOnly(bullet.text);
@@ -168,8 +186,15 @@ function makeBulletRow(bullet: Bullet): FrameNode {
   row.appendChild(markerNode);
   markerNode.textAutoResize = 'WIDTH_AND_HEIGHT';
 
-  // Re-parse the rest so bold lead-ins survive the marker split.
-  const runs = parseRuns(rest);
+  // bullet.runs already carries any bold lead-ins parsed from the source
+  // markdown, and its concatenated text matches bullet.text for every
+  // current caller (docModel's makeBullet and buildProse both derive text
+  // from runs). Drop the same number of leading characters the marker split
+  // consumed so those runs line up with `rest`, rather than re-parsing
+  // already-plain text and losing the bold. Fall back to a fresh parse if a
+  // future caller ever breaks that invariant.
+  const runsMatchText = bullet.runs.map((r) => r.text).join('') === bullet.text;
+  const runs = runsMatchText ? dropLeading(bullet.runs, bullet.text.length - rest.length) : parseRuns(rest);
   const plain = runs.map((r) => r.text).join('');
   const content = makeText(plain, 'Regular', 15, palette.body, 155);
   row.appendChild(content);
