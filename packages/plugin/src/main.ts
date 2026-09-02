@@ -1,7 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
-import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource } from './messages';
+import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource, PublishInfo } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation, type FoundationReader } from './serializeFoundation';
@@ -252,6 +252,12 @@ async function postSelection(): Promise<void> {
   const component = findComponent(figma.currentPage.selection);
 
   if (!component) {
+    // TEMP diagnostic: separates "the walk found no component" from the
+    // serialization failure below, which reaches the SAME empty state.
+    console.log(
+      '[Spec Layer] no component in selection, selection was',
+      figma.currentPage.selection.map((n) => `${n.type}:${n.name}`).join(', ') || '(nothing)',
+    );
     figma.notify('Select a component or component set');
     if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
@@ -281,6 +287,12 @@ async function postSelection(): Promise<void> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const node = await serializeNode(component as any, resolver);
+    // TEMP diagnostic: sizes the tree that has to cross the sandbox bridge, so
+    // a failure in postMessage below can be told apart from one in serializeNode.
+    console.log(
+      '[Spec Layer] serialized', component.type, component.name,
+      'approx bytes', JSON.stringify(node).length,
+    );
     if (seq !== selectionSeq) return; // a newer selection superseded this one
     const msg: MainToUi = {
       type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
@@ -290,9 +302,15 @@ async function postSelection(): Promise<void> {
       ...(foundation ? { foundation } : {}),
     };
     figma.ui.postMessage(msg);
-  } catch {
+  } catch (err) {
     // Serialization failed: show the empty state rather than leaving the panel
-    // stuck on the previous component with no feedback.
+    // stuck on the previous component with no feedback. Logged for the same
+    // reason the foundation catch above is: a bare catch here made "this
+    // component cannot be read" look identical to "nothing is selected".
+    console.error(
+      '[Spec Layer] selection serialization failed for',
+      component.type, component.name, component.id, err,
+    );
     if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
     figma.ui.postMessage(msg);
@@ -399,6 +417,26 @@ function pageOf(node: BaseNode): PageNode | null {
 }
 
 // Read the registry off figma.root.
+/**
+ * Publish identity. `figma.fileKey` is undefined for a Community plugin, so
+ * the library id is kept in the document itself (root plugin data, shared by
+ * every editor of this file) and the pull key per user in clientStorage,
+ * keyed by that id. A second device therefore sees the id without the key.
+ */
+const PUBLISH_LIBRARY_KEY = 'speclayer.publish.libraryId';
+const publishKeyStorageKey = (libraryId: string): string => `publishKey:${libraryId}`;
+
+async function readPublishInfo(): Promise<PublishInfo> {
+  const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
+  if (!libraryId) return { libraryId: null, pullKey: null };
+  let pullKey: string | null = null;
+  try {
+    const raw = await figma.clientStorage.getAsync(publishKeyStorageKey(libraryId)) as unknown;
+    pullKey = typeof raw === 'string' && raw ? raw : null;
+  } catch { pullKey = null; }
+  return { libraryId, pullKey };
+}
+
 function readRegistry() {
   return parseRegistry(figma.root.getPluginData(DOC_REGISTRY_KEY));
 }
@@ -1272,14 +1310,28 @@ figma.ui.onmessage = async (raw: unknown) => {
       try {
         const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
+          // TEMP diagnostic: both branches of this case report the same
+          // "Check unavailable" row, so the row alone cannot say which fired.
+          console.error(
+            '[Spec Layer] drift source unresolved', msg.docId, msg.sourceNodeId,
+            'resolved to', src ? src.type : 'null',
+          );
           figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, resolver);
+        // TEMP diagnostic: same bridge-size question as postSelection.
+        console.log(
+          '[Spec Layer] drift serialized', src.type, src.name,
+          'approx bytes', JSON.stringify(node).length,
+        );
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
-      } catch {
+      } catch (err) {
+        console.error(
+          '[Spec Layer] drift check threw for', msg.docId, msg.sourceNodeId, err,
+        );
         figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
       }
       break;
@@ -1381,7 +1433,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         figma.ui.postMessage({
           type: 'publishSources', foundation, groupDescriptions, components, skipped,
-          fileKey, fileName: figma.root.name,
+          fileKey, fileName: figma.root.name, publishInfo: await readPublishInfo(),
         } as MainToUi);
       } catch (err) {
         figma.ui.postMessage({
@@ -1392,25 +1444,22 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestPublishInfo': {
-      const { fileKey } = resolveFileKey(figma.fileKey, null);
-      type PublishInfoRecord = { libraryId?: string; pullKey?: string };
-      let info: PublishInfoRecord | null = null;
-      try {
-        const raw = await figma.clientStorage.getAsync(`publishInfo:${fileKey}`) as string | undefined;
-        info = raw ? (JSON.parse(raw) as PublishInfoRecord) : null;
-      } catch { info = null; }
-      figma.ui.postMessage({
-        type: 'publishInfo', fileKey,
-        libraryId: info?.libraryId ?? null, pullKey: info?.pullKey ?? null,
-      } as MainToUi);
+      figma.ui.postMessage({ type: 'publishInfo', ...(await readPublishInfo()) } as MainToUi);
       break;
     }
 
     case 'setPublishInfo': {
-      await figma.clientStorage.setAsync(
-        `publishInfo:${msg.fileKey}`,
-        JSON.stringify({ libraryId: msg.libraryId, pullKey: msg.pullKey }),
-      );
+      figma.root.setPluginData(PUBLISH_LIBRARY_KEY, msg.libraryId);
+      await figma.clientStorage.setAsync(publishKeyStorageKey(msg.libraryId), msg.pullKey);
+      break;
+    }
+
+    case 'clearPublishInfo': {
+      const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY);
+      figma.root.setPluginData(PUBLISH_LIBRARY_KEY, '');
+      if (libraryId) {
+        try { await figma.clientStorage.deleteAsync(publishKeyStorageKey(libraryId)); } catch { /* nothing to drop */ }
+      }
       break;
     }
   }

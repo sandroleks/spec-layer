@@ -139,7 +139,7 @@ describe('publish screen body', () => {
   it('names rotating in the consequence under the two-button row', () => {
     const markup = publishScrollMarkup(PUBLISHED);
     expect(markup).toContain(
-      'Rotating invalidates the current key for everyone using it.',
+      'Rotating cuts off everyone using the current key within about a minute.',
     );
     expect(markup.indexOf('sl-publish-hint'))
       .toBeGreaterThan(markup.indexOf('data-publish-rotate'));
@@ -160,11 +160,18 @@ describe('publish screen body', () => {
    * fabrication the extraction invariants forbid everywhere else.
    */
   it('withholds the command box when either half of it is unknown', () => {
+    // Half a command is a command that fails: no <code> box and no copy button
+    // unless both the id and the key are known. The id-only case still gets
+    // the Rotate action, since that is how a device without the key gets one.
     expect(publishScrollMarkup(state({ libraryId: LIBRARY_ID })))
-      .not.toContain('sl-publish-command');
+      .not.toContain('sl-publish-command"');
+    expect(publishScrollMarkup(state({ libraryId: LIBRARY_ID })))
+      .not.toContain('data-publish-copy-command');
     expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
       .not.toContain('sl-publish-command');
-    expect(publishScrollMarkup(PUBLISHED)).toContain('sl-publish-command');
+    expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
+      .not.toContain('data-publish-rotate');
+    expect(publishScrollMarkup(PUBLISHED)).toContain('sl-publish-command"');
   });
 
   /**
@@ -351,5 +358,30 @@ describe('publish screen styling', () => {
     expect(margin).toContain('--sl-line-height-tight');
     expect(margin).toContain('--sl-control-sm');
     expect(margin).not.toMatch(/\d+px/);
+  });
+});
+
+describe('publish screen: rotate safety and missing key', () => {
+  it('disables rotate while a publish is collecting or uploading', () => {
+    for (const status of ['collecting', 'uploading'] as const) {
+      const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(publishScrollMarkup(state({ ...PUBLISHED, status })))?.[0] ?? '';
+      expect(rotate).toContain('disabled');
+    }
+    const idle = /<button[^>]*data-publish-rotate[^>]*>/.exec(publishScrollMarkup(PUBLISHED))?.[0] ?? '';
+    expect(idle).not.toContain('disabled');
+  });
+
+  it('is honest that rotation takes up to a minute to reach every developer', () => {
+    expect(publishScrollMarkup(PUBLISHED)).toContain('within about a minute');
+    expect(publishScrollMarkup(PUBLISHED)).not.toContain('invalidates');
+  });
+
+  it('shows the library id and rotate, but no command, when the key is not on this device', () => {
+    const markup = publishScrollMarkup(state({ libraryId: LIBRARY_ID, pullKey: null }));
+    expect(markup).toContain(LIBRARY_ID);
+    expect(markup).toContain('data-publish-rotate');
+    expect(markup).not.toContain('data-publish-copy-command');
+    expect(markup).not.toContain('SPEC_LAYER_KEY=');
+    expect(markup).toContain('not on this device');
   });
 });

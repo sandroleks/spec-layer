@@ -77,9 +77,34 @@ export function publishHeaderMarkup(): string {
  * belongs in the scroll body rather than the fixed-height footer band.
  */
 export function publishScrollMarkup(state: PublishState): string {
-  // Both halves are needed for a command a developer can actually run. Half a
-  // command is a command that fails, so the whole group is withheld rather
-  // than guessed at.
+  const busy = isBusy(state);
+  // Rotating during an upload would race the publish on the server, so the
+  // control is disabled while the footer reports work in progress.
+  const rotateButton =
+    '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
+    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>`;
+  // Names the action, since it sits under a row of two: the consequence
+  // belongs to rotating, not to the copy button beside it. "Within about a
+  // minute" is what the server can actually promise.
+  const rotateHint =
+    '<p class="sl-publish-hint">Rotating cuts off everyone using the current key ' +
+    'within about a minute.</p>';
+  // The id lives in the file; the key lives on the device that published or
+  // rotated last. Both halves are needed for a command a developer can
+  // actually run, so with only the id the screen says so and offers the one
+  // way to get a key: rotate.
+  const idOnly = state.libraryId && !state.pullKey
+    ? (
+      '<section class="sl-publish-group">' +
+      '<div class="sl-settings-section-heading"><h2>Developer setup</h2>' +
+      `<p>This file is published as <code>${esc(state.libraryId)}</code>. ` +
+      'The pull key is not on this device, so the setup command cannot be shown here. ' +
+      'Rotate the key to issue a new one.</p></div>' +
+      `<div class="sl-publish-command-actions">${rotateButton}</div>` +
+      rotateHint +
+      '</section>'
+    )
+    : '';
   const setup = state.pullKey && state.libraryId
     ? (
       '<section class="sl-publish-group">' +
@@ -100,16 +125,12 @@ export function publishScrollMarkup(state: PublishState): string {
        * `data-tone="danger"` would. Second in the row, since copy is what the
        * user came for.
        */
-      '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
-      'data-publish-rotate>Rotate key</button>' +
+      rotateButton +
       '</div>' +
-      // Names the action, since it sits under a row of two: the consequence
-      // belongs to rotating, not to the copy button beside it.
-      '<p class="sl-publish-hint">Rotating invalidates the current key for ' +
-      'everyone using it.</p>' +
+      rotateHint +
       '</section>'
     )
-    : '';
+    : idOnly;
   const statusLine = state.message
     ? `<p class="sl-publish-status${state.status === 'error' ? ' is-error' : ''}">${esc(state.message)}</p>`
     : '';

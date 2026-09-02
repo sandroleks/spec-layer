@@ -83,10 +83,17 @@ export type PublishOutcome =
   | { kind: 'gone' }
   | { kind: 'error'; message: string };
 
+/** Bytes as "5.6 MB", with no decimal when it is whole, or the raw value when it is not a number. */
+function megabytes(bytes: unknown): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return String(bytes);
+  const mb = bytes / 1_000_000;
+  return `${Number.isInteger(mb) ? String(mb) : mb.toFixed(1)} MB`;
+}
+
 function publishErrorCopy(status: number, body: Record<string, unknown>): string {
   const error = typeof body.error === 'string' ? body.error : '';
   if (status === 401) return 'Publishing needs an active Pro license.';
-  if (error === 'bundle_too_large') return `This library is larger than the publish limit (${String(body.size)} of ${String(body.limit)} characters).`;
+  if (error === 'bundle_too_large') return `This library is larger than the publish limit (${megabytes(body.size)} of ${megabytes(body.limit)}).`;
   if (error === 'library_limit') return `This license already publishes ${String(body.limit)} libraries, which is the limit.`;
   if (status === 429) return 'Too many requests just now. Give it a minute.';
   return `Publishing failed with HTTP ${status}.`;
@@ -169,13 +176,6 @@ function createPublishState(): PublishState {
 
 let state: PublishState = createPublishState();
 
-/**
- * The fileKey the current libraryId/pullKey belong to, learned from either a
- * publishSources reply or the persisted publishInfo seed. onRotateClick needs
- * it to send setPublishInfo, since a rotate reply carries only the new key.
- */
-let publishFileKey: string | null = null;
-
 export interface PublishHost { repaint(): void; send(msg: UiToMain): void }
 
 const noopPublishHost: PublishHost = { repaint: () => {}, send: () => {} };
@@ -211,29 +211,31 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>): strin
   return `Nothing was published. ${count} component${count === 1 ? '' : 's'} could not be read: ${names}. Fix or remove those docs, then publish again.`;
 }
 
+const GONE_MESSAGE =
+  'That library is gone or belongs to another license. Nothing was published. '
+  + 'Publish again to create a new library, then share its setup command with your developers.';
+
 export async function onPublishSources(
   msg: PublishSourcesMsg,
   auth: ProxyAuth,
   fetcher?: typeof fetch,
 ): Promise<void> {
-  publishFileKey = msg.fileKey;
   if (msg.skipped.length > 0) {
     state = { ...state, status: 'error', message: skippedMessage(msg.skipped) };
     host.repaint();
     return;
   }
 
-  state = { ...state, status: 'uploading' };
+  // What this session already knows wins; otherwise the identity the main
+  // thread read from the file in this same round trip. A publishInfo reply
+  // that has not landed yet can no longer cost us a republish.
+  const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
+  const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
+  state = { ...state, status: 'uploading', libraryId, pullKey };
   host.repaint();
 
   const bundle = buildPublishBundle(msg, new Date().toISOString());
-  let outcome = await publishBundle(bundle, { auth, libraryId: state.libraryId, fetcher });
-  // The republish target is gone (deleted, or owned by someone else now):
-  // retry exactly once as a brand-new library rather than surfacing an error
-  // for something the user can fix simply by publishing again.
-  if (outcome.kind === 'gone') {
-    outcome = await publishBundle(bundle, { auth, libraryId: null, fetcher });
-  }
+  const outcome = await publishBundle(bundle, { auth, libraryId, fetcher });
 
   switch (outcome.kind) {
     case 'created':
@@ -245,12 +247,7 @@ export async function onPublishSources(
         lastPublishedAt: outcome.publishedAt,
         message: 'Published. Anyone with the key can pull this version.',
       };
-      host.send({
-        type: 'setPublishInfo',
-        fileKey: msg.fileKey,
-        libraryId: outcome.libraryId,
-        pullKey: outcome.pullKey,
-      });
+      host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
       break;
     case 'updated':
       state = {
@@ -262,10 +259,11 @@ export async function onPublishSources(
       };
       break;
     case 'gone':
-      // publishBundle only maps 404/not_owner to 'gone' when a libraryId was
-      // sent; the retry above always sends null, so this is unreachable. Kept
-      // so the switch stays exhaustive for the type checker.
-      state = { ...state, status: 'error', message: 'That library is gone. Publish again to create a new one.' };
+      // Never recreate on the user's behalf: the developers pulling the old id
+      // would be stranded without anyone being told. Drop the stale identity
+      // here and in the file so the next click is a deliberate new library.
+      state = { ...state, status: 'error', libraryId: null, pullKey: null, message: GONE_MESSAGE };
+      host.send({ type: 'clearPublishInfo' });
       break;
     case 'error':
       state = { ...state, status: 'error', message: outcome.message };
@@ -291,30 +289,30 @@ export function onPublishSourcesError(message: string): void {
  * truth, and a slow publishInfo reply landing afterward must not clobber it.
  */
 export function onPublishInfo(msg: PublishInfoMsg): void {
-  publishFileKey = msg.fileKey;
   if (state.status !== 'idle') return;
   state = { ...state, libraryId: msg.libraryId, pullKey: msg.pullKey };
   host.repaint();
 }
 
+export const isPublishBusy = (s: Readonly<PublishState>): boolean =>
+  s.status === 'collecting' || s.status === 'uploading';
+
 export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Promise<void> {
   const libraryId = state.libraryId;
-  if (!libraryId) return;
+  // A rotate racing an upload would let the two overwrite each other's
+  // result on the server, and a failed rotate flipping status mid-upload
+  // would re-enable Publish. The button is disabled while busy; this is the
+  // guard behind it.
+  if (!libraryId || isPublishBusy(state)) return;
   const outcome = await rotatePullKey(libraryId, auth, fetcher);
   if (outcome.kind === 'rotated') {
     state = {
       ...state,
+      status: 'done',
       pullKey: outcome.pullKey,
-      message: 'Key rotated. The old key no longer works. Share the new command with your developers.',
+      message: 'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
     };
-    if (publishFileKey) {
-      host.send({
-        type: 'setPublishInfo',
-        fileKey: publishFileKey,
-        libraryId,
-        pullKey: outcome.pullKey,
-      });
-    }
+    host.send({ type: 'setPublishInfo', libraryId, pullKey: outcome.pullKey });
   } else {
     state = { ...state, status: 'error', message: outcome.message };
   }

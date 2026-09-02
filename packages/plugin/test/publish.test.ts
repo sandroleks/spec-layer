@@ -207,12 +207,12 @@ describe('publishBundle', () => {
 
   it('maps bundle_too_large with the sizes', async () => {
     const fetcher = vi.fn(async () => jsonResponse(413, {
-      error: 'bundle_too_large', size: 120000, limit: 100000,
+      error: 'bundle_too_large', size: 5_640_000, limit: 5_000_000,
     }));
     const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'This library is larger than the publish limit (120000 of 100000 characters).',
+      message: 'This library is larger than the publish limit (5.6 MB of 5 MB).',
     });
   });
 
@@ -390,6 +390,7 @@ describe('publish controller', () => {
       skipped: [],
       fileKey: 'F1',
       fileName: 'Design System',
+      publishInfo: { libraryId: null, pullKey: null },
       ...overrides,
     };
   }
@@ -458,7 +459,7 @@ describe('publish controller', () => {
     expect(state.lastPublishedAt).toBe('2026-09-01T00:00:01.000Z');
     expect(state.message).toBe('Published. Anyone with the key can pull this version.');
     expect(sent).toContainEqual({
-      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_new', pullKey: 'sl_pull',
+      type: 'setPublishInfo', libraryId: 'lib_new', pullKey: 'sl_pull',
     });
   });
 
@@ -487,7 +488,7 @@ describe('publish controller', () => {
     expect(updateFetcher).toHaveBeenCalledTimes(1);
   });
 
-  it('retries as a fresh create when the republish target is gone', async () => {
+  it('stops on a gone republish target, clears the identity, and never recreates', async () => {
     publish.onPublishClick(AUTH);
     const createFetcher = vi.fn(async () => jsonResponse(201, {
       libraryId: 'lib_old', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z',
@@ -496,29 +497,52 @@ describe('publish controller', () => {
     expect(publish.publishState().libraryId).toBe('lib_old');
 
     publish.onPublishClick(AUTH);
-    let call = 0;
     const fetcher = vi.fn(async (_url, init) => {
-      call += 1;
       const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
-      if (call === 1) {
-        expect(body.libraryId).toBe('lib_old');
-        return jsonResponse(404, {});
-      }
-      expect('libraryId' in body).toBe(false);
-      return jsonResponse(201, {
-        libraryId: 'lib_new', pullKey: 'sl_new', publishedAt: '2026-09-01T00:00:02.000Z',
-      });
+      expect(body.libraryId).toBe('lib_old');
+      return jsonResponse(403, { error: 'not_owner' });
     });
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
     const state = publish.publishState();
-    expect(state.status).toBe('done');
-    expect(state.libraryId).toBe('lib_new');
-    expect(state.pullKey).toBe('sl_new');
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(sent.filter((msg) => msg.type === 'setPublishInfo')).toHaveLength(2);
-    expect(sent.at(-1)).toEqual({
-      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_new', pullKey: 'sl_new',
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'That library is gone or belongs to another license. Nothing was published. '
+      + 'Publish again to create a new library, then share its setup command with your developers.',
+    );
+    // The stale identity is dropped locally and in the file, so the next
+    // click is a deliberate create rather than another failed republish.
+    expect(state.libraryId).toBeNull();
+    expect(state.pullKey).toBeNull();
+    expect(sent.at(-1)).toEqual({ type: 'clearPublishInfo' });
+
+    publish.onPublishClick(AUTH);
+    const recreate = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
+      expect('libraryId' in body).toBe(false);
+      return jsonResponse(201, { libraryId: 'lib_new', pullKey: 'sl_new', publishedAt: '2026-09-01T00:00:03.000Z' });
     });
+    await publish.onPublishSources(sourcesMsg(), AUTH, recreate);
+    expect(publish.publishState().libraryId).toBe('lib_new');
+  });
+
+  it('republishes with the identity carried by publishSources when the session has none', async () => {
+    // No publishInfo reply reached this session before the click: the main
+    // thread read the file's identity in the same round trip as the sources.
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
+      expect(body.libraryId).toBe('lib_file');
+      return jsonResponse(200, { libraryId: 'lib_file', publishedAt: '2026-09-01T00:00:02.000Z' });
+    });
+    await publish.onPublishSources(
+      sourcesMsg({ publishInfo: { libraryId: 'lib_file', pullKey: 'sl_file' } }), AUTH, fetcher,
+    );
+    const state = publish.publishState();
+    expect(state.status).toBe('done');
+    expect(state.libraryId).toBe('lib_file');
+    expect(state.pullKey).toBe('sl_file');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces publish errors verbatim in state', async () => {
@@ -531,7 +555,7 @@ describe('publish controller', () => {
   });
 
   it('onPublishSourcesError sets an honest error, without touching any stored key', () => {
-    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_1', pullKey: 'sl_1' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_1' });
     publish.onPublishSourcesError('the selection has no components');
     const state = publish.publishState();
     expect(state.status).toBe('error');
@@ -544,7 +568,7 @@ describe('publish controller', () => {
   });
 
   it('onPublishInfo seeds libraryId/pullKey only while idle', () => {
-    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_seed', pullKey: 'sl_seed' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_seed', pullKey: 'sl_seed' });
     expect(publish.publishState().libraryId).toBe('lib_seed');
     expect(publish.publishState().pullKey).toBe('sl_seed');
     expect(repaintCount).toBeGreaterThan(0);
@@ -552,7 +576,7 @@ describe('publish controller', () => {
     // Once a publish has started this session, a slow/stale publishInfo reply
     // must not clobber what already happened.
     publish.onPublishClick(AUTH);
-    publish.onPublishInfo({ type: 'publishInfo', fileKey: 'F1', libraryId: 'lib_other', pullKey: 'sl_other' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_other', pullKey: 'sl_other' });
     expect(publish.publishState().libraryId).toBe('lib_seed');
     expect(publish.publishState().pullKey).toBe('sl_seed');
   });
@@ -569,12 +593,41 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.pullKey).toBe('sl_rotated');
     expect(state.libraryId).toBe('lib_1');
+    expect(state.status).toBe('done');
     expect(state.message).toBe(
-      'Key rotated. The old key no longer works. Share the new command with your developers.',
+      'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
     );
     expect(sent).toContainEqual({
-      type: 'setPublishInfo', fileKey: 'F1', libraryId: 'lib_1', pullKey: 'sl_rotated',
+      type: 'setPublishInfo', libraryId: 'lib_1', pullKey: 'sl_rotated',
     });
+  });
+
+  it('ignores rotate while a publish is collecting or uploading', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old' });
+    publish.onPublishClick(AUTH);
+    const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_rotated' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    expect(rotateFetcher).not.toHaveBeenCalled();
+    expect(publish.publishState().status).toBe('collecting');
+    expect(publish.publishState().pullKey).toBe('sl_old');
+  });
+
+  it('a rotate that succeeds after a failed publish reads as done, not as an error', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old' });
+    publish.onPublishSourcesError('the file has no docs');
+    expect(publish.publishState().status).toBe('error');
+    const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_rotated' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    expect(publish.publishState().status).toBe('done');
+    expect(publish.publishState().pullKey).toBe('sl_rotated');
+  });
+
+  it('rotates with only a library id known, so a second device can recover a key', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: null });
+    const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_fresh' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    expect(publish.publishState().pullKey).toBe('sl_fresh');
+    expect(sent).toContainEqual({ type: 'setPublishInfo', libraryId: 'lib_1', pullKey: 'sl_fresh' });
   });
 
   it('onRotateClick surfaces a rotate failure without losing the current key', async () => {

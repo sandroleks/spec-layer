@@ -138,12 +138,21 @@ export type MainToUi =
       groupDescriptions: Record<string, Record<string, string>>;
       components: PublishComponentSource[];
       skipped: Array<{ name: string; reason: string }>;
-      fileKey: string; fileName: string }
+      fileKey: string; fileName: string;
+      /** The file's persisted publish identity, read in the same round trip
+       *  as the sources so a publish can never outrun the `publishInfo`
+       *  reply and mint a duplicate library. */
+      publishInfo: PublishInfo }
   | { type: 'publishSourcesError'; message: string }
-  /** Reply for `requestPublishInfo`: the last library/pull identity persisted
-   *  for this file via `setPublishInfo`, or nulls when nothing has been
-   *  published from this file yet. */
-  | { type: 'publishInfo'; fileKey: string; libraryId: string | null; pullKey: string | null };
+  /** Reply for `requestPublishInfo`: the library id stored in this file and,
+   *  when this device holds it, the pull key. Nulls when the file has never
+   *  been published, or the key when only the id is known. */
+  | ({ type: 'publishInfo' } & PublishInfo);
+
+/** What identifies a published library: the id lives in the file (root plugin
+ *  data, shared by every editor) and the pull key lives per user in
+ *  clientStorage, since it is a secret and the file is not. */
+export interface PublishInfo { libraryId: string | null; pullKey: string | null }
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -180,4 +189,7 @@ export type UiToMain =
   | { type: 'updateFoundationDoc'; docId: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }
-  | { type: 'setPublishInfo'; fileKey: string; libraryId: string; pullKey: string };
+  | { type: 'setPublishInfo'; libraryId: string; pullKey: string }
+  /** Drop the file's stored library id after the server said it is gone or
+   *  belongs to another license, so the next publish creates a new one. */
+  | { type: 'clearPublishInfo' };
