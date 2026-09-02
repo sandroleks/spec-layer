@@ -702,3 +702,36 @@ describe('headingLine', () => {
     expect(headingLine('')).toBeNull();
   });
 });
+
+describe('buildDocModel placeholders for merged prose', () => {
+  const empty = { definition: '', accessibility: '', dos: [], donts: [] };
+
+  it('renders the placeholder when a required prose field is an empty string', () => {
+    const model = buildDocModel(spec, empty, new Set<SectionId>(['definition', 'accessibility']), new Set());
+    const texts = model.sections.map((s) => (s.kind === 'prose' ? s.text : ''));
+    expect(texts).toEqual(['_To be written._', '_To be written._']);
+  });
+
+  it('renders the placeholder when both dos and donts are empty', () => {
+    const model = buildDocModel(spec, empty, new Set<SectionId>(['dosDonts']), new Set());
+    const block = model.sections[0];
+    expect(block.kind).toBe('bullets');
+    if (block.kind === 'bullets') expect(block.items.map((b) => b.text)).toEqual(['_To be written._']);
+  });
+
+  it('renders the placeholder for an empty optional prose field', () => {
+    const model = buildDocModel(
+      spec, { ...empty, interactions: '' }, new Set<SectionId>(['interactions']), new Set(),
+    );
+    const block = model.sections[0];
+    if (block.kind === 'prose') expect(block.text).toBe('_To be written._');
+  });
+
+  it('drops an empty anatomy summary rather than rendering a blank line', () => {
+    const model = buildDocModel(
+      spec, { ...empty, anatomySummary: '' }, new Set<SectionId>(['anatomy']), new Set(),
+    );
+    const block = model.sections[0];
+    expect(block.kind).toBe('bullets');
+  });
+});

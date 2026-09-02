@@ -281,36 +281,39 @@ function buildSection(
     case 'definition': {
       return {
         id, heading: label, kind: 'prose',
-        text: prose?.definition ?? AI_PLACEHOLDER,
+        // `||`, not `??`: a merged prose object fills a field it has no text
+        // for with '', and a blank section is a claim of emptiness while the
+        // placeholder is an honest "nobody wrote this yet".
+        text: prose?.definition || AI_PLACEHOLDER,
       };
     }
 
     case 'accessibility': {
       return {
         id, heading: label, kind: 'prose',
-        text: prose?.accessibility ?? AI_PLACEHOLDER,
+        text: prose?.accessibility || AI_PLACEHOLDER,
       };
     }
 
     case 'interactions': {
-      return { id, heading: label, kind: 'prose', text: prose?.interactions ?? AI_PLACEHOLDER };
+      return { id, heading: label, kind: 'prose', text: prose?.interactions || AI_PLACEHOLDER };
     }
 
     case 'contentConsiderations': {
-      return { id, heading: label, kind: 'prose', text: prose?.contentConsiderations ?? AI_PLACEHOLDER };
+      return { id, heading: label, kind: 'prose', text: prose?.contentConsiderations || AI_PLACEHOLDER };
     }
 
     case 'dosDonts': {
-      let items: Bullet[];
-      if (prose) {
-        items = [
-          ...prose.dos.map((d) => makeBullet(`✅ ${d}`)),
-          ...prose.donts.map((d) => makeBullet(`❌ ${d}`)),
-        ];
-      } else {
-        items = [makeBullet(AI_PLACEHOLDER)];
-      }
-      return { id, heading: label, kind: 'bullets', items };
+      const items: Bullet[] = prose
+        ? [
+            ...prose.dos.map((d) => makeBullet(`✅ ${d}`)),
+            ...prose.donts.map((d) => makeBullet(`❌ ${d}`)),
+          ]
+        : [];
+      return {
+        id, heading: label, kind: 'bullets',
+        items: items.length ? items : [makeBullet(AI_PLACEHOLDER)],
+      };
     }
 
     case 'anatomy': {
@@ -341,7 +344,7 @@ function buildSection(
         return {
           id, heading: label, kind: 'anatomy',
           componentId: spec.anatomyComponentId, parts, view: 'diagram',
-          summary: prose?.anatomySummary ?? null,
+          summary: prose?.anatomySummary || null,
         };
       }
       return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
@@ -399,7 +402,7 @@ function buildSection(
       const stateProps = stateAxisProps(spec.variants);
       const axes = spec.variants.filter((v) => !stateProps.has(v.prop));
       const defaults = defaultAxisValues(spec);
-      const summary = prose?.variantsSummary ?? null;
+      const summary = prose?.variantsSummary || null;
 
       // A boolean axis (True/False) has no self-describing values, so a bare
       // "FALSE"/"TRUE" header reads as meaningless. Qualify those with the axis
