@@ -12,6 +12,24 @@ function gitInit(cwd: string): void {
   if (res.status !== 0) throw new Error('git init failed; git must be on PATH for these tests');
 }
 
+/**
+ * Runs `fn` with PATH pointed at an empty directory, so any `spawnSync('git',
+ * ...)` inside it fails to find the binary (ENOENT) rather than running git.
+ * This simulates a slim environment without git installed, without touching
+ * the real PATH outside the call.
+ */
+function withoutGitOnPath<T>(fn: () => T): T {
+  const emptyDir = mkdtempSync(join(tmpdir(), 'sl-no-git-path-'));
+  const originalPath = process.env.PATH;
+  process.env.PATH = emptyDir;
+  try {
+    return fn();
+  } finally {
+    process.env.PATH = originalPath;
+    rmSync(emptyDir, { recursive: true, force: true });
+  }
+}
+
 describe('ensureIgnored', () => {
   let cwd: string;
   beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-ignore-')); });
@@ -72,5 +90,21 @@ describe('ensureIgnored', () => {
     expect(result.kind).toBe('refused');
     expect((result as { kind: 'refused'; line: string }).line).toBe(NAME);
     chmodSync(path, 0o644);
+  });
+
+  // The important case: a real working tree, but git cannot be run at all.
+  // Reporting this as "not a repository" would be a false reassurance that
+  // lets a caller write an un-ignored secret into a real git checkout.
+  it('reports no-git when a working tree exists but git cannot run', () => {
+    gitInit(cwd);
+    const result = withoutGitOnPath(() => ensureIgnored(cwd, NAME));
+    expect(result).toEqual({ kind: 'no-git', line: NAME });
+    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+  });
+
+  it('still reports not-a-repo when git cannot run and there is no .git', () => {
+    const result = withoutGitOnPath(() => ensureIgnored(cwd, NAME));
+    expect(result).toEqual({ kind: 'not-a-repo' });
+    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ Commands:
   show    foundation | component NAME [--canonical]
                                                  print one artifact's AI YAML (or canonical JSON)
 
-Selection (pull and init; flags replace the include block in speclayer.json):
+Selection (setup, pull and init; flags replace the include block in speclayer.json):
   --only foundation | components   write just the foundation, or just components
   --component NAME                 write only this component (repeatable, matched by slug)
 

@@ -139,15 +139,32 @@ export async function runSetup(
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
-  if (ignored.kind === 'refused') {
-    io.err(`Could not add ${CREDENTIALS_NAME} to .gitignore, so the key was not written.`);
-    io.err(`Add this line to .gitignore, then run the command again:\n${ignored.line}`);
-    return 1;
+  switch (ignored.kind) {
+    case 'refused':
+      io.err(`Could not add ${CREDENTIALS_NAME} to .gitignore, so the key was not written.`);
+      io.err(`Add this line to .gitignore, then run the command again:\n${ignored.line}`);
+      return 1;
+    case 'no-git':
+      io.err(`Could not run git, so it could not confirm ${CREDENTIALS_NAME} would be ignored. The key was not written.`);
+      io.err(`Add this line to .gitignore, then run the command again:\n${ignored.line}`);
+      return 1;
+    case 'created':
+      io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
+      break;
+    case 'added':
+      io.out(`Added ${CREDENTIALS_NAME} to .gitignore.`);
+      break;
+    case 'already':
+      io.out(`${CREDENTIALS_NAME} is already ignored by git.`);
+      break;
+    case 'not-a-repo':
+      io.out('Not a git repository, so .gitignore was left alone.');
+      break;
+    default: {
+      const exhaustive: never = ignored;
+      return exhaustive;
+    }
   }
-  if (ignored.kind === 'created') io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
-  if (ignored.kind === 'added') io.out(`Added ${CREDENTIALS_NAME} to .gitignore.`);
-  if (ignored.kind === 'already') io.out(`${CREDENTIALS_NAME} is already ignored by git.`);
-  if (ignored.kind === 'not-a-repo') io.out('Not a git repository, so .gitignore was left alone.');
 
   const { replaced } = writeCredentials(cwd, { libraryId: flags.id, key });
   io.out(replaced

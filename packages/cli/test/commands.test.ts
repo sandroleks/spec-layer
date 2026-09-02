@@ -582,6 +582,7 @@ describe('runSetup', () => {
     expect(stored()).toEqual({ libraryId: LIB, key: KEY });
     expect(existsSync(join(cwd, '.speclayer', 'manifest.json'))).toBe(true);
     expect(io.outLines.join('\n')).toMatch(/Pulled/);
+    expect(io.outLines.join('\n')).toMatch(/Created/);
   });
 
   it('takes the key from SPEC_LAYER_KEY when --key is absent', async () => {
@@ -641,6 +642,42 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: next }, {}, io, stub200())).toBe(0);
     expect(stored().key).toBe(next);
     expect(io.outLines.join('\n')).toMatch(/[Rr]eplaced/);
+    expect(io.outLines.join('\n')).toMatch(/already ignored/);
+  });
+
+  it('reports adding the entry to a .gitignore that already exists', async () => {
+    gitInit();
+    writeFileSync(join(cwd, '.gitignore'), 'node_modules\n');
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+    expect(io.outLines.join('\n')).toMatch(/Added/);
+    const body = readFileSync(join(cwd, '.gitignore'), 'utf8');
+    expect(body).toContain('node_modules');
+    expect(body).toContain('speclayer.local.json');
+  });
+
+  // The important case from review: a real working tree where git itself
+  // cannot run. Reporting "not a repository" here would be a false
+  // reassurance that lets an un-ignored secret land in a real git checkout.
+  it('writes no key when git cannot run inside a real working tree', async () => {
+    gitInit();
+    const emptyDir = mkdtempSync(join(tmpdir(), 'sl-no-git-path-'));
+    const originalPath = process.env.PATH;
+    process.env.PATH = emptyDir;
+    const io = makeIo();
+    let code: number;
+    try {
+      code = await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
+
+    expect(code).toBe(1);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+    expect(io.errLines.join('\n')).toMatch(/git/i);
+    expect(io.errLines.join('\n')).toContain('speclayer.local.json');
   });
 
   it('exits with the pull code and still leaves a usable setup', async () => {

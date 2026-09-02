@@ -7,15 +7,25 @@ export type IgnoreResult =
   | { kind: 'added' }
   | { kind: 'created' }
   | { kind: 'not-a-repo' }
-  | { kind: 'refused'; line: string };
+  | { kind: 'refused'; line: string }
+  | { kind: 'no-git'; line: string };
 
 const COMMENT = '# Spec Layer pull key, not for committing';
 
-/** Quiet, never-throwing git call. `null` means git could not run at all. */
-function git(cwd: string, args: string[]): number | null {
+/**
+ * Quiet, never-throwing git call.
+ *
+ * `{ ranGit: false }` means the `git` binary itself could not be run (missing
+ * from PATH, spawn failure). That is distinct from git running and reporting
+ * a nonzero exit, which is a real answer (e.g. "not a working tree").
+ * Conflating the two would let a missing git binary pass silently as "not a
+ * repository" even inside a real working tree, which is exactly the case
+ * where the key must not be written unverified.
+ */
+function git(cwd: string, args: string[]): { ranGit: true; status: number } | { ranGit: false } {
   const res = spawnSync('git', args, { cwd, stdio: 'ignore' });
-  if (res.error || res.status === null) return null;
-  return res.status;
+  if (res.error || res.status === null) return { ranGit: false };
+  return { ranGit: true, status: res.status };
 }
 
 /**
@@ -30,8 +40,18 @@ function git(cwd: string, args: string[]): number | null {
  * wrong in a monorepo.
  */
 export function ensureIgnored(cwd: string, fileName: string): IgnoreResult {
-  if (git(cwd, ['rev-parse', '--is-inside-work-tree']) !== 0) return { kind: 'not-a-repo' };
-  if (git(cwd, ['check-ignore', '-q', fileName]) === 0) return { kind: 'already' };
+  const inWorkTree = git(cwd, ['rev-parse', '--is-inside-work-tree']);
+  if (!inWorkTree.ranGit) {
+    // git itself could not run. A `.git` entry means we are sitting inside a
+    // working tree we cannot verify or write ignore rules for, so the key
+    // must not be written. No `.git` entry means there is genuinely no
+    // repository to worry about, same as git reporting that itself.
+    return existsSync(join(cwd, '.git')) ? { kind: 'no-git', line: fileName } : { kind: 'not-a-repo' };
+  }
+  if (inWorkTree.status !== 0) return { kind: 'not-a-repo' };
+
+  const checkIgnore = git(cwd, ['check-ignore', '-q', fileName]);
+  if (checkIgnore.ranGit && checkIgnore.status === 0) return { kind: 'already' };
 
   const path = join(cwd, '.gitignore');
   const existed = existsSync(path);
