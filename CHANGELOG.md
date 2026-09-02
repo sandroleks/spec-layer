@@ -179,6 +179,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- The CLI runs again. Every `spec-layer` command in `0.2.0` died on import with
+  `Error: Dynamic require of "crypto" is not supported`, so `npx spec-layer
+  pull` never reached the network. Routing bundle parsing through the shared
+  extractor parser pulled in js-sha256, which is CommonJS and calls
+  `require('crypto')` while it evaluates; esbuild rewrites that into a shim that
+  throws in the CLI's ESM output. The bundle now defines a real `require`
+  through `node:module` `createRequire`. `0.1.0` is unaffected, since it
+  predates the extractor dependency. Hashes are unchanged: js-sha256's Node path
+  and its pure-JS path produce the same digests, and a pull verifies against a
+  manifest the plugin wrote.
+
+  Nothing caught this, because nothing ran the artifact. Lint, typecheck and the
+  test suite all import the TypeScript sources, and `build:cli` proved only that
+  esbuild wrote a file. `npm run check:cli-bundle` now executes the built bundle
+  and fails the gate when it cannot load.
+
 - Publishing is behind the paywall in the plugin, not only on the server. A
   free plan opening **Publish for developers** saw the full screen and a working
   **Publish library** button, and pressing it collected every component in the
