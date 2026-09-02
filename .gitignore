@@ -19,3 +19,11 @@ coverage/
 # never forget a blob once it lands. These are working files, not shipped assets.
 # (apps/landing/demo.mp4 IS tracked; the landing page needs it to deploy.)
 screenshots/*.mp4
+
+# Local pull of our own published library, for testing the developer-facing
+# loop against real Figma data. `spec-layer pull` writes .speclayer/ and
+# `spec-layer init` writes speclayer.json; both are working files here, not
+# repo content. A consumer repo WOULD commit speclayer.json (it carries the
+# library id, never the pull key) — this repo is the publisher, not a consumer.
+.speclayer/
+speclayer.json
