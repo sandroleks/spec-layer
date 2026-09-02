@@ -22,7 +22,11 @@ export async function fetchBundle(opts: {
   }
   if (res.status === 304) return { kind: 'not_modified' };
   if (res.status === 401) {
-    return { kind: 'error', message: 'Key was rotated or revoked. Ask the publisher for the current key.' };
+    return {
+      kind: 'error',
+      message: 'Key was rotated or revoked. Run the setup command from the plugin\'s '
+        + 'Library screen to store the current key.',
+    };
   }
   if (res.status === 404) return { kind: 'error', message: 'Library not found. It may have been unpublished.' };
   if (!res.ok) return { kind: 'error', message: `Request failed with HTTP ${res.status}.` };

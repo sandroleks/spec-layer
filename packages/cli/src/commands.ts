@@ -6,6 +6,8 @@ import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest
 import {
   DEFAULT_SELECTION, matchesName, resolveSelection, selectComponents, selectionFromFlags, type Selection,
 } from './selection';
+import { CREDENTIALS_NAME, writeCredentials } from './credentials';
+import { ensureIgnored } from './gitignore';
 
 export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
@@ -48,7 +50,7 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, { libraryId: flags.id, outDir, ...(include ? { include } : {}) });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
-  io.out('The pull key is never stored here. Set SPEC_LAYER_KEY in your environment or pass --key.');
+  io.out(`The pull key is not stored here. Run spec-layer setup to store it in ${CREDENTIALS_NAME}, or set SPEC_LAYER_KEY.`);
   return 0;
 }
 
@@ -72,7 +74,11 @@ function resolved(
     return null;
   }
   if (!opts.key) {
-    io.err('No pull key. Set SPEC_LAYER_KEY or pass --key.');
+    io.err(opts.storedKeyFor
+      ? `The key in ${CREDENTIALS_NAME} was issued for library ${opts.storedKeyFor}, not `
+        + `${opts.libraryId}. Run the setup command from the plugin's Library screen.`
+      : 'No pull key. Run the setup command from the plugin\'s Library screen, '
+        + 'or set SPEC_LAYER_KEY.');
     return null;
   }
   return opts as typeof opts & { libraryId: string; key: string };
@@ -97,6 +103,60 @@ function describePull(bundle: BundleV1, selection: Selection, selected: boolean[
     : `${count} of ${total} components`;
   if (!bundle.foundation) return components;
   return selection.foundation ? `foundation + ${components}` : `${components}, no foundation`;
+}
+
+/**
+ * First run in a repo: config, gitignore, key, pull.
+ *
+ * The order is load-bearing. speclayer.json first because it holds no secret
+ * and leaves the repo configured even when a later step refuses. The gitignore
+ * entry before the key, so the secret is ignored before it exists. The pull
+ * last, so a network failure still leaves a usable setup that a bare
+ * `spec-layer pull` retries.
+ */
+export async function runSetup(
+  cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
+): Promise<number> {
+  if (!flags.id) {
+    io.err('spec-layer setup needs --id lib_... (shown in the plugin after publishing).');
+    return 1;
+  }
+  const key = flags.key ?? env.SPEC_LAYER_KEY;
+  if (!key) {
+    io.err('spec-layer setup needs --key sl_..., or SPEC_LAYER_KEY in the environment.');
+    return 1;
+  }
+  let include: Selection | null;
+  try {
+    include = selectionFromFlags(flags);
+  } catch (err) {
+    io.err(errorText(err));
+    return 1;
+  }
+
+  const outDir = flags.out ?? DEFAULT_OUT_DIR;
+  writeConfig(cwd, { libraryId: flags.id, outDir, ...(include ? { include } : {}) });
+  io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
+
+  const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
+  if (ignored.kind === 'refused') {
+    io.err(`Could not add ${CREDENTIALS_NAME} to .gitignore, so the key was not written.`);
+    io.err(`Add this line to .gitignore, then run the command again:\n${ignored.line}`);
+    return 1;
+  }
+  if (ignored.kind === 'created') io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
+  if (ignored.kind === 'added') io.out(`Added ${CREDENTIALS_NAME} to .gitignore.`);
+  if (ignored.kind === 'already') io.out(`${CREDENTIALS_NAME} is already ignored by git.`);
+  if (ignored.kind === 'not-a-repo') io.out('Not a git repository, so .gitignore was left alone.');
+
+  const { replaced } = writeCredentials(cwd, { libraryId: flags.id, key });
+  io.out(replaced
+    ? `Replaced the stored key in ${CREDENTIALS_NAME}.`
+    : `Stored the pull key in ${CREDENTIALS_NAME}.`);
+
+  // Pass the key through rather than relying on a re-read of what was just
+  // written, so the pull cannot disagree with the file.
+  return runPull(cwd, { ...flags, key }, env, io, fetcher);
 }
 
 export async function runPull(

@@ -1,9 +1,11 @@
 import { parseArgs } from 'node:util';
-import { runInit, runPull, runStatus, runList, runShow, type Flags, type Io } from './commands';
+import { runInit, runSetup, runPull, runStatus, runList, runShow, type Flags, type Io } from './commands';
 
 const USAGE = `spec-layer <command>
 
 Commands:
+  setup   --id lib_... --key sl_... [--out DIR] [selection]
+                                                 store the key, then pull
   init    --id lib_... [--out DIR] [selection]   write speclayer.json
   pull    [--id lib_...] [--key sl_...] [selection]
                                                  fetch the library into DIR (default .speclayer)
@@ -18,7 +20,7 @@ Selection (pull and init; flags replace the include block in speclayer.json):
 
 Options:
   --api URL   override the API origin (default https://api.spec-layer.com)
-The pull key comes from --key or the SPEC_LAYER_KEY environment variable.`;
+The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
 
 const io: Io = {
   out: (l) => console.log(l),
@@ -52,6 +54,7 @@ async function main(): Promise<number> {
   const command = positionals[0];
   const cwd = process.cwd();
   try {
+    if (command === 'setup') return await runSetup(cwd, values, process.env, io);
     if (command === 'init') return runInit(cwd, values, io);
     if (command === 'pull') return await runPull(cwd, values, process.env, io);
     if (command === 'status') return await runStatus(cwd, values, process.env, io);

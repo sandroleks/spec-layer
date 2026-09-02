@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runInit, runPull, runStatus, runList, runShow, type Io } from '../src/commands';
+import { runInit, runSetup, runPull, runStatus, runList, runShow, type Io } from '../src/commands';
 import { readConfig } from '../src/config';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
@@ -59,7 +60,7 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer' });
-    expect(io.outLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+    expect(io.outLines.join('\n')).toMatch(/spec-layer setup/);
   });
 
   it('fails without --id', () => {
@@ -125,7 +126,9 @@ describe('runPull', () => {
     const code = await runPull(cwd, {}, {}, io);
 
     expect(code).toBe(1);
-    expect(io.errLines.join('\n')).toBe('No pull key. Set SPEC_LAYER_KEY or pass --key.');
+    expect(io.errLines.join('\n')).toBe(
+      'No pull key. Run the setup command from the plugin\'s Library screen, or set SPEC_LAYER_KEY.',
+    );
   });
 
   it('errors without a library id', async () => {
@@ -551,5 +554,174 @@ describe('runPull safety and freshness', () => {
     expect(io.errLines.join('\n')).toMatch(/src.*not written by spec-layer/s);
     expect(readFileSync(join(cwd, 'src/index.ts'), 'utf8')).toBe('export {};');
     expect(existsSync(join(cwd, 'src.partial'))).toBe(false);
+  });
+});
+
+describe('runSetup', () => {
+  let cwd: string;
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+  const KEY = `sl_${'a'.repeat(48)}`;
+
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-setup-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  const gitInit = () => {
+    const res = spawnSync('git', ['init', '-q'], { cwd });
+    if (res.status !== 0) throw new Error('git init failed; git must be on PATH');
+  };
+  const stored = () => JSON.parse(readFileSync(join(cwd, 'speclayer.local.json'), 'utf8'));
+
+  it('writes the config, ignores the key file, stores the key, then pulls', async () => {
+    gitInit();
+    const io = makeIo();
+    const code = await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+
+    expect(code).toBe(0);
+    expect(readConfig(cwd)).toMatchObject({ libraryId: LIB, outDir: '.speclayer' });
+    expect(readFileSync(join(cwd, '.gitignore'), 'utf8')).toContain('speclayer.local.json');
+    expect(stored()).toEqual({ libraryId: LIB, key: KEY });
+    expect(existsSync(join(cwd, '.speclayer', 'manifest.json'))).toBe(true);
+    expect(io.outLines.join('\n')).toMatch(/Pulled/);
+  });
+
+  it('takes the key from SPEC_LAYER_KEY when --key is absent', async () => {
+    gitInit();
+    const io = makeIo();
+    const code = await runSetup(cwd, { id: LIB }, { SPEC_LAYER_KEY: KEY }, io, stub200());
+    expect(code).toBe(0);
+    expect(stored().key).toBe(KEY);
+  });
+
+  it('errors without an id, before writing anything', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toMatch(/--id/);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
+  it('errors without a key, before writing anything', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toMatch(/--key/);
+    expect(io.errLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
+  it('stores the key outside a git repo and says it skipped .gitignore', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+    expect(stored().key).toBe(KEY);
+    expect(io.outLines.join('\n')).toMatch(/[Nn]ot a git repository/);
+    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+  });
+
+  // The awkward case, chosen deliberately: an un-ignored secret in a git
+  // working tree is worse than a failed setup.
+  it('writes no key when .gitignore cannot be updated', async () => {
+    if (process.getuid?.() === 0) return;
+    gitInit();
+    const path = join(cwd, '.gitignore');
+    writeFileSync(path, 'node_modules\n');
+    chmodSync(path, 0o444);
+    const io = makeIo();
+    const code = await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+    chmodSync(path, 0o644);
+
+    expect(code).toBe(1);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+    expect(io.errLines.join('\n')).toContain('speclayer.local.json');
+  });
+
+  it('reports a replacement rather than a fresh write on a second run', async () => {
+    gitInit();
+    await runSetup(cwd, { id: LIB, key: KEY }, {}, makeIo(), stub200());
+    const io = makeIo();
+    const next = `sl_${'b'.repeat(48)}`;
+    expect(await runSetup(cwd, { id: LIB, key: next }, {}, io, stub200())).toBe(0);
+    expect(stored().key).toBe(next);
+    expect(io.outLines.join('\n')).toMatch(/[Rr]eplaced/);
+  });
+
+  it('exits with the pull code and still leaves a usable setup', async () => {
+    gitInit();
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
+    expect(stored().key).toBe(KEY);
+    expect(readConfig(cwd)).toMatchObject({ libraryId: LIB });
+  });
+
+  it('honours --out and the selection flags like init does', async () => {
+    gitInit();
+    const io = makeIo();
+    const code = await runSetup(
+      cwd, { id: LIB, key: KEY, out: 'design-context', only: 'foundation' }, {}, io, stub200(),
+    );
+    expect(code).toBe(0);
+    expect(readConfig(cwd)).toMatchObject({
+      outDir: 'design-context', include: { foundation: true, components: [] },
+    });
+    expect(existsSync(join(cwd, 'design-context', 'manifest.json'))).toBe(true);
+  });
+
+  it('never prints the key', async () => {
+    gitInit();
+    const io = makeIo();
+    await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+    const everything = [...io.outLines, ...io.errLines, ...io.writes].join('\n');
+    expect(everything).not.toContain(KEY);
+  });
+});
+
+describe('stored key errors', () => {
+  let cwd: string;
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-stored-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('names the setup command when no source has a key', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toMatch(/setup command/);
+    expect(io.errLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+  });
+
+  it('says which library a mismatched stored key belongs to', async () => {
+    writeFileSync(
+      join(cwd, 'speclayer.local.json'),
+      JSON.stringify({ libraryId: 'lib_ffffffffffffffffffffffff', key: `sl_${'a'.repeat(48)}` }),
+    );
+    const io = makeIo();
+    expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toContain('lib_ffffffffffffffffffffffff');
+    expect(io.errLines.join('\n')).toMatch(/setup command/);
+  });
+
+  it('reports an unreadable credential file and exits 1', async () => {
+    writeFileSync(join(cwd, 'speclayer.local.json'), '{ not json');
+    const io = makeIo();
+    expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
+    expect(io.errLines.join('\n')).toContain('speclayer.local.json');
+    expect(io.errLines.join('\n')).toMatch(/setup command/);
+  });
+
+  /**
+   * An invariant from the design: list and show need no key, so they must not
+   * touch the credential file at all. A malformed one would throw if they did.
+   */
+  it('list and show ignore the credential file entirely', async () => {
+    await runSetup(cwd, { id: LIB, key: `sl_${'a'.repeat(48)}` }, {}, makeIo(), stub200());
+    writeFileSync(join(cwd, 'speclayer.local.json'), '{ not json');
+
+    const listIo = makeIo();
+    expect(runList(cwd, {}, listIo)).toBe(0);
+    const showIo = makeIo();
+    expect(runShow(cwd, {}, ['foundation'], showIo)).toBe(0);
+
+    const everything = [
+      ...listIo.outLines, ...listIo.errLines, ...showIo.outLines, ...showIo.errLines,
+    ].join('\n');
+    expect(everything).not.toContain('speclayer.local.json');
   });
 });
