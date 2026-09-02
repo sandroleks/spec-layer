@@ -728,10 +728,30 @@ describe('buildDocModel placeholders for merged prose', () => {
   });
 
   it('drops an empty anatomy summary rather than rendering a blank line', () => {
+    const anatomySpec = {
+      ...spec,
+      anatomyComponentId: '1:2',
+      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
+    } as unknown as IntermediateSpec;
     const model = buildDocModel(
-      spec, { ...empty, anatomySummary: '' }, new Set<SectionId>(['anatomy']), new Set(),
+      anatomySpec, { ...empty, anatomySummary: '' }, new Set<SectionId>(['anatomy']), new Set(),
     );
     const block = model.sections[0];
-    expect(block.kind).toBe('bullets');
+    expect(block.kind).toBe('anatomy');
+    if (block.kind === 'anatomy') expect(block.summary).toBeNull();
+  });
+
+  it('preserves non-empty anatomy summary', () => {
+    const anatomySpec = {
+      ...spec,
+      anatomyComponentId: '1:2',
+      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      anatomySpec, { ...empty, anatomySummary: 'Two parts.' }, new Set<SectionId>(['anatomy']), new Set(),
+    );
+    const block = model.sections[0];
+    expect(block.kind).toBe('anatomy');
+    if (block.kind === 'anatomy') expect(block.summary).toBe('Two parts.');
   });
 });
