@@ -51,3 +51,19 @@ describe('parseBundle', () => {
     expect(() => parseBundle(JSON.stringify(missingHash))).toThrow();
   });
 });
+
+describe('parseBundle version gate', () => {
+  it('rejects an unsupported bundle version and says to update spec-layer', () => {
+    expect(() => parseBundle(JSON.stringify({ ...GOOD, version: '2.0.0' })))
+      .toThrow(/version 2\.0\.0.*update spec-layer/is);
+  });
+
+  it('accepts any 1.x version', () => {
+    expect(parseBundle(JSON.stringify({ ...GOOD, version: '1.3.0' })).version).toBe('1.3.0');
+  });
+
+  it('rejects a bundle missing extractorVersion, matching the proxy', () => {
+    const { extractorVersion: _e, ...rest } = GOOD;
+    expect(() => parseBundle(JSON.stringify(rest))).toThrow(/missing required fields/);
+  });
+});

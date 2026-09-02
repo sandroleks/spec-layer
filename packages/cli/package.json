@@ -18,6 +18,7 @@
     "prepublishOnly": "node build.mjs"
   },
   "devDependencies": {
+    "@spec-layer/extractor": "*",
     "esbuild": "^0.28.1"
   },
   "repository": {
