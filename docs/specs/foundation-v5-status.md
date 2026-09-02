@@ -165,8 +165,13 @@ Phase 4 component adoption is implemented: component Copy now joins Foundation
 v5 by exact id and embeds a validated dependency closure. Delivery is also
 shipped: the plugin publishes a library's canonical v5 artifacts and their
 ai-profile YAML to `api.spec-layer.com`, and the `spec-layer` CLI (`init`,
-`pull`, `status`) writes them into a repo without re-deriving or re-validating
-v5 output. A republish always stamps a fresh export id and `generatedAt`, so
+`pull`, `status`, `list`, `show`) writes them into a repo without re-deriving
+or re-validating v5 output. A pull can select whole entries (the Foundation,
+named components); a per-collection Foundation slice is deliberately not a
+CLI feature, because the honest slice needs the extractor's alias closure. The
+path to collection-level pulls is for the plugin to publish per-collection
+entries in a later bundle version, which the CLI would then select like any
+other entry. A republish always stamps a fresh export id and `generatedAt`, so
 `bundle.json` and `manifest.json` change on every re-pull even when the
 underlying content is unchanged, while the `ai` YAML files and the semantic
 content hashes stay stable. Remaining Phase 4 work is command tooling and

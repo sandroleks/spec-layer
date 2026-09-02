@@ -129,21 +129,35 @@ A pull-only delivery CLI published to npm as `spec-layer` (`npx spec-layer
 pull`), not a workspace dependency of the extractor or the plugin. It has zero
 runtime dependencies and no dependency on `@spec-layer/extractor`: it treats
 the bundle it receives as opaque JSON with a known shape (`parseBundle` checks
-structure only) and never touches Figma or extraction code. Three commands:
+structure only) and never touches Figma or extraction code. Five commands:
 
-- `init --id lib_...` writes `speclayer.json` (library id, output directory)
-  so later commands need no flags.
+- `init --id lib_...` writes `speclayer.json` (library id, output directory,
+  and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
   to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, one
   `ai/foundation.yaml` when the library has a Foundation, one
   `ai/components/<slug>.yaml` per component (collision-safe slugs), and a
   `manifest.json` indexing every artifact by content hash and ai-file path.
-  Writes stage into `<outDir>.partial` and rename into place, so a failed pull
-  never leaves a half-written directory.
+  A selection (`--only foundation|components`, repeatable `--component NAME`,
+  or the config's `include` block) narrows which `ai/` files are written;
+  `bundle.json` always holds the whole library and the manifest lists every
+  artifact, with `aiPath: null` for the ones left unwritten. The unit of
+  selection is a whole bundle entry, never a slice of one, because slicing
+  below an entry would need the extractor's alias-closure logic. When the
+  last pull used the same selection, `pull` sends the manifest's hash as
+  `If-None-Match` and a 304 writes nothing. Writes stage into
+  `<outDir>.partial` and rename into place, so a failed pull never leaves a
+  half-written directory, and the swap refuses a directory that is the
+  working directory, a parent of it, or an existing non-empty directory the
+  CLI did not write.
 - `status` re-requests the bundle with the manifest's stored hash as an
   `If-None-Match` etag: a 304 means up to date (exit 0); a fresh body means
   the local pull is behind (exit 2) without writing anything, leaving `pull`
   to do the actual update.
+- `list` prints every artifact from the local manifest with its ai path or
+  `not written`, and `show foundation` / `show component NAME` print one
+  entry's AI YAML (or its canonical JSON with `--canonical`) from the local
+  `bundle.json` to stdout. Both are local only and need no key.
 
 The pull key is never written to disk; every command reads it from
 `SPEC_LAYER_KEY` or `--key`. The setup command the plugin shows after

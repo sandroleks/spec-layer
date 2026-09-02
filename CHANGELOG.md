@@ -163,6 +163,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   ai-profile YAML into a repo, with `status` for freshness checks and key
   rotation for revoking access.
 
+- Granular pulls in the `spec-layer` CLI (0.2.0). `pull --only foundation`,
+  `pull --only components`, and a repeatable `pull --component NAME` write
+  just those entries into `ai/`, matched by slug so `button` finds `Button`;
+  an unknown name is an error that lists what the library holds. `init`
+  persists the same flags as an `include` block in `speclayer.json`, and
+  flags on `pull` replace it for one run. `bundle.json` always holds the
+  whole library and `manifest.json` lists every artifact, with `aiPath: null`
+  for the ones not written. Two local commands read the last pull without a
+  key: `list` prints every artifact with its path or `not written`, and
+  `show foundation` / `show component NAME` print one entry's AI YAML, or the
+  canonical JSON with `--canonical`, to stdout for piping. Selection stops at
+  a whole entry: a per-collection Foundation slice would need the extractor's
+  alias closure and is left for a bundle-side change.
+
+### Fixed
+
+- `spec-layer pull` no longer deletes an arbitrary directory. The swap that
+  replaces the output directory refused nothing before, so `--out .` removed
+  the whole repository; it now rejects the working directory, a parent of it,
+  and any existing non-empty directory the CLI did not write.
+- An API origin with a trailing slash (`--api https://host/`) built a `//v1`
+  path the proxy rejected, reported as "Library not found". The slash is now
+  stripped.
+- `pull` sends the last pull's hash as `If-None-Match` when the selection is
+  unchanged, so an up-to-date repo gets a 304 and writes nothing instead of
+  re-downloading the whole bundle on every run.
+
 ### Security
 
 - License hardening: transient Lemon Squeezy errors (rate limits, 5xx,
