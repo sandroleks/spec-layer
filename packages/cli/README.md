@@ -51,13 +51,16 @@ npm install --save-dev spec-layer
 
 `npx spec-layer` then runs the pinned local copy, no `--yes` needed. Pinning
 also keeps `.speclayer/manifest.json` on one format: 0.1.0 wrote no
-`selection` field, and 0.2.0 does.
+`selection` field, and 0.2.0 onward does. `setup` needs 0.3.0 or later; earlier
+versions have no such command, so the setup command the plugin copies fails
+against them.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `init --id lib_... [--out DIR] [selection]` | Writes `speclayer.json` so later commands need no flags. |
+| `setup --id lib_... --key sl_... [--out DIR] [selection]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
+| `init --id lib_... [--out DIR] [selection]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
 | `pull [--id lib_...] [--key sl_...] [selection]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
 | `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
