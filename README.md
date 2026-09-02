@@ -6,8 +6,8 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-43853d.svg)](https://nodejs.org)
 
 Spec Layer is a Figma plugin that turns components, variables, and styles into
-design-system documentation—directly on the canvas or as structured context for
-an AI coding agent.
+design-system documentation—on the canvas, on the clipboard, or pulled straight
+into your repository as structured context for an AI coding agent.
 
 **[Open in Figma](https://www.figma.com/community/plugin/1652104411578396548)** ·
 [Visit spec-layer.com](https://spec-layer.com)
@@ -24,6 +24,9 @@ an AI coding agent.
   and style dependency closure they use.
 - **Library and updates.** Track generated documents, detect source changes, and
   rebuild outdated frames in one click.
+- **Publish and pull.** Publish a library from the plugin, then pull it into a
+  repository with the [`spec-layer`](packages/cli/README.md) CLI, so a coding
+  agent reads the same component and token facts your designers see in Figma.
 - **Optional AI writing.** Draft overviews, usage guidance, do's and don'ts, and
   interaction notes from the selected component.
 
@@ -32,12 +35,15 @@ AI-written prose uses a model.
 
 ## Free and Pro
 
-Every documentation feature is free and works without an account.
+Every documentation feature is free and works without an account. Publishing a
+library needs Pro, because it stores the bundle on the Spec Layer proxy;
+pulling one only needs the CLI and a pull key.
 
 | | Free | Pro |
 |---|---|---|
 | Canvas documentation and updates | Yes | Yes |
 | Copy for AI | Yes | Yes |
+| Publish a library for the CLI | — | Yes |
 | AI writing | 20 uses in the first month, then 10/month | No fixed monthly cap for normal individual use |
 | Priority support | — | Yes |
 
@@ -60,6 +66,13 @@ When you request AI writing, the plugin sends a structured component summary
 and, when it fits the export limits, a rendered image through the Spec Layer
 proxy to Anthropic. If the image cannot be exported, the request continues with
 text only. You do not provide an API key.
+
+Publishing a library is the one feature that stores your content. The bundle
+you publish is held on the proxy so the CLI can fetch it, and pulling it
+requires a bearer pull key that only you hold: the proxy stores the key's
+sha256 digest, never the key itself, so rotating it invalidates every command
+already handed out. Publishing is explicit and per-file. Nothing leaves Figma
+until you choose it.
 
 The proxy never logs prompts, rendered images, generated text, or raw license
 keys. Read the published [Privacy Policy](apps/landing/privacy.html),
@@ -85,6 +98,21 @@ select `packages/plugin/manifest.json`.
 Local builds use the production proxy at `https://api.spec-layer.com`. Keep the
 plugin source and manifest network allowlist aligned when changing that host.
 
+### The CLI
+
+Publishing a library from the plugin's **Library** screen shows a setup command
+to run in your repository. It needs no install step of its own:
+
+```bash
+SPEC_LAYER_KEY=sl_... npx spec-layer pull --id lib_...
+```
+
+That writes `.speclayer/`. The CLI is delivery only: it never talks to Figma,
+re-derives nothing, and has no runtime dependencies. `init` records the library
+id, `status` checks freshness without writing, and `list` and `show` read the
+last pull. See the [CLI README](packages/cli/README.md) for every command,
+partial pulls, and CI usage.
+
 ## Development
 
 Install dependencies and run the complete local quality gate:
@@ -95,8 +123,8 @@ npm run check
 ```
 
 `npm run check` runs linting, TypeScript checks, the NUL-byte scan, tests, the
-plugin build, browser-sandbox validation, and a dry-run proxy bundle. Useful
-individual commands:
+plugin and CLI builds, browser-sandbox validation, and a dry-run proxy bundle.
+Useful individual commands:
 
 ```bash
 npm run lint
@@ -104,6 +132,7 @@ npm run typecheck
 npm test
 npm run test:coverage
 npm run build:plugin
+npm run build:cli
 npm run check:proxy-dry-run
 npm run audit
 ```
@@ -119,13 +148,16 @@ Figma node
   → plain IntermediateSpec data
   ├─→ canvas documentation + connected Library entry
   ├─→ compact YAML on the clipboard
+  ├─→ published library bundle → proxy → spec-layer CLI → your repository
   └─→ optional AI-writing proxy → Anthropic
 ```
 
 The plugin owns all Figma API access. The extractor receives plain JSON and has
 no Figma runtime dependency, which keeps the transformation layer testable with
 synthetic fixtures. The Cloudflare Worker owns the Anthropic credential, quota
-enforcement, and Lemon Squeezy license validation.
+enforcement, Lemon Squeezy license validation, and published library bundles.
+The CLI parses a bundle through the same extractor parser the proxy uses, so
+neither end carries a second interpretation of the format.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full data flow, storage model, and
 trust boundaries.
@@ -135,7 +167,8 @@ trust boundaries.
 ```text
 packages/plugin/       Figma serializer, canvas renderer, and plugin UI
 packages/extractor/    deterministic extraction and YAML context generation
-packages/proxy/        Cloudflare Worker for AI writing, quotas, and licensing
+packages/proxy/        Cloudflare Worker for AI writing, quotas, licensing, libraries
+packages/cli/          spec-layer CLI: pulls a published library into a repo
 apps/landing/          marketing site, policies, and public schemas
 docs/                  product specs, plans, reviews, and writing guidance
 ```
