@@ -38,6 +38,20 @@ export class FakeFrame {
   paddingBottom = 0;
   children: FakeNode[] = [];
   fills: unknown = [];
+  type = 'FRAME';
+  pluginData: Record<string, string> = {};
+
+  setPluginData(key: string, value: string): void {
+    this.pluginData[key] = value;
+  }
+
+  getPluginData(key: string): string {
+    return this.pluginData[key] ?? '';
+  }
+
+  /** Detaching a frame that was never appended is a no-op here, as in Figma. */
+  remove(): void {}
+
   [k: string]: unknown;
 
   private fixedW = 0.01;
@@ -143,6 +157,17 @@ export class FakeSection {
   height = 0;
   x = 0;
   y = 0;
+  type = 'SECTION';
+  pluginData: Record<string, string> = {};
+
+  setPluginData(key: string, value: string): void {
+    this.pluginData[key] = value;
+  }
+
+  getPluginData(key: string): string {
+    return this.pluginData[key] ?? '';
+  }
+
   [k: string]: unknown;
 
   appendChild(n: FakeNode): void {
@@ -155,8 +180,56 @@ export class FakeSection {
   }
 }
 
-function fakeText(): Record<string, unknown> {
-  return { type: 'TEXT', height: TEXT_H, characters: '' };
+interface FakeFont { family: string; style: string }
+
+/**
+ * A text node that remembers per-range fonts, enough for
+ * getStyledTextSegments to report bold runs the way Figma does: one segment
+ * per maximal run of identical style, in order.
+ */
+export class FakeText {
+  type = 'TEXT';
+  height = TEXT_H;
+  characters = '';
+  fontName: FakeFont = { family: 'Inter', style: 'Regular' };
+  pluginData: Record<string, string> = {};
+  private ranges: { start: number; end: number; font: FakeFont }[] = [];
+  [k: string]: unknown;
+
+  setPluginData(key: string, value: string): void {
+    this.pluginData[key] = value;
+  }
+
+  getPluginData(key: string): string {
+    return this.pluginData[key] ?? '';
+  }
+
+  setRangeFontName(start: number, end: number, font: FakeFont): void {
+    this.ranges.push({ start, end, font });
+  }
+
+  getStyledTextSegments(_fields: ['fontName']): { characters: string; fontName: FakeFont; start: number; end: number }[] {
+    const styles: FakeFont[] = Array.from(this.characters, () => this.fontName);
+    for (const r of this.ranges) {
+      for (let i = r.start; i < r.end && i < styles.length; i += 1) styles[i] = r.font;
+    }
+    const out: { characters: string; fontName: FakeFont; start: number; end: number }[] = [];
+    let start = 0;
+    for (let i = 1; i <= styles.length; i += 1) {
+      const boundary = i === styles.length
+        || styles[i].family !== styles[start].family || styles[i].style !== styles[start].style;
+      if (!boundary) continue;
+      out.push({ characters: this.characters.slice(start, i), fontName: styles[start], start, end: i });
+      start = i;
+    }
+    return out;
+  }
+
+  remove(): void {}
+}
+
+function fakeText(): FakeText {
+  return new FakeText();
 }
 
 function fakeRect(): Record<string, unknown> {

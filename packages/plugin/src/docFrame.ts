@@ -9,6 +9,7 @@ import type {
   TextRun,
   VariantRow,
 } from './ui/docModel';
+import type { SectionId } from './ui/docModel';
 import type { resolveTheme } from './brandColors';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
@@ -19,6 +20,7 @@ import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
 import { buildMatrixSection } from './statesSection';
 import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
+import { SLOT_KEY, SLOT_PART_KEY, LINE_KEY, type ProseSlot, type LineKind } from './canvasProse';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
@@ -40,6 +42,39 @@ const CARD_WIDTH_MIN = 880;
 const CARD_WIDTH_MAX = 1440; // safety cap so a pathological token can't run away
 let CARD_WIDTH = CARD_WIDTH_MIN;
 let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+
+// ---------------------------------------------------------------------------
+// Editorial tags — see canvasProse.ts. Anything tagged with a slot is text
+// the designer owns; an Update reads it back instead of regenerating it.
+// ---------------------------------------------------------------------------
+
+function tagSlot(node: SceneNode, slot: ProseSlot): void {
+  node.setPluginData(SLOT_KEY, slot);
+}
+
+function tagLine(node: SceneNode, kind: LineKind): void {
+  node.setPluginData(LINE_KEY, kind);
+}
+
+/** Which prose sections are editorial slots. Every `kind: 'prose'` section
+ *  today is one; a future generated prose section would simply be absent. */
+const PROSE_SLOT_BY_SECTION: Partial<Record<SectionId, ProseSlot>> = {
+  definition: 'definition',
+  accessibility: 'accessibility',
+  interactions: 'interactions',
+  contentConsiderations: 'contentConsiderations',
+};
+
+/** Render markdown into a tagged slot container. */
+function buildProseSlot(text: string, slot: ProseSlot, spacing: number): FrameNode {
+  const holder = vstack(spacing);
+  tagSlot(holder, slot);
+  for (const node of buildProse(text)) {
+    holder.appendChild(node);
+    (node as TextNode).layoutSizingHorizontal = 'FILL';
+  }
+  return holder;
+}
 
 // ---------------------------------------------------------------------------
 // Text construction
@@ -156,7 +191,9 @@ function buildProse(text: string): SceneNode[] {
 
     const placeholder = emphasisOnly(line);
     if (placeholder) {
-      out.push(makeText(placeholder, 'Regular', 15, palette.muted, 155));
+      const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
+      tagLine(node, 'placeholder');
+      out.push(node);
       continue;
     }
 
@@ -171,6 +208,7 @@ function buildProse(text: string): SceneNode[] {
       wrap.appendChild(node);
       node.layoutSizingHorizontal = 'FILL';
       node.textAutoResize = 'HEIGHT';
+      tagLine(wrap, 'heading');
       out.push(wrap);
       continue;
     }
@@ -179,16 +217,23 @@ function buildProse(text: string): SceneNode[] {
     if (bulletMatch) {
       const runs = parseRuns(bulletMatch[1]);
       const plain = runs.map((r) => r.text).join('');
-      out.push(makeBulletRow({ runs, text: plain }));
+      const row = makeBulletRow({ runs, text: plain });
+      tagLine(row, 'bullet');
+      out.push(row);
     } else {
       const runs = parseRuns(line);
       const plain = runs.map((r) => r.text).join('');
       const node = makeText(plain, 'Regular', 15, palette.body, 155);
       applyBoldRuns(node, runs, 0);
+      tagLine(node, 'paragraph');
       out.push(node);
     }
   }
-  if (out.length === 0) out.push(makeText('', 'Regular', 15, palette.body, 155));
+  if (out.length === 0) {
+    const empty = makeText('', 'Regular', 15, palette.body, 155);
+    tagLine(empty, 'paragraph');
+    out.push(empty);
+  }
   return out;
 }
 
@@ -563,6 +608,10 @@ function anatomyPin(n: number): FrameNode {
  *  hang cleanly beside it. */
 function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   const row = hstack(12);
+  // The description is editorial; the tag carries the part name so a rebuilt
+  // legend can find each description again even if the row text was edited.
+  tagSlot(row, 'anatomyPart');
+  row.setPluginData(SLOT_PART_KEY, part.name);
   row.counterAxisAlignItems = 'MIN';
   row.paddingTop = row.paddingBottom = 12;
   row.paddingLeft = part.depth * 18;
@@ -779,9 +828,37 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
   body.layoutSizingHorizontal = 'FILL';
 
   if (section.kind === 'prose') {
-    for (const node of buildProse(section.text)) {
-      body.appendChild(node);
-      (node as TextNode).layoutSizingHorizontal = 'FILL';
+    const slot = PROSE_SLOT_BY_SECTION[section.id];
+    if (slot) {
+      const holder = buildProseSlot(section.text, slot, bodySpacing);
+      body.appendChild(holder);
+      holder.layoutSizingHorizontal = 'FILL';
+    } else {
+      for (const node of buildProse(section.text)) {
+        body.appendChild(node);
+        (node as TextNode).layoutSizingHorizontal = 'FILL';
+      }
+    }
+  } else if (section.kind === 'bullets' && section.id === 'dosDonts') {
+    // Dos and don'ts are two slots sharing one section. Rows are routed by
+    // their marker; the placeholder (no marker) lands in `dos`, where the
+    // read-back recognises it and reports the slot as absent.
+    const dos = vstack(bodySpacing);
+    const donts = vstack(bodySpacing);
+    for (const b of section.items) {
+      const row = makeBulletRow(b);
+      const holder = b.text.startsWith('❌') ? donts : dos;
+      holder.appendChild(row);
+      row.layoutSizingHorizontal = 'FILL';
+    }
+    for (const [holder, slot] of [[dos, 'dos'], [donts, 'donts']] as const) {
+      if (holder.children.length === 0) {
+        holder.remove();
+        continue;
+      }
+      tagSlot(holder, slot);
+      body.appendChild(holder);
+      holder.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'bullets') {
     for (const b of section.items) {
@@ -793,6 +870,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     // AI orientation to the component's structure, above the diagram.
     if (section.summary) {
       const summary = makeText(section.summary, 'Regular', 15, palette.body, 155);
+      tagSlot(summary, 'anatomySummary');
       body.appendChild(summary);
       summary.layoutSizingHorizontal = 'FILL';
       summary.textAutoResize = 'HEIGHT';
@@ -927,10 +1005,9 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     // as prose above the matrix so bold type names and bullet lines format
     // correctly, rather than as a single flat line of raw markdown.
     if (section.summary) {
-      for (const node of buildProse(section.summary)) {
-        body.appendChild(node);
-        (node as TextNode).layoutSizingHorizontal = 'FILL';
-      }
+      const holder = buildProseSlot(section.summary, 'variantsSummary', 10);
+      body.appendChild(holder);
+      holder.layoutSizingHorizontal = 'FILL';
     }
     // Combine the row-cap disclosure (when the first axis had >4 values) with any
     // held-axis note, so a capped Variants matrix explains its truncation the same
@@ -985,7 +1062,13 @@ async function buildHeader(
     title: componentName,
     subtitle: runs ? runs.map((r) => r.text).join('') : null,
     logoBase64,
-    styleSubtitle: runs ? (node) => applyBoldRuns(node, runs, 0) : undefined,
+    styleSubtitle: runs
+      ? (node) => {
+          applyBoldRuns(node, runs, 0);
+          // The lead is the first sentence of the Definition, lifted here.
+          tagSlot(node, 'definitionLead');
+        }
+      : undefined,
   });
 }
 
