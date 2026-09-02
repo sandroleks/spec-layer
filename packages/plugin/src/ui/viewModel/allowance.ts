@@ -102,3 +102,20 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
       return assertNever(state, 'AllowanceState');
   }
 }
+
+/**
+ * Whether the publish screen is behind the paywall.
+ *
+ * Publishing is a Pro action the proxy already enforces: `proCaller` in
+ * packages/proxy/src/libraries.ts answers 401 to every other tier. This is the
+ * UI half, so a free plan is told before it spends a collection pass over every
+ * component in the file and gets the refusal back as an error line.
+ *
+ * Only a confirmed free plan locks it. 'loading' and 'unknown' mean the server
+ * has not told us anything, and demoting a Pro user who is briefly offline is
+ * worse than letting the publish attempt carry the answer, which is the same
+ * split the header's copy makes above.
+ */
+export function publishLocked(state: AllowanceState): boolean {
+  return state.kind === 'free';
+}

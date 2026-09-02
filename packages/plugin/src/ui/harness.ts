@@ -526,10 +526,15 @@ if (view === 'library') {
     param('pane', 'list') === 'publish' ? 'publish' : 'list';
   const publishFixture =
     PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
+  // `?pane=publish&plan=free` is the paywalled screen. Its own param rather
+  // than a PUBLISH_FIXTURES entry, since the lock crosses every publish state:
+  // a lapsed license still holds a key, and that pairing is the one worth
+  // looking at.
+  const publishLockedFixture = param('plan', 'pro') === 'free';
 
   const renderLibraryFixture = () => {
     if (libraryPane === 'publish') {
-      renderPublishScreen(refs, publishFixture);
+      renderPublishScreen(refs, publishFixture, publishLockedFixture);
       return;
     }
     const model = buildLibraryModel(entries, {

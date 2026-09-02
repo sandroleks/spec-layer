@@ -179,6 +179,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Publishing is behind the paywall in the plugin, not only on the server. A
+  free plan opening **Publish for developers** saw the full screen and a working
+  **Publish library** button, and pressing it collected every component in the
+  file before the proxy answered 401 and the screen printed "Publishing needs an
+  active Pro license." The screen now names the plan up front: a **Pro plan
+  required** group, and **Enter a license key** and **Upgrade to Pro** in place
+  of the publish action. A lapsed license keeps its setup command readable,
+  since pulling never checked the license, but loses the Pro-only **Rotate key**
+  control and the instruction to use it. Only a confirmed free plan locks the
+  screen: while the plan is still loading or the proxy is unreachable, the
+  publish attempt still carries the answer, so a Pro user who is briefly offline
+  is not demoted.
 - A component containing a text layer with non-uniform character fills can be
   documented again. Figma returns `figma.mixed` (a symbol) from `fills`,
   `strokes`, `fillStyleId` and `strokeStyleId` when a text node's ranges

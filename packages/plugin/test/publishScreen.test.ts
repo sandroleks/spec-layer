@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { setupCommand, type PublishState } from '../src/ui/publish';
 import { ICON_PATHS } from '../src/ui/shell/icons';
+import { publishLocked } from '../src/ui/viewModel/allowance';
 import {
   publishFooterMarkup,
   publishHeaderMarkup,
@@ -29,6 +30,14 @@ const PUBLISHED = state({
   pullKey: PULL_KEY,
   lastPublishedAt: '2026-09-01T00:00:00.000Z',
 });
+
+/**
+ * Every case below this line renders the screen a Pro plan sees. The paywalled
+ * screen has its own block at the end of the file, since almost nothing on it
+ * is shared: no publish action, no rotate, and a different second group.
+ */
+const proScroll = (s: PublishState) => publishScrollMarkup(s, false);
+const proFooter = (s: PublishState) => publishFooterMarkup(s, false);
 
 const ALL_STATES: PublishState['status'][] = [
   'idle',
@@ -62,7 +71,7 @@ describe('publish screen header', () => {
 
 describe('publish screen body', () => {
   it('names what publishing sends, before anything is published', () => {
-    const markup = publishScrollMarkup(state());
+    const markup = proScroll(state());
     expect(markup).toContain('<h2>What gets published</h2>');
     expect(markup).toContain(
       "This library's AI context: the foundation document and every connected "
@@ -80,12 +89,12 @@ describe('publish screen body', () => {
   });
 
   it('drops the where-the-key-comes-from line once there is a key', () => {
-    expect(publishScrollMarkup(PUBLISHED))
+    expect(proScroll(PUBLISHED))
       .not.toContain('They appear here once it has run.');
   });
 
   it('shows the setup command, copy, and rotate once a key exists', () => {
-    const markup = publishScrollMarkup(PUBLISHED);
+    const markup = proScroll(PUBLISHED);
     expect(markup).toContain('<h2>Developer setup</h2>');
     expect(markup).toContain('data-publish-copy-command');
     expect(markup).toContain('Copy setup command');
@@ -102,11 +111,11 @@ describe('publish screen body', () => {
    * paragraph, well above the key. It belongs with the key.
    */
   it('keeps the key warning in the group that shows the key', () => {
-    const markup = publishScrollMarkup(PUBLISHED);
+    const markup = proScroll(PUBLISHED);
     const setupAt = markup.indexOf('Developer setup');
     const warningAt = markup.indexOf('Anyone with the key can pull it.');
     expect(warningAt).toBeGreaterThan(setupAt);
-    expect(publishScrollMarkup(state())).not.toContain('Anyone with the key can pull it.');
+    expect(proScroll(state())).not.toContain('Anyone with the key can pull it.');
   });
 
   /**
@@ -116,7 +125,7 @@ describe('publish screen body', () => {
    * replace them with a filled red block and out-shout the footer's primary.
    */
   it('puts rotate beside copy as a secondary button in danger colour', () => {
-    const markup = publishScrollMarkup(PUBLISHED);
+    const markup = proScroll(PUBLISHED);
     const copy = /<button[^>]*data-publish-copy-command[^>]*>/.exec(markup)?.[0] ?? '';
     const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(markup)?.[0] ?? '';
     expect(copy).toContain('data-tone="secondary"');
@@ -137,7 +146,7 @@ describe('publish screen body', () => {
    * command invalidates nothing.
    */
   it('names rotating in the consequence under the two-button row', () => {
-    const markup = publishScrollMarkup(PUBLISHED);
+    const markup = proScroll(PUBLISHED);
     expect(markup).toContain(
       'Rotating cuts off everyone using the current key within about a minute.',
     );
@@ -150,8 +159,8 @@ describe('publish screen body', () => {
    * when both are on screen.
    */
   it('groups the two concerns, and draws no divider when there is only one', () => {
-    expect(publishScrollMarkup(PUBLISHED).split('sl-publish-group').length - 1).toBe(2);
-    expect(publishScrollMarkup(state()).split('sl-publish-group').length - 1).toBe(1);
+    expect(proScroll(PUBLISHED).split('sl-publish-group').length - 1).toBe(2);
+    expect(proScroll(state()).split('sl-publish-group').length - 1).toBe(1);
   });
 
   /**
@@ -163,15 +172,15 @@ describe('publish screen body', () => {
     // Half a command is a command that fails: no <code> box and no copy button
     // unless both the id and the key are known. The id-only case still gets
     // the Rotate action, since that is how a device without the key gets one.
-    expect(publishScrollMarkup(state({ libraryId: LIBRARY_ID })))
+    expect(proScroll(state({ libraryId: LIBRARY_ID })))
       .not.toContain('sl-publish-command"');
-    expect(publishScrollMarkup(state({ libraryId: LIBRARY_ID })))
+    expect(proScroll(state({ libraryId: LIBRARY_ID })))
       .not.toContain('data-publish-copy-command');
-    expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
+    expect(proScroll(state({ pullKey: PULL_KEY })))
       .not.toContain('sl-publish-command');
-    expect(publishScrollMarkup(state({ pullKey: PULL_KEY })))
+    expect(proScroll(state({ pullKey: PULL_KEY })))
       .not.toContain('data-publish-rotate');
-    expect(publishScrollMarkup(PUBLISHED)).toContain('sl-publish-command"');
+    expect(proScroll(PUBLISHED)).toContain('sl-publish-command"');
   });
 
   /**
@@ -180,27 +189,27 @@ describe('publish screen body', () => {
    * groups rather than inside either one.
    */
   it('puts the status line after both groups', () => {
-    const markup = publishScrollMarkup(PUBLISHED);
+    const markup = proScroll(PUBLISHED);
     expect(markup.indexOf('sl-publish-status'))
       .toBeGreaterThan(markup.lastIndexOf('sl-publish-group'));
   });
 
   it('tones the status line by status and leaves the body without one when silent', () => {
-    const failed = publishScrollMarkup(
+    const failed = proScroll(
       state({ status: 'error', message: 'Publishing needs an active Pro license.' }),
     );
     expect(failed).toContain('sl-publish-status is-error');
     expect(failed).toContain('Publishing needs an active Pro license.');
 
-    expect(publishScrollMarkup(PUBLISHED)).not.toContain('is-error');
-    expect(publishScrollMarkup(PUBLISHED))
+    expect(proScroll(PUBLISHED)).not.toContain('is-error');
+    expect(proScroll(PUBLISHED))
       .toContain('Published. Developers get this version on their next pull.');
 
-    expect(publishScrollMarkup(state())).not.toContain('sl-publish-status');
+    expect(proScroll(state())).not.toContain('sl-publish-status');
   });
 
   it('escapes a message and a key rather than trusting them as markup', () => {
-    const markup = publishScrollMarkup(
+    const markup = proScroll(
       state({ status: 'error', message: 'Failed <b>badly</b> & loudly' }),
     );
     expect(markup).toContain('Failed &lt;b&gt;badly&lt;/b&gt; &amp; loudly');
@@ -210,15 +219,15 @@ describe('publish screen body', () => {
   /** The publish action itself is the footer's, not the body's. */
   it('leaves the publish action to the footer', () => {
     for (const status of ALL_STATES) {
-      expect(publishScrollMarkup(state({ status }))).not.toContain('data-publish>');
-      expect(publishScrollMarkup(state({ status }))).not.toContain('data-publish ');
+      expect(proScroll(state({ status }))).not.toContain('data-publish>');
+      expect(proScroll(state({ status }))).not.toContain('data-publish ');
     }
   });
 });
 
 describe('publish screen footer', () => {
   it('names the act and the object it acts on', () => {
-    const markup = publishFooterMarkup(state());
+    const markup = proFooter(state());
     expect(markup).toContain('data-publish>');
     expect(markup).toContain('Publish library');
     expect(markup).toContain('data-tone="primary"');
@@ -230,13 +239,13 @@ describe('publish screen footer', () => {
    */
   it('reports work in the label and disables the button while it runs', () => {
     for (const status of ['collecting', 'uploading'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = proFooter(state({ status }));
       expect(markup).toContain('data-publish disabled');
       expect(markup).toContain('Publishing…');
       expect(markup).not.toContain('Publish library');
     }
     for (const status of ['idle', 'done', 'error'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = proFooter(state({ status }));
       expect(markup).not.toContain('disabled');
       expect(markup).toContain('Publish library');
     }
@@ -251,7 +260,7 @@ describe('publish screen footer', () => {
    */
   it('keeps one glyph in every state', () => {
     for (const status of ALL_STATES) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = proFooter(state({ status }));
       expect(markup).toContain(ICON_PATHS.upload);
       expect(markup.split('<svg').length - 1).toBe(1);
     }
@@ -263,12 +272,12 @@ describe('publish screen footer', () => {
    * it has no dots of its own.
    */
   it('reports an in-flight publish in a progress line, and only then', () => {
-    expect(publishFooterMarkup(state({ status: 'collecting' })))
+    expect(proFooter(state({ status: 'collecting' })))
       .toContain('<strong>Collecting sources</strong>');
-    expect(publishFooterMarkup(state({ status: 'uploading' })))
+    expect(proFooter(state({ status: 'uploading' })))
       .toContain('<strong>Uploading library</strong>');
     for (const status of ['idle', 'done', 'error'] as const) {
-      expect(publishFooterMarkup(state({ status })))
+      expect(proFooter(state({ status })))
         .not.toContain('sl-footer-progress');
     }
   });
@@ -276,9 +285,9 @@ describe('publish screen footer', () => {
   it('keeps the plugin voice: no em dashes anywhere on the screen', () => {
     const all = [
       publishHeaderMarkup(),
-      ...ALL_STATES.map((status) => publishScrollMarkup(state({ status }))),
-      publishScrollMarkup(PUBLISHED),
-      ...ALL_STATES.map((status) => publishFooterMarkup(state({ status }))),
+      ...ALL_STATES.map((status) => proScroll(state({ status }))),
+      proScroll(PUBLISHED),
+      ...ALL_STATES.map((status) => proFooter(state({ status }))),
     ].join('');
     expect(all).not.toContain('—');
   });
@@ -364,24 +373,132 @@ describe('publish screen styling', () => {
 describe('publish screen: rotate safety and missing key', () => {
   it('disables rotate while a publish is collecting or uploading', () => {
     for (const status of ['collecting', 'uploading'] as const) {
-      const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(publishScrollMarkup(state({ ...PUBLISHED, status })))?.[0] ?? '';
+      const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(proScroll(state({ ...PUBLISHED, status })))?.[0] ?? '';
       expect(rotate).toContain('disabled');
     }
-    const idle = /<button[^>]*data-publish-rotate[^>]*>/.exec(publishScrollMarkup(PUBLISHED))?.[0] ?? '';
+    const idle = /<button[^>]*data-publish-rotate[^>]*>/.exec(proScroll(PUBLISHED))?.[0] ?? '';
     expect(idle).not.toContain('disabled');
   });
 
   it('is honest that rotation takes up to a minute to reach every developer', () => {
-    expect(publishScrollMarkup(PUBLISHED)).toContain('within about a minute');
-    expect(publishScrollMarkup(PUBLISHED)).not.toContain('invalidates');
+    expect(proScroll(PUBLISHED)).toContain('within about a minute');
+    expect(proScroll(PUBLISHED)).not.toContain('invalidates');
   });
 
   it('shows the library id and rotate, but no command, when the key is not on this device', () => {
-    const markup = publishScrollMarkup(state({ libraryId: LIBRARY_ID, pullKey: null }));
+    const markup = proScroll(state({ libraryId: LIBRARY_ID, pullKey: null }));
     expect(markup).toContain(LIBRARY_ID);
     expect(markup).toContain('data-publish-rotate');
     expect(markup).not.toContain('data-publish-copy-command');
     expect(markup).not.toContain('SPEC_LAYER_KEY=');
     expect(markup).toContain('not on this device');
+  });
+});
+
+/**
+ * The paywall. Publishing is Pro-only on the server (`proCaller` in
+ * packages/proxy/src/libraries.ts answers 401 to every other tier), so a free
+ * plan seeing a working Publish button was an offer the product does not make:
+ * it collected every component in the file, uploaded nothing, and reported the
+ * refusal as an error line under the button it had just enabled.
+ */
+describe('publish screen on a free plan', () => {
+  const lockedScroll = (s: PublishState) => publishScrollMarkup(s, true);
+  const lockedFooter = (s: PublishState) => publishFooterMarkup(s, true);
+
+  it('states the plan instead of promising a first publish', () => {
+    const markup = lockedScroll(state());
+    expect(markup).toContain('<h2>Pro plan required</h2>');
+    expect(markup).toContain('Publishing is part of Pro.');
+    // The unlocked screen's "the key appears here once it has run" is a promise
+    // about a run that cannot happen on this plan.
+    expect(markup).not.toContain('They appear here once it has run.');
+    // What publishing sends is still worth reading before upgrading.
+    expect(markup).toContain('<h2>What gets published</h2>');
+  });
+
+  it('offers no publish action anywhere on the screen', () => {
+    for (const status of ALL_STATES) {
+      const markup = lockedScroll(state({ status })) + lockedFooter(state({ status }));
+      expect(markup).not.toContain('data-publish>');
+      expect(markup).not.toContain('data-publish ');
+      expect(markup).not.toContain('Publish library');
+      expect(markup).not.toContain('Publishing…');
+    }
+  });
+
+  /**
+   * Two real actions, not one disabled Publish. A disabled primary says "not
+   * right now" about work this plan will never do, and names nothing to wait
+   * for. Order follows the Library footer: secondary first, primary last.
+   */
+  it('routes to the two ways out: a key you own, or the plan you do not', () => {
+    const markup = lockedFooter(state());
+    expect(markup).toContain('data-view="license"');
+    expect(markup).toContain('Enter a license key');
+    expect(markup).toContain('data-license-open="upgrade"');
+    expect(markup).toContain('Upgrade to Pro');
+    expect(markup).toContain('data-tone="primary"');
+    expect(markup.indexOf('data-view="license"'))
+      .toBeLessThan(markup.indexOf('data-license-open="upgrade"'));
+    expect(markup).not.toContain('disabled');
+    // One glyph each, and the external-link glyph is the License screen's own
+    // signal that Upgrade leaves the panel.
+    expect(markup).toContain(ICON_PATHS.key);
+    expect(markup).toContain(ICON_PATHS.externalLink);
+    expect(markup.split('<svg').length - 1).toBe(2);
+  });
+
+  /**
+   * A lapsed Pro license still owns what it published, and pulling never
+   * checked the license. Withholding the command would stop developers who are
+   * already set up, so the key stays readable and only the Pro calls go.
+   */
+  it('keeps a key it already has readable, without the Pro-only rotate', () => {
+    const markup = lockedScroll(PUBLISHED);
+    expect(markup).toContain('<h2>Developer setup</h2>');
+    expect(markup).toContain('data-publish-copy-command');
+    expect(markup).toContain(
+      `SPEC_LAYER_KEY=${PULL_KEY} npx spec-layer pull --id ${LIBRARY_ID}`,
+    );
+    expect(markup).not.toContain('data-publish-rotate');
+    expect(markup).not.toContain('Rotate key');
+    // The consequence line belongs to a control that is no longer there.
+    expect(markup).not.toContain('Rotating cuts off everyone');
+  });
+
+  it('does not tell a locked device to rotate a key it cannot rotate', () => {
+    const markup = lockedScroll(state({ libraryId: LIBRARY_ID, pullKey: null }));
+    expect(markup).toContain(LIBRARY_ID);
+    expect(markup).toContain('not on this device');
+    expect(markup).toContain('Issuing a new key needs Pro.');
+    expect(markup).not.toContain('Rotate the key to issue a new one.');
+    expect(markup).not.toContain('data-publish-rotate');
+    // No actions row left to draw around nothing.
+    expect(markup).not.toContain('sl-publish-command-actions');
+  });
+
+  it('keeps the plugin voice: no em dashes anywhere on the locked screen', () => {
+    const all = [
+      ...ALL_STATES.map((status) => lockedScroll(state({ status }))),
+      lockedScroll(PUBLISHED),
+      ...ALL_STATES.map((status) => lockedFooter(state({ status }))),
+    ].join('');
+    expect(all).not.toContain('—');
+  });
+});
+
+/**
+ * Which plans see the paywall. 'loading' and 'unknown' are "the server has not
+ * told us", and locking on those would demote a Pro user who is briefly
+ * offline, which is the same call allowanceCopy makes for the header.
+ */
+describe('publishLocked', () => {
+  it('locks a known free plan and nothing else', () => {
+    expect(publishLocked({ kind: 'free', remaining: 8, limit: 10, resetsAt: '' })).toBe(true);
+    expect(publishLocked({ kind: 'free', remaining: 0, limit: 10, resetsAt: '' })).toBe(true);
+    expect(publishLocked({ kind: 'pro' })).toBe(false);
+    expect(publishLocked({ kind: 'loading' })).toBe(false);
+    expect(publishLocked({ kind: 'unknown', message: 'Plan status unavailable' })).toBe(false);
   });
 });
