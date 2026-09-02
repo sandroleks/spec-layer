@@ -231,8 +231,20 @@ action. The rows below start there.
       component; the YAML matches what Copy for AI puts on the clipboard.
 - [ ] Republish after editing a token: `spec-layer status` exits 2 and names
       the new publish time; `spec-layer pull` then `status` exits 0.
-- [ ] Rotate key: old command fails with the rotated-key message; new command
-      pulls.
+- [ ] Rotate key: old command fails with the rotated-key message within about
+      a minute; new command pulls. While a publish is running, **Rotate key**
+      is disabled.
+- [ ] Two files: publish file A, then open an unrelated file B and publish.
+      B gets its own library id and key; pulling A's id still returns A's
+      components.
+- [ ] Second device (or a second Figma account on the same file): the publish
+      screen shows the library id, "not on this device", and only **Rotate
+      key**. Rotating shows the full setup command; the first device's old
+      command then fails.
+- [ ] Gone library: publish, then rotate the license key (or publish the same
+      file with another Pro license). The screen reports the library is gone
+      or belongs to another license, publishes nothing, and the next publish
+      creates a new library.
 - [ ] Free license: publish shows the Pro copy and publishes nothing. The
       Library footer's **Publish** still opens the screen.
 - [ ] Broken source: delete a doc's source component, publish; the error names

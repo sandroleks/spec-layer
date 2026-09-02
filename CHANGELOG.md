@@ -179,6 +179,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Publish identity now lives in the file, not in one shared slot. Because
+  `figma.fileKey` is undefined for a Community plugin, every file used to
+  share the `publishInfo:unknown` record, so publishing from one file could
+  overwrite the library another file had published. The library id is now
+  stored in the document's root plugin data and the pull key per user in
+  `clientStorage` keyed by that id. A device that has the id but not the key
+  sees the id and can rotate to get a key. Files published before this change
+  create a fresh library on their next publish; the old one keeps serving its
+  last bundle.
+- Publishing no longer silently creates a new library when the server reports
+  the stored one gone or owned by another license. It stops, says so, clears
+  the stale identity, and leaves the next publish as a deliberate create.
+  The persisted identity also rides the `publishSources` reply, so a publish
+  started before the `publishInfo` reply lands can no longer mint a
+  duplicate.
+- The proxy stores the pull key digest and each ownership record in their own
+  KV keys, so a rotate racing a republish cannot overwrite the other's write
+  and two concurrent first publishes cannot lose a library from the owner
+  list. Legacy records are migrated on first use. **Rotate key** is disabled
+  while a publish is running, and a successful rotate no longer paints its
+  message as an error.
+- The publish size cap measures UTF-8 bytes at every check. The
+  `content-length` precheck compared bytes to a character limit, so non-ASCII
+  libraries were rejected below the real cap with a size reported in the
+  wrong unit. The plugin now shows the limit in megabytes.
+- The bundle envelope is parsed by one shared function in the extractor. The
+  proxy used to accept a bundle without `extractorVersion` that the CLI then
+  refused, and the CLI accepted any bundle version; both now share
+  `parseLibraryBundle`, and the CLI asks you to update when it meets a bundle
+  major it does not know.
+- Rotate copy no longer claims the old key stops "immediately"; KV propagation
+  can take up to about a minute, and the plugin says so.
 - `spec-layer pull` no longer deletes an arbitrary directory. The swap that
   replaces the output directory refused nothing before, so `--out .` removed
   the whole repository; it now rejects the working directory, a parent of it,

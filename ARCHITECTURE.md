@@ -96,24 +96,37 @@ implementation of v5 extraction.
   the server ever hands back (`sl_` + 24 random bytes as hex). Passing an
   owned `libraryId` overwrites it in place (200) and does not return a key,
   since the key does not change. The bundle body is capped at
-  `MAX_BUNDLE_CHARS` (5,000,000 characters).
+  `MAX_BUNDLE_BYTES` (5,000,000 UTF-8 bytes of the request body).
 - `GET /v1/libraries/:libraryId` (pull key required, `Authorization: Bearer
   sl_...`): returns the stored bundle verbatim, with `ETag` and
   `X-Published-At` headers; an `If-None-Match` matching the current
   `bundleHash` gets a bare 304.
 - `POST /v1/libraries/:libraryId/rotate` (Pro license required, caller must
-  own the library): issues a new pull key and invalidates the old one
-  immediately.
+  own the library): issues a new pull key. The old key stops working once
+  the KV write propagates, which can take up to about a minute.
 
-KV layout, all under the `libraryStore` binding:
+KV layout, all under the `libraryStore` binding. The records a publish writes
+share no field with the record a rotate writes, so the two can overlap
+without clobbering each other:
 
-- `lib:<libraryId>:meta` — a `LibraryMeta` JSON record: `keyHash` (sha256 of
-  the pull key; the key itself is never stored), `licenseId`, `publishedAt`,
-  `bundleHash`, `size`, `fileName`.
 - `lib:<libraryId>:bundle` — the published bundle JSON, served as-is to a
   pull request.
-- `libowner:<licenseId>` — a JSON array of `libraryId`s that license has
-  published, used to enforce `LIBRARY_LIMIT`.
+- `lib:<libraryId>:meta` — a `LibraryMeta` JSON record: `licenseId`,
+  `publishedAt`, `bundleHash`, `size` (bytes), `fileName`. Libraries
+  published before September 2026 also carry a legacy `keyHash` here, which
+  pull falls back to.
+- `lib:<libraryId>:key` — sha256 of the current pull key (the key itself is
+  never stored). Rotate writes only this record.
+- `libowner:<licenseId>:<libraryId>` — one record per owned library, counted
+  by prefix to enforce `LIBRARY_LIMIT`, so concurrent creates never
+  read-modify-write a shared list. A legacy `libowner:<licenseId>` array is
+  expanded into these records the first time that license publishes.
+
+The bundle envelope itself is defined once, in the extractor's
+`libraryBundle.ts` (`parseLibraryBundle`), and the plugin, the proxy, and the
+CLI all use it. The proxy rejects an unsupported major version with
+`400 unsupported bundle version`, and the size cap (`MAX_BUNDLE_BYTES`,
+5,000,000) is measured in UTF-8 bytes of the request body at every check.
 
 **Transport invariant:** the plugin's publish step assembles the bundle
 through the same extractor calls Copy for AI uses (`buildFoundationArtifactV5`
@@ -127,9 +140,10 @@ re-derives, re-validates, or re-projects v5 output from source data.
 
 A pull-only delivery CLI published to npm as `spec-layer` (`npx spec-layer
 pull`), not a workspace dependency of the extractor or the plugin. It has zero
-runtime dependencies and no dependency on `@spec-layer/extractor`: it treats
-the bundle it receives as opaque JSON with a known shape (`parseBundle` checks
-structure only) and never touches Figma or extraction code. Five commands:
+runtime dependencies: the one piece of shared code it uses, the bundle
+envelope parser from `@spec-layer/extractor`, is inlined at build time, and it
+never touches Figma or extraction code. It treats each artifact as opaque JSON
+and refuses a bundle whose major version it does not know. Five commands:
 
 - `init --id lib_...` writes `speclayer.json` (library id, output directory,
   and an optional `include` selection) so later commands need no flags.
@@ -174,7 +188,12 @@ chosen for its lifetime:
   It is per user and per machine, which is why license activation re-probes
   each session rather than trusting a stored verdict.
 - `figma.root` plugin data holds the document registry, so a file knows which
-  documents it contains without scanning every page.
+  documents it contains without scanning every page. It also holds the file's
+  published library id (`speclayer.publish.libraryId`), because
+  `figma.fileKey` is undefined for a Community plugin and a per-user store
+  cannot tell two files apart. The matching pull key is a secret, so it stays
+  in `figma.clientStorage` under `publishKey:<libraryId>`; a second device
+  sees the id without the key and can rotate to get one.
 - Each generated Section holds its own doc link and prose under plugin data on
   the node, which is what lets a document be found, drift-checked, and updated
   from the node itself rather than from a registry that could disagree with it.
