@@ -1,0 +1,347 @@
+/**
+ * DTCG projection of a Foundation Context v5 artifact. Spec:
+ * docs/superpowers/specs/2026-09-03-dtcg-foundation-export-design.md.
+ *
+ * Design Tokens Format Module 2025.10 and Resolver Module 2025.10. This is a
+ * presentation profile over a validated artifact, like aiContext.ts: it never
+ * feeds a hash, never mutates its input, and anything the format cannot state
+ * is omitted and written to the report rather than approximated.
+ */
+import type { FoundationArtifactV5 } from './canonical';
+import { compareCodeUnits } from './diagnostics';
+import type { CollectionV5, TokenV5 } from './entities';
+import { canonicalNumber } from './precision';
+import type { ColorValue, TypedValue } from './value';
+
+export type DtcgValueStyle = 'standard' | 'legacy';
+export interface DtcgOptions {
+  /** `standard` is the 2025.10 object form; `legacy` is the pre-2025 string form. */
+  values?: DtcgValueStyle;
+  /** `"Collection/name glob": unit` overrides for numbers whose scopes state no unit. */
+  units?: Record<string, 'px' | 'rem'>;
+}
+
+export type DtcgJson = string | number | boolean | null | DtcgJson[] | { [key: string]: DtcgJson };
+export type DtcgTree = { [key: string]: DtcgJson };
+
+export type DtcgReportCode =
+  | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
+  | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
+  | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
+  | 'duplicate_code_syntax';
+
+export interface DtcgReportEntry {
+  code: DtcgReportCode;
+  severity: 'error' | 'warning' | 'info';
+  /** DTCG path, collection first, dot-joined. */
+  path: string;
+  mode?: string;
+  message: string;
+  details: Record<string, DtcgJson>;
+}
+
+export interface DtcgMetaEntry {
+  id: string;
+  collection_id: string;
+  type: string;
+  scopes: string[];
+  code_syntax?: Record<string, string>;
+  publication?: { published: boolean; hidden_from_publishing: boolean };
+  omitted?: true;
+  /** Canonical values by mode label, only for omitted tokens. */
+  values?: Record<string, DtcgJson>;
+}
+
+export interface DtcgResolverDocument {
+  version: '2025.10';
+  name?: string;
+  sets: Record<string, { sources: DtcgJson[] }>;
+  modifiers: Record<string, { contexts: Record<string, DtcgJson[]>; default?: string }>;
+  resolutionOrder: Array<{ $ref: string }>;
+}
+
+export interface DtcgExport {
+  files: Record<string, DtcgTree>;
+  resolver: DtcgResolverDocument;
+  meta: Record<string, DtcgMetaEntry>;
+  report: DtcgReportEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Names
+// ---------------------------------------------------------------------------
+
+export interface SegmentNote { code: 'segment_split' | 'name_escaped'; original: string }
+
+/**
+ * Figma name -> DTCG group segments. `/` groups, as `path` does. A `.` inside
+ * a segment splits it further, because DTCG reserves `.` for references and an
+ * underscore would flatten a hierarchy the author meant. `{`, `}`, a leading
+ * `$`, and an empty segment are escaped and noted.
+ */
+export function dtcgSegments(name: string): { segments: string[]; notes: SegmentNote[] } {
+  const segments: string[] = [];
+  const notes: SegmentNote[] = [];
+  for (const raw of name.split('/')) {
+    const parts = raw.includes('.') ? raw.split('.') : [raw];
+    if (parts.length > 1) notes.push({ code: 'segment_split', original: raw });
+    for (const part of parts) {
+      let out = part;
+      if (out === '') out = '_';
+      if (/[{}]/.test(out)) out = out.replace(/[{}]/g, '_');
+      if (out.startsWith('$')) out = `_${out}`;
+      if (out !== part) notes.push({ code: 'name_escaped', original: part });
+      segments.push(out);
+    }
+  }
+  return { segments, notes };
+}
+
+export function dtcgPathOf(collectionName: string, tokenName: string): string {
+  return [...dtcgSegments(collectionName).segments, ...dtcgSegments(tokenName).segments].join('.');
+}
+
+const slug = (s: string): string =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
+
+/** `<collection>.<mode>.json`, with `-2`, `-3` on a slug collision. */
+export function fileNameFor(
+  collection: { name: string }, mode: { name: string }, taken: Set<string>,
+): string {
+  const base = `${slug(collection.name)}.${slug(mode.name)}`;
+  let candidate = `${base}.json`;
+  let n = 1;
+  while (taken.has(candidate)) {
+    n += 1;
+    candidate = `${base}-${n}.json`;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+// ---------------------------------------------------------------------------
+// Values
+// ---------------------------------------------------------------------------
+
+function hexByte(n: number): string {
+  return Math.round(n * 255).toString(16).padStart(2, '0');
+}
+
+function colorComponents(color: ColorValue): [number, number, number] {
+  if (color.channels) return [color.channels[0], color.channels[1], color.channels[2]];
+  const at = (i: number) => canonicalNumber(parseInt(color.hex.slice(i, i + 2), 16) / 255);
+  return [at(1), at(3), at(5)];
+}
+
+export interface DtcgTyped { $type: string; $value: DtcgJson }
+export type Converted =
+  | DtcgTyped
+  | { omit: 'type_not_expressible' | 'unit_not_expressible'; details: Record<string, DtcgJson> };
+
+/**
+ * One typed literal. `fontWeight` is chosen only by the FONT_WEIGHT scope, not
+ * the name: units.ts already made the name inadmissible as evidence and this
+ * module keeps that rule.
+ */
+export function dtcgLiteral(
+  value: TypedValue, scopes: string[], style: DtcgValueStyle,
+): Converted {
+  switch (value.type) {
+    case 'color': {
+      if (style === 'legacy') {
+        const alpha = value.alpha === 1 ? '' : hexByte(value.alpha);
+        return { $type: 'color', $value: `${value.hex}${alpha}` };
+      }
+      return {
+        $type: 'color',
+        $value: {
+          colorSpace: 'srgb', components: colorComponents(value), alpha: value.alpha, hex: value.hex,
+        },
+      };
+    }
+    case 'dimension': {
+      if (value.unit !== 'px' && value.unit !== 'rem') {
+        return { omit: 'unit_not_expressible', details: { unit: value.unit, number: value.number } };
+      }
+      return {
+        $type: 'dimension',
+        $value: style === 'legacy' ? `${value.number}${value.unit}` : { value: value.number, unit: value.unit },
+      };
+    }
+    case 'duration':
+      return {
+        $type: 'duration',
+        $value: style === 'legacy' ? `${value.number}${value.unit}` : { value: value.number, unit: value.unit },
+      };
+    case 'number':
+      return { $type: scopes.includes('FONT_WEIGHT') ? 'fontWeight' : 'number', $value: value.value };
+    case 'cubic_bezier':
+      return { $type: 'cubicBezier', $value: [...value.value] };
+    case 'font_family':
+      return { $type: 'fontFamily', $value: value.value };
+    case 'string':
+    case 'boolean':
+      return { omit: 'type_not_expressible', details: { type: value.type } };
+    default: {
+      const exhaustive: never = value;
+      return exhaustive;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Trees
+// ---------------------------------------------------------------------------
+
+function setLeaf(tree: DtcgTree, segments: string[], leaf: DtcgJson): void {
+  let node: DtcgTree = tree;
+  for (const seg of segments.slice(0, -1)) {
+    const next = node[seg];
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) node[seg] = {};
+    node = node[seg] as DtcgTree;
+  }
+  node[segments[segments.length - 1]] = leaf;
+}
+
+/** Recursively sorts keys by code unit, keeping `$`-keys first in a fixed order. */
+const KEY_ORDER = ['$type', '$value', '$description', '$deprecated', '$extensions'];
+export function sortTree(value: DtcgJson): DtcgJson {
+  if (Array.isArray(value)) return value.map(sortTree);
+  if (typeof value !== 'object' || value === null) return value;
+  const rank = (k: string) => { const i = KEY_ORDER.indexOf(k); return i === -1 ? KEY_ORDER.length : i; };
+  const keys = Object.keys(value).sort((a, b) => rank(a) - rank(b) || compareCodeUnits(a, b));
+  return Object.fromEntries(keys.map((k) => [k, sortTree(value[k])]));
+}
+
+interface Projection {
+  artifact: FoundationArtifactV5;
+  options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  collectionById: Map<string, CollectionV5>;
+  /** token id -> dot-joined DTCG path, for every token that survived collision. */
+  pathById: Map<string, string>;
+  /** token id -> segments including the collection head. */
+  segmentsById: Map<string, string[]>;
+  omittedIds: Set<string>;
+  report: DtcgReportEntry[];
+}
+
+function reportOnce(p: Projection, entry: DtcgReportEntry): void {
+  const key = JSON.stringify([entry.code, entry.path, entry.mode ?? null, entry.details]);
+  const seen = p.report.some((r) => JSON.stringify([r.code, r.path, r.mode ?? null, r.details]) === key);
+  if (!seen) p.report.push(entry);
+}
+
+/** Resolves every token's DTCG path and drops both sides of a collision. */
+function indexPaths(p: Projection): void {
+  const owners = new Map<string, TokenV5[]>();
+  for (const token of p.artifact.tokens) {
+    const collection = p.collectionById.get(token.collection_id);
+    if (!collection) continue;
+    const head = dtcgSegments(collection.name);
+    const tail = dtcgSegments(token.name);
+    const segments = [...head.segments, ...tail.segments];
+    const path = segments.join('.');
+    p.segmentsById.set(token.id, segments);
+    for (const note of [...head.notes, ...tail.notes]) {
+      reportOnce(p, {
+        code: note.code, severity: note.code === 'segment_split' ? 'info' : 'warning', path,
+        message: note.code === 'segment_split'
+          ? `The segment "${note.original}" contains "." and was split into nested groups.`
+          : `The segment "${note.original}" contains a character DTCG forbids and was escaped.`,
+        details: { id: token.id, original: note.original },
+      });
+    }
+    owners.set(path, [...(owners.get(path) ?? []), token]);
+  }
+  for (const [path, tokens] of owners) {
+    if (tokens.length === 1) {
+      p.pathById.set(tokens[0].id, path);
+      continue;
+    }
+    for (const token of tokens) {
+      p.omittedIds.add(token.id);
+      reportOnce(p, {
+        code: 'path_collision', severity: 'error', path,
+        message: `${tokens.length} tokens share this DTCG path after escaping; all were omitted.`,
+        details: { id: token.id, ids: tokens.map((t) => t.id) },
+      });
+    }
+  }
+}
+
+function modeName(collection: CollectionV5, modeId: string): string {
+  return collection.modes.find((m) => m.id === modeId)?.name ?? modeId;
+}
+
+export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
+  const p: Projection = {
+    artifact,
+    options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
+    pathById: new Map(),
+    segmentsById: new Map(),
+    omittedIds: new Set(),
+    report: [],
+  };
+  indexPaths(p);
+  omitInexpressibleTypes(p);
+
+  const files: Record<string, DtcgTree> = {};
+  const taken = new Set<string>();
+  for (const collection of artifact.collections) {
+    for (const mode of collection.modes) {
+      const tree: DtcgTree = {};
+      for (const token of artifact.tokens) {
+        if (token.collection_id !== collection.id || p.omittedIds.has(token.id)) continue;
+        const leaf = tokenLeaf(p, token, collection, mode.id);
+        if (leaf) setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+      }
+      files[fileNameFor(collection, mode, taken)] = sortTree(tree) as DtcgTree;
+    }
+  }
+
+  return {
+    files,
+    resolver: { version: '2025.10', sets: {}, modifiers: {}, resolutionOrder: [] },
+    meta: {},
+    report: p.report,
+  };
+}
+
+/** DTCG has no string or boolean type. Such tokens are omitted whole. */
+function omitInexpressibleTypes(p: Projection): void {
+  for (const token of p.artifact.tokens) {
+    if (token.type !== 'string' && token.type !== 'boolean') continue;
+    p.omittedIds.add(token.id);
+    reportOnce(p, {
+      code: 'type_not_expressible', severity: 'warning',
+      path: p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name,
+      message: `DTCG has no ${token.type} type; the token was omitted.`,
+      details: { id: token.id, type: token.type },
+    });
+  }
+}
+
+/** The `$type`/`$value`/`$description` leaf for one token in one mode, or null when omitted. */
+function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, modeId: string): DtcgTree | null {
+  const value = token.values[modeId];
+  const path = p.pathById.get(token.id) ?? '';
+  const mode = modeName(collection, modeId);
+  if (value === undefined || value.kind !== 'literal') return null; // aliases and missing: Task 3
+  const converted = dtcgLiteral(value.value, token.scopes, p.options.values);
+  if ('omit' in converted) {
+    reportOnce(p, {
+      code: converted.omit, severity: 'warning', path, mode,
+      message: converted.omit === 'type_not_expressible'
+        ? `DTCG has no ${String(converted.details.type)} type; the value was omitted.`
+        : `DTCG dimensions take px or rem; a ${String(converted.details.unit)} value was omitted.`,
+      details: { id: token.id, ...converted.details },
+    });
+    return null;
+  }
+  return {
+    $type: converted.$type,
+    $value: converted.$value,
+    ...(token.description.length > 0 ? { $description: token.description } : {}),
+  };
+}

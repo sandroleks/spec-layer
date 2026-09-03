@@ -17,4 +17,5 @@ export * from './normalize';
 export * from './statistics';
 export * from './fromFoundation';
 export * from './aiContext';
+export * from './dtcg';
 export * from './componentContext';
