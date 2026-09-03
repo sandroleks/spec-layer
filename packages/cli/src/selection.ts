@@ -2,13 +2,14 @@ import type { BundleV1 } from './bundle';
 import { slugify } from './files';
 
 /**
- * Which bundle entries a pull writes as ai/ files. The unit is a whole entry
+ * Which bundle entries a pull writes. A component becomes one `ai/` YAML file;
+ * the Foundation becomes the `tokens/` DTCG directory. The unit is a whole entry
  * (the Foundation, or one component): the CLI copies entries verbatim and
  * never slices below one, since anything narrower would need the extractor's
  * alias-closure logic and become a second interpretation of v5.
  */
 export interface Selection {
-  /** Write ai/foundation.yaml when the bundle has a Foundation. */
+  /** Write the tokens/ directory when the bundle has a Foundation. */
   foundation: boolean;
   /** Component names to write; null means every component, [] means none. */
   components: string[] | null;

@@ -491,7 +491,9 @@ export async function updateFromSource(
 }
 
 // ---------------------------------------------------------------------------
-// Copy for AI (My Library) — put a YAML brief on the clipboard.
+// Copy for AI (My Library): put a brief on the clipboard. A component copies
+// as Component Context v5 YAML; a foundation copies as the DTCG resolver
+// document (see foundationDtcgJson below).
 //
 // Deliberately unlike the doc-building actions: it re-extracts the source the
 // way Update does, but it never generates prose, never touches quota, and
@@ -689,7 +691,8 @@ function foundationDtcgJson(
 }
 
 /**
- * Copy the whole file as a Foundation Context v5 YAML artifact.
+ * Copy the whole file as a DTCG resolver document, projected from the
+ * canonical Foundation Context v5 artifact.
  *
  * Deliberately ignores the scope selection that foundation DOCUMENT generation
  * respects: the artifact gives an agent a complete token vocabulary, and
