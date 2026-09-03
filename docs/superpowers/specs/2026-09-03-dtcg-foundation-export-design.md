@@ -303,7 +303,10 @@ and references do not move. Two collections whose names collide already produce
 ```
 
 Omitted tokens keep an entry with `"omitted": true` and their canonical values
-by mode name, so nothing the plugin read is lost on the way to disk.
+by mode label, so nothing the plugin read is lost on the way to disk. A token
+omitted for `path_collision` is keyed `"<path> [<token id>]"` instead, because
+the colliding tokens share a path and the path alone would let one record
+overwrite the other.
 
 ### Report
 

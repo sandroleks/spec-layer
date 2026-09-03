@@ -160,6 +160,35 @@ describe('foundationDtcg aliases and omissions', () => {
     });
   });
 
+  it('keeps a sidecar entry for every token in a DTCG path collision', () => {
+    const artifact = syntheticArtifact();
+    const ids = ['VariableID:color-exact', 'VariableID:color-lossy'];
+    for (const id of ids) {
+      const token = artifact.tokens.find((t) => t.id === id);
+      if (!token) throw new Error(`fixture lost ${id}`);
+      token.name = 'color/twin';
+    }
+    const collided = foundationDtcg(artifact);
+    for (const [name, file] of Object.entries(collided.files)) {
+      expect(leaf(file, 'Primitives.color.twin'), name).toBeUndefined();
+    }
+    for (const id of ids) {
+      expect(collided.report).toContainEqual(expect.objectContaining({
+        code: 'path_collision', severity: 'error', path: 'Primitives.color.twin',
+        details: expect.objectContaining({ id, ids }),
+      }));
+      // Keyed by path alone, one collider's record would overwrite the other's.
+      const entry = collided.meta[`Primitives.color.twin [${id}]`];
+      expect(entry, id).toBeDefined();
+      expect(entry.id).toBe(id);
+      expect(entry.omitted).toBe(true);
+      expect(Object.keys(entry.values ?? {})).toEqual([
+        'Light [ModeID:p-light]', 'Dark', 'Light [ModeID:p-light-duplicate]',
+      ]);
+    }
+    expect(collided.meta['Primitives.color.twin']).toBeUndefined();
+  });
+
   it('promotes a scope-less number to a dimension only under a declared override', () => {
     const forced = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/number/*': 'px' } });
     expect(leaf(forced.files['primitives.light.json'], 'Primitives.number.unknown-scope'))

@@ -230,6 +230,10 @@ interface Projection {
   /** token id -> segments including the collection head. */
   segmentsById: Map<string, string[]>;
   omittedIds: Set<string>;
+  /** The subset of `omittedIds` dropped because two tokens reached one DTCG
+   *  path. Their sidecar keys carry the token id, since the path does not
+   *  identify them. */
+  collidedIds: Set<string>;
   report: DtcgReportEntry[];
   /** Serialized identity of every entry already in `report`, so the dedupe
    *  below stays O(1) per call instead of re-serializing the whole report. */
@@ -272,6 +276,7 @@ function indexPaths(p: Projection): void {
     }
     for (const token of tokens) {
       p.omittedIds.add(token.id);
+      p.collidedIds.add(token.id);
       reportOnce(p, {
         code: 'path_collision', severity: 'error', path,
         message: `${tokens.length} tokens share this DTCG path after escaping; all were omitted.`,
@@ -683,6 +688,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     pathById: new Map(),
     segmentsById: new Map(),
     omittedIds: new Set(),
+    collidedIds: new Set(),
     report: [],
     reportKeys: new Set(),
   };
@@ -719,7 +725,9 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     const collection = p.collectionById.get(token.collection_id);
     if (!collection) continue;
     const path = p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name;
-    meta[path] = metaEntry(p, token, collection);
+    // Colliding tokens share a path, so the path alone would let one of them
+    // overwrite the other and lose the record the sidecar exists to keep.
+    meta[p.collidedIds.has(token.id) ? `${path} [${token.id}]` : path] = metaEntry(p, token, collection);
   }
   const sortedMeta = Object.fromEntries(Object.entries(meta).sort(([a], [b]) => compareCodeUnits(a, b)));
 
