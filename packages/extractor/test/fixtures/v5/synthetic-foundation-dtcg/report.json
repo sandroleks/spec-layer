@@ -13,7 +13,7 @@
     "code": "value_omitted",
     "severity": "warning",
     "path": "Primitives.color.shared",
-    "mode": "Light",
+    "mode": "Light [ModeID:p-light-duplicate]",
     "message": "The token has no value for this mode.",
     "details": {
       "id": "VariableID:local-collision",
@@ -24,7 +24,7 @@
     "code": "value_omitted",
     "severity": "warning",
     "path": "Primitives.cycle.a",
-    "mode": "Light",
+    "mode": "Light [ModeID:p-light]",
     "message": "The alias could not be resolved (cycle); no value was written.",
     "details": {
       "id": "VariableID:cycle-a",
@@ -37,7 +37,7 @@
     "code": "value_omitted",
     "severity": "warning",
     "path": "Primitives.cycle.b",
-    "mode": "Light",
+    "mode": "Light [ModeID:p-light]",
     "message": "The alias could not be resolved (cycle); no value was written.",
     "details": {
       "id": "VariableID:cycle-b",

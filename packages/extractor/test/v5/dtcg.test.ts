@@ -121,10 +121,14 @@ describe('foundationDtcg aliases and omissions', () => {
 
   it('omits missing values and unresolved aliases with a reason, never a literal or a fake reference', () => {
     expect(leaf(out.files['primitives.light-2.json'], 'Primitives.color.shared')).toBeUndefined();
+    // The mode is the resolver context label, not the raw display name: the
+    // fixture has two modes named "Light" and only the second lacks a value.
     expect(out.report).toContainEqual(expect.objectContaining({
       code: 'value_omitted', severity: 'warning', path: 'Primitives.color.shared',
+      mode: 'Light [ModeID:p-light-duplicate]',
       details: expect.objectContaining({ id: 'VariableID:local-collision', reason: 'no_value_for_mode' }),
     }));
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.color.shared')).toBeDefined();
     expect(leaf(out.files['semantic.light.json'], 'Semantic.color.legacy.readable')).toBeUndefined();
     expect(out.report).toContainEqual(expect.objectContaining({
       code: 'value_omitted', path: 'Semantic.color.legacy.readable', mode: 'Light',

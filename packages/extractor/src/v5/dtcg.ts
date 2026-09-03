@@ -349,7 +349,7 @@ function asJson(value: unknown): DtcgJson {
 }
 
 function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): DtcgMetaEntry {
-  const labels = modeLabels(collection);
+  const labels = p.modeLabelsById.get(collection.id) ?? modeLabels(collection);
   const omitted = p.omittedIds.has(token.id);
   const plain = (v: TokenV5['values'][string]): DtcgJson => {
     if (v.kind === 'literal' && (v.value.type === 'boolean' || v.value.type === 'string'
@@ -690,7 +690,9 @@ function omitInexpressibleTypes(p: Projection): void {
 function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, modeId: string): DtcgTree | null {
   const value = token.values[modeId];
   const path = p.pathById.get(token.id) ?? '';
-  const mode = modeName(collection, modeId);
+  // The report names the mode the way the resolver contexts do, so an entry
+  // about one of two same-named modes points at the file it came from.
+  const mode = modeLabelOf(p, collection, modeId);
   const description: Record<string, DtcgJson> =
     token.description.length > 0 ? { $description: token.description } : {};
 
@@ -738,8 +740,11 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     const hop = value.resolved.chain[0];
     if (target && hop && target.collection_id !== token.collection_id) {
       const targetCollection = p.collectionById.get(target.collection_id);
-      const hopMode = targetCollection ? modeName(targetCollection, hop.mode_id) : hop.mode_id;
-      if (hopMode !== mode) {
+      // Compared by display NAME, because that is the mode policy Figma applied;
+      // reported by LABEL, so the entry names a resolver context that exists.
+      const hopName = targetCollection ? modeName(targetCollection, hop.mode_id) : hop.mode_id;
+      if (hopName !== modeName(collection, modeId)) {
+        const hopMode = targetCollection ? modeLabelOf(p, targetCollection, hop.mode_id) : hop.mode_id;
         reportOnce(p, {
           code: 'mode_selection_not_expressible', severity: 'info', path, mode,
           message: `Figma resolved this alias through the target's "${hopMode}" mode; DTCG resolves it by the consumer's context.`,

@@ -300,6 +300,13 @@ details }`. Codes: `segment_split`, `name_escaped`, `path_collision`,
 counterpart of `diagnostics`; it never replaces them. Paths are DTCG paths,
 and `details.id` carries the stable Figma id.
 
+`mode` is the resolver context label, not the raw display name, so an entry
+about one of two same-named modes names the context and the file it came from.
+`details.target_mode` on `mode_selection_not_expressible` is the target
+collection's label for the hop mode by the same rule. Whether that entry is
+raised is still decided by comparing display names, because an exact name match
+is the mode policy Figma applied.
+
 ### Clipboard document
 
 The plugin copies one JSON document: the resolver document with inline
