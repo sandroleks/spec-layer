@@ -36,6 +36,18 @@ describe('foundationDtcg files and literals', () => {
     expect(Object.keys(out.files['primitives.light.json'])).toEqual(['Primitives']);
   });
 
+  it('never lets a collection file take a name the export reserves', () => {
+    const artifact = syntheticArtifact();
+    artifact.collections[0].name = 'Styles';
+    artifact.collections[0].modes[0].name = 'Typography';
+    const clashing = foundationDtcg(artifact);
+    expect(Object.keys(clashing.files)).toContain('styles.typography-2.json');
+    expect(Object.keys(clashing.files['styles.typography-2.json'])).toEqual(['Styles']);
+    // The style file is still the style file.
+    expect(leaf(clashing.files['styles.typography.json'], 'Typography styles.Body.Regular')?.$type)
+      .toBe('typography');
+  });
+
   it('emits standard 2025.10 colors with exact components and the hex', () => {
     const red = leaf(out.files['primitives.light.json'], 'Primitives.color.exact.red');
     expect(red).toEqual({

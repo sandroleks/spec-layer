@@ -106,7 +106,16 @@ export function dtcgPathOf(collectionName: string, tokenName: string): string {
 const slug = (s: string): string =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
 
-/** `<collection>.<mode>.json`, with `-2`, `-3` on a slug collision. */
+/** The names the export writes itself. A collection file must never land on
+ *  one of them: a collection named "Styles" with a mode "Typography" would
+ *  otherwise overwrite the typography style file. */
+const RESERVED_FILE_NAMES: readonly string[] = [
+  'styles.typography.json', 'styles.effects.json',
+  'resolver.json', 'spec-layer.meta.json', 'report.json',
+];
+
+/** `<collection>.<mode>.json`, with `-2`, `-3` on a slug collision with an
+ *  already taken or reserved name. */
 export function fileNameFor(
   collection: { name: string }, mode: { name: string }, taken: Set<string>,
 ): string {
@@ -699,7 +708,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
 
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];
-  const taken = new Set<string>();
+  const taken = new Set<string>(RESERVED_FILE_NAMES);
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
       const tree: DtcgTree = {};
