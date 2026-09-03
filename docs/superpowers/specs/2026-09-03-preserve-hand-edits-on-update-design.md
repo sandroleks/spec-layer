@@ -106,10 +106,11 @@ its only content is the untouched placeholder text. Rules:
   segments whose style is Bold. Other styling is dropped.
 
 `mergeProse(stored: ProseDrafts | null, canvas: CanvasProse) → ProseDrafts | null`:
-canvas wins per field, stored fills the rest, and the result is null only
-when neither side has anything. Sections the config does not render keep
-their stored text this way, so unchecking Interactions and updating does
-not erase the AI's interactions prose.
+canvas wins per field, stored fills the rest, and the result is null when
+the merged prose carries no content at all (no non-blank string, no non-empty
+list), so a doc that never had guidelines still reports none. Sections the
+config does not render keep their stored text this way, so unchecking
+Interactions and updating does not erase the AI's interactions prose.
 
 `docModel.ts` treats an empty string as absent (renders the placeholder) and
 renders the placeholder when both `dos` and `donts` are empty, so a merged
