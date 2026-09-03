@@ -258,6 +258,16 @@ modifiers; merging them would name a modifier the file never named. Keys in
 `resolutionOrder` are JSON pointers with `~` and `/` escaped per RFC 6901.
 Collection order follows the artifact.
 
+Figma allows two collections to share a display name, so a set or modifier is
+keyed by the collection **label**, by the same rule modes use: the bare name
+when it is unique across the artifact, otherwise `Name [collection id]`. The
+`resolutionOrder` pointer uses the same label. Each colliding collection is
+reported `collection_name_collision`, severity warning, with `path` set to the
+label and `details.ids` listing every colliding id. The group root inside each
+token file is unchanged: it stays the escaped collection name, so DTCG paths
+and references do not move. Two collections whose names collide already produce
+`path_collision` for any token paths that collide as a result.
+
 ### Sidecar
 
 `spec-layer.meta.json` is keyed by DTCG path:
@@ -285,7 +295,8 @@ details }`. Codes: `segment_split`, `name_escaped`, `path_collision`,
 `type_not_expressible`, `unit_not_expressible`,
 `unit_override_conflicts_with_scope`, `mode_selection_not_expressible`,
 `value_omitted` with `details.reason` copied from the canonical value,
-`effect_not_expressible`, `duplicate_code_syntax`. The report is the DTCG
+`effect_not_expressible`, `duplicate_code_syntax`,
+`collection_name_collision`. The report is the DTCG
 counterpart of `diagnostics`; it never replaces them. Paths are DTCG paths,
 and `details.id` carries the stable Figma id.
 

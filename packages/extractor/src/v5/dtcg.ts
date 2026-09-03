@@ -30,7 +30,7 @@ export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
   | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
-  | 'duplicate_code_syntax';
+  | 'duplicate_code_syntax' | 'collection_name_collision';
 
 export interface DtcgReportEntry {
   code: DtcgReportCode;
@@ -219,6 +219,11 @@ interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
   collectionById: Map<string, CollectionV5>;
+  /** collection id -> resolver label: the name alone, or name plus id when a
+   *  name repeats. Figma allows two collections to share a display name. */
+  collectionLabelById: Map<string, string>;
+  /** collection id -> mode id -> resolver context label. */
+  modeLabelsById: Map<string, Map<string, string>>;
   /** token id -> dot-joined DTCG path, for every token that survived collision. */
   pathById: Map<string, string>;
   /** token id -> segments including the collection head. */
@@ -300,6 +305,43 @@ function modeLabels(collection: CollectionV5): Map<string, string> {
   const counts = new Map<string, number>();
   for (const m of collection.modes) counts.set(m.name, (counts.get(m.name) ?? 0) + 1);
   return new Map(collection.modes.map((m) => [m.id, counts.get(m.name) === 1 ? m.name : `${m.name} [${m.id}]`]));
+}
+
+/** Collection labels unique across the artifact, by the same rule as modes.
+ *  Two Figma collections may share a display name, and keying the resolver by
+ *  the bare name would drop one of them. */
+function collectionLabels(collections: CollectionV5[]): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const c of collections) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+  return new Map(collections.map(
+    (c) => [c.id, counts.get(c.name) === 1 ? c.name : `${c.name} [${c.id}]`],
+  ));
+}
+
+/** The resolver context label for one mode, from the cache built per collection. */
+function modeLabelOf(p: Projection, collection: CollectionV5, modeId: string): string {
+  return p.modeLabelsById.get(collection.id)?.get(modeId) ?? modeId;
+}
+
+const collectionLabelOf = (p: Projection, collection: CollectionV5): string =>
+  p.collectionLabelById.get(collection.id) ?? collection.name;
+
+function reportCollectionNameCollisions(p: Projection): void {
+  const owners = new Map<string, CollectionV5[]>();
+  for (const collection of p.artifact.collections) {
+    owners.set(collection.name, [...(owners.get(collection.name) ?? []), collection]);
+  }
+  for (const [name, collections] of owners) {
+    if (collections.length < 2) continue;
+    for (const collection of collections) {
+      reportOnce(p, {
+        code: 'collection_name_collision', severity: 'warning',
+        path: collectionLabelOf(p, collection),
+        message: `${collections.length} collections are named "${name}"; the resolver labels each one by its id.`,
+        details: { id: collection.id, ids: collections.map((c) => c.id) },
+      });
+    }
+  }
 }
 
 function asJson(value: unknown): DtcgJson {
@@ -533,17 +575,18 @@ function buildResolver(p: Projection, plans: FilePlan[], styleFileNames: string[
   for (const collection of p.artifact.collections) {
     const own = plans.filter((f) => f.collection.id === collection.id);
     if (own.length === 0) continue;
-    const labels = modeLabels(collection);
+    const labels = p.modeLabelsById.get(collection.id) ?? modeLabels(collection);
+    const label = collectionLabelOf(p, collection);
     if (own.length === 1) {
-      sets[collection.name] = { sources: [{ $ref: own[0].file }] };
-      order.push({ $ref: `#/sets/${pointer(collection.name)}` });
+      sets[label] = { sources: [{ $ref: own[0].file }] };
+      order.push({ $ref: `#/sets/${pointer(label)}` });
       continue;
     }
     const contexts: Record<string, DtcgJson[]> = {};
     for (const plan of own) contexts[labels.get(plan.modeId) ?? plan.modeId] = [{ $ref: plan.file }];
     const def = labels.get(collection.default_mode_id);
-    modifiers[collection.name] = { contexts, ...(def !== undefined ? { default: def } : {}) };
-    order.push({ $ref: `#/modifiers/${pointer(collection.name)}` });
+    modifiers[label] = { contexts, ...(def !== undefined ? { default: def } : {}) };
+    order.push({ $ref: `#/modifiers/${pointer(label)}` });
   }
   for (const file of styleFileNames) {
     const root = STYLE_ROOTS[file];
@@ -581,6 +624,8 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
     collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
+    collectionLabelById: collectionLabels(artifact.collections),
+    modeLabelsById: new Map(artifact.collections.map((c) => [c.id, modeLabels(c)])),
     pathById: new Map(),
     segmentsById: new Map(),
     omittedIds: new Set(),
@@ -590,6 +635,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   indexPaths(p);
   omitInexpressibleTypes(p);
   reportDuplicateCodeSyntax(p);
+  reportCollectionNameCollisions(p);
 
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];

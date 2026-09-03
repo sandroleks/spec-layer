@@ -262,6 +262,32 @@ describe('foundationDtcg resolver and document', () => {
     ]);
   });
 
+  it('labels two collections that share a name apart and reports the collision', () => {
+    const clashing = syntheticArtifact();
+    clashing.collections[1].name = clashing.collections[0].name;
+    const clashed = foundationDtcg(clashing);
+    const first = 'Primitives [CollectionID:primitives]';
+    const second = 'Primitives [CollectionID:semantic]';
+    expect(Object.keys(clashed.resolver.modifiers).sort()).toEqual([first, second]);
+    expect(clashed.resolver.resolutionOrder).toEqual([
+      { $ref: `#/modifiers/${first}` },
+      { $ref: `#/modifiers/${second}` },
+      { $ref: '#/sets/Effect styles' },
+      { $ref: '#/sets/Typography styles' },
+    ]);
+    // The second collection's modes must survive rather than overwrite the first's.
+    expect(Object.keys(clashed.resolver.modifiers[second].contexts)).toEqual(['Light', 'Dark']);
+    const collisions = clashed.report.filter((r) => r.code === 'collection_name_collision');
+    expect(collisions).toHaveLength(2);
+    expect(collisions.map((r) => r.path).sort()).toEqual([first, second]);
+    for (const entry of collisions) {
+      expect(entry.severity).toBe('warning');
+      expect(entry.details.ids).toEqual(['CollectionID:primitives', 'CollectionID:semantic']);
+    }
+    const doc = foundationDtcgDocument(clashing);
+    expect(Object.keys(doc.modifiers).sort()).toEqual([first, second]);
+  });
+
   it('escapes JSON pointer characters in set and modifier names', () => {
     const renamed = syntheticArtifact();
     renamed.collections[1].name = 'a/b~c';
