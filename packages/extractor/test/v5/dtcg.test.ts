@@ -29,6 +29,7 @@ describe('foundationDtcg files and literals', () => {
     expect(Object.keys(out.files).sort()).toEqual([
       'primitives.dark.json', 'primitives.light-2.json', 'primitives.light.json',
       'semantic.dark.json', 'semantic.light.json',
+      'styles.effects.json', 'styles.typography.json',
     ]);
     expect(Object.keys(out.files['primitives.light.json'])).toEqual(['Primitives']);
   });
@@ -173,5 +174,63 @@ describe('foundationDtcg aliases and omissions', () => {
     const dup = foundationDtcg(artifact).report.filter((r) => r.code === 'duplicate_code_syntax');
     expect(dup).toHaveLength(2);
     expect(dup[0].details).toMatchObject({ platform: 'WEB', identifier: '--dup' });
+  });
+});
+
+describe('foundationDtcg styles', () => {
+  const out = foundationDtcg(syntheticArtifact());
+
+  it('maps a text style to the typography composite with references for bound properties', () => {
+    const body = leaf(out.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect(body?.$type).toBe('typography');
+    expect(body?.$value).toEqual({
+      fontFamily: '{Primitives.typography.family.body}',
+      fontWeight: '{Primitives.typography.weight.strong}',
+      fontSize: { value: 16, unit: 'px' },
+      lineHeight: { value: 24, unit: 'px' },
+    });
+    expect(body?.$extensions).toEqual({
+      'com.spec-layer': {
+        letterSpacing: { value: 0, unit: '%' },
+        paragraphSpacing: { value: 8, unit: 'px' },
+        paragraphIndent: { value: 0, unit: 'px' },
+        textCase: 'original',
+        textDecoration: 'none',
+      },
+    });
+    expect(body?.$description).toBe('Source style retained for Phase 3.');
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'unit_not_expressible', path: 'Typography styles.Body.Regular',
+      details: expect.objectContaining({ property: 'letterSpacing', unit: '%' }),
+    }));
+  });
+
+  it('maps an effect style to a shadow array of visible shadows, with every layer under extensions', () => {
+    const card = leaf(out.files['styles.effects.json'], 'Effect styles.Shadow.Card');
+    expect(card?.$type).toBe('shadow');
+    expect(card?.$value).toEqual([{
+      color: { colorSpace: 'srgb', components: [0, 0, 0], alpha: 0.2, hex: '#000000' },
+      offsetX: { value: 0, unit: 'px' },
+      offsetY: { value: 4, unit: 'px' },
+      blur: '{Primitives.effect.shadow.blur}',
+      spread: { value: 0, unit: 'px' },
+      inset: false,
+    }]);
+    expect(card?.$extensions).toEqual({
+      'com.spec-layer': {
+        layers: [
+          { index: 0, type: 'drop_shadow', visible: true, blend_mode: 'normal' },
+          { index: 1, type: 'layer_blur', visible: false, blur: { value: 2, unit: 'px' } },
+        ],
+      },
+    });
+  });
+
+  it('writes no style file when the artifact has no styles of that kind', () => {
+    const artifact = syntheticArtifact();
+    artifact.styles = { typography: [], effects: [] };
+    const bare = foundationDtcg(artifact);
+    expect(bare.files['styles.typography.json']).toBeUndefined();
+    expect(bare.files['styles.effects.json']).toBeUndefined();
   });
 });

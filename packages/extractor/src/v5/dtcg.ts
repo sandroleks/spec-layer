@@ -9,9 +9,11 @@
  */
 import type { FoundationArtifactV5 } from './canonical';
 import { compareCodeUnits } from './diagnostics';
-import type { CollectionV5, TokenV5 } from './entities';
+import type {
+  CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
+} from './entities';
 import { canonicalNumber } from './precision';
-import type { ColorValue, TypedValue } from './value';
+import type { ColorValue, DimensionValue, TypedValue } from './value';
 
 export type DtcgValueStyle = 'standard' | 'legacy';
 export interface DtcgOptions {
@@ -347,6 +349,170 @@ function reportDuplicateCodeSyntax(p: Projection): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const SPEC_LAYER_EXT = 'com.spec-layer';
+
+/** A style property as a DTCG composite member: a reference when bound to a
+ *  surviving token, else the converted literal; `null` when nothing truthful fits. */
+function styleMember(
+  p: Projection, property: StyleProperty, scopes: string[], path: string, name: string,
+): { value: DtcgJson } | { extension: DtcgJson } | null {
+  if (property.source.kind === 'alias' && property.source.target_id !== null
+    && !p.omittedIds.has(property.source.target_id)) {
+    const target = p.pathById.get(property.source.target_id);
+    if (target !== undefined) return { value: `{${target}}` };
+  }
+  if (property.resolved === null) {
+    reportOnce(p, {
+      code: 'value_omitted', severity: 'warning', path,
+      message: `The ${name} property has no resolved value and was omitted.`,
+      details: { property: name, reason: 'source_unavailable' },
+    });
+    return null;
+  }
+  const converted = dtcgLiteral(property.resolved, scopes, p.options.values);
+  if ('omit' in converted) {
+    if (converted.omit === 'unit_not_expressible') {
+      reportOnce(p, {
+        code: 'unit_not_expressible', severity: 'info', path,
+        message: `The ${name} unit is not a DTCG dimension unit; the value is kept under $extensions.`,
+        details: { property: name, ...converted.details },
+      });
+      const d = property.resolved as DimensionValue;
+      return { extension: { value: d.number, unit: d.unit } };
+    }
+    reportOnce(p, {
+      code: 'type_not_expressible', severity: 'warning', path,
+      message: `The ${name} property has a type DTCG cannot state and was omitted.`,
+      details: { property: name, ...converted.details },
+    });
+    return null;
+  }
+  return { value: converted.$value };
+}
+
+type TypographyKey = 'font_family' | 'font_size' | 'font_weight' | 'line_height'
+  | 'letter_spacing' | 'paragraph_spacing' | 'paragraph_indent';
+const TYPOGRAPHY_MEMBERS: Array<[TypographyKey, string, string[]]> = [
+  ['font_family', 'fontFamily', []],
+  ['font_size', 'fontSize', []],
+  ['font_weight', 'fontWeight', ['FONT_WEIGHT']],
+  ['line_height', 'lineHeight', []],
+  ['letter_spacing', 'letterSpacing', []],
+];
+const TYPOGRAPHY_EXTENSION_MEMBERS: Array<[TypographyKey, string]> = [
+  ['paragraph_spacing', 'paragraphSpacing'],
+  ['paragraph_indent', 'paragraphIndent'],
+];
+
+function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): DtcgTree {
+  const value: DtcgTree = {};
+  const ext: DtcgTree = {};
+  for (const [key, name, scopes] of TYPOGRAPHY_MEMBERS) {
+    const member = styleMember(p, style.properties[key], scopes, path, name);
+    if (member === null) continue;
+    if ('value' in member) value[name] = member.value;
+    else ext[name] = member.extension;
+  }
+  for (const [key, name] of TYPOGRAPHY_EXTENSION_MEMBERS) {
+    const member = styleMember(p, style.properties[key], [], path, name);
+    if (member === null) continue;
+    ext[name] = 'value' in member ? member.value : member.extension;
+  }
+  ext.textCase = style.properties.text_case;
+  ext.textDecoration = style.properties.text_decoration;
+  return {
+    $type: 'typography',
+    $value: value,
+    ...(style.description.length > 0 ? { $description: style.description } : {}),
+    $extensions: { [SPEC_LAYER_EXT]: ext },
+  };
+}
+
+type ShadowKey = 'color' | 'offset_x' | 'offset_y' | 'blur' | 'spread';
+const SHADOW_FIELDS: Array<[ShadowKey, string]> = [
+  ['color', 'color'], ['offset_x', 'offsetX'], ['offset_y', 'offsetY'], ['blur', 'blur'], ['spread', 'spread'],
+];
+
+function effectLeaf(p: Projection, style: EffectStyleV5, path: string): DtcgTree {
+  const bindings = new Map((style.bindings ?? []).map((b) => [b.property, b.token_id]));
+  const shadows: DtcgJson[] = [];
+  const layers: DtcgJson[] = [];
+  style.effects.forEach((effect: EffectV5, index) => {
+    const isShadow = effect.type === 'drop_shadow' || effect.type === 'inner_shadow';
+    const layer: DtcgTree = { index, type: effect.type, visible: effect.visible };
+    if (effect.blend_mode !== undefined) layer.blend_mode = effect.blend_mode;
+    if (!isShadow && effect.blur) {
+      const b = dtcgLiteral(effect.blur, [], p.options.values);
+      if (!('omit' in b)) layer.blur = b.$value;
+    }
+    layers.push(layer);
+    if (!isShadow || !effect.visible) return;
+    const shadow: DtcgTree = {};
+    for (const [field, name] of SHADOW_FIELDS) {
+      const boundId = bindings.get(`effects[${index}].${field}`);
+      const boundPath = boundId !== undefined && !p.omittedIds.has(boundId) ? p.pathById.get(boundId) : undefined;
+      if (boundPath !== undefined) {
+        shadow[name] = `{${boundPath}}`;
+        continue;
+      }
+      const raw = effect[field] as TypedValue | undefined;
+      if (raw === undefined) continue;
+      const converted = dtcgLiteral(raw, [], p.options.values);
+      if (!('omit' in converted)) shadow[name] = converted.$value;
+    }
+    shadow.inset = effect.type === 'inner_shadow';
+    shadows.push(shadow);
+  });
+  if (shadows.length === 0) {
+    reportOnce(p, {
+      code: 'effect_not_expressible', severity: 'warning', path,
+      message: 'The style has no visible shadow; DTCG has no blur type, so it is kept only under $extensions.',
+      details: { id: style.id },
+    });
+  }
+  return {
+    $type: 'shadow',
+    $value: shadows,
+    $extensions: { [SPEC_LAYER_EXT]: { layers } },
+  };
+}
+
+function styleFiles(p: Projection): Record<string, DtcgTree> {
+  const files: Record<string, DtcgTree> = {};
+  const build = <T extends { id: string; name: string }>(
+    styles: T[], root: string, file: string, leafOf: (style: T, path: string) => DtcgTree,
+  ) => {
+    if (styles.length === 0) return;
+    const tree: DtcgTree = {};
+    const seen = new Map<string, string>();
+    for (const style of styles) {
+      const segments = [root, ...dtcgSegments(style.name).segments];
+      const path = segments.join('.');
+      const other = seen.get(path);
+      if (other !== undefined) {
+        reportOnce(p, {
+          code: 'path_collision', severity: 'error', path,
+          message: 'Two styles share this DTCG path after escaping; the later one was omitted.',
+          details: { id: style.id, ids: [other, style.id] },
+        });
+        continue;
+      }
+      seen.set(path, style.id);
+      setLeaf(tree, segments, leafOf(style, path));
+    }
+    files[file] = sortTree(tree) as DtcgTree;
+  };
+  build(p.artifact.styles.typography, 'Typography styles', 'styles.typography.json',
+    (s, path) => typographyLeaf(p, s, path));
+  build(p.artifact.styles.effects, 'Effect styles', 'styles.effects.json',
+    (s, path) => effectLeaf(p, s, path));
+  return files;
+}
+
 export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
   const p: Projection = {
     artifact,
@@ -374,6 +540,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
       files[fileNameFor(collection, mode, taken)] = sortTree(tree) as DtcgTree;
     }
   }
+  Object.assign(files, styleFiles(p));
 
   const meta: Record<string, DtcgMetaEntry> = {};
   for (const token of artifact.tokens) {
