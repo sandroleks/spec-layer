@@ -198,11 +198,11 @@ Typography styles map to the `typography` composite:
           "fontFamily": "Open Sans",
           "fontSize": "{Foundation.font-size.850}",
           "fontWeight": 700,
-          "lineHeight": { "value": 50, "unit": "px" },
           "letterSpacing": { "value": 0, "unit": "px" }
         },
         "$extensions": {
           "com.spec-layer": {
+            "lineHeight": { "value": 50, "unit": "px" },
             "paragraphSpacing": { "value": 0, "unit": "px" },
             "paragraphIndent": { "value": 0, "unit": "px" },
             "textCase": "original",
@@ -219,6 +219,16 @@ A property whose source is an alias becomes a reference. A property whose
 resolved value is `null` is omitted from `$value` and reported. Letter spacing
 in `%` cannot be a DTCG dimension: it goes under `$extensions` as
 `{ "value": n, "unit": "%" }` and is reported `unit_not_expressible`.
+
+Line height follows the same shape for a different reason. The stable format
+says `lineHeight` MUST be a number or a reference to a number token, read as a
+multiplier of the font size, so a measured `px` or `%` line height has no home
+in `$value`. Dividing it by the font size would derive a figure Figma never
+stated. A `dimension` line height, whether a literal or a binding, goes under
+`$extensions["com.spec-layer"].lineHeight` as `{ "value": n, "unit": u }` and is
+reported `unit_not_expressible` with `details.property = "lineHeight"`. A
+`number` line height, which is what Figma's auto line height and a multiplier
+produce, stays in `$value`, as a reference when it is bound to a number token.
 
 Effect styles map to `shadow`. Visible drop and inner shadows become the
 `$value` array in source order, each

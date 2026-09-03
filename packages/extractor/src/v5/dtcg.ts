@@ -495,7 +495,23 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
   const value: DtcgTree = {};
   const ext: DtcgTree = {};
   for (const [key, name, scopes] of TYPOGRAPHY_MEMBERS) {
-    const member = styleMember(p, style.properties[key], scopes, path, name);
+    const property = style.properties[key];
+    // The stable format states that `lineHeight` MUST be a number or a
+    // reference to a number token, read as a multiplier of the font size. A
+    // measured px or % line height is not that, and dividing it by the font
+    // size would derive a figure Figma never stated, so it is kept verbatim
+    // under $extensions. This holds for a binding too: the target's own $type
+    // is `dimension`, which `lineHeight` does not accept.
+    if (key === 'line_height' && property.resolved?.type === 'dimension') {
+      reportOnce(p, {
+        code: 'unit_not_expressible', severity: 'info', path,
+        message: 'DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.',
+        details: { property: name, unit: property.resolved.unit, number: property.resolved.number },
+      });
+      ext[name] = { value: property.resolved.number, unit: property.resolved.unit };
+      continue;
+    }
+    const member = styleMember(p, property, scopes, path, name);
     if (member === null) continue;
     if ('value' in member) value[name] = member.value;
     else ext[name] = member.extension;

@@ -114,6 +114,17 @@
     "code": "unit_not_expressible",
     "severity": "info",
     "path": "Typography styles.Body.Regular",
+    "message": "DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.",
+    "details": {
+      "property": "lineHeight",
+      "unit": "px",
+      "number": 24
+    }
+  },
+  {
+    "code": "unit_not_expressible",
+    "severity": "info",
+    "path": "Typography styles.Body.Regular",
     "message": "The letterSpacing unit is not a DTCG dimension unit; the value is kept under $extensions.",
     "details": {
       "property": "letterSpacing",

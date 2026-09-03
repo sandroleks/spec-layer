@@ -9,11 +9,7 @@
             "unit": "px",
             "value": 16
           },
-          "fontWeight": "{Primitives.typography.weight.strong}",
-          "lineHeight": {
-            "unit": "px",
-            "value": 24
-          }
+          "fontWeight": "{Primitives.typography.weight.strong}"
         },
         "$description": "Source style retained for Phase 3.",
         "$extensions": {
@@ -21,6 +17,10 @@
             "letterSpacing": {
               "unit": "%",
               "value": 0
+            },
+            "lineHeight": {
+              "unit": "px",
+              "value": 24
             },
             "paragraphIndent": {
               "unit": "px",

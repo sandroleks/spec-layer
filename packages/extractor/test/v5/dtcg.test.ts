@@ -240,10 +240,10 @@ describe('foundationDtcg styles', () => {
       fontFamily: '{Primitives.typography.family.body}',
       fontWeight: '{Primitives.typography.weight.strong}',
       fontSize: { value: 16, unit: 'px' },
-      lineHeight: { value: 24, unit: 'px' },
     });
     expect(body?.$extensions).toEqual({
       'com.spec-layer': {
+        lineHeight: { value: 24, unit: 'px' },
         letterSpacing: { value: 0, unit: '%' },
         paragraphSpacing: { value: 8, unit: 'px' },
         paragraphIndent: { value: 0, unit: 'px' },
@@ -255,6 +255,42 @@ describe('foundationDtcg styles', () => {
     expect(out.report).toContainEqual(expect.objectContaining({
       code: 'unit_not_expressible', path: 'Typography styles.Body.Regular',
       details: expect.objectContaining({ property: 'letterSpacing', unit: '%' }),
+    }));
+    // DTCG line height is a unitless multiplier of the font size. A measured
+    // 24px is not that, and dividing it by 16 would be a derivation.
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'unit_not_expressible', path: 'Typography styles.Body.Regular',
+      details: expect.objectContaining({ property: 'lineHeight', unit: 'px', number: 24 }),
+    }));
+  });
+
+  it('keeps a line height in $value only when it is a unitless number', () => {
+    const multiplier = syntheticArtifact();
+    multiplier.styles.typography[0].properties.line_height = {
+      source: { kind: 'alias', target_id: 'VariableID:unknown-number', target_path: ['number', 'unknown-scope'] },
+      resolved: { type: 'number', value: 1.5 },
+    };
+    const asNumber = foundationDtcg(multiplier);
+    const body = leaf(asNumber.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect(body?.$value).toMatchObject({ lineHeight: '{Primitives.number.unknown-scope}' });
+    expect(asNumber.report.filter((r) => r.details.property === 'lineHeight')).toEqual([]);
+
+    // A binding to a dimension token cannot become a reference either: the
+    // target's own $type is dimension, which lineHeight does not accept.
+    const bound = syntheticArtifact();
+    bound.styles.typography[0].properties.line_height = {
+      source: { kind: 'alias', target_id: 'VariableID:gap', target_path: ['spacing', 'gap'] },
+      resolved: { type: 'dimension', number: 8, unit: 'px' },
+    };
+    const asDimension = foundationDtcg(bound);
+    const boundBody = leaf(asDimension.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect(boundBody?.$value).not.toHaveProperty('lineHeight');
+    expect(boundBody?.$extensions).toMatchObject({
+      'com.spec-layer': { lineHeight: { value: 8, unit: 'px' } },
+    });
+    expect(asDimension.report).toContainEqual(expect.objectContaining({
+      code: 'unit_not_expressible', severity: 'info', path: 'Typography styles.Body.Regular',
+      details: expect.objectContaining({ property: 'lineHeight', unit: 'px', number: 8 }),
     }));
   });
 
