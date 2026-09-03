@@ -2,7 +2,7 @@
 title: Component Context v5
 status: Implemented; manual real-Figma gate open
 schema_version: 5.1.0
-last_updated: 2026-08-29
+last_updated: 2026-09-03
 ---
 
 # Component Context v5

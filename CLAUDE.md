@@ -131,10 +131,11 @@ Shipped and merged:
 - Component documentation, Foundation documentation, Library with drift
   detection and in-place rebuild, frame theming, licensing, AI writing.
 - **Foundation Context v5** phases 1 to 3. Copy for AI builds a validated
-  schema `5.0.0` artifact directly from `FoundationSpec`, preserving stable
+  schema `5.1.0` artifact directly from `FoundationSpec`, preserving stable
   ids, source scopes, RGBA precision, complete alias chains, external
-  references, and composite typography/effect styles, then projects a compact
-  `profile: ai` clipboard form.
+  references, and composite typography/effect styles. The compact
+  `profile: ai` projection now serves only the component dependency slice
+  (see below); the Foundation clipboard is the DTCG document.
 - **Component Context v5** (phase 4 adoption). A component copy joins Foundation
   v5 by stable Figma id and embeds only its own validated dependency closure,
   with repeated bindings grouped under ordered `paths`.

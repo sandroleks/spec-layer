@@ -1,6 +1,6 @@
 # Plugin knowledge map
 
-Updated: 2026-08-28
+Updated: 2026-09-03
 
 This is the current orientation guide for the Figma plugin and its supporting
 packages. Historical design decisions remain in `docs/superpowers/`; current
