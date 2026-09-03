@@ -1030,7 +1030,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     // as prose above the matrix so bold type names and bullet lines format
     // correctly, rather than as a single flat line of raw markdown.
     if (section.summary) {
-      const holder = buildProseSlot(section.summary, 'variantsSummary', 10);
+      const holder = buildProseSlot(section.summary, 'variantsSummary', bodySpacing);
       body.appendChild(holder);
       holder.layoutSizingHorizontal = 'FILL';
     }

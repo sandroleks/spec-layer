@@ -98,10 +98,22 @@ its only content is the untouched placeholder text. Rules:
   lines. Either half may be missing.
 - `dos` and `donts` yield one string per bullet row in order. A duplicated
   row adds an item. A deleted row removes one.
-- `anatomyPart` yields `{ name: slotKey, description }` where description
-  is the text after the first `: `. A row with no `: ` yields nothing. The
-  name comes from the tag, not from the row text, so bolding or a typo in
-  the name cannot detach the description from its part.
+- `anatomyPart` yields `{ name: slotKey, description }`. The row text is
+  split by the tagged name, not by the first `: ` in the row text: an
+  undescribed part renders as exactly the name (plus an optional nested
+  note), so a match against `name` or `` `${name}  ·  ` `` means no
+  description, and a match against `` `${name}: ` `` gives the description
+  after it. Only when the row text does not start with the tagged name at
+  all does the read fall back to the first `: ` in the row text, so a typo
+  in the name text cannot lose the description entirely. The name comes from
+  the tag either way, so bolding or a typo in the name cannot detach the
+  description from its part.
+- Repeated containers for one slot are read in document order and
+  concatenated: a prose block's lines are appended to any lines already read
+  for that slot, `dos` and `donts` items are concatenated across containers
+  (a placeholder-only repeat contributes nothing and does not erase an
+  already-accumulated list), and `definitionLead` / `anatomySummary` join
+  repeated values with a newline.
 - Bold reconstruction uses `getStyledTextSegments(['fontName'])` and wraps
   segments whose style is Bold. Other styling is dropped.
 
@@ -171,6 +183,16 @@ stored prose, unchanged from today.
 - **Structural edits.** Added frames, images, moved or deleted generated
   blocks. Not preserved, by agreement.
 - **Non-bold text styling** inside editorial text. Dropped on read-back.
+- **Blank lines between paragraphs.** The canvas renders each line as its own
+  text node, so read-back joins lines with a single newline; stored and
+  published markdown loses paragraph separation after the first Update.
+  Rendering is unaffected.
+- **The part name inside an anatomy legend row.** The row is one text node,
+  so the name is inside the editorial tag, but Update rebuilds it from the
+  component and keeps only the description after the colon.
+- **Round-trip markup caveats.** Literal `**` typed into editorial text is
+  read as bold markup on the next Update; bold inside a `###` heading line is
+  dropped; a second text node nested inside one prose line is dropped.
 
 ## Testing
 

@@ -144,32 +144,61 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
       return;
     }
     if (BLOCK_SLOTS.has(slot)) {
-      blocks.set(slot as BlockSlot, readLines(node));
+      // A repeated or pasted tagged block accumulates rather than overwrites,
+      // so a duplicated container does not silently drop the earlier one.
+      const key = slot as BlockSlot;
+      const existing = blocks.get(key) ?? [];
+      blocks.set(key, [...existing, ...readLines(node)]);
       return;
     }
     switch (slot) {
-      case 'definitionLead':
-        lead = textToMarkdown(node);
+      case 'definitionLead': {
+        const value = textToMarkdown(node);
+        lead = lead !== undefined ? `${lead}\n${value}` : value;
         return;
-      case 'anatomySummary':
-        anatomySummary = textToMarkdown(node);
+      }
+      case 'anatomySummary': {
+        const value = textToMarkdown(node);
+        anatomySummary = anatomySummary !== undefined ? `${anatomySummary}\n${value}` : value;
         return;
-      case 'dos':
-        dos = readBullets(node) ?? undefined;
+      }
+      case 'dos': {
+        const items = readBullets(node);
+        // A placeholder-only repeat contributes nothing; it must not turn an
+        // already-accumulated list back into absent.
+        if (items) dos = [...(dos ?? []), ...items];
         return;
-      case 'donts':
-        donts = readBullets(node) ?? undefined;
+      }
+      case 'donts': {
+        const items = readBullets(node);
+        if (items) donts = [...(donts ?? []), ...items];
         return;
+      }
       case 'anatomyPart': {
         // Seeing any row means the anatomy legend is on canvas, so an empty
         // list is a real answer: every description was removed.
         if (!parts) parts = [];
         const name = node.getPluginData(SLOT_PART_KEY);
+        if (!name) return;
         const texts = allTexts(node);
         const chars = texts.length ? (texts[texts.length - 1].characters ?? '') : '';
-        const i = chars.indexOf(': ');
-        if (!name || i < 0) return;
-        const description = chars.slice(i + 2).trim();
+        // Split by the tagged name first, not by the first ': ' in the row
+        // text: anatomyLegendRow renders an undescribed part as exactly the
+        // name (plus an optional "  ·  component" nested note) and a
+        // described part as "name: description". Using the tagged name keeps
+        // a part named e.g. "Icon: Left" from reading its own name as a
+        // fabricated description. Fall back to the first ': ' only when the
+        // row text does not start with the tagged name at all (a typo in the
+        // name text), so the description is still found.
+        let description: string | undefined;
+        if (chars === name || chars.startsWith(`${name}  ·  `)) {
+          description = undefined;
+        } else if (chars.startsWith(`${name}: `)) {
+          description = chars.slice(name.length + 2).trim();
+        } else {
+          const i = chars.indexOf(': ');
+          if (i >= 0) description = chars.slice(i + 2).trim();
+        }
         if (description) parts.push({ name, description });
         return;
       }
@@ -199,6 +228,13 @@ const OPTIONAL_KEYS = [
   'variantsSummary', 'anatomySummary', 'anatomyParts',
   'interactions', 'designConsiderations', 'contentConsiderations',
 ] as const;
+
+// Compile-time guard: a future optional field added to ProseDrafts must be
+// added to OPTIONAL_KEYS above, or mergeProse would silently drop it. This
+// fails to compile when ProseDrafts gains a field this list does not name.
+type RequiredKeys = 'definition' | 'accessibility' | 'dos' | 'donts';
+type UncoveredOptionalKey = Exclude<keyof ProseDrafts, RequiredKeys | (typeof OPTIONAL_KEYS)[number]>;
+const _everyOptionalKeyIsListed: UncoveredOptionalKey extends never ? true : never = true;
 
 /** True when at least one field carries real content: a non-blank string
  *  after trimming, or a non-empty array. An object with only empty strings

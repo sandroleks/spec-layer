@@ -182,6 +182,40 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(frame([rows]))).toEqual({ anatomyParts: [] });
   });
 
+  it('splits an anatomy part by the tagged name, not by the first colon in the row text', () => {
+    // The part name itself contains ": " (e.g. "Icon: Left"), so splitting on
+    // the first colon in the row text would fabricate a description out of
+    // the name's own second half.
+    const described = frame([text('1'), text('Icon: Left: Points left.')],
+      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
+    expect(readCanvasProse(frame([described]))).toEqual({
+      anatomyParts: [{ name: 'Icon: Left', description: 'Points left.' }],
+    });
+  });
+
+  it('reads an undescribed anatomy part whose name contains a colon as absent', () => {
+    const undescribed = frame([text('1'), text('Icon: Left')],
+      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
+    expect(readCanvasProse(frame([undescribed]))).toEqual({ anatomyParts: [] });
+  });
+
+  it('reads a nested undescribed anatomy part whose name contains a colon as absent', () => {
+    const nested = frame([text('1'), text('Icon: Left  ·  Icon')],
+      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
+    expect(readCanvasProse(frame([nested]))).toEqual({ anatomyParts: [] });
+  });
+
+  it('falls back to the first colon split when the row text does not start with the tagged name', () => {
+    // A typo in the row text (name text reads "Lable", tag still says
+    // "Label") means the name-based prefixes never match; the description
+    // must still be found rather than lost entirely.
+    const typo = frame([text('1'), text('Lable: The text.')],
+      slot('anatomyPart', { [SLOT_PART_KEY]: 'Label' }));
+    expect(readCanvasProse(frame([typo]))).toEqual({
+      anatomyParts: [{ name: 'Label', description: 'The text.' }],
+    });
+  });
+
   it('never descends into component instances', () => {
     const inst = frame([frame([text('Mirror')], slot('definition'))], {}, 'INSTANCE');
     expect(readCanvasProse(frame([inst]))).toEqual({});
@@ -190,6 +224,26 @@ describe('readCanvasProse', () => {
   it('ignores a slot name it does not know', () => {
     const block = frame([text('x')], slot('somethingNew'));
     expect(readCanvasProse(frame([block]))).toEqual({});
+  });
+
+  it('concatenates two prose containers for the same slot, in document order', () => {
+    const first = frame([text('First block.', { data: line('paragraph') })], slot('accessibility'));
+    const second = frame([text('Second block.', { data: line('paragraph') })], slot('accessibility'));
+    expect(readCanvasProse(frame([first, second]))).toEqual({
+      accessibility: 'First block.\nSecond block.',
+    });
+  });
+
+  it('concatenates two dos containers for the same slot, in document order', () => {
+    const first = frame([bulletRow('Do A')], slot('dos'));
+    const second = frame([bulletRow('Do B')], slot('dos'));
+    expect(readCanvasProse(frame([first, second]))).toEqual({ dos: ['Do A', 'Do B'] });
+  });
+
+  it('keeps the first dos container when a repeat is placeholder-only', () => {
+    const first = frame([bulletRow('Do A')], slot('dos'));
+    const placeholderOnly = frame([frame([text(PLACEHOLDER_TEXT)])], slot('dos'));
+    expect(readCanvasProse(frame([first, placeholderOnly]))).toEqual({ dos: ['Do A'] });
   });
 });
 

@@ -391,7 +391,7 @@ function collectGeneratedLane(node: BaseNode): string[] {
  * The guidelines a doc currently carries: what its canvas says, with the
  * stored blob filling any slot the canvas does not render.
  */
-function docProse(section: SectionNode): ProseDrafts | null {
+function mergedProse(section: SectionNode): ProseDrafts | null {
   return mergeProse(
     parseProse(section.getPluginData(DOC_PROSE_KEY)),
     readCanvasProse(section as unknown as ProseNodeLike),
@@ -1339,7 +1339,7 @@ figma.ui.onmessage = async (raw: unknown) => {
       figma.ui.postMessage({
         type: 'docProse',
         docId: msg.docId,
-        prose: section ? docProse(section) : null,
+        prose: section ? mergedProse(section) : null,
       } as MainToUi);
       break;
     }
@@ -1376,7 +1376,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({
           type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,
-          config: data.config, selfEdited, prose: docProse(section), intent: msg.intent,
+          config: data.config, selfEdited, prose: mergedProse(section), intent: msg.intent,
         } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1416,7 +1416,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const node = await serializeNode(src as any, resolver);
-            components.push({ docId, name: node.name, node, prose: docProse(section) });
+            components.push({ docId, name: node.name, node, prose: mergedProse(section) });
           } catch (err) {
             skipped.push({ name: src.name, reason: err instanceof Error ? err.message : String(err) });
           }
