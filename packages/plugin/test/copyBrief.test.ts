@@ -41,6 +41,7 @@ const NODE = {
 const SRC: DocSource = {
   docId: 'doc-1', node: NODE, fileKey: 'F1',
   config: { sections: [], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [] },
+  prose: null,
 };
 
 beforeEach(() => {

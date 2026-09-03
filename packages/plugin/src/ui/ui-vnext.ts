@@ -854,8 +854,8 @@ function startLibraryUpdates(docIds: string[], batch: boolean): void {
     edited.length > 0 &&
     !window.confirm(
       batch
-        ? `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} manual edits. Updating replaces those edits.`
-        : 'You edited this frame by hand. Updating replaces those edits.',
+        ? `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`
+        : 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
     )
   ) {
     return;
@@ -2329,6 +2329,7 @@ window.onmessage = (event: MessageEvent): void => {
         fileKey: msg.fileKey,
         ...(msg.fileName ? { fileName: msg.fileName } : {}),
         config: msg.config,
+        prose: msg.prose,
       };
       if (active.kind === 'copy') {
         // Copy never asks about hand edits (msg.selfEdited) and never runs
@@ -2343,8 +2344,8 @@ window.onmessage = (event: MessageEvent): void => {
         return;
       }
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
-        if (!window.confirm('You edited this frame by hand. Updating replaces those edits.')) {
-          finishLibraryOperation('Update canceled because the frame has newer manual edits.');
+        if (!window.confirm('You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.')) {
+          finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
           return;
         }
         active.confirmedOverwrite.add(msg.docId);

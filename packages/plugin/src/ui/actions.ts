@@ -429,10 +429,13 @@ export function setBrandTheme(state: UiState, value: BrandTheme): void {
 }
 
 // ---------------------------------------------------------------------------
-// Update from source (My Library) — regenerate a doc in place using its stored
-// config, WITHOUT touching the Selected-component tab's live state. Extraction
-// is deterministic; prose runs only when the stored config had AI on. Dispatches
-// renderDocFrame, which replaces the existing doc (matched by sourceNodeId).
+// Update from source (My Library) — regenerate the doc from its live source.
+//
+// The generated lane is rebuilt from a fresh extraction. The editorial lane
+// comes from `src.prose`, which the main thread read back from the canvas, so
+// hand edits survive and the model is never asked again. An Update is a
+// source refresh, not a reason to re-bill the quota, the same rule the
+// foundation Update follows. Fresh AI prose is what Create is for.
 // ---------------------------------------------------------------------------
 /** A library row's stored source: what it was built from, and how. */
 export type DocSource = {
@@ -444,10 +447,14 @@ export type DocSource = {
    *  `file_name`. */
   fileName?: string;
   config: DocConfig;
+  /** What the doc's writing sections currently say, read off the canvas by the
+   *  main thread with the stored blob filling anything the canvas does not
+   *  show. Null when the doc has never had guidelines. */
+  prose: ProseDrafts | null;
 };
 
 export async function updateFromSource(
-  state: UiState,
+  _state: UiState,
   src: DocSource,
   ui: BuildPresenter,
 ): Promise<boolean> {
@@ -460,26 +467,8 @@ export async function updateFromSource(
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const selected = new Set<SectionId>(src.config.sections);
-
-    let prose = null as Awaited<ReturnType<typeof generateProse>>;
-    const requested = proseKeysForSections(selected);
-    if (src.config.aiEnabled && requested.size > 0 && (state.licenseKey || state.figmaUserId)) {
-      try {
-        prose = await generateProse(
-          spec,
-          effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
-          src.node.id,
-          requested,
-          (q) => { state.quota = q; },
-        );
-      } catch {
-        // AI is best-effort garnish: fall through to placeholders on any failure.
-        prose = null;
-      }
-    }
-
     const variantIds = new Set<string>(src.config.variantIds);
-    const model = buildDocModel(spec, prose, selected, variantIds, {
+    const model = buildDocModel(spec, src.prose, selected, variantIds, {
       measureViews: src.config.measureViews,
     });
     send({
@@ -489,7 +478,7 @@ export async function updateFromSource(
       contentHash: specContentHash(spec),
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
-      ...(prose ? { prose } : {}),
+      ...(src.prose ? { prose: src.prose } : {}),
     });
     // Loader stops on docFrameDone/docFrameError (ui-vnext.ts).
     return true;
