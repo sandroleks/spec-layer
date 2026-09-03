@@ -1,0 +1,22 @@
+{
+  "Semantic": {
+    "color": {
+      "surface": {
+        "primary": {
+          "$type": "color",
+          "$value": {
+            "alpha": 1,
+            "colorSpace": "srgb",
+            "components": [
+              1,
+              1,
+              1
+            ],
+            "hex": "#ffffff"
+          },
+          "$description": "Three-hop semantic alias."
+        }
+      }
+    }
+  }
+}

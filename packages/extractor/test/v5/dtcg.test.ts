@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { dtcgPathOf, dtcgSegments, foundationDtcg } from '../../src/index';
+import {
+  dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
+} from '../../src/index';
 import { leaf, syntheticArtifact } from './dtcgFixture';
 
 describe('dtcgSegments', () => {
@@ -232,5 +234,71 @@ describe('foundationDtcg styles', () => {
     const bare = foundationDtcg(artifact);
     expect(bare.files['styles.typography.json']).toBeUndefined();
     expect(bare.files['styles.effects.json']).toBeUndefined();
+  });
+});
+
+describe('foundationDtcg resolver and document', () => {
+  const artifact = syntheticArtifact();
+  const out = foundationDtcg(artifact);
+
+  it('models a multi-mode collection as a modifier and styles as sets, in artifact order', () => {
+    expect(out.resolver.version).toBe('2025.10');
+    expect(out.resolver.name).toBe('Synthetic Direct Foundation');
+    expect(out.resolver.modifiers.Primitives).toEqual({
+      contexts: {
+        'Light [ModeID:p-light]': [{ $ref: 'primitives.light.json' }],
+        Dark: [{ $ref: 'primitives.dark.json' }],
+        'Light [ModeID:p-light-duplicate]': [{ $ref: 'primitives.light-2.json' }],
+      },
+      default: 'Light [ModeID:p-light]',
+    });
+    expect(out.resolver.modifiers.Semantic.default).toBe('Light');
+    expect(out.resolver.sets['Typography styles']).toEqual({ sources: [{ $ref: 'styles.typography.json' }] });
+    expect(out.resolver.resolutionOrder).toEqual([
+      { $ref: '#/modifiers/Primitives' },
+      { $ref: '#/modifiers/Semantic' },
+      { $ref: '#/sets/Effect styles' },
+      { $ref: '#/sets/Typography styles' },
+    ]);
+  });
+
+  it('escapes JSON pointer characters in set and modifier names', () => {
+    const renamed = syntheticArtifact();
+    renamed.collections[1].name = 'a/b~c';
+    const r = foundationDtcg(renamed).resolver;
+    expect(r.resolutionOrder[1]).toEqual({ $ref: '#/modifiers/a~1b~0c' });
+    expect(Object.keys(r.modifiers)).toContain('a/b~c');
+  });
+
+  it('puts generated group descriptions on the matching group', () => {
+    const annotated = syntheticArtifact();
+    annotated.guidelines = { origin: 'generated', group_descriptions: { Primitives: { color: 'Brand ramps.' } } };
+    const files = foundationDtcg(annotated).files;
+    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+  });
+
+  it('builds one clipboard document with inline sources and a spec-layer extension', () => {
+    const doc = foundationDtcgDocument(artifact);
+    expect(doc.version).toBe('2025.10');
+    expect(doc.modifiers.Primitives.contexts.Dark[0]).toHaveProperty('Primitives');
+    expect(doc.sets['Typography styles'].sources[0]).toHaveProperty('Typography styles');
+    const ext = doc.$extensions['com.spec-layer'];
+    expect(ext.schema_version).toBe('5.1.0');
+    expect(ext.content_hash).toBe(artifact.spec_layer.export.content_hash);
+    expect(ext.source).toEqual({ provider: 'figma', file_name: 'Synthetic Direct Foundation' });
+    expect(ext.completeness).toEqual(artifact.completeness);
+    expect(ext.code_syntax['Primitives.color.exact.red']).toEqual({ WEB: '--color-exact-red' });
+    expect(ext.report).toEqual(out.report);
+  });
+
+  it('serializes every file deterministically with a trailing newline', () => {
+    const texts = dtcgExportFiles(out);
+    expect(Object.keys(texts).sort()).toEqual([
+      'primitives.dark.json', 'primitives.light-2.json', 'primitives.light.json', 'report.json',
+      'resolver.json', 'semantic.dark.json', 'semantic.light.json', 'spec-layer.meta.json',
+      'styles.effects.json', 'styles.typography.json',
+    ]);
+    for (const text of Object.values(texts)) expect(text.endsWith('\n')).toBe(true);
+    expect(dtcgExportFiles(foundationDtcg(syntheticArtifact()))).toEqual(texts);
   });
 });

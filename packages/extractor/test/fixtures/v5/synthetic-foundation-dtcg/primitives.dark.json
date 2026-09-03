@@ -1,0 +1,144 @@
+{
+  "Primitives": {
+    "color": {
+      "chain": {
+        "bridge": {
+          "$type": "color",
+          "$value": "{Primitives.color.chain.middle}"
+        },
+        "middle": {
+          "$type": "color",
+          "$value": "{Primitives.color.chain.terminal}"
+        },
+        "terminal": {
+          "$type": "color",
+          "$value": {
+            "alpha": 1,
+            "colorSpace": "srgb",
+            "components": [
+              0,
+              0,
+              0
+            ],
+            "hex": "#000000"
+          }
+        }
+      },
+      "exact": {
+        "red": {
+          "$type": "color",
+          "$value": {
+            "alpha": 1,
+            "colorSpace": "srgb",
+            "components": [
+              1,
+              0,
+              0
+            ],
+            "hex": "#ff0000"
+          },
+          "$description": "Exactly representable source channels."
+        }
+      },
+      "lossy": {
+        "teal": {
+          "$type": "color",
+          "$value": {
+            "alpha": 0.875,
+            "colorSpace": "srgb",
+            "components": [
+              0.2501,
+              0.5001,
+              0.7501
+            ],
+            "hex": "#4080bf"
+          },
+          "$description": "Channels carry precision beyond hex."
+        }
+      },
+      "shared": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0,
+            0,
+            1
+          ],
+          "hex": "#0000ff"
+        },
+        "$description": "Local token with the readable external path."
+      }
+    },
+    "cycle": {
+      "a": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0,
+            0,
+            0
+          ],
+          "hex": "#000000"
+        }
+      },
+      "b": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0,
+            0,
+            0
+          ],
+          "hex": "#000000"
+        }
+      }
+    },
+    "effect": {
+      "shadow": {
+        "blur": {
+          "$type": "dimension",
+          "$value": {
+            "unit": "px",
+            "value": 8
+          },
+          "$description": "Shared shadow blur radius."
+        }
+      }
+    },
+    "number": {
+      "unknown-scope": {
+        "$type": "number",
+        "$value": 2.5
+      }
+    },
+    "spacing": {
+      "gap": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 12
+        }
+      }
+    },
+    "typography": {
+      "family": {
+        "body": {
+          "$type": "fontFamily",
+          "$value": "Inter"
+        }
+      },
+      "weight": {
+        "strong": {
+          "$type": "fontWeight",
+          "$value": 700
+        }
+      }
+    }
+  }
+}

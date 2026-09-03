@@ -1,0 +1,58 @@
+{
+  "Effect styles": {
+    "Shadow": {
+      "Card": {
+        "$type": "shadow",
+        "$value": [
+          {
+            "blur": "{Primitives.effect.shadow.blur}",
+            "color": {
+              "alpha": 0.2,
+              "colorSpace": "srgb",
+              "components": [
+                0,
+                0,
+                0
+              ],
+              "hex": "#000000"
+            },
+            "inset": false,
+            "offsetX": {
+              "unit": "px",
+              "value": 0
+            },
+            "offsetY": {
+              "unit": "px",
+              "value": 4
+            },
+            "spread": {
+              "unit": "px",
+              "value": 0
+            }
+          }
+        ],
+        "$extensions": {
+          "com.spec-layer": {
+            "layers": [
+              {
+                "blend_mode": "normal",
+                "index": 0,
+                "type": "drop_shadow",
+                "visible": true
+              },
+              {
+                "blur": {
+                  "unit": "px",
+                  "value": 2
+                },
+                "index": 1,
+                "type": "layer_blur",
+                "visible": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

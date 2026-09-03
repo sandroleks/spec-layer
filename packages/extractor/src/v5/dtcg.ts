@@ -7,7 +7,7 @@
  * feeds a hash, never mutates its input, and anything the format cannot state
  * is omitted and written to the report rather than approximated.
  */
-import type { FoundationArtifactV5 } from './canonical';
+import { SCHEMA_VERSION, type FoundationArtifactV5 } from './canonical';
 import { compareCodeUnits } from './diagnostics';
 import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
@@ -513,6 +513,65 @@ function styleFiles(p: Projection): Record<string, DtcgTree> {
   return files;
 }
 
+const pointer = (s: string): string => s.replace(/~/g, '~0').replace(/\//g, '~1');
+
+interface FilePlan { collection: CollectionV5; modeId: string; file: string }
+
+const STYLE_ROOTS: Record<string, string> = {
+  'styles.typography.json': 'Typography styles',
+  'styles.effects.json': 'Effect styles',
+};
+
+function buildResolver(p: Projection, plans: FilePlan[], styleFileNames: string[]): DtcgResolverDocument {
+  const sets: DtcgResolverDocument['sets'] = {};
+  const modifiers: DtcgResolverDocument['modifiers'] = {};
+  const order: Array<{ $ref: string }> = [];
+  for (const collection of p.artifact.collections) {
+    const own = plans.filter((f) => f.collection.id === collection.id);
+    if (own.length === 0) continue;
+    const labels = modeLabels(collection);
+    if (own.length === 1) {
+      sets[collection.name] = { sources: [{ $ref: own[0].file }] };
+      order.push({ $ref: `#/sets/${pointer(collection.name)}` });
+      continue;
+    }
+    const contexts: Record<string, DtcgJson[]> = {};
+    for (const plan of own) contexts[labels.get(plan.modeId) ?? plan.modeId] = [{ $ref: plan.file }];
+    const def = labels.get(collection.default_mode_id);
+    modifiers[collection.name] = { contexts, ...(def !== undefined ? { default: def } : {}) };
+    order.push({ $ref: `#/modifiers/${pointer(collection.name)}` });
+  }
+  for (const file of styleFileNames) {
+    const root = STYLE_ROOTS[file];
+    sets[root] = { sources: [{ $ref: file }] };
+    order.push({ $ref: `#/sets/${pointer(root)}` });
+  }
+  const fileName = p.artifact.spec_layer.source.file_name;
+  return {
+    version: '2025.10',
+    ...(typeof fileName === 'string' && fileName.length > 0 ? { name: fileName } : {}),
+    sets, modifiers, resolutionOrder: order,
+  };
+}
+
+/** Generated group descriptions become `$description` on the group they name. */
+function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5): void {
+  const groups = p.artifact.guidelines?.group_descriptions[collection.name];
+  if (!groups) return;
+  const head = dtcgSegments(collection.name).segments;
+  for (const [folder, text] of Object.entries(groups)) {
+    if (text.length === 0) continue;
+    let node: DtcgJson | undefined = tree;
+    for (const seg of [...head, ...dtcgSegments(folder).segments]) {
+      if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+      node = node[seg];
+    }
+    if (typeof node === 'object' && node !== null && !Array.isArray(node) && !('$value' in node)) {
+      node.$description = text;
+    }
+  }
+}
+
 export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
   const p: Projection = {
     artifact,
@@ -528,6 +587,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   reportDuplicateCodeSyntax(p);
 
   const files: Record<string, DtcgTree> = {};
+  const plans: FilePlan[] = [];
   const taken = new Set<string>();
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
@@ -537,10 +597,17 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
         const leaf = tokenLeaf(p, token, collection, mode.id);
         if (leaf) setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
       }
-      files[fileNameFor(collection, mode, taken)] = sortTree(tree) as DtcgTree;
+      annotateGroups(p, tree, collection);
+      const file = fileNameFor(collection, mode, taken);
+      plans.push({ collection, modeId: mode.id, file });
+      files[file] = sortTree(tree) as DtcgTree;
     }
   }
-  Object.assign(files, styleFiles(p));
+  const styles = styleFiles(p);
+  Object.assign(files, styles);
+  const resolver = buildResolver(p, plans, Object.keys(styles).sort(compareCodeUnits));
+  p.report.sort((a, b) => compareCodeUnits(a.path, b.path)
+    || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? ''));
 
   const meta: Record<string, DtcgMetaEntry> = {};
   for (const token of artifact.tokens) {
@@ -551,12 +618,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   }
   const sortedMeta = Object.fromEntries(Object.entries(meta).sort(([a], [b]) => compareCodeUnits(a, b)));
 
-  return {
-    files,
-    resolver: { version: '2025.10', sets: {}, modifiers: {}, resolutionOrder: [] },
-    meta: sortedMeta,
-    report: p.report,
-  };
+  return { files, resolver, meta: sortedMeta, report: p.report };
 }
 
 /** DTCG has no string or boolean type. Such tokens are omitted whole. */
@@ -674,4 +736,67 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     return null;
   }
   return { $type: converted.$type, $value: converted.$value, ...description };
+}
+
+// ---------------------------------------------------------------------------
+// Resolver document and export
+// ---------------------------------------------------------------------------
+
+export interface DtcgDocumentExtension {
+  schema_version: string;
+  content_hash: string;
+  source: { provider: 'figma'; file_name?: string };
+  completeness: FoundationArtifactV5['completeness'];
+  code_syntax: Record<string, Record<string, string>>;
+  report: DtcgReportEntry[];
+}
+export interface DtcgDocument extends DtcgResolverDocument {
+  $extensions: { 'com.spec-layer': DtcgDocumentExtension };
+}
+
+/** The clipboard form: the resolver with sources inlined instead of `$ref`s. */
+export function foundationDtcgDocument(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgDocument {
+  const out = foundationDtcg(artifact, options);
+  const inline = (sources: DtcgJson[]): DtcgJson[] => sources.map((s) =>
+    typeof s === 'object' && s !== null && !Array.isArray(s) && typeof s.$ref === 'string'
+      ? out.files[s.$ref] ?? s
+      : s);
+  const sets = Object.fromEntries(Object.entries(out.resolver.sets)
+    .map(([k, v]) => [k, { sources: inline(v.sources) }]));
+  const modifiers = Object.fromEntries(Object.entries(out.resolver.modifiers).map(([k, v]) => [k, {
+    contexts: Object.fromEntries(Object.entries(v.contexts).map(([c, s]) => [c, inline(s)])),
+    ...(v.default !== undefined ? { default: v.default } : {}),
+  }]));
+  const codeSyntax: Record<string, Record<string, string>> = {};
+  for (const [path, entry] of Object.entries(out.meta)) {
+    if (entry.code_syntax) codeSyntax[path] = entry.code_syntax;
+  }
+  const fileName = artifact.spec_layer.source.file_name;
+  return {
+    ...out.resolver, sets, modifiers,
+    $extensions: {
+      'com.spec-layer': {
+        schema_version: SCHEMA_VERSION,
+        content_hash: artifact.spec_layer.export.content_hash,
+        source: {
+          provider: 'figma',
+          ...(typeof fileName === 'string' && fileName.length > 0 ? { file_name: fileName } : {}),
+        },
+        completeness: artifact.completeness,
+        code_syntax: codeSyntax,
+        report: out.report,
+      },
+    },
+  };
+}
+
+/** Every output as file text, two-space JSON with a trailing newline. */
+export function dtcgExportFiles(out: DtcgExport): Record<string, string> {
+  const text = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
+  const files: Record<string, string> = {};
+  for (const name of Object.keys(out.files).sort(compareCodeUnits)) files[name] = text(out.files[name]);
+  files['resolver.json'] = text(out.resolver);
+  files['spec-layer.meta.json'] = text(out.meta);
+  files['report.json'] = text(out.report);
+  return files;
 }

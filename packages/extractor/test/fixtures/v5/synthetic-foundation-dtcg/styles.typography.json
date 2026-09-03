@@ -1,0 +1,40 @@
+{
+  "Typography styles": {
+    "Body": {
+      "Regular": {
+        "$type": "typography",
+        "$value": {
+          "fontFamily": "{Primitives.typography.family.body}",
+          "fontSize": {
+            "unit": "px",
+            "value": 16
+          },
+          "fontWeight": "{Primitives.typography.weight.strong}",
+          "lineHeight": {
+            "unit": "px",
+            "value": 24
+          }
+        },
+        "$description": "Source style retained for Phase 3.",
+        "$extensions": {
+          "com.spec-layer": {
+            "letterSpacing": {
+              "unit": "%",
+              "value": 0
+            },
+            "paragraphIndent": {
+              "unit": "px",
+              "value": 0
+            },
+            "paragraphSpacing": {
+              "unit": "px",
+              "value": 8
+            },
+            "textCase": "original",
+            "textDecoration": "none"
+          }
+        }
+      }
+    }
+  }
+}
