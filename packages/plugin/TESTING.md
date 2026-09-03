@@ -91,45 +91,70 @@ non-component selection shows an actionable empty state.
 
 ### Foundation Context v5 Copy matrix
 
-Run this matrix against a development plugin build before releasing a change to
-Foundation extraction or Copy:
+Run this matrix against a development plugin build before releasing a change
+to Foundation extraction or Copy. The clipboard is a Design Tokens Format
+Module 2025.10 document; the checks below name fields at that top level and
+under its `$extensions["com.spec-layer"]` block.
 
-1. Copy an ordinary local file twice without editing it. Export ids/timestamps
-   are not part of the AI profile; `spec_layer.content_hash` must match. Every
-   declared mode must have its own labelled value or explicit `missing` record.
+1. Copy an ordinary local file twice without editing it. Both copies must
+   have `"version": "2025.10"`, a `schema_version` of `5.1.0` under
+   `$extensions["com.spec-layer"]`, and a matching `content_hash`; export
+   ids and timestamps play no part in it. Every declared mode appears as its own
+   resolver context (a single-mode collection is a `set` instead of a
+   `modifier`, with contexts named after the modes and a `default`); a token
+   with no value for some mode is simply absent from that mode's source,
+   with a matching `value_omitted` entry in `report`.
 2. Copy a collection containing a cross-collection alias. The selected
-   collection and every complete transitive dependency collection must appear;
-   no local reference may dangle. A grouped/split frame row must still copy the
+   collection and every complete transitive dependency collection must
+   appear as their own set or modifier, and every `{Collection.path}`
+   reference must resolve to a token actually present in the document; no
+   reference may dangle. A grouped/split frame row must still copy the
    complete collection and all modes.
-3. Copy a text-style Library row. It must say `version: 5`, `profile: ai`,
-   include every requested typography style, and add only collections required
-   by bound property tokens. The canonical backing artifact must retain stable
-   style ids; the compact AI profile exposes `source_id` when names collide.
-   It must not include unrelated collections or effect styles.
-4. Test an enabled/readable external library and an unavailable/deprecated one.
-   The readable library/path stays in the alias label when Figma exposes it;
-   the value remains explicitly unresolved and the unavailable source is listed.
-5. Simulate a local variable read failure. A known local id must not be
-   mislabeled external, and collection completeness must be partial or
-   unavailable.
-6. Use two modes with one display name. Both values must survive without
-   overwrite, with source ids added to the two otherwise-identical labels.
-7. Check a `GAP` float, a `FONT_WEIGHT` float, and an `ALL_SCOPES` float. Expect
-   `{ number, unit: px }`, a number, and a preserved number plus a
-   `UNIT_METADATA_UNAVAILABLE` issue count, respectively.
-8. Check a half/precise color. Expect canonical hex plus source channels when
-   hex loses precision. A corrupt-color fixture must produce `missing` plus a
-   diagnostic, never clamped black or white.
-9. Check a multi-hop alias, a cycle, and configured depth exhaustion. The full
-   local chain must name every readable token/mode pair; unresolved cases must
-   still copy with explicit reasons and must not crash the UI.
+3. Copy a text-style Library row. It must have `sets["Typography styles"]`
+   with every requested typography style and add only the collections
+   required by bound property tokens; it must not include unrelated
+   collections or `sets["Effect styles"]`. If two tokens or two styles
+   collide on the same escaped path, confirm `report` carries a
+   `path_collision` entry: both colliding tokens are dropped, while for
+   styles only the later one is dropped and the first keeps the path.
+4. Test an enabled/readable external library and an unavailable/deprecated
+   one. Neither alias ever appears as a value in the tree; `report` carries
+   a `value_omitted` entry with `reason: "source_library_unavailable"`,
+   plus `source_library_name` when Figma exposes it.
+5. Simulate a local variable read failure. A known local id's omission must
+   never read as `source_library_unavailable`, and
+   `$extensions["com.spec-layer"].completeness.collections` must read
+   `partial` or `unavailable`.
+6. Use two modes with one display name. Both value sets must survive as
+   separate resolver contexts, distinguished by appending the mode id to
+   the otherwise duplicate label (for example `Light [ModeID:...]`).
+7. Check a `GAP` float, a `FONT_WEIGHT` float, and a float whose scopes
+   state no unit. Expect `{ $type: "dimension", $value: { value, unit:
+   "px" } }`, `{ $type: "fontWeight", $value: <number> }`, and `{ $type:
+   "number", $value: <number> }` respectively. The third case's
+   `UNIT_METADATA_UNAVAILABLE` diagnostic is not in the clipboard:
+   diagnostics stay in the canonical artifact, and the clipboard carries
+   `report` instead.
+8. Check a half-precision and a fully precise color. `$value.hex` is the
+   canonical hex and `$value.components` are the precise source channels,
+   even where they differ from what the hex alone would round to. A
+   corrupt-color fixture must be absent from the tree with a
+   `value_omitted` report entry, never a clamped black or white value.
+9. Check a multi-hop alias, a cycle, and depth exhaustion. A resolved alias
+   references its direct target only, as `{Collection.path}`, never the
+   chain's terminal value. An unresolved case (a cycle or exhausted
+   resolution depth) is absent from the tree with a `value_omitted` report
+   entry naming the reason, and must not crash the UI.
 10. Copy with existing generated group descriptions, then change only their
-    wording and copy again. Guidelines must update while the semantic content
-    hash stays unchanged.
-11. Exercise the large-payload manual clipboard fallback. Its line-count caveat
-    and modal must remain available for the compact profile. A representative
-    large artifact should remain below 55% of the canonical artifact's bytes
-    and lines; the automated projection test enforces the same ceiling.
+    wording and copy again. The matching group's `$description` in the
+    tree must update while `$extensions["com.spec-layer"].content_hash`
+    stays unchanged.
+11. Exercise the large-payload manual clipboard fallback. Its line-count
+    caveat and modal must remain available for the DTCG document text.
+    There is no byte/line ceiling against the canonical artifact to check
+    here: the resolver's inlined sources are full per-mode files, not a
+    summarized profile, so `copyFoundation.test.ts`'s size-caveat tests are
+    the coverage for the 800-line threshold itself.
 
 ## Doc frame content
 
