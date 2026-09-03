@@ -277,6 +277,17 @@ describe('foundationDtcg resolver and document', () => {
     expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
   });
 
+  it('keeps annotating later groups after one folder is absent from a mode', () => {
+    const annotated = syntheticArtifact();
+    annotated.guidelines = {
+      origin: 'generated',
+      group_descriptions: { Primitives: { cycle: 'Cycles.', color: 'Brand ramps.' } },
+    };
+    const files = foundationDtcg(annotated).files;
+    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+    expect(leaf(files['primitives.light.json'], 'Primitives.cycle')).toBeUndefined();
+  });
+
   it('builds one clipboard document with inline sources and a spec-layer extension', () => {
     const doc = foundationDtcgDocument(artifact);
     expect(doc.version).toBe('2025.10');

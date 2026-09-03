@@ -559,11 +559,11 @@ function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5)
   const groups = p.artifact.guidelines?.group_descriptions[collection.name];
   if (!groups) return;
   const head = dtcgSegments(collection.name).segments;
-  for (const [folder, text] of Object.entries(groups)) {
+  folders: for (const [folder, text] of Object.entries(groups)) {
     if (text.length === 0) continue;
     let node: DtcgJson | undefined = tree;
     for (const seg of [...head, ...dtcgSegments(folder).segments]) {
-      if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+      if (typeof node !== 'object' || node === null || Array.isArray(node)) continue folders;
       node = node[seg];
     }
     if (typeof node === 'object' && node !== null && !Array.isArray(node) && !('$value' in node)) {
