@@ -72,8 +72,10 @@ tokens/
 ```
 
 Slugs appear only in file names, lowercase, `[a-z0-9-]`, with a numeric
-suffix on collision. Inside a file every group key is the source segment
-verbatim.
+suffix on collision. The five fixed names above are reserved, so a collection
+named "Styles" with a mode "Typography" takes `styles.typography-2.json`
+rather than overwriting the style file. Inside a file every group key is the
+source segment verbatim.
 
 ### Token tree
 
@@ -129,7 +131,7 @@ would lose a style for a sibling's defect.
 
 | Canonical | `standard` | `legacy` |
 |---|---|---|
-| `color` | `{ "colorSpace": "srgb", "components": [r, g, b], "alpha": a, "hex": "#rrggbb" }`; components from `channels` when present, else exact `hex / 255` | `"#rrggbb"`, or `"#rrggbbaa"` when alpha is below 1 |
+| `color` | `{ "colorSpace": "srgb", "components": [r, g, b], "alpha": a, "hex": "#rrggbb" }`; components from `channels` when present, else `hex / 255` rounded through `canonicalNumber` | `"#rrggbb"`, or `"#rrggbbaa"` when alpha is below 1 |
 | `dimension` px or rem | `{ "value": n, "unit": "px" }` | `"16px"` |
 | `dimension` `%`, `em`, `deg` | not a DTCG dimension unit; omitted and reported `unit_not_expressible` | same |
 | `number` with `FONT_WEIGHT` scope | `$type: fontWeight`, numeric | same |
