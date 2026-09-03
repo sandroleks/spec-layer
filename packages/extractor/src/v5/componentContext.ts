@@ -21,7 +21,7 @@ import { validate as validateComponentFacts } from '../validate';
 import { EXTRACTOR_VERSION } from '../version';
 import type { YamlValue } from '../yaml';
 import {
-  canonicalJson, semanticContentHash,
+  canonicalJson, semanticContentHash, SCHEMA_VERSION,
 } from './canonical';
 import type {
   ArtifactSource, FoundationArtifactV5, SemanticPayload,
@@ -730,7 +730,9 @@ export function componentAiContext(
       ...payload,
       spec_layer: {
         kind: 'foundation',
-        schema_version: COMPONENT_SCHEMA_VERSION,
+        // The Foundation schema's own version, since this slice is a Foundation
+        // artifact: the two happen to agree today and need not tomorrow.
+        schema_version: SCHEMA_VERSION,
         schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
         extractor: artifact.spec_layer.extractor,
         export: {
