@@ -1,5 +1,9 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute } from 'node:path';
+import {
+  dtcgExportFiles, foundationDtcg, validateLevel1,
+  type DtcgOptions, type FoundationArtifactV5,
+} from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 
@@ -8,7 +12,11 @@ export function slugify(name: string): string {
   return slug || 'component';
 }
 
-/** Every artifact in the bundle; aiPath is null when the selection left it unwritten. */
+/**
+ * Every artifact in the bundle; aiPath is null when the selection left it
+ * unwritten. For the foundation this is the DTCG resolver path
+ * (`tokens/resolver.json`); for a component it is its AI YAML path.
+ */
 export interface ManifestArtifact {
   kind: 'foundation' | 'component'; name: string; contentHash: string; aiPath: string | null;
 }
@@ -85,7 +93,7 @@ function assertReplaceable(outDir: string, cwd: string): void {
 /** Stage into <outDir>.partial, then swap. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
-  selection?: Selection;
+  selection?: Selection; dtcg?: DtcgOptions;
 }): string[] {
   assertReplaceable(opts.outDir, opts.cwd);
   const selection = opts.selection ?? DEFAULT_SELECTION;
@@ -104,8 +112,19 @@ export function writeBundleFiles(opts: {
     put('bundle.json', opts.raw);
     const artifacts: ManifestArtifact[] = [];
     if (opts.bundle.foundation) {
-      const aiPath = selection.foundation ? 'ai/foundation.yaml' : null;
-      if (aiPath) put(aiPath, opts.bundle.foundation.ai);
+      let aiPath: string | null = null;
+      if (selection.foundation) {
+        // A shape check on the wire, so a malformed artifact fails in one
+        // sentence rather than deep inside the projection. This does not
+        // re-derive v5 output; the projection reads the artifact as published.
+        const artifact: unknown = opts.bundle.foundation.artifact;
+        if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
+          throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
+        }
+        const files = dtcgExportFiles(foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {}));
+        for (const [name, text] of Object.entries(files)) put(`tokens/${name}`, text);
+        aiPath = 'tokens/resolver.json';
+      }
       artifacts.push({
         kind: 'foundation', name: 'foundation',
         contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash,

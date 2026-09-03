@@ -8,11 +8,11 @@ Commands:
                                                  store the key, then pull
   init    --id lib_... [--out DIR] [selection]   write speclayer.json
   pull    [--id lib_...] [--key sl_...] [selection]
-                                                 fetch the library into DIR (default .speclayer)
+                                                 fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/
   status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
   list                                           list every artifact in the last pull
   show    foundation | component NAME [--canonical]
-                                                 print one artifact's AI YAML (or canonical JSON)
+                                                 print one artifact (foundation: the DTCG document; component: its AI YAML; --canonical for JSON)
 
 Selection (setup, pull and init; flags replace the include block in speclayer.json):
   --only foundation | components   write just the foundation, or just components

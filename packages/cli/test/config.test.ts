@@ -309,3 +309,20 @@ describe('resolveOptions key sources', () => {
     expect(resolveOptions(cwd, { id: LIB }, {}, stub).key).toBeNull();
   });
 });
+
+describe('config dtcg block', () => {
+  let cwd: string;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-cli-config-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('reads a dtcg block with values and units, and rejects a bad one', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_1', dtcg: { values: 'legacy', units: { 'Foundation/spacing/*': 'px' } },
+    }));
+    expect(readConfig(cwd)?.dtcg).toEqual({ values: 'legacy', units: { 'Foundation/spacing/*': 'px' } });
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_1', dtcg: { values: 'strings' } }));
+    expect(() => readConfig(cwd)).toThrow(/speclayer.json/);
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_1', dtcg: { units: { 'a/*': 'em' } } }));
+    expect(() => readConfig(cwd)).toThrow(/speclayer.json/);
+  });
+});

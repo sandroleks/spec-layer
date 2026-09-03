@@ -3,6 +3,10 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import {
+  buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
+} from '@spec-layer/extractor';
 import { runInit, runSetup, runPull, runStatus, runList, runShow, type Io } from '../src/commands';
 import { readConfig } from '../src/config';
 
@@ -20,10 +24,24 @@ function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string
   };
 }
 
+// A real Foundation Context v5 artifact, not a stub: writeBundleFiles now runs
+// validateLevel1 on the published artifact before projecting tokens/, so a
+// bundle that expects a successful pull needs the genuine shape.
+const SERIALIZED_FOUNDATION = fileURLToPath(new URL(
+  '../../extractor/test/fixtures/v5/synthetic-foundation-serialized.json', import.meta.url,
+));
+function realFoundationArtifact() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED_FOUNDATION, 'utf8')) as SerializedFoundation;
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
 const GOOD_BUNDLE = {
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'DS',
   pluginVersion: '5.0.0', extractorVersion: '2',
-  foundation: { ai: 'foundation: yes\n', artifact: { spec_layer: { export: { content_hash: 'f'.repeat(64) } } } },
+  foundation: { ai: 'foundation: yes\n', artifact: realFoundationArtifact() },
   components: [
     { name: 'Button', ai: 'button: yes\n', artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
   ],
@@ -91,7 +109,7 @@ describe('runPull', () => {
 
     expect(code).toBe(0);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/foundation.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(true);
     const output = io.outLines.join('\n');
@@ -265,7 +283,7 @@ describe('runPull with a selection', () => {
     const code = await runPull(cwd, { only: 'foundation' }, ENV, io, stubThree());
 
     expect(code).toBe(0);
-    expect(existsSync(join(cwd, '.speclayer/ai/foundation.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/ai/components'))).toBe(false);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
     expect(io.outLines.join('\n')).toMatch(/foundation \+ 0 of 3 components/);
@@ -289,7 +307,7 @@ describe('runPull with a selection', () => {
     const code = await runPull(cwd, { only: 'components' }, ENV, io, stubThree());
 
     expect(code).toBe(0);
-    expect(existsSync(join(cwd, '.speclayer/ai/foundation.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/tokens'))).toBe(false);
     expect(io.outLines.join('\n')).toMatch(/3 components, no foundation/);
   });
 
@@ -391,7 +409,7 @@ describe('runList', () => {
     const out = io.outLines.join('\n');
     expect(out).toMatch(/lib_abc/);
     expect(out).toMatch(/2026-09-01T00:00:00\.000Z/);
-    expect(out).toMatch(/foundation\s+foundation\s+ai\/foundation\.yaml\s+f{64}/);
+    expect(out).toMatch(/foundation\s+foundation\s+tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
     expect(out).toMatch(/component\s+Card\s+ai\/components\/card\.yaml\s+b{64}/);
   });

@@ -157,7 +157,12 @@ export async function runSetup(
   try { existing = readConfig(cwd); } catch { existing = null; }
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
   const keptInclude = include ?? existing?.include ?? null;
-  writeConfig(cwd, { libraryId: flags.id, outDir, ...(keptInclude ? { include: keptInclude } : {}) });
+  const keptDtcg = existing?.dtcg ?? null;
+  writeConfig(cwd, {
+    libraryId: flags.id, outDir,
+    ...(keptInclude ? { include: keptInclude } : {}),
+    ...(keptDtcg ? { dtcg: keptDtcg } : {}),
+  });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
@@ -243,6 +248,7 @@ export async function runPull(
     written = writeBundleFiles({
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
+      dtcg: opts.dtcg,
     });
     io.out(
       `Pulled ${bundle.fileName ?? opts.libraryId}: ${describePull(bundle, selection, selected)} ` +

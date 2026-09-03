@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
 
@@ -7,7 +8,7 @@ export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
 const CONFIG_NAME = 'speclayer.json';
 
-export interface CliConfig { libraryId?: string; outDir?: string; include?: Selection }
+export interface CliConfig { libraryId?: string; outDir?: string; include?: Selection; dtcg?: DtcgOptions }
 
 const invalidConfig = () => new Error(`${CONFIG_NAME} is not valid JSON. Fix or delete it, then retry.`);
 
@@ -26,6 +27,25 @@ function parseInclude(value: unknown): Selection {
   };
 }
 
+/** `dtcg` chooses the value flavour and declares unit overrides for the tokens/ output. */
+function parseDtcg(value: unknown): DtcgOptions {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw invalidConfig();
+  const record = value as Record<string, unknown>;
+  const out: DtcgOptions = {};
+  if (record.values !== undefined) {
+    if (record.values !== 'standard' && record.values !== 'legacy') throw invalidConfig();
+    out.values = record.values;
+  }
+  if (record.units !== undefined) {
+    if (typeof record.units !== 'object' || record.units === null || Array.isArray(record.units)) throw invalidConfig();
+    for (const unit of Object.values(record.units as Record<string, unknown>)) {
+      if (unit !== 'px' && unit !== 'rem') throw invalidConfig();
+    }
+    out.units = record.units as Record<string, 'px' | 'rem'>;
+  }
+  return out;
+}
+
 export function readConfig(cwd: string): CliConfig | null {
   const path = join(cwd, CONFIG_NAME);
   if (!existsSync(path)) return null;
@@ -37,16 +57,18 @@ export function readConfig(cwd: string): CliConfig | null {
     ...(typeof record.libraryId === 'string' ? { libraryId: record.libraryId } : {}),
     ...(typeof record.outDir === 'string' ? { outDir: record.outDir } : {}),
     ...(record.include !== undefined ? { include: parseInclude(record.include) } : {}),
+    ...(record.dtcg !== undefined ? { dtcg: parseDtcg(record.dtcg) } : {}),
   };
 }
 
 export function writeConfig(
-  cwd: string, config: { libraryId: string; outDir: string; include?: Selection },
+  cwd: string, config: { libraryId: string; outDir: string; include?: Selection; dtcg?: DtcgOptions },
 ): void {
   const body = {
     libraryId: config.libraryId,
     outDir: config.outDir,
     ...(config.include ? { include: config.include } : {}),
+    ...(config.dtcg ? { dtcg: config.dtcg } : {}),
   };
   writeFileSync(join(cwd, CONFIG_NAME), `${JSON.stringify(body, null, 2)}\n`);
 }
@@ -55,6 +77,8 @@ export interface ResolvedOptions {
   libraryId: string | null; outDir: string; api: string; key: string | null;
   /** The config's include block, when it has one, for pull to fall back on. */
   include?: Selection;
+  /** The config's dtcg block, when it has one, for pull to pass through to writeBundleFiles. */
+  dtcg?: DtcgOptions;
   /**
    * Set when a credential file exists but was issued for another library, so
    * the caller can say that instead of reporting a plain missing key.
@@ -99,6 +123,7 @@ export function resolveOptions(
     api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
     key: supplied ?? storedKey,
     ...(config?.include ? { include: config.include } : {}),
+    ...(config?.dtcg ? { dtcg: config.dtcg } : {}),
     ...(storedKeyFor ? { storedKeyFor } : {}),
   };
 }

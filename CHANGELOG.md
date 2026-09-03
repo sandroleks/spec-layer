@@ -219,6 +219,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- `spec-layer pull` (CLI 0.4.0) writes the Foundation as a `tokens/` directory
+  of Design Tokens Format Module 2025.10 files plus `resolver.json`, a Figma
+  metadata sidecar, and `report.json`, projected from the canonical artifact
+  in `bundle.json` after a schema shape check. `ai/foundation.yaml` is no
+  longer written; the manifest points the foundation at
+  `tokens/resolver.json`. A `dtcg` block in `speclayer.json` chooses `standard`
+  or `legacy` values and declares unit overrides for numbers whose scopes state
+  no unit.
+
 - Foundation **Copy for AI** and the published bundle's foundation context are
   now a Design Tokens Format Module 2025.10 resolver document instead of Spec
   Layer's own YAML profile. Collections become sets or modifiers named as in

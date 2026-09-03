@@ -2,8 +2,23 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import {
+  buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
+} from '@spec-layer/extractor';
 import { slugify, readManifest, readLocalBundle, writeBundleFiles, type Manifest } from '../src/files';
 import type { BundleV1 } from '../src/bundle';
+
+const SERIALIZED = fileURLToPath(new URL(
+  '../../extractor/test/fixtures/v5/synthetic-foundation-serialized.json', import.meta.url,
+));
+function realFoundation() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED, 'utf8')) as SerializedFoundation;
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test', generatedAt: '2026-09-03T00:00:00.000Z', build: null,
+  });
+  return { ai: '{"version":"2025.10"}\n', artifact };
+}
 
 // Controls a single injected failure for the atomicity test below. Node's `node:fs`
 // module namespace is not configurable under ESM, so `vi.spyOn(fs, 'writeFileSync')`
@@ -68,15 +83,17 @@ describe('writeBundleFiles', () => {
   });
 
   it('writes bundle.json byte-for-byte, ai yaml per artifact, and a manifest', () => {
-    const bundle = makeBundle();
+    const bundle = makeBundle({ foundation: realFoundation() });
     const raw = JSON.stringify(bundle);
-    writeBundleFiles({
+    const written = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
 
     expect(readFileSync(join(outDir, 'bundle.json'), 'utf8')).toBe(raw);
-    expect(readFileSync(join(outDir, 'ai/foundation.yaml'), 'utf8')).toBe(bundle.foundation!.ai);
+    expect(written).toContain('tokens/resolver.json');
+    expect(written).toContain('tokens/spec-layer.meta.json');
+    expect(written).toContain('tokens/report.json');
     expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
@@ -86,13 +103,18 @@ describe('writeBundleFiles', () => {
     expect(manifest.pluginVersion).toBe('5.0.0');
     expect(manifest.extractorVersion).toBe('2');
     expect(manifest.artifacts).toEqual([
-      { kind: 'foundation', name: 'foundation', contentHash: 'f'.repeat(64), aiPath: 'ai/foundation.yaml' },
+      {
+        kind: 'foundation', name: 'foundation',
+        contentHash: bundle.foundation!.artifact.spec_layer.export.content_hash,
+        aiPath: 'tokens/resolver.json',
+      },
       { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), aiPath: 'ai/components/button.yaml' },
     ]);
   });
 
   it('dedupes colliding slugs in bundle order', () => {
     const bundle = makeBundle({
+      foundation: null,
       components: [
         { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
         { name: 'button', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
@@ -111,7 +133,6 @@ describe('writeBundleFiles', () => {
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     expect(manifest.artifacts.map((a) => a.aiPath)).toEqual([
-      'ai/foundation.yaml',
       'ai/components/button.yaml',
       'ai/components/button-2.yaml',
     ]);
@@ -123,6 +144,7 @@ describe('writeBundleFiles', () => {
     // base" dedupe would give the third component 'button-2' too (count=2), silently
     // overwriting the second component's file. The fix must skip already-used slugs.
     const bundle = makeBundle({
+      foundation: null,
       components: [
         { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
         { name: 'Button 2', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
@@ -158,7 +180,7 @@ describe('writeBundleFiles', () => {
   });
 
   it('is atomic: a second write replaces the directory, and no staging dir remains after success', () => {
-    const bundle1 = makeBundle();
+    const bundle1 = makeBundle({ foundation: null });
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
@@ -203,7 +225,7 @@ describe('writeBundleFiles', () => {
   it('readManifest returns null when absent and the manifest after a write', () => {
     expect(readManifest(outDir)).toBeNull();
 
-    const bundle = makeBundle();
+    const bundle = makeBundle({ foundation: realFoundation() });
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
@@ -217,28 +239,29 @@ describe('writeBundleFiles', () => {
 
   it('cleans up staging and leaves the prior outDir untouched when a write fails partway', () => {
     // Establish a baseline outDir with a successful write first.
-    const bundle1 = makeBundle();
+    const bundle1 = makeBundle({ foundation: realFoundation() });
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
     const originalButtonContent = readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8');
-    const originalFoundationContent = readFileSync(join(outDir, 'ai/foundation.yaml'), 'utf8');
+    const originalResolverContent = readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8');
 
-    // Force the mid-staging write of ai/foundation.yaml to fail, simulating a disk
+    // Force the mid-staging write of tokens/resolver.json to fail, simulating a disk
     // error partway through. Directory pre-seeding cannot inject this: writeBundleFiles
     // unconditionally rmSync's the .partial staging dir as its very first step, so any
     // conflict planted there ahead of time is wiped out before it can matter (verified:
-    // pre-creating <outDir>.partial/ai/foundation.yaml as a directory does not trigger
+    // pre-creating <outDir>.partial/tokens/resolver.json as a directory does not trigger
     // the catch branch, because it never survives that leading rmSync). Failing exactly
     // one write instead requires intercepting the fs call itself, via the vi.mock above.
     const bundle2 = makeBundle({
+      foundation: realFoundation(),
       components: [
         { name: 'Card', ai: 'card: yes\n', artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
       ],
     });
 
-    fsFailure.failPathSuffix = join('ai', 'foundation.yaml');
+    fsFailure.failPathSuffix = join('tokens', 'resolver.json');
     try {
       expect(() => writeBundleFiles({
         outDir, cwd: tmpDir, raw: JSON.stringify(bundle2), bundle: bundle2,
@@ -253,9 +276,57 @@ describe('writeBundleFiles', () => {
     // The prior successful outDir is untouched: neither deleted nor half-overwritten.
     expect(existsSync(join(outDir, 'ai/components/button.yaml'))).toBe(true);
     expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe(originalButtonContent);
-    expect(existsSync(join(outDir, 'ai/foundation.yaml'))).toBe(true);
-    expect(readFileSync(join(outDir, 'ai/foundation.yaml'), 'utf8')).toBe(originalFoundationContent);
+    expect(existsSync(join(outDir, 'tokens/resolver.json'))).toBe(true);
+    expect(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8')).toBe(originalResolverContent);
     expect(existsSync(join(outDir, 'ai/components/card.yaml'))).toBe(false);
+  });
+
+  it('writes the foundation as a tokens/ directory projected from the canonical artifact', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const written = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+    expect(written).toContain('tokens/resolver.json');
+    expect(written).toContain('tokens/primitives.light.json');
+    expect(written).toContain('tokens/spec-layer.meta.json');
+    expect(written).toContain('tokens/report.json');
+    expect(written).not.toContain('ai/foundation.yaml');
+    const resolver = JSON.parse(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8'));
+    expect(resolver.version).toBe('2025.10');
+    const manifest = readManifest(outDir)!;
+    expect(manifest.artifacts.find((a) => a.kind === 'foundation')?.aiPath).toBe('tokens/resolver.json');
+  });
+
+  it('honours dtcg options from config', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+      dtcg: { values: 'legacy' },
+    });
+    const light = JSON.parse(readFileSync(join(outDir, 'tokens/primitives.light.json'), 'utf8'));
+    expect(light.Primitives.color.exact.red.$value).toBe('#ff0000');
+  });
+
+  it('writes no tokens/ when the selection excludes the foundation', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const written = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+      selection: { foundation: false, components: null },
+    });
+    expect(written.some((f) => f.startsWith('tokens/'))).toBe(false);
+    expect(readManifest(outDir)!.artifacts.find((a) => a.kind === 'foundation')?.aiPath).toBeNull();
+  });
+
+  it('fails with a plain sentence when the foundation artifact is not a valid v5 artifact', () => {
+    const bundle = makeBundle(); // the stub artifact carries only a content hash
+    expect(() => writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    })).toThrow('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
+    expect(existsSync(outDir)).toBe(false);
   });
 });
 
@@ -312,6 +383,7 @@ describe('writeBundleFiles with a selection', () => {
 
   it('keeps slugs stable for a selected component regardless of which siblings are deselected', () => {
     const bundle = makeBundle({
+      foundation: null,
       components: [
         { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
         { name: 'button', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
@@ -329,7 +401,7 @@ describe('writeBundleFiles with a selection', () => {
   });
 
   it('records the default selection when none is given', () => {
-    const bundle = twoComponents();
+    const bundle = makeBundle({ foundation: null, components: twoComponents().components });
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
@@ -357,7 +429,7 @@ describe('readLocalBundle', () => {
   });
 
   it('returns the parsed bundle after a write', () => {
-    const bundle = makeBundle();
+    const bundle = makeBundle({ foundation: null });
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),

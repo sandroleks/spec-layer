@@ -53,7 +53,8 @@ npm install --save-dev spec-layer
 also keeps `.speclayer/manifest.json` on one format: 0.1.0 wrote no
 `selection` field, and 0.2.0 onward does. `setup` needs 0.3.0 or later; earlier
 versions have no such command, so the setup command the plugin copies fails
-against them.
+against them. The Foundation landing under `tokens/` as Design Tokens Format
+Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 
 ## Commands
 
@@ -64,7 +65,7 @@ against them.
 | `pull [--id lib_...] [--key sl_...] [selection]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
 | `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
-| `show foundation [--canonical]` | Prints the Foundation's AI YAML to stdout. |
+| `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--canonical]` | Prints one component's AI YAML to stdout. |
 
 `--api URL` overrides the API origin (default `https://api.spec-layer.com`).
@@ -169,15 +170,22 @@ matter what the ignore rules say.
 
 ```text
 .speclayer/
-  bundle.json              the published bundle, verbatim
-  manifest.json            every artifact indexed by content hash and ai path, plus the selection
-  ai/foundation.yaml       tokens, styles, and modes (when selected and the library has a Foundation)
-  ai/components/<name>.yaml one file per selected component
+  bundle.json                the published bundle, verbatim
+  manifest.json               every artifact indexed by content hash and path, plus the selection
+  tokens/                    the Foundation as Design Tokens Format Module 2025.10 files
+    <collection>.<mode>.json one file per collection and mode, rooted at the collection name
+    styles.typography.json   text styles as typography composites (when present)
+    styles.effects.json      effect styles as shadow composites (when present)
+    resolver.json            Design Tokens Resolver Module 2025.10: sets, modifiers, order
+    spec-layer.meta.json     Figma ids, scopes, code syntax, publication, keyed by DTCG path
+    report.json              what DTCG could not express, with reasons and stable ids
+  ai/components/<name>.yaml  one file per selected component
 ```
 
-Point your agent at `.speclayer/ai/`. The YAML there is the same compact form
-the plugin's **Copy for AI** puts on your clipboard; `bundle.json` additionally
-holds the full canonical artifacts if you need them.
+Point your agent at `.speclayer/ai/` and `.speclayer/tokens/`. The component
+YAML is the same compact form the plugin's **Copy for AI** puts on your
+clipboard; `bundle.json` additionally holds the full canonical artifacts if
+you need them.
 
 In `manifest.json`, an artifact the selection left unwritten has `"aiPath":
 null`. A manifest from CLI 0.1.0 has no `selection` field and means
@@ -192,7 +200,31 @@ When nothing changed since the last pull with the same selection, `pull`
 prints `Already up to date` and writes nothing. Every republish stamps a new
 export id and time into the canonical artifacts, so `bundle.json` and
 `manifest.json` change on each republish even when the content did not. The
-`ai/` YAML files and the content hashes stay stable.
+`ai/` YAML files, the `tokens/` files, and the content hashes stay stable.
+
+## Configuring the token output
+
+`speclayer.json` may carry a `dtcg` block:
+
+    {
+      "libraryId": "lib_...",
+      "outDir": ".speclayer",
+      "dtcg": {
+        "values": "standard",
+        "units": { "Foundation/spacing/*": "px", "Foundation/radius/*": "px" }
+      }
+    }
+
+`values` is `standard` (the 2025.10 object forms, the default) or `legacy`
+(the string forms Style Dictionary 4 and Tokens Studio read today). `units`
+promotes a number whose Figma scopes state no unit to a dimension. Keys are a
+collection name, a slash, and a glob over the variable name. An override that
+contradicts a stated scope is ignored and listed in `report.json`. Nothing is
+inferred from a name.
+
+Point Style Dictionary at `.speclayer/tokens/` and load the files
+`resolver.json` names for the mode you are building. The metadata sidecar and
+the report are not token files; exclude them from token globs.
 
 ## Exit codes
 
