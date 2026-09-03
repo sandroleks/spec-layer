@@ -8,7 +8,7 @@
  */
 import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
-  buildFoundationArtifactV5, foundationAiContext,
+  buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext,
   type FoundationArtifactV5, type YamlValue, type SerializedFoundation,
 } from '@spec-layer/extractor';
@@ -48,7 +48,7 @@ export function buildPublishBundle(sources: PublishSources, generatedAt: string)
     const guidelines = generatedGuidelines(sources.groupDescriptions);
     if (guidelines) artifact.guidelines = guidelines;
     foundationArtifact = artifact;
-    foundation = { ai: toYaml(foundationAiContext(artifact) as unknown as YamlValue), artifact };
+    foundation = { ai: `${JSON.stringify(foundationDtcgDocument(artifact), null, 2)}\n`, artifact };
   }
   const components = [...sources.components]
     .sort((a, b) => compareCodeUnits(a.name, b.name))

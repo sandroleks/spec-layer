@@ -19,7 +19,8 @@ Before merging a branch that touched the plugin, walk these in order. Each one
 covers something unit tests cannot reach, roughly highest risk first:
 
 1. **Generate component docs** on a component set with two variant axes.
-2. **Generate Foundation docs** and exercise file-wide **Copy for AI**.
+2. **Generate Foundation docs** and exercise file-wide **Copy for AI**, which
+   copies a DTCG resolver document.
 3. **Doc frame content**, where most rendering regressions show up.
 4. **Library**, including component and Foundation rows and scoped copies.
 5. **AI-writing allowance** and **License**, which need a real proxy round
@@ -76,12 +77,14 @@ non-component selection shows an actionable empty state.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
 4. Click the Foundations footer's **Copy for AI** and paste into a plain text
-   editor. Confirm `kind: foundation`, `version: 5`, `profile: ai`, and a
-   `content_hash`. Collections should own their tokens, values should use
-   readable mode labels, and source ids should appear only to disambiguate a
-   duplicate name. Confirm the complete file-wide Foundation vocabulary is
-   present regardless of current source selection, and no canvas objects are
-   created.
+   editor. Confirm it is JSON with `"version": "2025.10"`, one set or modifier
+   per collection named exactly as in Figma, `$type` and `$value` on every
+   token, `{Collection.path}` references for aliases, and a
+   `$extensions["com.spec-layer"]` block carrying `content_hash`,
+   `completeness`, `code_syntax`, and a `report` array. Every unresolved
+   library alias in the file must appear in `report` and nowhere else.
+   Confirm the complete file-wide vocabulary is present regardless of source
+   selection, and no canvas objects are created.
 5. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
@@ -183,9 +186,12 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    read. A rule used once carries `path`; otherwise-identical rules used on
    multiple nodes carry one ordered `paths` list with every exact path.
 8. Run **Copy for AI** on a split or grouped Foundation row. Confirm the copy
-   widens to the complete collection and all modes and includes only additional
-   collections required by transitive local aliases. A text-style row copies
-   v5 typography plus only its bound-token dependency collections.
+   is the same DTCG resolver document shape as the file-wide copy, widened to
+   the complete collection and all modes, with sets or modifiers for only that
+   collection and any additional ones required by transitive local aliases. A
+   text-style row's `sets["Typography styles"]` covers every requested style
+   plus only its bound-token dependency collections, with no `sets["Effect
+   styles"]` and no unrelated collection.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
 10. **Detach documentation** leaves the canvas Section but removes its Library

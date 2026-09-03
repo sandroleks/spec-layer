@@ -219,6 +219,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Foundation **Copy for AI** and the published bundle's foundation context are
+  now a Design Tokens Format Module 2025.10 resolver document instead of Spec
+  Layer's own YAML profile. Collections become sets or modifiers named as in
+  Figma, tokens carry `$type` and `$value`, aliases are `{Collection.path}`
+  references, and text and effect styles are `typography` and `shadow`
+  composites. Anything the format cannot state, such as an unresolved library
+  alias or a boolean variable, is omitted from the tree and listed under
+  `$extensions["com.spec-layer"].report`. The canonical v5 artifact is
+  unchanged and still owns the content hash. Component Copy for AI is
+  unchanged apart from `code_syntax` on the tokens it embeds.
+
 - A Library Update keeps what is written in a component doc's writing
   sections. The renderer tags the definition, accessibility, interactions,
   content considerations, dos and don'ts, variants and anatomy summaries, and

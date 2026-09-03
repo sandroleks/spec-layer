@@ -84,9 +84,11 @@ describe('buildPublishBundle', () => {
     // Two components named 'button' and 'Badge': 'Badge' first (code-unit order).
     expect(bundle.components.map((c) => c.name)).toEqual(['Badge', 'button']);
 
-    // foundation.ai is a non-empty YAML string; each component ai likewise.
+    // foundation.ai is a non-empty DTCG resolver document as JSON text; each
+    // component ai is still a non-empty YAML string.
     expect(typeof bundle.foundation?.ai).toBe('string');
     expect(bundle.foundation!.ai.length).toBeGreaterThan(0);
+    expect((JSON.parse(bundle.foundation!.ai) as { version: string }).version).toBe('2025.10');
     for (const component of bundle.components) {
       expect(typeof component.ai).toBe('string');
       expect(component.ai.length).toBeGreaterThan(0);

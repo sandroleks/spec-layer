@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { load } from 'js-yaml';
 import type { SerializedFoundation } from '@spec-layer/extractor';
 
 const copyText = vi.fn();
@@ -12,29 +11,37 @@ vi.mock('../src/ui/clipboard', () => ({
 const { copyFoundationBrief, copyFoundationBriefForScope, onFoundationMessage, setFoundationGroupDescriptions } =
   await import('../src/ui/actions');
 
-/** Shape of the parsed brief, just deep enough for these assertions. Typed
- *  rather than `any` so a shape drift fails at compile time, matching the
- *  convention in packages/extractor/test/brief.test.ts and copyBrief.test.ts. */
-interface ParsedFoundationBrief {
-  spec_layer: {
-    kind: string; version?: number; profile?: string; content_hash?: string;
-  };
-  completeness?: {
-    collections: string; styles: string; unavailable_sources: string[];
-  };
-  collections: Array<{
-    source_id?: string; name: string; modes?: string[];
-    tokens?: Array<{
-      source_id?: string; name: string; type: string;
-      scopes?: string[]; values: Record<string, unknown>;
-    }>;
-  }>;
-  styles?: {
-    typography: Array<Record<string, unknown>>;
-    effects: Array<Record<string, unknown>>;
-  };
-  issue_counts?: Record<string, Record<string, number>>;
-  guidelines?: Record<string, Record<string, string>>;
+/** Shape of the parsed clipboard document, just deep enough for these
+ *  assertions. Typed rather than `any` so a shape drift fails at compile
+ *  time, matching the convention in packages/extractor/test/brief.test.ts
+ *  and copyBrief.test.ts. */
+interface ClipboardDocument {
+  version: string;
+  name?: string;
+  sets: Record<string, { sources: unknown[] }>;
+  modifiers: Record<string, { contexts: Record<string, unknown[]>; default?: string }>;
+  resolutionOrder: Array<{ $ref: string }>;
+  $extensions: { 'com.spec-layer': {
+    schema_version: string; content_hash: string; completeness: { collections: string };
+    code_syntax: Record<string, Record<string, string>>; report: Array<{ code: string; path: string }>;
+  } };
+}
+const copied = (): ClipboardDocument =>
+  JSON.parse(copyText.mock.calls.at(-1)?.[0] as string) as ClipboardDocument;
+
+/** Walks a dotted path inside an inlined DTCG source tree. */
+function leafAt(tree: unknown, path: string): Record<string, unknown> {
+  let node: unknown = tree;
+  for (const seg of path.split('.')) {
+    if (typeof node !== 'object' || node === null) {
+      throw new Error(`Copied document is missing "${path}" at segment "${seg}".`);
+    }
+    node = (node as Record<string, unknown>)[seg];
+  }
+  if (typeof node !== 'object' || node === null) {
+    throw new Error(`Copied document is missing "${path}".`);
+  }
+  return node as Record<string, unknown>;
 }
 
 function presenter() {
@@ -110,74 +117,62 @@ describe('copyFoundationBrief', () => {
     expect(ui.error).toHaveBeenCalled();
   });
 
-  it('copies a parseable compact v5 AI profile backed by the canonical content hash', async () => {
+  it('copies one DTCG resolver document backed by the canonical content hash', async () => {
     onFoundationMessage(DUMP);
     await copyFoundationBrief(presenter());
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    expect(y.spec_layer.kind).toBe('foundation');
-    expect(y.spec_layer.version).toBe(5);
-    expect(y.spec_layer.profile).toBe('ai');
-    expect(y.spec_layer.content_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(y.collections[0]).toMatchObject({
-      name: 'Color', modes: ['Light'],
-    });
-    expect(y.collections[0].tokens?.[0]).toMatchObject({
-      name: 'color/bg/brand', scopes: ['FRAME_FILL'],
-    });
-    expect(Object.keys(y.collections[0].tokens?.[0].values ?? {})).toEqual(['Light']);
+    const doc = copied();
+    expect(doc.version).toBe('2025.10');
+    expect(doc.$extensions['com.spec-layer'].content_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(Object.keys(doc.sets).concat(Object.keys(doc.modifiers))).toContain('Color');
   });
 
-  it('carries dimensions, unit diagnostics, precise channels, and full/external aliases', async () => {
+  it('carries dimensions, precise color channels, and local and external aliases', async () => {
     onFoundationMessage(DUMP);
     await copyFoundationBrief(presenter());
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    const token = (name: string) => {
-      const found = y.collections.flatMap((collection) => collection.tokens ?? [])
-        .find((item) => item.name === name);
-      if (!found) throw new Error(`Copied context is missing token ${name}.`);
-      return found;
-    };
-    expect(token('space/gap')).toMatchObject({ type: 'dimension' });
-    expect(token('space/gap').values.Light).toEqual({ number: 8, unit: 'px' });
-    expect(token('number/unknown')).toMatchObject({ type: 'number' });
-    expect(y.issue_counts?.error?.UNIT_METADATA_UNAVAILABLE).toBe(1);
-    expect(token('color/bg/brand').values.Light).toMatchObject({
-      channels: [0.1401, 0.3901, 0.9201], alpha: 0.125,
-    });
-    expect(token('color/owner').values.Light).toMatchObject({
-      alias: 'Color/color/middle @ Light',
-      chain: ['Color/color/middle @ Light', 'Color/color/terminal @ Light'],
-    });
-    expect(token('color/external').values.Light).toEqual({
-      alias: 'Remote Core/color/shared', unresolved: 'source_library_unavailable',
-    });
+    const doc = copied();
+    const tree = doc.sets.Color.sources[0];
+    expect(leafAt(tree, 'Color.space.gap')).toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
+    const brand = leafAt(tree, 'Color.color.bg.brand');
+    expect(brand.$type).toBe('color');
+    expect((brand.$value as { components: number[] }).components).toEqual([0.1401, 0.3901, 0.9201]);
+    expect((brand.$value as { alpha: number }).alpha).toBe(0.125);
+    // color/owner -> color/middle -> color/terminal: the direct alias target, not the chain end.
+    const owner = leafAt(tree, 'Color.color.owner');
+    expect(owner).toEqual({ $type: 'color', $value: '{Color.color.middle}' });
+    // color/external aliases an unavailable library source: absent from the tree,
+    // and the omission is stated in the report instead of guessed at.
+    const colorGroup = leafAt(tree, 'Color.color');
+    expect('external' in colorGroup).toBe(false);
+    expect(doc.$extensions['com.spec-layer'].report).toContainEqual(
+      expect.objectContaining({ code: 'value_omitted', path: 'Color.color.external' }),
+    );
   });
 
-  it('omits guidelines when no foundation doc on canvas carries group descriptions', async () => {
+  it('omits group descriptions when no foundation doc on canvas carries them', async () => {
     onFoundationMessage(DUMP);
     await copyFoundationBrief(presenter());
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    expect('guidelines' in y).toBe(false);
+    const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
+    expect('$description' in bg).toBe(false);
   });
 
   it('carries group descriptions merged from the foundation doc links on canvas', async () => {
     onFoundationMessage(DUMP, { Color: { 'color/bg': 'Backgrounds behind content.' } });
     await copyFoundationBrief(presenter());
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    expect(y.guidelines).toEqual({
-      Color: { 'color/bg': 'Backgrounds behind content.' },
-    });
+    const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
+    expect(bg.$description).toBe('Backgrounds behind content.');
   });
 
   it('keeps generated guidelines outside the semantic content hash', async () => {
     onFoundationMessage(DUMP, { Color: { color: 'First wording.' } });
     await copyFoundationBrief(presenter());
-    const first = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
+    const first = copied();
     setFoundationGroupDescriptions({ Color: { color: 'Changed wording.' } });
     await copyFoundationBrief(presenter());
-    const second = load(copyText.mock.calls[1][0]) as ParsedFoundationBrief;
-    expect(second.guidelines?.Color.color).toBe('Changed wording.');
-    expect(second.spec_layer.content_hash).toBe(first.spec_layer.content_hash);
+    const second = copied();
+    const group = leafAt(second.sets.Color.sources[0], 'Color.color');
+    expect(group.$description).toBe('Changed wording.');
+    expect(second.$extensions['com.spec-layer'].content_hash)
+      .toBe(first.$extensions['com.spec-layer'].content_hash);
   });
 
   /**
@@ -195,10 +190,8 @@ describe('copyFoundationBrief', () => {
       Color: { 'color/bg': 'Backgrounds behind content.' },
     });
     await copyFoundationBrief(presenter()); // 3: Copy, no refresh in between.
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    expect(y.guidelines).toEqual({
-      Color: { 'color/bg': 'Backgrounds behind content.' },
-    });
+    const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
+    expect(bg.$description).toBe('Backgrounds behind content.');
   });
 
   /**
@@ -210,8 +203,8 @@ describe('copyFoundationBrief', () => {
     onFoundationMessage(DUMP, { Color: { 'color/bg': 'Backgrounds behind content.' } });
     setFoundationGroupDescriptions({}); // docDetached/docRemoved's fresh, now-empty merge.
     await copyFoundationBrief(presenter());
-    const y = load(copyText.mock.calls[0][0]) as ParsedFoundationBrief;
-    expect('guidelines' in y).toBe(false);
+    const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
+    expect('$description' in bg).toBe(false);
   });
 
   it('renders no caveat in the tier-3 modal for a small payload', async () => {
@@ -227,8 +220,8 @@ describe('copyFoundationBrief', () => {
       collections: [{
         id: 'C1', name: 'Color', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Light' }],
-        // The compact profile still gives each token its name, type and values,
-        // so 900 remains comfortably above the 800-line manual-copy threshold.
+        // The document still gives each token its own $type/$value object, so
+        // 900 tokens stays comfortably above the 800-line manual-copy threshold.
         variables: Array.from({ length: 900 }, (_, i) => ({
           id: `V${i}`, name: `color/bg/brand-${i}`, resolvedType: 'COLOR' as const, description: '',
           codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
@@ -285,19 +278,15 @@ describe('copyFoundationBriefForScope', () => {
     collectionName: 'Color', modeIds: ['m1'],
   };
 
-  function parse(): ParsedFoundationBrief {
-    return load(copyText.mock.calls[0][0] as string) as ParsedFoundationBrief;
-  }
-
   it('copies only the scoped collection', async () => {
     onFoundationMessage(TWO);
     const ui = presenter();
     await copyFoundationBriefForScope(COLOR_SCOPE, ui);
-    const brief = parse();
-    expect(brief.collections).toHaveLength(1);
-    expect(brief.collections[0].name).toBe('Color');
-    expect(brief.collections[0].tokens?.map((token) => token.name)).toEqual(['color/bg/brand']);
-    expect(brief.completeness).toMatchObject({
+    const doc = copied();
+    expect(Object.keys(doc.sets).concat(Object.keys(doc.modifiers))).toEqual(['Color']);
+    const brand = leafAt(doc.sets.Color.sources[0], 'Color.color.bg.brand');
+    expect(brand.$type).toBe('color');
+    expect(doc.$extensions['com.spec-layer'].completeness).toMatchObject({
       collections: 'partial', styles: 'unavailable',
     });
     expect(ui.info).toHaveBeenCalled();
@@ -310,8 +299,8 @@ describe('copyFoundationBriefForScope', () => {
       { ...COLOR_SCOPE, group: 'nonexistent', modeIds: [] },
       presenter(),
     );
-    const brief = parse();
-    expect(brief.collections[0].tokens?.map((token) => token.name)).toEqual(['color/bg/brand']);
+    const brand = leafAt(copied().sets.Color.sources[0], 'Color.color.bg.brand');
+    expect(brand.$type).toBe('color');
   });
 
   it('adds complete transitive dependency collections to a collection copy', async () => {
@@ -327,27 +316,23 @@ describe('copyFoundationBriefForScope', () => {
       { ...COLOR_SCOPE, group: 'color', modeIds: [] },
       presenter(),
     );
-    const brief = parse();
-    expect(brief.collections.map((collection) => collection.name)).toEqual(['Color', 'Spacing']);
-    expect(brief.collections.flatMap((collection) => collection.tokens ?? [])
-      .map((token) => token.name)).toEqual(['color/bg/brand', 'space/semantic-gap', 'space/gap']);
-    expect(brief.collections[0].tokens?.find((token) => token.name === 'space/semantic-gap')
-      ?.values.Light).toEqual({
-        alias: 'Spacing/space/gap @ Value', resolved: { number: 8, unit: 'px' },
-      });
+    const doc = copied();
+    expect(Object.keys(doc.sets).concat(Object.keys(doc.modifiers)).sort()).toEqual(['Color', 'Spacing']);
+    const semanticGap = leafAt(doc.sets.Color.sources[0], 'Color.space.semantic-gap');
+    expect(semanticGap).toEqual({ $type: 'dimension', $value: '{Spacing.space.gap}' });
+    const gap = leafAt(doc.sets.Spacing.sources[0], 'Spacing.space.gap');
+    expect(gap).toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
   });
 
   it('copies every text style for a text styles scope', async () => {
     onFoundationMessage(TWO);
     await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
-    const brief = parse();
-    expect(brief.spec_layer).toMatchObject({ version: 5, profile: 'ai' });
-    expect(brief.collections).toEqual([]);
-    expect(brief.styles?.typography).toEqual([
-      expect.objectContaining({ name: 'heading/lg' }),
-    ]);
-    expect(brief.styles?.effects).toEqual([]);
-    expect(brief.completeness).toMatchObject({
+    const doc = copied();
+    expect(doc.sets['Typography styles']).toBeDefined();
+    expect(doc.sets['Effect styles']).toBeUndefined();
+    const heading = leafAt(doc.sets['Typography styles'].sources[0], 'Typography styles.heading.lg');
+    expect(heading.$type).toBe('typography');
+    expect(doc.$extensions['com.spec-layer'].completeness).toMatchObject({
       collections: 'partial', styles: 'partial',
     });
   });
@@ -359,17 +344,13 @@ describe('copyFoundationBriefForScope', () => {
     bound.textStyles[0].boundVariables = { fontSize: 'space/gap' };
     onFoundationMessage(bound);
     await copyFoundationBriefForScope({ target: 'textStyles' }, presenter());
-    const brief = parse();
-    expect(brief.collections.map((collection) => collection.name)).toEqual(['Spacing']);
-    expect(brief.collections[0].tokens?.map((token) => token.name)).toEqual(['space/gap']);
-    expect(brief.styles?.typography[0]).toMatchObject({
-      properties: {
-        font_size: {
-          alias: 'Spacing/space/gap',
-          resolved: { type: 'dimension', value: { number: 32, unit: 'px' } },
-        },
-      },
-    });
+    const doc = copied();
+    expect(Object.keys(doc.sets).sort()).toEqual(['Spacing', 'Typography styles']);
+    expect(doc.modifiers).toEqual({});
+    const gap = leafAt(doc.sets.Spacing.sources[0], 'Spacing.space.gap');
+    expect(gap.$type).toBe('dimension');
+    const heading = leafAt(doc.sets['Typography styles'].sources[0], 'Typography styles.heading.lg');
+    expect((heading.$value as { fontSize: string }).fontSize).toBe('{Spacing.space.gap}');
   });
 
   it('passes only the scoped collection\'s group descriptions', async () => {
@@ -379,10 +360,8 @@ describe('copyFoundationBriefForScope', () => {
       Spacing: { space: 'The 8px scale.' },
     });
     await copyFoundationBriefForScope(COLOR_SCOPE, presenter());
-    const brief = parse();
-    expect(brief.guidelines).toEqual({
-      Color: { color: 'Surface and text colours.' },
-    });
+    const group = leafAt(copied().sets.Color.sources[0], 'Color.color');
+    expect(group.$description).toBe('Surface and text colours.');
   });
 
   it('refuses when no foundation has been read', async () => {
@@ -412,7 +391,9 @@ describe('copyFoundationBriefForScope', () => {
   it('leaves the whole-file copy covering every collection', async () => {
     onFoundationMessage(TWO);
     await copyFoundationBrief(presenter());
-    expect(parse().collections).toHaveLength(2);
+    const doc = copied();
+    expect(Object.keys(doc.sets).concat(Object.keys(doc.modifiers)).sort())
+      .toEqual(['Color', 'Spacing', 'Typography styles']);
   });
 
   it('carries failed source reads into v5 completeness', async () => {
@@ -420,7 +401,7 @@ describe('copyFoundationBriefForScope', () => {
       ...TWO, unavailable: ['variables'], unavailableSources: ['figma:variables'],
     });
     await copyFoundationBrief(presenter());
-    expect(parse().completeness).toEqual({
+    expect(copied().$extensions['com.spec-layer'].completeness).toEqual({
       collections: 'partial', styles: 'partial',
       unavailable_sources: ['figma:variables'],
     });

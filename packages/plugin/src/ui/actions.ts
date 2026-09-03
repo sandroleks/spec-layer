@@ -8,7 +8,7 @@
 
 import {
   extract, ProseProxyError, specContentHash, buildFoundation,
-  buildFoundationArtifactV5, foundationAiContext,
+  buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml,
 } from '@spec-layer/extractor';
 import type {
@@ -626,20 +626,20 @@ export function currentFoundationSpec(): FoundationSpec | null {
  * Shared tail of copyFoundationBrief and copyFoundationBriefForScope: the two
  * differ only in how they build the artifact scope (whole file vs. one
  * Library row), and were otherwise identical down to the 800-line
- * threshold and the error string. `buildYaml` is a thunk rather than an
+ * threshold and the error string. `buildText` is a thunk rather than an
  * already-built string so this can keep wrapping the brief construction
  * itself in the same try/catch the duplicated code used — a failure in
- * artifact/YAML construction is reported with the same "could not read"
+ * artifact/document construction is reported with the same "could not read"
  * way a copy failure is, exactly as before the extraction.
  */
-async function deliverBrief(buildYaml: () => string, ui: BuildPresenter): Promise<void> {
+async function deliverBrief(buildText: () => string, ui: BuildPresenter): Promise<void> {
   try {
-    const yaml = buildYaml();
-    const lines = yaml.split('\n').length;
+    const text = buildText();
+    const lines = text.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
-    const tier = await copyText(yaml);
+    const tier = await copyText(text);
     if (tier === 'manual') {
-      renderManualCopyModal(yaml, size.trim() || undefined);
+      renderManualCopyModal(text, size.trim() || undefined);
       return;
     }
     ui.info(`Copied.${size}`);
@@ -664,7 +664,7 @@ export function generatedGuidelines(
     : undefined;
 }
 
-function foundationAiYaml(
+function foundationDtcgJson(
   spec: FoundationSpec,
   generatedAt: string,
   descriptions: Record<string, Record<string, string>>,
@@ -680,11 +680,12 @@ function foundationAiYaml(
   });
   const guidelines = generatedGuidelines(descriptions);
   if (guidelines) artifact.guidelines = guidelines;
-  // The canonical artifact remains the validated source of truth and owns the
-  // semantic hash. Clipboard context is a separate presentation projection:
-  // expanding every stable id, typed envelope, diagnostic message and derived
-  // statistic made a medium design system cost roughly 10,000 prompt lines.
-  return toYaml(foundationAiContext(artifact) as unknown as YamlValue);
+  // The canonical artifact stays the validated source of truth and owns the
+  // semantic hash. The clipboard carries a Design Tokens Format Module 2025.10
+  // resolver document projected from it, which Style Dictionary and Tokens
+  // Studio read and an agent needs no dialect for. What DTCG cannot express is
+  // listed under $extensions["com.spec-layer"].report, never approximated.
+  return `${JSON.stringify(foundationDtcgDocument(artifact), null, 2)}\n`;
 }
 
 /**
@@ -704,7 +705,7 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
   }
   const generatedAt = new Date().toISOString();
   await deliverBrief(
-    () => foundationAiYaml(spec, generatedAt, foundationGroupDescriptions),
+    () => foundationDtcgJson(spec, generatedAt, foundationGroupDescriptions),
     ui,
   );
 }
@@ -754,7 +755,7 @@ export async function copyFoundationBriefForScope(
     // the stable collection id gives Copy the full collection plus the direct
     // exporter's dependency closure instead of silently hiding rows or modes.
     await deliverBrief(
-      () => foundationAiYaml(spec, generatedAt, groupDescriptions, {
+      () => foundationDtcgJson(spec, generatedAt, groupDescriptions, {
         target: 'collection', collectionId: scope.collectionId,
       }),
       ui,
@@ -767,7 +768,7 @@ export async function copyFoundationBriefForScope(
     return;
   }
   await deliverBrief(
-    () => foundationAiYaml(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+    () => foundationDtcgJson(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
     ui,
   );
 }
