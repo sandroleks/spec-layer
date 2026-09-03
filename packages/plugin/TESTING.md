@@ -157,8 +157,17 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 4. Change a source and refresh Library. Confirm **Update available**, then run
    **Update documentation** and verify replacement in place and a return to
    **In sync**.
-5. Hand-edit generated text. Confirm **Manually edited**, the overwrite warning,
-   and that an accepted Update replaces the manual edit.
+5. Edit text in a writing section (the definition, a do or don't, an
+   accessibility line, an anatomy part description). Refresh Library and
+   confirm the row still reads **In sync**. Change the source, run **Update
+   documentation**, and confirm the rebuilt frame keeps your edited text
+   word for word, bold included, while its tables reflect the source change.
+   Duplicate a do row before updating and confirm the extra row survives.
+   Then edit a generated cell (a token table value). Confirm **Manually
+   edited**, the confirm that says generated edits are replaced and writing
+   sections are kept, and that an accepted Update replaces the cell edit and
+   keeps the writing sections. Run **Copy for AI** on the edited doc and
+   confirm the brief carries the edited text.
 6. Delete a source component or remove a documented Foundation scope. Confirm
    **Source missing** and that Update and **Copy for AI** are not offered.
 7. Run **Copy for AI** on in-sync, update-available, and manually edited

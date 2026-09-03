@@ -49,7 +49,7 @@ Legend: **[feat]** new capability · **[fix]** correctness/copy fix · **[decide
 | # | Item | Notes |
 |---|------|-------|
 | 4.1 | **[feat] Drift detection surfaces** | `spec-layer check` CI + in-Figma drift badge via committed `content_hash`. The strategic bet (see `docs/strategy/2026-06-22-positioning-and-pivot.md`); 2.1 is its on-canvas prerequisite. **Note:** 2.5 adds per-scope foundation hashes, which give `spec-layer check` a file-level baseline (has the token layer moved?) rather than only per-component ones. |
-| 4.2 | **[feat] Manual-edit preservation on Update** | Three-way merge of generated frames vs. user edits vs. new extraction. Most expensive item in the analysis — deferred deliberately. |
+| 4.2 | **[feat] Manual-edit preservation on Update** ✅ built (2026-09-03) | Narrowed from a three-way merge to a two-lane model: writing sections are tagged as editorial and read back from the canvas on Update; generated sections are rebuilt. Spec `docs/superpowers/specs/2026-09-03-preserve-hand-edits-on-update-design.md`. Open follow-ups: the same tagging for Foundation group descriptions, and a hand-edit warning on Create over an existing doc. |
 | 4.3 | **[feat] Team licensing** | Central billing, seats. Server handles most lifecycle already; needs LS product + UI. |
 | 4.4 | **[feat] Enterprise/BYOK option** | Re-introduce direct-key mode as an enterprise privacy feature (data never touches the proxy). |
 

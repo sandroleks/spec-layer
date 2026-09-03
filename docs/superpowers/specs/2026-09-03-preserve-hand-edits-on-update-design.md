@@ -1,7 +1,7 @@
 # Preserve hand edits on Update
 
 **Date:** 2026-09-03
-**Status:** approved, ready for planning
+**Status:** implemented 2026-09-03
 **Scope:** component documentation Sections in the Figma plugin
 
 ## Problem

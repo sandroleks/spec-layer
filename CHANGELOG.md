@@ -210,6 +210,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a whole entry: a per-collection Foundation slice would need the extractor's
   alias closure and is left for a bundle-side change.
 
+### Changed
+
+- A Library Update keeps what is written in a component doc's writing
+  sections. The renderer tags the definition, accessibility, interactions,
+  content considerations, dos and don'ts, variants and anatomy summaries, and
+  anatomy part descriptions as editorial. Update reads that text back off the
+  canvas, rebuilds every generated table and matrix from the live component,
+  and renders the two together. It no longer calls the AI, so it spends no
+  quota and never replaces prose a designer rewrote. Rebuild needed and
+  Update all follow the same path. Copy for AI and Publish read the same
+  canvas text, so hand edits reach the coding agent's brief. An empty prose
+  field now renders the placeholder instead of a blank line.
+
+  "Manually edited" now means an edit to generated content, the only kind an
+  Update replaces. Editing the writing sections reads as In sync. The confirm
+  before an Update names what is at stake and says the writing sections are
+  kept. Creating documentation again from the component screen still starts
+  over with fresh AI prose; that is the one way to ask the model again.
+
+  An empty dos and don'ts pair now shows the placeholder rather than nothing.
+
+- Bold text inside a bulleted line, such as a `**Keyboard:**` lead-in in an
+  accessibility bullet, now renders correctly on the canvas and survives an
+  Update. Previously, bullet rows re-parsed already-plain text and silently
+  dropped bold formatting; this is fixed.
+
 ### Fixed
 
 - The CLI runs again. Every `spec-layer` command in `0.2.0` died on import with
