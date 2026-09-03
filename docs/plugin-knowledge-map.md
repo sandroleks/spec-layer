@@ -90,8 +90,8 @@ content hashes with fresh extraction to distinguish:
 Updates replace the linked Section in place, but the doc has two lanes.
 Generated content (tables, matrices, anatomy structure, chrome) is rebuilt
 from the live source. Editorial content (the writing sections) is tagged with
-pluginData at render time (`canvasProse.ts`), read back from the canvas on
-Update, and rendered again unchanged; Update never calls the AI. `selfHash`
+pluginData at render time in `docFrame.ts` and read back by `canvasProse.ts`
+on Update, and rendered again unchanged; Update never calls the AI. `selfHash`
 covers the generated lane only, so "manually edited" means an edit Update
 would replace. Source drift uses deterministic content hashes and excludes
 AI prose. Copy for AI and Publish read the same canvas text, with the stored

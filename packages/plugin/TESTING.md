@@ -167,7 +167,10 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    edited**, the confirm that says generated edits are replaced and writing
    sections are kept, and that an accepted Update replaces the cell edit and
    keeps the writing sections. Run **Copy for AI** on the edited doc and
-   confirm the brief carries the edited text.
+   confirm the brief carries the edited text. Separately, edit an anatomy
+   part description on its own (including a part whose name contains a
+   colon, if the component has one) and confirm it survives an Update word
+   for word: anatomy has the most fragile read-back rule of any slot.
 6. Delete a source component or remove a documented Foundation scope. Confirm
    **Source missing** and that Update and **Copy for AI** are not offered.
 7. Run **Copy for AI** on in-sync, update-available, and manually edited

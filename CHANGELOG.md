@@ -221,18 +221,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   quota and never replaces prose a designer rewrote. Rebuild needed and
   Update all follow the same path. Copy for AI and Publish read the same
   canvas text, so hand edits reach the coding agent's brief. An empty prose
-  field now renders the placeholder instead of a blank line. When the canvas
-  and the stored guidelines together carry no text at all, the doc counts as
-  having no guidelines, so Copy for AI still says so rather than sending empty
-  fields.
+  field, or an empty dos and don'ts pair, now renders the placeholder instead
+  of nothing. When the canvas and the stored guidelines together carry no
+  text at all, the doc counts as having no guidelines, so Copy for AI still
+  says so rather than sending empty fields.
 
   "Manually edited" now means an edit to generated content, the only kind an
   Update replaces. Editing the writing sections reads as In sync. The confirm
   before an Update names what is at stake and says the writing sections are
   kept. Creating documentation again from the component screen still starts
   over with fresh AI prose; that is the one way to ask the model again.
-
-  An empty dos and don'ts pair now shows the placeholder rather than nothing.
 
 - Bold text inside a bulleted line, such as a `**Keyboard:**` lead-in in an
   accessibility bullet, now renders correctly on the canvas and survives an
