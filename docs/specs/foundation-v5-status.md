@@ -1,8 +1,8 @@
 ---
 title: Foundation Context v5 — status and handoff
 status: Phase 4 component adoption implemented; tooling and real-source gates open
-schema_version: 5.0.0
-last_updated: 2026-08-29
+schema_version: 5.1.0
+last_updated: 2026-09-03
 ---
 
 # Foundation Context v5 — status and handoff
@@ -23,9 +23,14 @@ document for rebuild.
 ## Current product behavior
 
 - Whole-file and collection-row Foundation **Copy for AI** first build the full
-  Foundation Context schema `5.0.0` artifact directly from `FoundationSpec`
-  through `buildFoundationArtifactV5`, then derive the compact `profile: ai`
-  clipboard context through `foundationAiContext`.
+  Foundation Context schema `5.1.0` artifact directly from `FoundationSpec`
+  through `buildFoundationArtifactV5`, then project it into a Design Tokens
+  Format Module 2025.10 resolver document through `foundationDtcgDocument`.
+  The published bundle's `foundation.ai` field and `spec-layer pull`'s
+  `tokens/` directory project the same canonical artifact through
+  `foundationDtcg`. `foundationAiContext` (the `profile: ai` projection) is no
+  longer a Foundation clipboard or bundle output; it now serves only the
+  Foundation dependency slice a Component Context v5 copy embeds.
 - The direct path preserves stable collection, mode, and variable ids; source
   scopes; mode-id keyed values; retained RGBA precision; complete local alias
   chains; external reference metadata; read failures; and completeness.
@@ -48,15 +53,22 @@ document for rebuild.
   picks a default mode for a mode-less style.
 - Generated group descriptions are a `guidelines` annotation outside the
   semantic payload and therefore do not alter the content hash.
-- The clipboard profile nests tokens beneath collections, uses readable mode
-  and alias labels, removes empty/derived repetition, replaces diagnostic prose
-  with issue counts, and restores source ids only for ambiguous names. It keeps
-  the canonical semantic hash and does not replace or modify the full artifact.
+- The DTCG clipboard document nests collections as resolver sets and modifiers
+  named as in Figma, gives tokens `$type`/`$value`, turns local aliases into
+  `{Collection.path}` references, and maps composite typography/effect styles
+  to `typography`/`shadow`. Anything the format cannot state, such as an
+  unresolved library alias, a boolean/string token, or an inexpressible unit,
+  is omitted from the tree and recorded in an
+  `$extensions["com.spec-layer"].report` array instead of being approximated.
+  It carries the canonical `content_hash` and never replaces or modifies the
+  full artifact.
 - The reviewed Company DS artifact measured 9,989 lines / 350,905 bytes in
-  canonical form and 2,539 lines / 108,357 bytes in the AI profile.
+  canonical form and 2,539 lines / 108,357 bytes in the retired whole-file AI
+  profile; the DTCG document has not had an equivalent real-source measurement
+  taken.
 
 The plugin package version for the published release is `5.0.0`. This is
-separate from Foundation schema `5.0.0` and from `EXTRACTOR_VERSION = '2'`.
+separate from Foundation schema `5.1.0` and from `EXTRACTOR_VERSION = '2'`.
 
 ## Direct architecture
 
@@ -69,6 +81,7 @@ separate from Foundation schema `5.0.0` and from `EXTRACTOR_VERSION = '2'`.
 | `v5/canonical.ts` | Semantic payload, envelope, code-unit canonical JSON, semantic hash |
 | `v5/statistics.ts` | Statistics derived only from finished artifact sections and final diagnostics |
 | `v5/aiContext.ts` | Deterministic prompt-sized projection of a finished artifact; readable references and ambiguity-only ids |
+| `v5/dtcg.ts` | DTCG 2025.10 projection of a finished artifact: files, resolver, sidecar, report, clipboard document |
 | `ui/actions.ts` | Whole, collection, and text-style v5 Copy integration |
 
 The direct builder constructs a complete provisional artifact, requires Level 1
@@ -119,7 +132,14 @@ The extractor compatibility id changed once, from `1` to `2`, because the
 Foundation extraction/export contract changed. Component briefs also carry
 this shared opaque id, so existing connected component docs may request one
 rebuild after upgrading even though their canvas projection did not change.
-`BRIEF_VERSION` remains `4`; `SCHEMA_VERSION` remains `5.0.0`.
+`BRIEF_VERSION` remains `4`; `SCHEMA_VERSION` is `5.1.0`.
+
+Tokens now carry an optional `code_syntax` object keyed by platform. This moves
+`semanticContentHash` for every artifact whose tokens declare a code syntax,
+and nothing else: `foundationContentHash`, `specContentHash`, and
+`EXTRACTOR_VERSION` are unchanged. `SCHEMA_VERSION` moved to `5.1.0` for both
+Foundation and Component Context, since the component schema references the
+foundation token definition by URI.
 
 ## Acceptance state
 
@@ -192,6 +212,8 @@ implementation rather than creating a second interpretation of v5.
 - Keep the compact AI profile downstream of the validated artifact and outside
   every semantic/canvas hash. Do not weaken the canonical schema to save prompt
   space.
+- Keep the DTCG profile downstream of the validated artifact and outside every
+  hash; omit and report, never approximate.
 - Do not replace the source-sized alias limit with the old four-hop ceiling.
 - A Foundation rollback reverts its plugin Copy call sites to
   `foundationBrief`; a component rollback reverts its Copy call site to

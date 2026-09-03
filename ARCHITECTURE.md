@@ -23,7 +23,7 @@ Transforms serialized Figma trees into `IntermediateSpec` data and YAML briefs. 
 
 `foundation.ts` models the layer beneath components: variable collections with their modes, local text styles, and local effect styles. It receives a raw dump and resolves alias chains synchronously, so cycles, depth limits, dangling targets, and cross-file references are fixture-testable rather than dependent on a live Figma runtime. An alias into a library carries its target's name and no value, because a remote variable's `valuesByMode` is keyed by the remote collection's mode ids and cannot be mapped onto local modes. Stable style ids and exact property binding ids sit beside the legacy name projection, so v5 can join by source identity without changing canvas hashes or v4 briefs. `planFoundationUnits` decides how many documents a file produces: one per collection, split by top-level name group past `SPLIT_THRESHOLD` rows, with mode columns capped at `MAX_MODE_COLUMNS`.
 
-Foundation Copy first builds and validates the complete Foundation Context v5 artifact. The artifact includes composite typography, ordered supported shadow/blur effects, and property-to-token bindings. Composite styles have no known consuming mode; binding drift is checked only when every bound-token mode resolves to one identical value. `v5/aiContext.ts` then projects that artifact into the clipboard profile: collections own their tokens, values use readable mode and token labels, typed envelopes are stated once, empty metadata is omitted, and repeated diagnostics become counts. Ambiguous names regain source ids, so compaction never turns a collision into a false match. The profile carries the canonical semantic content hash but does not replace the schema-valid artifact or participate in hashing.
+Foundation Copy first builds and validates the complete Foundation Context v5 artifact. The artifact includes composite typography, ordered supported shadow/blur effects, and property-to-token bindings. Composite styles have no known consuming mode; binding drift is checked only when every bound-token mode resolves to one identical value. `v5/dtcg.ts` then projects that artifact into a Design Tokens Format Module 2025.10 resolver document, the plugin's Foundation clipboard output: collections become resolver sets or mode-keyed modifiers named as in Figma, tokens carry `$type`/`$value`, local aliases become `{Collection.path}` references, and composite typography/effect styles map to `typography`/`shadow`. Anything the format cannot state, such as an unresolved library alias, a boolean or string token, or a unit DTCG has no dimension for, is omitted from the tree and recorded in the document's `$extensions["com.spec-layer"].report` array instead of being approximated. The document carries the canonical semantic content hash but does not replace the schema-valid artifact or participate in hashing. `v5/aiContext.ts` still projects the same artifact into the compact `profile: ai` form, but only as the Foundation dependency slice a Component Context v5 copy embeds; it is no longer a Foundation clipboard or bundle output.
 
 Component Copy builds Component Context v5 over the existing `IntermediateSpec`
 without changing canvas extraction or drift hashes. `v5/componentContext.ts`
@@ -130,11 +130,13 @@ CLI all use it. The proxy rejects an unsupported major version with
 
 **Transport invariant:** the plugin's publish step assembles the bundle
 through the same extractor calls Copy for AI uses (`buildFoundationArtifactV5`
-/ `buildComponentArtifactV5` plus their `*AiContext` projections), so every
-published bundle carries both the canonical v5 artifact and its ai-profile
-YAML side by side. The proxy stores and returns that bundle unmodified, and
-the `spec-layer` CLI only parses and writes it to disk — neither ever
-re-derives, re-validates, or re-projects v5 output from source data.
+/ `buildComponentArtifactV5` plus `foundationDtcgDocument` for the Foundation
+and `componentAiContext` for each component), so every published bundle
+carries both the canonical v5 artifact and its `ai` field side by side: a DTCG
+resolver document for the Foundation, ai-profile YAML for each component. The
+proxy stores and returns that bundle unmodified, and the `spec-layer` CLI only
+parses and writes it to disk — neither ever re-derives, re-validates, or
+re-projects v5 output from source data.
 
 ### `spec-layer` (`packages/cli/`)
 
@@ -148,14 +150,25 @@ and refuses a bundle whose major version it does not know. Five commands:
 - `init --id lib_...` writes `speclayer.json` (library id, output directory,
   and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
-  to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, one
-  `ai/foundation.yaml` when the library has a Foundation, one
-  `ai/components/<slug>.yaml` per component (collision-safe slugs), and a
-  `manifest.json` indexing every artifact by content hash and ai-file path.
+  to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, a `tokens/`
+  directory for the Foundation, one `ai/components/<slug>.yaml` per component
+  (collision-safe slugs), and a `manifest.json` indexing every artifact by
+  content hash and ai-file path. The `tokens/` directory is projected from the
+  canonical Foundation artifact in `bundle.json` by the extractor's
+  `foundationDtcg`, after a Level 1 shape check on that artifact so a malformed
+  bundle fails with a plain sentence rather than a stack trace; that check is
+  a validity check on the wire, not a re-derivation of v5 output. It holds one
+  Design Tokens Format Module 2025.10 file per collection and mode,
+  `resolver.json`, style files, a `spec-layer.meta.json` Figma metadata
+  sidecar, and `report.json` naming what the projection could not express.
+  `ai/foundation.yaml` is no longer written; the manifest points the
+  foundation entry at `tokens/resolver.json` instead of an `ai` path. A
+  `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
+  and declares unit overrides for numbers whose scopes state no unit.
   A selection (`--only foundation|components`, repeatable `--component NAME`,
-  or the config's `include` block) narrows which `ai/` files are written;
-  `bundle.json` always holds the whole library and the manifest lists every
-  artifact, with `aiPath: null` for the ones left unwritten. The unit of
+  or the config's `include` block) narrows which of `tokens/` and `ai/` are
+  written; `bundle.json` always holds the whole library and the manifest lists
+  every artifact, with `aiPath: null` for the ones left unwritten. The unit of
   selection is a whole bundle entry, never a slice of one, because slicing
   below an entry would need the extractor's alias-closure logic. When the
   last pull used the same selection, `pull` sends the manifest's hash as
@@ -170,8 +183,10 @@ and refuses a bundle whose major version it does not know. Five commands:
   to do the actual update.
 - `list` prints every artifact from the local manifest with its ai path or
   `not written`, and `show foundation` / `show component NAME` print one
-  entry's AI YAML (or its canonical JSON with `--canonical`) from the local
-  `bundle.json` to stdout. Both are local only and need no key.
+  entry's `ai` field from the local `bundle.json` to stdout (or its canonical
+  JSON with `--canonical`): the DTCG resolver document for `show foundation`,
+  component AI YAML for `show component NAME`. Both are local only and need no
+  key.
 
 The pull key is never written to disk; every command reads it from
 `SPEC_LAYER_KEY` or `--key`. The setup command the plugin shows after

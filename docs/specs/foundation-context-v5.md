@@ -1,7 +1,7 @@
 ---
 title: Foundation Context v5
 status: Proposed
-schema_version: 5.0.0
+schema_version: 5.1.0
 adopted: 2026-08-27
 ---
 
@@ -55,7 +55,7 @@ Every export MUST have a top-level envelope:
 ```yaml
 spec_layer:
   kind: foundation
-  schema_version: "5.0.0"
+  schema_version: "5.1.0"
   schema_uri: "https://spec-layer.com/schemas/foundation-context/v5.json"
   extractor:
     name: spec-layer-foundation
@@ -117,11 +117,11 @@ not measured Figma source data. It is optional, omitted when empty, and MUST be
 excluded from the semantic content hash together with diagnostics, statistics,
 and volatile envelope metadata.
 
-### 5.4 Compact Copy for AI profile
+### 5.4 Compact profiles
 
 The schema-valid artifact is an audit and interchange contract, not a prompt
-budget. A clipboard consumer MAY derive a compact AI presentation profile from
-an already-built artifact. Spec Layer identifies that projection explicitly:
+budget. A consumer MAY derive a compact presentation profile from an
+already-built artifact. Spec Layer identifies that projection explicitly:
 
 ```yaml
 spec_layer:
@@ -133,7 +133,10 @@ spec_layer:
 
 The profile is not validated by the Foundation Context v5 JSON Schema and MUST
 NOT become an input to `semanticContentHash`. Its `content_hash` points back to
-the complete canonical artifact from which it was derived.
+the complete canonical artifact from which it was derived. Foundation Copy for
+AI, the published bundle's `foundation.ai`, and `spec-layer pull` project the
+DTCG profile in §5.5 instead of this one; the AI profile now feeds only the
+Foundation dependency slice a Component Context v5 copy embeds.
 
 The projection MUST preserve implementation-relevant facts: collection and
 token names, declared modes and defaults, token types and scopes, values and
@@ -154,6 +157,15 @@ guidelines, and diagnostic counts. It MAY:
 
 The canonical artifact remains the sole source of truth for validation,
 machine diffing, stable source identity, and exact reconstruction.
+
+### 5.5 DTCG profile
+
+Foundation clipboard and repository output is a Design Tokens Format Module
+2025.10 projection of the validated artifact, defined in
+`docs/superpowers/specs/2026-09-03-dtcg-foundation-export-design.md`. It is
+downstream of validation, outside every hash, and it omits and reports what the
+format cannot express rather than approximating it. The canonical artifact
+remains the sole source of truth.
 
 ## 6. Stable identity and names
 
@@ -226,6 +238,7 @@ Requirements:
   type: color
   description: "Use for a page or screen background."
   scopes: ["FRAME_FILL", "SHAPE_FILL"]
+  code_syntax: { WEB: "--background-surface-page" }
   publication:
     published: true
     hidden_from_publishing: false
@@ -250,6 +263,9 @@ Each token MUST include:
 - publication state;
 - lifecycle state;
 - one value entry for every declared mode, or an explicit missing-value record.
+
+Each token record MAY additionally carry Figma code syntax by platform, when
+the variable declares any, as `code_syntax`.
 
 ## 9. Canonical value representation
 
@@ -655,6 +671,14 @@ Recommended flags:
 ```
 
 The programmatic API SHOULD return the artifact and diagnostics separately so callers can decide whether to persist partially valid exports.
+
+Of this recommended surface, only `pull` is implemented, and not as shown
+above: `spec-layer pull` (CLI `0.4.0`) writes the Foundation as a `tokens/`
+directory projected from the canonical artifact in `bundle.json` (see §5.5 and
+`docs/superpowers/specs/2026-09-03-dtcg-foundation-export-design.md`) rather
+than a single `foundation.yaml`. `validate`, `normalize`, and `diff` remain
+unimplemented; see `docs/specs/foundation-v5-status.md` for what is still
+open.
 
 ## 21. Acceptance criteria
 

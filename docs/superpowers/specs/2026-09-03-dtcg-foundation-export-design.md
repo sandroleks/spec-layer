@@ -1,7 +1,7 @@
 # DTCG Foundation export
 
 **Date:** 2026-09-03
-**Status:** approved design, not yet implemented
+**Status:** implemented 2026-09-03
 **Scope:** Foundation Copy for AI in the plugin, the published bundle's foundation `ai` field, and the CLI `pull` output. Component Context v5 is unchanged except that its embedded tokens gain `code_syntax`.
 **Reads with:** `docs/specs/foundation-context-v5.md`, `docs/specs/foundation-v5-status.md`, `packages/cli/README.md`, `docs/strategy/2026-09-02-design-conformance-pivot.md` section 6.1.
 
@@ -118,6 +118,10 @@ Figma names split on `/` into segments, as `path` already does. DTCG forbids
   fabrication.
 
 Casing is preserved. There is no slugging inside files.
+
+Style paths collide by keeping the first style in artifact order and omitting
+later ones, because styles are already ordered by the source and dropping both
+would lose a style for a sibling's defect.
 
 ### Values
 

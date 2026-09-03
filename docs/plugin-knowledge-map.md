@@ -9,10 +9,11 @@ runtime truth belongs in production source, `ARCHITECTURE.md`, and this map.
 ## Product boundary
 
 Spec Layer turns selected components and file-level Foundations into connected
-documentation Sections on the Figma canvas. **Copy for AI** produces a YAML
-brief on the clipboard: from a component or scoped Foundation row in Library,
-or for the complete file-wide token vocabulary from Foundations. Markdown and
-ZIP output have been retired.
+documentation Sections on the Figma canvas. **Copy for AI** puts context on the
+clipboard: a YAML brief from a component, and a Design Tokens Format Module
+2025.10 resolver document (JSON) from a scoped Foundation row in Library or the
+complete file-wide token vocabulary from Foundations. Markdown and ZIP output
+have been retired.
 
 Structural extraction is deterministic and local. AI writing is optional. The
 plugin sends a derived component summary and, when small enough, a rendered

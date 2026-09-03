@@ -105,6 +105,10 @@ match, and the published URL must serve the committed bytes before a release.
 artifact for prompt size. It never participates in a hash and never justifies
 weakening the canonical schema.
 
+**DTCG is a projection.** `v5/dtcg.ts` reads a validated artifact and never
+feeds a hash. What the format cannot express is omitted and written to the
+report. Never a plausible default, never a fake reference.
+
 **NUL bytes.** Some separator idioms emit raw `0x00` that lint, tests, and
 `git diff` all hide. `npm run check:nul` guards `packages/`, but not `docs/`.
 This has bitten the repo three times.
@@ -118,9 +122,9 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-01)
+## Where things stand (2026-09-03)
 
-`main` is clean and green: 1718 tests passing, 9 todo.
+`main` is clean and green: 2078 tests passing, 9 todo.
 
 Shipped and merged:
 
@@ -134,13 +138,23 @@ Shipped and merged:
 - **Component Context v5** (phase 4 adoption). A component copy joins Foundation
   v5 by stable Figma id and embeds only its own validated dependency closure,
   with repeated bindings grouped under ordered `paths`.
+- **DTCG Foundation export**, schema `5.1.0`. Tokens carry an optional
+  `code_syntax` object. `packages/extractor/src/v5/dtcg.ts` projects a
+  validated Foundation artifact into a Design Tokens Format Module 2025.10
+  resolver document; it replaces the AI profile everywhere Foundation Copy for
+  AI, the published bundle's `foundation.ai`, and `spec-layer pull` (CLI
+  `0.4.0`, which writes a `tokens/` directory) used to emit Spec Layer's own
+  YAML. The AI profile now feeds only the Foundation dependency slice a
+  Component Context v5 copy embeds.
 - Production proxy at `api.spec-layer.com`, landing site, freemium flow.
 
 Open, in rough priority order:
 
 1. **The manual Figma matrix in `packages/plugin/TESTING.md` has never been run
-   against a development build** for the v5 work. This is the standing release
-   blocker. Unit tests cannot reach it.
+   against a development build** for the v5 work, including the rewritten
+   Foundation Copy for AI rows that now check the DTCG clipboard document
+   rather than YAML. This is the standing release blocker. Unit tests cannot
+   reach it.
 2. Real design-system grading for v5 criteria 3, 10, and 11 (synthetic golden
    passes; a reviewed real artifact does not exist in-repo). Criterion 9
    (style lifecycle) is ungradable from the current Plugin API.

@@ -1,7 +1,7 @@
 ---
 title: Component Context v5
 status: Implemented; manual real-Figma gate open
-schema_version: 5.0.0
+schema_version: 5.1.0
 last_updated: 2026-08-29
 ---
 
@@ -43,7 +43,7 @@ metadata, and source identity:
 ```yaml
 spec_layer:
   kind: component
-  schema_version: 5.0.0
+  schema_version: 5.1.0
   schema_uri: https://spec-layer.com/schemas/component-context/v5.json
   extractor: { name: spec-layer-component, version: "2", build: null }
   export:
