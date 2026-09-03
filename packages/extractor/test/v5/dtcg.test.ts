@@ -90,3 +90,71 @@ describe('foundationDtcg files and literals', () => {
     expect(JSON.stringify(artifact)).toBe(before);
   });
 });
+
+describe('foundationDtcg aliases and omissions', () => {
+  const out = foundationDtcg(syntheticArtifact());
+
+  it('writes a local alias as a reference to the target DTCG path', () => {
+    const primary = leaf(out.files['semantic.dark.json'], 'Semantic.color.surface.primary');
+    expect(primary).toMatchObject({ $type: 'color', $value: '{Primitives.color.chain.bridge}' });
+  });
+
+  it('omits missing values and unresolved aliases with a reason, never a literal or a fake reference', () => {
+    expect(leaf(out.files['primitives.light-2.json'], 'Primitives.color.shared')).toBeUndefined();
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'value_omitted', severity: 'warning', path: 'Primitives.color.shared',
+      details: expect.objectContaining({ id: 'VariableID:local-collision', reason: 'no_value_for_mode' }),
+    }));
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.color.legacy.readable')).toBeUndefined();
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'value_omitted', path: 'Semantic.color.legacy.readable', mode: 'Light',
+      details: expect.objectContaining({
+        reason: 'source_library_unavailable', source_library_name: 'Deprecated Core',
+      }),
+    }));
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.cycle.a')).toBeUndefined();
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'value_omitted', path: 'Primitives.cycle.a', details: expect.objectContaining({ reason: 'cycle' }),
+    }));
+    for (const text of Object.values(out.files).map((f) => JSON.stringify(f))) {
+      expect(text).not.toContain('unresolved');
+      expect(text).not.toContain('"$value":null');
+    }
+  });
+
+  it('keeps the sidecar keyed by DTCG path with the stable id, scopes, and code syntax', () => {
+    expect(out.meta['Primitives.color.exact.red']).toEqual({
+      id: 'VariableID:color-exact', collection_id: 'CollectionID:primitives', type: 'color',
+      scopes: ['FRAME_FILL'], code_syntax: { WEB: '--color-exact-red' },
+    });
+    const boolToken = syntheticArtifact().tokens.find((t) => t.type === 'boolean');
+    if (!boolToken) throw new Error('fixture lost its boolean token');
+    const omitted = out.meta[dtcgPathOf('Primitives', boolToken.name)];
+    expect(omitted.omitted).toBe(true);
+    expect(omitted.values).toEqual({
+      'Light [ModeID:p-light]': true, Dark: false, 'Light [ModeID:p-light-duplicate]': true,
+    });
+  });
+
+  it('promotes a scope-less number to a dimension only under a declared override', () => {
+    const forced = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/number/*': 'px' } });
+    expect(leaf(forced.files['primitives.light.json'], 'Primitives.number.unknown-scope'))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'px' } });
+    const conflicting = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/typography/weight/*': 'px' } });
+    expect(leaf(conflicting.files['primitives.light.json'], 'Primitives.typography.weight.strong')?.$type)
+      .toBe('fontWeight');
+    expect(conflicting.report).toContainEqual(expect.objectContaining({
+      code: 'unit_override_conflicts_with_scope', path: 'Primitives.typography.weight.strong',
+    }));
+  });
+
+  it('reports a code syntax identifier that two tokens share', () => {
+    const artifact = syntheticArtifact();
+    const [a, b] = artifact.tokens.filter((t) => t.type === 'color').slice(0, 2);
+    a.code_syntax = { WEB: '--dup' };
+    b.code_syntax = { WEB: '--dup' };
+    const dup = foundationDtcg(artifact).report.filter((r) => r.code === 'duplicate_code_syntax');
+    expect(dup).toHaveLength(2);
+    expect(dup[0].details).toMatchObject({ platform: 'WEB', identifier: '--dup' });
+  });
+});

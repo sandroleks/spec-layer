@@ -273,6 +273,80 @@ function modeName(collection: CollectionV5, modeId: string): string {
   return collection.modes.find((m) => m.id === modeId)?.name ?? modeId;
 }
 
+/** `Collection/glob` -> matcher over a token's Figma name within that collection. */
+function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5): 'px' | 'rem' | undefined {
+  const units = p.options.units;
+  if (!units) return undefined;
+  for (const key of Object.keys(units).sort(compareCodeUnits)) {
+    const slash = key.indexOf('/');
+    if (slash === -1 || key.slice(0, slash) !== collection.name) continue;
+    const glob = key.slice(slash + 1);
+    const escaped = glob.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+    if (new RegExp(`^${escaped}$`).test(token.name)) return units[key];
+  }
+  return undefined;
+}
+
+const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
+
+/** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
+function modeLabels(collection: CollectionV5): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const m of collection.modes) counts.set(m.name, (counts.get(m.name) ?? 0) + 1);
+  return new Map(collection.modes.map((m) => [m.id, counts.get(m.name) === 1 ? m.name : `${m.name} [${m.id}]`]));
+}
+
+function asJson(value: unknown): DtcgJson {
+  return JSON.parse(JSON.stringify(value)) as DtcgJson;
+}
+
+function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): DtcgMetaEntry {
+  const labels = modeLabels(collection);
+  const omitted = p.omittedIds.has(token.id);
+  const plain = (v: TokenV5['values'][string]): DtcgJson => {
+    if (v.kind === 'literal' && (v.value.type === 'boolean' || v.value.type === 'string'
+      || v.value.type === 'number' || v.value.type === 'font_family')) return v.value.value;
+    return asJson(v);
+  };
+  return {
+    id: token.id,
+    collection_id: token.collection_id,
+    type: token.type,
+    scopes: [...token.scopes],
+    ...(token.code_syntax ? { code_syntax: token.code_syntax } : {}),
+    ...(token.publication ? { publication: token.publication } : {}),
+    ...(omitted
+      ? {
+          omitted: true,
+          values: Object.fromEntries(Object.entries(token.values)
+            .map(([modeId, v]) => [labels.get(modeId) ?? modeId, plain(v)])),
+        }
+      : {}),
+  };
+}
+
+function reportDuplicateCodeSyntax(p: Projection): void {
+  const owners = new Map<string, TokenV5[]>();
+  for (const token of p.artifact.tokens) {
+    for (const [platform, identifier] of Object.entries(token.code_syntax ?? {})) {
+      const key = JSON.stringify([platform, identifier]);
+      owners.set(key, [...(owners.get(key) ?? []), token]);
+    }
+  }
+  for (const [key, tokens] of owners) {
+    if (tokens.length < 2) continue;
+    const [platform, identifier] = JSON.parse(key) as [string, string];
+    for (const token of tokens) {
+      reportOnce(p, {
+        code: 'duplicate_code_syntax', severity: 'warning',
+        path: p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name,
+        message: `${tokens.length} tokens declare the ${platform} identifier "${identifier}".`,
+        details: { id: token.id, platform, identifier, ids: tokens.map((t) => t.id) },
+      });
+    }
+  }
+}
+
 export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
   const p: Projection = {
     artifact,
@@ -285,6 +359,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   };
   indexPaths(p);
   omitInexpressibleTypes(p);
+  reportDuplicateCodeSyntax(p);
 
   const files: Record<string, DtcgTree> = {};
   const taken = new Set<string>();
@@ -300,10 +375,19 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     }
   }
 
+  const meta: Record<string, DtcgMetaEntry> = {};
+  for (const token of artifact.tokens) {
+    const collection = p.collectionById.get(token.collection_id);
+    if (!collection) continue;
+    const path = p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name;
+    meta[path] = metaEntry(p, token, collection);
+  }
+  const sortedMeta = Object.fromEntries(Object.entries(meta).sort(([a], [b]) => compareCodeUnits(a, b)));
+
   return {
     files,
     resolver: { version: '2025.10', sets: {}, modifiers: {}, resolutionOrder: [] },
-    meta: {},
+    meta: sortedMeta,
     report: p.report,
   };
 }
@@ -327,8 +411,85 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
   const value = token.values[modeId];
   const path = p.pathById.get(token.id) ?? '';
   const mode = modeName(collection, modeId);
-  if (value === undefined || value.kind !== 'literal') return null; // aliases and missing: Task 3
-  const converted = dtcgLiteral(value.value, token.scopes, p.options.values);
+  const description: Record<string, DtcgJson> =
+    token.description.length > 0 ? { $description: token.description } : {};
+
+  if (value === undefined || value.kind === 'missing') {
+    reportOnce(p, {
+      code: 'value_omitted', severity: 'warning', path, mode,
+      message: 'The token has no value for this mode.',
+      details: { id: token.id, reason: value?.reason ?? 'no_value_for_mode' },
+    });
+    return null;
+  }
+
+  if (value.kind === 'alias') {
+    if (value.resolved.status === 'unresolved') {
+      reportOnce(p, {
+        code: 'value_omitted', severity: 'warning', path, mode,
+        message: `The alias could not be resolved (${value.resolved.reason}); no value was written.`,
+        details: {
+          id: token.id, reason: value.resolved.reason,
+          target_path: value.reference.target_path.join('/'),
+          ...(value.reference.target_id !== null ? { target_id: value.reference.target_id } : {}),
+          ...(value.reference.source_library_name
+            ? { source_library_name: value.reference.source_library_name } : {}),
+        },
+      });
+      return null;
+    }
+    const targetId = value.reference.target_id;
+    const targetPath = targetId !== null && !p.omittedIds.has(targetId) ? p.pathById.get(targetId) : undefined;
+    if (targetPath === undefined) {
+      reportOnce(p, {
+        code: 'value_omitted', severity: 'warning', path, mode,
+        message: 'The alias target was itself omitted from the DTCG output.',
+        details: { id: token.id, reason: 'target_omitted', ...(targetId !== null ? { target_id: targetId } : {}) },
+      });
+      return null;
+    }
+    const target = p.artifact.tokens.find((t) => t.id === targetId);
+    const hop = value.resolved.chain[0];
+    if (target && hop && target.collection_id !== token.collection_id) {
+      const targetCollection = p.collectionById.get(target.collection_id);
+      const hopMode = targetCollection ? modeName(targetCollection, hop.mode_id) : hop.mode_id;
+      if (hopMode !== mode) {
+        reportOnce(p, {
+          code: 'mode_selection_not_expressible', severity: 'info', path, mode,
+          message: `Figma resolved this alias through the target's "${hopMode}" mode; DTCG resolves it by the consumer's context.`,
+          details: {
+            id: token.id, target_id: targetId ?? '', target_mode: hopMode,
+            resolved: asJson(value.resolved.value),
+          },
+        });
+      }
+    }
+    const typed = dtcgLiteral(value.resolved.value, token.scopes, p.options.values);
+    if ('omit' in typed) {
+      reportOnce(p, {
+        code: typed.omit, severity: 'warning', path, mode,
+        message: 'The alias resolves to a value DTCG cannot state; the value was omitted.',
+        details: { id: token.id, ...typed.details },
+      });
+      return null;
+    }
+    return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
+  }
+
+  const override = unitOverrideFor(p, token, collection);
+  let literal: TypedValue = value.value;
+  if (override !== undefined && literal.type === 'number') {
+    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) {
+      reportOnce(p, {
+        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
+        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+        details: { id: token.id, override, scopes: [...token.scopes] },
+      });
+    } else {
+      literal = { type: 'dimension', number: literal.value, unit: override };
+    }
+  }
+  const converted = dtcgLiteral(literal, token.scopes, p.options.values);
   if ('omit' in converted) {
     reportOnce(p, {
       code: converted.omit, severity: 'warning', path, mode,
@@ -339,9 +500,5 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     });
     return null;
   }
-  return {
-    $type: converted.$type,
-    $value: converted.$value,
-    ...(token.description.length > 0 ? { $description: token.description } : {}),
-  };
+  return { $type: converted.$type, $value: converted.$value, ...description };
 }
