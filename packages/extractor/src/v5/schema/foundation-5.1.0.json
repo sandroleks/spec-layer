@@ -159,6 +159,10 @@
               "type": "array",
               "items": { "type": "string" }
             },
+            "code_syntax": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
             "publication": { "$ref": "#/$defs/publication" },
             "lifecycle": { "$ref": "#/$defs/lifecycle" },
             "values": {

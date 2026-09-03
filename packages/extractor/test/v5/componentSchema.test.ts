@@ -6,11 +6,11 @@ import { COMPONENT_SCHEMA_URI } from '../../src/v5/componentContext';
 import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
 
 const componentSchemaText = readFileSync(
-  'packages/extractor/src/v5/schema/component-5.0.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/component-5.1.0.json', 'utf8',
 );
 const componentSchema = JSON.parse(componentSchemaText) as Record<string, unknown>;
 const foundationSchema = JSON.parse(readFileSync(
-  'packages/extractor/src/v5/schema/foundation-5.0.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/foundation-5.1.0.json', 'utf8',
 )) as Record<string, unknown>;
 
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: true, inlineRefs: false }));

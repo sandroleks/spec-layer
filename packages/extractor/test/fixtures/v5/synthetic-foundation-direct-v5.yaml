@@ -35,6 +35,7 @@ tokens:
     type: color
     description: Exactly representable source channels.
     scopes: [FRAME_FILL]
+    code_syntax: { WEB: "--color-exact-red" }
     values:
       ModeID:p-light:
         kind: literal
@@ -84,6 +85,7 @@ tokens:
     type: dimension
     description: ""
     scopes: [GAP]
+    code_syntax: { WEB: "--spacing-gap" }
     values:
       ModeID:p-light: { kind: literal, value: { type: dimension, number: 8, unit: px } }
       ModeID:p-dark: { kind: literal, value: { type: dimension, number: 12, unit: px } }
@@ -95,6 +97,7 @@ tokens:
     type: dimension
     description: Shared shadow blur radius.
     scopes: [EFFECT_FLOAT]
+    code_syntax: { WEB: "--effect-shadow-blur" }
     publication: { published: true, hidden_from_publishing: false }
     values:
       ModeID:p-light: { kind: literal, value: { type: dimension, number: 8, unit: px } }
@@ -330,6 +333,7 @@ tokens:
     type: color
     description: Three-hop semantic alias.
     scopes: [FRAME_FILL]
+    code_syntax: { WEB: "--color-surface-primary" }
     values:
       ModeID:s-light:
         kind: literal
@@ -490,14 +494,14 @@ styles:
         modified_at: null
 spec_layer:
   kind: foundation
-  schema_version: 5.0.0
+  schema_version: 5.1.0
   schema_uri: https://spec-layer.com/schemas/foundation-context/v5.json
   extractor: { name: spec-layer-foundation, version: "2", build: null }
   export:
     id: synthetic-direct-v5-acceptance
     generated_at: 2026-08-28T00:00:00.000Z
     deterministic: true
-    content_hash: sha256:39147fd721bde03b8706b3104fb9921f5c35a7fdf14dae39998a5d898d3a1fea
+    content_hash: sha256:6672f17bd07643b2f27bb9b7e955fdcaf68948137a0d10a2711c45d5eb0153a8
   source:
     provider: figma
     file_id: FILE:synthetic-direct-v5

@@ -50,6 +50,10 @@ export interface TokenV5 extends EntityIdentity {
    *  description" from "the field was not exported". */
   description: string;
   scopes: string[];
+  /** Figma's per-platform code syntax, keyed by platform (`WEB`, `ANDROID`,
+   *  `iOS`). Absent when the variable declares none. A cross-check for a code
+   *  identifier, never the source of a name. Schema 5.1.0. */
+  code_syntax?: Record<string, string>;
   publication?: PublicationState;
   lifecycle?: LifecycleState;
   /** Keyed by MODE ID, never by mode display name. §7. */

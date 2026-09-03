@@ -37,7 +37,7 @@ import { computeFoundationStatistics } from './statistics';
 import { validateLevel1, validateLevel2 } from './validate';
 import { resolvedValueOf } from './value';
 
-export const COMPONENT_SCHEMA_VERSION = '5.0.0';
+export const COMPONENT_SCHEMA_VERSION = '5.1.0';
 export const COMPONENT_SCHEMA_URI = 'https://spec-layer.com/schemas/component-context/v5.json';
 export const COMPONENT_EXTRACTOR_NAME = 'spec-layer-component';
 
@@ -730,7 +730,7 @@ export function componentAiContext(
       ...payload,
       spec_layer: {
         kind: 'foundation',
-        schema_version: '5.0.0',
+        schema_version: COMPONENT_SCHEMA_VERSION,
         schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
         extractor: artifact.spec_layer.extractor,
         export: {

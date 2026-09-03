@@ -61,6 +61,7 @@ export interface FoundationAiToken {
   type: TokenType;
   description?: string;
   scopes?: string[];
+  code_syntax?: Record<string, string>;
   publication?: PublicationState;
   lifecycle?: { status: LifecycleState['status']; replacement?: string };
   values: Record<string, AiValue>;
@@ -275,6 +276,7 @@ function compactToken(
     type: token.type,
     ...(token.description.length > 0 ? { description: token.description } : {}),
     ...(token.scopes.length > 0 ? { scopes: token.scopes } : {}),
+    ...(token.code_syntax ? { code_syntax: token.code_syntax } : {}),
     ...(token.publication ? { publication: token.publication } : {}),
     ...(lifecycle ? { lifecycle } : {}),
     values,

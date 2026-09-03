@@ -42,6 +42,7 @@ describe('foundationAiContext', () => {
     };
     expect(token('spacing/gap')).toEqual({
       name: 'spacing/gap', type: 'dimension', scopes: ['GAP'],
+      code_syntax: { WEB: '--spacing-gap' },
       values: {
         'Light [ModeID:p-light]': { number: 8, unit: 'px' },
         Dark: { number: 12, unit: 'px' },

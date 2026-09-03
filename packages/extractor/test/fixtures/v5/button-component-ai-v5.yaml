@@ -2,8 +2,8 @@ spec_layer:
   kind: component
   version: 5
   profile: ai
-  content_hash: sha256:9582c10bb19851958592d38df1ba9446be7c4585b9dca8d570b0764c91baf389
-  foundation_hash: sha256:ecdeee34463e3cad7c68883b916992a3e23097c9cc84e64b22b7c88ce73759d1
+  content_hash: sha256:4c7e0de66d8d0173202669a5ce10b48f0b0273be8453bf46f6d1ac0b93f1ac47
+  foundation_hash: sha256:4f57a78b751c4e7345b341eb86bf0dd01aad69286331ba658ce26d6fa65e24d1
   source: { provider: figma, file_name: Design System }
 source: { node_id: 1:100, node_name: Button, component_key: m3-button }
 component: { name: Button, related: [Icon] }
@@ -86,7 +86,7 @@ references:
       kind: variable
       when: { Style: [Outlined] }
   foundation:
-    dependency_hash: sha256:6c65ce623fcc15fb4abc9d4ac5ce43bfceb35f21ffb6c18ba8af5efe6afaae9a
+    dependency_hash: sha256:6be56f6e11c10cf77694b259bc818e3e6fe54fd636a3d833b66d1c77a938fb58
     completeness: { collections: complete, styles: complete, unavailable_sources: [] }
     collections:
       - name: Material tokens
@@ -98,26 +98,31 @@ references:
             source_id: VariableID:1
             type: color
             scopes: [FRAME_FILL, SHAPE_FILL]
+            code_syntax: { WEB: "--md-sys-color-primary" }
             values: { Default: "#6750a4" }
           - name: md.sys.shape.corner.full
             source_id: VariableID:2
             type: dimension
             scopes: [CORNER_RADIUS]
+            code_syntax: { WEB: "--md-sys-shape-corner-full" }
             values: { Default: { number: 999, unit: px } }
           - name: md.sys.color.on-primary
             source_id: VariableID:3
             type: color
             scopes: [FRAME_FILL, SHAPE_FILL]
+            code_syntax: { WEB: "--md-sys-color-on-primary" }
             values: { Default: "#ffffff" }
           - name: md.sys.color.outline
             source_id: VariableID:4
             type: color
             scopes: [STROKE_COLOR]
+            code_syntax: { WEB: "--md-sys-color-outline" }
             values: { Default: "#79747e" }
           - name: md.sys.color.primary-hover
             source_id: VariableID:5
             type: color
             scopes: [FRAME_FILL, SHAPE_FILL]
+            code_syntax: { WEB: "--md-sys-color-primary-hover" }
             values: { Default: "#5b438f" }
     styles: { typography: [], effects: [] }
 unbound:

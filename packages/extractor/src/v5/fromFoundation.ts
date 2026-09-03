@@ -336,6 +336,13 @@ function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set(values)].sort(compareCodeUnits);
 }
 
+/** Keys sorted by code unit so two exports of one variable serialize alike. */
+function sortedRecord(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(record).sort(([a], [b]) => compareCodeUnits(a, b)),
+  );
+}
+
 function diagnosticIdentity(finding: Diagnostic): string {
   return canonicalJson({
     code: finding.code,
@@ -942,6 +949,9 @@ export function buildFoundationArtifactV5(
         type,
         description: variable.description,
         scopes: uniqueSorted(variable.provenance.scopes),
+        ...(Object.keys(variable.codeSyntax).length > 0
+          ? { code_syntax: sortedRecord(variable.codeSyntax) }
+          : {}),
         ...(publicationOf(variable.publication)
           ? { publication: publicationOf(variable.publication) }
           : {}),

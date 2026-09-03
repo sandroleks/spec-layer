@@ -1,7 +1,7 @@
 /**
  * Level 1 validation — spec §18 "Schema validity".
  *
- * A hand-written mirror of `schema/foundation-5.0.0.json`, kept separate
+ * A hand-written mirror of `schema/foundation-5.1.0.json`, kept separate
  * because the plugin sandbox cannot load `ajv` (see the module comment on
  * that schema file). The published schema is for consumers; this is what the
  * plugin itself runs. `test/v5/schemaParity.test.ts` is what keeps the two
@@ -383,6 +383,12 @@ function validateToken(token: unknown, index: number, out: Diagnostic[]): void {
   }
   if (token.suggested_code_name !== undefined && typeof token.suggested_code_name !== 'string') {
     out.push(shape(entityId, 'token.suggested_code_name must be a string when present.'));
+  }
+  if (token.code_syntax !== undefined) {
+    if (!isRecord(token.code_syntax)
+      || Object.values(token.code_syntax).some((v) => typeof v !== 'string')) {
+      out.push(shape(entityId, 'token.code_syntax must be an object of strings when present.'));
+    }
   }
   let tokenType: TokenType | undefined;
   if (typeof token.type !== 'string') {

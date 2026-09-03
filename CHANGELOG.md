@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Foundation Context v5 tokens carry `code_syntax`, Figma's per-platform code
+  identifier, when the variable declares one. Schema `5.1.0` for both
+  Foundation and Component Context. This moves the semantic content hash of
+  every artifact whose tokens declare a code syntax, and nothing else: canvas
+  drift hashes and `EXTRACTOR_VERSION` are unchanged. The identifier is a
+  cross-check for code, never the source of a name.
+
 - `spec-layer setup`, one command for a developer's first run in a repo. It
   writes `speclayer.json`, makes sure git ignores `speclayer.local.json`,
   stores the pull key there at mode `0600`, and pulls. Every later `pull` and

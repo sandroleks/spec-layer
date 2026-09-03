@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   buildFoundation, type RawCollection, type RawExternalRef, type RawVariable,
@@ -6,6 +8,22 @@ import {
 import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
 import { canonicalJson } from '../../src/v5/canonical';
 import { validateLevel1, validateLevel2 } from '../../src/v5/validate';
+
+const DIRECT_INPUT_PATH = fileURLToPath(
+  new URL('../fixtures/v5/synthetic-foundation-serialized.json', import.meta.url),
+);
+const DIRECT_META = {
+  exportId: 'synthetic-direct-v5-acceptance',
+  generatedAt: '2026-08-28T00:00:00.000Z',
+  build: null,
+};
+
+function directFixture() {
+  const serialized = JSON.parse(
+    readFileSync(DIRECT_INPUT_PATH, 'utf8'),
+  ) as SerializedFoundation;
+  return buildFoundationArtifactV5(buildFoundation(serialized), DIRECT_META);
+}
 
 const META = {
   exportId: 'export-1', generatedAt: '2026-08-28T12:00:00.000Z',
@@ -581,5 +599,17 @@ describe('buildFoundationArtifactV5 — completeness, hashes, and validation', (
     const stats = artifact.statistics as { diagnostics: Record<string, number> };
     expect(Object.values(stats.diagnostics).reduce((sum, count) => sum + count, 0))
       .toBe(artifact.diagnostics.length);
+  });
+
+  it('carries code_syntax only for variables that state one', () => {
+    const { artifact } = directFixture();
+    const red = artifact.tokens.find((t) => t.id === 'VariableID:color-exact');
+    const gap = artifact.tokens.find((t) => t.id === 'VariableID:gap');
+    expect(red?.code_syntax).toEqual({ WEB: '--color-exact-red' });
+    expect(gap?.code_syntax).toEqual({ WEB: '--spacing-gap' });
+    // The fixture's second variable declares `"codeSyntax": {}`, which must not
+    // surface as an empty object.
+    const empty = artifact.tokens.filter((t) => !('code_syntax' in t));
+    expect(empty.length).toBeGreaterThan(0);
   });
 });
