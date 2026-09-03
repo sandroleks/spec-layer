@@ -444,7 +444,13 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       reportOnce(p, {
         code: 'value_omitted', severity: 'warning', path, mode,
         message: 'The alias target was itself omitted from the DTCG output.',
-        details: { id: token.id, reason: 'target_omitted', ...(targetId !== null ? { target_id: targetId } : {}) },
+        details: {
+          id: token.id, reason: 'target_omitted',
+          target_path: value.reference.target_path.join('/'),
+          ...(targetId !== null ? { target_id: targetId } : {}),
+          ...(value.reference.source_library_name
+            ? { source_library_name: value.reference.source_library_name } : {}),
+        },
       });
       return null;
     }

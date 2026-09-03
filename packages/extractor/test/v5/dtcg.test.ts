@@ -99,6 +99,23 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(primary).toMatchObject({ $type: 'color', $value: '{Primitives.color.chain.bridge}' });
   });
 
+  it('reports the target path when an alias target was itself omitted', () => {
+    const artifact = syntheticArtifact();
+    const target = artifact.tokens.find((t) => t.id === 'VariableID:chain-bridge');
+    if (!target) throw new Error('fixture lost the alias target Primitives.color.chain.bridge');
+    // DTCG has no boolean type, so omitInexpressibleTypes drops this token
+    // whole, which is what makes its dependent alias's target look up empty.
+    target.type = 'boolean';
+    const withOmittedTarget = foundationDtcg(artifact);
+    expect(leaf(withOmittedTarget.files['semantic.dark.json'], 'Semantic.color.surface.primary')).toBeUndefined();
+    expect(withOmittedTarget.report).toContainEqual(expect.objectContaining({
+      code: 'value_omitted', severity: 'warning', path: 'Semantic.color.surface.primary', mode: 'Dark',
+      details: expect.objectContaining({
+        id: 'VariableID:chain-owner', reason: 'target_omitted', target_path: 'color/chain/bridge',
+      }),
+    }));
+  });
+
   it('omits missing values and unresolved aliases with a reason, never a literal or a fake reference', () => {
     expect(leaf(out.files['primitives.light-2.json'], 'Primitives.color.shared')).toBeUndefined();
     expect(out.report).toContainEqual(expect.objectContaining({
