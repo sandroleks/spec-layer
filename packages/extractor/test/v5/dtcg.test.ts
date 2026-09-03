@@ -160,6 +160,29 @@ describe('foundationDtcg aliases and omissions', () => {
     });
   });
 
+  it('still emits the reference when Figma resolved a hop through another mode', () => {
+    const artifact = syntheticArtifact();
+    const primitives = artifact.collections.find((c) => c.id === 'CollectionID:primitives');
+    const dark = primitives?.modes.find((m) => m.id === 'ModeID:p-dark');
+    if (!dark) throw new Error('fixture lost the Primitives Dark mode');
+    // Now every Primitives mode is named "Light", so the hop Figma resolved
+    // through no longer matches the consuming Semantic "Dark" mode by name.
+    dark.name = 'Light';
+    const renamed = foundationDtcg(artifact);
+    expect(leaf(renamed.files['semantic.dark.json'], 'Semantic.color.surface.primary'))
+      .toMatchObject({ $type: 'color', $value: '{Primitives.color.chain.bridge}' });
+    expect(renamed.report).toContainEqual(expect.objectContaining({
+      code: 'mode_selection_not_expressible', severity: 'info',
+      path: 'Semantic.color.surface.primary', mode: 'Dark',
+      details: expect.objectContaining({
+        id: 'VariableID:chain-owner', target_id: 'VariableID:chain-bridge',
+        // Both labels are the resolver's, not the raw display names, which now
+        // collide inside Primitives.
+        target_mode: 'Light [ModeID:p-dark]',
+      }),
+    }));
+  });
+
   it('keeps a sidecar entry for every token in a DTCG path collision', () => {
     const artifact = syntheticArtifact();
     const ids = ['VariableID:color-exact', 'VariableID:color-lossy'];
@@ -342,6 +365,49 @@ describe('foundationDtcg styles', () => {
         ],
       },
     });
+  });
+
+  it('keeps the first of two styles that share a DTCG path and reports the later one', () => {
+    const artifact = syntheticArtifact();
+    const original = artifact.styles.typography[0];
+    artifact.styles.typography.push({
+      ...structuredClone(original), id: 'StyleID:body-regular-copy', description: 'The later twin.',
+    });
+    const collided = foundationDtcg(artifact);
+    const body = leaf(collided.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect(body?.$description).toBe('Source style retained for Phase 3.');
+    expect(collided.report.filter((r) => r.code === 'path_collision')).toEqual([
+      expect.objectContaining({
+        code: 'path_collision', severity: 'error', path: 'Typography styles.Body.Regular',
+        details: {
+          id: 'StyleID:body-regular-copy',
+          ids: ['StyleID:body-regular', 'StyleID:body-regular-copy'],
+        },
+      }),
+    ]);
+  });
+
+  it('reports an effect style with no visible shadow and keeps every layer under extensions', () => {
+    const artifact = syntheticArtifact();
+    // The drop shadow turns invisible, leaving only a hidden shadow and a blur,
+    // neither of which DTCG's shadow type can state.
+    artifact.styles.effects[0].effects[0].visible = false;
+    const blurred = foundationDtcg(artifact);
+    const card = leaf(blurred.files['styles.effects.json'], 'Effect styles.Shadow.Card');
+    expect(card?.$type).toBe('shadow');
+    expect(card?.$value).toEqual([]);
+    expect(card?.$extensions).toEqual({
+      'com.spec-layer': {
+        layers: [
+          { index: 0, type: 'drop_shadow', visible: false, blend_mode: 'normal' },
+          { index: 1, type: 'layer_blur', visible: false, blur: { value: 2, unit: 'px' } },
+        ],
+      },
+    });
+    expect(blurred.report).toContainEqual(expect.objectContaining({
+      code: 'effect_not_expressible', severity: 'warning', path: 'Effect styles.Shadow.Card',
+      details: { id: 'StyleID:shadow-card' },
+    }));
   });
 
   it('writes no style file when the artifact has no styles of that kind', () => {
