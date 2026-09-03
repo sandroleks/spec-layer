@@ -225,12 +225,16 @@ interface Projection {
   segmentsById: Map<string, string[]>;
   omittedIds: Set<string>;
   report: DtcgReportEntry[];
+  /** Serialized identity of every entry already in `report`, so the dedupe
+   *  below stays O(1) per call instead of re-serializing the whole report. */
+  reportKeys: Set<string>;
 }
 
 function reportOnce(p: Projection, entry: DtcgReportEntry): void {
   const key = JSON.stringify([entry.code, entry.path, entry.mode ?? null, entry.details]);
-  const seen = p.report.some((r) => JSON.stringify([r.code, r.path, r.mode ?? null, r.details]) === key);
-  if (!seen) p.report.push(entry);
+  if (p.reportKeys.has(key)) return;
+  p.reportKeys.add(key);
+  p.report.push(entry);
 }
 
 /** Resolves every token's DTCG path and drops both sides of a collision. */
@@ -581,6 +585,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     segmentsById: new Map(),
     omittedIds: new Set(),
     report: [],
+    reportKeys: new Set(),
   };
   indexPaths(p);
   omitInexpressibleTypes(p);
