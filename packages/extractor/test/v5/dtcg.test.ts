@@ -172,6 +172,53 @@ describe('foundationDtcg aliases and omissions', () => {
     }));
   });
 
+  it('gives an alias the projected type of the token it references', () => {
+    // DTCG requires a referencing token's $type to equal the referenced token's,
+    // so a unit override or a FONT_WEIGHT scope on the target must reach the alias.
+    const aliasedToNumber = (): ReturnType<typeof syntheticArtifact> => {
+      const artifact = syntheticArtifact();
+      const gap = artifact.tokens.find((t) => t.id === 'VariableID:gap');
+      if (!gap) throw new Error('fixture lost Primitives.spacing.gap');
+      gap.values['ModeID:p-light'] = {
+        kind: 'alias',
+        reference: {
+          target_id: 'VariableID:unknown-number',
+          target_collection_id: 'CollectionID:primitives',
+          target_path: ['number', 'unknown-scope'],
+          external: false,
+        },
+        resolved: {
+          status: 'resolved',
+          value: { type: 'number', value: 1.5 },
+          chain: [{ token_id: 'VariableID:unknown-number', mode_id: 'ModeID:p-light' }],
+        },
+      };
+      return artifact;
+    };
+
+    const overridden = foundationDtcg(aliasedToNumber(), { units: { 'Primitives/number/*': 'px' } });
+    expect(leaf(overridden.files['primitives.light.json'], 'Primitives.number.unknown-scope')?.$type)
+      .toBe('dimension');
+    expect(leaf(overridden.files['primitives.light.json'], 'Primitives.spacing.gap'))
+      .toEqual({ $type: 'dimension', $value: '{Primitives.number.unknown-scope}' });
+
+    // Same shape, but the target's type comes from its scope rather than an override.
+    const scoped = aliasedToNumber();
+    const gap = scoped.tokens.find((t) => t.id === 'VariableID:gap');
+    const value = gap?.values['ModeID:p-light'];
+    if (!gap || value?.kind !== 'alias') throw new Error('the alias mutation did not take');
+    value.reference.target_id = 'VariableID:font-weight';
+    value.reference.target_path = ['typography', 'weight', 'strong'];
+    value.resolved = {
+      status: 'resolved',
+      value: { type: 'number', value: 600 },
+      chain: [{ token_id: 'VariableID:font-weight', mode_id: 'ModeID:p-light' }],
+    };
+    expect(gap.scopes).not.toContain('FONT_WEIGHT');
+    expect(leaf(foundationDtcg(scoped).files['primitives.light.json'], 'Primitives.spacing.gap'))
+      .toEqual({ $type: 'fontWeight', $value: '{Primitives.typography.weight.strong}' });
+  });
+
   it('reports a code syntax identifier that two tokens share', () => {
     const artifact = syntheticArtifact();
     const [a, b] = artifact.tokens.filter((t) => t.type === 'color').slice(0, 2);

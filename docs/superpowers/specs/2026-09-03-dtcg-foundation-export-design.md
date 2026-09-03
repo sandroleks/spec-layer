@@ -165,7 +165,14 @@ the clipboard document carries no overrides.
 ### Aliases
 
 A local alias becomes `"{Collection.segment.segment}"` with the target's DTCG
-path. Which mode of the target applies is decided by the consumer's resolver
+path. Its `$type` is the type the token it references projects to, not the type
+its own scopes would give the resolved value, because DTCG requires a
+referencing token's `$type` to match the referenced token's. A unit override or
+a `FONT_WEIGHT` scope on the target therefore reaches every alias to it. A
+chain takes the type of the token that holds the literal, which is the same
+answer as asking each direct target for its own projected type in turn.
+
+Which mode of the target applies is decided by the consumer's resolver
 contexts, which matches the artifact's mode policy of exact name match. When a
 chain hop was resolved by the collection default instead of a same-named mode,
 the reference is still emitted and the token is reported

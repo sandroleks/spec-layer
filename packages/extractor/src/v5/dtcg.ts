@@ -13,7 +13,7 @@ import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
 } from './entities';
 import { canonicalNumber } from './precision';
-import type { ColorValue, DimensionValue, TypedValue } from './value';
+import type { ColorValue, DimensionValue, ResolutionStep, TypedValue } from './value';
 
 export type DtcgValueStyle = 'standard' | 'legacy';
 export interface DtcgOptions {
@@ -218,6 +218,7 @@ export function sortTree(value: DtcgJson): DtcgJson {
 interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  tokenById: Map<string, TokenV5>;
   collectionById: Map<string, CollectionV5>;
   /** collection id -> resolver label: the name alone, or name plus id when a
    *  name repeats. Figma allows two collections to share a display name. */
@@ -299,6 +300,42 @@ function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5
 }
 
 const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
+
+/**
+ * The typed leaf one token's own value projects to: a declared unit override
+ * and the scopes that pin a number are the TOKEN's, not the reader's. Shared by
+ * the literal branch and the alias branch of `tokenLeaf` so the two can never
+ * disagree about a `$type`. `onOverrideConflict` fires only when the caller
+ * owns the token, since an override that contradicts a scope is reported once
+ * against the token it names, not against everything that aliases it.
+ */
+function projectedLiteral(
+  p: Projection, token: TokenV5, resolved: TypedValue,
+  onOverrideConflict?: (override: 'px' | 'rem') => void,
+): Converted {
+  const collection = p.collectionById.get(token.collection_id);
+  const override = collection ? unitOverrideFor(p, token, collection) : undefined;
+  let literal: TypedValue = resolved;
+  if (override !== undefined && literal.type === 'number') {
+    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) onOverrideConflict?.(override);
+    else literal = { type: 'dimension', number: literal.value, unit: override };
+  }
+  return dtcgLiteral(literal, token.scopes, p.options.values);
+}
+
+/**
+ * The `$type` an alias leaf carries. DTCG requires a referencing token's type
+ * to equal the referenced token's, and the referenced token's type is decided
+ * by ITS override and scopes. Following the chain to its last hop gives the
+ * same answer as asking the direct target for its own projected type, hop by
+ * hop, and terminates on the token that actually holds the literal.
+ */
+function aliasLeafType(
+  p: Projection, token: TokenV5, chain: readonly ResolutionStep[], resolved: TypedValue,
+): Converted {
+  const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
+  return projectedLiteral(p, terminal ?? token, resolved);
+}
 
 /** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
 function modeLabels(collection: CollectionV5): Map<string, string> {
@@ -623,6 +660,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   const p: Projection = {
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
     collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
     collectionLabelById: collectionLabels(artifact.collections),
     modeLabelsById: new Map(artifact.collections.map((c) => [c.id, modeLabels(c)])),
@@ -736,7 +774,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
-    const target = p.artifact.tokens.find((t) => t.id === targetId);
+    const target = targetId !== null ? p.tokenById.get(targetId) : undefined;
     const hop = value.resolved.chain[0];
     if (target && hop && target.collection_id !== token.collection_id) {
       const targetCollection = p.collectionById.get(target.collection_id);
@@ -755,7 +793,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
         });
       }
     }
-    const typed = dtcgLiteral(value.resolved.value, token.scopes, p.options.values);
+    const typed = aliasLeafType(p, token, value.resolved.chain, value.resolved.value);
     if ('omit' in typed) {
       reportOnce(p, {
         code: typed.omit, severity: 'warning', path, mode,
@@ -767,20 +805,13 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const override = unitOverrideFor(p, token, collection);
-  let literal: TypedValue = value.value;
-  if (override !== undefined && literal.type === 'number') {
-    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) {
-      reportOnce(p, {
-        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
-        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
-        details: { id: token.id, override, scopes: [...token.scopes] },
-      });
-    } else {
-      literal = { type: 'dimension', number: literal.value, unit: override };
-    }
-  }
-  const converted = dtcgLiteral(literal, token.scopes, p.options.values);
+  const converted = projectedLiteral(p, token, value.value, (override) => {
+    reportOnce(p, {
+      code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
+      message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+      details: { id: token.id, override, scopes: [...token.scopes] },
+    });
+  });
   if ('omit' in converted) {
     reportOnce(p, {
       code: converted.omit, severity: 'warning', path, mode,
