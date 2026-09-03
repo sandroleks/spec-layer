@@ -105,7 +105,7 @@ describe('copyBriefFromSource', () => {
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
     const [, notice] = renderManualCopyModal.mock.calls[0];
     expect(notice).toContain('Token values are missing because foundations have not been read yet.');
-    expect(notice).toContain('This document was made before guidelines were saved, so it has none.');
+    expect(notice).toContain('This document has no saved guidelines.');
   });
 
   it('omits the modal caveat entirely when nothing is missing', async () => {
@@ -116,7 +116,7 @@ describe('copyBriefFromSource', () => {
     // "token values missing" caveat is unavoidable here; assert only that a
     // present prose stops contributing its own half of the caveat.
     const [, notice] = renderManualCopyModal.mock.calls[0];
-    expect(notice).not.toContain('made before guidelines were saved');
+    expect(notice).not.toContain('no saved guidelines');
   });
 
   it('never posts a canvas-mutating message', async () => {

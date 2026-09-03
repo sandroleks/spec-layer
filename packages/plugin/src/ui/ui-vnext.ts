@@ -885,10 +885,11 @@ function completeCurrentLibraryUpdate(): void {
  * Copy for AI.
  *
  * Component rows need a round trip: the brief needs both the stored prose and
- * the doc's source, so this asks for prose first (cheap: a single pluginData
- * read) and only sends requestDocSource once the docProse reply lands and is
- * stashed on the operation. The docSource handler reads that prose back off,
- * builds the brief, and clears the operation on every exit.
+ * the doc's source, so this asks for prose first (the doc's guidelines: the
+ * stored blob merged with the canvas) and only sends requestDocSource once
+ * the docProse reply lands and is stashed on the operation. The docSource
+ * handler reads that prose back off, builds the brief, and clears the
+ * operation on every exit.
  *
  * Foundation rows need none of that. The whole file's variables are already in
  * memory (the Library view asks for them on entry), and the doc's scope rode in

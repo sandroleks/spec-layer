@@ -528,7 +528,7 @@ export async function copyBriefFromSource(
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
-    const noProse = prose ? '' : ' This document was made before guidelines were saved, so it has none.';
+    const noProse = prose ? '' : ' This document has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
     const tier = await copyText(yaml);
     if (tier === 'manual') {
