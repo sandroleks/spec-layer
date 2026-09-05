@@ -821,6 +821,28 @@ function copyPresenter(): BuildPresenter {
   };
 }
 
+/**
+ * Copy one Foundations row: a collection with all of its modes, or the text
+ * styles. Reuses the Library row's scoped copy, which widens a collection to
+ * every mode and its local dependency closure. modeIds is a frame-only limit
+ * the copy ignores, so it is passed empty.
+ */
+function copyFoundationRow(id: string, textStyles: boolean): void {
+  if (textStyles) {
+    void copyFoundationBriefForScope({ target: 'textStyles' }, copyPresenter());
+    return;
+  }
+  const collection = currentFoundationSpec()?.collections.find((c) => c.id === id);
+  if (!collection) {
+    nativeNotify('That collection is no longer in this file. Nothing was copied.', { error: true, timeout: 5000 });
+    return;
+  }
+  void copyFoundationBriefForScope(
+    { target: 'collection', collectionId: collection.id, collectionName: collection.name, modeIds: [] },
+    copyPresenter(),
+  );
+}
+
 function finishLibraryOperation(error = ''): void {
   const active = libraryOperation;
   if (!active) return;
@@ -1669,6 +1691,12 @@ document.addEventListener('click', (event) => {
   if (target.closest('[data-foundation-bulk]')) {
     onFoundationToggleAll();
     paintAndFocus('[data-foundation-bulk]');
+    return;
+  }
+
+  const foundationCopy = target.closest<HTMLButtonElement>('[data-foundation-copy]');
+  if (foundationCopy?.dataset.foundationCopy) {
+    copyFoundationRow(foundationCopy.dataset.foundationCopy, foundationCopy.dataset.textStyles === 'true');
     return;
   }
 

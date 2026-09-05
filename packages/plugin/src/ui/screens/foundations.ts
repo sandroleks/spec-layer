@@ -69,6 +69,7 @@ function sourceRow(options: {
   checked: boolean;
   iconName: IconName;
   textStyles?: boolean;
+  busy: boolean;
 }): string {
   const action = options.checked ? 'Remove' : 'Include';
   return (
@@ -80,7 +81,15 @@ function sourceRow(options: {
     `<span class="sl-foundation-source-icon">${icon(options.iconName, 17)}</span>` +
     '<span class="sl-foundation-title">' +
     `<strong>${esc(options.name)}</strong><small>${esc(options.meta)}</small>` +
-    '</span></button></article>'
+    '</span></button>' +
+    // A sibling of the checkbox button, never inside it: a copy must not
+    // toggle inclusion. One collection is what an agent usually needs, and
+    // it stays well under the size the whole-file copy reaches.
+    `<button class="sl-icon-button sl-foundation-copy" type="button" data-foundation-copy="${esc(options.id)}"` +
+    `${options.textStyles ? ' data-text-styles="true"' : ''}` +
+    ` aria-label="Copy ${esc(options.name)} for AI" title="Copy for AI"${options.busy ? ' disabled' : ''}>` +
+    `${icon('copy', 17)}</button>` +
+    '</article>'
   );
 }
 
@@ -109,6 +118,8 @@ export function foundationScrollMarkup(
   }
 
   const summary = summarize(spec);
+  // 'loading' already returned above, so only 'generating' remains busy here.
+  const busy = state.kind === 'generating';
   const frames = framesPerSource(spec);
   const selectedCount = selection.collections.length +
     (selection.textStyles && summary.textStyleCount > 0 ? 1 : 0);
@@ -124,6 +135,7 @@ export function foundationScrollMarkup(
       meta: collectionMeta(collection, frames.collections[collection.id] ?? 0),
       checked: picked,
       iconName: FOUNDATION_ICON[collection.iconKind],
+      busy,
     });
   });
   if (summary.textStyleCount > 0) {
@@ -134,6 +146,7 @@ export function foundationScrollMarkup(
       checked: selection.textStyles,
       iconName: FOUNDATION_ICON.typography,
       textStyles: true,
+      busy,
     }));
   }
 
@@ -178,11 +191,12 @@ export function foundationFooterMarkup(
       : FOUNDATION_CREATE_LABEL;
   const progress = footerProgressMarkup(state);
   const refreshLabel = refreshing ? 'Refreshing…' : 'Refresh sources';
-  // Shown once a file has been read, so an agent can grab the whole token
-  // vocabulary without waiting on (or being limited by) a source selection.
+  // The whole file, named as such now that every row copies its own
+  // collection. Kept one click away: the CLI writes the same document as
+  // files, and some agents want the complete vocabulary.
   const copy = spec
     ? '<button class="sl-button" data-tone="secondary" id="sl-copy-foundation" type="button">' +
-      `${icon('copy', 15)}<span>Copy for AI</span></button>`
+      `${icon('copy', 15)}<span>Copy whole file for AI</span></button>`
     : '';
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +

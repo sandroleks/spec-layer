@@ -222,6 +222,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   selection with the same content a Library row copies, minus saved
   guidelines, since no document is involved.
 
+- Every collection row and the text styles row on the Foundations screen has
+  its own **Copy for AI**, producing the same scoped DTCG document a Library
+  row copies. The footer copy is now labelled **Copy whole file for AI**.
+
 ### Changed
 
 - Clicking anything that is not a component no longer shows a toast on the

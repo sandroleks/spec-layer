@@ -98,7 +98,13 @@ open: nothing should pop up on the canvas.
    Confirm the complete file-wide vocabulary is present regardless of source
    selection, and no canvas objects are created. Note the size the toast
    reports, if any; it appears above 200 KB and is measured in kilobytes.
-5. If AI group descriptions are enabled, confirm a failed or refused AI
+5. Click the copy icon on one collection row and paste. Confirm the document
+   contains that collection with all of its modes plus only the collections
+   its aliases need, that the "included" checkbox did not toggle, and that the
+   copy is much smaller than the whole-file copy. Repeat for the **Text
+   styles** row and confirm only `sets["Typography styles"]` and its
+   dependency collections appear.
+6. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
 

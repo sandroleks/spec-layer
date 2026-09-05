@@ -1687,7 +1687,15 @@
 }
 
 .sl-foundation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   border-bottom: 1px solid var(--sl-color-border-muted);
+}
+
+.sl-foundation-copy {
+  margin-inline-end: var(--sl-space-8);
+  color: var(--sl-color-text-muted);
 }
 
 .sl-foundation-summary {
