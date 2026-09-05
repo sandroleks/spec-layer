@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { IntermediateSpec } from '../../src/extract';
 import type { TokenRule } from '../../src/tokens';
+import { buildFoundation, type SerializedFoundation } from '../../src/foundation';
+import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
 import type {
   CollectionV5, EffectStyleV5, StyleProperty, TokenV5, TypographyStyleV5,
 } from '../../src/v5/entities';
@@ -251,6 +253,48 @@ describe('Component Context v5', () => {
     const first = buildComponentArtifactV5(component, { ...META, foundation: complete });
     const second = buildComponentArtifactV5(component, { ...META, foundation: partial });
     expect(second.references.foundation?.completeness.collections).toBe('complete');
+    expect(second.spec_layer.export.content_hash).toBe(first.spec_layer.export.content_hash);
+  });
+
+  it('keeps the slice completeness equal to the foundation when a publish status read fails', () => {
+    // A real Figma read: `getPublishStatusAsync` threw, so the plugin recorded
+    // `publishStatus: null` (packages/plugin/src/main.ts, publishStatusOf).
+    const serialized: SerializedFoundation = {
+      fileKey: 'FILE1', fileName: 'Design System', extractedAt: 'T',
+      collections: [{
+        id: 'CollectionID:space', name: 'Space',
+        modes: [{ modeId: 'CollectionID:space:mode', name: 'Default' }],
+        defaultModeId: 'CollectionID:space:mode',
+        variableIds: ['VariableID:base'],
+        publication: { hiddenFromPublishing: false, publishStatus: null, remote: false },
+        variables: [{
+          id: 'VariableID:base', name: 'space/base', resolvedType: 'FLOAT',
+          description: '', codeSyntax: {}, scopes: ['GAP'],
+          valuesByMode: { 'CollectionID:space:mode': 8 },
+        }],
+      }],
+      textStyles: [], effectStyles: [], externals: [],
+    };
+    const source = buildFoundationArtifactV5(buildFoundation(serialized), {
+      exportId: 'foundation:partial', generatedAt: '2026-08-29T00:00:00.000Z', build: null,
+    }).artifact;
+    expect(source.completeness.collections).toBe('partial');
+    expect(source.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'METADATA_UNAVAILABLE', entity_id: 'CollectionID:space',
+    }));
+
+    const component = spec([rule(
+      'VariableID:base', 'space/base', 'variable', 'gap', 'CollectionID:space',
+    )]);
+    const first = buildComponentArtifactV5(component, { ...META, foundation: source });
+    const second = buildComponentArtifactV5(component, { ...META, foundation: source });
+
+    // The slice carries the collection whose source is partial, so it must say
+    // so too. If it flips to `complete`, `completeness` is inside the hashed
+    // payload and every such component's content_hash moves.
+    expect(first.references.foundation?.completeness.collections).toBe('partial');
+    expect(first.references.foundation?.completeness.collections)
+      .toBe(source.completeness.collections);
     expect(second.spec_layer.export.content_hash).toBe(first.spec_layer.export.content_hash);
   });
 

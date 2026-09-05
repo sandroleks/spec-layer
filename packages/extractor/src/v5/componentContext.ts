@@ -300,6 +300,20 @@ function dedupeFoundationDiagnostics(findings: Diagnostic[]): Diagnostic[] {
 }
 
 /**
+ * Diagnostic codes that, carried on a collection or token id, state that part
+ * of that entity's source did not reach the artifact. The Foundation's own
+ * `completeness.collections` turns partial on the same facts, so the embedded
+ * slice must read the same set or the two disagree and the component hash
+ * moves. `METADATA_UNAVAILABLE` carries an unreadable publication status,
+ * `EXPORT_SCOPED` carries the requested collection of a scoped export, and
+ * `SOURCE_PARTIALLY_UNAVAILABLE` stays because its read-failure sites use
+ * `ROOT` today but are not required to.
+ */
+const PARTIAL_SOURCE_CODES: ReadonlySet<string> = new Set([
+  'SOURCE_PARTIALLY_UNAVAILABLE', 'METADATA_UNAVAILABLE', 'EXPORT_SCOPED',
+]);
+
+/**
  * Select exactly the Foundation entities needed by these component references.
  * Entity arrays retain their source artifact order; closure discovery order
  * cannot make two exports differ.
@@ -378,7 +392,7 @@ export function componentFoundationDependencies(
     (reference.kind === 'text-style' || reference.kind === 'effect-style')
       && reference.status !== 'resolved') || unavailableStyles.size > 0;
   const collectionSourcePartial = inherited.some((finding) =>
-    finding.code === 'SOURCE_PARTIALLY_UNAVAILABLE'
+    PARTIAL_SOURCE_CODES.has(finding.code)
       && (collectionIds.has(finding.entity_id) || tokenIds.has(finding.entity_id)));
   const completeness: ExtractionCompleteness = {
     collections: !variableRequested

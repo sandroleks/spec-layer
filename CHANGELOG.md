@@ -228,7 +228,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `METADATA_UNAVAILABLE` at info, and a deliberately scoped copy as
   `EXPORT_SCOPED` at info; `SOURCE_PARTIALLY_UNAVAILABLE` now means a source
   read failed. Diagnostics are outside every content hash, so no artifact
-  identity moves.
+  identity moves. The Component Context v5 dependency slice reads the recoded
+  codes when it decides its own `completeness.collections`, which is inside the
+  hashed payload, so a component that depends on a collection whose publication
+  status could not be read still reports `partial` and keeps its hash.
 
 - `spec-layer pull` (CLI 0.4.0) writes the Foundation as a `tokens/` directory
   of Design Tokens Format Module 2025.10 files plus `resolver.json`, a Figma
