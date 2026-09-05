@@ -442,8 +442,8 @@ function lookupToken(
   foundation: FoundationSpec | undefined,
   ref: RefIdentity,
 ): { alias?: string; resolved?: YamlValue; external?: boolean; code?: YamlValue; mode?: string } {
-  // Variables only. A style name has no entry in any collection, so walking
-  // them for one was the lookup whose empty result used to be emitted as `{}`.
+  // Variables only. A style name has no entry in any collection, so a lookup
+  // for one would come back empty and must not be emitted as `{}`.
   if (!foundation || ref.kind !== 'variable') return {};
   for (const collection of foundation.collections) {
     for (const variable of collection.variables) {
@@ -581,12 +581,9 @@ function tokensOf(
  * `instanceSwap` today -- is a content/icon slot (→ `slots`).
  *
  * `slots` is defined by exclusion (neither `variant` nor `boolean`), not by
- * naming `text`/`instanceSwap` explicitly: an earlier version of this
- * function did name them explicitly and silently dropped both from the
- * brief (both `button.json` and `chip.json` declare a `text` prop named
- * `Label` that vanished as a result). Defining the fourth group by exclusion
- * means a future fifth `PropKind` surfaces here too, instead of vanishing
- * the same way.
+ * naming `text`/`instanceSwap` explicitly. Naming them would silently drop any
+ * fifth `PropKind` from the brief; defining the group by exclusion surfaces it
+ * here instead.
  */
 function apiOf(spec: IntermediateSpec): YamlValue | undefined {
   const stateProps = stateAxisProps(spec.variants);

@@ -33,7 +33,7 @@ declare const __PLUGIN_VERSION__: string;
 // once), updated on 'setBrandTheme', and resolved to concrete values when
 // building a frame.
 let brandTheme: BrandTheme = emptyBrandTheme();
-// User-captured logo (base64 PNG), used by Task 14 to stamp the frame.
+// User-captured logo (base64 PNG), stamped into the frame header.
 let brandLogo: string | null = null;
 
 // ---------------------------------------------------------------------------
@@ -197,8 +197,7 @@ const foundationReader: FoundationReader = {
 // closing and reopening the plugin always re-fetches. The Foundations tab's
 // own fetch (`requestFoundation`, below) refreshes this same cache — both the
 // tab's initial load and its "Refresh sources" button — so a user who
-// suspects staleness has an existing, discoverable way to clear it without
-// this task inventing a second refresh affordance.
+// suspects staleness has one discoverable way to clear it.
 // ---------------------------------------------------------------------------
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
 
@@ -336,18 +335,16 @@ figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
-// Send stored frame brand theme on startup (default: no overrides). Prefers
-// the new 'brandTheme' key; falls back to a one-time migration from the 1.x
-// two-color 'brandColors' storage. The old key is left in place (harmless,
-// keeps rollback safe).
+// Send stored frame brand theme on startup (default: no overrides). Reads
+// 'brandTheme'; a 1.x install that only has the two-color 'brandColors' key is
+// migrated once. The legacy key is left in place so a rollback still finds it.
 figma.clientStorage.getAsync('brandTheme').then(async (value: BrandTheme | undefined) => {
   if (value) {
     brandTheme = migrateBrandColors(value);
   } else {
     const legacy = await figma.clientStorage.getAsync('brandColors') as BrandColors | undefined;
     brandTheme = migrateBrandColors(legacy);
-    // Persist the migrated theme so this branch runs only once; the legacy
-    // key stays untouched for rollback.
+    // Persist the migrated theme so the migration runs only once.
     await figma.clientStorage.setAsync('brandTheme', brandTheme);
   }
   const msg: MainToUi = { type: 'brandTheme', value: brandTheme };
@@ -492,8 +489,8 @@ async function findExistingDoc(
       const node = await figma.getNodeByIdAsync(docId);
       if (node && node.type === 'SECTION') {
         const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
-        // Foundation docs have no sourceNodeId and can never match a component
-        // lookup; Task 12 gives them their own resolution path.
+        // Foundation docs have no sourceNodeId and resolve by scope in
+        // renderFoundation and updateFoundationDoc, never here.
         if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return node as SectionNode;
       }
     } catch { /* dangling id; enumerate task prunes these */ }
@@ -506,10 +503,8 @@ async function findExistingDoc(
     try {
       if (child.type === 'SECTION' && child.name === sectionName) {
         const data = parseDocLink((child as SectionNode).getPluginData(DOC_LINK_KEY));
-        // A foundation-linked section sharing this name is someone else's doc
-        // (a foundation doc, not this component's), same as a mismatched
-        // sourceNodeId below: must not be adopted. Task 12 gives foundation
-        // docs their own resolution path.
+        // A foundation-linked section sharing this name is another doc, same as
+        // a mismatched sourceNodeId below: it must not be adopted.
         if (!data || (!isFoundationLink(data) && data.sourceNodeId === sourceNodeId)) return child as SectionNode;
       }
     } catch { /* skip unresolved child */ }
@@ -874,12 +869,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           label: name,
           componentName: name,
           pageName: page?.name ?? '',
-          // The source's page, and only that. This used to concatenate the doc
-          // name onto it, which made every consumer render the name twice — once
-          // as the row title, once inside its own subtitle ("buttonText" over
-          // "Components · buttonText"). A locator is only worth showing when it
-          // says something the title doesn't. Falls back to the name when the
-          // source node is gone and there's no page left to point at.
+          // The source's page, and only that: a locator is worth showing only
+          // when it says something the row title does not. Falls back to the
+          // name when the source node is gone and there is no page to point at.
           sourceLabel: sourcePage?.name || name,
           generatedAt: data.generatedAt,
           sourceNodeId: data.sourceNodeId,
@@ -938,8 +930,8 @@ figma.ui.onmessage = async (raw: unknown) => {
       }
       foundationRendering = true;
       // Declared outside the try so the catch block can report how many frames
-      // actually landed on the canvas before the failure (Finding 2: frames are
-      // appended one at a time and are never rolled back).
+      // actually landed on the canvas before the failure (frames are appended
+      // one at a time and are never rolled back).
       let created = 0;
       // The page the user invoked from. A non-replacing unit always lands
       // here; a replacing unit switches to its predecessor's page just long
@@ -1357,10 +1349,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
           break;
         }
-        // Foundation docs have no sourceNodeId to rebuild from here; Task 12
-        // gives them their own source-resolution path. The equivalent of an
-        // early `continue` for this non-loop site: bail with the same
-        // "no longer linked" message rather than reading a field that doesn't exist.
+        // Foundation docs have no sourceNodeId to rebuild from here; their
+        // rebuild path is updateFoundationDoc. Bail with the same "no longer
+        // linked" message rather than reading a field that does not exist.
         if (isFoundationLink(data)) {
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
           break;

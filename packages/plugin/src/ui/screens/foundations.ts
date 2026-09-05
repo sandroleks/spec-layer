@@ -161,13 +161,9 @@ export function foundationFooterMarkup(
    * "Select sources to continue" is an instruction, so it may only appear when
    * the user can actually follow it: sources are listed and none are ticked.
    *
-   * It used to be the label for every `frames === 0`, which is a different
-   * question — "nothing to build" has several causes and only one of them is
-   * the user's to fix. On page load it asked for a selection while the list was
-   * still skeleton rows and the progress line said "Reading this file"; in a
-   * file with no variables or text styles it asked forever, next to an empty
-   * state explaining there is nothing to select; and after a failed read it
-   * pointed at the wrong remedy, which is "Refresh sources" beside it.
+   * "Nothing to build" has other causes that are not the user's to fix: the
+   * list is still loading, the file has no variables or text styles, or the
+   * read failed and the remedy is "Refresh sources" beside it.
    *
    * Everywhere else the button names its act and is simply disabled, the same
    * way the component screen's "Create docs" sits disabled while extraction

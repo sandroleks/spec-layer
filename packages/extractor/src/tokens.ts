@@ -166,7 +166,7 @@ const simpleProperty = (raw: string): string => SIMPLE_PROPERTY_MAP[raw] ?? raw;
  * Shared between `normalizeBindings` (values are token names) and
  * `extractGaps` (values are hardcoded numbers) so a hardcoded padding gap and
  * a real padding binding on the same shape land on the exact same property
- * name — vocabulary drift between the two is the defect this task removes.
+ * name.
  */
 function paddingSides<T>(
   top: T[], right: T[], bottom: T[], left: T[],
@@ -223,8 +223,8 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
   const emit = (property: string, ref: TokenRef) => {
     if (out.some((o) => o.property === property && o.kind === ref.kind && o.id === ref.id)) return;
     // The ref travels through with its identity intact; only the PROPERTY is
-    // renamed. Reconstructing `{ property, token }` here is what used to flatten
-    // every binding back to a string one stage after it was resolved.
+    // renamed. Rebuilding `{ property, token }` here would flatten the binding
+    // back to a string one stage after it was resolved.
     out.push({ ...ref, property });
   };
 
@@ -269,8 +269,8 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
  * The identity key for one reference: what makes two bindings the same binding.
  *
  * `${kind}|${id}`, not the name. A name is a display string and two different
- * Figma resources can share one; keying on it is what used to make a variable
- * and an effect style called "Elevation/1" a single rule.
+ * Figma resources can share one; a variable and an effect style both called
+ * "Elevation/1" must stay two rules.
  */
 const refKey = (r: RefIdentity): string => `${r.kind}|${r.id}`;
 
@@ -281,9 +281,8 @@ const refKey = (r: RefIdentity): string => `${r.kind}|${r.id}`;
  * shape is built.
  *
  * A plain word rather than a control-character prefix, and safe because a real
- * refKey ALWAYS contains a `|` and this never does. The previous version began
- * with a raw SOH byte, which is exactly the class of invisible source that
- * `npm run check:nul` exists to catch and that its NUL-only scan missed.
+ * refKey ALWAYS contains a `|` and this never does. A control character here is
+ * exactly the class of invisible source `npm run check:nul` exists to catch.
  */
 const ABSENT_KEY = 'absent';
 
@@ -352,11 +351,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   const partByPath = new Map<string, string>();
   /** Every reference seen anywhere in this component, by refKey, so a rule can
    *  be turned back into a full identity at emit time. Two refs sharing a
-   *  (kind, id) are the same Figma resource, so overwriting is a no-op.
-   *
-   *  This REPLACES `identityByName` from the previous task, which was keyed by
-   *  name and so could only ever hold one of two references that shared one.
-   *  Delete that map and its two uses. */
+   *  (kind, id) are the same Figma resource, so overwriting is a no-op. */
   const refsByKey = new Map<string, RefIdentity>();
 
   variants.forEach((variant, idx) => {
@@ -576,8 +571,8 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
    * Sort fields, compared one at a time. Deliberately an array rather than a
    * separator-joined string: a joined key makes ordering depend on how the
    * separator sorts against whatever the previous field's last characters were,
-   * which is why the old version needed an unspellable NUL to be correct. Field
-   * by field, that question does not arise.
+   * and only an unspellable separator such as NUL makes that correct. Field by
+   * field, the question does not arise.
    *
    * Field 4 is the reference's NAME, so rules still sort the way a reader
    * expects to see them. Field 5 is the refKey, which only ever breaks a tie

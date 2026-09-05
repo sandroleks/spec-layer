@@ -44,9 +44,8 @@ function fmt(l: LayoutInfo): string {
  *
  * The walk is walkParts, the same one extractTokens and extractGaps use, so
  * `path` here is byte-identical to the `path` on a TokenRule for the same node.
- * Hand-rolling a second walk is what the old version did, and a second
- * vocabulary would make validate.ts's join match nothing and kill the geometry
- * rule silently in production instead of fixing it.
+ * A second walk would be a second path vocabulary, and validate.ts's join
+ * would then match nothing and drop the geometry rule silently.
  */
 export function extractLayout(root: SerializedNode): LayoutSummary[] {
   const out: LayoutSummary[] = [];

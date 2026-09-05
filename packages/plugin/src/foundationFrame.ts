@@ -193,10 +193,8 @@ export function headerSubtitle(content: FoundationUnitContent, isText: boolean):
  *
  * Takes ONLY the content object, never the surrounding batch. Everything a
  * footer says has to come from what the drift hash reads, or the note is
- * rendered without being covered: the part numbers used to arrive as
- * arguments, which put them outside the hash, counted the whole batch rather
- * than the split collection, and let a single-doc Update silently drop the
- * line altogether.
+ * rendered without being covered. Part numbers passed as arguments would sit
+ * outside the hash and disagree between a batch render and a single-doc Update.
  */
 export function footerNotes(content: FoundationUnitContent): string[] {
   const notes: string[] = [];
@@ -211,9 +209,8 @@ export function footerNotes(content: FoundationUnitContent): string[] {
 
 const COL_NAME = 240;
 const COL_DESC = 220;
-// Narrower than the one-line cell needed: a stacked "name over value" pair fits
-// a shorter column, so a four-mode table is now narrower than it used to be
-// rather than wider.
+// A stacked "name over value" pair fits a shorter column than a one-line cell,
+// so four mode columns stay narrower than the description column would suggest.
 const COL_MODE = 160;
 const ROW_PAD = 10;
 const CELL_GAP = 12;

@@ -27,15 +27,11 @@ import {
  * v8 = accessibility group expansion (Interactions, Design/Content Considerations)
  *      + selection-aware prompting and cache keys.
  *
- * DELIBERATELY NOT bumped on 2026-08-21, when proseInputHash changed from a
- * deny-list over IntermediateSpec to a hash of the rendered prompt. This
- * constant means "the produced voice changed", and it did not: the prompt is
- * byte-identical. The change does void every key minted before it, so drafts
- * cached under the old derivation are unreachable and regenerate once. That is
- * a one-time cost being paid deliberately, in exchange for the key never again
- * moving for a reason the model cannot see. Bumping this instead would have
- * bought the same regeneration while claiming a voice change that never
- * happened.
+ * Not bumped when proseInputHash changed from a deny-list over IntermediateSpec
+ * to a hash of the rendered prompt. This constant means "the produced voice
+ * changed"; a key derivation change is not that. Such a change voids every
+ * existing key and regenerates each draft once, which is the price of a key
+ * that never again moves for a reason the model cannot see.
  */
 export const PROSE_PROMPT_VERSION = 'v8';
 
@@ -47,18 +43,14 @@ export const PROSE_PROMPT_VERSION = 'v8';
  * field that does not reach buildProsePrompt cannot move the key, and a field
  * that does cannot fail to, without anyone maintaining a list.
  *
- * It was previously a DENY-list over IntermediateSpec, and that shape was wrong
- * in a way that cost money twice. `draftProse` sends this key to the proxy,
- * which reserves quota against it: a known key returns the stored body free,
- * while an unknown key calls Anthropic and commits a metered generation. So
- * every field present in the hash and absent from the prompt was a billed
- * regeneration for byte-identical prose. The deny-list let in `figmaFileName`
- * (a rename re-billed every component), the Figma file key (a duplicate or a
- * branch re-billed every component), the component key, the node id,
- * anatomyComponentId, variantInstances, gaps, and the `path`/`values` identity
- * fields threaded onto tokens, layout and anatomy by this branch. Sixteen
- * fields in total, four of them new, each one an independent way to orphan
- * every cached draft in existence.
+ * The shape matters because `draftProse` sends this key to the proxy, which
+ * reserves quota against it: a known key returns the stored body free, while
+ * an unknown key calls Anthropic and commits a metered generation. Any field in
+ * the hash that does not reach the prompt is a billed regeneration for
+ * byte-identical prose. A deny-list over IntermediateSpec cannot hold that
+ * line, since every new field is billable by default: the file name, the file
+ * key, node ids, variant instances, gaps, and path identities all leaked in
+ * that way.
  *
  * Deliberately NOT specContentHash: that projection flattens anatomy to its
  * depth-0 legacy shape, and nested anatomy parts DO reach the prompt, so reusing

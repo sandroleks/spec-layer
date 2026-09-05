@@ -39,7 +39,7 @@ export function solidFill(color: RGB): Paint[] {
 
 export type FontStyle = 'Regular' | 'Medium' | 'Bold';
 
-// Mutable so the theme can swap families (Task 14). Reset to Inter per build.
+// Mutable so the theme can swap families. Reset to Inter per build.
 let headingFamily = 'Inter';
 let bodyFamily = 'Inter';
 

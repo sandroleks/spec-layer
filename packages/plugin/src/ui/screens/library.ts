@@ -380,13 +380,10 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   );
   const refreshLabel = model.refreshing ? 'Refreshing…' : 'Refresh library';
   /**
-   * Label only. The glyph is fixed at `fileCheck` below and does not vary with
-   * state, which is the whole of the bug this used to have: it picked
-   * `refresh`, then `alertCircle`, then `check` as the state changed, so one
-   * slot showed an action, then a warning, then a status. It also could not
-   * take the circular arrows it wanted, because those mean "re-reads, writes
-   * nothing" and belong to the "Refresh library" beside it. The failed checks
-   * the old `alertCircle` reported are already visible per row as "Check
+   * Label only. The glyph is fixed at `fileCheck` and does not vary with
+   * state: one slot must not show an action, then a warning, then a status.
+   * Circular arrows mean "re-reads, writes nothing" and belong to "Refresh
+   * library" beside it; failed checks are already visible per row as "Check
    * unavailable". See the icon contract in design-system/components.css.
    *
    * "Update all docs", not "Update all 3": see docs/plugin-voice-and-copy.md

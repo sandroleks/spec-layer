@@ -1021,10 +1021,9 @@ export interface FoundationUnitContent {
    * "Part {index + 1} of {total}, covering {group}."
    *
    * Derived here rather than passed in, for two reasons. It has to be inside
-   * unitContent's return or the footer note it drives is rendered but not
-   * hashed, which is how adding a group to a large collection used to leave
-   * surviving frames with stale part numbers and no "Update available" to say
-   * so. And deriving it from the scope alone is what makes the numbers agree
+   * unitContent's return, or the footer note it drives is rendered but not
+   * hashed, and adding a group to a large collection would renumber surviving
+   * frames with no "Update available" to say so. And deriving it from the scope alone is what makes the numbers agree
    * between a whole-batch render and a single-doc rebuild: updateFoundationDoc
    * has no batch around it to count, so any numbering the batch computed for
    * itself would be lost on the next Update.

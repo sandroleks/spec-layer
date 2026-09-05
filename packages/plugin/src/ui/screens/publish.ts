@@ -5,12 +5,6 @@
  * viewModel/library.ts: `ui/publish.ts` (same basename, one directory up) owns
  * publish state, the bundle, and the proxy calls. This module turns a
  * PublishState into markup and knows nothing else.
- *
- * This used to be a section appended after the Library's document list, which
- * put the one action that sends a library off the machine below everything
- * else, in a viewport that filters and reflows under it, with no report of its
- * own work in flight. It is a Library sub-screen now: the rail keeps Library
- * selected and the header carries the way back.
  */
 
 import { icon } from '../shell/icons';
@@ -28,9 +22,8 @@ function esc(value: string): string {
 
 /**
  * Two groups, because this screen holds two different concerns: what leaving
- * this file means, and the key a developer needs. They used to be one grey
- * paragraph, which buried "anyone with the key can pull it" as the third
- * sentence of a run-on, forty pixels above the key it is about.
+ * this file means, and the key a developer needs. "Anyone with the key can
+ * pull it" has to sit next to the key it is about.
  */
 const WHAT_GETS_PUBLISHED =
   "This library's AI context: the foundation document and every connected " +
@@ -54,10 +47,9 @@ const BEFORE_FIRST_PUBLISH =
  * Shown instead of the publish action on a free plan.
  *
  * Publishing is a Pro action the proxy already enforces (`proCaller` in
- * packages/proxy/src/libraries.ts answers 401 to every other tier). A free plan
- * used to get the same screen and the same primary, spend a collection pass
- * over every component in the file, and read the refusal as an error line under
- * the button. The screen states the plan up front instead.
+ * packages/proxy/src/libraries.ts answers 401 to every other tier). Stating the
+ * plan up front saves a free plan a collection pass over every component in
+ * the file that would end in that refusal.
  */
 const PRO_ONLY =
   'Publishing is part of Pro. Upgrade to publish this library, and to get the ' +

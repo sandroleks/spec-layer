@@ -408,7 +408,7 @@ function convertLiteral(
       if (result.ok) return { kind: 'literal', value: result.value };
       // colorFromHex REJECTS rather than repairs (see color.ts) -- a
       // malformed colour becomes `missing` plus a diagnostic, never a
-      // clamped or padded guess. Decision 4 / Task 3.
+      // clamped or padded guess.
       diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
         entity_id: entityId, mode_id: modeId,
         message: `Colour could not be canonicalized: ${result.reason}`,
@@ -425,7 +425,7 @@ function convertLiteral(
       }
       // v4 carries no `scopes` at all, so `numericValue` always returns
       // null here -- there is no unit to state. The NUMBER is real data and
-      // must survive; only the unit CLAIM is lost. Decision 2: `type:
+      // must survive; only the unit CLAIM is lost. The rule: `type:
       // number` plus UNIT_METADATA_UNAVAILABLE, never `missing` (which
       // would discard real data) and never a guessed `dimension`/`px`
       // (which would fabricate one). Deliberately not UNSUPPORTED_VALUE_TYPE,
@@ -537,7 +537,7 @@ function convertAlias(
   }
 
   const byPath = tokenIndex.filter((t) => arraysEqual(t.path, targetPath));
-  // Decision 3, step 1: match on (collection, path) ONLY when v4 states a
+  // Match on (collection, path) ONLY when v4 states a
   // collection -- never fall back to the unqualified pool in that case, or a
   // qualified miss would silently widen into an unqualified guess.
   const collectionName = alias.collection?.normalize('NFC');
@@ -545,7 +545,7 @@ function convertAlias(
     ? byPath.filter((t) => t.collectionName === collectionName)
     : byPath;
 
-  // Decision 3, step 3: two or more matches is reported, never resolved by
+  // Two or more matches is reported, never resolved by
   // picking the first one.
   if (candidates.length > 1) {
     return unresolvedAlias(
@@ -910,7 +910,7 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     exportId: meta.exportId, generatedAt: meta.generatedAt, build: null, source,
   });
 
-  // Decision 8 / the review finding on Task 8: `diagnostics` is sorted here,
+  // `diagnostics` is sorted here,
   // once, right before it becomes part of the artifact -- never accumulated
   // in whatever order the two walks above happened to visit collections and
   // tokens in.

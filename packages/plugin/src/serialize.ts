@@ -147,7 +147,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
       if (!entry?.id) continue;
       const v = await resolver.variable(entry.id);
       // Deduped on the resolved ID, not on the name: two ids resolving to one
-      // name are two bindings, which is exactly what this change stops losing.
+      // name are two bindings.
       if (v && !bindings.some((b) => b.property === property && b.id === v.id)) {
         bindings.push({ property, ...variableRef(v) });
       }
@@ -156,8 +156,8 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
 
   // --- Resolve style ids ---
   // The property each id was read from decides the BINDING property; the style
-  // itself decides what kind of thing it is. Those are two different questions
-  // and this task stops answering the second by guessing at the first.
+  // itself decides what kind of thing it is. Those are two different questions,
+  // and the second is never answered by guessing from the first.
   const styleBinding = async (id: string, property: string): Promise<void> => {
     const s = await resolver.style(id);
     const ref = s ? styleRef(s) : null;
@@ -194,7 +194,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
 
   // Array.isArray, not `?? []`: figma.mixed is a symbol, so it is neither null
   // nor undefined and slipped through into `.some()`. Mixed reads as "no paint
-  // this pass can speak for", which is why no verdict below fires for it -- a
+  // this read can speak for", which is why no verdict below fires for it -- a
   // multi-colour label has fills, and claiming hasUnboundPaint or a hex for it
   // would be inventing a gap and a value nobody read.
   const fills = Array.isArray(node.fills) ? node.fills : [];

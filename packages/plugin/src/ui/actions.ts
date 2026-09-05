@@ -48,8 +48,8 @@ export interface UiState {
   currentExtractedAt: string;
   // Proxy-routed AI flow: a pro license key (mirrored to clientStorage via
   // main) and/or the Figma user id (free-tier identity), the global "Write
-  // with AI" preference, and the most recent generated prose drafts used to
-  // fill AI sections.
+  // with AI" preference, and the most recent generated prose drafts that fill
+  // AI sections.
   licenseKey: string | null;
   licenseInstanceId: string | null;
   // Session-only view of whether the stored key is granting Pro: null = not yet

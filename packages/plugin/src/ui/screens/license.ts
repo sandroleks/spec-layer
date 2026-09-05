@@ -131,11 +131,9 @@ function planCard(model: LicenseScreenModel): string {
     ? 100
     : safeLimit > 0 ? Math.min(100, (safeRemaining / safeLimit) * 100) : 0;
   const title = isPro ? 'Pro plan' : isUnknown ? 'Pro key saved' : 'Free plan';
-  // Says it once. The card used to read "Unlimited documentation maintenance"
-  // above "Unlimited AI writing" and "Unlimited library maintenance", which is
-  // the same claim three times, and it overstated the plan: Pro has no monthly
-  // cap, but PRO_SOFT_THRESHOLD and the per-minute rate limit still apply, so
-  // "unlimited" is the word voice rule 6 tells us not to use here.
+  // Says it once. Pro has no monthly cap, but PRO_SOFT_THRESHOLD and the
+  // per-minute rate limit still apply, so "unlimited" is the word voice rule 6
+  // tells us not to use here.
   const detail = isPro
     ? 'No monthly cap on AI writing or library maintenance'
     : isUnknown

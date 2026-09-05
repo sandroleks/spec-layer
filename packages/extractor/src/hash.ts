@@ -61,8 +61,8 @@ export function specContentHash(spec: IntermediateSpec): string {
       ({ part, property, conditions, token: name })),
     // Same reasoning as `tokens` above: `path` is a new identity for data
     // already hashed under `part`, so it stays out. `property` and `value` do
-    // enter: they are real content (Task 8 moved the measured number out of
-    // the old prose `issue` string and into its own field), so dropping them
+    // enter: they are real content (the measured number is its own field, not
+    // text inside `issue`), so dropping them
     // would silently stop the hash from noticing a gap's value change.
     //
     // gaps itself reaches only componentBrief's `unbound` list (the clipboard
@@ -78,9 +78,9 @@ export function specContentHash(spec: IntermediateSpec): string {
     gaps: spec.gaps.map(({ part, property, issue, value }) =>
       ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
     // `values` and `path` are both new identities for data already hashed
-    // here: the numbers live inside `summary`'s rendered sentence (Task 11
-    // gives validate.ts the structured numbers so it never has to regex-parse
-    // that sentence), and `path` names the same node `part` already names. Both
+    // here: the numbers live inside `summary`'s rendered sentence (validate.ts
+    // reads the structured `values`, never the sentence), and `path` names the
+    // same node `part` already names. Both
     // must stay out of the hash for the same reason `path` stays out of
     // `tokens`/`gaps` above: every committed doc's baseline was computed
     // without them, and including either would flip all of them to "update

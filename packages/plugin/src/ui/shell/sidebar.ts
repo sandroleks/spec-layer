@@ -45,12 +45,10 @@ const LINKEDIN_LABEL = 'Spec Layer on LinkedIn';
 /**
  * The badge is a dot, not a count.
  *
- * It used to print `counts.updates`, which is a number the UI only ever knows
- * progressively: source checks resolve one doc at a time, so the digit climbed
- * 1, 2, 3 as they landed, and every refresh cleared the checks and took the
- * badge away entirely before it counted back up. None of that motion told the
- * user anything they could act on. "Something in the Library needs attention"
- * is the whole message, and a dot says it without changing shape.
+ * A count is a number the UI only knows progressively: source checks resolve
+ * one doc at a time, so a digit would climb as they land and vanish on every
+ * refresh. "Something in the Library needs attention" is the whole message,
+ * and a dot says it without changing shape.
  *
  * The dot itself stays aria-hidden, and the state goes on the button's
  * accessible name instead: colour and shape alone are not available to a screen

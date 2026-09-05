@@ -252,11 +252,10 @@ export function buildLibraryModel(
  * Whether the Library rail badge should show, given a pass that may still be
  * running.
  *
- * The badge used to read `counts.updates` directly, which is not a fact until a
- * check pass finishes: `startLibraryDriftChecks` clears every result and marks
- * each component row `pending`, so a reload dropped the count to zero before it
- * climbed back one landed check at a time. The user saw the badge disappear and
- * then a number stepping 1, 2, 3.
+ * `counts.updates` is not a fact until a check pass finishes:
+ * `startLibraryDriftChecks` clears every result and marks each component row
+ * `pending`, so reading it directly would drop the badge to zero on reload and
+ * climb back one landed check at a time.
  *
  * A found update is true immediately, so it shows at once. A zero only means
  * "nothing to report" once nothing is still being checked; until then the

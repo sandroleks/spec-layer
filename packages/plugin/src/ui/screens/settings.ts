@@ -140,11 +140,9 @@ function themeChoice(
 /**
  * The swatch is the picker.
  *
- * It used to be an inert `<i>` that only previewed the hex beside it, so a
- * colour could be chosen exactly one way: by knowing its hex and typing it. A
- * native `type="color"` input is the whole feature, with the OS picker and no
- * custom eyedropper/wheel to build or maintain, and it keeps the field looking
- * like the swatch it replaces (see the CSS, which strips its default chrome).
+ * A native `type="color"` input is the whole feature, with the OS picker and no
+ * custom eyedropper or wheel to maintain, and it keeps the field looking like a
+ * swatch (see the CSS, which strips its default chrome).
  *
  * `value` must be a spec-valid lowercase `#rrggbb` or the control silently
  * sanitizes it to #000000 and the field would read as black. Everything here

@@ -5,8 +5,8 @@
  * detected automatically from Figma's host theme at boot (synchronously, so the
  * first paint is already correct — no flash-then-flip), and the toggle then
  * overrides it for the session. There is no persisted preference: deriving from
- * Figma every load is both the "automatic" behaviour we want and the thing that
- * removes the async clientStorage round-trip that used to cause the flash.
+ * Figma every load is the "automatic" behaviour we want, and an async
+ * clientStorage read here would reintroduce the flash.
  *
  * applyThemeMode() always sets body[data-theme] (our published palette in
  * design-system/tokens.css) rather than relying on Figma's injected :root vars — that way the
