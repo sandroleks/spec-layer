@@ -9,7 +9,7 @@ vi.mock('../src/ui/clipboard', () => ({
   renderManualCopyModal: (t: string, notice?: string) => renderManualCopyModal(t, notice),
 }));
 
-const { copyBriefFromSource, createState, onSelectionFoundation } =
+const { copyBriefFromSource, createState, onSelectionFoundation, LARGE_COPY_BYTES } =
   await import('../src/ui/actions');
 
 /** Shape of the parsed brief, just deep enough for these assertions. Typed
@@ -155,12 +155,9 @@ describe('copyBriefFromSource', () => {
     copyText.mockResolvedValue('manual');
     await copyBriefFromSource(createState(), { node: wide, fileKey: 'F1' }, null, presenter());
     const [text, notice] = renderManualCopyModal.mock.calls[0];
-    const kb = Math.round(new TextEncoder().encode(text).length / 1024);
-    if (kb * 1024 > 200 * 1024) {
-      expect(notice).toContain(`${kb} KB, which is large for some chat windows.`);
-    } else {
-      expect(notice ?? '').not.toContain('large for some chat windows');
-    }
+    const bytes = new TextEncoder().encode(text).length;
+    expect(bytes).toBeGreaterThan(LARGE_COPY_BYTES);
+    expect(notice).toContain(`${Math.round(bytes / 1024)} KB, which is large for some chat windows.`);
     expect(notice ?? '').not.toMatch(/\d+ lines/);
   });
 

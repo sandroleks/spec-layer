@@ -1,7 +1,7 @@
 # Review quick wins: design
 
 **Date:** 2026-09-05
-**Status:** Implemented on branch review-quick-wins, merged to main 2026-09-05.
+**Status:** Implemented on branch review-quick-wins on 2026-09-05. The merge to main is recorded in git history.
 **Reads with:** `docs/reviews/2026-09-05-major-review.md`,
 `packages/plugin/TESTING.md`, `docs/plugin-voice-and-copy.md`.
 

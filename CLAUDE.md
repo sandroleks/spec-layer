@@ -124,7 +124,7 @@ descriptions, and diagnostics before it can be committed.
 
 ## Where things stand (2026-09-05)
 
-`main` is clean and green: 2078 tests passing, 9 todo.
+`main` is clean and green: 2136 tests passing, 9 todo.
 
 Shipped and merged:
 

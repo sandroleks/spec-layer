@@ -242,10 +242,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   keeps it, which removes a structured clone of up to a few hundred kilobytes
   per selection on large files.
 - Detach, Remove, and Update of a hand-edited document now confirm inside the
-  plugin panel instead of through the browser's `confirm()`. A sandboxed
-  iframe can answer `confirm()` with false without showing anything, which
-  made those actions do nothing. The new dialog follows the theme, traps
-  focus, and cancels on Escape.
+  plugin panel instead of through the browser's `confirm()`, which is not
+  dependable inside Figma's sandboxed iframe. The new dialog follows the
+  theme, traps focus, and cancels on Escape.
 - The Foundation clipboard document is compact JSON on one line, roughly half
   the bytes of the indented form. Files written by the CLI are unchanged. The
   "large for some chat windows" notice now reports kilobytes above 200 KB

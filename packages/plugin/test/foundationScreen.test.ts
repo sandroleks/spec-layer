@@ -200,9 +200,14 @@ describe('foundation screen', () => {
     expect(markup).not.toMatch(/data-foundation-copy="colors"[^>]*disabled/);
   });
 
-  it('disables the row copies while the screen is loading or generating', () => {
+  it('disables the row copies while generating', () => {
     const generating = foundationScrollMarkup({ kind: 'generating', done: 0, total: 3 } as FoundationScreenState, SPEC, ALL);
     expect(generating).toMatch(/data-foundation-copy="colors"[^>]*disabled/);
+  });
+
+  it('disables the row copies while a refresh is running', () => {
+    const refreshing = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL, true);
+    expect(refreshing).toMatch(/data-foundation-copy="colors"[^>]*disabled/);
   });
 
   it('keeps the row copy outside the checkbox button so a copy never toggles inclusion', () => {

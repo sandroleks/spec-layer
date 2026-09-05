@@ -32,7 +32,7 @@ function button(label: string, tone: string): HTMLButtonElement {
 export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   // One dialog at a time, judged from the DOM rather than a module flag: the
   // dialog's own removal is what ends it, so anything that removes the host
-  // (Close, Escape, a full re-render) also releases the lock.
+  // (Close, Escape, or some other means entirely) also releases the lock.
   if (document.querySelector('[data-confirm-dialog]')) return Promise.resolve(false);
 
   const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -80,8 +80,9 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     // out of whatever screen sits under the overlay.
     const onKey = (event: KeyboardEvent): void => {
       if (!host.isConnected) {
-        // The host was removed without close() running (for example a full
-        // re-render of the document). Detach quietly and let the key through.
+        // The host was removed without close() running, by some means other
+        // than this module (paint() never touches document.body, so it is
+        // not the cause). Detach quietly and let the key through.
         document.removeEventListener('keydown', onKey, true);
         return;
       }

@@ -894,7 +894,7 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     const ok = await confirmDialog(batch
       ? {
           title: `Replace hand edits in ${edited.length} ${edited.length === 1 ? 'document' : 'documents'}?`,
-          body: `${edited.length === 1 ? 'One selected document has' : `${edited.length} selected documents have`} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`,
+          body: `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`,
           confirmLabel: 'Update all',
         }
       : {
@@ -2081,8 +2081,11 @@ function applySelection(msg: SelectionMessage): void {
   // a later action for this component (Copy for AI, Update) reads the
   // current selection's foundation rather than one left over from the
   // previous selection. Absent when the main thread has no dump yet (or
-  // building one failed) — extraction still proceeds, and the brief's token
-  // bindings simply omit resolved values until a foundation dump arrives.
+  // building one failed), or when the panel already holds this exact dump:
+  // the main thread sends a dump once per read, not on every selection (see
+  // foundationPost.ts). Extraction still proceeds either way, and the
+  // brief's token bindings simply omit resolved values until a foundation
+  // dump arrives.
   if (msg.foundation) onSelectionFoundation(msg.foundation);
   if (!node) {
     screen = { kind: 'empty' };

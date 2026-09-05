@@ -101,6 +101,7 @@ export function foundationScrollMarkup(
   state: FoundationScreenState,
   spec: FoundationSpec | null,
   selection: FoundationSelection,
+  refreshing = false,
 ): string {
   if (state.kind === 'loading') {
     return (
@@ -118,8 +119,9 @@ export function foundationScrollMarkup(
   }
 
   const summary = summarize(spec);
-  // 'loading' already returned above, so only 'generating' remains busy here.
-  const busy = state.kind === 'generating';
+  // 'loading' already returned above, so 'generating' or an in-flight
+  // refresh are what remains busy here, matching the footer.
+  const busy = state.kind === 'generating' || refreshing;
   const frames = framesPerSource(spec);
   const selectedCount = selection.collections.length +
     (selection.textStyles && summary.textStyleCount > 0 ? 1 : 0);
@@ -227,7 +229,7 @@ export function renderFoundationScreen(
   refs.screen.className = 'sl-screen sl-foundation-screen';
   refs.pageHeader.innerHTML = foundationHeaderMarkup();
   refs.pageHeader.hidden = false;
-  refs.scroll.innerHTML = foundationScrollMarkup(state, spec, selection);
+  refs.scroll.innerHTML = foundationScrollMarkup(state, spec, selection, refreshing);
   refs.footer.innerHTML = foundationFooterMarkup(state, spec, selection, refreshing);
   refs.footer.hidden = false;
 }
