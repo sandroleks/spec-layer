@@ -219,6 +219,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- The plugin asks Figma once per distinct variable or style id during a
+  component read, instead of once per binding occurrence. A component set
+  binding the same tokens across many variants now makes a few dozen lookups
+  rather than hundreds. Output is unchanged.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on

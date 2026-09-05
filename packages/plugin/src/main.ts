@@ -1,6 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
+import { memoizedResolver } from './resolverMemo';
 import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource, PublishInfo } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
@@ -281,7 +282,7 @@ async function postSelection(): Promise<void> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const node = await serializeNode(component as any, resolver);
+    const node = await serializeNode(component as any, memoizedResolver(resolver));
     if (seq !== selectionSeq) return; // a newer selection superseded this one
     const msg: MainToUi = {
       type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
@@ -1304,7 +1305,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, resolver);
+        const node = await serializeNode(src as any, memoizedResolver(resolver));
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
       } catch (err) {
@@ -1363,7 +1364,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, resolver);
+        const node = await serializeNode(src as any, memoizedResolver(resolver));
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({
           type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,
@@ -1386,6 +1387,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         const components: PublishComponentSource[] = [];
         const skipped: Array<{ name: string; reason: string }> = [];
         const seenSources = new Set<string>();
+        // One memo for the whole publish pass: every doc in a file binds the
+        // same few dozen variables, so per-doc caches would refetch them.
+        const passResolver = memoizedResolver(resolver);
         for (const docId of reg.docIds) {
           let section: SectionNode | null = null;
           try {
@@ -1406,7 +1410,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const node = await serializeNode(src as any, resolver);
+            const node = await serializeNode(src as any, passResolver);
             components.push({ docId, name: node.name, node, prose: mergedProse(section) });
           } catch (err) {
             skipped.push({ name: src.name, reason: err instanceof Error ? err.message : String(err) });
