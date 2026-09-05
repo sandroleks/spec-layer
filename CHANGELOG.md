@@ -226,8 +226,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   than once per mode. Metadata the Plugin API never exposes (style publication
   and lifecycle, publication status, progressive blur detail) is reported as
   `METADATA_UNAVAILABLE` at info, and a deliberately scoped copy as
-  `EXPORT_SCOPED` at info; `SOURCE_PARTIALLY_UNAVAILABLE` now means a source
-  read failed. Diagnostics are outside every content hash, so no artifact
+  `EXPORT_SCOPED` at info; `SOURCE_PARTIALLY_UNAVAILABLE` now means part of the
+  source is absent from this artifact because a read failed or a section was
+  not migrated. Diagnostics are outside every content hash, so no artifact
   identity moves. The Component Context v5 dependency slice reads the recoded
   codes when it decides its own `completeness.collections`, which is inside the
   hashed payload, so a component that depends on a collection whose publication

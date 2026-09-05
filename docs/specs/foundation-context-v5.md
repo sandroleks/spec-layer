@@ -536,7 +536,8 @@ At minimum:
 | `MODE_VALUES_IDENTICAL` | info | Every mode resolves to the same value. |
 | `MISSING_DESCRIPTION` | info | A published semantic token lacks documentation. |
 | `GENERATED_NAME_COLLISION` | warning | Suggested code names collide. |
-| `SOURCE_PARTIALLY_UNAVAILABLE` | error | A source read failed. |
+| `UNIT_METADATA_UNAVAILABLE` | warning | A number's scopes state no unit; the value is retained. |
+| `SOURCE_PARTIALLY_UNAVAILABLE` | error | Part of the source is absent from this artifact because a read failed or a section was not migrated. |
 | `METADATA_UNAVAILABLE` | info | A metadata field the source API does not expose; no value depends on it. |
 | `EXPORT_SCOPED` | info | The artifact was deliberately scoped. |
 
