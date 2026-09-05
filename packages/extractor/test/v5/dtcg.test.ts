@@ -328,6 +328,19 @@ describe('foundationDtcg styles', () => {
     }));
   });
 
+  it('reports a typography property whose bound token is not in the artifact, and keeps the literal', () => {
+    const artifact = syntheticArtifact();
+    const style = artifact.styles.typography[0];
+    style.properties.font_size.source = { kind: 'alias', target_id: 'VariableID:not-here', target_path: [] };
+    const withMissingTarget = foundationDtcg(artifact);
+    const body = leaf(withMissingTarget.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect(body?.$value).toMatchObject({ fontSize: { value: 16, unit: 'px' } });
+    expect(withMissingTarget.report).toContainEqual(expect.objectContaining({
+      code: 'binding_dropped', severity: 'warning', path: 'Typography styles.Body.Regular',
+      details: { property: 'fontSize', target_id: 'VariableID:not-here', reason: 'target_unavailable' },
+    }));
+  });
+
   it('keeps a line height in $value only when it is a unitless number', () => {
     const multiplier = syntheticArtifact();
     multiplier.styles.typography[0].properties.line_height = {
@@ -377,6 +390,20 @@ describe('foundationDtcg styles', () => {
         ],
       },
     });
+  });
+
+  it('reports a shadow field whose bound token was omitted, and keeps the literal', () => {
+    const artifact = syntheticArtifact();
+    const blur = artifact.tokens.find((t) => t.id === 'VariableID:shadow-blur');
+    if (!blur) throw new Error('fixture lost shadow-blur');
+    blur.type = 'boolean'; // boolean tokens are omitted by the projection
+    const withOmittedTarget = foundationDtcg(artifact);
+    const card = leaf(withOmittedTarget.files['styles.effects.json'], 'Effect styles.Shadow.Card');
+    expect((card?.$value as Array<Record<string, unknown>>)[0].blur).toEqual({ value: 12, unit: 'px' });
+    expect(withOmittedTarget.report).toContainEqual(expect.objectContaining({
+      code: 'binding_dropped', path: 'Effect styles.Shadow.Card',
+      details: { property: 'effects[0].blur', target_id: 'VariableID:shadow-blur', reason: 'target_omitted' },
+    }));
   });
 
   it('keeps the first of two styles that share a DTCG path and reports the later one', () => {

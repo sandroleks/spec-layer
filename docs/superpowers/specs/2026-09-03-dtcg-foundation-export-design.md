@@ -222,6 +222,10 @@ resolved value is `null` is omitted from `$value` and reported. Letter spacing
 in `%` cannot be a DTCG dimension: it goes under `$extensions` as
 `{ "value": n, "unit": "%" }` and is reported `unit_not_expressible`.
 
+A property bound to a token the export does not carry keeps its resolved
+literal and is reported `binding_dropped` with the target id and whether the
+target was unavailable or omitted.
+
 Line height follows the same shape for a different reason. The stable format
 says `lineHeight` MUST be a number or a reference to a number token, read as a
 multiplier of the font size, so a measured `px` or `%` line height has no home
@@ -318,7 +322,10 @@ details }`. Codes: `segment_split`, `name_escaped`, `path_collision`,
 `unit_override_conflicts_with_scope`, `mode_selection_not_expressible`,
 `value_omitted` with `details.reason` copied from the canonical value,
 `effect_not_expressible`, `duplicate_code_syntax`,
-`collection_name_collision`. The report is the DTCG
+`collection_name_collision`, `binding_dropped` with `details.target_id` and
+`details.reason` (`target_unavailable` when the id is not a token in the
+artifact, `target_omitted` when it is a token this projection omitted). The
+report is the DTCG
 counterpart of `diagnostics`; it never replaces them. Paths are DTCG paths,
 and `details.id` carries the stable Figma id.
 

@@ -30,7 +30,7 @@ export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
   | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
-  | 'duplicate_code_syntax' | 'collection_name_collision';
+  | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped';
 
 export interface DtcgReportEntry {
   code: DtcgReportCode;
@@ -228,6 +228,10 @@ interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
   tokenById: Map<string, TokenV5>;
+  /** Every token id in the artifact, regardless of whether the projection
+   *  carried it through. Distinguishes a binding to a token this export never
+   *  had (`target_unavailable`) from one it omitted (`target_omitted`). */
+  tokenIds: Set<string>;
   collectionById: Map<string, CollectionV5>;
   /** collection id -> resolver label: the name alone, or name plus id when a
    *  name repeats. Figma allows two collections to share a display name. */
@@ -457,10 +461,18 @@ const SPEC_LAYER_EXT = 'com.spec-layer';
 function styleMember(
   p: Projection, property: StyleProperty, scopes: string[], path: string, name: string,
 ): { value: DtcgJson } | { extension: DtcgJson } | null {
-  if (property.source.kind === 'alias' && property.source.target_id !== null
-    && !p.omittedIds.has(property.source.target_id)) {
-    const target = p.pathById.get(property.source.target_id);
+  if (property.source.kind === 'alias' && property.source.target_id !== null) {
+    const targetId = property.source.target_id;
+    const target = p.omittedIds.has(targetId) ? undefined : p.pathById.get(targetId);
     if (target !== undefined) return { value: `{${target}}` };
+    reportOnce(p, {
+      code: 'binding_dropped', severity: 'warning', path,
+      message: `The ${name} property is bound to a token this export does not carry; the resolved literal is written instead.`,
+      details: {
+        property: name, target_id: targetId,
+        reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
+      },
+    });
   }
   if (property.resolved === null) {
     reportOnce(p, {
@@ -571,6 +583,16 @@ function effectLeaf(p: Projection, style: EffectStyleV5, path: string): DtcgTree
       if (boundPath !== undefined) {
         shadow[name] = `{${boundPath}}`;
         continue;
+      }
+      if (boundId !== undefined) {
+        reportOnce(p, {
+          code: 'binding_dropped', severity: 'warning', path,
+          message: `The effects[${index}].${field} property is bound to a token this export does not carry; the resolved literal is written instead.`,
+          details: {
+            property: `effects[${index}].${field}`, target_id: boundId,
+            reason: p.tokenIds.has(boundId) ? 'target_omitted' : 'target_unavailable',
+          },
+        });
       }
       const raw = effect[field] as TypedValue | undefined;
       if (raw === undefined) continue;
@@ -691,6 +713,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
     tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
+    tokenIds: new Set(artifact.tokens.map((t) => t.id)),
     collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
     collectionLabelById: collectionLabels(artifact.collections),
     modeLabelsById: new Map(artifact.collections.map((c) => [c.id, modeLabels(c)])),
