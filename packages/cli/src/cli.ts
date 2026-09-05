@@ -72,4 +72,11 @@ async function main(): Promise<number> {
   }
 }
 
+// `spec-layer show foundation | head` closes stdout early. That is not an
+// error worth a stack trace; exit quietly with the code the command chose.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(process.exitCode ?? 0);
+  throw err;
+});
+
 process.exitCode = await main();

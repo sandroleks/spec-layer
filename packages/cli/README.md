@@ -220,7 +220,8 @@ export id and time into the canonical artifacts, so `bundle.json` and
 promotes a number whose Figma scopes state no unit to a dimension. Keys are a
 collection name, a slash, and a glob over the variable name. An override that
 contradicts a stated scope is ignored and listed in `report.json`. Nothing is
-inferred from a name.
+inferred from a name. Changing the `dtcg` block re-projects `tokens/` on the
+next `pull` even when the library has not been republished.
 
 Point Style Dictionary at `.speclayer/tokens/` and load the files
 `resolver.json` names for the mode you are building. The metadata sidecar and

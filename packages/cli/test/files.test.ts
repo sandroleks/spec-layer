@@ -309,6 +309,21 @@ describe('writeBundleFiles', () => {
     expect(light.Primitives.color.exact.red.$value).toBe('#ff0000');
   });
 
+  it('records the dtcg options in the manifest, and omits the field for defaults', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+      dtcg: { values: 'legacy', units: { 'Primitives/number/*': 'px' } },
+    });
+    expect(readManifest(outDir)!.dtcg).toEqual({ values: 'legacy', units: { 'Primitives/number/*': 'px' } });
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
+      publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+    expect(readManifest(outDir)!).not.toHaveProperty('dtcg');
+  });
+
   it('writes no tokens/ when the selection excludes the foundation', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
     const written = writeBundleFiles({

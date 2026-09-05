@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +61,24 @@ function stub304() {
 
 function stub401() {
   return vi.fn(async () => new Response(null, { status: 401 })) as unknown as typeof fetch;
+}
+
+/**
+ * A fetcher that behaves like a real server: it answers 304 when the request
+ * carries an If-None-Match matching the body's own hash, and 200 with the body
+ * otherwise. Reused across several pulls in one test, unlike the single-shot
+ * stubs above, so the freshness decision made by runPull's ETag header
+ * actually drives the response.
+ */
+function stubEtagAware(body: string, publishedAt = '2026-09-03T00:00:00.000Z') {
+  const hash = createHash('sha256').update(body).digest('hex');
+  return vi.fn(async (_url: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    if (headers['If-None-Match'] === `"${hash}"`) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(body, { status: 200, headers: { 'X-Published-At': publishedAt } });
+  }) as unknown as typeof fetch;
 }
 
 describe('runInit', () => {
@@ -345,6 +364,39 @@ describe('runPull with a selection', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/--only takes "foundation" or "components"/);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('runPull with dtcg options', () => {
+  let cwd: string;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-dtcg-'));
+  });
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('re-projects tokens/ when the dtcg block changes, instead of answering up to date', async () => {
+    const fetcher = stubEtagAware(JSON.stringify(GOOD_BUNDLE));
+    // First pull with defaults.
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_1' }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: 'sl_k' }, {}, io, fetcher)).toBe(0);
+    const standard = JSON.parse(readFileSync(join(cwd, '.speclayer/tokens/primitives.light.json'), 'utf8'));
+    expect(standard.Primitives.color.exact.red.$value).toMatchObject({ hex: '#ff0000' });
+
+    // Same bundle, new dtcg config.
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_1', dtcg: { values: 'legacy' } }));
+    const io2 = makeIo();
+    expect(await runPull(cwd, { key: 'sl_k' }, {}, io2, fetcher)).toBe(0);
+    expect(io2.outLines.join('\n')).not.toContain('Already up to date');
+    const legacy = JSON.parse(readFileSync(join(cwd, '.speclayer/tokens/primitives.light.json'), 'utf8'));
+    expect(legacy.Primitives.color.exact.red.$value).toBe('#ff0000');
+
+    // And a third pull with nothing changed is up to date again.
+    const io3 = makeIo();
+    expect(await runPull(cwd, { key: 'sl_k' }, {}, io3, fetcher)).toBe(0);
+    expect(io3.outLines.at(-1)).toContain('Already up to date');
   });
 });
 

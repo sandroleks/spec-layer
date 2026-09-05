@@ -269,6 +269,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `spec-layer pull` re-projects `tokens/` when the `dtcg` block in
+  `speclayer.json` changes. It used to answer "Already up to date" because
+  freshness compared only the selection; the manifest now records the dtcg
+  options and compares them too. `show foundation | head` no longer prints an
+  EPIPE stack trace when the reader closes early.
+
 - The CLI runs again. Every `spec-layer` command in `0.2.0` died on import with
   `Error: Dynamic require of "crypto" is not supported`, so `npx spec-layer
   pull` never reached the network. Routing bundle parsing through the shared

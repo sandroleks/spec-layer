@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
   readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, type CliConfig, type ResolvedOptions,
@@ -29,10 +30,23 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two selections name the same files when they agree on the foundation and the component slugs. */
-function sameSelection(a: Selection, b: Selection): boolean {
-  const key = (s: Selection) => JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
-  return key(a) === key(b);
+/** Two pulls write the same files when they agree on the selection and on the dtcg options. */
+function sameOutput(
+  a: { selection: Selection; dtcg?: DtcgOptions },
+  b: { selection: Selection; dtcg?: DtcgOptions },
+): boolean {
+  const selectionKey = (s: Selection) =>
+    JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
+  const dtcgKey = (d: DtcgOptions | undefined) => JSON.stringify(sortKeys(d ?? {}));
+  return selectionKey(a.selection) === selectionKey(b.selection) && dtcgKey(a.dtcg) === dtcgKey(b.dtcg);
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value as object).sort().map((k) => [k, sortKeys((value as Record<string, unknown>)[k])]));
+  }
+  return value;
 }
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -224,9 +238,12 @@ export async function runPull(
     return 1;
   }
   // Ask for a 304 only when the last pull wrote the same files this one would;
-  // a changed selection needs the bundle again to re-project the ai/ directory.
+  // a changed selection or dtcg block needs the bundle again to re-project.
   const manifest = manifestAt(join(cwd, opts.outDir));
-  const etag = manifest && sameSelection(manifest.selection ?? DEFAULT_SELECTION, selection)
+  const etag = manifest && sameOutput(
+    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg },
+    { selection, dtcg: opts.dtcg },
+  )
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({

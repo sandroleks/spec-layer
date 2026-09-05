@@ -28,6 +28,12 @@ export interface Manifest {
   extractorVersion: string;
   /** Absent in manifests written by CLI 0.1.0, which always wrote everything. */
   selection?: Selection;
+  /**
+   * The dtcg options the tokens/ directory was projected with; absent for
+   * defaults. Part of the freshness comparison, since a config change must
+   * re-project even when the bundle did not move.
+   */
+  dtcg?: DtcgOptions;
   artifacts: ManifestArtifact[];
 }
 
@@ -143,6 +149,7 @@ export function writeBundleFiles(opts: {
       libraryId: opts.libraryId, publishedAt: opts.publishedAt, bundleHash: opts.bundleHash,
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
       selection, artifacts,
+      ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
     };
     put('manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
   } catch (err) {
