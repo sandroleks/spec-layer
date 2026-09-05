@@ -787,6 +787,23 @@ function libraryEntry(docId: string): LibraryEntry | undefined {
 }
 
 /**
+ * Copy for AI from the Selected component screen: the same brief a Library
+ * row copies, built from the current selection. No document is read, so no
+ * saved guidelines ride along and the caveat does not mention them.
+ */
+function copyCurrentComponent(): void {
+  const node = state.currentNode;
+  if (!node) return;
+  void copyBriefFromSource(
+    state,
+    { node, fileKey: state.currentFileKey, ...(state.currentFileName ? { fileName: state.currentFileName } : {}) },
+    null,
+    copyPresenter(),
+    { guidelinesNote: false },
+  );
+}
+
+/**
  * Reports a Copy through Figma's native notification surface, same as any
  * other Library action. Unlike libraryPresenter, error() notifies directly
  * rather than routing through a caller-owned callback: Copy has no
@@ -1634,6 +1651,11 @@ document.addEventListener('click', (event) => {
     toggle(selection.measureViews, id);
     state.measureViews = [...selection.measureViews];
     syncMeasurementOptions();
+    return;
+  }
+
+  if (target.closest('#sl-copy-component')) {
+    copyCurrentComponent();
     return;
   }
 

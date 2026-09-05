@@ -217,6 +217,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a whole entry: a per-collection Foundation slice would need the extractor's
   alias closure and is left for a bundle-side change.
 
+- **Copy for AI** on the Selected component screen. The component brief no
+  longer requires creating a canvas document first; it copies from the
+  selection with the same content a Library row copies, minus saved
+  guidelines, since no document is involved.
+
 ### Changed
 
 - Clicking anything that is not a component no longer shows a toast on the

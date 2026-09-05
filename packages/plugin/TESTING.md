@@ -59,9 +59,13 @@ requests carry token names and resolved values without an image.
 4. Pick sections and, for a component set, the variants to document. Click
    **Create docs** and confirm a `<Name>: Guidelines` Section is placed next to
    the component. Re-running replaces the previous Section in place.
-5. Open **Library**, use the row menu's **Copy for AI**, and paste into a plain
-   text editor. Confirm it is a YAML brief for the live source. It must not
-   download Markdown/ZIP files or change the canvas.
+5. With a component selected and no document created, click the footer's
+   **Copy for AI** and paste into a plain text editor. Confirm it is a YAML
+   brief for the live source that says `kind: component`, carries token values
+   when Foundations have been read, and does not mention saved guidelines. It
+   must not change the canvas. Then open **Library**, use a row menu's **Copy
+   for AI**, and confirm that brief still includes saved guidelines when the
+   document has them.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click

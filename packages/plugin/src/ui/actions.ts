@@ -500,11 +500,24 @@ export async function updateFromSource(
 // never mutates the canvas or any stored metadata. Guidelines come from the
 // caller, which read them from DOC_PROSE_KEY.
 // ---------------------------------------------------------------------------
+/** What a copy needs from a source: the live node and where it came from.
+ *  A Library row passes its DocSource; the component screen passes the
+ *  current selection, which has no doc id or config. */
+export type CopySource = Pick<DocSource, 'node' | 'fileKey' | 'fileName'>;
+
+export interface CopyBriefOptions {
+  /** Say "This document has no saved guidelines" when prose is null. True for
+   *  a Library row, where a document exists and could have had them. False
+   *  from the component screen, where there is no document to speak of. */
+  guidelinesNote?: boolean;
+}
+
 export async function copyBriefFromSource(
   state: UiState,
-  src: DocSource,
+  src: CopySource,
   prose: ProseDrafts | null,
   ui: BuildPresenter,
+  options: CopyBriefOptions = {},
 ): Promise<void> {
   ui.clear();
   try {
@@ -530,7 +543,7 @@ export async function copyBriefFromSource(
     const lines = yaml.split('\n').length;
     const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
-    const noProse = prose ? '' : ' This document has no saved guidelines.';
+    const noProse = prose || options.guidelinesNote === false ? '' : ' This document has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
     const tier = await copyText(yaml);
     if (tier === 'manual') {

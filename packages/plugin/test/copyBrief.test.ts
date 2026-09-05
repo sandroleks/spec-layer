@@ -128,6 +128,25 @@ describe('copyBriefFromSource', () => {
     expect(types).not.toContain('updateFoundationDoc');
   });
 
+  it('accepts a bare selection source with no doc id or config', async () => {
+    const ui = presenter();
+    await copyBriefFromSource(createState(), { node: NODE, fileKey: 'F1' }, null, ui);
+    expect(copyText).toHaveBeenCalledTimes(1);
+    const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
+    expect(y.source.node_id).toBe('1:100');
+  });
+
+  it('omits the guidelines note when the caller says no document is involved', async () => {
+    copyText.mockResolvedValue('manual');
+    await copyBriefFromSource(createState(), { node: NODE, fileKey: 'F1' }, null, presenter(), { guidelinesNote: false });
+    const [, notice] = renderManualCopyModal.mock.calls[0];
+    expect(notice ?? '').not.toContain('no saved guidelines');
+    expect(notice ?? '').toContain('Token values are missing');
+  });
+
+  // This test sets foundationSpec at module scope via onSelectionFoundation,
+  // which nothing in this file resets afterward. It must run last, after every
+  // test above that relies on foundations being unset.
   it('embeds only the exact bound Foundation dependency with stable ids', async () => {
     onSelectionFoundation({
       fileKey: 'F1', fileName: 'Design System', extractedAt: '2026-08-29T00:00:00.000Z',

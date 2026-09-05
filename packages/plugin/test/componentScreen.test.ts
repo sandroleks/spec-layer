@@ -361,26 +361,40 @@ describe('component screen markup', () => {
       .toContain('id="sl-create" type="button" disabled');
   });
 
+  it('offers Copy for AI beside Create docs whenever the screen is not busy', () => {
+    const ready = componentFooterMarkup(READY);
+    expect(ready).toContain('id="sl-copy-component"');
+    expect(ready).toContain('Copy for AI');
+    expect(ready.indexOf('sl-copy-component')).toBeLessThan(ready.indexOf('id="sl-create"'));
+    expect(ready).not.toMatch(/id="sl-copy-component"[^>]*disabled/);
+    expect(componentFooterMarkup({ kind: 'reading', componentName: 'Button' }))
+      .toMatch(/id="sl-copy-component"[^>]*disabled/);
+    expect(componentFooterMarkup({ kind: 'building', componentName: 'Button', action: 'create' }))
+      .toMatch(/id="sl-copy-component"[^>]*disabled/);
+    expect(componentFooterMarkup({ kind: 'empty' })).toBe('');
+  });
+
   it('renders the selected-component eyebrow and follows the icon contract', () => {
     const header = componentHeaderMarkup(READY);
     const footer = componentFooterMarkup(READY);
     expect(header).toContain('Selected component');
     expect(footer).toContain('id="sl-create"');
-    // One button, one glyph. "Create docs" carries `filePlus` — the act, not
+    // One glyph per button. "Create docs" carries `filePlus`, the act, not
     // the finished document its old `fileDescription` drew (which was also the
-    // sidebar's icon for this screen).
-    expect(footer.match(/<svg/g)).toHaveLength(1);
+    // sidebar's icon for this screen). "Copy for AI" carries `copy`.
+    expect(footer.match(/<svg/g)).toHaveLength(2);
     expect(footer).toContain(ICON_PATHS.filePlus);
+    expect(footer).toContain(ICON_PATHS.copy);
     expect(footer).not.toContain(ICON_PATHS.fileDescription);
 
-    // Success draws the same single create button: the footer has one action
-    // now that Markdown download is retired.
+    // Success draws the same two-button footer: Copy for AI stays available
+    // alongside Create docs now that Markdown download is retired.
     const onSuccess = componentFooterMarkup({
       kind: 'success',
       componentName: 'Button',
       replaced: false,
     });
-    expect(onSuccess.match(/<svg/g)).toHaveLength(1);
+    expect(onSuccess.match(/<svg/g)).toHaveLength(2);
     expect(onSuccess).toContain(ICON_PATHS.filePlus);
   });
 

@@ -345,6 +345,12 @@ export function componentFooterMarkup(state: ComponentScreenState): string {
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
+    // The fastest path to value is component context in an agent's window,
+    // and it used to require a canvas document first. Same disabled rule as
+    // Create docs: both need the extracted spec, which reading produces.
+    `<button class="sl-button" data-tone="secondary" id="sl-copy-component" type="button"` +
+    `${busy ? ' disabled' : ''}>${icon('copy', 15)}` +
+    '<span>Copy for AI</span></button>' +
     `<button class="sl-button" data-tone="primary" id="sl-create" type="button"` +
     `${busy ? ' disabled' : ''}>${icon('filePlus', 15)}` +
     `<span>${createLabel}</span></button>` +
