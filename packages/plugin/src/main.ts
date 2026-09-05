@@ -1,15 +1,18 @@
 /// <reference types="@figma/plugin-typings" />
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
+import { memoizedResolver } from './resolverMemo';
 import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource, PublishInfo } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
-import { serializeFoundation, type FoundationReader } from './serializeFoundation';
+import { serializeFoundation } from './serializeFoundation';
+import { createFoundationReader } from './foundationReader';
+import { FoundationPostGate } from './foundationPost';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
-  type FoundationVariableRow, type SerializedFoundation, type RawEffect,
+  type FoundationVariableRow, type SerializedFoundation,
   type ProseDrafts,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
@@ -95,91 +98,6 @@ const resolver: NodeResolver = {
 };
 
 // ---------------------------------------------------------------------------
-// FoundationReader — wraps the variables/styles APIs for serializeFoundation
-// ---------------------------------------------------------------------------
-async function publishStatusOf(
-  source: { getPublishStatusAsync(): Promise<PublishStatus> },
-): Promise<PublishStatus | null> {
-  try { return await source.getPublishStatusAsync(); } catch { return null; }
-}
-
-const foundationReader: FoundationReader = {
-  async collections() {
-    const colls = await figma.variables.getLocalVariableCollectionsAsync();
-    return Promise.all(colls.map(async (c) => ({
-      id: c.id,
-      name: c.name,
-      modes: c.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
-      defaultModeId: c.defaultModeId,
-      variableIds: c.variableIds,
-      hiddenFromPublishing: c.hiddenFromPublishing,
-      publishStatus: await publishStatusOf(c),
-      remote: c.remote,
-    })));
-  },
-  async variable(id) {
-    const v = await figma.variables.getVariableByIdAsync(id);
-    if (!v) return null;
-    return {
-      id: v.id,
-      name: v.name,
-      resolvedType: v.resolvedType,
-      description: v.description ?? '',
-      variableCollectionId: v.variableCollectionId,
-      // codeSyntax is Partial<Record<CodeSyntaxPlatform, string>>; drop empties.
-      codeSyntax: Object.fromEntries(
-        Object.entries(v.codeSyntax ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
-      ),
-      valuesByMode: v.valuesByMode as Record<string, never>,
-      scopes: [...v.scopes],
-      remote: v.remote,
-      hiddenFromPublishing: v.hiddenFromPublishing,
-      publishStatus: await publishStatusOf(v),
-    };
-  },
-  async textStyles() {
-    const styles = await figma.getLocalTextStylesAsync();
-    return Promise.all(styles.map(async (s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description ?? '',
-      fontName: { family: s.fontName.family, style: s.fontName.style },
-      fontSize: s.fontSize,
-      lineHeight: s.lineHeight,
-      letterSpacing: s.letterSpacing,
-      paragraphSpacing: s.paragraphSpacing,
-      paragraphIndent: s.paragraphIndent,
-      textCase: String(s.textCase),
-      textDecoration: String(s.textDecoration),
-      boundVariables: Object.fromEntries(
-        Object.entries(s.boundVariables ?? {})
-          .filter((e): e is [string, VariableAlias] => Boolean(e[1]?.id))
-          .map(([k, v]) => [k, { id: v.id }]),
-      ),
-      remote: s.remote,
-      publishStatus: await publishStatusOf(s),
-    })));
-  },
-  async effectStyles() {
-    const styles = await figma.getLocalEffectStylesAsync();
-    return Promise.all(styles.map(async (s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description ?? '',
-      // Handed to effectLayerOf as-is: it is structurally typed for exactly this,
-      // which is what keeps the effect union in the extractor rather than here.
-      effects: s.effects as unknown as RawEffect[],
-      remote: s.remote,
-      publishStatus: await publishStatusOf(s),
-    })));
-  },
-  async collectionName(id) {
-    const c = await figma.variables.getVariableCollectionByIdAsync(id);
-    return c?.name ?? null;
-  },
-};
-
-// ---------------------------------------------------------------------------
 // Foundation dump, cached for the session — the file's variables/styles feed
 // token-value resolution in the component brief on every selection, but they
 // change far less often than the selection itself, so re-serializing the
@@ -200,11 +118,12 @@ const foundationReader: FoundationReader = {
 // suspects staleness has one discoverable way to clear it.
 // ---------------------------------------------------------------------------
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
+const foundationPosts = new FoundationPostGate();
 
 async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
   if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
   const dump = await serializeFoundation(
-    foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+    createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
   );
   foundationCache = { fileKey, dump };
   return dump;
@@ -253,7 +172,6 @@ async function postSelection(): Promise<void> {
   const component = findComponent(figma.currentPage.selection);
 
   if (!component) {
-    figma.notify('Select a component or component set');
     if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
     figma.ui.postMessage(msg);
@@ -281,14 +199,16 @@ async function postSelection(): Promise<void> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const node = await serializeNode(component as any, resolver);
+    const node = await serializeNode(component as any, memoizedResolver(resolver));
     if (seq !== selectionSeq) return; // a newer selection superseded this one
     const msg: MainToUi = {
       type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
       // figma.root.name is main-thread only, so the file's NAME has to ride
       // this message alongside its key; the UI cannot read it itself.
       fileName: figma.root.name,
-      ...(foundation ? { foundation } : {}),
+      // Only when the UI does not already hold this exact dump. See
+      // FoundationPostGate for why identity is the right test.
+      ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
     };
     figma.ui.postMessage(msg);
   } catch (err) {
@@ -790,7 +710,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
           const dump = await serializeFoundation(
-            foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
           );
           foundationSpec = buildFoundation(dump);
         } catch {
@@ -892,7 +812,7 @@ figma.ui.onmessage = async (raw: unknown) => {
       try {
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
-          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
         );
         // This is the Foundations tab's own fetch — both its first load and
         // its "Refresh sources" button — so it is also the one place a user
@@ -909,6 +829,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // foundationBrief's own absent-vs-empty rule one layer up.
         const merged = await liveFoundationGroupDescriptions();
         const groupDescriptions = Object.keys(merged).length > 0 ? merged : undefined;
+        // The 'foundation' reply hands the UI this dump, so the next
+        // 'selection' must not send it again.
+        foundationPosts.fresh(dump);
         figma.ui.postMessage({ type: 'foundation', dump, groupDescriptions } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -950,7 +873,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // here keeps the generated frames faithful to the file as it is now.
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
-          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
         );
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
@@ -1138,7 +1061,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         const dump = await serializeFoundation(
-          foundationReader, fileKey, new Date().toISOString(), figma.root.name,
+          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
         );
         const spec = buildFoundation(dump);
 
@@ -1304,7 +1227,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, resolver);
+        const node = await serializeNode(src as any, memoizedResolver(resolver));
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
       } catch (err) {
@@ -1363,7 +1286,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, resolver);
+        const node = await serializeNode(src as any, memoizedResolver(resolver));
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({
           type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,
@@ -1386,6 +1309,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         const components: PublishComponentSource[] = [];
         const skipped: Array<{ name: string; reason: string }> = [];
         const seenSources = new Set<string>();
+        // One memo for the whole publish pass: every doc in a file binds the
+        // same few dozen variables, so per-doc caches would refetch them.
+        const passResolver = memoizedResolver(resolver);
         for (const docId of reg.docIds) {
           let section: SectionNode | null = null;
           try {
@@ -1406,7 +1332,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           }
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const node = await serializeNode(src as any, resolver);
+            const node = await serializeNode(src as any, passResolver);
             components.push({ docId, name: node.name, node, prose: mergedProse(section) });
           } catch (err) {
             skipped.push({ name: src.name, reason: err instanceof Error ? err.message : String(err) });

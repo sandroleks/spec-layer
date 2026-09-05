@@ -25,6 +25,7 @@ import { allowanceState, publishLocked } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { setRailBadge } from './shell/sidebar';
+import { confirmDialog } from './shell/confirmDialog';
 import {
   createComponentSelection,
   renderComponentScreen,
@@ -786,6 +787,23 @@ function libraryEntry(docId: string): LibraryEntry | undefined {
 }
 
 /**
+ * Copy for AI from the Selected component screen: the same brief a Library
+ * row copies, built from the current selection. No document is read, so no
+ * saved guidelines ride along and the caveat does not mention them.
+ */
+function copyCurrentComponent(): void {
+  const node = state.currentNode;
+  if (!node) return;
+  void copyBriefFromSource(
+    state,
+    { node, fileKey: state.currentFileKey, ...(state.currentFileName ? { fileName: state.currentFileName } : {}) },
+    null,
+    copyPresenter(),
+    { guidelinesNote: false },
+  );
+}
+
+/**
  * Reports a Copy through Figma's native notification surface, same as any
  * other Library action. Unlike libraryPresenter, error() notifies directly
  * rather than routing through a caller-owned callback: Copy has no
@@ -801,6 +819,28 @@ function copyPresenter(): BuildPresenter {
     startProgress: () => {},
     stopProgress: () => {},
   };
+}
+
+/**
+ * Copy one Foundations row: a collection with all of its modes, or the text
+ * styles. Reuses the Library row's scoped copy, which widens a collection to
+ * every mode and its local dependency closure. modeIds is a frame-only limit
+ * the copy ignores, so it is passed empty.
+ */
+function copyFoundationRow(id: string, textStyles: boolean): void {
+  if (textStyles) {
+    void copyFoundationBriefForScope({ target: 'textStyles' }, copyPresenter());
+    return;
+  }
+  const collection = currentFoundationSpec()?.collections.find((c) => c.id === id);
+  if (!collection) {
+    nativeNotify('That collection is no longer in this file. Nothing was copied.', { error: true, timeout: 5000 });
+    return;
+  }
+  void copyFoundationBriefForScope(
+    { target: 'collection', collectionId: collection.id, collectionName: collection.name, modeIds: [] },
+    copyPresenter(),
+  );
 }
 
 function finishLibraryOperation(error = ''): void {
@@ -847,18 +887,22 @@ function dispatchNextLibraryUpdate(): void {
   if (view === 'library') paint();
 }
 
-function startLibraryUpdates(docIds: string[], batch: boolean): void {
+async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<void> {
   if (docIds.length === 0 || operation.active) return;
   const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
-  if (
-    edited.length > 0 &&
-    !window.confirm(
-      batch
-        ? `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`
-        : 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
-    )
-  ) {
-    return;
+  if (edited.length > 0) {
+    const ok = await confirmDialog(batch
+      ? {
+          title: `Replace hand edits in ${edited.length} ${edited.length === 1 ? 'document' : 'documents'}?`,
+          body: `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`,
+          confirmLabel: 'Update all',
+        }
+      : {
+          title: 'Replace your edits to generated content?',
+          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          confirmLabel: 'Update',
+        });
+    if (!ok) return;
   }
   if (!beginOperation(operation)) return;
   libraryOperation = {
@@ -1379,7 +1423,7 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
-    startLibraryUpdates(
+    void startLibraryUpdates(
       model.allRows
         .filter((row) => row.status === 'updateAvailable')
         .map((row) => row.docId),
@@ -1478,7 +1522,7 @@ document.addEventListener('click', (event) => {
         paint();
         return;
       case 'update':
-        startLibraryUpdates([docId], false);
+        void startLibraryUpdates([docId], false);
         return;
       case 'open-frame':
         send({ type: 'focusNode', nodeId: docId });
@@ -1492,22 +1536,25 @@ document.addEventListener('click', (event) => {
         startLibraryCopy(docId);
         return;
       case 'detach':
-        if (
-          !operation.active &&
-          window.confirm(
-            'Detach this documentation? It stays on the canvas as a plain frame and stops tracking its source.',
-          )
-        ) {
-          send({ type: 'detachDoc', docId });
-        }
+        if (operation.active) return;
+        void confirmDialog({
+          title: 'Detach this documentation?',
+          body: 'It stays on the canvas as a plain frame and stops tracking its source.',
+          confirmLabel: 'Detach',
+        }).then((ok) => {
+          if (ok && !operation.active) send({ type: 'detachDoc', docId });
+        });
         return;
       case 'remove':
-        if (
-          !operation.active &&
-          window.confirm('Remove this documentation frame from the canvas?')
-        ) {
-          send({ type: 'removeDoc', docId });
-        }
+        if (operation.active) return;
+        void confirmDialog({
+          title: 'Remove this frame from the canvas?',
+          body: 'The documentation Section is deleted and its Library connection is removed.',
+          confirmLabel: 'Remove',
+          tone: 'danger',
+        }).then((ok) => {
+          if (ok && !operation.active) send({ type: 'removeDoc', docId });
+        });
         return;
       default:
         return;
@@ -1629,6 +1676,11 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  if (target.closest('#sl-copy-component')) {
+    copyCurrentComponent();
+    return;
+  }
+
   if (target.closest('#sl-create')) build();
 
   if (target.closest('[data-foundation-refresh]')) {
@@ -1639,6 +1691,12 @@ document.addEventListener('click', (event) => {
   if (target.closest('[data-foundation-bulk]')) {
     onFoundationToggleAll();
     paintAndFocus('[data-foundation-bulk]');
+    return;
+  }
+
+  const foundationCopy = target.closest<HTMLButtonElement>('[data-foundation-copy]');
+  if (foundationCopy?.dataset.foundationCopy) {
+    copyFoundationRow(foundationCopy.dataset.foundationCopy, foundationCopy.dataset.textStyles === 'true');
     return;
   }
 
@@ -2023,8 +2081,11 @@ function applySelection(msg: SelectionMessage): void {
   // a later action for this component (Copy for AI, Update) reads the
   // current selection's foundation rather than one left over from the
   // previous selection. Absent when the main thread has no dump yet (or
-  // building one failed) — extraction still proceeds, and the brief's token
-  // bindings simply omit resolved values until a foundation dump arrives.
+  // building one failed), or when the panel already holds this exact dump:
+  // the main thread sends a dump once per read, not on every selection (see
+  // foundationPost.ts). Extraction still proceeds either way, and the
+  // brief's token bindings simply omit resolved values until a foundation
+  // dump arrives.
   if (msg.foundation) onSelectionFoundation(msg.foundation);
   if (!node) {
     screen = { kind: 'empty' };
@@ -2344,24 +2405,36 @@ window.onmessage = (event: MessageEvent): void => {
         });
         return;
       }
+      const runUpdate = (): void => {
+        let preparationError = '';
+        void updateFromSource(state, src, libraryPresenter((message) => {
+          preparationError = message;
+        })).then((dispatched) => {
+          if (!dispatched) {
+            finishLibraryOperation(
+              preparationError ||
+              'The source could not be prepared, so the remaining updates stopped.',
+            );
+          }
+        });
+      };
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
-        if (!window.confirm('You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.')) {
-          finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
-          return;
-        }
-        active.confirmedOverwrite.add(msg.docId);
+        void confirmDialog({
+          title: 'Replace your edits to generated content?',
+          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          confirmLabel: 'Update',
+        }).then((ok) => {
+          if (libraryOperation !== active) return; // the operation ended while the dialog was open
+          if (!ok) {
+            finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
+            return;
+          }
+          active.confirmedOverwrite.add(msg.docId);
+          runUpdate();
+        });
+        return;
       }
-      let preparationError = '';
-      void updateFromSource(state, src, libraryPresenter((message) => {
-        preparationError = message;
-      })).then((dispatched) => {
-        if (!dispatched) {
-          finishLibraryOperation(
-            preparationError ||
-            'The source could not be prepared, so the remaining updates stopped.',
-          );
-        }
-      });
+      runUpdate();
       return;
     }
 

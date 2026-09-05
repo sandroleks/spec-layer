@@ -214,15 +214,25 @@ describe('copyFoundationBrief', () => {
     expect(renderManualCopyModal).toHaveBeenCalledWith(expect.any(String), undefined);
   });
 
-  it('carries the same size caveat into the tier-3 modal as the toast reports', async () => {
+  it('copies compact JSON: one line, still parseable, same content', async () => {
+    onFoundationMessage(DUMP);
+    await copyFoundationBrief(presenter());
+    const text = copyText.mock.calls.at(-1)?.[0] as string;
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text.trimEnd().includes('\n')).toBe(false);
+    expect(text).not.toContain('  "');
+    expect(copied().version).toBe('2025.10');
+  });
+
+  it('carries a byte-based size caveat into the tier-3 modal, the same one the toast reports', async () => {
     const bigDump: SerializedFoundation = {
       ...DUMP,
       collections: [{
         id: 'C1', name: 'Color', defaultModeId: 'm1',
         modes: [{ modeId: 'm1', name: 'Light' }],
-        // The document still gives each token its own $type/$value object, so
-        // 900 tokens stays comfortably above the 800-line manual-copy threshold.
-        variables: Array.from({ length: 900 }, (_, i) => ({
+        // Each token is roughly 120 bytes of compact JSON, so 2500 tokens
+        // lands well past the 200 KB threshold.
+        variables: Array.from({ length: 2500 }, (_, i) => ({
           id: `V${i}`, name: `color/bg/brand-${i}`, resolvedType: 'COLOR' as const, description: '',
           codeSyntax: {}, valuesByMode: { m1: { r: 0.14, g: 0.39, b: 0.92, a: 1 } },
         })),
@@ -232,8 +242,16 @@ describe('copyFoundationBrief', () => {
     copyText.mockResolvedValue('manual');
     await copyFoundationBrief(presenter());
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
-    const [, notice] = renderManualCopyModal.mock.calls[0];
-    expect(notice).toMatch(/lines, which is large for some chat windows\.$/);
+    const [text, notice] = renderManualCopyModal.mock.calls[0];
+    const kb = Math.round(new TextEncoder().encode(text).length / 1024);
+    expect(notice).toBe(`${kb} KB, which is large for some chat windows.`);
+  });
+
+  it('says nothing about size under the threshold', async () => {
+    onFoundationMessage(DUMP);
+    const ui = presenter();
+    await copyFoundationBrief(ui);
+    expect(ui.info).toHaveBeenCalledWith('Copied.');
   });
 });
 

@@ -189,6 +189,40 @@ describe('foundation screen', () => {
     expect(markup).toMatch(/data-foundation-refresh disabled/);
   });
 
+  it('gives every source row its own Copy for AI action', () => {
+    const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL);
+    expect(markup).toContain('data-foundation-copy="colors"');
+    expect(markup).toContain('data-foundation-copy="density"');
+    expect(markup).toContain('data-foundation-copy="text-styles"');
+    expect(markup).toContain('aria-label="Copy Mapped Colors for AI"');
+    expect(markup).toContain('aria-label="Copy Text styles for AI"');
+    expect(markup).toContain(ICON_PATHS.copy);
+    expect(markup).not.toMatch(/data-foundation-copy="colors"[^>]*disabled/);
+  });
+
+  it('disables the row copies while generating', () => {
+    const generating = foundationScrollMarkup({ kind: 'generating', done: 0, total: 3 } as FoundationScreenState, SPEC, ALL);
+    expect(generating).toMatch(/data-foundation-copy="colors"[^>]*disabled/);
+  });
+
+  it('disables the row copies while a refresh is running', () => {
+    const refreshing = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL, true);
+    expect(refreshing).toMatch(/data-foundation-copy="colors"[^>]*disabled/);
+  });
+
+  it('keeps the row copy outside the checkbox button so a copy never toggles inclusion', () => {
+    const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL);
+    const row = markup.slice(markup.indexOf('<article'), markup.indexOf('</article>') + 10);
+    const summaryEnd = row.indexOf('</button>');
+    expect(row.indexOf('data-foundation-copy')).toBeGreaterThan(summaryEnd);
+  });
+
+  it('names the footer copy as the whole file', () => {
+    const footer = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL);
+    expect(footer).toContain('id="sl-copy-foundation"');
+    expect(footer).toContain('Copy whole file for AI');
+  });
+
   it('shows loading, real progress, and persistent read errors honestly', () => {
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('sl-loading-row');
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).not.toContain('sl-work-status');

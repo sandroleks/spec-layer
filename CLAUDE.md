@@ -122,9 +122,9 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-03)
+## Where things stand (2026-09-05)
 
-`main` is clean and green: 2078 tests passing, 9 todo.
+`main` is clean and green: 2136 tests passing, 9 todo.
 
 Shipped and merged:
 
@@ -148,6 +148,11 @@ Shipped and merged:
   YAML. The AI profile now feeds only the Foundation dependency slice a
   Component Context v5 copy embeds.
 - Production proxy at `api.spec-layer.com`, landing site, freemium flow.
+- **2026-09-05 review quick wins.** Memoized resolver lookups, bulk variable
+  reads, foundation dump posted once per read, in-panel confirmation dialogs,
+  no non-component toast, Copy for AI on the component screen and per
+  Foundations row, minified bundles, compact DTCG clipboard with a kilobyte
+  size notice. Design in `docs/superpowers/specs/2026-09-05-review-quick-wins-design.md`.
 
 Open, in rough priority order:
 

@@ -59,33 +59,52 @@ requests carry token names and resolved values without an image.
 4. Pick sections and, for a component set, the variants to document. Click
    **Create docs** and confirm a `<Name>: Guidelines` Section is placed next to
    the component. Re-running replaces the previous Section in place.
-5. Open **Library**, use the row menu's **Copy for AI**, and paste into a plain
-   text editor. Confirm it is a YAML brief for the live source. It must not
-   download Markdown/ZIP files or change the canvas.
+5. With a component selected and no document created, click the footer's
+   **Copy for AI** and paste into a plain text editor. Confirm it is a YAML
+   brief for the live source that says `kind: component`, carries token values
+   when Foundations have been read, and does not mention saved guidelines. It
+   must not change the canvas. Then open **Library**, use a row menu's **Copy
+   for AI**, and confirm that brief still includes saved guidelines when the
+   document has them.
 
 Also verify a nested selection resolves to its enclosing component and a
-non-component selection shows an actionable empty state.
+non-component selection shows an actionable empty state with no toast. Click
+a frame, a text node, and one of the plugin's own Sections while the panel is
+open: nothing should pop up on the canvas.
 
 ## Generate Foundation docs
 
 1. Open **Foundation documents** and wait for local variable collections and
    text styles to finish loading. Use **Refresh sources** after changing the
    Figma file and confirm the list updates without creating Sections.
+   Then select a component, change a variable value, come back to
+   **Foundation documents**, click **Refresh sources**, select the component
+   again, and run Library **Copy for AI** on it. The copied token value must be
+   the new one: the selection message no longer carries the foundation dump,
+   so this checks the refreshed dump still reaches the component copy.
 2. Exercise **Select all** / **Clear all**, individual source selection, and a
    collection large enough to split. Confirm row and button frame counts match
    the Sections that are created.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
-4. Click the Foundations footer's **Copy for AI** and paste into a plain text
-   editor. Confirm it is JSON with `"version": "2025.10"`, one set or modifier
+4. Click the Foundations footer's **Copy whole file for AI** and paste into a
+   plain text editor. Confirm it is a single line of compact JSON that a
+   formatter can pretty-print, with `"version": "2025.10"`, one set or modifier
    per collection named exactly as in Figma, `$type` and `$value` on every
    token, `{Collection.path}` references for aliases, and a
    `$extensions["com.spec-layer"]` block carrying `content_hash`,
    `completeness`, `code_syntax`, and a `report` array. Every unresolved
    library alias in the file must appear in `report` and nowhere else.
    Confirm the complete file-wide vocabulary is present regardless of source
-   selection, and no canvas objects are created.
-5. If AI group descriptions are enabled, confirm a failed or refused AI
+   selection, and no canvas objects are created. Note the size the toast
+   reports, if any; it appears above 200 KB and is measured in kilobytes.
+5. Click the copy icon on one collection row and paste. Confirm the document
+   contains that collection with all of its modes plus only the collections
+   its aliases need, that the "included" checkbox did not toggle, and that the
+   copy is much smaller than the whole-file copy. Repeat for the **Text
+   styles** row and confirm only `sets["Typography styles"]` and its
+   dependency collections appear.
+6. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
 
@@ -219,16 +238,16 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    styles"]` and no unrelated collection.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
-10. **Detach documentation** first asks for confirmation. Confirm the dialog is
-    visible, Cancel leaves the row unchanged, and accepting leaves the canvas
-    Section in place while removing its Library connection. **Remove
-    connection** asks the same way and performs the cleanup only on accept.
-    Also confirm that **Update documentation** on a row marked **Manually
-    edited** shows its confirmation and that **Update all** with an edited
-    row shows one confirmation naming how many documents have hand edits.
-    If any of these actions runs without a dialog, or does nothing at all,
-    record it in the run notes: a sandboxed iframe can make `window.confirm`
-    return false silently.
+10. **Detach documentation** first asks for confirmation in a dialog inside
+    the panel. Confirm the dialog follows the current theme, Cancel leaves the
+    row unchanged, Escape closes the dialog without also leaving the screen
+    underneath, a click on the dimmed backdrop cancels, and focus returns to
+    the row menu button afterwards. Accepting leaves the canvas Section in
+    place while removing its Library connection. **Remove connection** asks
+    the same way and performs the cleanup only on accept. Also confirm that
+    **Update documentation** on a row marked **Manually edited** shows its
+    confirmation, and that **Update all** with an edited row shows one
+    confirmation naming how many documents have hand edits.
 11. Close and reopen the plugin. Library must survive because connections live
     in the document, not only on the device.
 

@@ -1687,7 +1687,19 @@
 }
 
 .sl-foundation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   border-bottom: 1px solid var(--sl-color-border-muted);
+}
+
+.sl-foundation-row:hover {
+  background: var(--sl-color-surface-subdued);
+}
+
+.sl-foundation-copy {
+  margin-inline-end: var(--sl-space-8);
+  color: var(--sl-color-text-muted);
 }
 
 .sl-foundation-summary {
@@ -1701,18 +1713,15 @@
   align-items: center;
   gap: var(--sl-space-4);
   /* Horizontal inset lives on the row itself (matches .sl-foundation-toolbar's
-     14px), so the hover fill runs full-bleed while the content stays clear
-     of the panel edge. */
+     14px). The hover fill lives on .sl-foundation-row, one level up, so it
+     spans both grid columns (summary and copy button) instead of stopping
+     at this element's own column. */
   padding: var(--sl-space-6) var(--sl-space-14);
   color: inherit;
   background: transparent;
   border: 0;
   text-align: left;
   cursor: pointer;
-}
-
-.sl-foundation-summary:hover {
-  background: var(--sl-color-surface-subdued);
 }
 
 .sl-foundation-source-icon {
@@ -2634,6 +2643,27 @@
   border: 1px solid var(--sl-color-border);
   border-radius: var(--sl-radius-lg);
   box-shadow: var(--sl-shadow-overlay);
+}
+
+.sl-confirm-dialog > h2 {
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-section);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-confirm-dialog > p {
+  margin: 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-control);
+  line-height: var(--sl-line-height-body);
+}
+
+.sl-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sl-space-8);
+  margin-top: var(--sl-space-14);
 }
 
 /*

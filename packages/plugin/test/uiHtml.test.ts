@@ -76,7 +76,15 @@ describe('dist/ui.html', () => {
 
   it('lets vNext AI writing fall back immediately when image export fails', () => {
     expect(vnext).toContain('componentImageError');
-    expect(vnext).toContain('resolveComponentImage(null)');
+    // The bundle is minified, so the local name resolveComponentImage no
+    // longer appears literally. Check the call structure by backreference
+    // instead: whatever the minifier renamed it to, the same identifier
+    // resolves the image on success and resolves null immediately on
+    // failure, right after the matching case labels (string literals, so
+    // unaffected by minification).
+    expect(vnext).toMatch(
+      /case"componentImage":(\w+)\(\{base64:[^}]*\}\);return;case"componentImageError":\1\(null\);return;/,
+    );
   });
 
   it('anchors hidden choice inputs to their visible controls to prevent focus scroll jumps', () => {
@@ -105,23 +113,28 @@ describe('dist/ui.html', () => {
   // sides come from the spacing scale. Asserting the left value only keeps the
   // test on the invariant that matters instead of the whole shorthand.
   it('indents child sections beneath their category title', () => {
+    // Minified CSS drops the trailing semicolon on a rule's last
+    // declaration, so accept either a semicolon or the closing brace.
     expect(vnext).toMatch(
-      /\.sl-section-row \.sl-choice\s*\{[^}]*padding:[^;]*\s40px;/,
+      /\.sl-section-row \.sl-choice\s*\{[^}]*padding:[^;]*\s40px[;}]/,
     );
-    expect(vnext).toMatch(/\.sl-section-details\s*\{[^}]*padding:[^;]*\s63px;/);
+    expect(vnext).toMatch(/\.sl-section-details\s*\{[^}]*padding:[^;]*\s63px[;}]/);
   });
 
   it('drives light-theme surfaces and component states through semantic roles', () => {
+    // Minified CSS drops the quotes around an attribute value that is a
+    // plain identifier (e.g. data-theme=light instead of data-theme="light"),
+    // so the attribute selectors below accept either form.
     expect(vnext).toMatch(
-      /body\[data-theme="light"\]\s*\{[^}]*--sl-color-canvas:\s*#ffffff;[^}]*--sl-color-chrome:\s*#ffffff;[^}]*--sl-color-surface:\s*#ffffff;/,
+      /body\[data-theme="?light"?\]\s*\{[^}]*--sl-color-canvas:\s*#ffffff;[^}]*--sl-color-chrome:\s*#ffffff;[^}]*--sl-color-surface:\s*#ffffff;/,
     );
     expect(vnext).toContain('--sl-color-accent-border');
     expect(vnext).toContain('--sl-color-control-thumb');
     expect(vnext).toContain('--sl-color-section-header: #f7f7f7');
     expect(vnext).toContain('--sl-color-ai-badge-text: #737373');
-    expect(vnext).not.toMatch(/body\[data-theme="light"\]\s+\.sl-/);
+    expect(vnext).not.toMatch(/body\[data-theme="?light"?\]\s+\.sl-/);
     expect(vnext).toMatch(
-      /\.sl-component-screen \.sl-section-row \.sl-badge\[data-tone="accent"\]\s*\{[^}]*color:\s*var\(--sl-color-ai-badge-text\);[^}]*background:\s*var\(--sl-color-ai-badge-bg\);[^}]*border:\s*1px solid var\(--sl-color-ai-badge-border\);/,
+      /\.sl-component-screen \.sl-section-row \.sl-badge\[data-tone="?accent"?\]\s*\{[^}]*color:\s*var\(--sl-color-ai-badge-text\);[^}]*background:\s*var\(--sl-color-ai-badge-bg\);[^}]*border:\s*1px solid var\(--sl-color-ai-badge-border\);/,
     );
     expect(vnext).toMatch(
       /\.sl-switch-thumb\s*\{[^}]*background:\s*var\(--sl-color-control-thumb\);[^}]*box-shadow:\s*var\(--sl-shadow-control-thumb\);/,
@@ -129,11 +142,15 @@ describe('dist/ui.html', () => {
   });
 
   it('centers the indeterminate mark in the checkbox grid', () => {
+    // Minified CSS drops a rule's trailing semicolon when the matched
+    // property is its only or last declaration, downgrades ::after to the
+    // equivalent legacy :after, and drops quotes around a plain-identifier
+    // attribute value; accept both forms for each.
     expect(vnext).toMatch(
-      /\.sl-checkbox-box\s*>\s*svg\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
+      /\.sl-checkbox-box\s*>\s*svg\s*\{[^}]*grid-area:\s*1\s*\/\s*1[;}]/,
     );
     expect(vnext).toMatch(
-      /\.sl-choice-input\[data-mixed="true"\]\s*\+\s*\.sl-checkbox-box::after\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
+      /\.sl-choice-input\[data-mixed="?true"?\]\s*\+\s*\.sl-checkbox-box:{1,2}after\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
     );
   });
 });

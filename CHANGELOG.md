@@ -217,8 +217,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a whole entry: a per-collection Foundation slice would need the extractor's
   alias closure and is left for a bundle-side change.
 
+- **Copy for AI** on the Selected component screen. The component brief no
+  longer requires creating a canvas document first; it copies from the
+  selection with the same content a Library row copies, minus saved
+  guidelines, since no document is involved.
+
+- Every collection row and the text styles row on the Foundations screen has
+  its own **Copy for AI**, producing the same scoped DTCG document a Library
+  row copies. The footer copy is now labelled **Copy whole file for AI**.
+
 ### Changed
 
+- Clicking anything that is not a component no longer shows a toast on the
+  canvas. The panel's empty state already says what to select.
+- The plugin asks Figma once per distinct variable or style id during a
+  component read, instead of once per binding occurrence. A component set
+  binding the same tokens across many variants now makes a few dozen lookups
+  rather than hundreds. Output is unchanged.
+- Reading a file's foundations fetches every local variable in one call and
+  indexes it, instead of one call per variable. Publication status is still
+  read per variable, so exported artifacts are unchanged.
+- Selecting a component no longer sends the whole foundation dump to the
+  plugin panel on every click. The dump travels once per read and the panel
+  keeps it, which removes a structured clone of up to a few hundred kilobytes
+  per selection on large files.
+- Detach, Remove, and Update of a hand-edited document now confirm inside the
+  plugin panel instead of through the browser's `confirm()`, which is not
+  dependable inside Figma's sandboxed iframe. The new dialog follows the
+  theme, traps focus, and cancels on Escape.
+- The Foundation clipboard document is compact JSON on one line, roughly half
+  the bytes of the indented form. Files written by the CLI are unchanged. The
+  "large for some chat windows" notice now reports kilobytes above 200 KB
+  instead of a line count, for both Foundation and component copies.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on
@@ -289,6 +319,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   accessibility bullet, now renders correctly on the canvas and survives an
   Update. Previously, bullet rows re-parsed already-plain text and silently
   dropped bold formatting; this is fixed.
+
+- The plugin bundles are minified. `dist/ui.html`, which the panel loads on
+  every open, went from 622 KB to 344 KB; `dist/main.js` from 237 KB to
+  120 KB. No behaviour change.
 
 ### Fixed
 
