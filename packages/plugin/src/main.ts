@@ -172,7 +172,6 @@ async function postSelection(): Promise<void> {
   const component = findComponent(figma.currentPage.selection);
 
   if (!component) {
-    figma.notify('Select a component or component set');
     if (seq !== selectionSeq) return;
     const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
     figma.ui.postMessage(msg);

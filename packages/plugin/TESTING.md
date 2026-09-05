@@ -64,7 +64,9 @@ requests carry token names and resolved values without an image.
    download Markdown/ZIP files or change the canvas.
 
 Also verify a nested selection resolves to its enclosing component and a
-non-component selection shows an actionable empty state.
+non-component selection shows an actionable empty state with no toast. Click
+a frame, a text node, and one of the plugin's own Sections while the panel is
+open: nothing should pop up on the canvas.
 
 ## Generate Foundation docs
 

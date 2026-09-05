@@ -219,6 +219,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Clicking anything that is not a component no longer shows a toast on the
+  canvas. The panel's empty state already says what to select.
 - The plugin asks Figma once per distinct variable or style id during a
   component read, instead of once per binding occurrence. A component set
   binding the same tokens across many variants now makes a few dozen lookups
