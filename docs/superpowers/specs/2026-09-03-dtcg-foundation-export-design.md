@@ -241,10 +241,22 @@ literal `%` line height is divided by 100 and written straight into `$value`
 with no report; the conversion itself never produces a `unit_not_expressible`
 entry. A `%` line height bound to a token this export does not carry is
 converted the same way, after the general `binding_dropped` report that every
-dropped binding produces fires first. A `%`
-bound to a token the export does carry keeps the same reference-or-extension
-rule as any other property, since the target's own `$type` decides it, not the
-percent unit. A `number` line height, which is what Figma's auto line height
+dropped binding produces fires first.
+
+A dimension-typed line height bound to a token the export *does* carry is
+never written as a reference. This is a deliberate deviation from the plan's
+Task 4 wording, which said the target's own `$type` would decide it the way it
+decides every other property. It cannot: the target is a `dimension` token,
+and `lineHeight` accepts only a unitless number, so `{Spacing.gap}` pointing
+at a `140` would be read as a 140x multiplier of the font size, a figure Figma
+never stated. So a bound `px` or `%` line height goes under
+`$extensions["com.spec-layer"].lineHeight` as the literal
+`{ "value": n, "unit": u }` with a `unit_not_expressible` entry, and that
+entry carries `details.target_id` so a consumer can see the value was bound
+and to what. No `binding_dropped` fires, because the target is present in the
+export and nothing about it was dropped.
+
+A `number` line height, which is what Figma's auto line height
 and a multiplier produce, stays in `$value`, as a reference when it is bound
 to a number token.
 

@@ -456,6 +456,22 @@ function reportDuplicateCodeSyntax(p: Projection): void {
 
 const SPEC_LAYER_EXT = 'com.spec-layer';
 
+/** A binding whose target this export does not carry: the resolved literal is
+ *  written instead. `target_omitted` when the artifact holds the token and the
+ *  projection dropped it, `target_unavailable` when the artifact never had it. */
+function reportBindingDropped(
+  p: Projection, path: string, property: string, targetId: string,
+): void {
+  reportOnce(p, {
+    code: 'binding_dropped', severity: 'warning', path,
+    message: `The ${property} property is bound to a token this export does not carry; the resolved literal is written instead.`,
+    details: {
+      property, target_id: targetId,
+      reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
+    },
+  });
+}
+
 /** A style property as a DTCG composite member: a reference when bound to a
  *  surviving token, else the converted literal; `null` when nothing truthful fits. */
 function styleMember(
@@ -465,14 +481,7 @@ function styleMember(
     const targetId = property.source.target_id;
     const target = p.omittedIds.has(targetId) ? undefined : p.pathById.get(targetId);
     if (target !== undefined) return { value: `{${target}}` };
-    reportOnce(p, {
-      code: 'binding_dropped', severity: 'warning', path,
-      message: `The ${name} property is bound to a token this export does not carry; the resolved literal is written instead.`,
-      details: {
-        property: name, target_id: targetId,
-        reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
-      },
-    });
+    reportBindingDropped(p, path, name, targetId);
   }
   if (property.resolved === null) {
     reportOnce(p, {
@@ -532,20 +541,11 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
     // literal percent, or one bound to a token this export does not carry, is
     // divided by 100 and written straight into $value instead.
     if (key === 'line_height' && property.resolved?.type === 'dimension') {
+      const boundTo = property.source.kind === 'alias' ? property.source.target_id : null;
       let targetExported = false;
-      if (property.resolved.unit === '%' && property.source.kind === 'alias' && property.source.target_id !== null) {
-        const targetId = property.source.target_id;
-        targetExported = !p.omittedIds.has(targetId) && p.pathById.get(targetId) !== undefined;
-        if (!targetExported) {
-          reportOnce(p, {
-            code: 'binding_dropped', severity: 'warning', path,
-            message: `The ${name} property is bound to a token this export does not carry; the resolved literal is written instead.`,
-            details: {
-              property: name, target_id: targetId,
-              reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
-            },
-          });
-        }
+      if (property.resolved.unit === '%' && boundTo !== null) {
+        targetExported = !p.omittedIds.has(boundTo) && p.pathById.get(boundTo) !== undefined;
+        if (!targetExported) reportBindingDropped(p, path, name, boundTo);
       }
       if (property.resolved.unit === '%' && !targetExported) {
         value[name] = canonicalNumber(property.resolved.number / 100);
@@ -554,7 +554,13 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
       reportOnce(p, {
         code: 'unit_not_expressible', severity: 'info', path,
         message: 'DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.',
-        details: { property: name, unit: property.resolved.unit, number: property.resolved.number },
+        // The binding is replaced by a literal here, so the entry names the
+        // target it stood for; without it a consumer cannot tell this value
+        // was bound at all.
+        details: {
+          property: name, unit: property.resolved.unit, number: property.resolved.number,
+          ...(boundTo !== null ? { target_id: boundTo } : {}),
+        },
       });
       ext[name] = { value: property.resolved.number, unit: property.resolved.unit };
       continue;
@@ -607,14 +613,7 @@ function effectLeaf(p: Projection, style: EffectStyleV5, path: string): DtcgTree
         continue;
       }
       if (boundId !== undefined) {
-        reportOnce(p, {
-          code: 'binding_dropped', severity: 'warning', path,
-          message: `The effects[${index}].${field} property is bound to a token this export does not carry; the resolved literal is written instead.`,
-          details: {
-            property: `effects[${index}].${field}`, target_id: boundId,
-            reason: p.tokenIds.has(boundId) ? 'target_omitted' : 'target_unavailable',
-          },
-        });
+        reportBindingDropped(p, path, `effects[${index}].${field}`, boundId);
       }
       const raw = effect[field] as TypedValue | undefined;
       if (raw === undefined) continue;
@@ -856,15 +855,14 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     const hop = value.resolved.chain[0];
     if (target && hop && target.collection_id !== token.collection_id) {
       const targetCollection = p.collectionById.get(target.collection_id);
-      // Compared by display NAME, because that is the mode policy Figma applied;
-      // reported by LABEL, so the entry names a resolver context that exists.
-      const hopName = targetCollection ? modeName(targetCollection, hop.mode_id) : hop.mode_id;
       // A single-mode target set resolves the same way in every context, so
       // nothing is lost. Only a multi-mode target can resolve differently
       // under the consumer's contexts than Figma did.
+      // Compared by display NAME, because that is the mode policy Figma applied;
+      // reported by LABEL, so the entry names a resolver context that exists.
       if (targetCollection !== undefined && targetCollection.modes.length > 1
-        && hopName !== modeName(collection, modeId)) {
-        const hopMode = targetCollection ? modeLabelOf(p, targetCollection, hop.mode_id) : hop.mode_id;
+        && modeName(targetCollection, hop.mode_id) !== modeName(collection, modeId)) {
+        const hopMode = modeLabelOf(p, targetCollection, hop.mode_id);
         reportOnce(p, {
           code: 'mode_selection_not_expressible', severity: 'info', path, mode,
           message: `Figma resolved this alias through the target's "${hopMode}" mode; DTCG resolves it by the consumer's context.`,

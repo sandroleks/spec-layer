@@ -258,7 +258,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - DTCG typography composites write a percent line height as the multiplier
   DTCG defines (140% becomes 1.4). A px line height stays under
-  `$extensions["com.spec-layer"].lineHeight`.
+  `$extensions["com.spec-layer"].lineHeight`. A line height bound to a token
+  is never a reference, since `lineHeight` takes a unitless number and the
+  target is a dimension, so it stays under `$extensions` too; the
+  `unit_not_expressible` report entry now carries `target_id`, so a consumer
+  can see the value was bound and to what.
 
 - A Library Update keeps what is written in a component doc's writing
   sections. The renderer tags the definition, accessibility, interactions,

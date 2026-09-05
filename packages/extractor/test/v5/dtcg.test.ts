@@ -385,7 +385,9 @@ describe('foundationDtcg styles', () => {
     });
     expect(asDimension.report).toContainEqual(expect.objectContaining({
       code: 'unit_not_expressible', severity: 'info', path: 'Typography styles.Body.Regular',
-      details: expect.objectContaining({ property: 'lineHeight', unit: 'px', number: 8 }),
+      details: expect.objectContaining({
+        property: 'lineHeight', unit: 'px', number: 8, target_id: 'VariableID:gap',
+      }),
     }));
   });
 
@@ -418,6 +420,33 @@ describe('foundationDtcg styles', () => {
         details: { property: 'lineHeight', target_id: 'VariableID:not-here', reason: 'target_unavailable' },
       }),
     ]);
+  });
+
+  it('keeps a percent line height bound to an exported token under extensions, naming the target', () => {
+    // The target token is `dimension`-typed and DTCG `lineHeight` accepts only
+    // a unitless number, so no reference can be written; the literal goes
+    // under $extensions and the report names the binding it stood for.
+    const artifact = syntheticArtifact();
+    artifact.styles.typography[0].properties.line_height = {
+      source: { kind: 'alias', target_id: 'VariableID:gap', target_path: ['spacing', 'gap'] },
+      resolved: { type: 'dimension', number: 150, unit: '%' },
+    };
+    const out = foundationDtcg(artifact);
+    const body = leaf(out.files['styles.typography.json'], 'Typography styles.Body.Regular');
+
+    expect(body?.$value).not.toHaveProperty('lineHeight');
+    expect(body?.$extensions).toMatchObject({
+      'com.spec-layer': { lineHeight: { value: 150, unit: '%' } },
+    });
+    expect(out.report.filter((r) => r.code === 'unit_not_expressible' && r.details.property === 'lineHeight')).toEqual([
+      expect.objectContaining({
+        code: 'unit_not_expressible', severity: 'info', path: 'Typography styles.Body.Regular',
+        details: {
+          property: 'lineHeight', unit: '%', number: 150, target_id: 'VariableID:gap',
+        },
+      }),
+    ]);
+    expect(out.report.filter((r) => r.code === 'binding_dropped' && r.details.property === 'lineHeight')).toEqual([]);
   });
 
   it('maps an effect style to a shadow array of visible shadows, with every layer under extensions', () => {
