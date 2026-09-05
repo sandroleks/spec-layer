@@ -292,6 +292,12 @@ describe('buildFoundationArtifactV5 — alias graph and scope', () => {
       collections: 'partial', styles: 'unavailable',
     });
     expect(validateLevel1(artifact)).toEqual([]);
+    const scoped = artifact.diagnostics.filter((finding) => finding.code === 'EXPORT_SCOPED');
+    expect(scoped).toEqual([expect.objectContaining({
+      code: 'EXPORT_SCOPED', severity: 'info',
+    })]);
+    expect(artifact.diagnostics.some((finding) =>
+      finding.code === 'SOURCE_PARTIALLY_UNAVAILABLE')).toBe(false);
   });
 
   it('throws before construction when a scoped collection no longer exists', () => {

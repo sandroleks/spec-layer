@@ -801,11 +801,13 @@ describe('normalizeV4', () => {
     });
     expect('scope' in artifact).toBe(false);
     expect(diagnostics).toContainEqual(expect.objectContaining({
-      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      code: 'EXPORT_SCOPED',
+      severity: 'info',
       details: expect.objectContaining({
         scope_kind: 'collections', included_collections: ['Semantic'],
       }),
     }));
+    expect(diagnostics.some((d) => d.code === 'SOURCE_PARTIALLY_UNAVAILABLE')).toBe(false);
   });
 
   it('does not present a text-style-scoped v4 copy as complete for collections or styles', () => {
@@ -816,9 +818,15 @@ describe('normalizeV4', () => {
     });
     expect('scope' in artifact).toBe(false);
     expect(diagnostics).toContainEqual(expect.objectContaining({
-      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      code: 'EXPORT_SCOPED',
+      severity: 'info',
       details: expect.objectContaining({ scope_kind: 'text_styles' }),
     }));
+    // The scope itself is no longer SOURCE_PARTIALLY_UNAVAILABLE; the fixture's
+    // unmigrated composite styles are a separate, unrelated diagnostic.
+    expect(diagnostics.some((d) =>
+      d.code === 'SOURCE_PARTIALLY_UNAVAILABLE'
+      && (d.details as { scope_kind?: string })?.scope_kind !== undefined)).toBe(false);
   });
 
   // -------------------------------------------------------------------------

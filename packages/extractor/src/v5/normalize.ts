@@ -848,7 +848,7 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
   // hashed completeness block and accompany it with actionable prose.
   if (v4.scope !== undefined) {
     if (Array.isArray(v4.scope.collections)) {
-      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      diagnostics.push(diagnostic('EXPORT_SCOPED', {
         entity_id: ARTIFACT_ENTITY_ID,
         message: `This v4 input is scoped to ${v4.scope.collections.length} collection(s); `
           + 'unselected collections and all styles are outside the copy, so it is not a '
@@ -861,7 +861,7 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
         },
       }));
     } else {
-      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      diagnostics.push(diagnostic('EXPORT_SCOPED', {
         entity_id: ARTIFACT_ENTITY_ID,
         message: 'This v4 input is scoped to text styles; collections and effect styles are '
           + 'outside the copy, so it is not a complete whole-file artifact.',
