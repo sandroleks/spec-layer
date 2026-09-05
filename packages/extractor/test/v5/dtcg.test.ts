@@ -400,6 +400,26 @@ describe('foundationDtcg styles', () => {
     expect(out.report.filter((r) => r.code === 'unit_not_expressible' && r.details.property === 'lineHeight')).toEqual([]);
   });
 
+  it('converts a percent line height bound to a token this export does not carry, and reports the dropped binding', () => {
+    const artifact = syntheticArtifact();
+    const style = artifact.styles.typography[0];
+    style.properties.line_height = {
+      source: { kind: 'alias', target_id: 'VariableID:not-here', target_path: [] },
+      resolved: { type: 'dimension', number: 150, unit: '%' },
+    };
+    const out = foundationDtcg(artifact);
+    const body = leaf(out.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect((body?.$value as Record<string, unknown>).lineHeight).toBe(1.5);
+    expect((body?.$extensions as Record<string, Record<string, unknown>>)['com.spec-layer']).not.toHaveProperty('lineHeight');
+    expect(out.report.filter((r) => r.code === 'unit_not_expressible' && r.details.property === 'lineHeight')).toEqual([]);
+    expect(out.report.filter((r) => r.code === 'binding_dropped' && r.details.property === 'lineHeight')).toEqual([
+      expect.objectContaining({
+        code: 'binding_dropped', path: 'Typography styles.Body.Regular',
+        details: { property: 'lineHeight', target_id: 'VariableID:not-here', reason: 'target_unavailable' },
+      }),
+    ]);
+  });
+
   it('maps an effect style to a shadow array of visible shadows, with every layer under extensions', () => {
     const card = leaf(out.files['styles.effects.json'], 'Effect styles.Shadow.Card');
     expect(card?.$type).toBe('shadow');

@@ -237,8 +237,11 @@ under `$extensions` with a report entry. Concretely: a literal `px` line
 height, or one bound to a token this export does not carry, goes under
 `$extensions["com.spec-layer"].lineHeight` as `{ "value": n, "unit": u }` and
 is reported `unit_not_expressible` with `details.property = "lineHeight"`; a
-literal `%` line height, or one bound to a token this export does not carry,
-is divided by 100 and written straight into `$value` with no report. A `%`
+literal `%` line height is divided by 100 and written straight into `$value`
+with no report; the conversion itself never produces a `unit_not_expressible`
+entry. A `%` line height bound to a token this export does not carry is
+converted the same way, after the general `binding_dropped` report that every
+dropped binding produces fires first. A `%`
 bound to a token the export does carry keeps the same reference-or-extension
 rule as any other property, since the target's own `$type` decides it, not the
 percent unit. A `number` line height, which is what Figma's auto line height
