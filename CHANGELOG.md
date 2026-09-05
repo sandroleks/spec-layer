@@ -226,6 +226,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Reading a file's foundations fetches every local variable in one call and
   indexes it, instead of one call per variable. Publication status is still
   read per variable, so exported artifacts are unchanged.
+- Selecting a component no longer sends the whole foundation dump to the
+  plugin panel on every click. The dump travels once per read and the panel
+  keeps it, which removes a structured clone of up to a few hundred kilobytes
+  per selection on large files.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on

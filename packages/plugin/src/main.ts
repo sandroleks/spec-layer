@@ -7,6 +7,7 @@ import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation } from './serializeFoundation';
 import { createFoundationReader } from './foundationReader';
+import { FoundationPostGate } from './foundationPost';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast,
@@ -117,6 +118,7 @@ const resolver: NodeResolver = {
 // suspects staleness has one discoverable way to clear it.
 // ---------------------------------------------------------------------------
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
+const foundationPosts = new FoundationPostGate();
 
 async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
   if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
@@ -205,7 +207,9 @@ async function postSelection(): Promise<void> {
       // figma.root.name is main-thread only, so the file's NAME has to ride
       // this message alongside its key; the UI cannot read it itself.
       fileName: figma.root.name,
-      ...(foundation ? { foundation } : {}),
+      // Only when the UI does not already hold this exact dump. See
+      // FoundationPostGate for why identity is the right test.
+      ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
     };
     figma.ui.postMessage(msg);
   } catch (err) {
@@ -826,6 +830,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // foundationBrief's own absent-vs-empty rule one layer up.
         const merged = await liveFoundationGroupDescriptions();
         const groupDescriptions = Object.keys(merged).length > 0 ? merged : undefined;
+        // The 'foundation' reply hands the UI this dump, so the next
+        // 'selection' must not send it again.
+        foundationPosts.fresh(dump);
         figma.ui.postMessage({ type: 'foundation', dump, groupDescriptions } as MainToUi);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

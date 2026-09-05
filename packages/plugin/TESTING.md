@@ -71,6 +71,11 @@ non-component selection shows an actionable empty state.
 1. Open **Foundation documents** and wait for local variable collections and
    text styles to finish loading. Use **Refresh sources** after changing the
    Figma file and confirm the list updates without creating Sections.
+   Then select a component, change a variable value, come back to
+   **Foundation documents**, click **Refresh sources**, select the component
+   again, and run Library **Copy for AI** on it. The copied token value must be
+   the new one: the selection message no longer carries the foundation dump,
+   so this checks the refreshed dump still reaches the component copy.
 2. Exercise **Select all** / **Clear all**, individual source selection, and a
    collection large enough to split. Confirm row and button frame counts match
    the Sections that are created.
