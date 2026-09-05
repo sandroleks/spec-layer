@@ -512,6 +512,22 @@ export interface CopyBriefOptions {
   guidelinesNote?: boolean;
 }
 
+/** Above this, a copy warns that some chat windows will not take it whole. */
+export const LARGE_COPY_BYTES = 200 * 1024;
+
+/**
+ * Size caveat for a copied payload, in kilobytes.
+ *
+ * Bytes, not lines: the DTCG clipboard is compact JSON on one line, and what
+ * a chat window or an agent's context actually pays for is bytes. Leading
+ * space so it appends to "Copied." the way the line-count string did.
+ */
+export function sizeCaveat(text: string): string {
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes <= LARGE_COPY_BYTES) return '';
+  return ` ${Math.round(bytes / 1024)} KB, which is large for some chat windows.`;
+}
+
 export async function copyBriefFromSource(
   state: UiState,
   src: CopySource,
@@ -540,8 +556,7 @@ export async function copyBriefFromSource(
       prose,
     });
     const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
-    const lines = yaml.split('\n').length;
-    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const size = sizeCaveat(yaml);
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
     const noProse = prose || options.guidelinesNote === false ? '' : ' This document has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
@@ -640,7 +655,7 @@ export function currentFoundationSpec(): FoundationSpec | null {
  *
  * Shared tail of copyFoundationBrief and copyFoundationBriefForScope: the two
  * differ only in how they build the artifact scope (whole file vs. one
- * Library row), and were otherwise identical down to the 800-line
+ * Library row), and were otherwise identical down to the size
  * threshold and the error string. `buildText` is a thunk rather than an
  * already-built string so this can keep wrapping the brief construction
  * itself in the same try/catch the duplicated code used — a failure in
@@ -650,8 +665,7 @@ export function currentFoundationSpec(): FoundationSpec | null {
 async function deliverBrief(buildText: () => string, ui: BuildPresenter): Promise<void> {
   try {
     const text = buildText();
-    const lines = text.split('\n').length;
-    const size = lines > 800 ? ` ${lines} lines, which is large for some chat windows.` : '';
+    const size = sizeCaveat(text);
     const tier = await copyText(text);
     if (tier === 'manual') {
       renderManualCopyModal(text, size.trim() || undefined);
@@ -700,7 +714,10 @@ function foundationDtcgJson(
   // resolver document projected from it, which Style Dictionary and Tokens
   // Studio read and an agent needs no dialect for. What DTCG cannot express is
   // listed under $extensions["com.spec-layer"].report, never approximated.
-  return `${JSON.stringify(foundationDtcgDocument(artifact), null, 2)}\n`;
+  // Compact on purpose. Indented, a 360-variable file is 12,000 lines and
+  // 424 KB; compact is roughly half the bytes and the same document. Files on
+  // disk stay two-space through dtcgExportFiles, which is what the CLI writes.
+  return `${JSON.stringify(foundationDtcgDocument(artifact))}\n`;
 }
 
 /**

@@ -144,6 +144,26 @@ describe('copyBriefFromSource', () => {
     expect(notice ?? '').toContain('Token values are missing');
   });
 
+  it('measures the component brief in kilobytes too', async () => {
+    const wide = {
+      ...(NODE as unknown as Record<string, unknown>),
+      children: Array.from({ length: 3000 }, (_, i) => ({
+        id: `1:${i + 200}`, name: `Layer ${i} with a deliberately long descriptive name`, type: 'FRAME',
+        visible: true, children: [], bindings: [],
+      })),
+    } as never;
+    copyText.mockResolvedValue('manual');
+    await copyBriefFromSource(createState(), { node: wide, fileKey: 'F1' }, null, presenter());
+    const [text, notice] = renderManualCopyModal.mock.calls[0];
+    const kb = Math.round(new TextEncoder().encode(text).length / 1024);
+    if (kb * 1024 > 200 * 1024) {
+      expect(notice).toContain(`${kb} KB, which is large for some chat windows.`);
+    } else {
+      expect(notice ?? '').not.toContain('large for some chat windows');
+    }
+    expect(notice ?? '').not.toMatch(/\d+ lines/);
+  });
+
   // This test sets foundationSpec at module scope via onSelectionFoundation,
   // which nothing in this file resets afterward. It must run last, after every
   // test above that relies on foundations being unset.

@@ -242,6 +242,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   iframe can answer `confirm()` with false without showing anything, which
   made those actions do nothing. The new dialog follows the theme, traps
   focus, and cancels on Escape.
+- The Foundation clipboard document is compact JSON on one line, roughly half
+  the bytes of the indented form. Files written by the CLI are unchanged. The
+  "large for some chat windows" notice now reports kilobytes above 200 KB
+  instead of a line count, for both Foundation and component copies.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on

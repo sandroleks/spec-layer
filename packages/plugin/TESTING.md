@@ -87,15 +87,17 @@ open: nothing should pop up on the canvas.
    the Sections that are created.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
-4. Click the Foundations footer's **Copy for AI** and paste into a plain text
-   editor. Confirm it is JSON with `"version": "2025.10"`, one set or modifier
+4. Click the Foundations footer's **Copy whole file for AI** and paste into a
+   plain text editor. Confirm it is a single line of compact JSON that a
+   formatter can pretty-print, with `"version": "2025.10"`, one set or modifier
    per collection named exactly as in Figma, `$type` and `$value` on every
    token, `{Collection.path}` references for aliases, and a
    `$extensions["com.spec-layer"]` block carrying `content_hash`,
    `completeness`, `code_syntax`, and a `report` array. Every unresolved
    library alias in the file must appear in `report` and nowhere else.
    Confirm the complete file-wide vocabulary is present regardless of source
-   selection, and no canvas objects are created.
+   selection, and no canvas objects are created. Note the size the toast
+   reports, if any; it appears above 200 KB and is measured in kilobytes.
 5. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
