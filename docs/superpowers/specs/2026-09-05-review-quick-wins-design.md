@@ -122,7 +122,8 @@ Delete the `figma.notify('Select a component or component set')` call in
 ### 3.6 Copy for AI on the component screen (review U1)
 
 `componentFooterMarkup` gains a secondary button, `id="sl-copy-component"`,
-before Create docs, enabled only in the `ready` state. The handler calls the
+before Create docs, disabled exactly when Create docs is (the `reading` and
+`building` states) and hidden with the footer in the `empty` state. The handler calls the
 existing `copyBriefFromSource` with `state.currentNode`, `state.currentFileKey`,
 and `state.currentFileName`, prose `null`.
 
@@ -180,8 +181,8 @@ Unit tests, all Node:
   lookups; null and rejection cached; `mainComponent` passes through.
 - `serializeFoundation` reader factory with a fake variables API: one bulk
   call per pass, per-id fallback for a missing id, unchanged dump shape.
-- Posted-dump gate: a fake `figma.ui.postMessage` sees `foundation` on the
-  first selection, not on the second, and again after `requestFoundation`.
+- `foundationPost.test.ts`: the gate hands over a dump once, withholds the
+  same object afterwards, and hands over a refreshed object even when equal.
 - `confirmDialog.test.ts` in happy-dom: resolves true and false, Escape and
   backdrop cancel, focus returns, single instance.
 - `componentScreen.test.ts`: copy button present only in `ready`.
