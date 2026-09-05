@@ -219,8 +219,16 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    styles"]` and no unrelated collection.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
-10. **Detach documentation** leaves the canvas Section but removes its Library
-    connection. **Remove connection** performs the confirmed cleanup.
+10. **Detach documentation** first asks for confirmation. Confirm the dialog is
+    visible, Cancel leaves the row unchanged, and accepting leaves the canvas
+    Section in place while removing its Library connection. **Remove
+    connection** asks the same way and performs the cleanup only on accept.
+    Also confirm that **Update documentation** on a row marked **Manually
+    edited** shows its confirmation and that **Update all** with an edited
+    row shows one confirmation naming how many documents have hand edits.
+    If any of these actions runs without a dialog, or does nothing at all,
+    record it in the run notes: a sandboxed iframe can make `window.confirm`
+    return false silently.
 11. Close and reopen the plugin. Library must survive because connections live
     in the document, not only on the device.
 
