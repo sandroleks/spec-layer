@@ -237,10 +237,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   alias or a boolean variable, is omitted from the tree and listed under
   `$extensions["com.spec-layer"].report`. A style's line height is one of
   those: the format reads `lineHeight` as a unitless multiplier of the font
-  size, so a measured px or % line height is kept under `$extensions` rather
-  than divided by the font size, which would state a figure Figma never did.
+  size, so a measured px line height is kept under `$extensions` rather than
+  divided by the font size, which would state a figure Figma never did.
   The canonical v5 artifact is unchanged and still owns the content hash. Component Copy for AI is
   unchanged apart from `code_syntax` on the tokens it embeds.
+
+- DTCG typography composites write a percent line height as the multiplier
+  DTCG defines (140% becomes 1.4). A px line height stays under
+  `$extensions["com.spec-layer"].lineHeight`.
 
 - A Library Update keeps what is written in a component doc's writing
   sections. The renderer tags the definition, accessibility, interactions,

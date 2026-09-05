@@ -524,11 +524,33 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
     const property = style.properties[key];
     // The stable format states that `lineHeight` MUST be a number or a
     // reference to a number token, read as a multiplier of the font size. A
-    // measured px or % line height is not that, and dividing it by the font
-    // size would derive a figure Figma never stated, so it is kept verbatim
-    // under $extensions. This holds for a binding too: the target's own $type
-    // is `dimension`, which `lineHeight` does not accept.
+    // measured px line height is not that, and dividing it by the font size
+    // would derive a figure Figma never stated, so it is kept verbatim under
+    // $extensions. This holds for a binding too: the target's own $type is
+    // `dimension`, which `lineHeight` does not accept. A measured percent IS
+    // that multiplier already (140% of the font size is 1.4x it), so a
+    // literal percent, or one bound to a token this export does not carry, is
+    // divided by 100 and written straight into $value instead.
     if (key === 'line_height' && property.resolved?.type === 'dimension') {
+      let targetExported = false;
+      if (property.resolved.unit === '%' && property.source.kind === 'alias' && property.source.target_id !== null) {
+        const targetId = property.source.target_id;
+        targetExported = !p.omittedIds.has(targetId) && p.pathById.get(targetId) !== undefined;
+        if (!targetExported) {
+          reportOnce(p, {
+            code: 'binding_dropped', severity: 'warning', path,
+            message: `The ${name} property is bound to a token this export does not carry; the resolved literal is written instead.`,
+            details: {
+              property: name, target_id: targetId,
+              reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
+            },
+          });
+        }
+      }
+      if (property.resolved.unit === '%' && !targetExported) {
+        value[name] = canonicalNumber(property.resolved.number / 100);
+        continue;
+      }
       reportOnce(p, {
         code: 'unit_not_expressible', severity: 'info', path,
         message: 'DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.',

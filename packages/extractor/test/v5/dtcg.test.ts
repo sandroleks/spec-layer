@@ -389,6 +389,17 @@ describe('foundationDtcg styles', () => {
     }));
   });
 
+  it('writes a percent line height as a multiplier and keeps a px line height under extensions', () => {
+    const artifact = syntheticArtifact();
+    const style = artifact.styles.typography[0];
+    style.properties.line_height = { source: { kind: 'literal' }, resolved: { type: 'dimension', number: 140, unit: '%' } };
+    const out = foundationDtcg(artifact);
+    const body = leaf(out.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect((body?.$value as Record<string, unknown>).lineHeight).toBe(1.4);
+    expect((body?.$extensions as Record<string, Record<string, unknown>>)['com.spec-layer']).not.toHaveProperty('lineHeight');
+    expect(out.report.filter((r) => r.code === 'unit_not_expressible' && r.details.property === 'lineHeight')).toEqual([]);
+  });
+
   it('maps an effect style to a shadow array of visible shadows, with every layer under extensions', () => {
     const card = leaf(out.files['styles.effects.json'], 'Effect styles.Shadow.Card');
     expect(card?.$type).toBe('shadow');

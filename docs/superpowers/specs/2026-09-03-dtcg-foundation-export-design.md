@@ -228,15 +228,22 @@ A property bound to a token the export does not carry keeps its resolved
 literal and is reported `binding_dropped` with the target id and whether the
 target was unavailable or omitted.
 
-Line height follows the same shape for a different reason. The stable format
-says `lineHeight` MUST be a number or a reference to a number token, read as a
-multiplier of the font size, so a measured `px` or `%` line height has no home
-in `$value`. Dividing it by the font size would derive a figure Figma never
-stated. A `dimension` line height, whether a literal or a binding, goes under
-`$extensions["com.spec-layer"].lineHeight` as `{ "value": n, "unit": u }` and is
-reported `unit_not_expressible` with `details.property = "lineHeight"`. A
-`number` line height, which is what Figma's auto line height and a multiplier
-produce, stays in `$value`, as a reference when it is bound to a number token.
+Line height follows a related but different rule. The stable format says
+`lineHeight` MUST be a number or a reference to a number token, read as a
+multiplier of the font size. A percent line height is written as a unitless
+multiplier by dividing by 100, which restates the same fact in the unit DTCG
+defines; a px line height cannot be converted without the font size and stays
+under `$extensions` with a report entry. Concretely: a literal `px` line
+height, or one bound to a token this export does not carry, goes under
+`$extensions["com.spec-layer"].lineHeight` as `{ "value": n, "unit": u }` and
+is reported `unit_not_expressible` with `details.property = "lineHeight"`; a
+literal `%` line height, or one bound to a token this export does not carry,
+is divided by 100 and written straight into `$value` with no report. A `%`
+bound to a token the export does carry keeps the same reference-or-extension
+rule as any other property, since the target's own `$type` decides it, not the
+percent unit. A `number` line height, which is what Figma's auto line height
+and a multiplier produce, stays in `$value`, as a reference when it is bound
+to a number token.
 
 Effect styles map to `shadow`. Visible drop and inner shadows become the
 `$value` array in source order, each
