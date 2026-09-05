@@ -161,6 +161,9 @@ Still open:
 
 - The manual Figma matrix in `packages/plugin/TESTING.md` has not yet been run
   against a development build.
+- A live `spec-layer pull` of a real 5.0.0 library on 2026-09-03 produced a
+  complete `tokens/` directory that Style Dictionary 5.5.2 built; the sidecar
+  carries no `code_syntax` until the plugin republishes with schema 5.1.0.
 - Real Company DS criteria 1, 2, 4, 5, and 7b passed a manual review of the
   supplied v5 artifact: 6 unique collection ids, 10 unique mode ids, 464 unique
   token ids, complete mode coverage, 354 resolved aliases, the expected 3
@@ -205,6 +208,10 @@ implementation rather than creating a second interpretation of v5.
 ## Release invariants
 
 - Never fabricate a value, unit, mode, id, or completeness claim.
+- Diagnostics follow one severity policy: `error` means a value is missing or
+  wrong, `warning` means a value is present but a consumer must decide
+  something, `info` means metadata is absent and no value depends on it.
+  Diagnostics stay outside every content hash.
 - Do not use `localeCompare` under `src/v5`; use `compareCodeUnits`.
 - Keep the extractor and landing schemas byte-identical.
 - Keep `guidelines`, diagnostics, statistics, timestamps, export ids, build ids,

@@ -156,13 +156,23 @@ Open, in rough priority order:
    Foundation Copy for AI rows that now check the DTCG clipboard document
    rather than YAML. This is the standing release blocker. Unit tests cannot
    reach it.
-2. Real design-system grading for v5 criteria 3, 10, and 11 (synthetic golden
+2. A live `spec-layer pull` of a real 5.0.0 library (`Design System
+   Variables`, published 2026-09-02) ran on 2026-09-03 into a scratch
+   directory: CLI 0.4.0 wrote a complete `tokens/` directory of 15 files that
+   Style Dictionary 5.5.2 built into 271 CSS variables with references
+   resolved. The sidecar carried no `code_syntax`, since the plugin has not
+   republished with schema 5.1.0. The canonical artifact reported 70 errors,
+   64 of them `UNIT_METADATA_UNAVAILABLE`, which is what motivated this
+   branch's diagnostic severity policy recalibrating that code down to a
+   warning. The plugin republish and the npm publish of CLI 0.4.0 are both
+   still pending.
+3. Real design-system grading for v5 criteria 3, 10, and 11 (synthetic golden
    passes; a reviewed real artifact does not exist in-repo). Criterion 9
    (style lifecycle) is ungradable from the current Plugin API.
-3. Remaining phase 4 work: command tooling (validate, normalize, diff) outside
+4. Remaining phase 4 work: command tooling (validate, normalize, diff) outside
    the Figma sandbox, reusing the canonical validator and hash rather than
    writing a second interpretation of v5.
-4. Community listing update and version alignment for the 5.0.0 plugin release.
+5. Community listing update and version alignment for the 5.0.0 plugin release.
 
 Explicitly not doing: remote MCP or agentic vision enrichment, new Markdown
 sections, a hosted composition layer. Those were considered and rejected; the
