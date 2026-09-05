@@ -195,6 +195,24 @@ describe('foundationDtcg aliases and omissions', () => {
     }));
   });
 
+  it('does not report mode selection for an alias into a single-mode collection', () => {
+    const artifact = syntheticArtifact();
+    const primitives = artifact.collections.find((c) => c.id === 'CollectionID:primitives');
+    if (!primitives) throw new Error('fixture lost Primitives');
+    // Collapse Primitives to one mode so every cross-collection hop lands on it.
+    const keep = primitives.modes[0];
+    primitives.modes = [keep];
+    primitives.default_mode_id = keep.id;
+    for (const token of artifact.tokens) {
+      if (token.collection_id !== primitives.id) continue;
+      token.values = { [keep.id]: token.values[keep.id] };
+    }
+    const out = foundationDtcg(artifact);
+    expect(out.report.filter((r) => r.code === 'mode_selection_not_expressible')).toEqual([]);
+    expect(leaf(out.files['semantic.dark.json'], 'Semantic.color.surface.primary')?.$value)
+      .toBe('{Primitives.color.chain.bridge}');
+  });
+
   it('keeps a sidecar entry for every token in a DTCG path collision', () => {
     const artifact = syntheticArtifact();
     const ids = ['VariableID:color-exact', 'VariableID:color-lossy'];

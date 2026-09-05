@@ -179,7 +179,9 @@ contexts, which matches the artifact's mode policy of exact name match. When a
 chain hop was resolved by the collection default instead of a same-named mode,
 the reference is still emitted and the token is reported
 `mode_selection_not_expressible` with the resolved snapshot, because DTCG has
-no per-alias mode.
+no per-alias mode. The entry is emitted only when the target collection has
+more than one mode; a single-mode target resolves identically in every
+context.
 
 A value that is `missing`, an unresolved alias of any reason, or an external
 alias produces no leaf in that mode file and a `report.json` entry with the

@@ -837,7 +837,11 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       // Compared by display NAME, because that is the mode policy Figma applied;
       // reported by LABEL, so the entry names a resolver context that exists.
       const hopName = targetCollection ? modeName(targetCollection, hop.mode_id) : hop.mode_id;
-      if (hopName !== modeName(collection, modeId)) {
+      // A single-mode target set resolves the same way in every context, so
+      // nothing is lost. Only a multi-mode target can resolve differently
+      // under the consumer's contexts than Figma did.
+      if (targetCollection !== undefined && targetCollection.modes.length > 1
+        && hopName !== modeName(collection, modeId)) {
         const hopMode = targetCollection ? modeLabelOf(p, targetCollection, hop.mode_id) : hop.mode_id;
         reportOnce(p, {
           code: 'mode_selection_not_expressible', severity: 'info', path, mode,
