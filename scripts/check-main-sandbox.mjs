@@ -16,10 +16,13 @@
  * feature had been reviewed and signed off. Tests that exercise main-thread
  * code in Node are testing a realm the code never ships to.
  *
- * Matching is deliberately narrow to avoid false positives on a bundled,
- * unminified artifact: constructor globals are matched only as `new X(`, and
+ * Matching is deliberately narrow to avoid false positives on a bundled
+ * artifact: constructor globals are matched only as `new X(`, and
  * namespace globals only as `X.` or `X(`. That catches real use while ignoring
  * the same word appearing in a comment or a string literal.
+ *
+ * The bundle is minified since 2026-09; minifiers rename locals, never
+ * globals, so `document.` and `new TextEncoder(` still read the same here.
  *
  * Portable: plain Node, no shell pipeline, no `grep -P`.
  */

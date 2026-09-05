@@ -32,6 +32,7 @@ await esbuild.build({
   format: 'iife',
   platform: 'browser',
   target: 'es2017',
+  minify: true,
   define,
 });
 console.log('Built dist/main.js');
@@ -54,7 +55,9 @@ const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
   .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
   .join('\n');
 
-const uiHtmlCss = designSystemCss;
+// Comments and whitespace out; selectors, custom properties, and cascade order
+// untouched. The uiHtml test checks order by selector, not by comment.
+const uiHtmlCss = (await esbuild.transform(designSystemCss, { loader: 'css', minify: true })).code;
 
 if (existsSync(uiEntry)) {
   const result = await esbuild.build({
@@ -63,6 +66,7 @@ if (existsSync(uiEntry)) {
     format: 'iife',
     platform: 'browser',
     target: 'es2017',
+    minify: true,
     write: false, // capture output in memory
     define,
   });
@@ -105,6 +109,7 @@ if (process.env.UI_HARNESS === '1') {
     format: 'iife',
     platform: 'browser',
     target: 'es2017',
+    minify: true,
     write: false,
     define,
   });

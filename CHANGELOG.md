@@ -313,6 +313,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Update. Previously, bullet rows re-parsed already-plain text and silently
   dropped bold formatting; this is fixed.
 
+- The plugin bundles are minified. `dist/ui.html`, which the panel loads on
+  every open, went from 622 KB to 344 KB; `dist/main.js` from 237 KB to
+  120 KB. No behaviour change.
+
 ### Fixed
 
 - `spec-layer pull` re-projects `tokens/` when the `dtcg` block in
