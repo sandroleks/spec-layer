@@ -223,6 +223,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   component read, instead of once per binding occurrence. A component set
   binding the same tokens across many variants now makes a few dozen lookups
   rather than hundreds. Output is unchanged.
+- Reading a file's foundations fetches every local variable in one call and
+  indexes it, instead of one call per variable. Publication status is still
+  read per variable, so exported artifacts are unchanged.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on
