@@ -294,7 +294,7 @@ function effectOf(
   }
   if (effect.type === 'layer-blur' || effect.type === 'background-blur') {
     if (effect.blurType === 'progressive') {
-      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: styleId,
         message: 'Progressive blur metadata is only partially representable in Foundation Context v5.',
         details: { effect_index: sourceIndex, figma_type: effect.type },
@@ -499,14 +499,6 @@ function projectValue(
       }));
       return { kind: 'missing', reason: 'unsupported_value_type' };
     }
-    if (variable.resolvedType === 'FLOAT'
-      && numericValue(0, variable.provenance.scopes) === null) {
-      diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
-        entity_id: variable.provenance.id, mode_id: modeId,
-        message: 'The numeric source value is retained, but its scopes do not state one unit.',
-        details: { scopes: uniqueSorted(variable.provenance.scopes) },
-      }));
-    }
     return { kind: 'literal', value: typed };
   }
 
@@ -552,14 +544,6 @@ function projectValue(
         chain: value.chain.map((step) => ({ token_id: step.tokenId, mode_id: step.modeId })),
       },
     };
-  }
-  if (variable.resolvedType === 'FLOAT'
-    && numericValue(0, variable.provenance.scopes) === null) {
-    diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
-      entity_id: variable.provenance.id, mode_id: modeId,
-      message: 'The resolved numeric value is retained, but its scopes do not state one unit.',
-      details: { scopes: uniqueSorted(variable.provenance.scopes) },
-    }));
   }
   return {
     kind: 'alias', reference,
@@ -755,7 +739,7 @@ function completenessOf(
     styles = scope.target === 'collection'
       ? 'unavailable'
       : unavailable.has('textStyles') ? 'unavailable' : 'partial';
-    diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+    diagnostics.push(diagnostic('EXPORT_SCOPED', {
       entity_id: scope.target === 'collection' ? scope.collectionId : ROOT,
       message: scope.target === 'collection'
         ? 'This artifact is scoped to one collection and its complete local dependency closure.'
@@ -795,7 +779,7 @@ function completenessOf(
   }
   if (scope?.target !== 'collection'
     && (foundation.textStyles.length > 0 || foundation.effectStyles.length > 0)) {
-    diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+    diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
       entity_id: ROOT,
       message: 'Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.',
       details: {
@@ -887,7 +871,7 @@ export function buildFoundationArtifactV5(
   for (const collection of includedCollections) {
     if (collection.publication?.publishStatus === null) {
       collectionMetadataUnavailable = true;
-      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: collection.id,
         message: 'The collection publication status could not be read.',
         details: { field: 'publication.published' },
@@ -896,7 +880,7 @@ export function buildFoundationArtifactV5(
     for (const variable of collection.variables) {
       if (variable.publication?.publishStatus !== null) continue;
       collectionMetadataUnavailable = true;
-      diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
+      diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: variable.provenance.id,
         message: 'The token publication status could not be read.',
         details: { field: 'publication.published' },
@@ -940,6 +924,18 @@ export function buildFoundationArtifactV5(
           variable.provenance.valuesByMode[mode.modeId],
           variable, type, mode.modeId, normalizedPaths, diagnostics,
         );
+      }
+      // Once per token, not once per mode: the scopes that would state a
+      // unit belong to the VARIABLE, not to any one mode's value, so a
+      // finding that repeats per declared mode would just restate the same
+      // fact about the same token N times.
+      if (variable.resolvedType === 'FLOAT'
+        && numericValue(0, variable.provenance.scopes) === null) {
+        diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
+          entity_id: variable.provenance.id,
+          message: 'The numeric source value is retained, but its scopes do not state one unit.',
+          details: { scopes: uniqueSorted(variable.provenance.scopes) },
+        }));
       }
       tokens.push({
         id: variable.provenance.id,

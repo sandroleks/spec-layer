@@ -198,7 +198,7 @@ describe('buildFoundationArtifactV5 — units and specializations', () => {
     if (expectedUnit) expect(value.value).toMatchObject({ unit: expectedUnit });
   });
 
-  it('keeps unknown and conflicting numeric scopes unitless with an error', () => {
+  it('keeps unknown and conflicting numeric scopes unitless with a warning', () => {
     for (const scopes of [[], ['GAP', 'FONT_WEIGHT'], ['ALL_SCOPES']]) {
       const artifact = artifactOf(dump([collection(
         'c1', 'Numbers', [{ modeId: 'm1', name: 'Value' }], 'm1', [
@@ -210,7 +210,7 @@ describe('buildFoundationArtifactV5 — units and specializations', () => {
         kind: 'literal', value: { type: 'number', value: 16 },
       });
       expect(artifact.diagnostics.some((finding) =>
-        finding.code === 'UNIT_METADATA_UNAVAILABLE')).toBe(true);
+        finding.code === 'UNIT_METADATA_UNAVAILABLE' && finding.severity === 'warning')).toBe(true);
     }
   });
 
@@ -611,5 +611,25 @@ describe('buildFoundationArtifactV5 — completeness, hashes, and validation', (
     // surface as an empty object.
     const empty = artifact.tokens.filter((t) => !('code_syntax' in t));
     expect(empty.length).toBeGreaterThan(0);
+  });
+
+  it('reports a scope-less number once per token as a warning', () => {
+    const { artifact } = directFixture();
+    const entries = artifact.diagnostics.filter((d) => d.code === 'UNIT_METADATA_UNAVAILABLE');
+    const ids = entries.map((d) => d.entity_id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const d of entries) {
+      expect(d.severity).toBe('warning');
+      expect(d).not.toHaveProperty('mode_id');
+    }
+  });
+
+  it('files metadata the Plugin API never exposes as info, not error', () => {
+    const { artifact } = directFixture();
+    const meta = artifact.diagnostics.filter((d) => d.code === 'METADATA_UNAVAILABLE');
+    expect(meta.length).toBeGreaterThan(0);
+    for (const d of meta) expect(d.severity).toBe('info');
+    const partial = artifact.diagnostics.filter((d) => d.code === 'SOURCE_PARTIALLY_UNAVAILABLE');
+    for (const d of partial) expect(d.severity).toBe('error');
   });
 });

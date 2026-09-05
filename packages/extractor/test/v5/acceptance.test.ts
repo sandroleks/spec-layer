@@ -180,7 +180,8 @@ describe('Foundation Context v5 direct synthetic golden acceptance', () => {
       ],
     });
     expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
-      code: 'SOURCE_PARTIALLY_UNAVAILABLE',
+      code: 'METADATA_UNAVAILABLE',
+      severity: 'info',
       details: expect.objectContaining({
         typography: 1, effects: 1,
         hidden_from_publishing_unavailable: true,

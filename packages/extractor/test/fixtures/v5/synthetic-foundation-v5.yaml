@@ -251,16 +251,6 @@ spec_layer:
     file_version: null
     library_enabled: false
 diagnostics:
-  - code: UNIT_METADATA_UNAVAILABLE
-    severity: error
-    entity_id: figma-name:token:Motion/duration/fast
-    mode_id: figma-name:collection:Motion/Value
-    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
-  - code: UNIT_METADATA_UNAVAILABLE
-    severity: error
-    entity_id: figma-name:token:Spacing/spacing/400
-    mode_id: figma-name:collection:Spacing/Value
-    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
   - code: UNRESOLVED_EXTERNAL_ALIAS
     severity: error
     entity_id: figma-name:token:Semantic/color/legacy/one
@@ -359,6 +349,14 @@ diagnostics:
     severity: warning
     entity_id: figma-name:token:Typography/font/family/body
     message: Token "font/family/body"'s id was derived from its name because v4 carries no stable id; a rename will read as a delete plus an add until re-extraction.
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: warning
+    entity_id: figma-name:token:Motion/duration/fast
+    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: warning
+    entity_id: figma-name:token:Spacing/spacing/400
+    message: v4 carries no scopes for this variable, so its unit is unknown. Re-extract from Figma to recover it.
 statistics:
   collections: 6
   modes: 8
@@ -366,4 +364,4 @@ statistics:
   styles: { typography: 0, effects: 0 }
   aliases: { total: 8, resolved: 2, unresolved: 6 }
   lifecycle: { active: 0, deprecated: 0, archived: 0 }
-  diagnostics: { error: 8, warning: 17, info: 0 }
+  diagnostics: { error: 6, warning: 19, info: 0 }

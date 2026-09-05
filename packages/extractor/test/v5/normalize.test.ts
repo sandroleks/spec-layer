@@ -532,8 +532,28 @@ describe('normalizeV4', () => {
     const { artifact, diagnostics } = normalizeV4(V4_WITH_FLOAT, META);
     expect(Object.values(artifact.tokens[0].values)[0])
       .toEqual({ kind: 'literal', value: { type: 'number', value: 16 } });
-    expect(diagnostics.map((d) => d.code)).toContain('UNIT_METADATA_UNAVAILABLE');
+    const unitFinding = diagnostics.find((d) => d.code === 'UNIT_METADATA_UNAVAILABLE');
+    expect(unitFinding?.severity).toBe('warning');
+    expect(unitFinding).not.toHaveProperty('mode_id');
     expect(diagnostics.map((d) => d.code)).not.toContain('UNSUPPORTED_VALUE_TYPE');
+  });
+
+  it('reports a v4 float with several declared modes once per token, not once per mode', () => {
+    const { artifact, diagnostics } = normalizeV4({
+      collections: [{
+        name: 'Spacing',
+        modes: ['Light', 'Dark'],
+        default_mode: 'Light',
+        tokens: [
+          { name: 'spacing/400', type: 'float', values: { Light: 16, Dark: 24 } },
+        ],
+      }],
+    }, META);
+    expect(Object.keys(artifact.tokens[0].values)).toHaveLength(2);
+    const unitFindings = diagnostics.filter((d) => d.code === 'UNIT_METADATA_UNAVAILABLE');
+    expect(unitFindings).toHaveLength(1);
+    expect(unitFindings[0].severity).toBe('warning');
+    expect(unitFindings[0]).not.toHaveProperty('mode_id');
   });
 
   it('emits missing plus INVALID_SOURCE_COLOR for a malformed colour', () => {

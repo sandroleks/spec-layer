@@ -219,6 +219,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Foundation Context v5 diagnostics follow one severity policy: `error` means a
+  value is missing or wrong, `warning` means a value is present but a consumer
+  must decide something, `info` means metadata is absent and no value depends on
+  it. `UNIT_METADATA_UNAVAILABLE` is now a warning emitted once per token rather
+  than once per mode. Metadata the Plugin API never exposes (style publication
+  and lifecycle, publication status, progressive blur detail) is reported as
+  `METADATA_UNAVAILABLE` at info, and a deliberately scoped copy as
+  `EXPORT_SCOPED` at info; `SOURCE_PARTIALLY_UNAVAILABLE` now means a source
+  read failed. Diagnostics are outside every content hash, so no artifact
+  identity moves.
+
 - `spec-layer pull` (CLI 0.4.0) writes the Foundation as a `tokens/` directory
   of Design Tokens Format Module 2025.10 files plus `resolver.json`, a Figma
   metadata sidecar, and `report.json`, projected from the canonical artifact

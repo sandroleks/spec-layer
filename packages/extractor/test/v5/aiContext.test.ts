@@ -80,12 +80,11 @@ describe('foundationAiContext', () => {
       error: {
         ALIAS_CYCLE: 1,
         MISSING_MODE_VALUE: 2,
-        SOURCE_PARTIALLY_UNAVAILABLE: 1,
-        UNIT_METADATA_UNAVAILABLE: 3,
         UNRESOLVED_ALIAS: 2,
         UNRESOLVED_EXTERNAL_ALIAS: 4,
       },
-      warning: { CONFUSABLE_NAME: 1, STYLE_BINDING_DRIFT: 1 },
+      warning: { CONFUSABLE_NAME: 1, STYLE_BINDING_DRIFT: 1, UNIT_METADATA_UNAVAILABLE: 1 },
+      info: { METADATA_UNAVAILABLE: 1 },
     });
     const serialized = JSON.stringify(context);
     expect(serialized).not.toContain('Alias resolution cycles back to itself');

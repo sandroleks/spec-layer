@@ -25,9 +25,11 @@ describe('diagnostics', () => {
   it('has dedicated codes for the migration facts, not overloaded ones', () => {
     expect(DEFAULT_SEVERITY.SYNTHETIC_IDENTITY).toBe('warning');
     expect(DEFAULT_SEVERITY.AMBIGUOUS_ALIAS_TARGET).toBe('error');
-    expect(DEFAULT_SEVERITY.UNIT_METADATA_UNAVAILABLE).toBe('error');
+    expect(DEFAULT_SEVERITY.UNIT_METADATA_UNAVAILABLE).toBe('warning');
     expect(DEFAULT_SEVERITY.SOURCE_PARTIALLY_UNAVAILABLE).toBe('error');
     expect(DEFAULT_SEVERITY.INVALID_SOURCE_COLOR).toBe('error');
+    expect(DEFAULT_SEVERITY.METADATA_UNAVAILABLE).toBe('info');
+    expect(DEFAULT_SEVERITY.EXPORT_SCOPED).toBe('info');
   });
 
   it('takes its severity from the table without the caller restating it', () => {

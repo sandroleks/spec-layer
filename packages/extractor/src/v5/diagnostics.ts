@@ -32,12 +32,20 @@ export type DiagnosticCode =
   /** An alias names a target that more than one entity could satisfy. Reported
    *  rather than resolved by picking the first match. */
   | 'AMBIGUOUS_ALIAS_TARGET'
-  /** A valid number whose unit the source does not state. The NUMBER is fine;
-   *  what is missing is the metadata that makes it a dimension. */
+  /** Warning, not error: the number is retained and usable, and Level 4
+   *  readiness is a consumer's judgment. What the consumer must decide is the
+   *  unit; the message says so and `units` overrides in the CLI are the
+   *  remedy. */
   | 'UNIT_METADATA_UNAVAILABLE'
   /** Part of the source could not be read. Not derivable from the surviving
    *  payload, which is why `completeness` is also hashed. */
   | 'SOURCE_PARTIALLY_UNAVAILABLE'
+  /** A metadata field the source API does not expose (publication, lifecycle,
+   *  consuming mode, progressive blur detail). No value depends on it. */
+  | 'METADATA_UNAVAILABLE'
+  /** The artifact was deliberately scoped to one collection or to text
+   *  styles; completeness records the scope. */
+  | 'EXPORT_SCOPED'
   /** A colour the source states that cannot be canonicalized without inventing
    *  channels. Emitted instead of clamping or padding it into a plausible one. */
   | 'INVALID_SOURCE_COLOR'
@@ -76,11 +84,6 @@ export const DEFAULT_SEVERITY: Record<DiagnosticCode, Severity> = {
   // dangling alias is -- a consumer joining on the id gets nothing.
   UNRESOLVED_REFERENCE: 'error',
   SOURCE_PARTIALLY_UNAVAILABLE: 'error',
-  // Error, not warning: §18 Level 4 requires every dimension to carry a unit,
-  // so an artifact holding units-unknown numbers is genuinely not
-  // code-generation ready and must not pass as though it were. The remedy is
-  // re-extraction with scopes, which the message says.
-  UNIT_METADATA_UNAVAILABLE: 'error',
   STYLE_BINDING_DRIFT: 'warning',
   CONFUSABLE_NAME: 'warning',
   INFERRED_LIFECYCLE: 'warning',
@@ -90,8 +93,20 @@ export const DEFAULT_SEVERITY: Record<DiagnosticCode, Severity> = {
   // for generation -- what it cannot do is survive a rename, which is a fact
   // about future diffs rather than about this artifact's correctness.
   SYNTHETIC_IDENTITY: 'warning',
+  // Warning, not error: the number is retained and usable, and Level 4
+  // readiness is a consumer's judgment. What the consumer must decide is the
+  // unit; the message says so and `units` overrides in the CLI are the
+  // remedy.
+  UNIT_METADATA_UNAVAILABLE: 'warning',
   MODE_VALUES_IDENTICAL: 'info',
   MISSING_DESCRIPTION: 'info',
+  // Info, not error: no value depends on metadata the Plugin API never
+  // exposes in the first place -- there is nothing for a consumer to decide
+  // and nothing missing that this export could have captured.
+  METADATA_UNAVAILABLE: 'info',
+  // Info, not error: a deliberately scoped export states its own scope in
+  // `completeness`; that is a fact about the request, not a defect in it.
+  EXPORT_SCOPED: 'info',
 };
 
 export interface Diagnostic {

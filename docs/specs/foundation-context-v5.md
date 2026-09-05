@@ -536,6 +536,13 @@ At minimum:
 | `MODE_VALUES_IDENTICAL` | info | Every mode resolves to the same value. |
 | `MISSING_DESCRIPTION` | info | A published semantic token lacks documentation. |
 | `GENERATED_NAME_COLLISION` | warning | Suggested code names collide. |
+| `SOURCE_PARTIALLY_UNAVAILABLE` | error | A source read failed. |
+| `METADATA_UNAVAILABLE` | info | A metadata field the source API does not expose; no value depends on it. |
+| `EXPORT_SCOPED` | info | The artifact was deliberately scoped. |
+
+Severity policy: `error` means a value is missing, wrong, or would be
+fabricated if used; `warning` means the value is present but a consumer has a
+decision to make; `info` means metadata is absent and no value depends on it.
 
 ### 14.2 Exit behavior
 

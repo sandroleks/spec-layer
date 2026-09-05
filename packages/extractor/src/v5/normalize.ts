@@ -380,6 +380,12 @@ function buildCollections(v4: V4Foundation, diagnostics: Diagnostic[]): Collecti
  */
 function convertLiteral(
   raw: V4Value, tokenType: V4TokenType, entityId: string, modeId: string, diagnostics: Diagnostic[],
+  // Called instead of pushing UNIT_METADATA_UNAVAILABLE directly: this
+  // function runs once per MODE, but the fact it reports (v4 states no
+  // scopes for this variable) is about the token, not the mode, so the
+  // caller collapses every call within one token's mode loop into a single
+  // once-per-token diagnostic.
+  onUnitMetadataUnavailable?: () => void,
 ): CanonicalValue {
   switch (tokenType) {
     case 'color': {
@@ -426,11 +432,7 @@ function convertLiteral(
       // which means a value that cannot be represented at all.
       const dimensionOrNumber = numericValue(raw, []);
       if (dimensionOrNumber !== null) return { kind: 'literal', value: dimensionOrNumber };
-      diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
-        entity_id: entityId, mode_id: modeId,
-        message: 'v4 carries no scopes for this variable, so its unit is unknown. '
-          + 'Re-extract from Figma to recover it.',
-      }));
+      onUnitMetadataUnavailable?.();
       return { kind: 'literal', value: { type: 'number', value: canonicalNumber(raw) } };
     }
     case 'string': {
@@ -506,6 +508,7 @@ function convertAlias(
   alias: V4AliasValue, ownerType: V4TokenType, entityId: string, modeId: string,
   ownerModeName: string, ownerCollectionId: string,
   tokenIndex: TokenIndexEntry[], collectionsByV5Id: Map<string, CollectionBuild>, diagnostics: Diagnostic[],
+  onUnitMetadataUnavailable?: () => void,
 ): CanonicalValue {
   const targetPath = parseV4Path(alias.alias.normalize('NFC'));
   const external = alias.external === true;
@@ -602,7 +605,9 @@ function convertAlias(
   // A concrete literal. An alias must share its owning token's declared
   // type (Figma enforces this), so it converts the same way a direct value
   // of that type would.
-  const literal = convertLiteral(alias.resolved, ownerType, entityId, modeId, diagnostics);
+  const literal = convertLiteral(
+    alias.resolved, ownerType, entityId, modeId, diagnostics, onUnitMetadataUnavailable,
+  );
   if (literal.kind !== 'literal') {
     // convertLiteral already reported the specific failure (e.g.
     // INVALID_SOURCE_COLOR). `type_mismatch` is the closest existing
@@ -704,6 +709,12 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
     }
 
     const values: Record<string, CanonicalValue> = {};
+    // Collapses every per-mode UNIT_METADATA_UNAVAILABLE call from
+    // `convertLiteral`/`convertAlias` below into one push, once per token:
+    // the fact reported (v4 states no scopes for this variable) is about the
+    // token, not any one declared mode.
+    let unitMetadataUnavailable = false;
+    const flagUnitMetadataUnavailable = () => { unitMetadataUnavailable = true; };
     // Iterates the COLLECTION'S DECLARED MODES, not `Object.entries(t.values)`.
     //
     // §8.2 requires "one value entry for every declared mode, or an explicit
@@ -734,7 +745,7 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
       if (isAliasShape(raw)) {
         values[mode.id] = convertAlias(
           raw, t.type, id, mode.id, mode.name, collBuild.v5.id,
-          tokenIndex, collectionsByV5Id, diagnostics,
+          tokenIndex, collectionsByV5Id, diagnostics, flagUnitMetadataUnavailable,
         );
       } else if (isUnresolvedShape(raw)) {
         diagnostics.push(diagnostic('MISSING_MODE_VALUE', {
@@ -744,8 +755,17 @@ export function normalizeV4(v4: V4Foundation, meta: NormalizeMeta): NormalizeRes
         }));
         values[mode.id] = { kind: 'missing', reason: 'no_value_for_mode' };
       } else {
-        values[mode.id] = convertLiteral(raw, t.type, id, mode.id, diagnostics);
+        values[mode.id] = convertLiteral(
+          raw, t.type, id, mode.id, diagnostics, flagUnitMetadataUnavailable,
+        );
       }
+    }
+    if (unitMetadataUnavailable) {
+      diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
+        entity_id: id,
+        message: 'v4 carries no scopes for this variable, so its unit is unknown. '
+          + 'Re-extract from Figma to recover it.',
+      }));
     }
 
     // A value keyed by a mode name the collection does not declare cannot be

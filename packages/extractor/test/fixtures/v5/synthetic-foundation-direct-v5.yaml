@@ -529,34 +529,6 @@ diagnostics:
     entity_id: VariableID:local-collision
     mode_id: ModeID:p-light-duplicate
     message: The source states no value for this declared mode.
-  - code: SOURCE_PARTIALLY_UNAVAILABLE
-    severity: error
-    entity_id: <artifact>
-    message: Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.
-    details:
-      typography: 1
-      effects: 1
-      hidden_from_publishing_unavailable: true
-      lifecycle_unavailable: true
-      consuming_mode_unavailable: true
-  - code: UNIT_METADATA_UNAVAILABLE
-    severity: error
-    entity_id: VariableID:unknown-number
-    mode_id: ModeID:p-dark
-    message: The numeric source value is retained, but its scopes do not state one unit.
-    details: { scopes: [ALL_SCOPES] }
-  - code: UNIT_METADATA_UNAVAILABLE
-    severity: error
-    entity_id: VariableID:unknown-number
-    mode_id: ModeID:p-light
-    message: The numeric source value is retained, but its scopes do not state one unit.
-    details: { scopes: [ALL_SCOPES] }
-  - code: UNIT_METADATA_UNAVAILABLE
-    severity: error
-    entity_id: VariableID:unknown-number
-    mode_id: ModeID:p-light-duplicate
-    message: The numeric source value is retained, but its scopes do not state one unit.
-    details: { scopes: [ALL_SCOPES] }
   - code: UNRESOLVED_ALIAS
     severity: error
     entity_id: VariableID:cycle-a
@@ -607,6 +579,21 @@ diagnostics:
       token_id: VariableID:shadow-blur
       style_value: { type: dimension, number: 12, unit: px }
       token_value: { type: dimension, number: 8, unit: px }
+  - code: UNIT_METADATA_UNAVAILABLE
+    severity: warning
+    entity_id: VariableID:unknown-number
+    message: The numeric source value is retained, but its scopes do not state one unit.
+    details: { scopes: [ALL_SCOPES] }
+  - code: METADATA_UNAVAILABLE
+    severity: info
+    entity_id: <artifact>
+    message: Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.
+    details:
+      typography: 1
+      effects: 1
+      hidden_from_publishing_unavailable: true
+      lifecycle_unavailable: true
+      consuming_mode_unavailable: true
 statistics:
   collections: 2
   modes: 5
@@ -614,4 +601,4 @@ statistics:
   styles: { typography: 1, effects: 1 }
   aliases: { total: 13, resolved: 7, unresolved: 6 }
   lifecycle: { active: 0, deprecated: 0, archived: 0 }
-  diagnostics: { error: 13, warning: 2, info: 0 }
+  diagnostics: { error: 9, warning: 3, info: 1 }
