@@ -230,6 +230,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   plugin panel on every click. The dump travels once per read and the panel
   keeps it, which removes a structured clone of up to a few hundred kilobytes
   per selection on large files.
+- Detach, Remove, and Update of a hand-edited document now confirm inside the
+  plugin panel instead of through the browser's `confirm()`. A sandboxed
+  iframe can answer `confirm()` with false without showing anything, which
+  made those actions do nothing. The new dialog follows the theme, traps
+  focus, and cancels on Escape.
 - Foundation Context v5 diagnostics follow one severity policy: `error` means a
   value is missing or wrong, `warning` means a value is present but a consumer
   must decide something, `info` means metadata is absent and no value depends on

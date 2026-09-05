@@ -25,6 +25,7 @@ import { allowanceState, publishLocked } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { setRailBadge } from './shell/sidebar';
+import { confirmDialog } from './shell/confirmDialog';
 import {
   createComponentSelection,
   renderComponentScreen,
@@ -847,18 +848,22 @@ function dispatchNextLibraryUpdate(): void {
   if (view === 'library') paint();
 }
 
-function startLibraryUpdates(docIds: string[], batch: boolean): void {
+async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<void> {
   if (docIds.length === 0 || operation.active) return;
   const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
-  if (
-    edited.length > 0 &&
-    !window.confirm(
-      batch
-        ? `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`
-        : 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
-    )
-  ) {
-    return;
+  if (edited.length > 0) {
+    const ok = await confirmDialog(batch
+      ? {
+          title: `Replace hand edits in ${edited.length} ${edited.length === 1 ? 'document' : 'documents'}?`,
+          body: `${edited.length === 1 ? 'One selected document has' : `${edited.length} selected documents have`} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`,
+          confirmLabel: 'Update all',
+        }
+      : {
+          title: 'Replace your edits to generated content?',
+          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          confirmLabel: 'Update',
+        });
+    if (!ok) return;
   }
   if (!beginOperation(operation)) return;
   libraryOperation = {
@@ -1379,7 +1384,7 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
-    startLibraryUpdates(
+    void startLibraryUpdates(
       model.allRows
         .filter((row) => row.status === 'updateAvailable')
         .map((row) => row.docId),
@@ -1478,7 +1483,7 @@ document.addEventListener('click', (event) => {
         paint();
         return;
       case 'update':
-        startLibraryUpdates([docId], false);
+        void startLibraryUpdates([docId], false);
         return;
       case 'open-frame':
         send({ type: 'focusNode', nodeId: docId });
@@ -1492,22 +1497,25 @@ document.addEventListener('click', (event) => {
         startLibraryCopy(docId);
         return;
       case 'detach':
-        if (
-          !operation.active &&
-          window.confirm(
-            'Detach this documentation? It stays on the canvas as a plain frame and stops tracking its source.',
-          )
-        ) {
-          send({ type: 'detachDoc', docId });
-        }
+        if (operation.active) return;
+        void confirmDialog({
+          title: 'Detach this documentation?',
+          body: 'It stays on the canvas as a plain frame and stops tracking its source.',
+          confirmLabel: 'Detach',
+        }).then((ok) => {
+          if (ok && !operation.active) send({ type: 'detachDoc', docId });
+        });
         return;
       case 'remove':
-        if (
-          !operation.active &&
-          window.confirm('Remove this documentation frame from the canvas?')
-        ) {
-          send({ type: 'removeDoc', docId });
-        }
+        if (operation.active) return;
+        void confirmDialog({
+          title: 'Remove this frame from the canvas?',
+          body: 'The documentation Section is deleted and its Library connection is removed.',
+          confirmLabel: 'Remove',
+          tone: 'danger',
+        }).then((ok) => {
+          if (ok && !operation.active) send({ type: 'removeDoc', docId });
+        });
         return;
       default:
         return;
@@ -2344,24 +2352,36 @@ window.onmessage = (event: MessageEvent): void => {
         });
         return;
       }
+      const runUpdate = (): void => {
+        let preparationError = '';
+        void updateFromSource(state, src, libraryPresenter((message) => {
+          preparationError = message;
+        })).then((dispatched) => {
+          if (!dispatched) {
+            finishLibraryOperation(
+              preparationError ||
+              'The source could not be prepared, so the remaining updates stopped.',
+            );
+          }
+        });
+      };
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
-        if (!window.confirm('You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.')) {
-          finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
-          return;
-        }
-        active.confirmedOverwrite.add(msg.docId);
+        void confirmDialog({
+          title: 'Replace your edits to generated content?',
+          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          confirmLabel: 'Update',
+        }).then((ok) => {
+          if (libraryOperation !== active) return; // the operation ended while the dialog was open
+          if (!ok) {
+            finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
+            return;
+          }
+          active.confirmedOverwrite.add(msg.docId);
+          runUpdate();
+        });
+        return;
       }
-      let preparationError = '';
-      void updateFromSource(state, src, libraryPresenter((message) => {
-        preparationError = message;
-      })).then((dispatched) => {
-        if (!dispatched) {
-          finishLibraryOperation(
-            preparationError ||
-            'The source could not be prepared, so the remaining updates stopped.',
-          );
-        }
-      });
+      runUpdate();
       return;
     }
 

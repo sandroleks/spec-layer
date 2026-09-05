@@ -2636,6 +2636,27 @@
   box-shadow: var(--sl-shadow-overlay);
 }
 
+.sl-confirm-dialog > h2 {
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-section);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-confirm-dialog > p {
+  margin: 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-control);
+  line-height: var(--sl-line-height-body);
+}
+
+.sl-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sl-space-8);
+  margin-top: var(--sl-space-14);
+}
+
 /*
  * The header is a flex row, so the grid-template-columns this block used to
  * declare on it never applied. What actually needs to give under 440px is the
