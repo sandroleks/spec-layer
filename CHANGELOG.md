@@ -226,6 +226,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   its own **Copy for AI**, producing the same scoped DTCG document a Library
   row copies. The footer copy is now labelled **Copy whole file for AI**.
 
+- The landing site has a 404 page, so a missing path no longer returns the home
+  page with HTTP 200, and a support page at support.html, which the site
+  footer now links instead of a bare mailto.
+
 ### Changed
 
 - Clicking anything that is not a component no longer shows a toast on the
