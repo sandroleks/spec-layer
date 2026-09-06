@@ -39,7 +39,7 @@
 <main>
   <div class="wrap">
     <h1>Security & responsible disclosure</h1>
-    <p class="meta">Last updated 28 August 2026</p>
+    <p class="meta">Last updated 6 September 2026</p>
     <p>
       We take the security of Spec Layer seriously. If you believe you have found a
       security vulnerability in the Spec Layer plugin or its backend, we want to hear
@@ -72,8 +72,9 @@
     </p>
     <h2>Scope</h2>
     <p>
-      This policy covers the Spec Layer Figma plugin and the backend it talks to. The
-      backend runs on Cloudflare Workers, a managed runtime that Cloudflare keeps
+      This policy covers the Spec Layer Figma plugin, the spec-layer command-line
+      tool, the backend they talk to, and the library store that holds published
+      bundles. The backend runs on Cloudflare Workers, a managed runtime that Cloudflare keeps
       patched, so there is no server or operating system for us to maintain. Our
       Anthropic API key is held server-side and never reaches the plugin. Prompts,
       rendered images, and generated text are never logged. The Worker receives a raw

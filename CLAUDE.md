@@ -15,8 +15,8 @@ Only optional AI prose uses a model. That split is the product's core claim, so
 do not blur it.
 
 There is no web app and no Markdown export. Both were deleted in August 2026.
-The plugin, the extractor, the proxy, and the static landing site are the whole
-product boundary.
+The plugin, the extractor, the proxy, the spec-layer CLI, and the static
+landing site are the whole product boundary.
 
 ## Layout
 
@@ -24,6 +24,7 @@ product boundary.
 packages/plugin/       Figma serializer, canvas renderers, iframe UI (vanilla DOM)
 packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
 packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
+packages/cli/          spec-layer CLI: setup, pull, status; delivery only, no extraction
 apps/landing/          static marketing site, policies, published JSON schemas
 docs/                  current specs, plans, reviews, writing guides
 project-docs/          ARCHIVED historical vault, not a source of truth
@@ -169,7 +170,7 @@ Open, in rough priority order:
    republished with schema 5.1.0. The canonical artifact reported 70 errors,
    64 of them `UNIT_METADATA_UNAVAILABLE`, which is what motivated this
    branch's diagnostic severity policy recalibrating that code down to a
-   warning. The plugin republish and the npm publish of CLI 0.4.0 are both
+   warning. CLI 0.4.0 is on npm (latest, 2026-09-05); the plugin republish is
    still pending.
 3. Real design-system grading for v5 criteria 3, 10, and 11 (synthetic golden
    passes; a reviewed real artifact does not exist in-repo). Criterion 9

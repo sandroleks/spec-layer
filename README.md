@@ -120,7 +120,7 @@ never talks to Figma, re-derives nothing, and has no runtime dependencies.
 | `pull` | Fetches the library and writes it into the output directory, default `.speclayer/`. | yes |
 | `status` | Checks freshness without writing. Exits `2` when the local copy is behind. | yes |
 | `list` | Lists every artifact in the last pull, with its file path. | no |
-| `show foundation` / `show component NAME` | Prints one artifact's AI YAML, or its canonical JSON with `--canonical`. | no |
+| `show foundation` / `show component NAME` | Prints the Foundation's DTCG resolver document or one component's AI YAML, or the canonical JSON with `--canonical`. | no |
 
 Every command takes `--out DIR` to point at a different output directory, and
 the three that reach the network also take `--api URL` to override the API

@@ -23,7 +23,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SamsonHD/spec-layer.git",
+    "url": "git+https://github.com/sandroleks/spec-layer.git",
     "directory": "packages/cli"
   },
   "homepage": "https://spec-layer.com",

@@ -16,15 +16,14 @@
  * and a dozen source-level NUL escapes used the same way — neither of which a
  * NUL-only scan catches. Both are widened for here.
  *
- * Scope is deliberately narrow: git-tracked files under the npm workspaces
- * (`packages/`) and this repo's own tooling (`scripts/`), plus the root
- * `package.json`, whose extension marks them as source/text. That is
- * "tracked source" in the sense the bug actually occurred in: code that
- * compiles, is tested, and is reviewed via `git diff`. It deliberately
- * excludes `docs/`, `apps/`, and other prose/asset trees, and extensions are
- * an allowlist rather than a blacklist: the repo also tracks legitimate
- * binary assets (png, jpg, mp4) that contain NUL bytes as a normal part of
- * their format, and those must never be scanned regardless of location.
+ * Scope: git-tracked text files under the npm workspaces (`packages/`), this
+ * repo's own tooling (`scripts/`), the static site and docs (`apps/`), and the
+ * prose tree (`docs/`), plus the root package.json and the top-level documents
+ * named in SOURCE_FILES. The prose trees were excluded at first and the trap
+ * bit plan documents there three times, so they are in. Extensions are an
+ * allowlist rather than a blacklist: the repo tracks legitimate binary assets
+ * (png, jpg) that contain NUL bytes as a normal part of their format, and
+ * those must never be scanned regardless of location.
  *
  * Portable on macOS (BSD) and Linux: no shell pipeline, no `grep -P`. Plain
  * Node reading each tracked file's bytes directly.
@@ -35,6 +34,7 @@ import { readFileSync } from 'node:fs';
 const TEXT_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
   '.json', '.css', '.scss', '.html', '.yml', '.yaml',
+  '.md', '.mdx', '.toml', '.svg',
 ]);
 
 /**
@@ -46,8 +46,8 @@ const TEXT_EXTENSIONS = new Set([
  */
 const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
-const SOURCE_ROOTS = ['packages/', 'scripts/'];
-const SOURCE_FILES = new Set(['package.json']);
+const SOURCE_ROOTS = ['packages/', 'scripts/', 'apps/', 'docs/'];
+const SOURCE_FILES = new Set(['package.json', 'README.md', 'ARCHITECTURE.md', 'CLAUDE.md', 'CHANGELOG.md', 'SECURITY.md']);
 
 function trackedFiles() {
   const out = execFileSync('git', ['ls-files'], { encoding: 'utf8' });
