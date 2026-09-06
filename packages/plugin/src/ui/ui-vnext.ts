@@ -5,7 +5,10 @@
  * the message plumbing, and each `screens/*` module owns its own markup.
  */
 
-import { extract, ProseProxyError, specContentHash, EXTRACTOR_VERSION } from '@spec-layer/extractor';
+import {
+  extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
+  type SpecHashProjection,
+} from '@spec-layer/extractor';
 import type { ProseDrafts } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
@@ -56,6 +59,8 @@ import {
 import {
   buildLibraryModel,
   libraryBadgeVisible,
+  resolveLibraryChanges,
+  type LibraryChangeResult,
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
@@ -161,6 +166,13 @@ const libraryBaseline = new Map<string, string>();
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
 const libraryExtractorVersion = new Map<string, string | undefined>();
+// docId → the live SpecHashProjection computed during this pass's drift check,
+// kept for every component row (not only drifted ones) so a row that drifts
+// on the next refresh needs no second round trip. A few kilobytes per row.
+const libraryLiveProjection = new Map<string, SpecHashProjection>();
+// docId → change result for the current refresh pass. Cleared with the other
+// library maps; a new pass starts every expansion from `pending` again.
+const libraryChanges = new Map<string, LibraryChangeResult>();
 let libraryFilter: LibraryFilter = 'all';
 /**
  * Which of the Library's two screens is showing.
@@ -693,6 +705,7 @@ function currentLibraryModel() {
     drift: libraryDrift,
     filter: libraryFilter,
     expandedDocId: libraryExpandedDocId,
+    changes: libraryChanges,
   });
 }
 
@@ -722,6 +735,7 @@ function refreshLibrary(): void {
   libraryRefreshing = true;
   libraryMenuDocId = null;
   libraryExpandedDocId = null;
+  libraryChanges.clear();
   if (view === 'library') paint();
   send({ type: 'requestLibrary' });
 }
@@ -730,6 +744,8 @@ function startLibraryDriftChecks(): void {
   libraryDrift.clear();
   libraryBaseline.clear();
   libraryExtractorVersion.clear();
+  libraryLiveProjection.clear();
+  libraryChanges.clear();
   for (const entry of libraryEntries) {
     if (!entry.sourceExists) continue;
     if (entry.kind === 'foundation') {
@@ -763,6 +779,20 @@ function closeLibraryMenu(restoreFocus = false): void {
     requestAnimationFrame(() => restore?.focus());
   }
   libraryMenuRestore = null;
+}
+
+/**
+ * Expand or collapse a row's change panel. Opening a row the pass has not
+ * compared yet marks it pending and asks main for the stored baseline; the
+ * `docBaseline` reply resolves it. Collapsing keeps the cached result.
+ */
+function toggleLibraryReview(docId: string): void {
+  const opening = libraryExpandedDocId !== docId;
+  libraryExpandedDocId = opening ? docId : null;
+  if (opening && !libraryChanges.has(docId)) {
+    libraryChanges.set(docId, { state: 'pending' });
+    send({ type: 'requestDocBaseline', docId });
+  }
 }
 
 function libraryPresenter(onError?: (message: string) => void): BuildPresenter {
@@ -1476,7 +1506,7 @@ document.addEventListener('click', (event) => {
   const libraryDisclosure = target.closest<HTMLButtonElement>('[data-library-disclosure]');
   if (libraryDisclosure?.dataset.libraryDisclosure) {
     const docId = libraryDisclosure.dataset.libraryDisclosure;
-    libraryExpandedDocId = libraryExpandedDocId === docId ? null : docId;
+    toggleLibraryReview(docId);
     paintAndFocus(`[data-library-disclosure="${docId}"]`);
     return;
   }
@@ -1518,7 +1548,7 @@ document.addEventListener('click', (event) => {
     closeLibraryMenu();
     switch (action) {
       case 'review':
-        libraryExpandedDocId = libraryExpandedDocId === docId ? null : docId;
+        toggleLibraryReview(docId);
         paint();
         return;
       case 'update':
@@ -2348,9 +2378,14 @@ window.onmessage = (event: MessageEvent): void => {
       } else {
         try {
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
+          // One projection serves both the hash and the later diff, so the
+          // live side of "Review detected changes" is the object that decided
+          // the badge.
+          const projection = specHashProjection(spec);
+          libraryLiveProjection.set(msg.docId, projection);
           libraryDrift.set(
             msg.docId,
-            specContentHash(spec) === baseline ? 'inSync' : 'drifted',
+            contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
@@ -2369,6 +2404,20 @@ window.onmessage = (event: MessageEvent): void => {
       syncLibraryBadge();
       if (view === 'library') paint();
       return;
+
+    case 'docBaseline': {
+      // Only a reply this pass asked for and is still waiting on; a reply that
+      // outlived a refresh would otherwise revive a cleared row.
+      const waiting = libraryChanges.get(msg.docId);
+      if (!waiting || waiting.state !== 'pending') return;
+      libraryChanges.set(msg.docId, resolveLibraryChanges({
+        baseline: msg.baseline,
+        live: msg.live,
+        liveProjection: libraryLiveProjection.get(msg.docId),
+      }));
+      if (view === 'library') paint();
+      return;
+    }
 
     case 'docProse': {
       const active = libraryOperation;
@@ -2478,6 +2527,8 @@ window.onmessage = (event: MessageEvent): void => {
       libraryDrift.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
       libraryExtractorVersion.delete(msg.docId);
+      libraryLiveProjection.delete(msg.docId);
+      libraryChanges.delete(msg.docId);
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
       syncLibraryBadge();
