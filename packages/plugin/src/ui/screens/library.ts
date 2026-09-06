@@ -94,7 +94,6 @@ function changeGroupMarkup(group: LibraryChangeGroupPresentation): string {
  */
 const CHANGE_UNAVAILABLE_COPY: Record<LibraryChangeUnavailableReason, string> = {
   noBaseline: 'Update this doc once to enable change lists.',
-  staleVersion: 'The extractor changed. Rebuild to compare future changes.',
   other: 'A detailed comparison isn&#39;t available. Review the source from the row menu.',
 };
 

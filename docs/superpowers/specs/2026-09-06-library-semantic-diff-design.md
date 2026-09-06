@@ -267,10 +267,13 @@ dashes, per `docs/plugin-voice-and-copy.md`:
 - `unavailable`: the existing alert row "Source changed" with a second line
   that names the reason the UI knows:
   - no baseline: "Update this doc once to enable change lists."
-  - rebuild needed (`staleVersion`): "The extractor changed. Rebuild to
-    compare future changes."
   - anything else: the current "A detailed comparison isn't available.
     Review the source from the row menu."
+
+  There is no rebuild-specific line, because a row marked Rebuild needed
+  never expands: the menu item and the disclosure are limited to rows whose
+  status is Update available. So the reasons are no baseline and anything
+  else.
 
 Item copy, one line each, verb first for additions and removals, the value
 transition spelled out with "changed to" rather than an arrow:

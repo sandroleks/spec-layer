@@ -43,35 +43,6 @@ export type LibraryStatus =
   | "edited"
   | "orphaned";
 
-// Re-exported for screens/* that only need the shape, plus imported here since
-// LibraryRowView below still references it in this same file.
-import type { ChangeGroup } from '@spec-layer/extractor';
-export type { ChangeGroup };
-
-export interface LibraryRowView {
-  docId: string;
-  label: string;
-  sourceLabel: string;
-  ageLabel: string;
-  status: LibraryStatus;
-  expanded: boolean;
-  canOpenFrame: boolean;
-  canOpenSource: boolean;
-  canReconnect: boolean;
-  canUpdate: boolean;
-  canDetach: boolean;
-  canRemove: boolean;
-  /** A COMPONENT row whose source still exists. Copy never mutates anything —
-   *  no canvas node, no pluginData, no AI quota — so it stays available even
-   *  when the doc itself needs an update. */
-  canCopy: boolean;
-  /**
-   * null means content-hash drift is known, but a reliable detailed comparison
-   * is unavailable. Render the honest fallback instead of inventing changes.
-   */
-  changeGroups: ChangeGroup[] | null;
-}
-
 export type FoundationScreenState =
   | { kind: "loading" }
   | { kind: "ready" }

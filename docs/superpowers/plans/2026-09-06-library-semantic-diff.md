@@ -1950,13 +1950,7 @@ export function resolveLibraryChanges(input: {
 }
 ```
 
-In `packages/plugin/src/ui/viewModel/contracts.ts`, find `export interface ChangeGroup {` (line 46). If its body is exactly `label: string; items: string[]`, replace the whole interface with:
-
-```ts
-export type { ChangeGroup } from '@spec-layer/extractor';
-```
-
-If the body has any other field, leave the file alone and note it in the commit message.
+In `packages/plugin/src/ui/viewModel/contracts.ts`, `LibraryRowView` and the local `ChangeGroup` were deleted as dead in the final-review fix wave: nothing imported either of them from that file.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -2460,6 +2454,6 @@ git commit -m "docs: record the library semantic diff as shipped"
 - §8 tests: `diff.test.ts`, `specHash.test.ts`, `docLink.test.ts`, `libraryViewModel.test.ts`, `libraryScreen.test.ts`, TESTING.md rows → Tasks 1 to 8, 10.
 - §10 documents → Task 10.
 
-**Known deviation, stated.** The `staleVersion` fallback line is implemented and tested but is unreachable through the UI: a `rebuildNeeded` row is never `updateAvailable`, so it never expands. Kept because the spec lists it and it costs one table entry.
+**Known deviation, stated.** The `staleVersion` change-unavailable reason was removed in the final-review fix wave as unreachable tested dead code: a `rebuildNeeded` row is never `updateAvailable`, so it never expands.
 
 **Type consistency.** `SpecHashProjection` (hash.ts) is used by diff.ts, docLink.ts, messages.ts, viewModel/library.ts, ui-vnext.ts under that exact name. `ChangeGroup` is defined once in diff.ts and re-exported through contracts.ts. `LibraryChangeResult`, `LibraryChangeState`, `LibraryChangeUnavailableReason`, `resolveLibraryChanges` are defined in viewModel/library.ts and consumed by screens/library.ts and ui-vnext.ts. `DocBaseline` is defined in docLink.ts and consumed by messages.ts, main.ts, viewModel/library.ts.

@@ -170,13 +170,12 @@ describe('library screen presentation', () => {
   });
 
   it('names the reason a comparison is unavailable', () => {
-    const line = (reason: 'noBaseline' | 'staleVersion' | 'other') => libraryScrollMarkup(model({
+    const line = (reason: 'noBaseline' | 'other') => libraryScrollMarkup(model({
       rows: [row('why', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: reason })],
     }));
     expect(line('noBaseline')).toContain('Update this doc once to enable change lists.');
-    expect(line('staleVersion')).toContain('The extractor changed. Rebuild to compare future changes.');
     expect(line('other')).toContain('A detailed comparison isn&#39;t available. Review the source from the row menu.');
-    for (const reason of ['noBaseline', 'staleVersion', 'other'] as const) {
+    for (const reason of ['noBaseline', 'other'] as const) {
       expect(line(reason)).toContain('<strong>Source changed</strong>');
     }
   });
@@ -195,7 +194,6 @@ describe('library screen presentation', () => {
         row('a', 'updateAvailable', { expanded: true, changeState: 'pending' }),
         row('b', 'updateAvailable', { expanded: true, changeState: 'ready', changeGroups: [] }),
         row('c', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: 'noBaseline' }),
-        row('d', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: 'staleVersion' }),
       ],
     }));
     // Scope the check to the change panels: other parts of the screen (the
@@ -204,7 +202,7 @@ describe('library screen presentation', () => {
       .split('class="sl-library-change-list">')
       .slice(1)
       .map((rest) => rest.split('</div></div>')[0]);
-    expect(panels).toHaveLength(4);
+    expect(panels).toHaveLength(3);
     for (const panel of panels) expect(panel).not.toContain('—');
   });
 

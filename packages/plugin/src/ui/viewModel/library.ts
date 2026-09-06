@@ -40,8 +40,6 @@ export type LibraryChangeUnavailableReason =
   /** Main sent no baseline: the doc predates baselines, its baseline was
    *  over budget, or it no longer matches the link. An Update writes one. */
   | 'noBaseline'
-  /** The doc was built by an older extractor; a hash diff is meaningless. */
-  | 'staleVersion'
   /** Anything else: no live side, or the diff itself failed. */
   | 'other';
 
