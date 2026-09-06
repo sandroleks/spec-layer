@@ -1279,33 +1279,43 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestDocBaseline': {
-      // Every failure resolves to `baseline: null` and the UI's fallback, never
-      // to a partial answer. Same getNodeByIdAsync caveat as requestDocProse:
-      // under dynamic-page access it can reject, not just resolve null.
+      // No failure resolves to a partial answer, but the two reads fail into
+      // different fallbacks. A failure at or before the baseline read leaves
+      // `baseline: null`, which the UI reads as "never updated with this
+      // build". A failure in the live foundation read must not claim that: the
+      // doc does have a baseline, so keep it and report `live: null`, which
+      // resolves to the generic "comparison unavailable" reason instead. Same
+      // getNodeByIdAsync caveat as requestDocProse: under dynamic-page access
+      // it can reject, not just resolve null.
       let baseline: DocBaseline | null = null;
       let live: FoundationUnitContent | null | undefined;
+      let link: DocLinkData | null = null;
       try {
         const docNode = await figma.getNodeByIdAsync(msg.docId);
         const section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
-        const link = section ? parseDocLink(section.getPluginData(DOC_LINK_KEY)) : null;
+        link = section ? parseDocLink(section.getPluginData(DOC_LINK_KEY)) : null;
         if (section && link) {
           baseline = baselineFor(link, section.getPluginData(DOC_BASELINE_KEY));
-          if (baseline && isFoundationLink(link)) {
-            // A fresh read, retargeted the way requestLibrary retargets, so
-            // the live side of the diff is the object whose hash produced the
-            // badge. Not the session cache: that can lag the library refresh.
-            const { fileKey } = resolveFileKey(figma.fileKey, null);
-            const dump = await serializeFoundation(
-              createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-            );
-            const spec = buildFoundation(dump);
-            live = unitContent(spec, retargetScope(link.scope, spec.collections));
-          }
         }
       } catch (err) {
         console.error('[Spec Layer] baseline read failed for', msg.docId, err);
         baseline = null;
-        live = undefined;
+      }
+      if (baseline && link && isFoundationLink(link)) {
+        try {
+          // A fresh read, retargeted the way requestLibrary retargets, so
+          // the live side of the diff is the object whose hash produced the
+          // badge. Not the session cache: that can lag the library refresh.
+          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const dump = await serializeFoundation(
+            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
+          );
+          const spec = buildFoundation(dump);
+          live = unitContent(spec, retargetScope(link.scope, spec.collections));
+        } catch (err) {
+          console.error('[Spec Layer] baseline read failed for', msg.docId, err);
+          live = null;
+        }
       }
       figma.ui.postMessage({
         type: 'docBaseline',

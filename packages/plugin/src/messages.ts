@@ -138,10 +138,11 @@ export type MainToUi =
   | { type: 'docProse'; docId: string; prose: ProseDrafts | null }
   /** Reply for `requestDocBaseline`. `baseline` is null when the Section is
    *  gone, unlinked, has no baseline, the baseline fails to parse, or its
-   *  contentHash no longer equals the link's. For a foundation link `live` is
-   *  the current unitContent for the doc's (retargeted) scope, the same object
-   *  whose hash produced the row's badge; `live: null` means the scope no
-   *  longer resolves. Absent for component links: the UI already holds the
+   *  contentHash no longer equals the link's. For a foundation link, `live` is
+   *  present whenever a baseline was found: it is the current unitContent for
+   *  the doc's (retargeted) scope, the same object whose hash produced the
+   *  row's badge, and `live: null` means the scope no longer resolves or the
+   *  live read failed. Absent for component links: the UI already holds the
    *  live projection from its drift check. */
   | { type: 'docBaseline'; docId: string; baseline: DocBaseline | null; live?: FoundationUnitContent | null }
   /** Everything a library publish needs, collected in one pass: the live
