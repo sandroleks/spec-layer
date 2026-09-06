@@ -20,7 +20,15 @@ Or use the `landing` config in `.claude/launch.json`.
 npx wrangler pages deploy apps/landing --project-name speclayer-landing
 ```
 
+(After Phase 2 of `docs/superpowers/plans/2026-09-06-website-update.md` lands,
+the deploy directory becomes `dist/site`; see that plan.)
+
 First run creates the project and prints the `*.pages.dev` URL.
+`spec-layer.com` is attached as the custom domain.
+
+`404.html` is served for every unmatched path. Without it, Pages falls back to
+`index.html` with HTTP 200, which on 2026-09-06 hid a missing schema file for
+days.
 
 The v5 schemas are committed at
 `apps/landing/schemas/foundation-context/v5.json` and
@@ -32,19 +40,19 @@ https://spec-layer.com/schemas/foundation-context/v5.json
 https://spec-layer.com/schemas/component-context/v5.json
 ```
 
-A successful Pages upload does not by itself prove that either permanent URI works.
-Before a release that publishes or relies on v5 artifacts:
+A successful Pages upload does not by itself prove that either permanent URI
+works. After every deploy, and before any release that publishes or relies on
+v5 artifacts, run the live check against both hosts:
 
-1. Confirm `spec-layer.com` is attached as a Cloudflare Pages custom domain and
-   its DNS record is active.
-2. Fetch both live URIs and confirm each returns HTTP 200 with JSON whose `$id`
-   is exactly its permanent URI above.
-3. Compare both live responses with their committed files so the schemas served
-   at the permanent URIs are the release candidates, not older deployments.
+```sh
+npm run check:landing-live
+npm run check:landing-live -- --base https://speclayer-landing.pages.dev
+```
 
-The `*.pages.dev` preview is useful for staging, but it is not a substitute for
-custom-domain, DNS, and live-URL verification. Any DNS, HTTP status, `$id`, or
-live-versus-committed parity failure is a release blocker.
+It fetches both URIs, compares the bytes with the committed files, checks the
+content type, and confirms a missing path returns 404. Any failure is a release
+blocker. The `*.pages.dev` preview is useful for staging, but the custom domain
+is what artifacts point at, so the first command is the one that counts.
 
 ## Checkout links
 
