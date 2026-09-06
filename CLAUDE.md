@@ -15,8 +15,8 @@ Only optional AI prose uses a model. That split is the product's core claim, so
 do not blur it.
 
 There is no web app and no Markdown export. Both were deleted in August 2026.
-The plugin, the extractor, the proxy, and the static landing site are the whole
-product boundary.
+The plugin, the extractor, the proxy, the spec-layer CLI, and the static
+landing site are the whole product boundary.
 
 ## Layout
 

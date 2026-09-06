@@ -18,12 +18,12 @@
  *
  * Scope: git-tracked text files under the npm workspaces (`packages/`), this
  * repo's own tooling (`scripts/`), the static site and docs (`apps/`), and the
- * prose tree (`docs/`), plus the root package.json and top-level Markdown. The
- * prose trees were excluded at first and the trap bit plan documents there
- * three times, so they are in. Extensions are an allowlist rather than a
- * blacklist: the repo tracks legitimate binary assets (png, jpg) that contain
- * NUL bytes as a normal part of their format, and those must never be scanned
- * regardless of location.
+ * prose tree (`docs/`), plus the root package.json and the top-level documents
+ * named in SOURCE_FILES. The prose trees were excluded at first and the trap
+ * bit plan documents there three times, so they are in. Extensions are an
+ * allowlist rather than a blacklist: the repo tracks legitimate binary assets
+ * (png, jpg) that contain NUL bytes as a normal part of their format, and
+ * those must never be scanned regardless of location.
  *
  * Portable on macOS (BSD) and Linux: no shell pipeline, no `grep -P`. Plain
  * Node reading each tracked file's bytes directly.

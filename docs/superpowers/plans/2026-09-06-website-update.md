@@ -68,10 +68,9 @@ Copy the `<style>` block verbatim from `apps/landing/security.html` lines 10 to 
     </p>
     <ul>
       <li><a href="/">Home</a></li>
-      <li><a href="/docs/">Documentation</a></li>
       <li><a href="/schemas/foundation-context/v5.json">Foundation Context v5 schema</a></li>
       <li><a href="/schemas/component-context/v5.json">Component Context v5 schema</a></li>
-      <li><a href="mailto:oleksandr.kurchev@gmail.com">Support</a></li>
+      <li><a href="/support.html">Support</a></li>
     </ul>
   </div>
 </main>
@@ -83,7 +82,7 @@ Copy the `<style>` block verbatim from `apps/landing/security.html` lines 10 to 
       <a href="/refund.html">Refund Policy</a>
       <a href="/privacy.html">Privacy Policy</a>
       <a href="/security.html">Security</a>
-      <a href="mailto:oleksandr.kurchev@gmail.com">Support</a>
+      <a href="/support.html">Support</a>
     </nav>
     <p class="small">Payments are handled by Lemon Squeezy as merchant of record.</p>
   </div>
@@ -94,7 +93,7 @@ Copy the `<style>` block verbatim from `apps/landing/security.html` lines 10 to 
 
 The `<title>` uses the same `—` separator the other four policy pages use in their titles. That is the one existing exception to the no-em-dash rule on this site, and the page copies it for consistency; the body text has none. All hrefs are root-relative because Pages serves this file for paths at any depth, including under `/docs/`.
 
-Note: the `/docs/` link is live only after Phase 2 deploys. Until then it resolves to this same 404 page, which is correct behaviour for a path that does not yet exist.
+Note: the page does not link the documentation site yet, because that path does not exist until Phase 2; Task 14 adds the link when it does. The Support links point at the support page Task 6 creates; until that task lands they resolve to the 404 page itself, which is acceptable for two commits on one branch.
 
 - [ ] **Step 2: Verify locally**
 
@@ -192,8 +191,10 @@ Insert after the `<ul>` on line 58, before the existing first `<li>`:
         properties, token bindings, and resolved values, plus any AI-written text
         already on the canvas. Our proxy stores that bundle so the developers you
         share the pull key with can fetch it with the spec-layer CLI. The pull key
-        itself is stored only as a SHA-256 digest; the plain key is shown once, to
-        you, in the plugin.
+        itself is stored on our side only as a SHA-256 digest. The plain key is
+        returned once, when the library is created; the plugin keeps it in Figma's
+        client storage on your machine so its Publish screen can show the setup
+        command again.
       </li>
 ```
 
@@ -265,7 +266,7 @@ Run:
 grep -c "—" apps/landing/privacy.html apps/landing/terms.html apps/landing/security.html; for f in privacy terms security; do python3 -c "import html.parser,sys; p=html.parser.HTMLParser(); p.feed(open('apps/landing/$f.html').read()); print('parsed $f')"; done
 ```
 
-Expected: each grep count is `1` (the `<title>` only, unchanged), and three `parsed` lines.
+Expected: each grep count is `1` (the `<title>` only). If `privacy.html` reports more, the extra em dashes are in its Service providers list and must be replaced with colons; that page is being edited and re-dated, so it has to meet the rule.
 
 - [ ] **Step 7: CHANGELOG**
 
@@ -434,11 +435,20 @@ Create `scripts/check-landing-live.mjs`:
  * domain; run it against both.
  */
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { evaluateSchema, evaluateNotFound } from './site/live.mjs';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const args = process.argv.slice(2);
 const baseIndex = args.indexOf('--base');
-const base = (baseIndex === -1 ? 'https://spec-layer.com' : args[baseIndex + 1]).replace(/\/$/, '');
+const baseArg = baseIndex === -1 ? 'https://spec-layer.com' : args[baseIndex + 1];
+if (!baseArg || baseArg.startsWith('--')) {
+  console.error('Usage: node scripts/check-landing-live.mjs [--base https://host]');
+  process.exit(1);
+}
+const base = baseArg.replace(/\/$/, '');
 
 const SCHEMAS = [
   ['/schemas/foundation-context/v5.json', 'apps/landing/schemas/foundation-context/v5.json'],
@@ -460,7 +470,7 @@ const problems = [];
 for (const [path, committed] of SCHEMAS) {
   const live = await fetchText(base + path);
   if (live.error) { problems.push(live.error); continue; }
-  problems.push(...evaluateSchema({ ...live, expected: readFileSync(committed, 'utf8') }));
+  problems.push(...evaluateSchema({ ...live, expected: readFileSync(resolve(repoRoot, committed), 'utf8') }));
 }
 const missing = await fetchText(base + MISSING_PATH);
 if (missing.error) problems.push(missing.error);
@@ -541,7 +551,7 @@ Replace the paragraph beginning `Scope is deliberately narrow:` with:
 - [ ] **Step 3: Run the scan**
 
 Run: `npm run check:nul`
-Expected: exit 0. If it lists an offender under `docs/` or `apps/`, open the file at the reported byte, remove the control character, and rerun. Report each such fix in the commit body.
+Expected: exit 0. If it lists an offender under `docs/` or `apps/`, open the file at the reported byte, work out what character it stood in for by checking the shipped code the document describes, replace it with that character (never delete it), and rerun. Report each such fix in the commit body.
 
 - [ ] **Step 4: Commit**
 
@@ -1749,6 +1759,7 @@ Then open the PR (or update the Phase 1 PR) and read the two job results in the 
 In `apps/landing/index.html`:
 
 - Footer `<nav>`: insert `<a href="/docs/">Documentation</a>` as the first link, before Open in Figma.
+- `apps/landing/404.html`: add `<li><a href="/docs/">Documentation</a></li>` as the second item of the recovery list in `<main>`; the link was withheld in Task 1 because the path did not exist yet.
 - Hero `.cta-row`: change the secondary button `<a class="btn btn-secondary" href="#pricing">See pricing</a>` to `<a class="btn btn-secondary" href="/docs/">Read the docs</a>`. Pricing keeps its own anchor further down the page.
 
 - [ ] **Step 2: The landing README deploy section**

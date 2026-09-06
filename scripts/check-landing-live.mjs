@@ -12,11 +12,20 @@
  * domain; run it against both.
  */
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { evaluateSchema, evaluateNotFound } from './site/live.mjs';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const args = process.argv.slice(2);
 const baseIndex = args.indexOf('--base');
-const base = (baseIndex === -1 ? 'https://spec-layer.com' : args[baseIndex + 1]).replace(/\/$/, '');
+const baseArg = baseIndex === -1 ? 'https://spec-layer.com' : args[baseIndex + 1];
+if (!baseArg || baseArg.startsWith('--')) {
+  console.error('Usage: node scripts/check-landing-live.mjs [--base https://host]');
+  process.exit(1);
+}
+const base = baseArg.replace(/\/$/, '');
 
 const SCHEMAS = [
   ['/schemas/foundation-context/v5.json', 'apps/landing/schemas/foundation-context/v5.json'],
@@ -38,7 +47,7 @@ const problems = [];
 for (const [path, committed] of SCHEMAS) {
   const live = await fetchText(base + path);
   if (live.error) { problems.push(live.error); continue; }
-  problems.push(...evaluateSchema({ ...live, expected: readFileSync(committed, 'utf8') }));
+  problems.push(...evaluateSchema({ ...live, expected: readFileSync(resolve(repoRoot, committed), 'utf8') }));
 }
 const missing = await fetchText(base + MISSING_PATH);
 if (missing.error) problems.push(missing.error);
