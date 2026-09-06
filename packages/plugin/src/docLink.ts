@@ -7,7 +7,10 @@
  * calls into these helpers, keeping the logic unit-testable (mirrors the
  * extractor-purity boundary).
  */
-import { contentHash, type FoundationScope, type ProseDrafts } from '@spec-layer/extractor';
+import {
+  contentHash,
+  type FoundationScope, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
+} from '@spec-layer/extractor';
 import { KNOWN_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
 
 /** pluginData key on each generated Section. */
@@ -28,12 +31,48 @@ export const DOC_PROSE_KEY = 'specLayerProse';
 
 /**
  * Ceiling on a serialized prose blob. Figma caps plugin data at 100 kB per
- * node and the doc link shares that budget, so this sits well below it.
+ * entry (plugin id, key and value together), so this sits well below it.
  * A payload over budget is dropped whole: half a guideline set presented as
  * complete is worse than none, and the brief already states when guidelines
  * are absent.
  */
 export const PROSE_BUDGET_BYTES = 64 * 1024;
+
+/**
+ * The drift baseline for "Review detected changes": the exact object the doc's
+ * content hash was computed over, stored beside the link so a later refresh can
+ * diff it against the live projection. A hash alone cannot be diffed.
+ *
+ * Its own key rather than a field on the link, for the same reason as prose:
+ * the library scan parses every link on every refresh and never needs this.
+ * Figma's 100 kB cap is per entry, so a separate key gets its own budget and
+ * cannot crowd out the link or the prose.
+ */
+export const DOC_BASELINE_KEY = 'specLayerBaseline';
+
+/**
+ * Ceiling on a serialized baseline. Over budget is dropped whole, never
+ * truncated: half a baseline presented as complete would make the diff report
+ * every missing item as "removed", which is fabrication.
+ */
+export const BASELINE_BUDGET_BYTES = 90 * 1024;
+
+export interface ComponentDocBaseline {
+  v: 1;
+  kind: 'component';
+  /** Must equal the doc link's contentHash, or the baseline is discarded. */
+  contentHash: string;
+  projection: SpecHashProjection;
+}
+
+export interface FoundationDocBaseline {
+  v: 1;
+  kind: 'foundation';
+  contentHash: string;
+  projection: FoundationUnitContent;
+}
+
+export type DocBaseline = ComponentDocBaseline | FoundationDocBaseline;
 
 const PROSE_STRING_KEYS = [
   'definition', 'accessibility', 'interactions',
@@ -119,6 +158,52 @@ export function parseProse(raw: string): ProseDrafts | null {
     (out as unknown as Record<string, unknown>).anatomyParts = o.anatomyParts;
   }
   return out;
+}
+
+export function serializeBaseline(baseline: DocBaseline): string {
+  const out = JSON.stringify(baseline);
+  const bytes = utf8ByteLength(out);
+  if (bytes > BASELINE_BUDGET_BYTES) {
+    // Same rule as prose: dropped whole, and logged, because a silent drop
+    // leaves the Library saying "Update this doc once" after an Update that
+    // did run. The log is the only record of why.
+    console.warn(`[Spec Layer] baseline dropped: ${bytes} bytes exceeds the ${BASELINE_BUDGET_BYTES}-byte budget`);
+    return '';
+  }
+  return out;
+}
+
+/**
+ * Defensive parse: null on empty, malformed, wrong `v`, wrong `kind`, or a
+ * projection that is not an object. The projection's interior is deliberately
+ * not validated; the diff treats unknown shapes as absent lists.
+ */
+export function parseBaseline(raw: string): DocBaseline | null {
+  if (!raw) return null;
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return null; }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  const o = j as Record<string, unknown>;
+  if (o.v !== 1) return null;
+  if (o.kind !== 'component' && o.kind !== 'foundation') return null;
+  if (typeof o.contentHash !== 'string') return null;
+  if (!o.projection || typeof o.projection !== 'object' || Array.isArray(o.projection)) return null;
+  return o as unknown as DocBaseline;
+}
+
+/**
+ * The one main-thread entry point: parse, then accept only a baseline whose
+ * kind matches the link's and whose contentHash equals the link's. A stale
+ * baseline (an older Update that stored a link but whose baseline write was
+ * dropped) or a foreign one is rejected here, in a pure function, rather than
+ * in main.ts.
+ */
+export function baselineFor(link: DocLinkData, raw: string): DocBaseline | null {
+  const baseline = parseBaseline(raw);
+  if (!baseline) return null;
+  const kind = isFoundationLink(link) ? 'foundation' : 'component';
+  if (baseline.kind !== kind || baseline.contentHash !== link.contentHash) return null;
+  return baseline;
 }
 
 /** Everything needed to faithfully regenerate a doc on Update. */

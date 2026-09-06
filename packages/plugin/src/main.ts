@@ -21,11 +21,12 @@ import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import {
-  DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY,
+  DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
   serializeProse, parseProse, mergeFoundationGroupDescriptions,
-  type DocLinkData, type FoundationDocLink, type DocRegistry,
+  serializeBaseline, baselineFor,
+  type DocLinkData, type FoundationDocLink, type DocRegistry, type DocBaseline,
 } from './docLink';
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 
@@ -651,6 +652,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         // document that does not exist. An over-budget payload serializes to
         // '' and simply stores nothing.
         section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(msg.prose) : '');
+        // The diff baseline: the projection msg.contentHash was computed over,
+        // written in the same commit as the link so the two can never disagree.
+        // Over budget serializes to '' and the row shows the fallback. An
+        // over-budget spec stays over budget on later Updates, so such a doc
+        // shows the fallback permanently, which spec section 9 accepts.
+        section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
+          v: 1, kind: 'component', contentHash: msg.contentHash, projection: msg.baseline,
+        }));
 
         // Point of no return: replace the old doc with the new one. After this,
         // `section` IS the doc and must survive any later (cosmetic) failure.
@@ -972,6 +981,11 @@ figma.ui.onmessage = async (raw: unknown) => {
           // doc (mirrors the component doc path in renderDocFrame above).
           data.selfHash = textContentHash(collectGeneratedLane(section));
           section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+          // `content` is the object foundationContentHash hashed for this
+          // link, so it is the baseline verbatim.
+          section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
+            v: 1, kind: 'foundation', contentHash: data.contentHash, projection: content,
+          }));
 
           if (prior) {
             // Compute the registry with the prior id dropped, but don't write
@@ -1137,6 +1151,9 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         data.selfHash = textContentHash(collectGeneratedLane(section));
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
+        section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
+          v: 1, kind: 'foundation', contentHash: data.contentHash, projection: content,
+        }));
 
         // Point of no return, matching the component path (renderDocFrame
         // above): the new section is stamped and placed before the old one
@@ -1187,7 +1204,10 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'detachDoc': {
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
-        if (node && node.type === 'SECTION') (node as SectionNode).setPluginData(DOC_LINK_KEY, '');
+        if (node && node.type === 'SECTION') {
+          (node as SectionNode).setPluginData(DOC_LINK_KEY, '');
+          (node as SectionNode).setPluginData(DOC_BASELINE_KEY, '');
+        }
       } catch { /* gone already */ }
       writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
       // Detaching a foundation doc wipes its link, so the merge below no
@@ -1255,6 +1275,54 @@ figma.ui.onmessage = async (raw: unknown) => {
         type: 'docProse',
         docId: msg.docId,
         prose: section ? mergedProse(section) : null,
+      } as MainToUi);
+      break;
+    }
+
+    case 'requestDocBaseline': {
+      // No failure resolves to a partial answer, but the two reads fail into
+      // different fallbacks. A failure at or before the baseline read leaves
+      // `baseline: null`, which the UI reads as "never updated with this
+      // build". A failure in the live foundation read must not claim that: the
+      // doc does have a baseline, so keep it and report `live: null`, which
+      // resolves to the generic "comparison unavailable" reason instead. Same
+      // getNodeByIdAsync caveat as requestDocProse: under dynamic-page access
+      // it can reject, not just resolve null.
+      let baseline: DocBaseline | null = null;
+      let live: FoundationUnitContent | null | undefined;
+      let link: DocLinkData | null = null;
+      try {
+        const docNode = await figma.getNodeByIdAsync(msg.docId);
+        const section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
+        link = section ? parseDocLink(section.getPluginData(DOC_LINK_KEY)) : null;
+        if (section && link) {
+          baseline = baselineFor(link, section.getPluginData(DOC_BASELINE_KEY));
+        }
+      } catch (err) {
+        console.error('[Spec Layer] baseline read failed for', msg.docId, err);
+        baseline = null;
+      }
+      if (baseline && link && isFoundationLink(link)) {
+        try {
+          // A fresh read, retargeted the way requestLibrary retargets, so
+          // the live side of the diff is the object whose hash produced the
+          // badge. Not the session cache: that can lag the library refresh.
+          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const dump = await serializeFoundation(
+            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
+          );
+          const spec = buildFoundation(dump);
+          live = unitContent(spec, retargetScope(link.scope, spec.collections));
+        } catch (err) {
+          console.error('[Spec Layer] baseline read failed for', msg.docId, err);
+          live = null;
+        }
+      }
+      figma.ui.postMessage({
+        type: 'docBaseline',
+        docId: msg.docId,
+        baseline,
+        ...(live !== undefined ? { live } : {}),
       } as MainToUi);
       break;
     }

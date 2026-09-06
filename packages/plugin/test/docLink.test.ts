@@ -1,11 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EXTRACTOR_VERSION, type ProseDrafts } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
   isFoundationLink, foundationScopeKey, retargetScope, mergeFoundationGroupDescriptions,
-  DOC_PROSE_KEY, serializeProse, parseProse, PROSE_BUDGET_BYTES,
+  DOC_LINK_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY, BASELINE_BUDGET_BYTES,
+  serializeProse, parseProse, PROSE_BUDGET_BYTES,
+  serializeBaseline, parseBaseline, baselineFor,
   type DocLinkData, type FoundationDocLink, type ComponentDocLink,
+  type DocBaseline, type ComponentDocBaseline, type FoundationDocBaseline,
 } from '../src/docLink';
 
 const DATA: DocLinkData = {
@@ -450,5 +453,117 @@ describe('prose storage', () => {
     const parsed = parseProse(serializeProse(minimal));
     expect(parsed).toEqual(minimal);
     expect(parsed && 'interactions' in parsed).toBe(false);
+  });
+});
+
+describe('baseline storage', () => {
+  const PROJECTION: SpecHashProjection = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1', anatomyComponentId: '1:2',
+    anatomy: [{ id: '1:3', name: 'Label', type: 'TEXT', nested: false }],
+    props: [], variants: [], variantInstances: [], states: [],
+    tokens: [{ part: 'Label', property: 'fill', conditions: {}, token: 'color.primary' }],
+    related: [], gaps: [], layout: [],
+  };
+  const UNIT: FoundationUnitContent = {
+    collectionName: 'Semantic', modeNames: ['Light'], omittedModeNames: [],
+    rows: [{ kind: 'variable', name: 'bg/brand', description: '', resolvedType: 'COLOR',
+      cells: [{ modeName: 'Light', value: { kind: 'color', hex: '#0055FF', alpha: 1 } }] }],
+  };
+  const COMPONENT: ComponentDocBaseline = { v: 1, kind: 'component', contentHash: 'abc', projection: PROJECTION };
+  const FOUNDATION: FoundationDocBaseline = { v: 1, kind: 'foundation', contentHash: 'fh', projection: UNIT };
+  const FOUNDATION_LINK: FoundationDocLink = {
+    v: 1, kind: 'foundation',
+    scope: { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: ['m1'] },
+    contentHash: 'fh', selfHash: 's',
+    config: { includeDescriptions: true, aiNotes: false, includeContrast: false },
+    generatedAt: 1, pluginVersion: '5.0.0',
+  };
+
+  it('uses its own plugin data key, so it never crowds the link or the prose', () => {
+    expect(DOC_BASELINE_KEY).toBe('specLayerBaseline');
+    expect(new Set([DOC_LINK_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY]).size).toBe(3);
+  });
+
+  it('round-trips a component and a foundation baseline', () => {
+    expect(parseBaseline(serializeBaseline(COMPONENT))).toEqual(COMPONENT);
+    expect(parseBaseline(serializeBaseline(FOUNDATION))).toEqual(FOUNDATION);
+  });
+
+  it('returns null on empty, malformed, wrong version, wrong kind, or a non-object projection', () => {
+    expect(parseBaseline('')).toBeNull();
+    expect(parseBaseline('not json')).toBeNull();
+    expect(parseBaseline('[]')).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, v: 2 }))).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, kind: 'prose' }))).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, contentHash: 5 }))).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, projection: [] }))).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, projection: 'x' }))).toBeNull();
+    expect(parseBaseline(JSON.stringify({ ...COMPONENT, projection: null }))).toBeNull();
+  });
+
+  it('does not validate the projection interior: the diff treats unknown shapes as absent lists', () => {
+    const parsed = parseBaseline(JSON.stringify({ ...COMPONENT, projection: { name: 'only' } }));
+    expect(parsed?.kind).toBe('component');
+  });
+
+  it('drops a baseline over budget whole and logs the size', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const huge: ComponentDocBaseline = {
+        ...COMPONENT,
+        projection: { ...PROJECTION, name: 'x'.repeat(BASELINE_BUDGET_BYTES + 1) },
+      };
+      expect(serializeBaseline(huge)).toBe('');
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [message] = warn.mock.calls[0];
+      expect(message).toContain(String(BASELINE_BUDGET_BYTES));
+      expect(message).toMatch(/\d+ bytes/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('has a 90 kB budget, under Figma\'s 100 kB per-entry cap', () => {
+    expect(BASELINE_BUDGET_BYTES).toBe(90 * 1024);
+  });
+
+  it('works in a realm with no TextEncoder, which is the Figma main thread', () => {
+    const g = globalThis as Record<string, unknown>;
+    const saved = g.TextEncoder;
+    delete g.TextEncoder;
+    try {
+      expect(() => serializeBaseline(COMPONENT)).not.toThrow();
+      expect(parseBaseline(serializeBaseline(FOUNDATION))).toEqual(FOUNDATION);
+    } finally {
+      g.TextEncoder = saved;
+    }
+  });
+
+  it('baselineFor returns the baseline only when kind and hash match the link', () => {
+    const componentLink: ComponentDocLink = { ...DATA, contentHash: 'abc' } as ComponentDocLink;
+    expect(baselineFor(componentLink, serializeBaseline(COMPONENT))).toEqual(COMPONENT);
+    expect(baselineFor(FOUNDATION_LINK, serializeBaseline(FOUNDATION))).toEqual(FOUNDATION);
+  });
+
+  it('baselineFor rejects a stale baseline whose hash no longer matches the link', () => {
+    const componentLink: ComponentDocLink = { ...DATA, contentHash: 'newer' } as ComponentDocLink;
+    expect(baselineFor(componentLink, serializeBaseline(COMPONENT))).toBeNull();
+  });
+
+  it('baselineFor rejects a baseline of the other kind even when the hash matches', () => {
+    const componentLink: ComponentDocLink = { ...DATA, contentHash: 'fh' } as ComponentDocLink;
+    expect(baselineFor(componentLink, serializeBaseline(FOUNDATION))).toBeNull();
+    const foundationLink: FoundationDocLink = { ...FOUNDATION_LINK, contentHash: 'abc' };
+    expect(baselineFor(foundationLink, serializeBaseline(COMPONENT))).toBeNull();
+  });
+
+  it('baselineFor returns null for empty or unparseable data', () => {
+    expect(baselineFor(DATA, '')).toBeNull();
+    expect(baselineFor(DATA, '{')).toBeNull();
+  });
+
+  it('DocBaseline narrows on kind', () => {
+    const b: DocBaseline = FOUNDATION;
+    if (b.kind === 'foundation') expect(b.projection.modeNames).toEqual(['Light']);
   });
 });

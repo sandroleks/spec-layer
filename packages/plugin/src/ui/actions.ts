@@ -7,7 +7,7 @@
  */
 
 import {
-  extract, ProseProxyError, specContentHash, buildFoundation,
+  extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml,
 } from '@spec-layer/extractor';
@@ -339,6 +339,7 @@ export async function createDocFrame(
       model: built.model,
       nodeId: state.currentNode!.id,
       contentHash: specContentHash(state.currentSpec!),
+      baseline: specHashProjection(state.currentSpec!),
       extractorVersion: EXTRACTOR_VERSION,
       config: built.config,
       ...(state.generatedProse ? { prose: state.generatedProse } : {}),
@@ -476,6 +477,7 @@ export async function updateFromSource(
       model,
       nodeId: src.node.id,
       contentHash: specContentHash(spec),
+      baseline: specHashProjection(spec),
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
       ...(src.prose ? { prose: src.prose } : {}),

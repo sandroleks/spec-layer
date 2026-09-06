@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { specContentHash, extract } from '../src/index';
+import { specContentHash, specHashProjection, contentHash, canonicalEqual, extract } from '../src/index';
 import type { SerializedNode } from '../src/index';
 
 // Minimal serialized COMPONENT: a frame with one text child, no variables.
@@ -89,4 +89,42 @@ it('is unchanged by nodeEffects', () => {
   // Same contract as rawValues: additive detail that alters no rendered output
   // must never mark a committed document as drifted.
   expect(specContentHash(withEffects as typeof spec)).toBe(BUTTON_HASH);
+});
+
+describe('specHashProjection', () => {
+  it('is exactly the object specContentHash hashes, on every fixture', () => {
+    for (const file of ['packages/extractor/test/fixtures/button.json', 'packages/extractor/test/fixtures/chip.json']) {
+      const spec = extract(JSON.parse(readFileSync(file, 'utf8')), { figmaFile: 'FILE1' });
+      expect(contentHash(specHashProjection(spec))).toBe(specContentHash(spec));
+    }
+    expect(contentHash(specHashProjection(extract(NODE, { figmaFile: 'FILEKEY' }))))
+      .toBe(specContentHash(extract(NODE, { figmaFile: 'FILEKEY' })));
+  });
+
+  it('keeps the legacy token key and leaves rawValues, nodeEffects and the file name out', () => {
+    const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+    const spec = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
+    const projection = specHashProjection(spec);
+    const keys = Object.keys(projection);
+    expect(keys).not.toContain('rawValues');
+    expect(keys).not.toContain('nodeEffects');
+    expect(keys).not.toContain('figmaFileName');
+    expect(projection.tokens.length).toBeGreaterThan(0);
+    for (const rule of projection.tokens) {
+      expect(Object.keys(rule).sort()).toEqual(['conditions', 'part', 'property', 'token']);
+    }
+    for (const part of projection.anatomy) {
+      expect(Object.keys(part).sort()).toEqual(['id', 'name', 'nested', 'type']);
+    }
+  });
+});
+
+describe('canonicalEqual', () => {
+  it('ignores key order and undefined-valued keys, and is otherwise strict', () => {
+    expect(canonicalEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+    expect(canonicalEqual({ a: 1, b: undefined }, { a: 1 })).toBe(true);
+    expect(canonicalEqual({ a: 1 }, { a: '1' })).toBe(false);
+    expect(canonicalEqual([1, 2], [2, 1])).toBe(false);
+    expect(canonicalEqual(null, undefined)).toBe(false);
+  });
 });

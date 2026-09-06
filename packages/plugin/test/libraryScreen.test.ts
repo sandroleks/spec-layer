@@ -35,6 +35,8 @@ function row(
     canRemove: true,
     canCopy: false,
     changeGroups: null,
+    changeState: 'idle',
+    changeUnavailableReason: null,
     ...overrides,
   };
 }
@@ -45,7 +47,7 @@ function refreshArrows(markup: string): number {
 }
 
 const ROWS: LibraryRowPresentation[] = [
-  row('buttonText', 'updateAvailable', { expanded: true }),
+  row('buttonText', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: 'other' }),
   row('buttonPrimary', 'inSync'),
   row('buttonEdited', 'edited'),
   row('buttonMissing', 'orphaned', {
@@ -135,6 +137,7 @@ describe('library screen presentation', () => {
       rows: [
         row('inputField', 'updateAvailable', {
           expanded: true,
+          changeState: 'ready',
           changeGroups: [
             { label: 'States', items: ['Added: read-only'] },
             { label: 'Tokens', items: ['Focus: action-500 → focus-ring'] },
@@ -149,12 +152,67 @@ describe('library screen presentation', () => {
     expect(markup).not.toContain('values changed');
   });
 
+  it('says it is comparing while the baseline is in flight', () => {
+    const markup = libraryScrollMarkup(model({
+      rows: [row('pendingDiff', 'updateAvailable', { expanded: true, changeState: 'pending' })],
+    }));
+    expect(markup).toContain('Comparing…');
+    expect(markup).not.toContain('Source changed');
+    expect(markup).not.toContain('<li>');
+  });
+
+  it('admits when a ready diff found nothing rather than showing an empty panel', () => {
+    const markup = libraryScrollMarkup(model({
+      rows: [row('emptyDiff', 'updateAvailable', { expanded: true, changeState: 'ready', changeGroups: [] })],
+    }));
+    expect(markup).toContain('<strong>Source changed</strong>');
+    expect(markup).toContain('No itemized differences were found.');
+  });
+
+  it('names the reason a comparison is unavailable', () => {
+    const line = (reason: 'noBaseline' | 'other') => libraryScrollMarkup(model({
+      rows: [row('why', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: reason })],
+    }));
+    expect(line('noBaseline')).toContain('Update this doc once to enable change lists.');
+    expect(line('other')).toContain('A detailed comparison isn&#39;t available. Review the source from the row menu.');
+    for (const reason of ['noBaseline', 'other'] as const) {
+      expect(line(reason)).toContain('<strong>Source changed</strong>');
+    }
+  });
+
+  it('renders no change copy at all for an idle row', () => {
+    const markup = libraryScrollMarkup(model({
+      rows: [row('idleRow', 'updateAvailable', { expanded: false, changeState: 'idle' })],
+    }));
+    expect(markup).not.toContain('Comparing…');
+    expect(markup).not.toContain('Source changed');
+  });
+
+  it('keeps the plugin voice in every change line', () => {
+    const markup = libraryScrollMarkup(model({
+      rows: [
+        row('a', 'updateAvailable', { expanded: true, changeState: 'pending' }),
+        row('b', 'updateAvailable', { expanded: true, changeState: 'ready', changeGroups: [] }),
+        row('c', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: 'noBaseline' }),
+      ],
+    }));
+    // Scope the check to the change panels: other parts of the screen (the
+    // unknown-age label, for one) legitimately use the character.
+    const panels = markup
+      .split('class="sl-library-change-list">')
+      .slice(1)
+      .map((rest) => rest.split('</div></div>')[0]);
+    expect(panels).toHaveLength(3);
+    for (const panel of panels) expect(panel).not.toContain('—');
+  });
+
   it('escapes document and change content before placing it in HTML', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [
         row('unsafe', 'updateAvailable', {
           label: '<Button "Primary">',
           expanded: true,
+          changeState: 'ready',
           changeGroups: [{ label: '<States>', items: ['A & B'] }],
         }),
       ],
@@ -162,6 +220,7 @@ describe('library screen presentation', () => {
         row('unsafe', 'updateAvailable', {
           label: '<Button "Primary">',
           expanded: true,
+          changeState: 'ready',
           changeGroups: [{ label: '<States>', items: ['A & B'] }],
         }),
       ],

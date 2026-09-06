@@ -6,9 +6,13 @@ import {
   formatLibraryAge,
   libraryBadgeVisible,
   libraryDriftForEntry,
+  resolveLibraryChanges,
   resolveLibraryRowStatus,
+  type LibraryChangeResult,
   type LibraryDriftState,
 } from '../src/ui/viewModel/library';
+import type { SpecHashProjection, FoundationUnitContent } from '@spec-layer/extractor';
+import type { ComponentDocBaseline, FoundationDocBaseline } from '../src/docLink';
 
 const NOW = Date.UTC(2026, 6, 29, 12);
 
@@ -114,6 +118,12 @@ describe('buildLibraryRow capabilities', () => {
       canDetach: true,
       canRemove: true,
       changeGroups: null,
+      // Expanded (status updateAvailable, expandedDocId matches) with no
+      // `changes` entry for this doc: per resolveLibraryChanges/buildLibraryRow,
+      // that reads as 'pending', not 'idle'. See the 'change states' describe
+      // block's identical-setup 'is pending when expanded with no result yet'.
+      changeState: 'pending',
+      changeUnavailableReason: null,
       ageLabel: '3d ago',
     });
   });
@@ -388,5 +398,111 @@ describe('canCopy on foundation rows', () => {
     expect(buildLibraryRow(entry(), { now: NOW }).canCopy).toBe(true);
     expect(buildLibraryRow(entry({ sourceNodeId: '' }), { now: NOW }).canCopy).toBe(false);
     expect(buildLibraryRow(entry({ sourceExists: false }), { now: NOW }).canCopy).toBe(false);
+  });
+});
+
+describe('change states', () => {
+  const drifted = new Map<string, LibraryDriftState>([['doc-1', 'drifted']]);
+  const groups = [{ label: 'Tokens', items: ['Label / fill: a changed to b'] }];
+
+  it('is idle for a row that is not expanded, even when a result exists', () => {
+    const changes = new Map<string, LibraryChangeResult>([['doc-1', { state: 'ready', groups }]]);
+    const row = buildLibraryRow(entry(), { drift: drifted, changes });
+    expect(row.expanded).toBe(false);
+    expect(row.changeState).toBe('idle');
+    expect(row.changeGroups).toBeNull();
+    expect(row.changeUnavailableReason).toBeNull();
+  });
+
+  it('is pending when expanded with no result yet', () => {
+    const row = buildLibraryRow(entry(), { drift: drifted, expandedDocId: 'doc-1' });
+    expect(row.expanded).toBe(true);
+    expect(row.changeState).toBe('pending');
+    expect(row.changeGroups).toBeNull();
+  });
+
+  it('is ready with groups when the result landed', () => {
+    const changes = new Map<string, LibraryChangeResult>([['doc-1', { state: 'ready', groups }]]);
+    const row = buildLibraryRow(entry(), { drift: drifted, expandedDocId: 'doc-1', changes });
+    expect(row.changeState).toBe('ready');
+    expect(row.changeGroups).toEqual(groups);
+    expect(row.changeUnavailableReason).toBeNull();
+  });
+
+  it('is unavailable with its reason', () => {
+    const changes = new Map<string, LibraryChangeResult>([['doc-1', { state: 'unavailable', reason: 'noBaseline' }]]);
+    const row = buildLibraryRow(entry(), { drift: drifted, expandedDocId: 'doc-1', changes });
+    expect(row.changeState).toBe('unavailable');
+    expect(row.changeGroups).toBeNull();
+    expect(row.changeUnavailableReason).toBe('noBaseline');
+  });
+
+  it('never expands a row whose status is not updateAvailable, so it stays idle', () => {
+    for (const drift of ['inSync', 'staleVersion', 'pending', 'unavailable'] as LibraryDriftState[]) {
+      const row = buildLibraryRow(entry(), {
+        drift: new Map([['doc-1', drift]]), expandedDocId: 'doc-1',
+        changes: new Map([['doc-1', { state: 'ready', groups }]]),
+      });
+      expect(row.expanded).toBe(false);
+      expect(row.changeState).toBe('idle');
+    }
+    const edited = buildLibraryRow(entry({ selfEdited: true }), {
+      drift: new Map([['doc-1', 'inSync']]), expandedDocId: 'doc-1',
+    });
+    expect(edited.status).toBe('edited');
+    expect(edited.changeState).toBe('idle');
+  });
+});
+
+describe('resolveLibraryChanges', () => {
+  const projection: SpecHashProjection = {
+    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1', anatomyComponentId: '1:2',
+    anatomy: [], props: [], variants: [], variantInstances: [], states: ['default'],
+    tokens: [], related: [], gaps: [], layout: [],
+  };
+  const unit: FoundationUnitContent = {
+    collectionName: 'Semantic', modeNames: ['Light'], omittedModeNames: [],
+    rows: [{ kind: 'variable', name: 'bg/brand', description: '', resolvedType: 'COLOR',
+      cells: [{ modeName: 'Light', value: { kind: 'color', hex: '#0055FF', alpha: 1 } }] }],
+  };
+  const component: ComponentDocBaseline = { v: 1, kind: 'component', contentHash: 'a', projection };
+  const foundation: FoundationDocBaseline = { v: 1, kind: 'foundation', contentHash: 'f', projection: unit };
+
+  it('is unavailable with noBaseline when main sent none', () => {
+    expect(resolveLibraryChanges({ baseline: null })).toEqual({ state: 'unavailable', reason: 'noBaseline' });
+    expect(resolveLibraryChanges({ baseline: null, liveProjection: projection }))
+      .toEqual({ state: 'unavailable', reason: 'noBaseline' });
+  });
+
+  it('diffs a component baseline against the cached live projection', () => {
+    const live = { ...projection, states: ['default', 'hover'] };
+    expect(resolveLibraryChanges({ baseline: component, liveProjection: live })).toEqual({
+      state: 'ready', groups: [{ label: 'States', items: ['Added state hover'] }],
+    });
+  });
+
+  it('is unavailable when a component row has no cached live projection', () => {
+    expect(resolveLibraryChanges({ baseline: component })).toEqual({ state: 'unavailable', reason: 'other' });
+  });
+
+  it('diffs a foundation baseline against the live unit content main sent', () => {
+    const live: FoundationUnitContent = { ...unit, modeNames: ['Light', 'Dark'] };
+    expect(resolveLibraryChanges({ baseline: foundation, live })).toEqual({
+      state: 'ready', groups: [{ label: 'Modes', items: ['Added mode Dark'] }],
+    });
+  });
+
+  it('is unavailable when the foundation scope no longer resolves or live is missing', () => {
+    expect(resolveLibraryChanges({ baseline: foundation, live: null })).toEqual({ state: 'unavailable', reason: 'other' });
+    expect(resolveLibraryChanges({ baseline: foundation })).toEqual({ state: 'unavailable', reason: 'other' });
+  });
+
+  it('is ready with no groups when the two sides are identical', () => {
+    expect(resolveLibraryChanges({ baseline: component, liveProjection: projection })).toEqual({ state: 'ready', groups: [] });
+  });
+
+  it('turns a throwing diff into unavailable rather than propagating', () => {
+    const broken = { ...component, projection: null as unknown as SpecHashProjection };
+    expect(resolveLibraryChanges({ baseline: broken, liveProjection: projection })).toEqual({ state: 'unavailable', reason: 'other' });
   });
 });
