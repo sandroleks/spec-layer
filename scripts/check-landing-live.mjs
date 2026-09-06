@@ -25,17 +25,24 @@ const SCHEMAS = [
 const MISSING_PATH = '/this-path-must-not-exist-' + Date.now();
 
 async function fetchText(url) {
-  const res = await fetch(url, { redirect: 'follow' });
-  return { url, status: res.status, contentType: res.headers.get('content-type') || '', body: await res.text() };
+  try {
+    const res = await fetch(url, { redirect: 'follow' });
+    return { url, status: res.status, contentType: res.headers.get('content-type') || '', body: await res.text() };
+  } catch (err) {
+    const reason = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
+    return { url, status: 0, contentType: '', body: '', error: `${url}: could not be fetched (${reason})` };
+  }
 }
 
 const problems = [];
 for (const [path, committed] of SCHEMAS) {
   const live = await fetchText(base + path);
+  if (live.error) { problems.push(live.error); continue; }
   problems.push(...evaluateSchema({ ...live, expected: readFileSync(committed, 'utf8') }));
 }
 const missing = await fetchText(base + MISSING_PATH);
-problems.push(...evaluateNotFound({ url: missing.url, status: missing.status }));
+if (missing.error) problems.push(missing.error);
+else problems.push(...evaluateNotFound({ url: missing.url, status: missing.status }));
 
 if (problems.length > 0) {
   console.error(`Live check against ${base} failed:`);
