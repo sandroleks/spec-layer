@@ -145,8 +145,11 @@ pull`), not a workspace dependency of the extractor or the plugin. It has zero
 runtime dependencies: the one piece of shared code it uses, the bundle
 envelope parser from `@spec-layer/extractor`, is inlined at build time, and it
 never touches Figma or extraction code. It treats each artifact as opaque JSON
-and refuses a bundle whose major version it does not know. Five commands:
+and refuses a bundle whose major version it does not know. Six commands:
 
+- `setup` writes `speclayer.json`, stores the pull key in a gitignored
+  `speclayer.local.json` at mode 0600 after confirming git ignores it, and
+  pulls.
 - `init --id lib_...` writes `speclayer.json` (library id, output directory,
   and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
@@ -188,10 +191,12 @@ and refuses a bundle whose major version it does not know. Five commands:
   component AI YAML for `show component NAME`. Both are local only and need no
   key.
 
-The pull key is never written to disk; every command reads it from
-`SPEC_LAYER_KEY` or `--key`. The setup command the plugin shows after
-publishing (`SPEC_LAYER_KEY=<key> npx spec-layer pull --id <libraryId>`)
-is the only place the key and the library id are meant to travel together.
+The pull key resolves `--key`, then `SPEC_LAYER_KEY`, then the stored
+`speclayer.local.json` beside `speclayer.json`, which `setup` writes at mode
+0600 only after `git check-ignore` confirms git ignores it. The plugin's Publish
+screen copies `npx spec-layer setup --id <libraryId> --key <pullKey>`; the key
+appears in the clear only there. Earlier versions documented the key as never
+written to disk; `CHANGELOG.md` records why that was reversed.
 
 ## Storage
 

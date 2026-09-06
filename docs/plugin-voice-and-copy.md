@@ -58,7 +58,7 @@ storage unit ("Create 8 frames"), and a batch scope ("Update all 3").
 
 | Screen | Secondary | Primary |
 | --- | --- | --- |
-| Selected component | `Download` | `Create docs` |
+| Selected component | `Copy for AI` | `Create docs` |
 | Foundations | `Refresh sources` | `Create docs` |
 | Library | `Publish`, `Refresh library` | `Update all docs` |
 | Publish for developers | none | `Publish library` |
@@ -80,7 +80,7 @@ state); see `docs/plugin-ui-vnext/design-system/README.md`.
 - Pro meter: `Pro plan active`
 - Activation success: `Pro plan active ✓`
 - Upsell: `You've used your free AI generations for July.`
-- Upgrade button: `Upgrade for $8/mo`
+- Upgrade button: `Upgrade to Pro` (the plugin never states a price; the site does)
 - Fallback (no identity): `AI works on the free plan. No key needed.`
 
 When in doubt, read it aloud. If it sounds like a landing page, rewrite it.

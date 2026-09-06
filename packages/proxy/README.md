@@ -42,6 +42,13 @@ Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
 endpoint and caches the status).
 
+### `POST /v1/license/deactivate`
+
+Body: `{ "key": "...", "instanceId": "..." }` → `{ deactivated: boolean }`
+(proxies Lemon Squeezy's deactivate endpoint and frees the device slot the
+plugin's Remove key action releases). 400 on a missing key or instanceId,
+429 under the license rate limit, 502 when Lemon Squeezy is unreachable.
+
 ### `POST /v1/libraries`
 
 Pro license required. Body: `{ "libraryId"?: "lib_...", "bundle": <library

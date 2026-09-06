@@ -57,7 +57,7 @@ requests carry token names and resolved values without an image.
 3. Toggle **AI writing**. On the free plan it enables without an API or license
    key while allowance remains.
 4. Pick sections and, for a component set, the variants to document. Click
-   **Create docs** and confirm a `<Name>: Guidelines` Section is placed next to
+   **Create docs** and confirm a `<Name>: Documentation` Section is placed next to
    the component. Re-running replaces the previous Section in place.
 5. With a component selected and no document created, click the footer's
    **Copy for AI** and paste into a plain text editor. Confirm it is a YAML
@@ -343,7 +343,7 @@ action. The rows below start there.
 1. Test every frame-theme preset. **Custom** reveals color and font controls;
    other presets hide them. Logo remains available in every mode.
 2. Test valid, empty, and invalid custom colors, the native color picker, font
-   search/fallback, Reset, and generated component and Foundation Sections.
+   search/fallback, and generated component and Foundation Sections.
 3. Attach and remove a logo. Confirm an oversized logo is rejected clearly.
 4. Use global search to open every workflow and a connected Library document.
 5. Tab and Shift+Tab reach every input and action logically. Focus remains
