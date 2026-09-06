@@ -1,14 +1,14 @@
 # Component frame quality, round 1
 
 **Date:** 2026-09-06
-**Status:** Approved design, implementation plan pending.
+**Status:** Approved design, implementation plan pending. Ships in the same plugin release as `2026-09-06-patterns-and-nested-components-design.md`, which shares the extractor version bump.
 **Reads with:** `docs/plugin-knowledge-map.md`, `docs/reviews/2026-09-05-major-review.md` (E3 to E6, S6, U3), `packages/plugin/TESTING.md`.
 
 ## 1. Why
 
 The September 5 review left three extraction findings and one speed finding open, and a section-by-section look at the component document showed the Specifications group grew one section at a time: Configuration lists properties with no link to the parts they drive, and the Anatomy legend repeats token names that Tokens used already carries per variant. Nobody has measured where a create spends its time in Figma, so speed work has no data.
 
-This spec is the first of three. It fixes what can be fixed without Figma, and produces the two inputs the other two specs need: timing numbers (spec B, create speed) and a list of canvas defects (spec C, canvas fixes).
+This spec is the first of a set. It fixes what can be fixed without Figma, and produces the two inputs the later specs need: timing numbers (spec B, create speed) and a list of canvas defects (spec C, canvas fixes). The patterns spec (`2026-09-06-patterns-and-nested-components-design.md`) ships alongside it.
 
 Decisions taken during brainstorming and not revisited here:
 
@@ -23,7 +23,7 @@ In scope:
 
 1. The Configuration section becomes Properties, covering every component property with the anatomy parts each one affects.
 2. The Anatomy legend drops its token list and gains a "Controlled by" line.
-3. Three extractor defects are pinned by synthetic fixtures and fixed: the asymmetric radius gap check, single-wrapper-only anatomy descent, and nested-instance token attribution (fix only if the fixture proves it wrong).
+3. Two extractor defects are pinned by synthetic fixtures and fixed: the asymmetric radius gap check and single-wrapper-only anatomy descent. Nested-instance attribution moved to the patterns spec.
 4. `EXTRACTOR_VERSION` goes from `'2'` to `'3'`, and the canvas hash switches to code-unit key ordering in the same change.
 5. A debug build with per-phase timings, and a manual canvas checklist to run once in Figma.
 
@@ -142,9 +142,7 @@ A fourth wrapper is not skipped; the fixture pins that too, so the bound is expl
 
 ### 6.3 Nested-instance token attribution
 
-Fixture: a default variant with a part that is a nested instance, which contains a frame, which contains a text node with a bound fill.
-
-The fixture pins which part the resulting token row is attributed to. If the row is attributed to the nested instance part, that is correct and the fixture stands as a regression guard, and this spec records that no fix was needed. If the row lands on the wrong part or is dropped, the fix goes in the same change and the expected attribution is the nearest enclosing anatomy part.
+Moved to `2026-09-06-patterns-and-nested-components-design.md`. Reading the walker showed the answer without a fixture: the token walk descends into instance internals with no boundary, so a binding inside a nested Button is attributed to the Button's inner layer, a part Anatomy never lists. The fix is the boundary rule that spec defines, and the fixture lives there so it pins both boundary modes.
 
 ## 7. Debug timing build
 
@@ -189,7 +187,7 @@ Findings go in a defects section at the bottom of the file. Defects are the inpu
 
 Unit tests, all in Vitest:
 
-- The three fixtures from section 6 with hash-projection goldens.
+- The two fixtures from section 6 with hash-projection goldens.
 - `extractProps` fills `affects` from `propertyRefs`, cleans the `#id` suffix, collapses duplicates, sorts by code units, never sets it on variant axes, and reports a below-cap referencing node by its own name.
 - `extractProps` surfaces `defaultLabel` for instance-swap properties and never exposes the raw id as the rendered default.
 - `propertiesByPart` inverts correctly.
@@ -205,7 +203,7 @@ Manual: `packages/plugin/TESTING.md` gains rows for the Properties section (all 
 
 ## 10. Documentation
 
-- `CHANGELOG.md`: Properties section, legend change, the three extractor fixes, the version bump and hash ordering switch, the debug build.
+- `CHANGELOG.md`: Properties section, legend change, the two extractor fixes, the version bump and hash ordering switch, the debug build.
 - `docs/plugin-knowledge-map.md`, canvas rendering: Properties and the shared property reference source.
 - `docs/reviews/2026-09-05-major-review.md`: E5 and E6 marked addressed with the date; S6 marked addressed by the debug build.
 - `CLAUDE.md`: `EXTRACTOR_VERSION` is `'3'`; the `localeCompare` invariant now covers `hash.ts` as well as `src/v5`.
