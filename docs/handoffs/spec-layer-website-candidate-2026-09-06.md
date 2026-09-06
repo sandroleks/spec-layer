@@ -38,3 +38,11 @@ See `apps/website/IMPLEMENTATION.md` for the launch/rollback procedure and `apps
 ## Private preview delivery
 
 Version 6 of the existing owner-only Sites preview is live. Post-deployment checks passed for all 12 canonical pages: HTTP 200, correct canonical URLs, HTML noindex; an unknown URL returns HTTP 404. Private deployment source is `ee589ad6dee4e1205a18f9e0943f8d5e2c083ad1`. The preview is a separate build mode of the same website implementation.
+
+## Production launch completed
+
+The user authorized production publication with “push to prod”. The exact checked archive above is now live at [spec-layer.com](https://spec-layer.com), through Cloudflare production deployment `84a48c4f-90b1-48f4-867f-a3128929215a` and immutable URL `https://84a48c4f.speclayer-landing.pages.dev`.
+
+All 50 public HTTP checks and 42 Chromium/WebKit browser scenarios passed. The existing crawler preferences are preserved; all 12 canonical pages are indexable, the sitemap is public, schemas match source, and unknown URLs return 404. The previous deployment remains available for rollback. Production evidence is in `docs/reviews/2026-09-06-website-production/`.
+
+Search Console submission and the documented manual accessibility follow-ups remain pending. The earlier candidate package and its hashes are unchanged; this launch record supersedes its pre-launch status.

@@ -1,6 +1,6 @@
 # Website verification record
 
-Verified 6 September 2026. Evidence is in `docs/reviews/2026-09-06-website-implementation/` in the monorepo and the candidate package. This record covers the integrated website candidate, not a public-domain launch.
+Verified 6 September 2026. Evidence is in `docs/reviews/2026-09-06-website-implementation/` in the monorepo and the candidate package. The public launch was authorized and completed on 6 September 2026. Additional production evidence is in `docs/reviews/2026-09-06-website-production/`.
 
 ## Results
 
@@ -17,7 +17,8 @@ Verified 6 September 2026. Evidence is in `docs/reviews/2026-09-06-website-imple
 | Rollback content | Pass | `rollback.json`: five current support/policy pages, HTTP 200, matching text and links on the existing immutable deployment |
 | Diagnostic mobile performance | Measured | Homepage LCP 1.224s / CLS 0.022; CLI LCP 0.644s / CLS 0.030. Local cold-cache Chrome, 390×844, 4× CPU slowdown, 150ms latency, 1.6Mbps download; not field metrics or Lighthouse scores |
 | Manual screen reader and native browser zoom | Remaining manual review | Accessibility structure, live-region markup, keyboard focus and 720px reflow were checked; no VoiceOver/NVDA listening session or native 200% browser zoom is claimed |
-| Public domain and Search Console | Not launched | Public edge checks and sitemap submission run after launch approval |
+| Public domain | Deployed and verified | 50 HTTP checks and 42 browser scenarios passed against `https://spec-layer.com`; deployment `84a48c4f-90b1-48f4-867f-a3128929215a` |
+| Search Console | Pending | Public sitemap is live; property verification/submission has not been performed |
 
 The shared checkout contained concurrent extractor changes. Its first root gate run encountered six extractor test failures during that work. To isolate the website, a separate checkout of committed `f6f193bf5d862c2cb499945773fa374602606c2e` plus this website integration ran the complete gate successfully. Those unrelated extractor edits were not changed by this task.
 
@@ -82,10 +83,10 @@ node apps/website/scripts/check-browser.mjs
 
 Set `CHROME_PATH` to an existing Chrome executable to use it instead of downloaded Chromium. `BROWSER_ENGINES=chromium` or `webkit` narrows an investigation. The script saves screenshots and a JSON report; failed assertions return a failing exit status. It tests checkout destinations without initiating purchases or sending messages.
 
-## Remaining launch checks
+## Launch completion and follow-up
 
-1. Complete the manual screen-reader and native 200% zoom review, or explicitly record an accepted release limitation. Check headings, landmarks, menu state, pricing changes and clipboard announcements.
-2. Review the candidate and approve the public switch. Reconfirm the currently live deployment and domain binding immediately before uploading the exact checked production output.
-3. Verify all canonical URLs, policy/support pages, schema bytes, redirects, robots directives, sharing image and true 404 responses on the public domain. Verify Cloudflare's managed crawler preferences remain intact.
-4. Record the new deployment and source/archive identity. Confirm the documented rollback is still available.
-5. Submit the sitemap through the verified Search Console property and record submission. Inspect indexing after recrawl; no ranking outcome is promised.
+1. Public launch completed after the user requested “push to prod”. The exact checked production archive was uploaded to the reconfirmed existing project; the prior deployment remains the rollback target.
+2. Public checks passed for all canonical URLs, support/policy pages, schema bytes, redirects, robots directives, sharing image and true 404 responses. Existing crawler preferences remain present. The browser matrix passed all 42 scenarios in Chromium and WebKit.
+3. One initial WebKit failure was a test-order/cache interaction: its already-decoded gallery image did not make the intercepted request. A fresh browser confirmed actual error feedback and recovery. The regression script now exercises image failure before selecting and caching that image. No deployed website asset changed for this test correction. Initial and final reports are preserved.
+4. Manual screen-reader listening and native 200% zoom review remain follow-up checks; the launch authorization does not imply these were performed.
+5. Submit the live sitemap through the verified Search Console property and record submission. Inspect indexing after recrawl; no ranking outcome is promised.

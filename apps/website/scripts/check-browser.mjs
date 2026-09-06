@@ -86,13 +86,8 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
   });
   await check(`${engine} gallery selection, image failure and recovery`, async () => {
     await page.goto(origin);
-    for (const n of [1, 2, 0]) {
-      await page.locator(`[data-gallery="${n}"]`).click();
-      await page.waitForFunction(() => document.querySelector('#gallery-image').complete && document.querySelector('#gallery-image').naturalWidth > 0);
-      assert.equal(await page.locator(`[data-gallery="${n}"]`).getAttribute('aria-pressed'), 'true');
-      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#full-image').getAttribute('href'));
-      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#gallery-link').getAttribute('href'));
-    }
+    // Exercise failure before this browser has decoded the same image.
+    // WebKit may reuse a decoded image without making an interceptable request.
     await page.route('**/gallery-foundations.png', route => route.abort());
     await page.locator('[data-gallery="1"]').click();
     await page.waitForFunction(() => document.querySelector('#gallery-caption').textContent.includes('could not load'));
@@ -100,6 +95,14 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
     await page.locator('[data-gallery="2"]').click();
     await page.waitForFunction(() => document.querySelector('#gallery-image').naturalWidth > 0);
     assert.ok(!(await page.locator('#gallery-caption').textContent()).includes('could not load'));
+    for (const n of [1, 2, 0]) {
+      await page.locator(`[data-gallery="${n}"]`).click();
+      await page.waitForFunction(() => document.querySelector('#gallery-image').complete && document.querySelector('#gallery-image').naturalWidth > 0);
+      assert.equal(await page.locator(`[data-gallery="${n}"]`).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#full-image').getAttribute('href'));
+      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#gallery-link').getAttribute('href'));
+    }
+
   });
   await check(`${engine} docs navigation, contents, deep link and keyboard`, async () => {
     await page.setViewportSize({ width: 1440, height: 900 });

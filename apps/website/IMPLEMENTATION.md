@@ -1,6 +1,6 @@
 # Spec Layer website implementation and launch
 
-Updated 6 September 2026. The website integration is implemented in `apps/website`. The public-domain switch remains a separate action after candidate review.
+Updated 6 September 2026. The website is live at [spec-layer.com](https://spec-layer.com). The user authorized production publishing with “push to prod”. The exact checked production artifact was deployed to the existing Cloudflare Pages project; all 50 public HTTP checks and 42 browser scenarios passed. See `docs/reviews/2026-09-06-website-production/` for delivered-response, browser, screenshot, and deployment evidence.
 
 Review the [private website](https://spec-layer-next.oleksandr-kurchev.chatgpt.site/) and [documentation](https://spec-layer-next.oleksandr-kurchev.chatgpt.site/docs/). See [ACCEPTANCE.md](ACCEPTANCE.md) for measured results, browser evidence, and the remaining manual/launch checks.
 
@@ -38,9 +38,11 @@ Generated HTML/crawl files and `dist/` are output. See [AUTHORING.md](AUTHORING.
 | Domains | `spec-layer.com`, `speclayer-landing.pages.dev` |
 | Deployment model | Direct upload; no Git provider configured |
 | Current production branch | `main` |
-| Current production deployment / rollback | `a24d34c5-c24b-4957-b0db-8f52f46f318d` |
-| Immutable deployment URL | `https://a24d34c5.speclayer-landing.pages.dev` |
-| Source metadata reported by host | `f6f193b`; use actual content verification because direct uploads can contain uncommitted source |
+| Current production deployment | `84a48c4f-90b1-48f4-867f-a3128929215a` |
+| Current production source | `bc763e4bcc55022758718c75b1bb6d078e1b73fa` |
+| Previous production deployment / rollback | `a24d34c5-c24b-4957-b0db-8f52f46f318d` |
+| Rollback deployment URL | `https://a24d34c5.speclayer-landing.pages.dev` |
+| Previous source metadata reported by host | `f6f193b`; use actual content verification because direct uploads can contain uncommitted source |
 
 These values were read through authenticated Wrangler project/deployment listing. All five support/policy URLs on the rollback deployment return 200 with text and links matching the verified source. Evidence is in `docs/reviews/2026-09-06-website-implementation/rollback.json` in the monorepo.
 
@@ -86,7 +88,7 @@ In the existing Cloudflare Pages project's production deployment history, roll b
 | `/sitemap.xml`, `/robots.txt`, `/social/spec-layer.png` | 200 with correct MIME type |
 | Unknown root or nested URL | HTTP 404 with useful navigation and HTML `noindex` |
 
-The local Cloudflare runtime passed this contract. Production edge delivery must be checked after launch. The Sites preview uses its own `.html` normalization and ignores Cloudflare rule files; its HTML `noindex` and bookmark fallback remain intentional.
+Both the local Cloudflare runtime and the public domain passed this contract on 6 September 2026. The Sites preview uses its own `.html` normalization and ignores Cloudflare rule files; its HTML `noindex` and bookmark fallback remain intentional.
 
 ## Source delivery
 
