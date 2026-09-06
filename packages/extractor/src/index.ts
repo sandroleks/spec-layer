@@ -9,6 +9,7 @@ export * from './rawValues';
 export * from './extract';
 export * from './foundation';
 export * from './hash';
+export * from './diff';
 export * from './version';
 export * from './resolve';
 export * from './statesMatrix';
