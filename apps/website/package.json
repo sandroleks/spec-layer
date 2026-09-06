@@ -1,0 +1,15 @@
+{
+  "name": "spec-layer-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "node build.mjs",
+    "docs:generate": "node scripts/docs.mjs",
+    "docs:sync": "node scripts/sync-reference.mjs",
+    "check": "npm run build && node scripts/check.mjs && node scripts/check-seo.mjs && node scripts/check-pages.mjs",
+    "build:production": "SPEC_LAYER_SITE_MODE=production node build.mjs",
+    "check:production": "SPEC_LAYER_SITE_MODE=production npm run check",
+    "social:render": "node scripts/social.mjs"
+  }
+}

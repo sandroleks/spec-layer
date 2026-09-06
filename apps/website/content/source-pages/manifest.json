@@ -1,0 +1,72 @@
+[
+  {
+    "slug": "support",
+    "url": "https://spec-layer.com/support",
+    "capturedAt": "2026-09-06T13:47:21.739Z",
+    "title": "Support — Spec Layer",
+    "liveResponseSha256": "16894d37e8eb76d6f231b3d189abc4319fc433f5f94db07ed9d1bbbf1274ba2a",
+    "authoredSource": {
+      "commit": "aac056d2c1f30604e2a873672055bbc4a683fc46",
+      "path": "apps/landing/support.html",
+      "sha256": "cf10719c2d8ab26a74e919544c1a25854421bb21ac287a8133b4261b1bfea636"
+    },
+    "mainTextSha256": "80a93be5559a703e868f712c56ca95a5eb93336820ef7c2fcdee9ff6df677fe7",
+    "liveTextAndLinksMatch": true
+  },
+  {
+    "slug": "privacy",
+    "url": "https://spec-layer.com/privacy",
+    "capturedAt": "2026-09-06T13:47:21.796Z",
+    "title": "Privacy Policy — Spec Layer",
+    "liveResponseSha256": "daf210e66b1a37fef0750deb4674fa1c4056bc785f25b0de76661e38c21615b8",
+    "authoredSource": {
+      "commit": "aac056d2c1f30604e2a873672055bbc4a683fc46",
+      "path": "apps/landing/privacy.html",
+      "sha256": "130ab5b764d0cf2cdb83f817eb668c727f5640de62160ffb1226c64198f0b842"
+    },
+    "mainTextSha256": "14101337c2d6bf8ac1101e89423d1adbc197fe38ab837b6b0378de2a2b274ed7",
+    "liveTextAndLinksMatch": true
+  },
+  {
+    "slug": "terms",
+    "url": "https://spec-layer.com/terms",
+    "capturedAt": "2026-09-06T13:47:21.844Z",
+    "title": "Terms of Service — Spec Layer",
+    "liveResponseSha256": "7d4ef7de7f9456378bb04d5c69215fa3a1a94c9489d07b6a9211da9bfe082479",
+    "authoredSource": {
+      "commit": "aac056d2c1f30604e2a873672055bbc4a683fc46",
+      "path": "apps/landing/terms.html",
+      "sha256": "cd8961e2c45e41a65a219a54d4259e9823089b917cfd349aa2ce919862d8a7dc"
+    },
+    "mainTextSha256": "06e07fc670a57b0ab7de47d07ef7f68e10b653aa2248ddd12abb02dc0292693b",
+    "liveTextAndLinksMatch": true
+  },
+  {
+    "slug": "security",
+    "url": "https://spec-layer.com/security",
+    "capturedAt": "2026-09-06T13:47:21.895Z",
+    "title": "Security & Responsible Disclosure — Spec Layer",
+    "liveResponseSha256": "68e6ccf6951ec18f0c79891bd83a681cdc18d5268afd316d2bd04929c4de3f12",
+    "authoredSource": {
+      "commit": "aac056d2c1f30604e2a873672055bbc4a683fc46",
+      "path": "apps/landing/security.html",
+      "sha256": "2e98a9175158ed0fba79174aab322418104af44094e5d0bebd29bdaf5bac78bc"
+    },
+    "mainTextSha256": "1e629de1392a757c0da4495d35f48442ba5e59f33e0b6446fb5d8a51c10e0ccb",
+    "liveTextAndLinksMatch": true
+  },
+  {
+    "slug": "refund",
+    "url": "https://spec-layer.com/refund",
+    "capturedAt": "2026-09-06T13:47:21.952Z",
+    "title": "Refund Policy — Spec Layer",
+    "liveResponseSha256": "79a0423e68fec77bb43a38d21a62093c6fa18e5d2355c195d8847f6ae5adbd27",
+    "authoredSource": {
+      "commit": "aac056d2c1f30604e2a873672055bbc4a683fc46",
+      "path": "apps/landing/refund.html",
+      "sha256": "4b9a195d254adbcdf93e021aff77f6832f477e557ef6b3ab1f4d9bdac1ab3962"
+    },
+    "mainTextSha256": "743907dd72566f54dae38b8e53e2caa907d6559747350778fbbf9dca99d18a48",
+    "liveTextAndLinksMatch": true
+  }
+]

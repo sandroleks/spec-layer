@@ -14,17 +14,21 @@ npx -y http-server apps/landing -p 4620 -c-1
 
 Or use the `landing` config in `.claude/launch.json`.
 
-## Deploy (Cloudflare Pages)
+## Website release source
+
+The redesigned website and all current support/policy pages are maintained in
+`apps/website`. See [the implementation and launch record](../website/IMPLEMENTATION.md).
+Build the production candidate with:
 
 ```sh
-npx wrangler pages deploy apps/landing --project-name speclayer-landing
+npm run check:production --prefix apps/website
 ```
 
-(After Phase 2 of `docs/superpowers/plans/2026-09-06-website-update.md` lands,
-the deploy directory becomes `dist/site`; see that plan.)
-
-First run creates the project and prints the `*.pages.dev` URL.
-`spec-layer.com` is attached as the custom domain.
+The verified existing Cloudflare Pages project is `speclayer-landing`, a direct
+upload project bound to `spec-layer.com`. The release output is
+`apps/website/dist`. Deploy the reviewed production artifact using the launch
+procedure in that record; uploading this older `apps/landing` directory would
+restore outdated content and omit the new documentation.
 
 `404.html` is served for every unmatched path. Without it, Pages falls back to
 `index.html` with HTTP 200, which on 2026-09-06 hid a missing schema file for
