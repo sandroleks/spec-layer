@@ -1,7 +1,7 @@
 # Library semantic diff: design
 
 **Date:** 2026-09-06
-**Status:** Approved design, not yet implemented.
+**Status:** Implemented 2026-09-06 (plan: docs/superpowers/plans/2026-09-06-library-semantic-diff.md). Manual matrix rows 12 and 13 in packages/plugin/TESTING.md pending.
 **Reads with:** `docs/reviews/2026-09-05-major-review.md` (findings 8, U2,
 X4, U5), `ARCHITECTURE.md`, `packages/plugin/src/docLink.ts`,
 `packages/extractor/src/hash.ts`, `docs/plugin-voice-and-copy.md`.

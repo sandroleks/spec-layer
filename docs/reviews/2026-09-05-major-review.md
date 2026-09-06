@@ -73,6 +73,7 @@ Ranked by consequence. Details and evidence follow in the sections below.
 8. **The Library's "Review detected changes" always lands on a fallback** that
    says a detailed comparison is not available. The menu offers a review the
    product cannot yet perform.
+   Addressed 2026-09-06: `docs/superpowers/specs/2026-09-06-library-semantic-diff-design.md`.
 9. **The landing page does not mention publishing or the CLI**, which are the
    only Pro features with a moat. Pro is sold as "no fixed monthly AI cap" and
    "priority support".
@@ -312,6 +313,10 @@ projection with the live one and list added, removed and changed rules by
 part and property. This is also the `diff` command the v5 status document
 already plans, so one implementation serves both. Until then, remove the
 menu item and let the status pill's disclosure show the fallback.
+Addressed 2026-09-06 by the library semantic diff (spec
+`docs/superpowers/specs/2026-09-06-library-semantic-diff-design.md`): the
+stored baseline is the hash projection, and `diffKeyed` is the core the
+`diff` command will reuse.
 
 **U3. Extraction depth versus the conformance direction (E3, E4).** If the
 strategy document is adopted, the first engineering phase is widening
@@ -365,7 +370,7 @@ only for the explicit `requestSelection` on mount.
 
 **X3. Copy for AI placement (U1).**
 
-**X4. Review that cannot review (U2).**
+**X4. Review that cannot review (U2).** Addressed 2026-09-06, see U2.
 
 **X5. Fixed 480 x 680 window.** `figma.ui.resize` is never called. Library
 rows with long names and the publish screen's setup command truncate. A
@@ -500,7 +505,7 @@ first read. Weak points: the comment archaeology (C2), 32 MB of images under
 13. Fake-`figma` tests for the commit ordering in `renderDocFrame`,
     `renderFoundation` and `updateFoundationDoc`, the paths the matrix exists
     for and the ones that mutate a user's canvas.
-14. Semantic diff for Library review, shared with the planned `diff` command (U2).
+14. ~~Semantic diff for Library review, shared with the planned `diff` command (U2).~~ Shipped 2026-09-06.
 15. Usage counters at the proxy with a Settings opt-out (M4).
 16. Pin `canonical()` against code-unit ordering in a test; schedule the
     switch for the next `EXTRACTOR_VERSION` bump (E6).
