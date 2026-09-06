@@ -505,7 +505,7 @@ first read. Weak points: the comment archaeology (C2), 32 MB of images under
 13. Fake-`figma` tests for the commit ordering in `renderDocFrame`,
     `renderFoundation` and `updateFoundationDoc`, the paths the matrix exists
     for and the ones that mutate a user's canvas.
-14. ~~Semantic diff for Library review, shared with the planned `diff` command (U2).~~ Shipped 2026-09-06.
+14. ~~Semantic diff for Library review, shared with the planned `diff` command (U2).~~ Implemented 2026-09-06 on branch library-semantic-diff; manual matrix rows 12 and 13 pending.
 15. Usage counters at the proxy with a Settings opt-out (M4).
 16. Pin `canonical()` against code-unit ordering in a test; schedule the
     switch for the next `EXTRACTOR_VERSION` bump (E6).

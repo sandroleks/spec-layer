@@ -262,11 +262,12 @@ set that has at least two variant axes and a hardcoded paint. Check that:
     component; Tokens for the Foundation). No item names anything you did
     not change. Run **Update documentation** and confirm the row returns to
     **In sync** and the panel is no longer offered.
-13. A doc generated before this build (or one whose baseline was cleared by
-    **Detach**, then reconnected by a fresh Create) shows "Source changed"
-    with "Update this doc once to enable change lists." Run **Update
-    documentation**, change the source again, refresh, and confirm the list
-    now appears.
+13. A doc generated before this build shows "Source changed" with "Update
+    this doc once to enable change lists." To produce one on a fresh file,
+    generate the doc with the currently published plugin build, then open the
+    same file with this development build and refresh the Library. Run
+    **Update documentation**, change the source again, refresh, and confirm
+    the list now appears.
 
 ## AI-writing allowance (free plan)
 
