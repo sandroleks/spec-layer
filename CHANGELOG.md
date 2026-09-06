@@ -8,6 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Review detected changes** in the Library now lists what changed. Every
+  generated Section stores the exact object its drift hash was computed over,
+  under its own plugin data key (`specLayerBaseline`, 90 kB budget, dropped
+  whole when over). Expanding a row marked Update available diffs that
+  baseline against the live projection and shows added, removed and changed
+  items with before and after values, grouped as Name, Properties, Variants,
+  Anatomy, States, Tokens, Unbound values, Layout and Related for components,
+  and Tokens, Descriptions, Modes and Part for Foundation docs. The diff input
+  is the hash input, so a list can never disagree with the badge. Docs
+  generated before this release show "Update this doc once to enable change
+  lists." until their next Update. No hash, `EXTRACTOR_VERSION`, schema, or
+  artifact changed. The keyed-list core (`diffKeyed`) is the piece the planned
+  `spec-layer diff` command will reuse.
+
 - Foundation Context v5 tokens carry `code_syntax`, Figma's per-platform code
   identifier, when the variable declares one. Schema `5.1.0` for both
   Foundation and Component Context. This moves the semantic content hash of

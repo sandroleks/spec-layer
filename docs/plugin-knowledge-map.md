@@ -98,6 +98,15 @@ would replace. Source drift uses deterministic content hashes and excludes
 AI prose. Copy for AI and Publish read the same canvas text, with the stored
 `DOC_PROSE_KEY` blob filling any section the doc does not render.
 
+"Review detected changes" on an Update available row asks the main thread for
+the doc's stored baseline (`DOC_BASELINE_KEY` in `docLink.ts`, written beside
+the link on every create and Update) and diffs it in the UI against the live
+projection with `componentChangeGroups` or `foundationChangeGroups` from the
+extractor's `diff.ts`. The baseline is the hash projection itself, so the
+list and the badge cannot disagree. A doc without a baseline shows "Update
+this doc once to enable change lists." Nothing about this rides the
+`library` message.
+
 ## Canvas rendering
 
 `docFrame.ts` renders component documentation. `foundationFrame.ts` renders

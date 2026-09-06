@@ -1,7 +1,7 @@
 # Library semantic diff: design
 
 **Date:** 2026-09-06
-**Status:** Approved design, not yet implemented.
+**Status:** Implemented 2026-09-06 (plan: docs/superpowers/plans/2026-09-06-library-semantic-diff.md). Manual matrix rows 12 and 13 in packages/plugin/TESTING.md pending.
 **Reads with:** `docs/reviews/2026-09-05-major-review.md` (findings 8, U2,
 X4, U5), `ARCHITECTURE.md`, `packages/plugin/src/docLink.ts`,
 `packages/extractor/src/hash.ts`, `docs/plugin-voice-and-copy.md`.
@@ -267,10 +267,13 @@ dashes, per `docs/plugin-voice-and-copy.md`:
 - `unavailable`: the existing alert row "Source changed" with a second line
   that names the reason the UI knows:
   - no baseline: "Update this doc once to enable change lists."
-  - rebuild needed (`staleVersion`): "The extractor changed. Rebuild to
-    compare future changes."
   - anything else: the current "A detailed comparison isn't available.
     Review the source from the row menu."
+
+  There is no rebuild-specific line, because a row marked Rebuild needed
+  never expands: the menu item and the disclosure are limited to rows whose
+  status is Update available. So the reasons are no baseline and anything
+  else.
 
 Item copy, one line each, verb first for additions and removals, the value
 transition spelled out with "changed to" rather than an arrow:

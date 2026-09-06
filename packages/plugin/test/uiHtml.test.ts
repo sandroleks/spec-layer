@@ -81,9 +81,11 @@ describe('dist/ui.html', () => {
     // instead: whatever the minifier renamed it to, the same identifier
     // resolves the image on success and resolves null immediately on
     // failure, right after the matching case labels (string literals, so
-    // unaffected by minification).
+    // unaffected by minification). esbuild's minifier reaches into `$`- and
+    // `_`-prefixed names once the plain alphabet is exhausted, so the class
+    // must include them alongside \w.
     expect(vnext).toMatch(
-      /case"componentImage":(\w+)\(\{base64:[^}]*\}\);return;case"componentImageError":\1\(null\);return;/,
+      /case"componentImage":([\w$]+)\(\{base64:[^}]*\}\);return;case"componentImageError":\1\(null\);return;/,
     );
   });
 

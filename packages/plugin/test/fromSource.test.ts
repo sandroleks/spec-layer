@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { extract, specHashProjection, contentHash } from '@spec-layer/extractor';
 import type { ProseDrafts, SerializedNode } from '@spec-layer/extractor';
 
 // Prove Update never reaches the AI: the module is mocked and asserted unused.
@@ -8,6 +9,7 @@ vi.mock('../src/ui/ai', () => ({
 
 import { generateProse } from '../src/ui/ai';
 import {
+  createDocFrame,
   createState,
   updateFromSource,
   type BuildPresenter,
@@ -136,5 +138,43 @@ describe('updateFromSource', () => {
     await updateFromSource(createState(), { ...goodSource, prose: null }, ui);
     const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as { prose?: unknown };
     expect('prose' in msg).toBe(false);
+  });
+
+  it('sends the hash projection as the baseline, and its hash is the message contentHash', async () => {
+    const ui = fakePresenter();
+    await updateFromSource(createState(), goodSource, ui);
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      contentHash: string; baseline: unknown;
+    };
+    const expected = specHashProjection(extract(goodSource.node, { figmaFile: goodSource.fileKey }));
+    expect(msg.baseline).toEqual(expected);
+    expect(contentHash(msg.baseline)).toBe(msg.contentHash);
+  });
+});
+
+/**
+ * The create path writes the same baseline the Update path does. Pinned here
+ * as well because the two build the message independently: a baseline whose
+ * hash is not the message's contentHash would make every later diff read
+ * against the wrong object.
+ */
+describe('createDocFrame', () => {
+  it('sends a baseline whose hash is the message contentHash', async () => {
+    const ui = fakePresenter();
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    await createDocFrame(state, {
+      sections: new Set(['definition', 'tokens']),
+      variantIds: new Set(),
+    }, ui);
+    expect(ui.errors).toEqual([]);
+    expect(generateProse).not.toHaveBeenCalled();
+
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      contentHash: string; baseline: unknown;
+    };
+    expect(msg).toBeDefined();
+    expect(contentHash(msg.baseline)).toBe(msg.contentHash);
   });
 });

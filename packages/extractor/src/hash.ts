@@ -1,5 +1,7 @@
 import { sha256 } from 'js-sha256';
-import type { IntermediateSpec } from './extract';
+import type { IntermediateSpec, VariantInstance } from './extract';
+import type { ComponentProp, VariantAxis } from './props';
+import type { GapIssue } from './tokens';
 import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
@@ -20,13 +22,49 @@ function canonical(value: unknown): string {
 export const contentHash = (value: unknown): string => sha256(canonical(value));
 
 /**
- * The drift baseline hash. Computed over a projection that excludes rawValues,
- * and reduces anatomy to the legacy depth-0 {id,name,type,nested} shape, so
- * canvas-only 2.0 additions never flip the hash for existing committed specs.
- * This is the single source of truth for content_hash; both the Markdown
- * frontmatter and on-canvas drift detection call it.
+ * "Would hash the same": two values are equal when their canonical
+ * serializations match. Key order and undefined-valued keys are ignored,
+ * exactly as contentHash ignores them. This is the equality the Library diff
+ * uses, so "changed" in a change list means precisely "moved the hash".
  */
-export function specContentHash(spec: IntermediateSpec): string {
+export function canonicalEqual(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b);
+}
+
+/**
+ * The object specContentHash hashes. Exported so the Library can store it as a
+ * doc's drift baseline and diff it later: the diff input IS the hash input, so
+ * a change list can never disagree with the badge in either direction.
+ *
+ * The legacy `token` key (from the newer `name` field) and the depth-0 anatomy
+ * reduction are part of the contract: every committed doc's baseline was hashed
+ * over exactly this shape.
+ */
+export interface SpecHashProjection {
+  name: string;
+  figmaKey: string;
+  figmaFile: string;
+  figmaNode: string;
+  anatomyComponentId: string;
+  anatomy: { id: string; name: string; type: string; nested: boolean }[];
+  props: ComponentProp[];
+  variants: VariantAxis[];
+  variantInstances: VariantInstance[];
+  states: string[];
+  tokens: { part: string; property: string; conditions: Record<string, string[]>; token: string }[];
+  related: string[];
+  gaps: { part: string; property: string; issue: GapIssue; value?: number | string }[];
+  layout: { part: string; summary: string }[];
+}
+
+/**
+ * The drift baseline projection. Excludes rawValues, and reduces anatomy to the
+ * legacy depth-0 {id,name,type,nested} shape, so canvas-only 2.0 additions
+ * never flip the hash for existing committed specs. specContentHash hashes
+ * exactly this object and the Library stores exactly this object as a doc's
+ * baseline, so the two cannot drift apart.
+ */
+export function specHashProjection(spec: IntermediateSpec): SpecHashProjection {
   // figmaFileName is destructured out alongside rawValues: renaming a Figma
   // file is not component drift, and every committed doc's baseline was
   // computed before the field existed, so including it would flip all of them
@@ -89,7 +127,16 @@ export function specContentHash(spec: IntermediateSpec): string {
     // a field added to LayoutSummary later is excluded by default.
     layout: spec.layout.map(({ part, summary }) => ({ part, summary })),
   };
-  return contentHash(hashable);
+  return hashable;
+}
+
+/**
+ * The drift baseline hash. This is the single source of truth for a component
+ * doc's content_hash; on-canvas drift detection and the stored baseline both
+ * derive from specHashProjection.
+ */
+export function specContentHash(spec: IntermediateSpec): string {
+  return contentHash(specHashProjection(spec));
 }
 
 /**
