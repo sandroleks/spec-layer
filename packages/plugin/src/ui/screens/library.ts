@@ -9,6 +9,7 @@
 import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import type {
+  LibraryChangeUnavailableReason,
   LibraryFilter,
   LibraryModel,
   LibraryRowModel,
@@ -86,22 +87,51 @@ function changeGroupMarkup(group: LibraryChangeGroupPresentation): string {
   );
 }
 
-function changeDetailsMarkup(row: LibraryRowPresentation): string {
-  const content = row.changeGroups?.length
-    ? row.changeGroups.map(changeGroupMarkup).join('')
-    : (
-      '<div class="sl-library-change-fallback">' +
-      `${icon('alertCircle', 16)}<span><strong>Source changed</strong>` +
-      '<small>A detailed comparison isn&#39;t available. Review the source from the row menu.</small>' +
-      '</span></div>'
-    );
+/**
+ * The second line under "Source changed" when no list can be shown. The
+ * `other` line is the pre-baseline fallback, kept verbatim. Pre-escaped
+ * because it is placed in HTML directly, not through esc().
+ */
+const CHANGE_UNAVAILABLE_COPY: Record<LibraryChangeUnavailableReason, string> = {
+  noBaseline: 'Update this doc once to enable change lists.',
+  staleVersion: 'The extractor changed. Rebuild to compare future changes.',
+  other: 'A detailed comparison isn&#39;t available. Review the source from the row menu.',
+};
 
+function changeFallbackMarkup(detail: string): string {
+  return (
+    '<div class="sl-library-change-fallback">' +
+    `${icon('alertCircle', 16)}<span><strong>Source changed</strong>` +
+    `<small>${detail}</small>` +
+    '</span></div>'
+  );
+}
+
+function changeContentMarkup(row: LibraryRowPresentation): string {
+  switch (row.changeState) {
+    case 'idle':
+      return '';
+    case 'pending':
+      // Reuses the fallback container so the pending line needs no new CSS.
+      return '<div class="sl-library-change-fallback"><span><strong>Comparing…</strong></span></div>';
+    case 'ready':
+      return row.changeGroups?.length
+        ? row.changeGroups.map(changeGroupMarkup).join('')
+        // Should not occur: the diff input is the hash input. Better than an
+        // empty panel if it does.
+        : changeFallbackMarkup('No itemized differences were found.');
+    case 'unavailable':
+      return changeFallbackMarkup(CHANGE_UNAVAILABLE_COPY[row.changeUnavailableReason ?? 'other']);
+  }
+}
+
+function changeDetailsMarkup(row: LibraryRowPresentation): string {
   return (
     `<div id="sl-library-details-${esc(row.docId)}" class="sl-library-details"` +
     `${row.expanded ? '' : ' hidden'}>` +
     '<div class="sl-library-details-inner">' +
     '<h2>Changes</h2>' +
-    `<div class="sl-library-change-list">${content}</div>` +
+    `<div class="sl-library-change-list">${changeContentMarkup(row)}</div>` +
     '</div></div>'
   );
 }
