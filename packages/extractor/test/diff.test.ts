@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { diffKeyed, formatFoundationValue, formatTextMetrics, foundationChangeGroups } from '../src/diff';
+import {
+  diffKeyed, formatFoundationValue, formatTextMetrics, foundationChangeGroups, componentChangeGroups,
+} from '../src/diff';
 import type { FoundationUnitContent, FoundationValue, FoundationVariableRow, FoundationTextRow } from '../src/foundation';
+import type { SpecHashProjection } from '../src/hash';
 
 interface Item { id: string; value: number }
 const byId = (item: Item) => item.id;
@@ -222,5 +225,183 @@ describe('foundationChangeGroups', () => {
     const partial = { collectionName: 'Semantic', modeNames: ['Light'] } as unknown as FoundationUnitContent;
     expect(foundationChangeGroups(partial, unit([colorRow('a', BLUE, BLUE)], { modeNames: ['Light'] })))
       .toEqual([{ label: 'Tokens', items: ['Added a'] }]);
+  });
+});
+
+function projection(overrides: Partial<SpecHashProjection> = {}): SpecHashProjection {
+  return {
+    name: 'Button',
+    figmaKey: 'key-1',
+    figmaFile: 'FILE1',
+    figmaNode: '1:1',
+    anatomyComponentId: '1:2',
+    anatomy: [{ id: '1:3', name: 'Label', type: 'TEXT', nested: false }],
+    props: [{ name: 'Size', kind: 'variant', options: ['Small', 'Medium'], default: 'Small' }],
+    variants: [{ prop: 'Size', values: ['Small', 'Medium'] }],
+    variantInstances: [{ nodeId: '1:2', name: 'Size=Small', values: { Size: 'Small' } }],
+    states: ['default', 'hover'],
+    tokens: [{ part: 'Label', property: 'fill', conditions: {}, token: 'color.primary' }],
+    related: ['Icon'],
+    gaps: [{ part: 'Label', property: 'padding', issue: 'hardcoded-value', value: 8 }],
+    layout: [{ part: 'Container', summary: 'horizontal, gap 8' }],
+    ...overrides,
+  };
+}
+
+describe('componentChangeGroups', () => {
+  it('returns no groups when nothing differs', () => {
+    expect(componentChangeGroups(projection(), projection())).toEqual([]);
+  });
+
+  it('explains an identity-only change so an otherwise empty list still explains the badge', () => {
+    expect(componentChangeGroups(projection(), projection({ figmaNode: '9:9' }))).toEqual([
+      { label: 'Name', items: ['Source identity changed'] },
+    ]);
+    expect(componentChangeGroups(projection(), projection({ name: 'Button v2', anatomyComponentId: '2:2' }))).toEqual([
+      { label: 'Name', items: ['Name Button changed to Button v2', 'Source identity changed'] },
+    ]);
+  });
+
+  it('itemizes property additions, removals and field changes', () => {
+    const after = projection({
+      props: [
+        { name: 'Size', kind: 'variant', options: ['Small', 'Medium', 'Large'], default: 'Medium' },
+        { name: 'Description', kind: 'text' },
+      ],
+    });
+    expect(componentChangeGroups(projection(), after)).toEqual([
+      { label: 'Properties', items: [
+        'Added Description property',
+        'Size property: options were Small, Medium changed to Small, Medium, Large',
+        'Size property: default Small changed to Medium',
+      ] },
+    ]);
+    expect(componentChangeGroups(projection(), projection({ props: [] }))).toEqual([
+      { label: 'Properties', items: ['Removed Size property'] },
+    ]);
+    expect(componentChangeGroups(projection(), projection({
+      props: [{ name: 'Size', kind: 'text', options: ['Small', 'Medium'], default: 'Small' }],
+    }))).toEqual([
+      { label: 'Properties', items: ['Size property: kind variant changed to text'] },
+    ]);
+  });
+
+  it('itemizes variant axes and variant instances under Variants', () => {
+    const after = projection({
+      variants: [{ prop: 'Size', values: ['Small', 'Medium', 'Large'] }, { prop: 'State', values: ['Default'] }],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Size=Small, State=Default', values: { Size: 'Small', State: 'Default' } },
+        { nodeId: '1:9', name: 'Size=Large, State=Default', values: { Size: 'Large', State: 'Default' } },
+      ],
+    });
+    expect(componentChangeGroups(projection(), after)).toEqual([
+      { label: 'Variants', items: [
+        'Added State axis',
+        'Size: values were Small, Medium changed to Small, Medium, Large',
+        'Added variant Size=Large, State=Default',
+        'Variant Size=Small changed to Size=Small, State=Default',
+        'Variant Size=Small, State=Default: values Size=Small changed to Size=Small, State=Default',
+      ] },
+    ]);
+  });
+
+  it('itemizes anatomy parts by id', () => {
+    const after = projection({
+      anatomy: [
+        { id: '1:3', name: 'Text', type: 'TEXT', nested: true },
+        { id: '1:4', name: 'Icon', type: 'INSTANCE', nested: true },
+      ],
+    });
+    expect(componentChangeGroups(projection(), after)).toEqual([
+      { label: 'Anatomy', items: [
+        'Added Icon part',
+        'Part Label renamed to Text',
+        'Text part: nested false changed to true',
+      ] },
+    ]);
+  });
+
+  it('treats states and related as sets', () => {
+    expect(componentChangeGroups(projection(), projection({ states: ['default', 'disabled'], related: [] }))).toEqual([
+      { label: 'States', items: ['Added state disabled', 'Removed state hover'] },
+      { label: 'Related', items: ['Removed related Icon'] },
+    ]);
+    expect(componentChangeGroups(projection(), projection({ states: ['hover', 'default'] }))).toEqual([
+      { label: 'States', items: ['Order changed, values unchanged'] },
+    ]);
+  });
+
+  it('keys tokens by part, property and conditions and spells conditions out', () => {
+    const before = projection({
+      tokens: [
+        { part: 'Label', property: 'fill', conditions: {}, token: 'color.primary' },
+        { part: 'Label', property: 'fill', conditions: { Size: ['Large'] }, token: 'color.primary' },
+        { part: 'Icon', property: 'padding', conditions: {}, token: 'space.2' },
+      ],
+    });
+    const after = projection({
+      tokens: [
+        { part: 'Label', property: 'fill', conditions: {}, token: 'color.brand.500' },
+        { part: 'Label', property: 'fill', conditions: { Size: ['Large'], State: ['Hover'] }, token: 'color.brand.600' },
+      ],
+    });
+    expect(componentChangeGroups(before, after)).toEqual([
+      { label: 'Tokens', items: [
+        'Added Label / fill when Size is Large and State is Hover: color.brand.600',
+        'Removed Label / fill when Size is Large',
+        'Removed Icon / padding',
+        'Label / fill: color.primary changed to color.brand.500',
+      ] },
+    ]);
+  });
+
+  it('keys conditions independently of axis key order', () => {
+    const before = projection({ tokens: [{ part: 'L', property: 'fill', conditions: { A: ['1'], B: ['2'] }, token: 't' }] });
+    const after = projection({ tokens: [{ part: 'L', property: 'fill', conditions: { B: ['2'], A: ['1'] }, token: 't' }] });
+    expect(componentChangeGroups(before, after)).toEqual([]);
+  });
+
+  it('itemizes unbound values with their issue and value', () => {
+    const after = projection({
+      gaps: [
+        { part: 'Label', property: 'padding', issue: 'hardcoded-value', value: 12 },
+        { part: 'Container', property: 'fill', issue: 'hardcoded-color', value: '#FFFFFF' },
+        { part: 'Icon', property: 'stroke', issue: 'missing-token-binding' },
+      ],
+    });
+    expect(componentChangeGroups(projection(), after)).toEqual([
+      { label: 'Unbound values', items: [
+        'Added Container / fill (hardcoded color): #FFFFFF',
+        'Added Icon / stroke (missing token binding)',
+        'Label / padding (hardcoded value): 8 changed to 12',
+      ] },
+    ]);
+  });
+
+  it('itemizes layout by part', () => {
+    const after = projection({
+      layout: [{ part: 'Container', summary: 'vertical, gap 12' }, { part: 'Label', summary: 'hug' }],
+    });
+    expect(componentChangeGroups(projection(), after)).toEqual([
+      { label: 'Layout', items: [
+        'Added Label layout: hug',
+        'Container: horizontal, gap 8 changed to vertical, gap 12',
+      ] },
+    ]);
+  });
+
+  it('keeps groups in the fixed order', () => {
+    const after = projection({
+      name: 'X', props: [], variants: [], anatomy: [], states: [], tokens: [], gaps: [], layout: [], related: [],
+    });
+    expect(componentChangeGroups(projection(), after).map((g) => g.label)).toEqual([
+      'Name', 'Properties', 'Variants', 'Anatomy', 'States', 'Tokens', 'Unbound values', 'Layout', 'Related',
+    ]);
+  });
+
+  it('treats a projection missing its lists as empty rather than throwing', () => {
+    const partial = { name: 'Button', figmaKey: 'key-1', figmaFile: 'FILE1', figmaNode: '1:1', anatomyComponentId: '1:2' } as unknown as SpecHashProjection;
+    const result = componentChangeGroups(partial, projection());
+    expect(result.find((g) => g.label === 'States')).toEqual({ label: 'States', items: ['Added state default', 'Added state hover'] });
   });
 });

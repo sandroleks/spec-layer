@@ -10,10 +10,11 @@
  * values: exactly the objects specContentHash and foundationContentHash hash.
  * Comparing anything else could disagree with the "Update available" badge.
  */
-import { canonicalEqual } from './hash';
+import { canonicalEqual, type SpecHashProjection } from './hash';
 import type {
   FoundationRow, FoundationTextMetrics, FoundationUnitContent, FoundationValue,
 } from './foundation';
+import { compareCodeUnits } from './v5/diagnostics';
 
 export interface ListDiff<T> {
   added: T[];
@@ -231,5 +232,163 @@ export function foundationChangeGroups(
     ['Descriptions', descriptions],
     ['Modes', modes],
     ['Part', part],
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+type TokenEntry = SpecHashProjection['tokens'][number];
+type GapEntry = SpecHashProjection['gaps'][number];
+
+/** Axis order is not identity: two rules with the same axes and values are the same rule. */
+function conditionsKey(conditions: Record<string, string[]>): string {
+  return JSON.stringify(Object.entries(conditions ?? {}).sort(([a], [b]) => compareCodeUnits(a, b)));
+}
+
+function formatConditions(conditions: Record<string, string[]>): string {
+  const clauses = Object.entries(conditions ?? {}).map(([axis, values]) => `${axis} is ${values.join(', ')}`);
+  return clauses.length > 0 ? ` when ${clauses.join(' and ')}` : '';
+}
+
+function tokenLabel(rule: TokenEntry): string {
+  return `${rule.part} / ${rule.property}${formatConditions(rule.conditions)}`;
+}
+
+function gapLabel(gap: GapEntry): string {
+  return `${gap.part} / ${gap.property} (${String(gap.issue).replace(/-/g, ' ')})`;
+}
+
+function formatList(values: readonly string[] | undefined): string {
+  return values && values.length > 0 ? values.join(', ') : 'none';
+}
+
+function formatDefault(value: string | boolean | undefined): string {
+  return value === undefined ? 'no default' : String(value);
+}
+
+function formatGapValue(value: number | string | undefined): string {
+  return value === undefined ? 'no value' : String(value);
+}
+
+function formatValues(values: Record<string, string>): string {
+  const entries = Object.entries(values ?? {}).map(([axis, value]) => `${axis}=${value}`);
+  return entries.length > 0 ? entries.join(', ') : 'none';
+}
+
+/**
+ * Groups, in order: Name, Properties, Variants, Anatomy, States, Tokens,
+ * Unbound values, Layout, Related. `figmaKey`, `figmaFile`, `figmaNode` and
+ * `anatomyComponentId` are hashed identity, not content, so a change in any of
+ * them is one "Source identity changed" line under Name.
+ */
+export function componentChangeGroups(
+  before: SpecHashProjection,
+  after: SpecHashProjection,
+): ChangeGroup[] {
+  const name: string[] = [];
+  if (before.name !== after.name) name.push(`Name ${before.name} changed to ${after.name}`);
+  if (
+    before.figmaKey !== after.figmaKey
+    || before.figmaFile !== after.figmaFile
+    || before.figmaNode !== after.figmaNode
+    || before.anatomyComponentId !== after.anatomyComponentId
+  ) {
+    name.push('Source identity changed');
+  }
+
+  const properties: string[] = [];
+  const props = diffKeyed(list(before.props), list(after.props), (prop) => prop.name);
+  for (const prop of props.added) properties.push(`Added ${prop.name} property`);
+  for (const prop of props.removed) properties.push(`Removed ${prop.name} property`);
+  for (const { before: b, after: a } of props.changed) {
+    if (b.kind !== a.kind) properties.push(`${a.name} property: kind ${b.kind} changed to ${a.kind}`);
+    if (!canonicalEqual(b.options, a.options)) {
+      properties.push(`${a.name} property: options were ${formatList(b.options)} changed to ${formatList(a.options)}`);
+    }
+    if (b.default !== a.default) {
+      properties.push(`${a.name} property: default ${formatDefault(b.default)} changed to ${formatDefault(a.default)}`);
+    }
+  }
+  if (props.reordered) pushReordered(properties);
+
+  const variants: string[] = [];
+  const axes = diffKeyed(list(before.variants), list(after.variants), (axis) => axis.prop);
+  for (const axis of axes.added) variants.push(`Added ${axis.prop} axis`);
+  for (const axis of axes.removed) variants.push(`Removed ${axis.prop} axis`);
+  for (const { before: b, after: a } of axes.changed) {
+    variants.push(`${a.prop}: values were ${formatList(b.values)} changed to ${formatList(a.values)}`);
+  }
+  if (axes.reordered) pushReordered(variants);
+  const instances = diffKeyed(list(before.variantInstances), list(after.variantInstances), (v) => v.nodeId);
+  for (const v of instances.added) variants.push(`Added variant ${v.name}`);
+  for (const v of instances.removed) variants.push(`Removed variant ${v.name}`);
+  for (const { before: b, after: a } of instances.changed) {
+    if (b.name !== a.name) variants.push(`Variant ${b.name} changed to ${a.name}`);
+    if (!canonicalEqual(b.values, a.values)) {
+      variants.push(`Variant ${a.name}: values ${formatValues(b.values)} changed to ${formatValues(a.values)}`);
+    }
+  }
+  if (instances.reordered) pushReordered(variants);
+
+  const anatomy: string[] = [];
+  const parts = diffKeyed(list(before.anatomy), list(after.anatomy), (part) => part.id);
+  for (const part of parts.added) anatomy.push(`Added ${part.name} part`);
+  for (const part of parts.removed) anatomy.push(`Removed ${part.name} part`);
+  for (const { before: b, after: a } of parts.changed) {
+    if (b.name !== a.name) anatomy.push(`Part ${b.name} renamed to ${a.name}`);
+    if (b.type !== a.type) anatomy.push(`${a.name} part: type ${b.type} changed to ${a.type}`);
+    if (b.nested !== a.nested) anatomy.push(`${a.name} part: nested ${b.nested} changed to ${a.nested}`);
+  }
+  if (parts.reordered) pushReordered(anatomy);
+
+  const states = stringSetItems(before.states, after.states,
+    (state) => `Added state ${state}`, (state) => `Removed state ${state}`);
+
+  const tokens: string[] = [];
+  const rules = diffKeyed(list(before.tokens), list(after.tokens),
+    (rule) => JSON.stringify([rule.part, rule.property, conditionsKey(rule.conditions)]));
+  for (const rule of rules.added) tokens.push(`Added ${tokenLabel(rule)}: ${rule.token}`);
+  for (const rule of rules.removed) tokens.push(`Removed ${tokenLabel(rule)}`);
+  for (const { before: b, after: a } of rules.changed) {
+    tokens.push(`${tokenLabel(a)}: ${b.token} changed to ${a.token}`);
+  }
+  if (rules.reordered) pushReordered(tokens);
+
+  const unbound: string[] = [];
+  const gaps = diffKeyed(list(before.gaps), list(after.gaps),
+    (gap) => JSON.stringify([gap.part, gap.property, gap.issue]));
+  for (const gap of gaps.added) {
+    unbound.push(`Added ${gapLabel(gap)}${gap.value !== undefined ? `: ${gap.value}` : ''}`);
+  }
+  for (const gap of gaps.removed) unbound.push(`Removed ${gapLabel(gap)}`);
+  for (const { before: b, after: a } of gaps.changed) {
+    unbound.push(`${gapLabel(a)}: ${formatGapValue(b.value)} changed to ${formatGapValue(a.value)}`);
+  }
+  if (gaps.reordered) pushReordered(unbound);
+
+  const layout: string[] = [];
+  const layouts = diffKeyed(list(before.layout), list(after.layout), (entry) => entry.part);
+  for (const entry of layouts.added) layout.push(`Added ${entry.part} layout: ${entry.summary}`);
+  for (const entry of layouts.removed) layout.push(`Removed ${entry.part} layout`);
+  for (const { before: b, after: a } of layouts.changed) {
+    layout.push(`${a.part}: ${b.summary} changed to ${a.summary}`);
+  }
+  if (layouts.reordered) pushReordered(layout);
+
+  const related = stringSetItems(before.related, after.related,
+    (value) => `Added related ${value}`, (value) => `Removed related ${value}`);
+
+  return groups([
+    ['Name', name],
+    ['Properties', properties],
+    ['Variants', variants],
+    ['Anatomy', anatomy],
+    ['States', states],
+    ['Tokens', tokens],
+    ['Unbound values', unbound],
+    ['Layout', layout],
+    ['Related', related],
   ]);
 }
