@@ -417,6 +417,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `pull` sends the last pull's hash as `If-None-Match` when the selection is
   unchanged, so an up-to-date repo gets a 304 and writes nothing instead of
   re-downloading the whole bundle on every run.
+- The privacy policy now discloses that a published library bundle is stored
+  until the next publish replaces it, and how to ask for its removal. The
+  terms and security pages name the spec-layer CLI and the library store.
 
 ### Security
 
