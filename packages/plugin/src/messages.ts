@@ -1,8 +1,11 @@
-import type { SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseDrafts } from '@spec-layer/extractor';
+import type {
+  SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseDrafts,
+  SpecHashProjection, FoundationUnitContent,
+} from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { DocFrameModel } from './ui/docModel';
-import type { DocConfig, FoundationConfig } from './docLink';
+import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
 
 /** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
@@ -133,6 +136,14 @@ export type MainToUi =
       groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'foundationFrameError'; message: string; created: number }
   | { type: 'docProse'; docId: string; prose: ProseDrafts | null }
+  /** Reply for `requestDocBaseline`. `baseline` is null when the Section is
+   *  gone, unlinked, has no baseline, the baseline fails to parse, or its
+   *  contentHash no longer equals the link's. For a foundation link `live` is
+   *  the current unitContent for the doc's (retargeted) scope, the same object
+   *  whose hash produced the row's badge; `live: null` means the scope no
+   *  longer resolves. Absent for component links: the UI already holds the
+   *  live projection from its drift check. */
+  | { type: 'docBaseline'; docId: string; baseline: DocBaseline | null; live?: FoundationUnitContent | null }
   /** Everything a library publish needs, collected in one pass: the live
    *  foundation dump, its merged group descriptions, one entry per documented
    *  component source (deduped so two docs for one source publish once), and
@@ -176,8 +187,15 @@ export type UiToMain =
   /** `prose` is the generated guidelines this build used, stored beside the doc
    *  link so a later Copy can include them without paying to regenerate. Absent
    *  when the build ran without AI. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseDrafts }
+  /** `baseline` is the projection `contentHash` was computed over, stored on
+   *  the Section under DOC_BASELINE_KEY so the Library can later diff it
+   *  against the live projection. Same object, same function: main wraps it
+   *  with `kind` and `contentHash` and never recomputes it. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseDrafts; baseline: SpecHashProjection }
   | { type: 'requestDocProse'; docId: string }
+  /** Lazy: sent only when a drifted row is expanded. Nothing new rides the
+   *  `library` message, which is the hot path. */
+  | { type: 'requestDocBaseline'; docId: string }
   | { type: 'requestLibrary' }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }

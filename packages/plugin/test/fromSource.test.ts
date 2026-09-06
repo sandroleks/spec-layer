@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { extract, specHashProjection, contentHash } from '@spec-layer/extractor';
 import type { ProseDrafts, SerializedNode } from '@spec-layer/extractor';
 
 // Prove Update never reaches the AI: the module is mocked and asserted unused.
@@ -136,5 +137,16 @@ describe('updateFromSource', () => {
     await updateFromSource(createState(), { ...goodSource, prose: null }, ui);
     const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as { prose?: unknown };
     expect('prose' in msg).toBe(false);
+  });
+
+  it('sends the hash projection as the baseline, and its hash is the message contentHash', async () => {
+    const ui = fakePresenter();
+    await updateFromSource(createState(), goodSource, ui);
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      contentHash: string; baseline: unknown;
+    };
+    const expected = specHashProjection(extract(goodSource.node, { figmaFile: goodSource.fileKey }));
+    expect(msg.baseline).toEqual(expected);
+    expect(contentHash(msg.baseline)).toBe(msg.contentHash);
   });
 });
