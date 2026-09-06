@@ -735,6 +735,7 @@ function refreshLibrary(): void {
   libraryRefreshing = true;
   libraryMenuDocId = null;
   libraryExpandedDocId = null;
+  libraryLiveProjection.clear();
   libraryChanges.clear();
   if (view === 'library') paint();
   send({ type: 'requestLibrary' });

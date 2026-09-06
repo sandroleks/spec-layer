@@ -201,7 +201,12 @@ export function foundationChangeGroups(
       tokens.push(`${a.name}: type ${rowTypeLabel(b)} changed to ${rowTypeLabel(a)}`);
     } else if (b.kind === 'variable' && a.kind === 'variable') {
       // Cells added or removed follow the mode set, which the Modes group
-      // already explains; only a value that moved is a token item.
+      // already explains; only a value that moved is a token item. The cell
+      // reorder flag is ignored on purpose, not overlooked: unitContent builds
+      // `cells` and `modeNames` from one `modes` array in one order, so
+      // cells[i].modeName is always modeNames[i]. A cell-only reorder is
+      // therefore unreachable, and a reorder of the modes themselves reaches
+      // the user through the Modes group.
       const cells = diffKeyed(list(b.cells), list(a.cells), (cell) => cell.modeName);
       for (const { before: cb, after: ca } of cells.changed) {
         tokens.push(`${a.name} in ${ca.modeName}: ${formatFoundationValue(cb.value)} changed to ${formatFoundationValue(ca.value)}`);

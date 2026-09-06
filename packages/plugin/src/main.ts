@@ -654,8 +654,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(msg.prose) : '');
         // The diff baseline: the projection msg.contentHash was computed over,
         // written in the same commit as the link so the two can never disagree.
-        // Over budget serializes to '' and the row shows the fallback until
-        // the next Update.
+        // Over budget serializes to '' and the row shows the fallback. An
+        // over-budget spec stays over budget on later Updates, so such a doc
+        // shows the fallback permanently, which spec section 9 accepts.
         section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
           v: 1, kind: 'component', contentHash: msg.contentHash, projection: msg.baseline,
         }));

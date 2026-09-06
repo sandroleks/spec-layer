@@ -31,7 +31,7 @@ export const DOC_PROSE_KEY = 'specLayerProse';
 
 /**
  * Ceiling on a serialized prose blob. Figma caps plugin data at 100 kB per
- * node and the doc link shares that budget, so this sits well below it.
+ * entry (plugin id, key and value together), so this sits well below it.
  * A payload over budget is dropped whole: half a guideline set presented as
  * complete is worse than none, and the brief already states when guidelines
  * are absent.
