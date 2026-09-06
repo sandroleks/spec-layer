@@ -1,5 +1,7 @@
 import { parseArgs } from 'node:util';
-import { runInit, runSetup, runPull, runStatus, runList, runShow, type Flags, type Io } from './commands';
+import {
+  runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Flags, type Io,
+} from './commands';
 
 const USAGE = `spec-layer <command>
 
@@ -13,6 +15,10 @@ Commands:
   list                                           list every artifact in the last pull
   show    foundation | component NAME [--canonical]
                                                  print one artifact (foundation: the DTCG document; component: its AI YAML; --canonical for JSON)
+  tools   [--json]                               list every command with what it reaches and writes
+  skill   [--install] [--agent HOST]... [--platform P] [--json]
+                                                 print a guide for a coding agent, adapted to this repo and the last pull;
+                                                 --install writes it for claude, cursor, copilot, windsurf, gemini, or agents-md
 
 Selection (setup, pull and init; flags replace the include block in speclayer.json):
   --only foundation | components   write just the foundation, or just components
@@ -42,6 +48,10 @@ async function main(): Promise<number> {
         only: { type: 'string' },
         component: { type: 'string', multiple: true },
         canonical: { type: 'boolean' },
+        json: { type: 'boolean' },
+        install: { type: 'boolean' },
+        agent: { type: 'string', multiple: true },
+        platform: { type: 'string' },
       },
     }));
   } catch {
@@ -60,6 +70,8 @@ async function main(): Promise<number> {
     if (command === 'status') return await runStatus(cwd, values, process.env, io);
     if (command === 'list') return runList(cwd, values, io);
     if (command === 'show') return runShow(cwd, values, positionals.slice(1), io);
+    if (command === 'tools') return runTools(values, io);
+    if (command === 'skill') return runSkill(cwd, values, io);
     io.err(USAGE);
     return 1;
   } catch (err) {

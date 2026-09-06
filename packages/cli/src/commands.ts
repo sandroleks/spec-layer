@@ -11,10 +11,15 @@ import {
 } from './selection';
 import { CREDENTIALS_NAME, writeCredentials } from './credentials';
 import { ensureIgnored } from './gitignore';
+import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
+import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
+import { toolsJson, toolsText } from './tools';
+import { cliVersion } from './version';
 
 export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
   only?: string; component?: string[]; canonical?: boolean;
+  json?: boolean; install?: boolean; agent?: string[]; platform?: string;
 };
 /** out/err add a newline per line; write emits exactly the given text, for piped output. */
 export type Io = { out(line: string): void; err(line: string): void; write(text: string): void };
@@ -221,7 +226,19 @@ export async function runSetup(
 
   // Pass the key through rather than relying on a re-read of what was just
   // written, so the pull cannot disagree with the file.
-  return runPull(cwd, { ...flags, key }, env, io, fetcher);
+  const code = await runPull(cwd, { ...flags, key }, env, io, fetcher);
+  if (code !== 0) return code;
+  // The setup command is what a developer hands a coding agent, so the agent's
+  // first sight of this tool is this output. Point it at the guide that says
+  // what landed and how to read it, rather than leaving it to open bundle.json.
+  const hosts = detectRepo(cwd).agents;
+  io.out('');
+  io.out('Next step for a coding agent: npx spec-layer skill --install');
+  io.out(hosts.length > 0
+    ? `That writes a guide to the pulled files, adapted to this codebase, to ${hosts.map((h) => installTarget(h).path).join(', ')}.`
+    : `That writes a guide to the pulled files, adapted to this codebase, into ${installTarget('agents-md').path}; --agent ${AGENT_HOSTS.join('|')} chooses where.`);
+  io.out('spec-layer skill prints the same guide; spec-layer tools lists every command.');
+  return 0;
 }
 
 export async function runPull(
@@ -367,5 +384,90 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     entry = matches[0];
   }
   io.write(flags.canonical ? `${JSON.stringify(entry.artifact, null, 2)}\n` : entry.ai);
+  return 0;
+}
+
+export function runTools(flags: Flags, io: Io): number {
+  if (flags.json) io.write(toolsJson(cliVersion()));
+  else io.out(toolsText());
+  return 0;
+}
+
+/** Everything `skill` says, gathered once so --json, printing, and --install agree. */
+function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null {
+  let config: CliConfig | null = null;
+  try { config = readConfig(cwd); } catch (err) { io.err(errorText(err)); return null; }
+  const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
+  const profile = detectRepo(cwd);
+  let platforms: Platform[];
+  let platformSource: SkillInput['platformSource'];
+  if (flags.platform !== undefined) {
+    if (!isPlatform(flags.platform)) {
+      io.err(`--platform takes ${PLATFORMS.join(', ')}, not "${flags.platform}".`);
+      return null;
+    }
+    platforms = [flags.platform];
+    platformSource = 'flag';
+  } else {
+    platforms = profile.platforms;
+    platformSource = platforms.length > 0 ? 'detected' : 'none';
+  }
+  const pull = summarizePull(cwd, outDir, readManifest(join(cwd, outDir)));
+  return { profile, platforms, platformSource, outDir, config, pull, version: cliVersion() };
+}
+
+/** Hosts named with --agent, else the ones detected, else AGENTS.md. */
+function skillHosts(flags: Flags, input: SkillInput, io: Io): AgentHost[] | null {
+  const named = flags.agent ?? [];
+  if (named.length > 0) {
+    const hosts: AgentHost[] = [];
+    for (const value of named) {
+      if (!isAgentHost(value)) {
+        io.err(`--agent takes ${AGENT_HOSTS.join(', ')}, not "${value}".`);
+        return null;
+      }
+      if (!hosts.includes(value)) hosts.push(value);
+    }
+    return hosts;
+  }
+  return input.profile.agents.length > 0 ? input.profile.agents : ['agents-md'];
+}
+
+export function runSkill(cwd: string, flags: Flags, io: Io): number {
+  const input = collectSkillInput(cwd, flags, io);
+  if (!input) return 1;
+  const hosts = skillHosts(flags, input, io);
+  if (!hosts) return 1;
+  if (flags.json) {
+    io.write(`${JSON.stringify({
+      cli_version: input.version,
+      detected: input.profile,
+      platforms: input.platforms,
+      platform_source: input.platformSource,
+      pull: input.pull,
+      install_targets: hosts.map((h) => installTarget(h)),
+    }, null, 2)}\n`);
+    return 0;
+  }
+  const guide = buildSkillGuide(input);
+  if (!flags.install) {
+    io.write(guide);
+    return 0;
+  }
+  const chosen = flags.agent && flags.agent.length > 0 ? 'named with --agent'
+    : input.profile.agents.length > 0 ? 'detected in this repository' : 'the default when no agent is detected';
+  for (const host of hosts) {
+    let outcome: ReturnType<typeof installSkill>;
+    try {
+      outcome = installSkill(cwd, host, guide);
+    } catch (err) {
+      io.err(`Could not write ${installTarget(host).path}: ${errorText(err)}`);
+      return 1;
+    }
+    const verb = outcome.result === 'created' ? 'Wrote' : outcome.result === 'updated' ? 'Updated' : 'Unchanged:';
+    io.out(`${verb} ${outcome.path} (${host}, ${chosen}).`);
+  }
+  if (!input.pull) io.out(`No local pull yet, so the guide lists no components. Run spec-layer pull, then spec-layer skill --install again.`);
+  if (input.platformSource === 'none') io.out(`No target platform detected. Pass --platform ${PLATFORMS.join('|')} to write platform-specific token advice.`);
   return 0;
 }

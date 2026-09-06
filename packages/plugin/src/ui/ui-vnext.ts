@@ -118,6 +118,7 @@ import {
 } from './proxy';
 import { copyText, renderManualCopyModal } from './clipboard';
 import {
+  agentSetupMessage,
   onPublishClick,
   onPublishInfo,
   onPublishSources,
@@ -1490,6 +1491,18 @@ document.addEventListener('click', (event) => {
       const command = setupCommand(libraryId, pullKey);
       void copyText(command).then((tier) => {
         if (tier === 'manual') renderManualCopyModal(command);
+        else nativeNotify('Copied.');
+      });
+    }
+    return;
+  }
+
+  if (target.closest('[data-publish-copy-agent]')) {
+    const { libraryId, pullKey } = publishState();
+    if (libraryId && pullKey) {
+      const message = agentSetupMessage(libraryId, pullKey);
+      void copyText(message).then((tier) => {
+        if (tier === 'manual') renderManualCopyModal(message);
         else nativeNotify('Copied.');
       });
     }

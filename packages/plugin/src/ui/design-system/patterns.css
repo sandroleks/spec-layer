@@ -1299,6 +1299,8 @@
 .sl-publish-command-actions {
   min-width: 0;
   display: flex;
+  /* Three buttons at the panel's 480px do not always fit on one line. */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sl-space-6);
   margin-top: var(--sl-space-8);

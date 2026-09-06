@@ -121,6 +121,8 @@ never talks to Figma, re-derives nothing, and has no runtime dependencies.
 | `status` | Checks freshness without writing. Exits `2` when the local copy is behind. | yes |
 | `list` | Lists every artifact in the last pull, with its file path. | no |
 | `show foundation` / `show component NAME` | Prints the Foundation's DTCG resolver document or one component's AI YAML, or the canonical JSON with `--canonical`. | no |
+| `tools [--json]` | Lists every command with what it reaches, needs, and writes. | no |
+| `skill [--install] [--agent HOST] [--platform P]` | Prints a guide for a coding agent, adapted to the repository's stack and the last pull; `--install` writes it for Claude Code, Cursor, Copilot, Windsurf, Gemini, or `AGENTS.md`. Needs 0.5.0 or later. | no |
 
 Every command takes `--out DIR` to point at a different output directory, and
 the three that reach the network also take `--api URL` to override the API
@@ -128,7 +130,7 @@ origin. `setup`, `init` and `pull` additionally take a selection (`--only founda
 `--component NAME`) to narrow what lands on disk. The pull key resolves from
 `--key`, then `SPEC_LAYER_KEY`, then `speclayer.local.json`. See the
 [CLI README](packages/cli/README.md) for the full flag reference, partial pulls,
-and what `pull` writes.
+what `pull` writes, and how the agent guide is built.
 
 ## Development
 

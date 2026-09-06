@@ -145,7 +145,7 @@ pull`), not a workspace dependency of the extractor or the plugin. It has zero
 runtime dependencies: the one piece of shared code it uses, the bundle
 envelope parser from `@spec-layer/extractor`, is inlined at build time, and it
 never touches Figma or extraction code. It treats each artifact as opaque JSON
-and refuses a bundle whose major version it does not know. Six commands:
+and refuses a bundle whose major version it does not know. Eight commands:
 
 - `setup` writes `speclayer.json`, stores the pull key in a gitignored
   `speclayer.local.json` at mode 0600 after confirming git ignores it, and
@@ -190,6 +190,32 @@ and refuses a bundle whose major version it does not know. Six commands:
   JSON with `--canonical`): the DTCG resolver document for `show foundation`,
   component AI YAML for `show component NAME`. Both are local only and need no
   key.
+- `tools` prints the command catalogue in `packages/cli/src/tools.ts`, the one
+  list the usage banner, the agent guide, and the README are checked against:
+  for each command its usage, purpose, whether it reaches the network, whether
+  it needs the key, what it writes, and its exit codes. `--json` is the
+  machine form.
+- `skill` builds the guide a coding agent reads before using the pulled files
+  (`packages/cli/src/skill.ts`) from three inputs and nothing else: the tool
+  catalogue; the last pull (components and paths from `manifest.json`,
+  collections, modes and defaults from `tokens/resolver.json`, report counts,
+  and a count of `$type: number` tokens); and a root-only reading of the
+  repository (`packages/cli/src/detect.ts`: `package.json` dependency names,
+  build files, agent configuration directories), every conclusion carrying
+  the file it came from. The detected platform chooses which Figma
+  `code_syntax` key and which token-pipeline advice the guide gives;
+  `--platform` overrides it, and a repository with no signal gets the generic
+  text plus that flag, never a guessed platform. `--install` renders the guide
+  with the frontmatter each host expects and writes it to
+  `.claude/skills/spec-layer/SKILL.md`, `.cursor/rules/spec-layer.mdc`,
+  `.github/instructions/spec-layer.instructions.md`, or
+  `.windsurf/rules/spec-layer.md` (replaced whole), or between
+  `<!-- spec-layer:begin -->` and `<!-- spec-layer:end -->` markers in
+  `AGENTS.md` or `GEMINI.md` (only the block is replaced). Targets are the
+  hosts detected at the root, or those named with `--agent`, or `AGENTS.md`.
+  `setup` names `skill --install` as the next step after a successful pull,
+  and the plugin's Publish screen copies the setup command followed by it as
+  a message for an agent (`agentSetupMessage`, beside `setupCommand`).
 
 The pull key resolves `--key`, then `SPEC_LAYER_KEY`, then the stored
 `speclayer.local.json` beside `speclayer.json`, which `setup` writes at mode

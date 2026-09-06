@@ -151,6 +151,27 @@ export function setupCommand(libraryId: string, pullKey: string): string {
   return `npx spec-layer setup --id ${libraryId} --key ${pullKey}`;
 }
 
+/**
+ * The same setup, phrased for a coding agent a developer pastes it to. It
+ * carries `--yes` because an unattended npx run otherwise stops to ask before
+ * downloading the package, and it ends with the command that writes the
+ * agent's guide to the pulled files, since an agent that only receives the
+ * setup line has no way to know what landed or how to read it.
+ */
+export function agentSetupMessage(libraryId: string, pullKey: string): string {
+  return [
+    'Set up Spec Layer design-system context in this repository.',
+    '',
+    '1. In the repository root, run:',
+    `   npx --yes spec-layer setup --id ${libraryId} --key ${pullKey}`,
+    '   It writes speclayer.json, stores the pull key in a gitignored speclayer.local.json, and pulls the published library into .speclayer/.',
+    '2. Then run:',
+    '   npx --yes spec-layer skill --install',
+    '   It writes a guide to the pulled files, adapted to this codebase, where you read project instructions. Read that guide before using the files.',
+    '3. Never print, commit, or copy the key anywhere else. npx --yes spec-layer tools lists every command with what it reaches and writes.',
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Publish controller — module state driving the library screen's "Publish for
 // developers" section, mirroring the module-state + host pattern actions.ts

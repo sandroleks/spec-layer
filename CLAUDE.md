@@ -24,7 +24,7 @@ landing site are the whole product boundary.
 packages/plugin/       Figma serializer, canvas renderers, iframe UI (vanilla DOM)
 packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
 packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
-packages/cli/          spec-layer CLI: setup, pull, status; delivery only, no extraction
+packages/cli/          spec-layer CLI: setup, pull, status, skill, tools; delivery only, no extraction
 apps/landing/          static marketing site, policies, published JSON schemas
 docs/                  current specs, plans, reviews, writing guides
 project-docs/          ARCHIVED historical vault, not a source of truth
@@ -149,6 +149,13 @@ Shipped and merged:
   YAML. The AI profile now feeds only the Foundation dependency slice a
   Component Context v5 copy embeds.
 - Production proxy at `api.spec-layer.com`, landing site, freemium flow.
+- **CLI agent access** (CLI `0.5.0`, unpublished). `spec-layer tools` is the
+  command catalogue with network, key, writes, and exit codes per command.
+  `spec-layer skill --install` writes a coding-agent guide built from that
+  catalogue, the last pull, and a root-only reading of the repository's stack
+  (`detect.ts`), to the instruction file of each detected agent host.
+  `setup` names it as the next step, and the Publish screen's **Copy for an
+  AI agent** copies the setup command followed by it.
 - **2026-09-05 review quick wins.** Memoized resolver lookups, bulk variable
   reads, foundation dump posted once per read, in-panel confirmation dialogs,
   no non-component toast, Copy for AI on the component screen and per
