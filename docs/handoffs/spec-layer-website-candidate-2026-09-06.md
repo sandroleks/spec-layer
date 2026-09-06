@@ -34,3 +34,7 @@ The existing deployment `a24d34c5-c24b-4957-b0db-8f52f46f318d` is the recorded r
 Finish the remaining manual accessibility review, review/approve the public switch, reconfirm the current host/deployment, and publish the exact checked artifact. Then run the public HTTP/browser checks and submit the sitemap through the verified Search Console property. The public switch and Search Console submission have not been performed.
 
 See `apps/website/IMPLEMENTATION.md` for the launch/rollback procedure and `apps/website/ACCEPTANCE.md` for the verification record. The prior implementation-handoff archive is preserved as history.
+
+## Private preview delivery
+
+Version 6 of the existing owner-only Sites preview is live. Post-deployment checks passed for all 12 canonical pages: HTTP 200, correct canonical URLs, HTML noindex; an unknown URL returns HTTP 404. Private deployment source is `ee589ad6dee4e1205a18f9e0943f8d5e2c083ad1`. The preview is a separate build mode of the same website implementation.
