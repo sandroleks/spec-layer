@@ -1,4 +1,8 @@
-import { resolveStatus } from '../../docLink';
+import {
+  componentChangeGroups, foundationChangeGroups,
+  type ChangeGroup, type FoundationUnitContent, type SpecHashProjection,
+} from '@spec-layer/extractor';
+import { resolveStatus, type DocBaseline } from '../../docLink';
 import type { FoundationIconKind } from '../../foundationIcon';
 import type { LibraryEntry } from '../../messages';
 
@@ -23,6 +27,28 @@ export type LibraryRowStatus =
   | 'unavailable';
 
 export type LibraryFilter = 'all' | 'updates' | 'sync';
+
+/**
+ * Where an expanded row's change list stands. `idle` is every row that is not
+ * expanded. Expanding a drifted row sets `pending` and asks main for the
+ * baseline; the reply resolves to `ready` (possibly with no groups) or
+ * `unavailable` with the reason the UI knows.
+ */
+export type LibraryChangeState = 'idle' | 'pending' | 'ready' | 'unavailable';
+
+export type LibraryChangeUnavailableReason =
+  /** Main sent no baseline: the doc predates baselines, its baseline was
+   *  over budget, or it no longer matches the link. An Update writes one. */
+  | 'noBaseline'
+  /** The doc was built by an older extractor; a hash diff is meaningless. */
+  | 'staleVersion'
+  /** Anything else: no live side, or the diff itself failed. */
+  | 'other';
+
+export type LibraryChangeResult =
+  | { state: 'pending' }
+  | { state: 'ready'; groups: ChangeGroup[] }
+  | { state: 'unavailable'; reason: LibraryChangeUnavailableReason };
 
 export interface LibraryRowModel {
   docId: string;
@@ -64,11 +90,11 @@ export interface LibraryRowModel {
    * too, and offering it would promise something that cannot be delivered.
    */
   canCopy: boolean;
-  /**
-   * The current protocol establishes hash drift, not a reliable itemized diff.
-   * `null` tells the screen to render its honest "Source changed" fallback.
-   */
-  changeGroups: null;
+  changeState: LibraryChangeState;
+  /** Populated only in the `ready` state. `null` otherwise. */
+  changeGroups: ChangeGroup[] | null;
+  /** Populated only in the `unavailable` state. `null` otherwise. */
+  changeUnavailableReason: LibraryChangeUnavailableReason | null;
 }
 
 export interface LibraryCounts {
@@ -93,6 +119,9 @@ export interface BuildLibraryModelOptions {
   query?: string;
   /** Injectable wall clock, primarily so relative age labels are deterministic. */
   now?: number;
+  /** Per-doc change results for the current refresh pass; a row not in the
+   *  map that is expanded reads as `pending`. */
+  changes?: ReadonlyMap<string, LibraryChangeResult>;
 }
 
 /**
@@ -177,6 +206,10 @@ export function buildLibraryRow(
   const componentSourceAvailable = entry.kind === 'component'
     && entry.sourceExists
     && entry.sourceNodeId.length > 0;
+  const expanded = options.expandedDocId === entry.docId && status === 'updateAvailable';
+  const change: LibraryChangeResult | null = expanded
+    ? options.changes?.get(entry.docId) ?? { state: 'pending' }
+    : null;
 
   return {
     docId: entry.docId,
@@ -191,8 +224,7 @@ export function buildLibraryRow(
     sourceNodeId: entry.sourceNodeId,
     ageLabel: formatLibraryAge(entry.generatedAt, options.now),
     status,
-    expanded: options.expandedDocId === entry.docId
-      && status === 'updateAvailable',
+    expanded,
     canOpenFrame: true,
     canOpenSource: componentSourceAvailable,
     // There is no reconnect command in the current main-thread protocol.
@@ -212,7 +244,9 @@ export function buildLibraryRow(
         && status !== 'unavailable'
         && status !== 'orphaned'
       : componentSourceAvailable && status !== 'unavailable',
-    changeGroups: null,
+    changeState: change ? change.state : 'idle',
+    changeGroups: change?.state === 'ready' ? change.groups : null,
+    changeUnavailableReason: change?.state === 'unavailable' ? change.reason : null,
   };
 }
 
@@ -271,4 +305,27 @@ export function libraryBadgeVisible(input: {
 }): boolean {
   if (input.updates > 0) return true;
   return input.checking ? input.previous : false;
+}
+
+/**
+ * Turn a `docBaseline` reply into the row's change result. Pure so every branch
+ * is testable without the message loop. Every failure is `unavailable`, never
+ * a partial list.
+ */
+export function resolveLibraryChanges(input: {
+  baseline: DocBaseline | null;
+  live?: FoundationUnitContent | null;
+  liveProjection?: SpecHashProjection;
+}): LibraryChangeResult {
+  if (!input.baseline) return { state: 'unavailable', reason: 'noBaseline' };
+  try {
+    if (input.baseline.kind === 'foundation') {
+      if (!input.live) return { state: 'unavailable', reason: 'other' };
+      return { state: 'ready', groups: foundationChangeGroups(input.baseline.projection, input.live) };
+    }
+    if (!input.liveProjection) return { state: 'unavailable', reason: 'other' };
+    return { state: 'ready', groups: componentChangeGroups(input.baseline.projection, input.liveProjection) };
+  } catch {
+    return { state: 'unavailable', reason: 'other' };
+  }
 }

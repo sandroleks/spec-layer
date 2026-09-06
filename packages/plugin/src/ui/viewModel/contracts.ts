@@ -43,10 +43,10 @@ export type LibraryStatus =
   | "edited"
   | "orphaned";
 
-export interface ChangeGroup {
-  label: string;
-  items: string[];
-}
+// Re-exported for screens/* that only need the shape, plus imported here since
+// LibraryRowView below still references it in this same file.
+import type { ChangeGroup } from '@spec-layer/extractor';
+export type { ChangeGroup };
 
 export interface LibraryRowView {
   docId: string;
