@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   diffKeyed, formatFoundationValue, formatTextMetrics, foundationChangeGroups, componentChangeGroups,
 } from '../src/diff';
+import { extract, specHashProjection } from '../src/index';
 import type { FoundationUnitContent, FoundationValue, FoundationVariableRow, FoundationTextRow } from '../src/foundation';
 import type { SpecHashProjection } from '../src/hash';
 
@@ -403,5 +405,62 @@ describe('componentChangeGroups', () => {
     const partial = { name: 'Button', figmaKey: 'key-1', figmaFile: 'FILE1', figmaNode: '1:1', anatomyComponentId: '1:2' } as unknown as SpecHashProjection;
     const result = componentChangeGroups(partial, projection());
     expect(result.find((g) => g.label === 'States')).toEqual({ label: 'States', items: ['Added state default', 'Added state hover'] });
+  });
+});
+
+/**
+ * A structural guard, not a behavior test.
+ *
+ * `componentChangeGroups` itemizes a fixed set of fields per projection entry.
+ * A field added to a projection entry later is invisible in the change list
+ * until it is added to the diff too, and an invisible change is worse than no
+ * change list at all: the panel would show "Source changed" over a list that
+ * silently omits what moved. These assertions fail the moment a key set moves,
+ * which is the prompt to decide whether the new field earns an item line.
+ *
+ * Keys are ordered with the default `.sort()` over ASCII identifiers, never
+ * `localeCompare`, so the expectations do not depend on the machine's locale.
+ */
+describe('the projection key sets the diff itemizes', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const projection = specHashProjection(extract(node, { figmaFile: 'FILE1' }));
+  const lists = projection as unknown as Record<string, Array<Record<string, unknown>>>;
+  const sortedKeys = (value: object): string[] => Object.keys(value).sort();
+
+  it('pins the top-level projection keys, so a new one has to be routed into the diff', () => {
+    expect(sortedKeys(projection)).toEqual([
+      'anatomy', 'anatomyComponentId', 'figmaFile', 'figmaKey', 'figmaNode', 'gaps',
+      'layout', 'name', 'props', 'related', 'states', 'tokens', 'variantInstances', 'variants',
+    ]);
+  });
+
+  /** Required keys every entry carries, and the keys that are legitimately
+   *  optional (absent on some entries of the same list). */
+  const REQUIRED: Record<string, string[]> = {
+    props: ['default', 'kind', 'name'],
+    variants: ['prop', 'values'],
+    variantInstances: ['name', 'nodeId', 'values'],
+    anatomy: ['id', 'name', 'nested', 'type'],
+    tokens: ['conditions', 'part', 'property', 'token'],
+    gaps: ['issue', 'part', 'property'],
+    layout: ['part', 'summary'],
+  };
+  const OPTIONAL: Record<string, string[]> = { props: ['options'], gaps: ['value'] };
+
+  it('pins each itemized entry shape, so a new field on an entry has to be itemized too', () => {
+    for (const [field, required] of Object.entries(REQUIRED)) {
+      const entries = lists[field];
+      // The guard is only meaningful over a populated list; the fixture
+      // populates all seven, and this says so rather than passing vacuously.
+      expect(Array.isArray(entries) && entries.length > 0, `${field} is empty in the fixture`).toBe(true);
+      const allowed = [...required, ...(OPTIONAL[field] ?? [])].sort();
+      // The first entry carries every documented key, optional ones included.
+      expect(sortedKeys(entries[0]), field).toEqual(allowed);
+      for (const entry of entries) {
+        const keys = sortedKeys(entry);
+        for (const key of required) expect(keys, field).toContain(key);
+        for (const key of keys) expect(allowed, field).toContain(key);
+      }
+    }
   });
 });
