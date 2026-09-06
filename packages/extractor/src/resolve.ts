@@ -19,14 +19,17 @@ export function resolveTokensForVariant(
   values: Record<string, string>,
 ): ResolvedToken[] {
   return tokens
-    .filter((rule) => matches(rule.conditions, values))
+    .filter((rule) => matchesVariant(rule.conditions, values))
     // `token` stays the field name here: ResolvedToken feeds the canvas view
     // models in docModel.ts and docFrame.ts, which are not references and have
     // no id or kind to carry.
     .map(({ part, property, name }) => ({ part, property, token: name }));
 }
 
-function matches(conditions: Record<string, string[]>, values: Record<string, string>): boolean {
+/** Whether a rule's conditions admit a variant with these axis values. Shared
+ *  with diff.ts so the change list and the canvas agree on which variants a
+ *  rule reaches. */
+export function matchesVariant(conditions: Record<string, string[]>, values: Record<string, string>): boolean {
   for (const [axis, allowed] of Object.entries(conditions)) {
     const v = values[axis];
     if (v === undefined) return false;

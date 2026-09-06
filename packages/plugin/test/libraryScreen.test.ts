@@ -139,8 +139,8 @@ describe('library screen presentation', () => {
           expanded: true,
           changeState: 'ready',
           changeGroups: [
-            { label: 'States', items: ['Added: read-only'] },
-            { label: 'Tokens', items: ['Focus: action-500 → focus-ring'] },
+            { label: 'States', items: [{ text: 'Added: read-only' }] },
+            { label: 'Tokens', items: [{ text: 'Focus: action-500 → focus-ring' }] },
           ],
         }),
       ],
@@ -150,6 +150,25 @@ describe('library screen presentation', () => {
     expect(markup).toContain('<strong>Tokens</strong>');
     expect(markup).not.toContain('state added');
     expect(markup).not.toContain('values changed');
+  });
+
+  it('renders an item scope as a quieter second line, escaped', () => {
+    const markup = libraryScrollMarkup(model({
+      rows: [
+        row('button', 'updateAvailable', {
+          expanded: true,
+          changeState: 'ready',
+          changeGroups: [{ label: 'Tokens', items: [
+            { text: 'Container / fill: a changed to b', scope: '1 of 64 variants: size Large · others <default>' },
+            { text: 'Container / radius: r changed to s' },
+          ] }],
+        }),
+      ],
+    }));
+    expect(markup).toContain(
+      '<li>Container / fill: a changed to b<span class="sl-library-change-scope">1 of 64 variants: size Large · others &lt;default&gt;</span></li>',
+    );
+    expect(markup).toContain('<li>Container / radius: r changed to s</li>');
   });
 
   it('says it is comparing while the baseline is in flight', () => {
@@ -213,7 +232,7 @@ describe('library screen presentation', () => {
           label: '<Button "Primary">',
           expanded: true,
           changeState: 'ready',
-          changeGroups: [{ label: '<States>', items: ['A & B'] }],
+          changeGroups: [{ label: '<States>', items: [{ text: 'A & B' }] }],
         }),
       ],
       rows: [
@@ -221,7 +240,7 @@ describe('library screen presentation', () => {
           label: '<Button "Primary">',
           expanded: true,
           changeState: 'ready',
-          changeGroups: [{ label: '<States>', items: ['A & B'] }],
+          changeGroups: [{ label: '<States>', items: [{ text: 'A & B' }] }],
         }),
       ],
       counts: { all: 1, updates: 1, inSync: 0 },

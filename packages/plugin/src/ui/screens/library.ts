@@ -19,9 +19,15 @@ import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './
 
 export type { LibraryFilter } from '../viewModel/library';
 
+export interface LibraryChangeItemPresentation {
+  text: string;
+  /** Which variants the change reaches. Absent means the whole document. */
+  scope?: string;
+}
+
 export interface LibraryChangeGroupPresentation {
   label: string;
-  items: readonly string[];
+  items: readonly LibraryChangeItemPresentation[];
 }
 
 /**
@@ -82,7 +88,8 @@ function changeGroupMarkup(group: LibraryChangeGroupPresentation): string {
     '<section class="sl-library-change-group">' +
     `<strong>${esc(group.label)}</strong>` +
     '<ul>' +
-    group.items.map((item) => `<li>${esc(item)}</li>`).join('') +
+    group.items.map((item) =>
+      `<li>${esc(item.text)}${item.scope ? `<span class="sl-library-change-scope">${esc(item.scope)}</span>` : ''}</li>`).join('') +
     '</ul></section>'
   );
 }

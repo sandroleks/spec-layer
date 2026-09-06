@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- A website release candidate in `apps/website` with a developer and community
+  focused homepage, six documentation pages, and the current support and policy
+  content. Static checks cover preserved disclosures, reference schemas, links,
+  metadata, indexing modes, and permanent redirects. CI verifies both build
+  modes; repeatable Chromium/WebKit and HTTP checks support launch review.
+
 - **Review detected changes** in the Library now lists what changed. Every
   generated Section stores the exact object its drift hash was computed over,
   under its own plugin data key (`specLayerBaseline`, 90 kB budget, dropped
@@ -15,8 +21,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   baseline against the live projection and shows added, removed and changed
   items with before and after values, grouped as Name, Properties, Variants,
   Anatomy, States, Tokens, Unbound values, Layout and Related for components,
-  and Tokens, Descriptions, Modes and Part for Foundation docs. The diff input
-  is the hash input, so a list can never disagree with the badge. Docs
+  and Tokens, Descriptions, Modes and Part for Foundation docs. Component
+  token changes are compared per variant, so rebinding one variant's fill is
+  one item, not a removed rule plus several added ones: the change on the
+  first line ("Container / fill: a changed to b") and the variants it reaches
+  on a quieter second line ("1 of 64 variants: size Large · others default"),
+  with no second line when every variant moved. A cell that kept some tokens
+  reports only the ones that moved, and a removed binding names its token.
+  The diff input is the hash input, so a list can never disagree with the
+  badge. Docs
   generated before this release show "Update this doc once to enable change
   lists." until their next Update. No hash, `EXTRACTOR_VERSION`, schema, or
   artifact changed. The keyed-list core (`diffKeyed`) is the piece the planned

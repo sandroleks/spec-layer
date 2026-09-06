@@ -259,7 +259,13 @@ set that has at least two variant axes and a hardcoded paint. Check that:
     changes** on each: the panel says "Comparing…" briefly, then lists each
     edit exactly once with its before and after value, spelled "changed to",
     under the right group (Tokens, Unbound values, Variants for the
-    component; Tokens for the Foundation). No item names anything you did
+    component; Tokens for the Foundation). The rebound fill is one Tokens
+    item, not a "Removed" line plus several "Added" lines: the first line
+    reads "Part / fill: old changed to new" and a quieter second line reads
+    "1 of N variants:" followed by the axis values of the variant you edited,
+    with axes left at their default collapsed to "others default". The other
+    variants of the same part are not mentioned, and no token name repeats
+    within one line. No item names anything you did
     not change. Run **Update documentation** and confirm the row returns to
     **In sync** and the panel is no longer offered.
 13. A doc generated before this build shows "Source changed" with "Update

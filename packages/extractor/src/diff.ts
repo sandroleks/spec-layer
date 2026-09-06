@@ -15,6 +15,7 @@ import type {
   FoundationRow, FoundationTextMetrics, FoundationUnitContent, FoundationValue,
 } from './foundation';
 import { compareCodeUnits } from './v5/diagnostics';
+import { matchesVariant } from './resolve';
 
 export interface ListDiff<T> {
   added: T[];
@@ -87,7 +88,16 @@ export function diffKeyed<T>(
 // Group builders
 // ---------------------------------------------------------------------------
 
-export interface ChangeGroup { label: string; items: string[] }
+/**
+ * One line of a change list. `text` is the change; `scope` is an optional
+ * second, quieter line saying which variants it reaches ("1 of 64 variants:
+ * size Large · others default"). Absent scope means the whole document.
+ */
+export interface ChangeItem { text: string; scope?: string }
+export interface ChangeGroup { label: string; items: ChangeItem[] }
+
+/** Builders push plain strings for scope-less items; groups() normalizes. */
+type Draft = string | ChangeItem;
 
 /** The one line a group shows when only its order moved. */
 const REORDERED = 'Order changed, values unchanged';
@@ -114,15 +124,18 @@ function stringSetItems(
   return items;
 }
 
-function pushReordered(items: string[]): void {
+function pushReordered(items: Draft[]): void {
   if (!items.includes(REORDERED)) items.push(REORDERED);
 }
 
 /** Only groups with at least one item, in the order given. */
-function groups(entries: readonly [string, string[]][]): ChangeGroup[] {
+function groups(entries: readonly [string, readonly Draft[]][]): ChangeGroup[] {
   return entries
     .filter(([, items]) => items.length > 0)
-    .map(([label, items]) => ({ label, items }));
+    .map(([label, items]) => ({
+      label,
+      items: items.map((item) => (typeof item === 'string' ? { text: item } : item)),
+    }));
 }
 
 function scalarItem(label: string, before: string | undefined, after: string | undefined): string {
@@ -187,8 +200,8 @@ export function foundationChangeGroups(
   before: FoundationUnitContent,
   after: FoundationUnitContent,
 ): ChangeGroup[] {
-  const tokens: string[] = [];
-  const descriptions: string[] = [];
+  const tokens: Draft[] = [];
+  const descriptions: Draft[] = [];
 
   const rows = diffKeyed(list(before.rows), list(after.rows), (row) => row.name);
   for (const row of rows.added) tokens.push(`Added ${row.name}`);
@@ -246,19 +259,292 @@ export function foundationChangeGroups(
 
 type TokenEntry = SpecHashProjection['tokens'][number];
 type GapEntry = SpecHashProjection['gaps'][number];
+type Combo = Record<string, string>;
 
 /** Axis order is not identity: two rules with the same axes and values are the same rule. */
 function conditionsKey(conditions: Record<string, string[]>): string {
   return JSON.stringify(Object.entries(conditions ?? {}).sort(([a], [b]) => compareCodeUnits(a, b)));
 }
 
+/** "a, b and c" for a list of words, "a" alone, "a and b" for two. */
+function joinWords(words: readonly string[], last: string): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} ${last} ${words[words.length - 1]}`;
+}
+
+/** Axes that accept the same values, in first-axis order, so they share one clause. */
+function clauseGroups(conditions: Record<string, string[]>): { axes: string[]; values: string[] }[] {
+  const byValues = new Map<string, { axes: string[]; values: string[] }>();
+  for (const [axis, values] of Object.entries(conditions ?? {})) {
+    const k = JSON.stringify(values);
+    const group = byValues.get(k);
+    if (group) group.axes.push(axis);
+    else byValues.set(k, { axes: [axis], values });
+  }
+  return [...byValues.values()];
+}
+
+/**
+ * " when size is Large and hover and disabled are False", or "" when
+ * unconditioned. Used by the rule-identity fallback only; the per-variant path
+ * puts its scope on a second line via describeScope.
+ */
 function formatConditions(conditions: Record<string, string[]>): string {
-  const clauses = Object.entries(conditions ?? {}).map(([axis, values]) => `${axis} is ${values.join(', ')}`);
+  const clauses = clauseGroups(conditions).map(({ axes, values }) =>
+    `${joinWords(axes, 'and')} ${axes.length > 1 ? 'are' : 'is'} ${joinWords(values, 'or')}`);
   return clauses.length > 0 ? ` when ${clauses.join(' and ')}` : '';
 }
 
 function tokenLabel(rule: TokenEntry): string {
   return `${rule.part} / ${rule.property}${formatConditions(rule.conditions)}`;
+}
+
+function comboKey(values: Combo): string {
+  return JSON.stringify(Object.entries(values ?? {}).sort(([a], [b]) => compareCodeUnits(a, b)));
+}
+
+/**
+ * The distinct tokens bound on one (part, property) in one variant: what
+ * resolveTokensForVariant resolves for it, as a sorted set so two cells compare
+ * by content. A set, not a list: several layers can share a part name, and the
+ * minimizer's rules can overlap for one token, so the same name may resolve
+ * more than once for a variant without that being a design fact.
+ * `bindingCells` expands a projection's minimized rules back over its variant
+ * instances, which is the shape the canvas Tokens table renders and the shape
+ * a designer edits one variant at a time.
+ */
+type CellsByProperty = Map<string, { part: string; property: string; cells: Map<string, string[]> }>;
+
+function bindingCells(projection: SpecHashProjection): CellsByProperty {
+  const sets = new Map<string, { part: string; property: string; cells: Map<string, Set<string>> }>();
+  for (const variant of list(projection.variantInstances)) {
+    const vk = comboKey(variant.values);
+    for (const rule of list(projection.tokens)) {
+      if (!matchesVariant(rule.conditions ?? {}, variant.values ?? {})) continue;
+      const pk = JSON.stringify([rule.part, rule.property]);
+      let entry = sets.get(pk);
+      if (!entry) sets.set(pk, (entry = { part: rule.part, property: rule.property, cells: new Map() }));
+      const tokens = entry.cells.get(vk);
+      if (tokens) tokens.add(rule.token);
+      else entry.cells.set(vk, new Set([rule.token]));
+    }
+  }
+  const out: CellsByProperty = new Map();
+  for (const [pk, { part, property, cells }] of sets) {
+    out.set(pk, { part, property, cells: new Map([...cells].map(([vk, tokens]) => [vk, [...tokens].sort(compareCodeUnits)])) });
+  }
+  return out;
+}
+
+/**
+ * The axes of a variant grid and each axis's value order: the declared
+ * `variants` axis order and option order where available, then anything else
+ * the instances actually carry, in first-seen order. Only values some variant
+ * carries are kept, so a declared option nobody uses is never named as changed.
+ */
+function axisModel(projection: SpecHashProjection, universe: readonly Combo[]): Map<string, string[]> {
+  const axes = new Map<string, string[]>();
+  for (const axis of list(projection.variants)) {
+    if (!axes.has(axis.prop)) axes.set(axis.prop, [...list(axis.values)]);
+  }
+  for (const combo of universe) {
+    for (const [axis, value] of Object.entries(combo)) {
+      const values = axes.get(axis);
+      if (!values) axes.set(axis, [value]);
+      else if (!values.includes(value)) values.push(value);
+    }
+  }
+  for (const [axis, values] of axes) {
+    const carried = new Set(universe.map((c) => c[axis]));
+    const kept = values.filter((v) => carried.has(v));
+    if (kept.length === 0) axes.delete(axis);
+    else axes.set(axis, kept);
+  }
+  return axes;
+}
+
+/** Each variant axis's default value, as Figma records it on the component set. */
+function variantDefaults(projection: SpecHashProjection): Map<string, string> {
+  const defaults = new Map<string, string>();
+  for (const prop of list(projection.props)) {
+    if (prop.kind === 'variant' && typeof prop.default === 'string') defaults.set(prop.name, prop.default);
+  }
+  return defaults;
+}
+
+/**
+ * The fewest, widest conditions that select exactly `subset` out of
+ * `universe`: a greedy cover. Each rule starts from one uncovered variant
+ * pinned on every axis, then each axis in turn is freed entirely if every
+ * variant that admits is in the subset, or else widened value by value under
+ * the same test. A rule never admits a variant outside the subset, so no line
+ * names a variant that did not change; a subset that is not one product of
+ * axis values takes more than one line rather than an inaccurate one.
+ */
+function coverConditions(
+  subset: readonly Combo[],
+  universe: readonly Combo[],
+  axes: Map<string, string[]>,
+): { conditions: Record<string, string[]>; count: number }[] {
+  const inSubset = new Set(subset.map(comboKey));
+  const selection = (conditions: Map<string, Set<string> | null>): Combo[] =>
+    universe.filter((combo) => [...conditions].every(([axis, allowed]) => allowed === null || allowed.has(combo[axis])));
+  const admissible = (conditions: Map<string, Set<string> | null>): boolean =>
+    selection(conditions).every((combo) => inSubset.has(comboKey(combo)));
+
+  const uncovered = new Set(inSubset);
+  const rules: { conditions: Record<string, string[]>; count: number }[] = [];
+  for (const start of subset) {
+    if (!uncovered.has(comboKey(start))) continue;
+    const conditions = new Map<string, Set<string> | null>([...axes.keys()].map((axis) => [axis, new Set([start[axis]])]));
+    for (const [axis, values] of axes) {
+      const freed = new Map(conditions).set(axis, null);
+      if (admissible(freed)) {
+        conditions.set(axis, null);
+        continue;
+      }
+      const allowed = conditions.get(axis)!;
+      for (const value of values) {
+        if (allowed.has(value)) continue;
+        const widened = new Map(conditions).set(axis, new Set([...allowed, value]));
+        if (admissible(widened)) allowed.add(value);
+      }
+    }
+    const selected = selection(conditions);
+    for (const combo of selected) uncovered.delete(comboKey(combo));
+    const rule: Record<string, string[]> = {};
+    for (const [axis, values] of axes) {
+      const allowed = conditions.get(axis);
+      if (allowed) rule[axis] = values.filter((v) => allowed.has(v));
+    }
+    rules.push({ conditions: rule, count: selected.length });
+  }
+  return rules;
+}
+
+/**
+ * The scope line under a token item: "1 of 64 variants: type Primary · size
+ * Large · others default". Axes pinned to their Figma default collapse into
+ * "others default" once there are at least two of them and something else is
+ * named; a scope pinned on every axis, all at default, is "the default
+ * variant". An axis with no recorded default is always spelled out. No scope
+ * at all when the conditions are empty: the change reaches every variant.
+ */
+function describeScope(
+  conditions: Record<string, string[]>,
+  count: number,
+  total: number,
+  axisCount: number,
+  defaults: Map<string, string>,
+): string | undefined {
+  const entries = Object.entries(conditions);
+  if (entries.length === 0) return undefined;
+  const atDefault = entries.filter(([axis, values]) => values.length === 1 && defaults.get(axis) === values[0]);
+  const named = entries.filter(([axis]) => !atDefault.some(([a]) => a === axis));
+  let detail: string;
+  if (named.length === 0 && atDefault.length === axisCount) {
+    detail = 'the default variant';
+  } else {
+    const collapse = atDefault.length >= 2 && named.length >= 1;
+    const shown = Object.fromEntries(collapse ? named : entries);
+    const clauses = clauseGroups(shown).map(({ axes, values }) => `${axes.join(', ')} ${values.join(' or ')}`);
+    if (collapse) clauses.push('others default');
+    detail = clauses.join(' · ');
+  }
+  return `${count} of ${total} variants: ${detail}`;
+}
+
+function setDifference(a: readonly string[], b: readonly string[]): string[] {
+  return a.filter((x) => !b.includes(x));
+}
+
+/**
+ * Token items. Compared per variant, not per rule: a rule's conditions are
+ * recomputed over the whole grid by extractTokens, so rebinding one variant
+ * splits one general rule into several specific ones, and a diff keyed by
+ * conditions reads that single edit as several rules added and one removed.
+ * Both sides are expanded over their variant instances and compared cell by
+ * cell; cells that moved the same way are described together, with the fewest
+ * conditions that select exactly them on a second scope line. A cell that kept
+ * some tokens and swapped others reports only the tokens that moved. Variants
+ * present on one side only are the Variants group's story and are not
+ * repeated here.
+ *
+ * Returns null when a side carries no variant instances, which a valid
+ * projection never does; the caller then falls back to rule identity so a
+ * half-readable baseline still explains what it can.
+ */
+function tokenItems(before: SpecHashProjection, after: SpecHashProjection): ChangeItem[] | null {
+  const beforeVariants = list(before.variantInstances);
+  const afterVariants = list(after.variantInstances);
+  if (beforeVariants.length === 0 || afterVariants.length === 0) return null;
+
+  const beforeKeys = new Set(beforeVariants.map((v) => comboKey(v.values)));
+  const seen = new Set<string>();
+  const shared: Combo[] = [];
+  for (const variant of afterVariants) {
+    const k = comboKey(variant.values);
+    if (beforeKeys.has(k) && !seen.has(k)) {
+      seen.add(k);
+      shared.push(variant.values);
+    }
+  }
+  const axes = axisModel(after, shared);
+  const defaults = variantDefaults(after);
+  const beforeCells = bindingCells(before);
+  const afterCells = bindingCells(after);
+
+  const items: ChangeItem[] = [];
+  const properties = [...afterCells.keys(), ...[...beforeCells.keys()].filter((k) => !afterCells.has(k))];
+  for (const pk of properties) {
+    const entry = afterCells.get(pk) ?? beforeCells.get(pk)!;
+    const label = `${entry.part} / ${entry.property}`;
+    const b = beforeCells.get(pk)?.cells;
+    const a = afterCells.get(pk)?.cells;
+    // One bucket per distinct movement, in the order first seen walking the
+    // after grid, holding the variants that moved that way.
+    const buckets = new Map<string, { text: string; combos: Combo[] }>();
+    for (const combo of shared) {
+      const k = comboKey(combo);
+      const from = b?.get(k);
+      const to = a?.get(k);
+      if (canonicalEqual(from, to)) continue;
+      let text: string;
+      if (!from) text = `Added ${label}: ${to!.join(', ')}`;
+      else if (!to) text = `Removed ${label}: ${from.join(', ')}`;
+      else {
+        const lost = setDifference(from, to);
+        const gained = setDifference(to, from);
+        if (lost.length > 0 && gained.length > 0) text = `${label}: ${lost.join(', ')} changed to ${gained.join(', ')}`;
+        else if (gained.length > 0) text = `${label}: also bound to ${gained.join(', ')}`;
+        else text = `${label}: no longer bound to ${lost.join(', ')}`;
+      }
+      const bucket = buckets.get(text);
+      if (bucket) bucket.combos.push(combo);
+      else buckets.set(text, { text, combos: [combo] });
+    }
+    for (const { text, combos } of buckets.values()) {
+      for (const { conditions, count } of coverConditions(combos, shared, axes)) {
+        const scope = describeScope(conditions, count, shared.length, axes.size, defaults);
+        items.push(scope ? { text, scope } : { text });
+      }
+    }
+  }
+  return items;
+}
+
+/** Rule-identity fallback for a projection missing its variant instances. */
+function ruleItems(before: SpecHashProjection, after: SpecHashProjection): Draft[] {
+  const tokens: Draft[] = [];
+  const rules = diffKeyed(list(before.tokens), list(after.tokens),
+    (rule) => JSON.stringify([rule.part, rule.property, conditionsKey(rule.conditions)]));
+  for (const rule of rules.added) tokens.push(`Added ${tokenLabel(rule)}: ${rule.token}`);
+  for (const rule of rules.removed) tokens.push(`Removed ${tokenLabel(rule)}: ${rule.token}`);
+  for (const { before: b, after: a } of rules.changed) {
+    tokens.push(`${tokenLabel(a)}: ${b.token} changed to ${a.token}`);
+  }
+  if (rules.reordered) pushReordered(tokens);
+  return tokens;
 }
 
 function gapLabel(gap: GapEntry): string {
@@ -351,15 +637,7 @@ export function componentChangeGroups(
   const states = stringSetItems(before.states, after.states,
     (state) => `Added state ${state}`, (state) => `Removed state ${state}`);
 
-  const tokens: string[] = [];
-  const rules = diffKeyed(list(before.tokens), list(after.tokens),
-    (rule) => JSON.stringify([rule.part, rule.property, conditionsKey(rule.conditions)]));
-  for (const rule of rules.added) tokens.push(`Added ${tokenLabel(rule)}: ${rule.token}`);
-  for (const rule of rules.removed) tokens.push(`Removed ${tokenLabel(rule)}`);
-  for (const { before: b, after: a } of rules.changed) {
-    tokens.push(`${tokenLabel(a)}: ${b.token} changed to ${a.token}`);
-  }
-  if (rules.reordered) pushReordered(tokens);
+  const tokens = tokenItems(before, after) ?? ruleItems(before, after);
 
   const unbound: string[] = [];
   const gaps = diffKeyed(list(before.gaps), list(after.gaps),

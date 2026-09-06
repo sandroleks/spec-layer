@@ -1062,6 +1062,15 @@
   line-height: var(--sl-line-height-body);
 }
 
+.sl-library-change-group > ul > li + li {
+  margin-top: var(--sl-space-4);
+}
+
+.sl-library-change-scope {
+  display: block;
+  color: var(--sl-color-text-quiet);
+}
+
 .sl-library-change-fallback {
   min-height: 50px;
   display: grid;

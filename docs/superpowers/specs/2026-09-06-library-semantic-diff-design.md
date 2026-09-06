@@ -196,6 +196,8 @@ export function foundationChangeGroups(
 ```
 
 Both return only groups with at least one item, in the fixed order below.
+Items are `ChangeItem { text, scope? }`; only component Tokens items carry a
+scope today.
 Both return `[]` when nothing differs.
 
 Component groups and identity keys:
@@ -208,10 +210,39 @@ Component groups and identity keys:
 | Variants | `variantInstances` | `nodeId` | name, values |
 | Anatomy | `anatomy` | `id` | name, type, nested |
 | States | `states` | the string | set membership |
-| Tokens | `tokens` | part, property, conditions | `token` |
+| Tokens | `tokens` expanded over `variantInstances` | part, property, variant axis values | the sorted token names bound in that variant |
 | Unbound values | `gaps` | part, property, issue | `value` |
 | Layout | `layout` | `part` | `summary` |
 | Related | `related` | the string | set membership |
+
+Token items are compared per variant, not per rule. `extractTokens` minimizes
+each (part, property) grid into rules whose conditions are recomputed over the
+whole variant grid, so rebinding one variant splits one general rule into
+several specific ones; a diff keyed by conditions read that single edit as
+several rules added and one removed, and the removed line carried no token.
+Instead both projections are expanded back over their variant instances with
+the same matcher the canvas uses (`matchesVariant`), and cells are compared
+for the variants present on both sides. A cell is the set of distinct tokens
+bound on (part, property) in that variant: several layers can share a part
+name and the minimizer's rules can overlap for one token, so one name may
+resolve more than once without that being a design fact. A cell that kept some
+tokens and swapped others reports only the tokens that moved ("also bound to",
+"no longer bound to" when only one side moved).
+
+Each item is a `ChangeItem { text, scope? }`. `text` is the change:
+"Container / fill: a changed to b". `scope` is a quieter second line naming
+the variants it reaches, "1 of 64 variants: size Large · others default", and
+is absent when the change reaches every variant. Cells that moved the same way
+are described together by the fewest conditions that select exactly them, a
+greedy cover: a line never names a variant that did not change, and a set that
+is not one product of axis values takes more than one item, each with the count
+its own conditions select. Axes pinned to the default Figma records for the
+component set collapse into "others default" once at least two are pinned and
+something else is named; a scope pinned on every axis, all at default, reads
+"the default variant"; an axis with no recorded default is always spelled out.
+Variants present on one side only are the Variants group's story and are not
+repeated under Tokens. A projection with no variant instances, which a valid
+one never is, falls back to rule identity with the conditions in the text.
 
 `figmaKey`, `figmaFile`, `figmaNode`, and `anatomyComponentId` are in the
 hash and so can move it. They are identity, not content; a change in any of

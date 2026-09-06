@@ -51,6 +51,7 @@ import { type ThemeMode } from './theme';
 import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
 import {
   buildLibraryModel,
+  type LibraryChangeResult,
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
@@ -470,6 +471,26 @@ if (view === 'library') {
     ]),
   );
   let libraryFilter: LibraryFilter = param('filter', 'all') as LibraryFilter;
+  // The change list the first drifted row shows when expanded: the shape
+  // componentChangeGroups returns for one rebound fill plus a swapped icon
+  // token across a variant set, so the two-line item can be looked at.
+  const changes = new Map<string, LibraryChangeResult>([
+    [entries[0].docId, { state: 'ready', groups: [
+      { label: 'Tokens', items: [
+        {
+          text: 'Container / fill: color/surface/primary/default changed to colors/gray/1000',
+          scope: '1 of 128 variants: type Primary · size Large · others default',
+        },
+        {
+          text: 'Vector / fill: color/icon/primary/primary changed to color/surface/semantic/informative/press',
+          scope: '32 of 128 variants: type Outline · disabled False',
+        },
+        { text: 'Container / radius: radius/md changed to radius/lg' },
+      ] },
+      { label: 'Unbound values', items: [{ text: 'Label / padding (hardcoded value): 8 changed to 12' }] },
+    ] }],
+    [entries[1].docId, { state: 'unavailable', reason: 'noBaseline' }],
+  ]);
   let expandedDocId: string | null =
     param('state', 'expanded') === 'expanded' ? entries[0].docId : null;
   let menuDocId: string | null =
@@ -539,6 +560,7 @@ if (view === 'library') {
     }
     const model = buildLibraryModel(entries, {
       drift,
+      changes,
       filter: libraryFilter,
       expandedDocId,
       now,

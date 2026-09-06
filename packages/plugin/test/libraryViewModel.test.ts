@@ -403,7 +403,7 @@ describe('canCopy on foundation rows', () => {
 
 describe('change states', () => {
   const drifted = new Map<string, LibraryDriftState>([['doc-1', 'drifted']]);
-  const groups = [{ label: 'Tokens', items: ['Label / fill: a changed to b'] }];
+  const groups = [{ label: 'Tokens', items: [{ text: 'Label / fill: a changed to b' }] }];
 
   it('is idle for a row that is not expanded, even when a result exists', () => {
     const changes = new Map<string, LibraryChangeResult>([['doc-1', { state: 'ready', groups }]]);
@@ -477,7 +477,7 @@ describe('resolveLibraryChanges', () => {
   it('diffs a component baseline against the cached live projection', () => {
     const live = { ...projection, states: ['default', 'hover'] };
     expect(resolveLibraryChanges({ baseline: component, liveProjection: live })).toEqual({
-      state: 'ready', groups: [{ label: 'States', items: ['Added state hover'] }],
+      state: 'ready', groups: [{ label: 'States', items: [{ text: 'Added state hover' }] }],
     });
   });
 
@@ -488,7 +488,7 @@ describe('resolveLibraryChanges', () => {
   it('diffs a foundation baseline against the live unit content main sent', () => {
     const live: FoundationUnitContent = { ...unit, modeNames: ['Light', 'Dark'] };
     expect(resolveLibraryChanges({ baseline: foundation, live })).toEqual({
-      state: 'ready', groups: [{ label: 'Modes', items: ['Added mode Dark'] }],
+      state: 'ready', groups: [{ label: 'Modes', items: [{ text: 'Added mode Dark' }] }],
     });
   });
 
