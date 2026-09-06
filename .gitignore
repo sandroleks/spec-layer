@@ -15,9 +15,8 @@ coverage/
 **/.spec-cache/
 **/.spec-data/
 
-# Screen recordings and marketing video source — tens of MB each, and git can
+# Screen recordings and marketing video source: tens of MB each, and git can
 # never forget a blob once it lands. These are working files, not shipped assets.
-# (apps/landing/demo.mp4 IS tracked; the landing page needs it to deploy.)
 screenshots/*.mp4
 
 # Local pull of our own published library, for testing the developer-facing
