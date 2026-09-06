@@ -8,6 +8,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- `spec-layer skill` and `spec-layer tools` (CLI 0.5.0), for the coding agent
+  that receives the setup command. `tools` prints every command with whether
+  it reaches the network, whether it needs the pull key, what it writes, and
+  what each exit code means; `--json` is the machine form, and the list is
+  the one source the usage banner and the agent guide are tested against.
+  `skill` prints a guide to the pulled files and `--install` writes it where
+  the agent reads project instructions: `.claude/skills/spec-layer/SKILL.md`,
+  `.cursor/rules/spec-layer.mdc`,
+  `.github/instructions/spec-layer.instructions.md`,
+  `.windsurf/rules/spec-layer.md`, or a marked block in `AGENTS.md` or
+  `GEMINI.md`, for every host detected at the repository root, the hosts
+  named with `--agent`, or `AGENTS.md` when there is neither. The guide is
+  built from the tool list, the last pull (every component with its path,
+  every collection with its modes and default, the report counts, the number
+  of tokens exported as plain numbers) and a root-only reading of the
+  codebase that names the file behind each signal: the platform chooses which
+  Figma `code_syntax` key the guide points at and which pipeline advice it
+  gives (Tailwind, Style Dictionary with the `legacy` value form suggested
+  below major version 5, Swift, Kotlin, Dart). Nothing is inferred beyond
+  that; a repository with no signal gets the generic text and the
+  `--platform web|ios|android|flutter` flag that overrides detection. `setup`
+  now ends a successful run by naming `skill --install` as the next step, and
+  the Publish screen gained **Copy for an AI agent**, which copies the setup
+  command with `--yes` followed by that step, as a message a developer pastes
+  to an agent. No hash, `EXTRACTOR_VERSION`, schema, or artifact changed.
+
 - A website release candidate in `apps/website` with a developer and community
   focused homepage, six documentation pages, and the current support and policy
   content. Static checks cover preserved disclosures, reference schemas, links,

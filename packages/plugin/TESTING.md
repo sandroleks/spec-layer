@@ -330,6 +330,18 @@ action. The rows below start there.
       then both work with nothing in the environment.
 - [ ] Stored key, no git: run the same command in a directory that is not a git
       working tree. It stores the key, says it left .gitignore alone, and pulls.
+- [ ] Agent next step: after a successful setup the output ends by naming
+      `npx spec-layer skill --install` and, when the directory holds a `.claude`
+      directory, the path `.claude/skills/spec-layer/SKILL.md`. Running it
+      writes that file; the file lists every pulled component with its path,
+      the token collections with their modes, and carries no key. A second run
+      reports the file unchanged.
+- [ ] Copy for an AI agent: the button sits between **Copy setup command** and
+      **Rotate key**, is present on a locked (free) screen, and copies a
+      numbered message whose first command is `npx --yes spec-layer setup` with
+      the same id and key as the setup command, followed by
+      `npx --yes spec-layer skill --install`. Pasting the message into a coding
+      agent in an empty git repository ends with `AGENTS.md` written.
 - [ ] Stored key, already tracked: after the no-git run above, `git init` in
       that directory, then `git add -A && git commit -m tracked` so
       speclayer.local.json is tracked. Re-paste the setup command: it refuses,

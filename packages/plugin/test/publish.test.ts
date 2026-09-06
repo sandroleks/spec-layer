@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { SerializedFoundation } from '@spec-layer/extractor';
 import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
-  buildPublishBundle, publishBundle, rotatePullKey, setupCommand,
+  agentSetupMessage, buildPublishBundle, publishBundle, rotatePullKey, setupCommand,
   type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
@@ -651,5 +651,25 @@ describe('publish controller', () => {
     expect(state.status).toBe('error');
     expect(state.message).toBe('Rotating the key needs an active Pro license.');
     expect(state.pullKey).toBe('sl_old');
+  });
+});
+
+describe('agentSetupMessage', () => {
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+  const KEY = 'sl_' + 'b'.repeat(48);
+
+  it('carries the setup command with --yes, the skill install, and the tools command', () => {
+    const message = agentSetupMessage(LIB, KEY);
+    expect(message).toContain(`npx --yes spec-layer setup --id ${LIB} --key ${KEY}`);
+    expect(message).toContain('npx --yes spec-layer skill --install');
+    expect(message).toContain('npx --yes spec-layer tools');
+    expect(message).toContain('Never print, commit, or copy the key');
+  });
+
+  it('is plain text a person can read back: numbered steps, no em dash, no markup', () => {
+    const message = agentSetupMessage(LIB, KEY);
+    expect(message.split('\n').filter((l) => /^\d\. /.test(l))).toHaveLength(3);
+    expect(message).not.toContain('—');
+    expect(message).not.toMatch(/<[a-z]/);
   });
 });

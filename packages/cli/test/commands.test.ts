@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
 } from '@spec-layer/extractor';
-import { runInit, runSetup, runPull, runStatus, runList, runShow, type Io } from '../src/commands';
+import {
+  runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
+} from '../src/commands';
 import { readConfig } from '../src/config';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
@@ -961,5 +963,148 @@ describe('stored key errors', () => {
       ...listIo.outLines, ...listIo.errLines, ...showIo.outLines, ...showIo.errLines,
     ].join('\n');
     expect(everything).not.toContain('speclayer.local.json');
+  });
+});
+
+describe('runTools', () => {
+  it('prints the catalogue as text by default and as JSON with --json', () => {
+    const io = makeIo();
+    expect(runTools({}, io)).toBe(0);
+    expect(io.outLines.join('\n')).toContain('spec-layer setup --id lib_...');
+    expect(io.outLines.join('\n')).toContain('spec-layer skill');
+
+    const json = makeIo();
+    expect(runTools({ json: true }, json)).toBe(0);
+    const parsed = JSON.parse(json.writes.join('')) as { tools: Array<{ name: string; network: boolean }> };
+    expect(parsed.tools.find((t) => t.name === 'status')?.network).toBe(true);
+    expect(parsed.tools.find((t) => t.name === 'show')?.network).toBe(false);
+  });
+});
+
+describe('runSkill', () => {
+  let cwd: string;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-skill-cmd-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('prints the guide to stdout without a pull and without writing anything', () => {
+    const io = makeIo();
+    expect(runSkill(cwd, {}, io)).toBe(0);
+    const guide = io.writes.join('');
+    expect(guide).toContain('# Spec Layer: design-system context for this repository');
+    expect(guide).toContain('No pull has been made in this directory yet');
+    expect(existsSync(join(cwd, 'AGENTS.md'))).toBe(false);
+    expect(io.outLines).toEqual([]);
+  });
+
+  it('describes the last pull: components with paths and the token collections', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer' }));
+    await runPull(cwd, { key: 'sl_k' }, {}, makeIo(), stub200());
+    const io = makeIo();
+    expect(runSkill(cwd, {}, io)).toBe(0);
+    const guide = io.writes.join('');
+    expect(guide).toContain('- Button: `.speclayer/ai/components/button.yaml`');
+    expect(guide).toContain('### Token collections');
+    expect(guide).toContain('- `resolver.json`: sets, modifiers, and resolution order.');
+    expect(guide).toContain('Library `lib_x`, published 2026-09-01T00:00:00.000Z by plugin 5.0.0');
+  });
+
+  it('--install writes AGENTS.md when no agent is detected, and says so', () => {
+    const io = makeIo();
+    expect(runSkill(cwd, { install: true }, io)).toBe(0);
+    expect(io.outLines[0]).toBe('Wrote AGENTS.md (agents-md, the default when no agent is detected).');
+    expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toContain('<!-- spec-layer:begin -->');
+    expect(io.outLines.join('\n')).toContain('No local pull yet');
+    expect(io.outLines.join('\n')).toContain('No target platform detected. Pass --platform');
+  });
+
+  it('--install writes to every detected host, and reports unchanged on a second run', () => {
+    mkdirSync(join(cwd, '.claude'));
+    mkdirSync(join(cwd, '.cursor'));
+    const io = makeIo();
+    expect(runSkill(cwd, { install: true }, io)).toBe(0);
+    expect(io.outLines.slice(0, 2)).toEqual([
+      'Wrote .claude/skills/spec-layer/SKILL.md (claude, detected in this repository).',
+      'Wrote .cursor/rules/spec-layer.mdc (cursor, detected in this repository).',
+    ]);
+    expect(readFileSync(join(cwd, '.claude/skills/spec-layer/SKILL.md'), 'utf8')).toMatch(/^---\nname: spec-layer\n/);
+    const again = makeIo();
+    runSkill(cwd, { install: true }, again);
+    expect(again.outLines[0]).toBe('Unchanged: .claude/skills/spec-layer/SKILL.md (claude, detected in this repository).');
+  });
+
+  it('--agent overrides detection and --platform overrides the detected target', () => {
+    mkdirSync(join(cwd, '.claude'));
+    const io = makeIo();
+    expect(runSkill(cwd, { install: true, agent: ['copilot', 'copilot'], platform: 'ios' }, io)).toBe(0);
+    expect(io.outLines).toEqual(expect.arrayContaining([
+      'Wrote .github/instructions/spec-layer.instructions.md (copilot, named with --agent).',
+    ]));
+    expect(existsSync(join(cwd, '.claude/skills'))).toBe(false);
+    const text = readFileSync(join(cwd, '.github/instructions/spec-layer.instructions.md'), 'utf8');
+    expect(text).toContain('Target platform (chosen with --platform): ios.');
+    expect(text).toContain('`code_syntax.iOS`');
+  });
+
+  it('rejects an unknown --platform or --agent before writing anything', () => {
+    const bad = makeIo();
+    expect(runSkill(cwd, { install: true, platform: 'Web' }, bad)).toBe(1);
+    expect(bad.errLines[0]).toBe('--platform takes web, ios, android, flutter, not "Web".');
+    const badAgent = makeIo();
+    expect(runSkill(cwd, { install: true, agent: ['codex'] }, badAgent)).toBe(1);
+    expect(badAgent.errLines[0]).toContain('--agent takes claude, cursor, copilot, windsurf, gemini, agents-md, not "codex".');
+    expect(existsSync(join(cwd, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('--json reports detection, platforms, the pull, and the install targets', async () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: { vue: '^3' } }));
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer' }));
+    await runPull(cwd, { key: 'sl_k' }, {}, makeIo(), stub200());
+    const io = makeIo();
+    expect(runSkill(cwd, { json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.writes.join('')) as {
+      platforms: string[]; platform_source: string;
+      detected: { frameworks: string[] };
+      pull: { components: Array<{ name: string; path: string | null }>; foundation: { written: boolean; sets: string[] } };
+      install_targets: Array<{ host: string; path: string }>;
+    };
+    expect(parsed.platforms).toEqual(['web']);
+    expect(parsed.platform_source).toBe('detected');
+    expect(parsed.detected.frameworks).toEqual(['vue']);
+    expect(parsed.pull.components).toEqual([{ name: 'Button', path: '.speclayer/ai/components/button.yaml' }]);
+    expect(parsed.pull.foundation.written).toBe(true);
+    expect(parsed.install_targets).toEqual([{ host: 'agents-md', path: 'AGENTS.md', mode: 'block' }]);
+  });
+
+  it('errors with a plain message on a corrupt speclayer.json', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), '{not json');
+    const io = makeIo();
+    expect(runSkill(cwd, {}, io)).toBe(1);
+    expect(io.errLines[0]).toContain('speclayer.json is not valid JSON');
+  });
+});
+
+describe('runSetup points a coding agent at the guide', () => {
+  let cwd: string;
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+  const KEY = `sl_${'a'.repeat(48)}`;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-setup-hint-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('names skill --install and the detected host after a successful pull', async () => {
+    spawnSync('git', ['init', '-q'], { cwd });
+    mkdirSync(join(cwd, '.claude'));
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+    const out = io.outLines.join('\n');
+    expect(out).toContain('Next step for a coding agent: npx spec-layer skill --install');
+    expect(out).toContain('.claude/skills/spec-layer/SKILL.md');
+    expect(out).not.toContain(KEY);
+  });
+
+  it('says nothing about the guide when the pull failed', async () => {
+    spawnSync('git', ['init', '-q'], { cwd });
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
+    expect(io.outLines.join('\n')).not.toContain('skill --install');
   });
 });

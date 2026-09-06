@@ -55,6 +55,7 @@ also keeps `.speclayer/manifest.json` on one format: 0.1.0 wrote no
 versions have no such command, so the setup command the plugin copies fails
 against them. The Foundation landing under `tokens/` as Design Tokens Format
 Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
+`tools` and `skill` need 0.5.0 or later.
 
 ## Commands
 
@@ -67,8 +68,75 @@ Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--canonical]` | Prints one component's AI YAML to stdout. |
+| `tools [--json]` | Lists every command with what it reaches, needs, and writes. |
+| `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
 `--api URL` overrides the API origin (default `https://api.spec-layer.com`).
+
+## For a coding agent
+
+The setup command is usually handed to a coding agent, and a bare command
+tells the agent nothing about what it just wrote or how to read it. Two
+local commands close that gap; neither needs a key or the network.
+
+`spec-layer tools` lists every command with the facts an agent needs before
+running one: whether it reaches the network, whether it needs the pull key,
+what it writes, and what each exit code means. `--json` prints the same list
+in a stable shape for machines.
+
+`spec-layer skill` prints a guide to the pulled files, and `--install` writes
+it where the agent reads project instructions:
+
+```bash
+npx spec-layer skill --install
+```
+
+`setup` names this command as the next step after a successful pull, and the
+plugin's Publish screen has a **Copy for an AI agent** button that copies the
+setup command already followed by it.
+
+The guide is built from three things and nothing else:
+
+- The tool list above.
+- **What the last pull wrote.** Every component with its file path, every
+  token collection with its modes and default, the token files, the
+  `report.json` counts, and how many tokens landed as plain numbers because
+  their Figma scopes state no unit. Before a pull the guide says so and names
+  nothing.
+- **What the repository root says about the codebase.** Detection reads only
+  the top level of the working directory (`package.json` dependency names,
+  build files, agent configuration directories) and names the file behind
+  every conclusion. A signal it cannot find is reported as absent, never
+  guessed. The platform decides which Figma `code_syntax` key the guide points
+  at (`WEB`, `iOS`, `ANDROID`; Flutter has none) and which token pipeline
+  advice it gives: Tailwind, Style Dictionary (with the `legacy` value form
+  suggested when package.json declares a major version below 5), Swift,
+  Kotlin or Compose, or Dart.
+
+`--platform web|ios|android|flutter` overrides the detected target, which is
+the way to get platform advice in a repository that carries no signal (a new
+directory, a monorepo whose apps sit one level down). `--json` prints the
+detection, the pull summary, and the install targets instead of the guide.
+
+`--install` writes to every agent host detected at the root, or to the hosts
+named with a repeatable `--agent`, or to `AGENTS.md` when nothing is detected
+and nothing is named. Each run says which files it wrote, updated, or left
+unchanged.
+
+| Host | `--agent` | File |
+|---|---|---|
+| Claude Code | `claude` | `.claude/skills/spec-layer/SKILL.md` |
+| Cursor | `cursor` | `.cursor/rules/spec-layer.mdc` |
+| GitHub Copilot | `copilot` | `.github/instructions/spec-layer.instructions.md` |
+| Windsurf | `windsurf` | `.windsurf/rules/spec-layer.md` |
+| Gemini CLI | `gemini` | `GEMINI.md`, between `<!-- spec-layer:begin -->` and `<!-- spec-layer:end -->` |
+| Anything that reads `AGENTS.md` | `agents-md` | `AGENTS.md`, between the same markers |
+
+The dedicated files are replaced whole. The shared files (`AGENTS.md`,
+`GEMINI.md`) are yours: only the marked block is replaced, and a file without
+the markers gets the block appended. Re-run `skill --install` after a pull
+that adds components or when the codebase changes stack. The written files
+carry no key and are meant to be committed with the rest of the repository.
 
 ## Pulling part of a library
 
@@ -232,7 +300,7 @@ the report are not token files; exclude them from token globs.
 | Code | Meaning |
 |---|---|
 | `0` | Success, or `status` found the local copy up to date. |
-| `1` | Usage error, bad key or id, unknown component name, or a network or server failure. |
+| `1` | Usage error, bad key or id, unknown component name, a network or server failure, or a file `skill --install` could not write. |
 | `2` | `status` only: the local copy is behind, or no local pull exists yet. |
 
 `status` is safe in CI: it writes nothing, and exit `2` is the signal to run

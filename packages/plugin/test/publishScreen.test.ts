@@ -502,3 +502,23 @@ describe('publishLocked', () => {
     expect(publishLocked({ kind: 'unknown', message: 'Plan status unavailable' })).toBe(false);
   });
 });
+
+describe('Copy for an AI agent', () => {
+  it('sits in the actions row between the command copy and rotate, and only once a key exists', () => {
+    const markup = proScroll(PUBLISHED);
+    expect(markup).toContain('data-publish-copy-agent');
+    expect(markup).toContain('Copy for an AI agent');
+    const row = /<div class="sl-publish-command-actions">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
+    expect(row.indexOf('data-publish-copy-command'))
+      .toBeLessThan(row.indexOf('data-publish-copy-agent'));
+    expect(row.indexOf('data-publish-copy-agent'))
+      .toBeLessThan(row.indexOf('data-publish-rotate'));
+    // Half a command is a command that fails, for an agent as much as a person.
+    expect(proScroll(state({ libraryId: LIBRARY_ID }))).not.toContain('data-publish-copy-agent');
+    expect(proScroll(state())).not.toContain('data-publish-copy-agent');
+  });
+
+  it('is offered on a locked screen too, since pulling needs no Pro', () => {
+    expect(publishScrollMarkup(PUBLISHED, true)).toContain('data-publish-copy-agent');
+  });
+});

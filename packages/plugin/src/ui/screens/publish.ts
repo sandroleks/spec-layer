@@ -131,6 +131,14 @@ export function publishScrollMarkup(state: PublishState, locked: boolean): strin
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-publish-copy-command>Copy setup command</button>' +
       /*
+       * The same setup as a message for a coding agent: the command with
+       * `--yes`, what it does, and the command that writes the agent's guide.
+       * A developer who hands the bare command to an agent leaves it to guess
+       * at the files; this hands it the instructions with the key.
+       */
+      '<button class="sl-button" data-tone="secondary" type="button" ' +
+      'data-publish-copy-agent>Copy for an AI agent</button>' +
+      /*
        * Copying is the action taken every time; rotating cuts off every
        * developer already pulling this library. Both are real buttons in one
        * row, so the weighting is carried by colour rather than by placement:
