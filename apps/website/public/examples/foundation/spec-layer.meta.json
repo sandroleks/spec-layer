@@ -1,0 +1,169 @@
+{
+  "Primitives.Background.Chip.Сhip (Hover)": {
+    "id": "VariableID:confusable",
+    "collection_id": "CollectionID:primitives",
+    "type": "boolean",
+    "scopes": [],
+    "omitted": true,
+    "values": {
+      "Light [ModeID:p-light]": true,
+      "Dark": false,
+      "Light [ModeID:p-light-duplicate]": true
+    }
+  },
+  "Primitives.color.chain.bridge": {
+    "id": "VariableID:chain-bridge",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ]
+  },
+  "Primitives.color.chain.middle": {
+    "id": "VariableID:chain-middle",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ]
+  },
+  "Primitives.color.chain.terminal": {
+    "id": "VariableID:chain-terminal",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ]
+  },
+  "Primitives.color.exact.red": {
+    "id": "VariableID:color-exact",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ],
+    "code_syntax": {
+      "WEB": "--color-exact-red"
+    }
+  },
+  "Primitives.color.lossy.teal": {
+    "id": "VariableID:color-lossy",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL",
+      "SHAPE_FILL"
+    ]
+  },
+  "Primitives.color.shared": {
+    "id": "VariableID:local-collision",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": []
+  },
+  "Primitives.cycle.a": {
+    "id": "VariableID:cycle-a",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": []
+  },
+  "Primitives.cycle.b": {
+    "id": "VariableID:cycle-b",
+    "collection_id": "CollectionID:primitives",
+    "type": "color",
+    "scopes": []
+  },
+  "Primitives.effect.shadow.blur": {
+    "id": "VariableID:shadow-blur",
+    "collection_id": "CollectionID:primitives",
+    "type": "dimension",
+    "scopes": [
+      "EFFECT_FLOAT"
+    ],
+    "code_syntax": {
+      "WEB": "--effect-shadow-blur"
+    },
+    "publication": {
+      "published": true,
+      "hidden_from_publishing": false
+    }
+  },
+  "Primitives.number.unknown-scope": {
+    "id": "VariableID:unknown-number",
+    "collection_id": "CollectionID:primitives",
+    "type": "number",
+    "scopes": [
+      "ALL_SCOPES"
+    ]
+  },
+  "Primitives.spacing.gap": {
+    "id": "VariableID:gap",
+    "collection_id": "CollectionID:primitives",
+    "type": "dimension",
+    "scopes": [
+      "GAP"
+    ],
+    "code_syntax": {
+      "WEB": "--spacing-gap"
+    }
+  },
+  "Primitives.typography.family.body": {
+    "id": "VariableID:font-family",
+    "collection_id": "CollectionID:primitives",
+    "type": "font_family",
+    "scopes": [
+      "FONT_FAMILY"
+    ]
+  },
+  "Primitives.typography.weight.strong": {
+    "id": "VariableID:font-weight",
+    "collection_id": "CollectionID:primitives",
+    "type": "number",
+    "scopes": [
+      "FONT_WEIGHT"
+    ]
+  },
+  "Semantic.color.legacy.readable": {
+    "id": "VariableID:external-owner-readable",
+    "collection_id": "CollectionID:semantic",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ]
+  },
+  "Semantic.color.legacy.unreadable": {
+    "id": "VariableID:external-owner-unreadable",
+    "collection_id": "CollectionID:semantic",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ]
+  },
+  "Semantic.color.surface.primary": {
+    "id": "VariableID:chain-owner",
+    "collection_id": "CollectionID:semantic",
+    "type": "color",
+    "scopes": [
+      "FRAME_FILL"
+    ],
+    "code_syntax": {
+      "WEB": "--color-surface-primary"
+    }
+  },
+  "Semantic.string.declared-missing": {
+    "id": "VariableID:declared-missing",
+    "collection_id": "CollectionID:semantic",
+    "type": "string",
+    "scopes": [
+      "TEXT_CONTENT"
+    ],
+    "omitted": true,
+    "values": {
+      "Light": "available",
+      "Dark": {
+        "kind": "missing",
+        "reason": "no_value_for_mode"
+      }
+    }
+  }
+}

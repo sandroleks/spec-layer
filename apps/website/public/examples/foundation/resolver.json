@@ -1,0 +1,71 @@
+{
+  "version": "2025.10",
+  "name": "Synthetic Direct Foundation",
+  "sets": {
+    "Effect styles": {
+      "sources": [
+        {
+          "$ref": "styles.effects.json"
+        }
+      ]
+    },
+    "Typography styles": {
+      "sources": [
+        {
+          "$ref": "styles.typography.json"
+        }
+      ]
+    }
+  },
+  "modifiers": {
+    "Primitives": {
+      "contexts": {
+        "Light [ModeID:p-light]": [
+          {
+            "$ref": "primitives.light.json"
+          }
+        ],
+        "Dark": [
+          {
+            "$ref": "primitives.dark.json"
+          }
+        ],
+        "Light [ModeID:p-light-duplicate]": [
+          {
+            "$ref": "primitives.light-2.json"
+          }
+        ]
+      },
+      "default": "Light [ModeID:p-light]"
+    },
+    "Semantic": {
+      "contexts": {
+        "Light": [
+          {
+            "$ref": "semantic.light.json"
+          }
+        ],
+        "Dark": [
+          {
+            "$ref": "semantic.dark.json"
+          }
+        ]
+      },
+      "default": "Light"
+    }
+  },
+  "resolutionOrder": [
+    {
+      "$ref": "#/modifiers/Primitives"
+    },
+    {
+      "$ref": "#/modifiers/Semantic"
+    },
+    {
+      "$ref": "#/sets/Effect styles"
+    },
+    {
+      "$ref": "#/sets/Typography styles"
+    }
+  ]
+}

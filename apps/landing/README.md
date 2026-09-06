@@ -14,13 +14,21 @@ npx -y http-server apps/landing -p 4620 -c-1
 
 Or use the `landing` config in `.claude/launch.json`.
 
-## Deploy (Cloudflare Pages)
+## Website release source
+
+The redesigned website and all current support/policy pages are maintained in
+`apps/website`. See [the implementation and launch record](../website/IMPLEMENTATION.md).
+Build the production candidate with:
 
 ```sh
-npx wrangler pages deploy apps/landing --project-name speclayer-landing
+npm run check:production --prefix apps/website
 ```
 
-First run creates the project and prints the `*.pages.dev` URL.
+The verified existing Cloudflare Pages project is `speclayer-landing`, a direct
+upload project bound to `spec-layer.com`. The release output is
+`apps/website/dist`. Deploy the reviewed production artifact using the launch
+procedure in that record; uploading this older `apps/landing` directory would
+restore outdated content and omit the new documentation.
 
 The v5 schemas are committed at
 `apps/landing/schemas/foundation-context/v5.json` and

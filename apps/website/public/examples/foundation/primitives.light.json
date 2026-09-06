@@ -1,0 +1,116 @@
+{
+  "Primitives": {
+    "color": {
+      "chain": {
+        "bridge": {
+          "$type": "color",
+          "$value": "{Primitives.color.chain.middle}"
+        },
+        "middle": {
+          "$type": "color",
+          "$value": "{Primitives.color.chain.terminal}"
+        },
+        "terminal": {
+          "$type": "color",
+          "$value": {
+            "alpha": 1,
+            "colorSpace": "srgb",
+            "components": [
+              1,
+              1,
+              1
+            ],
+            "hex": "#ffffff"
+          }
+        }
+      },
+      "exact": {
+        "red": {
+          "$type": "color",
+          "$value": {
+            "alpha": 1,
+            "colorSpace": "srgb",
+            "components": [
+              1,
+              0,
+              0
+            ],
+            "hex": "#ff0000"
+          },
+          "$description": "Exactly representable source channels."
+        }
+      },
+      "lossy": {
+        "teal": {
+          "$type": "color",
+          "$value": {
+            "alpha": 0.125,
+            "colorSpace": "srgb",
+            "components": [
+              0.5001,
+              0.1001,
+              0.0001
+            ],
+            "hex": "#801a00"
+          },
+          "$description": "Channels carry precision beyond hex."
+        }
+      },
+      "shared": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0,
+            0,
+            1
+          ],
+          "hex": "#0000ff"
+        },
+        "$description": "Local token with the readable external path."
+      }
+    },
+    "effect": {
+      "shadow": {
+        "blur": {
+          "$type": "dimension",
+          "$value": {
+            "unit": "px",
+            "value": 8
+          },
+          "$description": "Shared shadow blur radius."
+        }
+      }
+    },
+    "number": {
+      "unknown-scope": {
+        "$type": "number",
+        "$value": 1.5
+      }
+    },
+    "spacing": {
+      "gap": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 8
+        }
+      }
+    },
+    "typography": {
+      "family": {
+        "body": {
+          "$type": "fontFamily",
+          "$value": "Inter"
+        }
+      },
+      "weight": {
+        "strong": {
+          "$type": "fontWeight",
+          "$value": 600
+        }
+      }
+    }
+  }
+}

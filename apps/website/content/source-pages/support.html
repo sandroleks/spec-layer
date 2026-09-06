@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support — Spec Layer</title>
+<meta name="description" content="How to get help with the Spec Layer Figma plugin and CLI.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root { --bg:#0a0a0a; --surface:#141414; --border:#2b2b2b; --text:#f5f5f5; --text-dim:#9a9a9a; --accent:#fff; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
+  header.site { padding:28px 0; border-bottom:1px solid var(--border); }
+  header.site .wrap { display:flex; align-items:center; }
+  header.site a.brand { display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--text); font-weight:600; font-size:1.0625rem; }
+  header.site img { width:34px; height:34px; border-radius:9px; }
+  main { padding:56px 0 72px; }
+  main h1 { font-size:2.25rem; letter-spacing:-0.02em; margin-bottom:8px; }
+  main .meta { color:var(--text-dim); font-size:.9rem; margin-bottom:40px; }
+  main h2 { font-size:1.25rem; letter-spacing:-0.01em; margin:36px 0 12px; }
+  main p, main li { color:#d8d8d8; font-size:1rem; margin-bottom:12px; }
+  main ul { padding-left:22px; margin-bottom:12px; }
+  main a { color:var(--text); }
+  main strong { color:var(--text); }
+  footer { border-top:1px solid var(--border); padding:32px 0; }
+  footer nav { display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin-bottom:12px; }
+  footer a { color:var(--text-dim); text-decoration:none; font-size:.9375rem; }
+  footer a:hover { color:var(--text); }
+  footer .small { color:var(--text-dim); font-size:.8125rem; text-align:center; }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="logo.svg" alt="Spec Layer">Spec Layer</a>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <h1>Support</h1>
+    <p class="meta">Last updated 6 September 2026</p>
+    <p>
+      Spec Layer is maintained by an independent developer. Email
+      <a href="mailto:oleksandr.kurchev@gmail.com">oleksandr.kurchev@gmail.com</a>
+      and expect a reply within a few business days.
+    </p>
+    <h2>Before you write</h2>
+    <ul>
+      <li>
+        <strong>License key not accepted.</strong> The plugin's License screen tells
+        you whether the key is invalid, expired, disabled, or already active on the
+        maximum number of devices. For the device limit, free a device in
+        <a href="https://app.lemonsqueezy.com/my-orders" target="_blank" rel="noopener">Manage subscription</a>
+        and try again. If the screen says verification is temporarily unavailable,
+        your plan has not changed; try again in a minute.
+      </li>
+      <li>
+        <strong>AI writing did not run.</strong> The frame is still created; AI
+        sections carry a placeholder. The License screen shows your remaining free
+        uses. Failed calls do not count against them.
+      </li>
+      <li>
+        <strong>Publishing failed.</strong> The Publish screen names the reason:
+        a Pro license is needed, the library is over the 5 MB limit, the license
+        already publishes 10 libraries, or a source component could not be read.
+        Nothing partial is published.
+      </li>
+      <li>
+        <strong>The pull key was rotated.</strong> Developers get a message from the
+        CLI naming the fix: run the new setup command copied from the plugin's
+        Publish screen.
+      </li>
+      <li>
+        <strong>Refunds.</strong> Within 30 days, for any reason. See the
+        <a href="refund.html">Refund Policy</a>.
+      </li>
+    </ul>
+    <h2>What to include</h2>
+    <ul>
+      <li>Which screen you were on and what you clicked.</li>
+      <li>The exact message the plugin showed, if any.</li>
+      <li>Your Lemon Squeezy order number for billing questions, never your license key.</li>
+    </ul>
+    <p>
+      Please do not send private design files. If a problem depends on a specific
+      component, a description of its structure is enough to start with.
+    </p>
+    <h2>Security</h2>
+    <p>
+      To report a vulnerability, follow the <a href="security.html">responsible
+      disclosure policy</a> instead of this address.
+    </p>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="refund.html">Refund Policy</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="security.html">Security</a>
+      <a href="support.html">Support</a>
+    </nav>
+    <p class="small">Payments are handled by Lemon Squeezy as merchant of record.</p>
+  </div>
+</footer>
+</body>
+</html>

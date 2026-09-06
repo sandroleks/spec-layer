@@ -1,0 +1,13 @@
+{
+  "Semantic": {
+    "color": {
+      "surface": {
+        "primary": {
+          "$type": "color",
+          "$value": "{Primitives.color.chain.bridge}",
+          "$description": "Three-hop semantic alias."
+        }
+      }
+    }
+  }
+}

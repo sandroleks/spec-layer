@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- A website release candidate in `apps/website` with a developer and community
+  focused homepage, six documentation pages, and the current support and policy
+  content. Static checks cover preserved disclosures, reference schemas, links,
+  metadata, indexing modes, and permanent redirects. CI verifies both build
+  modes; repeatable Chromium/WebKit and HTTP checks support launch review.
+
 - **Review detected changes** in the Library now lists what changed. Every
   generated Section stores the exact object its drift hash was computed over,
   under its own plugin data key (`specLayerBaseline`, 90 kB budget, dropped
