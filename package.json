@@ -35,7 +35,7 @@
     "check:cli-bundle": "node scripts/check-cli-bundle.mjs",
     "check:sandbox": "node scripts/check-main-sandbox.mjs",
     "check:proxy-dry-run": "npm run check:deploy --workspace @spec-layer/proxy",
-    "check:landing-live": "node scripts/check-landing-live.mjs"
+    "check:site-live": "node scripts/check-site-live.mjs"
   },
   "overrides": {
     "brace-expansion": "^5.0.9",

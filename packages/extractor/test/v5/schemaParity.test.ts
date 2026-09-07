@@ -53,8 +53,8 @@ describe('schema parity', () => {
     expect(schema.$id).toBe(SCHEMA_URI);
   });
 
-  it('keeps the public landing copy byte-identical to the package schema', () => {
-    expect(readFileSync('apps/landing/schemas/foundation-context/v5.json', 'utf8'))
+  it('keeps the published website copy byte-identical to the package schema', () => {
+    expect(readFileSync('apps/website/public/schemas/foundation-context/v5.json', 'utf8'))
       .toBe(schemaText);
   });
 

@@ -477,6 +477,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The privacy policy now discloses that a published library bundle is stored
   until the next publish replaces it, and how to ask for its removal. The
   terms and security pages name the spec-layer CLI and the library store.
+- The shared brand catalog reported every contrast pair as "Pass" regardless
+  of the recorded verdict, so a failing pair could be presented as passing.
+  It now prints the check's own result.
+- The website's link check validates the gallery close-up destinations as
+  well as its preview images. Those close-ups are the href behind "View full
+  size", and only the first one appeared in the static HTML, so a typo in
+  either of the other two shipped a 404 that the offline gate did not see.
+
+### Removed
+
+- `apps/landing`, the superseded static marketing site. `apps/website` has
+  been the only source of https://spec-layer.com since 6 September 2026, and
+  the two published JSON schemas now live only at
+  `apps/website/public/schemas/`, byte-identical to the extractor as before.
+  `npm run check:landing-live` is now `npm run check:site-live`.
+- The support and policy source manifest, and with it the sha256 pinning in
+  `check-pages.mjs`. It guarded a real incident, when production had drifted
+  ahead of the checkout and a deploy would have reverted published
+  disclosures. `apps/website` is now the only path to production, so the
+  repository is the source by construction and the pin had become a tripwire
+  against editing the files at all: an ordinary wording change had to record
+  a manifest exception to silence it. The check still proves that the
+  generator reproduces every authored policy body verbatim.
 
 ### Security
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * check-landing-live.mjs: fetch the deployed landing site and confirm that the
- * two permanent schema URLs serve the committed bytes and that a missing path
+ * check-site-live.mjs: fetch the deployed site and confirm that the two
+ * permanent schema URLs serve the committed bytes and that a missing path
  * returns 404. Exit 1 on any problem. Usage:
  *
- *   node scripts/check-landing-live.mjs                      # spec-layer.com
- *   node scripts/check-landing-live.mjs --base https://speclayer-landing.pages.dev
+ *   node scripts/check-site-live.mjs                      # spec-layer.com
+ *   node scripts/check-site-live.mjs --base https://speclayer-landing.pages.dev
  *
- * This is the release gate described in apps/landing/README.md, made
- * executable. A passing pages.dev run is not a substitute for the custom
- * domain; run it against both.
+ * The published schema URL is a permanent contract: an artifact validated
+ * against it must stay valid, so the live bytes have to match the committed
+ * ones before a release. A passing pages.dev run is not a substitute for the
+ * custom domain; run it against both.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,14 +23,14 @@ const args = process.argv.slice(2);
 const baseIndex = args.indexOf('--base');
 const baseArg = baseIndex === -1 ? 'https://spec-layer.com' : args[baseIndex + 1];
 if (!baseArg || baseArg.startsWith('--')) {
-  console.error('Usage: node scripts/check-landing-live.mjs [--base https://host]');
+  console.error('Usage: node scripts/check-site-live.mjs [--base https://host]');
   process.exit(1);
 }
 const base = baseArg.replace(/\/$/, '');
 
 const SCHEMAS = [
-  ['/schemas/foundation-context/v5.json', 'apps/landing/schemas/foundation-context/v5.json'],
-  ['/schemas/component-context/v5.json', 'apps/landing/schemas/component-context/v5.json'],
+  ['/schemas/foundation-context/v5.json', 'apps/website/public/schemas/foundation-context/v5.json'],
+  ['/schemas/component-context/v5.json', 'apps/website/public/schemas/component-context/v5.json'],
 ];
 const MISSING_PATH = '/this-path-must-not-exist-' + Date.now();
 

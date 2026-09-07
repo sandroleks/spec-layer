@@ -1,6 +1,6 @@
 /**
  * Pure checks for the live landing deployment. No network here; the runner in
- * scripts/check-landing-live.mjs fetches and hands the results to these.
+ * scripts/check-site-live.mjs fetches and hands the results to these.
  *
  * Why this exists: on 2026-09-06 the custom domain served index.html for the
  * component schema URL (Pages falls back to index.html when a file is missing

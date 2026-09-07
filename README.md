@@ -75,8 +75,8 @@ already handed out. Publishing is explicit and per-file. Nothing leaves Figma
 until you choose it.
 
 The proxy never logs prompts, rendered images, generated text, or raw license
-keys. Read the published [Privacy Policy](apps/landing/privacy.html),
-[Security overview](apps/landing/security.html), and [security policy](SECURITY.md)
+keys. Read the published [Privacy Policy](https://spec-layer.com/privacy),
+[Security overview](https://spec-layer.com/security), and [security policy](SECURITY.md)
 for the complete data flow and reporting instructions.
 
 ## Install
@@ -188,7 +188,7 @@ packages/plugin/       Figma serializer, canvas renderer, and plugin UI
 packages/extractor/    deterministic extraction and YAML context generation
 packages/proxy/        Cloudflare Worker for AI writing, quotas, licensing, libraries
 packages/cli/          spec-layer CLI: pulls a published library into a repo
-apps/landing/          marketing site, policies, and public schemas
+apps/website/          marketing site, documentation, policies, and public schemas
 docs/                  product specs, plans, reviews, and writing guidance
 ```
 

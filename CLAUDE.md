@@ -25,7 +25,7 @@ packages/plugin/       Figma serializer, canvas renderers, iframe UI (vanilla DO
 packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
 packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
 packages/cli/          spec-layer CLI: setup, pull, status, skill, tools; delivery only, no extraction
-apps/landing/          static marketing site, policies, published JSON schemas
+apps/website/          static site generator: marketing, docs, policies, published JSON schemas
 docs/                  current specs, plans, reviews, writing guides
 project-docs/          ARCHIVED historical vault, not a source of truth
 ```
@@ -98,9 +98,11 @@ regenerate every document. It is currently `'2'`.
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits`. Locale
 ordering makes hashes machine-dependent.
 
-**Keep the extractor and landing schemas byte-identical.**
-`packages/extractor/src/v5/schema/*.json` and `apps/landing/schemas/**` must
-match, and the published URL must serve the committed bytes before a release.
+**Keep the extractor and website schemas byte-identical.**
+`packages/extractor/src/v5/schema/*.json` and
+`apps/website/public/schemas/**` must match, and the published URL must serve
+the committed bytes before a release. `npm run check:site-live` checks the
+live site against the committed files.
 
 **Keep the AI profile downstream.** `v5/aiContext.ts` projects a validated
 artifact for prompt size. It never participates in a hash and never justifies
