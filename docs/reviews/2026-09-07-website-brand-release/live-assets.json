@@ -1,0 +1,197 @@
+{
+  "verifiedAt": "2026-09-07T17:26:11.206Z",
+  "results": [
+    {
+      "path": "app.js",
+      "status": 200,
+      "bytes": 6865,
+      "sha256": "12c86e454df4f22e17ed48dac25c1dbe47fd92ea26646718ef521f8061a030d4"
+    },
+    {
+      "path": "brand/tokens.css",
+      "status": 200,
+      "bytes": 3169,
+      "sha256": "20bb3dea5936d94628ebe2c74c02af5b62451be3a26e23e9a1e12677204b341d"
+    },
+    {
+      "path": "brand.css",
+      "status": 200,
+      "bytes": 1247,
+      "sha256": "764aef74daf365be14728dc90607329ae17b1ad6e4b21019cc9e3bbc18087a75"
+    },
+    {
+      "path": "docs.css",
+      "status": 200,
+      "bytes": 8432,
+      "sha256": "380ffbf1f8c586907e94fc9073bc729942cd2f5a639ace582a0306d50bb9d2a0"
+    },
+    {
+      "path": "example-button.yaml",
+      "status": 200,
+      "bytes": 5575,
+      "sha256": "1738d2b9b34a2d0305c30eea99d57beccf3429be6096717b1f7d08406e12ffee"
+    },
+    {
+      "path": "examples/foundation/primitives.dark.json",
+      "status": 200,
+      "bytes": 2904,
+      "sha256": "59cda66d3e041d220802d11e855576f7d3a42cb8efb0c92c157a1a43a91ecc21"
+    },
+    {
+      "path": "examples/foundation/primitives.light-2.json",
+      "status": 200,
+      "bytes": 2584,
+      "sha256": "9b677f146a2a697e60a629c1b353dcda4c649632c71d8518e3eaff4f1eda34a3"
+    },
+    {
+      "path": "examples/foundation/primitives.light.json",
+      "status": 200,
+      "bytes": 2398,
+      "sha256": "40d086beb75d3f8421635bc03660b772c2539a5256f289524340f7d88217edc9"
+    },
+    {
+      "path": "examples/foundation/report.json",
+      "status": 200,
+      "bytes": 4103,
+      "sha256": "f5422129e29bd6809f41184c2d9853372017c81bb1633760db27736d2c922e58"
+    },
+    {
+      "path": "examples/foundation/resolver.json",
+      "status": 200,
+      "bytes": 1282,
+      "sha256": "4df4bca18f96d1baa197e455f790d294cfc19f94751467d91f999f9980da7dd9"
+    },
+    {
+      "path": "examples/foundation/semantic.dark.json",
+      "status": 200,
+      "bytes": 240,
+      "sha256": "69b4ee8ad0029dc042b84f81d0166489bb69b62fee5ae128f127829a86a55792"
+    },
+    {
+      "path": "examples/foundation/semantic.light.json",
+      "status": 200,
+      "bytes": 400,
+      "sha256": "71b818177262979db90989b7821cd6a9eba30c7d3667bcf50e996b396dd5e89a"
+    },
+    {
+      "path": "examples/foundation/spec-layer.meta.json",
+      "status": 200,
+      "bytes": 3991,
+      "sha256": "49944f8bdc2dcba2aed350eb996f9fd89052f770947d1f7cc338a867757d6c00"
+    },
+    {
+      "path": "examples/foundation/styles.effects.json",
+      "status": 200,
+      "bytes": 1277,
+      "sha256": "59db179edfbc0f4ad9d2af0ccef6782312dd813f5c9ee23fa1666f918cd1cd72"
+    },
+    {
+      "path": "examples/foundation/styles.typography.json",
+      "status": 200,
+      "bytes": 966,
+      "sha256": "84fc9a7dcc664d9680361559cf8c354fb0ce3d953dead6271112c14d5561e0b6"
+    },
+    {
+      "path": "examples/validate-context.mjs",
+      "status": 200,
+      "bytes": 1038,
+      "sha256": "4093c11c11dbe3ee738ad6992a5a273a2383a8dd93b71811dc20a8d7bfa216bf"
+    },
+    {
+      "path": "fonts/OFL.txt",
+      "status": 200,
+      "bytes": 4384,
+      "sha256": "e01b637272e0cbdfb240184dd98ea5cc671556d9894dae2668d92ab2c906787c"
+    },
+    {
+      "path": "fonts/manrope-400.ttf",
+      "status": 200,
+      "bytes": 94972,
+      "sha256": "a13d9b41b0a471ce58f0e46d377fa3cc76615e4632c3b15eb397caadf7a13f0a"
+    },
+    {
+      "path": "fonts/manrope-500.ttf",
+      "status": 200,
+      "bytes": 95060,
+      "sha256": "f433e5d333be1128d8ec8a28b8aadd0314d10e14e4105406076666bc830fc15d"
+    },
+    {
+      "path": "fonts/manrope-600.ttf",
+      "status": 200,
+      "bytes": 95096,
+      "sha256": "6bad1a774228464cc88b8b0271555b266f7a3c64a7bedf15e165fdab4f6ac0ce"
+    },
+    {
+      "path": "fonts/manrope-700.ttf",
+      "status": 200,
+      "bytes": 94928,
+      "sha256": "b9584e099e0e7f1e1e914c3037aabb9010c50346a3ce8df5eeeeecc0563044d8"
+    },
+    {
+      "path": "gallery-component-docs.png",
+      "status": 200,
+      "bytes": 317688,
+      "sha256": "60bc440a7211cc1fc8f77b7e29ad58ac7e84a11d64e4a7900c842d22091903ee"
+    },
+    {
+      "path": "gallery-foundations.png",
+      "status": 200,
+      "bytes": 279780,
+      "sha256": "5315973089662917750a8392e429341b67976a3b91b0ea652dd00568d35bd9fc"
+    },
+    {
+      "path": "gallery-library-updates.png",
+      "status": 200,
+      "bytes": 364708,
+      "sha256": "e65a3c9866374b092d4613b6fd64a065c3be000da46e9526eb7c04ce156350ad"
+    },
+    {
+      "path": "logo.svg",
+      "status": 200,
+      "bytes": 842,
+      "sha256": "356cca6d52352174f394c188d20af84443c321dec5778ed4ce7886a6c5c8461a"
+    },
+    {
+      "path": "schemas/component-context/v5.json",
+      "status": 200,
+      "bytes": 7457,
+      "sha256": "f8d03eb7a8fb9690c10e6fdd556c094cc613f030abb6d1ae31aacbf28011e0ef"
+    },
+    {
+      "path": "schemas/foundation-context/v5.json",
+      "status": 200,
+      "bytes": 21133,
+      "sha256": "d8220be436a88f8538531b35f7a240d11c52cf18220cfdf845064568d82b0aa8"
+    },
+    {
+      "path": "screenshots/component-dark.png",
+      "status": 200,
+      "bytes": 33072,
+      "sha256": "fe0e3ebcdc44559308db24f575fd0a7867da4b21c40e85b9384f8d57f5d1eca6"
+    },
+    {
+      "path": "screenshots/foundations-dark.png",
+      "status": 200,
+      "bytes": 28576,
+      "sha256": "ac0fd1245f09aadf6959aef2fdc0e05a6cde2eb517fb4c9c54f3ad7083e6ebb7"
+    },
+    {
+      "path": "screenshots/library-dark.png",
+      "status": 200,
+      "bytes": 40006,
+      "sha256": "d5bc20d05482eabf046f8489e40fa606fc19d3c38ffc0f4f5fd698f4ac436e06"
+    },
+    {
+      "path": "social/spec-layer.png",
+      "status": 200,
+      "bytes": 45377,
+      "sha256": "27b1b6b17dd45f85e5bd712ff54a3e903af47a282da9c2933c36ab60427a37c5"
+    },
+    {
+      "path": "styles.css",
+      "status": 200,
+      "bytes": 25922,
+      "sha256": "203e92a5cec43567899bce84cd98d85e575fc2eb50bdad8043af969b2b180e64"
+    }
+  ]
+}

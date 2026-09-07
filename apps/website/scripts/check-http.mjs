@@ -9,6 +9,9 @@ for (const path of canonicalPaths) {
   const response = await fetch(origin + path, { redirect: 'manual' });
   assert.equal(response.status, 200, path);
   const html = await response.text();
+  if (path.startsWith('/docs/')) {
+    assert.ok(!html.includes('__cf_email__'), `Code rewritten as an email address: ${path}`);
+  }
   assert.ok(html.includes(`rel="canonical" href="https://spec-layer.com${path}"`), path);
   assert.equal(/<meta name="robots" content="[^"]*noindex/.test(html), !site.indexable, path);
   assert.equal(/noindex/.test(response.headers.get('x-robots-tag') || ''), !site.indexable, path);

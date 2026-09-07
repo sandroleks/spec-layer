@@ -1,0 +1,92 @@
+{
+  "source": "Shared brand tokens and static symbol; browser captures of the current plugin renderer with synthetic fixtures.",
+  "renderer": "render.mjs",
+  "inputs": [
+    {
+      "file": "render.mjs",
+      "sha256": "83c84110ca0664ac4017f90ed440d39ae5cad2803374a53c219e15e85cc94573"
+    },
+    {
+      "file": "../../../packages/brand/src/tokens.json",
+      "sha256": "80fc51ecef2544d0d6518b5c0ec51e9488dede408d3e60d106ef183c8655f3e2"
+    },
+    {
+      "file": "../../../packages/brand/assets/logo.svg",
+      "sha256": "356cca6d52352174f394c188d20af84443c321dec5778ed4ce7886a6c5c8461a"
+    },
+    {
+      "file": "../../../packages/brand/assets/manrope-600.ttf",
+      "sha256": "6bad1a774228464cc88b8b0271555b266f7a3c64a7bedf15e165fdab4f6ac0ce"
+    },
+    {
+      "file": "captures/component-dark.png",
+      "sha256": "fe0e3ebcdc44559308db24f575fd0a7867da4b21c40e85b9384f8d57f5d1eca6"
+    },
+    {
+      "file": "captures/foundations-dark.png",
+      "sha256": "ac0fd1245f09aadf6959aef2fdc0e05a6cde2eb517fb4c9c54f3ad7083e6ebb7"
+    },
+    {
+      "file": "captures/library-dark.png",
+      "sha256": "d5bc20d05482eabf046f8489e40fa606fc19d3c38ffc0f4f5fd698f4ac436e06"
+    }
+  ],
+  "exports": [
+    {
+      "file": "exports/gallery-component-docs.png",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 317688,
+      "sha256": "60bc440a7211cc1fc8f77b7e29ad58ac7e84a11d64e4a7900c842d22091903ee"
+    },
+    {
+      "file": "exports/gallery-foundations.png",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 279780,
+      "sha256": "5315973089662917750a8392e429341b67976a3b91b0ea652dd00568d35bd9fc"
+    },
+    {
+      "file": "exports/gallery-library-updates.png",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 364708,
+      "sha256": "e65a3c9866374b092d4613b6fd64a065c3be000da46e9526eb7c04ce156350ad"
+    },
+    {
+      "file": "exports/social-card.png",
+      "width": 1200,
+      "height": 630,
+      "bytes": 45377,
+      "sha256": "27b1b6b17dd45f85e5bd712ff54a3e903af47a282da9c2933c36ab60427a37c5"
+    },
+    {
+      "file": "exports/repository-social.png",
+      "width": 1280,
+      "height": 640,
+      "bytes": 48344,
+      "sha256": "f4737a5c40fec96ccd07058af654cdbcae6360b898679fa7e152a3bc37abde94"
+    },
+    {
+      "file": "exports/figma-cover.png",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 322013,
+      "sha256": "23f4ba46bf9108388475dbd7c55a468c68e70756da279ff8bb6386d210d0f54e"
+    },
+    {
+      "file": "exports/icon-128.png",
+      "width": 128,
+      "height": 128,
+      "bytes": 2018,
+      "sha256": "b034c3efacb62d5e09a3c4573aa3732523d162a5a0a325214d963194e958d444"
+    },
+    {
+      "file": "exports/icon-512.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 13820,
+      "sha256": "14d64a04debcbd05fd468c8429d6fa4bf73cd3282149bafd8ca1115a9592b838"
+    }
+  ]
+}

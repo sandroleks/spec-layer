@@ -1,5 +1,7 @@
 # Spec Layer website implementation and launch
 
+**Latest release, 7 September 2026:** shared branding and refreshed screenshot/social assets are live at https://spec-layer.com. All 50 public HTTP checks and exact parity for 32 static assets passed. See `docs/reviews/2026-09-07-website-brand-release/` for the current release and rollback record. The earlier launch record below is historical.
+
 Updated 6 September 2026. The website is live at [spec-layer.com](https://spec-layer.com). The user authorized production publishing with “push to prod”. The exact checked production artifact was deployed to the existing Cloudflare Pages project; all 50 public HTTP checks and 42 browser scenarios passed. See `docs/reviews/2026-09-06-website-production/` for delivered-response, browser, screenshot, and deployment evidence.
 
 Review the [private website](https://spec-layer-next.oleksandr-kurchev.chatgpt.site/) and [documentation](https://spec-layer-next.oleksandr-kurchev.chatgpt.site/docs/). See [ACCEPTANCE.md](ACCEPTANCE.md) for measured results, browser evidence, and the remaining manual/launch checks.
@@ -28,7 +30,7 @@ The implementation uses plain HTML, CSS, browser JavaScript, and a dependency-fr
 | References | `public/schemas/`, `public/examples/`, `public/example-button.yaml` |
 | Verification | `scripts/check*.mjs`, `ACCEPTANCE.md` |
 
-Generated HTML/crawl files and `dist/` are output. See [AUTHORING.md](AUTHORING.md) to extend the docs. Keep both permanent schema files byte-identical to the extractor and retain the older `apps/landing/schemas` copies while existing release checks reference them.
+Generated HTML/crawl files and `dist/` are output. See [AUTHORING.md](AUTHORING.md) to extend the docs. Keep both permanent schema files byte-identical to the extractor; `public/schemas/` is now the only copy, and the extractor's parity tests and `npm run check:site-live` both read it.
 
 ## Verified public host
 
@@ -46,7 +48,7 @@ Generated HTML/crawl files and `dist/` are output. See [AUTHORING.md](AUTHORING.
 
 These values were read through authenticated Wrangler project/deployment listing. All five support/policy URLs on the rollback deployment return 200 with text and links matching the verified source. Evidence is in `docs/reviews/2026-09-06-website-implementation/rollback.json` in the monorepo.
 
-A direct-upload project has no Git build integration to repoint. The production build/check happens locally or in CI; the reviewed `dist/` output is uploaded explicitly. Do not deploy `apps/landing` over the candidate.
+A direct-upload project has no Git build integration to repoint. The production build/check happens locally or in CI; the reviewed `dist/` output is uploaded explicitly. The superseded `apps/landing` source was deleted on 7 September 2026; it survives only in Git history and must never be deployed, because it predates published disclosures.
 
 ## Release procedure
 
@@ -72,7 +74,7 @@ For a fresh source build, run `npm run check:production --prefix apps/website`; 
 
 ## Rollback
 
-In the existing Cloudflare Pages project's production deployment history, roll back to `a24d34c5-c24b-4957-b0db-8f52f46f318d` if the public release fails its checks. Recheck the homepage, all five policy/support pages, and both permanent schemas after rollback. Do not rebuild the old local `apps/landing` source as a substitute: it predates some published disclosures.
+In the existing Cloudflare Pages project's production deployment history, roll back to `a24d34c5-c24b-4957-b0db-8f52f46f318d` if the public release fails its checks. Recheck the homepage, all five policy/support pages, and both permanent schemas after rollback. Do not rebuild the deleted `apps/landing` source from Git history as a substitute: it predates some published disclosures.
 
 ## Route contract
 

@@ -85,6 +85,7 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
     assert.equal(await faq.evaluate(el => el.open), false);
   });
   await check(`${engine} gallery selection, image failure and recovery`, async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(origin);
     // Exercise failure before this browser has decoded the same image.
     // WebKit may reuse a decoded image without making an interceptable request.
@@ -99,10 +100,19 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
       await page.locator(`[data-gallery="${n}"]`).click();
       await page.waitForFunction(() => document.querySelector('#gallery-image').complete && document.querySelector('#gallery-image').naturalWidth > 0);
       assert.equal(await page.locator(`[data-gallery="${n}"]`).getAttribute('aria-pressed'), 'true');
-      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#full-image').getAttribute('href'));
-      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#gallery-link').getAttribute('href'));
+      assert.equal(await page.locator('#gallery-closeup').getAttribute('srcset'), await page.locator('#full-image').getAttribute('href'));
+      assert.equal(await page.locator('#gallery-closeup').getAttribute('srcset'), await page.locator('#gallery-link').getAttribute('href'));
     }
 
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const n of [1, 2, 0]) {
+      await page.locator(`[data-gallery="${n}"]`).click();
+      await page.waitForFunction(() => {
+        const image = document.querySelector('#gallery-image');
+        return image.complete && image.naturalWidth === 480;
+      });
+      assert.equal(new URL(await page.locator('#gallery-image').evaluate(el => el.currentSrc)).pathname.slice(1), await page.locator('#gallery-closeup').getAttribute('srcset'));
+    }
   });
   await check(`${engine} docs navigation, contents, deep link and keyboard`, async () => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -142,6 +152,50 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
       await page.locator(`.docs-sidebar a[href="${pageUrl(entry)}"]`).click();
       assert.equal(new URL(page.url()).pathname, pageUrl(entry));
       assert.equal(await page.locator('.docs-sidebar a[aria-current=page]').getAttribute('href'), pageUrl(entry));
+    }
+  });
+  await check(`${engine} docs sidebar padding, section spacing and focus`, async () => {
+    await page.goto(origin + '/docs/');
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
+      await page.locator('.docs-nav-disclosure').evaluate(el => { el.open = true; });
+      const layout = await page.locator('.docs-sidebar').evaluate(sidebar => {
+        const bounds = sidebar.getBoundingClientRect();
+        const groups = [...sidebar.querySelectorAll('.docs-nav-group')];
+        return groups.map((group, index) => {
+          const heading = group.querySelector('strong');
+          const headingLeft = heading.getBoundingClientRect().left + parseFloat(getComputedStyle(heading).paddingLeft);
+          return {
+            gap: index ? group.getBoundingClientRect().top - groups[index - 1].getBoundingClientRect().bottom : null,
+            links: [...group.querySelectorAll('a')].map(link => {
+              const box = link.getBoundingClientRect();
+              const style = getComputedStyle(link);
+              return { left: box.left - bounds.left, right: bounds.right - box.right, padding: parseFloat(style.paddingLeft), alignment: Math.abs(box.left + parseFloat(style.paddingLeft) - headingLeft), height: box.height };
+            })
+          };
+        });
+      });
+      for (const group of layout) {
+        if (group.gap !== null) assert.ok(group.gap >= 18, `${width}px: sections run together`);
+        for (const link of group.links) {
+          assert.ok(link.left >= 0 && link.right >= 0, `${width}px: sidebar clips a navigation row`);
+          assert.ok(link.padding >= 12 && link.alignment <= 1, `${width}px: link and heading padding do not align`);
+          assert.ok(link.height >= (width < 761 ? 44 : 40), `${width}px: navigation row is too short`);
+        }
+      }
+      const active = page.locator('.docs-sidebar a[aria-current=page]');
+      await active.focus();
+      assert.notEqual(await active.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
+      assert.ok(await active.evaluate(el => {
+        const sidebar = el.closest('.docs-sidebar');
+        if (getComputedStyle(sidebar).overflowX === 'visible') return true;
+        const style = getComputedStyle(el);
+        const inset = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+        const link = el.getBoundingClientRect();
+        const bounds = sidebar.getBoundingClientRect();
+        return link.left - inset >= bounds.left && link.right + inset <= bounds.right;
+      }), `${width}px: sidebar clips the keyboard focus outline`);
+      if ([390, 1440].includes(width)) await page.screenshot({ path: resolve(output, `${engine}-docs-menu-${width}.png`) });
     }
   });
   await check(`${engine} clipboard denial feedback`, async () => {

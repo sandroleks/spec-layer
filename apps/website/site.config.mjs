@@ -12,7 +12,7 @@ export const site = {
   homeTitle: 'Spec Layer | Figma design system documentation',
   homeDescription: 'Document Figma components, variables, and styles. Share component YAML and DTCG design tokens with developers and AI coding agents through Spec Layer.',
   image: '/social/spec-layer.png',
-  imageAlt: 'Spec Layer: Figma documentation and developer-ready design context.',
+  imageAlt: 'Spec Layer. Your design system. Ready to build. Documentation and context from Figma.',
 };
 
 export const absoluteUrl = path => new URL(path, site.origin).href;

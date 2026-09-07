@@ -1,7 +1,7 @@
 <p class="docs-lead">Connect a published library, pull updates, and inspect the context in your repository. This reference covers CLI {{cliVersion}}.</p>
 <section id="requirements"><h2>Requirements and installation</h2>
-<p>Use Node.js 22 or newer. Only the publisher needs Pro; network commands need the published library ID and pull key. Run commands from your project root.</p>
-<div class="docs-code"><div class="code-heading"><span>Use without a separate install</span><button data-copy="npx spec-layer pull" aria-label="Copy pull command">Copy</button></div><pre tabindex="0"><code>npx spec-layer pull</code></pre></div>
+<p>Use Node.js 22 or newer and run commands from your project root. Publishing requires Pro; pulling a library requires its ID and pull key. For your first connection, follow the <a href="#setup">setup instructions</a> before running <code>pull</code>.</p>
+<div class="docs-code"><div class="code-heading"><span>After setup, pull the published library</span><button data-copy="npx spec-layer pull" aria-label="Copy pull command">Copy</button></div><pre tabindex="0"><code>npx spec-layer pull</code></pre></div>
 <p>For automated runs, pin the documented CLI version as a development dependency:</p>
 <div class="docs-code"><div class="code-heading"><span>Install a specific version</span><button data-copy="npm install --save-dev --save-exact spec-layer@{{cliVersion}}" aria-label="Copy CLI install command">Copy</button></div><pre tabindex="0"><code>npm install --save-dev --save-exact spec-layer@{{cliVersion}}</code></pre></div>
 <p><code>npx spec-layer</code> then uses the installed local version. If you deliberately use an uninstalled package in automation, <code>npx --yes spec-layer …</code> suppresses npm’s installation prompt.</p></section>

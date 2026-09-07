@@ -1,6 +1,6 @@
-<p class="docs-lead">Use canvas docs for people, compact context for coding agents, and canonical artifacts when you need the full structured contract.</p>
+<p class="docs-lead">Choose canvas documentation for your team, compact exports for coding agents and token tools, or canonical JSON for validation and integrations.</p>
 <section id="formats"><h2>Choose the right format</h2>
-<div class="table-scroll" role="region" tabindex="0" aria-label="Output formats"><table><thead><tr><th scope="col">Output</th><th scope="col">Where to get it</th><th scope="col">Use it for</th></tr></thead><tbody><tr><td>Canvas documentation</td><td>Create docs in Figma</td><td>Readable specs, measurements, anatomy, variants, and token references.</td></tr><tr><td>Component YAML</td><td>Copy for AI or <code>ai/components/</code></td><td>Give a coding agent a component’s API, layout, and dependencies.</td></tr><tr><td>Foundation DTCG JSON</td><td>A foundation copy or <code>tokens/</code></td><td>Read token types, values, modes, and supported references.</td></tr><tr><td>Canonical JSON</td><td><code>show --canonical</code> or the published bundle</td><td>Validate, inspect stable identities, and build integrations.</td></tr></tbody></table></div>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Output formats"><table><thead><tr><th scope="col">Output</th><th scope="col">Where to get it</th><th scope="col">Use it for</th></tr></thead><tbody><tr><td>Canvas documentation</td><td>Create docs in Figma</td><td>Readable specs, measurements, anatomy, variants, and token references.</td></tr><tr><td>Component YAML</td><td>Copy for AI or <code>ai/components/</code></td><td>Give a coding agent a component’s API, layout, and dependencies.</td></tr><tr><td>Foundation DTCG JSON</td><td>Copy a foundation source or read <code>tokens/</code></td><td>Read token types, values, modes, and supported references.</td></tr><tr><td>Canonical JSON (full context)</td><td><code>show --canonical</code> or the published bundle</td><td>Validate, inspect stable identities, and build integrations.</td></tr></tbody></table></div>
 <p>Extraction is deterministic. Previously saved AI-written guidance may accompany an export, but it is identified separately and excluded from semantic content hashes.</p></section>
 <section id="component-yaml"><h2>Component YAML</h2>
 <p>A component copy contains its properties, variants, states, anatomy, default-variant layout, and the token and style dependencies it uses. The dependency slice includes the local aliases needed to interpret those references.</p>
@@ -25,7 +25,7 @@ api:
     "hex": "#ffffff"
   }
 }</code></pre></div>
-<p><code>spec-layer.meta.json</code> retains source details such as Figma IDs and code syntax. <code>report.json</code> explains information the projection cannot express. These are sidecars, so exclude them from token-file globs.</p>
+<p><code>spec-layer.meta.json</code> retains source details such as Figma IDs and code syntax. <code>report.json</code> explains information the projection cannot express. These files contain metadata, not tokens. Exclude them from patterns that select token files.</p>
 <p><a href="/examples/foundation/resolver.json">Inspect the synthetic resolver</a> and its linked files. For compatibility formats or explicit unit choices, see <a href="/docs/configuration/#token-options">token output options</a>.</p></section>
 <section id="file-layout"><h2>Files written by a pull</h2>
 <div class="docs-code"><pre tabindex="0"><code>.speclayer/
@@ -41,9 +41,9 @@ api:
 └── ai/
     └── components/
         └── &lt;component-name&gt;.yaml</code></pre></div>
-<p>The tree shows possible output. Token and component files depend on the published library and your selection. Component filenames are slugged; collisions receive numeric suffixes.</p>
+<p>This example shows the files a pull can create. Token and component files depend on the published library and your selection. Component filenames are slugged; collisions receive numeric suffixes.</p>
 <dl class="docs-definitions"><div><dt>bundle.json</dt><dd>The published bundle, retained in full even when you select only some artifacts for separate files.</dd></div><div><dt>manifest.json</dt><dd>Library and publication information, bundle hash, output selection, and an index of artifact names, content hashes, and paths. An unselected artifact has <code>aiPath: null</code>.</dd></div><div><dt>tokens/ and ai/components/</dt><dd>The files your token tooling and coding agent usually read. The foundation entry’s manifest path points to <code>tokens/resolver.json</code>.</dd></div></dl></section>
 <section id="updates"><h2>How updates affect files</h2>
 <p>The CLI stages output in <code>.speclayer.partial</code> and swaps it into place. Keep your own source files outside this managed output directory.</p>
 <p>An unchanged bundle, selection, and token configuration produces no new writes. Republishing changes export IDs and timestamps, so the bundle and manifest can change even if their semantic content hashes stay the same.</p>
-<p>Component YAML, token files, and semantic hashes stay stable when the facts they represent do not change. An unrelated foundation change can move the whole-foundation hash without changing a component whose dependency slice is unchanged.</p></section>
+<p>Component YAML, token files, and semantic hashes stay stable when the underlying design data does not change. An unrelated foundation change can change the whole-foundation hash without changing a component whose dependency slice is unchanged.</p></section>

@@ -28,18 +28,21 @@ window.matchMedia('(min-width: 761px)').addEventListener('change', closeMenu);
 const galleryItems = [
   {
     src: 'gallery-component-docs.png',
-    alt: 'Spec Layer canvas documentation showing component anatomy, measurements, and properties',
-    caption: 'Generate anatomy, measurements, properties, and token references together on the Figma canvas.'
+    closeup: 'screenshots/component-dark.png',
+    alt: 'Spec Layer component documentation controls, with Specifications expanded and Create docs and Copy for AI actions. Sample data.',
+    caption: 'Choose anatomy, measurements, states, and tokens for your component documentation. Plugin interface shown with sample data.'
   },
   {
     src: 'gallery-foundations.png',
-    alt: 'Spec Layer foundation documentation with color swatches, token names, variables, and styles',
-    caption: 'Turn local variable collections and text styles into foundation references your team can read.'
+    closeup: 'screenshots/foundations-dark.png',
+    alt: 'Spec Layer Foundation documents screen with selected variable collections and text styles. Sample data.',
+    caption: 'Choose variable collections and text styles to document, or copy design tokens for AI. Plugin interface shown with sample data.'
   },
   {
     src: 'gallery-library-updates.png',
-    alt: 'Spec Layer Library with connected documentation and actions to review and update it',
-    caption: 'Check source changes in the Library, review what changed, and update the connected docs.'
+    closeup: 'screenshots/library-dark.png',
+    alt: 'Spec Layer Library with expanded token and unbound-value changes and an Update all docs action. Sample data.',
+    caption: 'Review source changes and update the connected documentation. Plugin interface shown with sample data.'
   }
 ];
 
@@ -48,11 +51,12 @@ document.querySelectorAll('[data-gallery]').forEach(button => {
     const item = galleryItems[Number(button.dataset.gallery)];
     const image = document.querySelector('#gallery-image');
     if (!item || !image) return;
+    document.querySelector('#gallery-closeup').srcset = item.closeup;
     image.src = item.src;
     image.alt = item.alt;
     document.querySelector('#gallery-caption').textContent = item.caption;
-    document.querySelector('#full-image').href = item.src;
-    document.querySelector('#gallery-link').href = item.src;
+    document.querySelector('#full-image').href = item.closeup;
+    document.querySelector('#gallery-link').href = item.closeup;
     document.querySelectorAll('[data-gallery]').forEach(other => {
       const selected = other === button;
       other.setAttribute('aria-pressed', String(selected));

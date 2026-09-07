@@ -1,0 +1,27 @@
+{
+  "publishedAt": "2026-09-07T17:27:51.381340+00:00",
+  "url": "https://spec-layer.com",
+  "deployment": {
+    "Id": "b4babbd4-9346-4097-930c-290f5f612854",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "6adbe72",
+    "Deployment": "https://b4babbd4.speclayer-landing.pages.dev",
+    "Status": "32 seconds ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/b4babbd4-9346-4097-930c-290f5f612854"
+  },
+  "rollbackDeploymentId": "2c51cdd0-f871-42e8-97d8-60e70d059a06",
+  "sourceBaseCommit": "6adbe7213e15c6a4b39c8a2db3fd4f55bb99773b",
+  "sourceBranch": "codex/shared-design-system",
+  "includesUncommittedWebsiteChanges": true,
+  "archiveSha256": "18bd83eda60479b1a0b35b6bbddfa6e94765e2b98c0b110f21d325ac2e0b6b79",
+  "httpChecksPassed": 50,
+  "staticAssetsExactMatch": 32,
+  "browserReview": [
+    "1440px homepage shared branding and production indexing metadata",
+    "Desktop Foundations gallery and full-size link",
+    "390px Library gallery close-up and no horizontal overflow",
+    "390px CLI documentation and no horizontal overflow"
+  ],
+  "scope": "Website only. Plugin distribution, public Figma listing, and repository social settings were not released."
+}

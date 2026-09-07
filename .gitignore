@@ -28,5 +28,19 @@ screenshots/*.mp4
 speclayer.json
 
 # Generated deployment archives are delivered out of band, not source-controlled.
+# A release record keeps its per-file hashes (candidate.json, live-assets.json),
+# which prove what shipped without carrying the payload; `npm run check:production
+# --prefix apps/website` rebuilds the bytes those hashes describe.
 docs/handoffs/*.zip
 docs/handoffs/*.tar.gz
+docs/reviews/**/*.zip
+docs/reviews/**/*.tar.gz
+
+# Delivery bundle of files that are already tracked individually beside it.
+# docs/brand/assets-v1/render.mjs regenerates it.
+docs/brand/assets-v1/*.zip
+
+# Superseded full-resolution concept art. Synthetic Image Gen proposals, never
+# an approved implementation target; the shipped visuals are the real renderer
+# captures in docs/brand/assets-v1/captures/.
+docs/brand/proposals/

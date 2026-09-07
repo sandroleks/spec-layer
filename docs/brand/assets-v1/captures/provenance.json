@@ -1,0 +1,43 @@
+{
+  "capturedOn": "2026-09-07",
+  "branch": "codex/shared-design-system",
+  "viewport": {
+    "width": 480,
+    "height": 680
+  },
+  "captureMethod": "Browser viewport screenshots of the actual local renderer; unretouched synthetic fixtures; not native Figma.",
+  "sourceHashes": {
+    "packages/plugin/dist/ui-harness.html": "4ea4d8e758b3a059eb55db6802bdbbc730176cbaf600f865a161de47a76e8404",
+    "packages/brand/src/tokens.json": "80fc51ecef2544d0d6518b5c0ec51e9488dede408d3e60d106ef183c8655f3e2"
+  },
+  "captures": [
+    {
+      "file": "component-dark.png",
+      "sha256": "fe0e3ebcdc44559308db24f575fd0a7867da4b21c40e85b9384f8d57f5d1eca6"
+    },
+    {
+      "file": "component-light.png",
+      "sha256": "b7ca4c7f7b57e4bce29f3ceb1b466da2fa07b2bda0e67f4fe878449c2054c507"
+    },
+    {
+      "file": "foundations-dark.png",
+      "sha256": "ac0fd1245f09aadf6959aef2fdc0e05a6cde2eb517fb4c9c54f3ad7083e6ebb7",
+      "revision": "Recaptured after changing the footer label to Copy all for AI.",
+      "rendererSha256": "c39ecce4f16ee1922d27747bd73a0dcddfb6be5a77848f4bc7c3123702a33668"
+    },
+    {
+      "file": "foundations-light.png",
+      "sha256": "529e80087aa0140680d02ef06f20eed89d053ec69fd3cfc259f4ed5b4984d63f",
+      "revision": "Recaptured after changing the footer label to Copy all for AI.",
+      "rendererSha256": "c39ecce4f16ee1922d27747bd73a0dcddfb6be5a77848f4bc7c3123702a33668"
+    },
+    {
+      "file": "library-dark.png",
+      "sha256": "d5bc20d05482eabf046f8489e40fa606fc19d3c38ffc0f4f5fd698f4ac436e06"
+    },
+    {
+      "file": "library-light.png",
+      "sha256": "cd470e2ededea5e04b67aa4ba4ad8be742d26ef40bc3e6a07ef2660022592395"
+    }
+  ]
+}

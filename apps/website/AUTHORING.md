@@ -2,6 +2,10 @@
 
 The website uses plain HTML content and a shared static generator. Pages are readable and navigable without JavaScript. JavaScript adds clipboard actions, mobile navigation, and section tracking.
 
+## Copy terminology
+
+Do not call documentation, specifications, or design context “facts”. Use the specific term: documentation, specifications, design details, design tokens, or context.
+
 ## Add a page
 
 1. Add `content/docs/your-topic.html` with the page body. Start with a short `<p class="docs-lead">` introduction. The generator supplies the page title and layout, so do not add another `<h1>`, `<main>`, header, or footer.
@@ -39,7 +43,7 @@ npm run docs:sync
 npm run check
 ```
 
-The sync script copies the committed canonical component and foundation schemas, the synthetic Button YAML fixture, and the synthetic foundation DTCG files into `public/`. It also updates CLI and Context version metadata in `content/reference.json`. These snapshots are source assets; commit them so the website builds independently of the monorepo.
+The sync script copies the committed canonical component and foundation schemas, the synthetic Button YAML fixture, and the synthetic foundation DTCG files into `public/`. It also updates CLI and Context version metadata in `content/reference.json`. These snapshots are source assets; commit them so reference generation does not depend on live services. Website builds require the shared `packages/brand` source in this monorepo.
 
 Use `{{cliVersion}}` and `{{schemaVersion}}` in content to show snapshot versions. The schema page’s field tables are generated from the schema files, with human-readable explanations in `scripts/docs.mjs`. When schema fields change, review those explanations too.
 
@@ -51,4 +55,14 @@ The downloadable `public/examples/validate-context.mjs` is a standalone consumer
 
 `pages.config.mjs` registers the five support/policy URLs and their metadata. `scripts/pages.mjs` wraps the verified authored source in the website layout. Update the original body under `content/source-pages/` deliberately; do not edit generated `public/support.html` or the other policy pages.
 
-`manifest.json` records the authored Git revision, source hashes, and the live text/link comparison. `check-pages.mjs` checks source integrity and exact generated body preservation, allowing only `.html` policy links to become their existing clean paths. For a future approved policy change, update the authored content and its provenance/hash together, review the disclosure changes, and verify that the generated page differs only as intended. Do not update a hash merely to silence an unexplained mismatch.
+`check-pages.mjs` checks exact generated body preservation, allowing only `.html` policy links to become their existing clean paths. The generator may reshape the page around the legal text; it may not change a word of it.
+
+These pages carry published legal disclosures, so treat a wording change as a deliberate act: review what the disclosure now says, confirm the generated page differs only as intended, and deploy so the public URL and this source agree. `apps/website` is the only path to production, so the repository is the source of truth by construction. To confirm the live site actually serves what is committed, run `npm run check:site-live` from the repository root.
+
+## Maintain the shared brand
+
+Edit shared colors, identity, fonts, motion, and shape roles in `packages/brand`; the plugin and website consume the same source. `scripts/brand.mjs` runs during build and preview startup, generating `public/brand/tokens.css` and copying the static `public/logo.svg`, Manrope files, and license from the shared package. Do not edit these copies independently.
+
+Use `public/brand.css` for website aliases and font loading, `public/styles.css` for website components and reading sizes, and `public/docs.css` for documentation layout. The website does not import plugin density. Pair action fills with `on-action`, selection with `accent-text`, and use the shared focus role. Illustrative Figma specimens represent customer content and can retain their own colors.
+
+Run `npm run check` after changes. It checks the shared contrast contract, exact palette and asset parity, transitive CSS/font paths, density separation, and page theme metadata. Review desktop/mobile rendering separately. Product captures and social artwork now come from `docs/brand/assets-v1/`. Run `npm run social:render` to regenerate from that master. The gallery uses desktop compositions and responsive raw captures; preserve sample-data captions. Native Figma verification remains in the release review phase.

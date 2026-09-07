@@ -19,5 +19,8 @@ node_modules/
 /public/security.html
 /public/refund.html
 
+# Shared palette is regenerated before both builds and local previews.
+/public/brand/
+
 # Private preview hosting binding.
 .openai/

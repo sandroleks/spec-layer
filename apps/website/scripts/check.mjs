@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { pages, pageUrl } from '../docs.config.mjs';
 import { infoPages, infoPageUrl } from '../pages.config.mjs';
+import { site } from '../site.config.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dist = join(root, 'dist');
 const origin = 'https://local.spec-layer.test';
@@ -19,7 +20,7 @@ async function htmlAt(path) {
 }
 async function checkLink(value, from) {
   const url = new URL(value.replaceAll('&amp;', '&'), `${origin}/${relative(dist, from)}`);
-  if (url.origin !== origin) return;
+  if (url.origin !== origin && url.origin !== site.origin) return;
   let path = decodeURIComponent(url.pathname);
   if (path.endsWith('/')) path += 'index.html';
   if (infoPages.some(page => infoPageUrl(page) === path)) path += '.html';
@@ -43,6 +44,13 @@ for (const path of files.filter(path => path.endsWith('.html'))) {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length, `Duplicate ids: ${path}`);
   for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) await checkLink(match[1], path);
+}
+// Gallery destinations only appear after interaction; validate them with the HTML
+// links. `closeup` is the href of #full-image and #gallery-link and the srcset of
+// #gallery-closeup, so it is a real click destination and not only an <img> source.
+const app = await readFile(join(dist, 'app.js'), 'utf8');
+for (const match of app.matchAll(/\b(?:src|closeup):\s*'([^']+)'/g)) {
+  await checkLink(match[1], join(dist, 'index.html'));
 }
 assert.equal(new Set(pages.map(page => page.slug)).size, pages.length, 'Documentation slugs must be unique');
 for (const page of pages) {

@@ -58,3 +58,21 @@ Both preview and production builds passed checks for 14 HTML routes, seven canon
 Read-only checks of the public site confirmed its policy/support routes and missing sitemap. No production-domain, DNS, crawler-management, or Search Console settings were changed. The policy/support route handoff and Search Console submission are documented in `SEO.md` for the public launch.
 
 The published preview served canonical pages and the social image successfully, exposed the sitemap and robots file, included HTML `noindex`, and returned 404 for an unknown page. Sites did not apply the uploaded Cloudflare redirect/header rules, so the preview relies on HTML metadata and a compatibility fallback for normalized legacy quickstart bookmarks. The public-host rules remain separately checked in source and the local HTTP server.
+
+## Further copy, links, and docs menu pass
+
+The follow-up fixes clipped sidebar padding and keyboard focus, aligns section headings with navigation labels, clarifies homepage and documentation copy, and expands link/menu regression coverage. Preview/production checks and 50 local HTTP checks pass; Chromium and WebKit pass 44 browser scenarios across nine viewport widths.
+
+The link audit verified 39 HTTP destinations: 36 responded directly, and the two checkout destinations worked in a browser with the correct selected plan. Figma blocks automated access and remains unverified live. Lemon Squeezy's annual checkout copy incorrectly says “Save about $30”; the website correctly states $15.89. See `docs/reviews/2026-09-06-website-improvements/` in the monorepo for the complete record and screenshots. These changes, including the final terminology revisions, are deployed to spec-layer.com. Final production verification passed 44 browser scenarios and 50 HTTP checks. Live verification also corrected Cloudflare email rewriting of versioned CLI commands. See the review directory’s release.json for the deployment and rollback records.
+
+## Shared brand adoption — 7 September 2026
+
+The implementation branch now connects the website to `packages/brand`, which also powers the plugin. Shared semantic colors, static identity, font assets, action/selection/focus states, and shape roles replace independently authored website branding. Web reading sizes stay separate from plugin density, with Manrope headings and the shared Inter/system stack for body text. Existing content edits and policy provenance remain intact.
+
+Preview and production-mode checks, shared asset/contrast gates, and local browser review are recorded in `docs/reviews/2026-09-07-website-brand-implementation/`. These branding changes are local and have not been deployed. Existing gallery and social images remain pending the separate imagery phase.
+
+## Screenshot and supporting artwork adoption — 7 September 2026
+
+Replaced the three local website gallery panels and social preview with assets generated from the shared brand source. Six unretouched browser captures show the actual implementation renderer in light/dark themes with synthetic data. Gallery descriptions now describe the visible interface, and mobile sources show a raw close-up rather than a reduced desktop panel. Full-size links open the matching raw screenshot.
+
+The standalone package includes listing/repository artwork and icons, source/capture provenance, a rebuildable master, and a download archive. Review and verification: `docs/brand/assets-v1/README.md` and `docs/reviews/2026-09-07-brand-artwork/README.md`. No public assets or listing settings have been updated in this pass. Native Figma verification remains outstanding.

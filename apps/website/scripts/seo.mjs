@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { site, absoluteUrl } from '../site.config.mjs';
 import { pages, pageUrl } from '../docs.config.mjs';
 import { infoPages, infoPageUrl } from '../pages.config.mjs';
+import { websiteThemeColor } from './brand.mjs';
 
 const root = new URL('../', import.meta.url);
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
@@ -36,6 +37,7 @@ export function seoHead({ title, description, path, breadcrumbs = [], notFound =
       })) });
   }
   return `<title>${escapeHtml(title)}</title>
+<meta name="theme-color" content="${websiteThemeColor}">
 <meta name="description" content="${escapeHtml(description)}">
 <meta name="robots" content="${robots}">
 ${notFound ? '' : `<link rel="canonical" href="${canonical}">`}
