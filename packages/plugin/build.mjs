@@ -7,8 +7,11 @@ import * as esbuild from 'esbuild';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { buildBrand } from '../brand/build.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Fail the contrast gate before replacing any plugin artifact.
+await buildBrand();
 const dist = resolve(__dirname, 'dist');
 mkdirSync(dist, { recursive: true });
 
@@ -44,16 +47,15 @@ console.log('Built dist/main.js');
 // ---------------------------------------------------------------------------
 const uiEntry = resolve(__dirname, 'src/ui/ui-vnext.ts');
 
-// The design system is embedded from disk rather than imported through the
-// TypeScript graph, so src/ui/design-system/*.css stays the single source and
-// no second copy can drift. Order is the documented cascade: tokens define the
-// roles, components consume them, patterns compose components.
-//
-// One value now, not two: with the legacy UI gone there is no build whose
-// ui.html should omit the design system, so the CSS is unconditional.
-const designSystemCss = ['tokens.css', 'components.css', 'patterns.css']
-  .map((file) => readFileSync(resolve(__dirname, 'src/ui/design-system', file), 'utf-8'))
-  .join('\n');
+// Generate shared tokens on every build and resolve CSS imports into the
+// embedded artifact. The Figma iframe never needs an external stylesheet.
+const styles = await esbuild.build({
+  entryPoints: [resolve(__dirname, 'src/ui/design-system/index.css')],
+  bundle: true,
+  write: false,
+  target: 'es2017',
+});
+const designSystemCss = styles.outputFiles[0].text;
 
 // Comments and whitespace out; selectors, custom properties, and cascade order
 // untouched. The uiHtml test checks order by selector, not by comment.
@@ -117,9 +119,10 @@ if (process.env.UI_HARNESS === '1') {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Spec Layer UI harness</title>
 <style>${designSystemCss}</style>
-<style>html,body{margin:0;width:480px;height:680px;overflow:hidden}</style>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}</style>
 </head>
 <body data-theme="dark">
 <script>${harness.outputFiles[0].text}</script>

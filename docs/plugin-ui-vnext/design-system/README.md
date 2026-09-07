@@ -1,7 +1,8 @@
 # Plugin UI design system
 
-The production design system lives in
-`packages/plugin/src/ui/design-system/` and does not require React. This
+The shared identity source lives in `packages/brand/src/tokens.json`. The
+production plugin adapter, primitives, and patterns live in
+`packages/plugin/src/ui/design-system/` and do not require React. This
 directory preserves the original documentation paths, but its CSS and
 TypeScript files are compatibility entry points that import or re-export the
 production source. Do not copy changes back into this directory.
@@ -22,7 +23,10 @@ production source. Do not copy changes back into this directory.
 Use `index.css`, or preserve its import order when the CSS is embedded.
 
 The production plugin emits one embedded HTML file. `packages/plugin/build.mjs`
-embeds the three production CSS layers in this order.
+generates the shared brand assets, checks their contrast pairs, and bundles
+`packages/plugin/src/ui/design-system/index.css` in this order. Shared CSS
+imports are resolved into the embedded HTML; no external stylesheet is fetched.
+Run `npm run build:brand` before using these compatibility imports independently.
 
 ## Theme contract
 
@@ -60,10 +64,10 @@ Steps are named for the **role** they serve, not their position in a sequence:
 
 | Token | px | Role |
 | --- | --- | --- |
-| `--sl-font-size-micro` | 8 | keyboard hints, smallest badges |
-| `--sl-font-size-caption` | 9 | hints, counts, secondary `<small>` |
-| `--sl-font-size-support` | 10 | metadata, help text, chips |
-| `--sl-font-size-control` | 11 | buttons, control labels, row titles |
+| `--sl-font-size-micro` | 11 | short keyboard hints; never essential reading |
+| `--sl-font-size-caption` | 11 | short counts, timestamps, badges |
+| `--sl-font-size-support` | 12 | explanations, help text, chips |
+| `--sl-font-size-control` | 12 | buttons, control labels, row titles |
 | `--sl-font-size-body` | 12 | base body copy |
 | `--sl-font-size-section` | 14 | section headings |
 | `--sl-font-size-display` | 20 | screen h1 |
@@ -78,13 +82,14 @@ Whole pixels only. The previous values ran to quarter-pixel steps (8.75, 9.25,
 step: nothing needs one, and a role name without a consumer is how the old dead
 `.sl-type-*` utilities started.
 
-Weights are `regular` 450, `medium` 560, `semibold` 650, `bold` 720 — four, not
-the twelve that existed before (610 / 620 / 640 are not distinguishable).
+Weights are `regular` 400, `medium` 500, `semibold` 600, `bold` 700. The working
+font stack is Inter with native system fallbacks; no network font is required.
 **Always set a weight on `<strong>`**: with no rule it inherits the UA default of
-700, which is not a token.
+700. Choose the role deliberately, usually semibold for a section label.
 
 Line heights are `none` 1 (single-line controls that centre their own text),
-`tight` 1.15, `control` 1.25, `body` 1.4.
+`tight` 1.15, `control` 1.25, `body` 1.4, and `reading` 1.5. Library change
+details and variant scope use the 12px body role with the reading line height.
 
 Tracking is `display` -0.035em, `tight` -0.01em, `caps` 0.045em, `caps-wide`
 0.07em. Small uppercase labels need positive tracking to stay readable; large
@@ -169,7 +174,7 @@ an internal storage unit ("Create 8 frames"), and a batch scope ("Update all
 
 | Screen | Secondary | Primary |
 | --- | --- | --- |
-| Selected component | `Download` (`download`) | `Create docs` (`filePlus`) |
+| Selected component | `Copy for AI` (`copy`) | `Create docs` (`filePlus`) |
 | Foundations | `Refresh sources` (`refresh`) | `Create docs` (`filePlus`) |
 | Library | `Refresh library` (`refresh`) | `Update all docs` (`fileCheck`) |
 
@@ -186,6 +191,11 @@ an internal storage unit ("Create 8 frames"), and a batch scope ("Update all
 - **Both slots hug and the row sits right.** No `flex` and no `min-width` on a
   footer button. The foundations primary used to take `flex: 1` and stretch the
   width of the footer while the same slot elsewhere hugged.
+
+At compact widths, actions wrap onto another right-aligned row instead of
+compressing their glyphs or clipping their labels. The screen grid allocates
+the footer's actual height. Foundations also offers **Copy whole file for AI**
+when a file has been read; keep that scope explicit beside its row-level copies.
 
 ## Component inventory
 
@@ -247,3 +257,25 @@ Product patterns:
 - Menus use menu semantics only when they provide action commands.
 - Dialogs move focus on open, close with Escape, and restore focus.
 - Animations respect `prefers-reduced-motion`.
+
+## Shared brand contract
+
+Violet is reserved for actions, selection, and restrained accents. AI assistance
+uses neutral surfaces. Components use paired foreground/background roles:
+`accent` with `text-on-accent`, `danger-fill` with `text-on-danger`, and
+`accent-text` on selected or neutral surfaces. Dark violet actions use dark
+foregrounds; light-theme actions use white. Dividers are separate from strong
+control boundaries.
+
+The adapter redeclares shared aliases on `body[data-theme]`, so switching themes
+resolves the new palette instead of inheriting a value resolved on the root.
+Do not replace this boundary with root-only aliases.
+
+Use radius roles: xs 3px, sm 4px, md 8px, lg 12px, pill 999px. Circles, 1px
+mark smoothing, and zero-radius joins remain geometric exceptions. Avoid new
+standalone radius literals for controls or content blocks.
+
+The dated proposal is in `docs/brand/system-v1/`; current implementation status
+is in `docs/strategy/2026-09-07-design-system-implementation.md`. The shared
+package is the source for future website adoption. Customer-document themes
+in `packages/plugin/src/brandColors.ts` are separate and must remain so.

@@ -1,0 +1,28 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+<g id="spec-layer-core_5" clip-path="url(#clip0_22_1278)">
+<rect width="512" height="512" id="spec-layer-core_5_bg_0" fill="black">
+</rect>
+<rect id="morph-square" transform="translate(97 97)" width="130" height="130" fill="white">
+
+
+</rect>
+<rect id="morph-circle-outlined" transform="translate(285 97)" width="130" height="130" rx="65" stroke="white" stroke-width="10">
+
+
+</rect>
+<rect id="morph-square-outlined" transform="translate(97 285)" width="130" height="130" stroke="white" stroke-width="10">
+
+
+</rect>
+<rect id="morph-circle" transform="translate(285 285)" width="130" height="130" rx="65" fill="white">
+
+
+</rect>
+</g>
+<defs>
+<clipPath id="clip0_22_1278">
+<rect width="512" height="512" fill="white"/>
+</clipPath>
+</defs>
+</svg>

@@ -87,7 +87,7 @@ open: nothing should pop up on the canvas.
    the Sections that are created.
 3. Click **Create docs** and confirm collection and text-style Sections use the
    current frame theme, include only selected sources, and appear in Library.
-4. Click the Foundations footer's **Copy whole file for AI** and paste into a
+4. Click the Foundations footer's **Copy all for AI** and paste into a
    plain text editor. Confirm it is a single line of compact JSON that a
    formatter can pretty-print, with `"version": "2025.10"`, one set or modifier
    per collection named exactly as in Figma, `$type` and `$value` on every

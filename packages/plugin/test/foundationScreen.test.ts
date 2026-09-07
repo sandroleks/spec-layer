@@ -220,7 +220,7 @@ describe('foundation screen', () => {
   it('names the footer copy as the whole file', () => {
     const footer = foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL);
     expect(footer).toContain('id="sl-copy-foundation"');
-    expect(footer).toContain('Copy whole file for AI');
+    expect(footer).toContain('Copy all for AI');
   });
 
   it('shows loading, real progress, and persistent read errors honestly', () => {

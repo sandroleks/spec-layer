@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spec Layer · Design system proposal</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="catalog.css?v=1.1">
+  <script src="catalog.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="wordmark" href="#main"><img src="assets/logo.svg" width="32" height="32" alt=""><span>spec layer</span></a>
+    <span class="edition">Design system <span>01 / Proposal</span></span>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light theme">Light theme</button>
+  </header>
+  <nav class="section-nav" aria-label="Design system sections">
+    <a href="#identity">Identity</a><a href="#color">Color</a><a href="#type">Typography</a><a href="#components">Components</a><a href="#context">In context</a><a href="#guidance">Guidance</a>
+  </nav>
+  <main id="main">
+    <section id="identity" class="intro">
+      <div class="intro-copy"><p class="eyebrow">SPEC LAYER / QUIET PRECISION</p>
+        <h1>Your design decisions.<br><span>Ready to build from.</span></h1>
+        <p class="lead">A shared identity for the tools that carry your design system into everyday work.</p>
+        <div class="intro-meta"><span>Violet with purpose</span><span>Readable by design</span><span>Light + dark</span></div>
+      </div>
+      <div class="identity-specimen">
+        <img src="assets/logo.svg" alt="Existing Spec Layer four-part symbol" width="112" height="112">
+        <span class="specimen-wordmark">spec layer</span>
+        <p>Precise. Dependable. Considerate.</p>
+        <span class="micro-note">Existing symbol · static treatment</span>
+      </div>
+    </section>
+
+    <section id="color">
+      <div class="section-heading"><div><p class="eyebrow">01 / COLOR</p><h2>A signature, with a job to do.</h2></div><p>Violet marks an action or selection. Neutral surfaces hold the work. Status colors keep their meaning.</p></div>
+      <div class="swatches" id="swatches"></div>
+      <div class="color-details">
+        <div><h3>Foreground and background, together.</h3><p>Light violet takes dark text. Deep violet takes white text. Each state has its own checked pairing.</p><div class="inline-states"><span class="badge success">In sync</span><span class="badge warning">Review needed</span><span class="badge danger">Could not update</span></div></div>
+        <div class="contrast-list" id="contrast-summary" aria-live="polite"></div>
+      </div>
+      <p class="footnote">96 semantic color-pair checks passed. These checks cover the specified pairs, not full product accessibility. Select a swatch to copy its value.</p>
+    </section>
+
+    <section id="type">
+      <div class="section-heading"><div><p class="eyebrow">02 / TYPOGRAPHY</p><h2>Character in the headline.<br>Clarity in the details.</h2></div><p>Manrope gives the brand its voice. Inter with native system fallbacks keeps the working interface familiar.</p></div>
+      <div class="type-specimens">
+        <article><span class="label">DISPLAY / MANROPE</span><p class="display-specimen">Keep the<br>details clear.</p><p class="footnote">Self-hosted here. Marketing headlines and brand expression.</p></article>
+        <article><span class="label">WORKING UI / INTER + SYSTEM</span><div class="type-row"><span class="type-display">Library</span><code>20 / 700</code></div><div class="type-row"><span class="type-section">Component specifications</span><code>14 / 600</code></div><div class="type-row"><span class="type-body">Container / radius changed from 8 to 12.</span><code>12 / 400</code></div><div class="type-row"><span class="type-caption">Updated 1 hour ago</span><code>11 / 400</code></div><p class="footnote">Essential detail stays at 12px. The 11px role is for short metadata. Regular 400 · Medium 500 · Semibold 600 · Bold 700.</p></article>
+      </div>
+    </section>
+
+    <section id="components">
+      <div class="section-heading"><div><p class="eyebrow">03 / COMPONENTS</p><h2>Small decisions.<br>Consistent everywhere.</h2></div><p>Try the controls. Hover, keyboard focus, selection, validation, and feedback belong to the system too.</p></div>
+      <div class="component-grid">
+        <article class="specimen"><div class="specimen-title"><h3>Actions</h3><span>34px / 8px radius</span></div><div class="control-row"><button class="button primary" id="create-demo" type="button">Create docs</button><button class="button" id="refresh-demo" type="button">Refresh library</button><button class="button quiet" id="reset-demo" type="button">Reset demo</button></div><div class="state-grid"><div><button class="button primary" data-state="hover" type="button">Create docs</button><span>Hover specimen</span></div><div><button class="button primary" data-state="pressed" type="button">Create docs</button><span>Pressed specimen</span></div><div><button class="button primary" data-state="focus" type="button">Create docs</button><span>Focus specimen</span></div><div><button class="button primary" disabled type="button">Create docs</button><span>Disabled specimen</span></div></div><p class="feedback" id="demo-feedback" role="status" aria-live="polite">Ready. This demo uses sample content.</p></article>
+        <article class="specimen"><div class="specimen-title"><h3>Selection</h3><span>Native controls</span></div><label class="choice"><input id="all-sections" type="checkbox"><span>Sections to include</span><small id="section-count">2 of 3 included</small></label><div class="choice-list"><label class="choice"><input class="section-check" type="checkbox" checked><span>Anatomy</span></label><label class="choice"><input class="section-check" type="checkbox" checked><span>Measurements</span></label><label class="choice"><input class="section-check" type="checkbox"><span>Related components</span></label></div><label class="choice switch-row"><span>AI writing <small>Optional assistance</small></span><input type="checkbox" role="switch" class="switch" aria-label="AI writing"></label><p class="footnote">Strong boundaries identify unchecked controls. AI uses a neutral surface; it does not compete with the main action.</p></article>
+        <article class="specimen"><div class="specimen-title"><h3>Fields and validation</h3><span>Label + useful feedback</span></div><form id="name-form" novalidate><label class="field-label" for="library-name">Library name</label><input class="text-field" id="library-name" name="library" placeholder="e.g. Core components" aria-describedby="name-help"><p class="field-help" id="name-help">Use a name your team will recognize.</p><button class="button" type="submit">Save name</button><p class="feedback" id="name-feedback" role="status"></p></form></article>
+        <article class="specimen"><div class="specimen-title"><h3>Disclosure and feedback</h3><span>Meaning beyond color</span></div><details open><summary>Button <span class="badge accent">Update available</span></summary><div class="change-body"><span class="label">TOKENS</span><p>Container / radius <strong>8 → 12</strong></p><p class="scope">Applies to the large variant.</p></div></details><p class="status-line"><span class="status-dot"></span>Checkbox <span>In sync</span></p><p class="footnote">Keep action glyphs consistent across states. Changes and their scope are reading content, not tiny metadata.</p></article>
+      </div>
+      <div class="geometry"><div><span class="label">SPACING</span><p>2 · 4 · 6 · 8 · 12 · 16 · 24 · 32</p></div><div><span class="label">SHAPE</span><p>3px small marks · 4px checks · 8px controls · 12px overlays</p></div><div><span class="label">MOTION</span><p>120ms feedback · 180ms state · 260ms disclosure</p></div></div>
+    </section>
+
+    <section id="context">
+      <div class="section-heading"><div><p class="eyebrow">04 / IN CONTEXT</p><h2>The same system.<br>The actual working interface.</h2></div><p>These previews use the current plugin renderer with candidate tokens and sample data. No production styles are changed.</p></div>
+      <div class="preview-toolbar"><label for="view-select">Workflow <select id="view-select"><option value="component">Component docs</option><option value="foundations">Foundations</option><option value="settings">Settings</option><option value="license">License</option></select></label><label for="width-select">Plugin width <select id="width-select"><option value="480">480px</option><option value="420">420px</option></select></label><span>Library stays visible for comparison.</span></div>
+      <div class="preview-grid"><figure><figcaption><span id="workflow-caption">Component docs</span><span>Proposed / interactive</span></figcaption><iframe id="workflow-preview" title="Proposed component plugin preview" src="plugin-preview.html?view=component&state=ready&theme=dark" loading="lazy"></iframe></figure><figure><figcaption><span>Library</span><span>Readable change details</span></figcaption><iframe id="library-preview" title="Proposed Library plugin preview" src="plugin-preview.html?view=library&theme=dark" loading="lazy"></iframe></figure></div>
+      <p class="footnote">Sample-data harness: selection, disclosure, and theme controls can be explored. Host actions such as creating Figma frames, publishing, or using a real license are not connected. Individual preview theme buttons affect that preview only. On narrow screens, scroll each preview horizontally to inspect it at its native width.</p>
+      <div class="website-specimen"><div class="mini-brand"><img src="assets/logo.svg" width="28" height="28" alt="">spec layer</div><span class="label">WEBSITE APPLICATION / SAME TOKENS</span><h3>Your design system.<br><span>Ready to build.</span></h3><p>Document your Figma components and share the details your team needs.</p><a class="button primary" href="#components">Explore the components</a></div>
+    </section>
+
+    <section id="guidance">
+      <div class="section-heading"><div><p class="eyebrow">05 / GUIDANCE</p><h2>A brand people can work with.</h2></div><p>Consistency comes from shared decisions and accurate product examples.</p></div>
+      <div class="guidance-grid"><article><h3>Show the work clearly.</h3><p>Pair the plugin with what it creates. Use real interface captures for product claims and readable close-ups for details.</p></article><article><h3>Speak like a teammate.</h3><p>“Create docs.” “Review changes.” “Library is up to date.” Name the action, explain the result, and be specific about limits.</p></article><article><h3>Respect the customer's system.</h3><p>Spec Layer's violet belongs to its own interface. Generated documents keep the customer's selected theme, tokens, and logo.</p></article><article><h3>Keep one source.</h3><p>The token file drives the catalog and candidate plugin mapping. Local spacing and density adapt to each surface.</p></article></div>
+      <div class="downloads"><a href="tokens.json" download>Download tokens</a><a href="contrast-report.json" download>Contrast results</a><a href="README.md">System specification</a><a href="MIGRATION.md">Adoption checklist</a></div>
+    </section>
+    <footer class="page-footer"><span>Spec Layer · System 01</span><span>Proposal for review · September 2026</span></footer>
+  </main>
+  <div id="copy-status" class="copy-status" role="status" aria-live="polite"></div>
+</body>
+</html>

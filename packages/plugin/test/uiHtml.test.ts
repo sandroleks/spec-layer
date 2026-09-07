@@ -128,12 +128,12 @@ describe('dist/ui.html', () => {
     // plain identifier (e.g. data-theme=light instead of data-theme="light"),
     // so the attribute selectors below accept either form.
     expect(vnext).toMatch(
-      /body\[data-theme="?light"?\]\s*\{[^}]*--sl-color-canvas:\s*#ffffff;[^}]*--sl-color-chrome:\s*#ffffff;[^}]*--sl-color-surface:\s*#ffffff;/,
+      /body\[data-theme="?light"?\]\s*\{[^}]*--brand-canvas:\s*#FFFFFF;[^}]*--brand-chrome:\s*#FFFFFF;[^}]*--brand-surface:\s*#FFFFFF;/,
     );
     expect(vnext).toContain('--sl-color-accent-border');
     expect(vnext).toContain('--sl-color-control-thumb');
-    expect(vnext).toContain('--sl-color-section-header: #f7f7f7');
-    expect(vnext).toContain('--sl-color-ai-badge-text: #737373');
+    expect(vnext).toMatch(/--sl-color-section-header:\s*var\(--brand-surface\)/);
+    expect(vnext).toMatch(/--sl-color-ai-badge-text:\s*var\(--brand-muted\)/);
     expect(vnext).not.toMatch(/body\[data-theme="?light"?\]\s+\.sl-/);
     expect(vnext).toMatch(
       /\.sl-component-screen \.sl-section-row \.sl-badge\[data-tone="?accent"?\]\s*\{[^}]*color:\s*var\(--sl-color-ai-badge-text\);[^}]*background:\s*var\(--sl-color-ai-badge-bg\);[^}]*border:\s*1px solid var\(--sl-color-ai-badge-border\);/,
@@ -141,6 +141,19 @@ describe('dist/ui.html', () => {
     expect(vnext).toMatch(
       /\.sl-switch-thumb\s*\{[^}]*background:\s*var\(--sl-color-control-thumb\);[^}]*box-shadow:\s*var\(--sl-shadow-control-thumb\);/,
     );
+  });
+
+  it('ships both shared action pairings and resolves all stylesheet imports', () => {
+    const css = vnext.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    expect(css).not.toContain('@import');
+    expect(css).toMatch(/--brand-action:\s*#B3A0FF/);
+    expect(css).toMatch(/--brand-on-action:\s*#17112E/);
+    expect(css).toMatch(/--brand-action:\s*#6845C7/);
+    // Rebinding aliases on body is necessary for an actual theme switch;
+    // inheriting an alias resolved on the dark root would freeze that color.
+    expect(css).toMatch(/body\[data-theme\]\s*\{[^}]*--sl-color-accent:\s*var\(--brand-action\)/);
+    expect(css).toMatch(/--sl-color-text-on-danger:\s*var\(--brand-on-danger\)/);
+    expect(css).toMatch(/\.sl-library-change-scope\s*\{[^}]*font-size:\s*var\(--sl-font-size-body\)/);
   });
 
   it('centers the indeterminate mark in the checkbox grid', () => {

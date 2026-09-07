@@ -1,0 +1,17 @@
+{
+  "name": "@spec-layer/brand",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Spec Layer identity and semantic design tokens",
+  "exports": {
+    "./tokens.json": "./src/tokens.json",
+    "./tokens.css": "./dist/tokens.css",
+    "./plugin.css": "./dist/plugin.css",
+    "./build": "./build.mjs",
+    "./assets/*": "./assets/*"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

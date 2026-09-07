@@ -184,9 +184,9 @@ button {
 }
 
 .sl-button[data-tone="danger"] {
-  color: var(--sl-color-text-on-accent);
-  background: var(--sl-color-danger);
-  border-color: var(--sl-color-danger);
+  color: var(--sl-color-text-on-danger);
+  background: var(--sl-color-danger-fill);
+  border-color: var(--sl-color-danger-fill);
 }
 
 .sl-button:active:not(:disabled) {
@@ -240,7 +240,7 @@ button {
 
 .sl-icon-button[aria-current="page"],
 .sl-icon-button[aria-pressed="true"] {
-  color: var(--sl-color-accent);
+  color: var(--sl-color-accent-text);
   background: var(--sl-color-surface-selected);
 }
 
@@ -440,7 +440,7 @@ button {
 }
 
 .sl-chip[aria-pressed="true"] {
-  color: var(--sl-color-accent);
+  color: var(--sl-color-accent-text);
   background: var(--sl-color-surface-selected);
   border-color: var(--sl-color-accent);
 }
@@ -489,7 +489,7 @@ button {
   color: var(--sl-color-text-muted);
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--sl-radius-sm);
   font-size: var(--sl-font-size-support);
   font-weight: var(--sl-font-weight-medium);
   cursor: pointer;
@@ -529,7 +529,7 @@ button {
   padding: 0 var(--sl-space-10);
   color: var(--sl-color-text-muted);
   background: var(--sl-color-surface-raised);
-  border: 1px solid var(--sl-color-border);
+  border: 1px solid var(--sl-color-border-strong);
   border-radius: var(--sl-radius-md);
   transition:
     border-color var(--sl-motion-fast) var(--sl-ease-standard),
@@ -589,7 +589,7 @@ button {
 }
 
 .sl-badge[data-tone="accent"] {
-  color: var(--sl-color-accent);
+  color: var(--sl-color-accent-text);
   background: var(--sl-color-accent-soft);
   border-color: transparent;
 }
@@ -632,7 +632,7 @@ button {
 }
 
 .sl-status[data-tone="accent"] {
-  color: var(--sl-color-accent);
+  color: var(--sl-color-accent-text);
 }
 
 .sl-status[data-tone="success"] {

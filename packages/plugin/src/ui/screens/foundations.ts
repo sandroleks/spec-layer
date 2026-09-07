@@ -198,7 +198,7 @@ export function foundationFooterMarkup(
   // files, and some agents want the complete vocabulary.
   const copy = spec
     ? '<button class="sl-button" data-tone="secondary" id="sl-copy-foundation" type="button">' +
-      `${icon('copy', 15)}<span>Copy whole file for AI</span></button>`
+      `${icon('copy', 15)}<span>Copy all for AI</span></button>`
     : '';
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
