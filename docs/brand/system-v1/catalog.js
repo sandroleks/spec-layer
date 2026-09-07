@@ -34,7 +34,7 @@ function renderColors() {
   }
   $('contrast-summary').innerHTML = [['on-action','action','Action label'],['quiet','subdued','Supporting text'],['control-border','surface','Control boundary']].map(([fg,bg,label])=>{
     const c = report.checks.find(c=>c.theme===theme&&c.foreground===fg&&c.background===bg);
-    return `<div class="contrast-row"><span>${label}</span><strong>${c.ratio.toFixed(2)}:1 / Pass</strong></div>`;
+    return `<div class="contrast-row"><span>${label}</span><strong>${c.ratio.toFixed(2)}:1 / ${c.pass ? 'Pass' : 'Fail'}</strong></div>`;
   }).join('');
 }
 $('theme-toggle').addEventListener('click', () => {
