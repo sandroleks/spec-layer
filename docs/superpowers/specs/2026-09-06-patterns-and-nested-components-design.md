@@ -15,7 +15,7 @@ Users document patterns: a Card built from an Avatar, a Button and text. Today t
 
 Decisions taken during brainstorming:
 
-- **Black box.** A nested published component is one part. The document names it, states the configuration used, and links to the sub-component's own document when one exists in the file. Its internal tokens belong to its own document. Overrides are not documented this round.
+- **Black box, with the parent's overrides kept.** A nested published component is one part. The document names it, states the configuration used, and links to the sub-component's own document when one exists in the file. Its internal tokens belong to its own document, with one exception: a binding the parent overrides inside the instance (a Button recoloring the vector inside its Icon) is the parent's decision and stays in the parent's document, attributed to the instance part. Overrides of anything other than bindings and hardcoded values are not documented this round.
 - **Composition lives in two places.** The Anatomy legend carries per-part configuration; a new Built from table carries the roll-up with counts and links.
 - **Properties stays component-only.** Properties exposed upward from nested instances are not listed; the Built from link covers them.
 - **The rule applies everywhere.** Canvas, brief, Copy for AI and the v5 artifact all use one boundary, so an agent never reads a sub-component's internals as the pattern's tokens.
@@ -32,7 +32,7 @@ In scope:
 5. The Settings toggle, stored per user, recorded per document, and stated in the v5 artifact.
 6. v5 component schema 5.2.0.
 
-Out of scope: overrides on nested instances, exposed nested properties, batch documentation of a pattern together with its sub-components, and serializer pruning of instance internals (a speed spec candidate once the timing build from spec A produces numbers).
+Out of scope: an overrides column in Built from, exposed nested properties, batch documentation of a pattern together with its sub-components, and serializer pruning of instance internals (a speed spec candidate once the timing build from spec A produces numbers).
 
 ## 3. The boundary rule
 
@@ -64,10 +64,33 @@ export type BoundaryMode = 'published' | 'all';
 
 ### 3.3 What changes in existing passes
 
-- **Tokens, gaps, raw values, layout**: stop at boundaries. Rows for a boundary instance's own bindings (a fill bound on the instance node itself) are kept, attributed to the instance part. Rows for its internals are gone.
+- **Tokens, gaps, raw values, layout**: stop at boundaries. Rows for a boundary instance's own bindings (a fill bound on the instance node itself) are kept, attributed to the instance part. Rows for its internals are gone, except the parent's overrides (3.4).
 - **Anatomy**: descends through transparent instances. The skipped-wrapper path logic is unchanged. Depth counting is unchanged: a transparent instance occupies a level like any frame.
 - **Related**: computed from composition (section 4), not from the anatomy walk.
 - The spec A nested-instance fixture (its section 6.3) moves here and pins both modes.
+
+### 3.4 The parent's overrides inside a boundary
+
+The most common nested case is not a pattern: a Button places an Icon instance and sets the icon color by overriding the fill of the vector inside it. Under a pure boundary that row would vanish from the Button's document, which is a regression on the most ordinary component. Figma states, per instance, which internal nodes the parent has overridden and which fields, so the rule is narrow and fabricates nothing.
+
+**Serializer.** `INSTANCE` nodes gain:
+
+```ts
+/** Internal nodes this instance overrides, as Figma states them: node id and
+ *  the overridden field names. Omitted when Figma reports none. */
+overrides?: { id: string; fields: string[] }[];
+```
+
+Read from `node.overrides`, synchronous, guarded like property definitions because Figma throws on instances of missing components. Field names are stored as Figma gives them.
+
+**Extractor.** When the walker reaches a boundary instance it does not descend, but it then visits each internal node named in the instance's `overrides` whose fields include a binding-bearing field: `boundVariables`, `fills`, `strokes`, `effects`, `fillStyleId`, `strokeStyleId`, `textStyleId`, `effectStyleId`. The exact field-to-binding table is fixed in the implementation plan and tested; a field not in the table never produces a row. For such a node, the token, gap and raw-value passes collect its bindings and hardcoded values exactly as for any part, with:
+
+- **part**: the boundary instance's part name, so the row groups under "Icon" in the Tokens table and matches an anatomy entry;
+- **path**: the instance's path joined with the internal node's cleaned name, so two overridden nodes with the same property inside one instance stay two rows. No v5 rule requires a binding path to match an anatomy path, and the anatomy entry for the instance is unchanged.
+
+Internal nodes that are not overridden, and overridden fields that carry no binding (visibility, characters, size), contribute nothing. Overrides inside a transparent instance need no special handling, since the walk descends into it anyway. Overrides are read in every variant, not only the default, because the token pass already walks every variant and a hover variant recoloring its icon is exactly what the conditions column exists to show.
+
+**Composition** is unaffected: the instance still appears as one component with its configuration.
 
 ## 4. Composition
 
@@ -173,10 +196,12 @@ Fixtures under `packages/extractor/test/fixtures/`:
 - `card.json`: a Card with two Buttons in different configurations, one Avatar, and two text layers. Expected: three anatomy parts plus text; composition with Button count 2 and two configurations, Avatar count 1; no rows from Button internals.
 - `button-on-base.json`: a Button whose only child is an instance of `.Button base`. Under `'published'` the base's parts and tokens are the Button's; under `'all'` the base is one part with only its own bindings and appears in composition.
 - `remote-instance.json`: a component containing a remote instance. Always a boundary, `remote: true` in composition, no link on canvas.
+- `button-with-icon.json`: a Button whose Icon instance has its inner vector fill overridden to a bound token in the default variant and to a different token in the hover variant, plus a second internal node overridden only in visibility. Expected: one `fill` row under part "Icon" with the hover condition, no row for the visibility override, no rows for un-overridden internals.
 
 Tests:
 
-- `walkParts` boundary predicate: visit called for the boundary node, children not walked; transparent instance walked like a frame.
+- `walkParts` boundary predicate: visit called for the boundary node, children not walked; transparent instance walked like a frame; overridden internal nodes visited with the instance's part and a path beneath it.
+- The field-to-binding table: every binding-bearing field yields rows, every other field yields none, and an override naming a node id that is not in the tree is ignored without a throw.
 - `boundaryPredicate` for both modes, dot and underscore prefixes, set-name precedence, remote precedence.
 - Composition grouping, key fallback to id, code-unit sort, first-seen configuration order.
 - Hash-projection goldens for all three fixtures in both modes.
@@ -197,6 +222,6 @@ Manual rows in `packages/plugin/TESTING.md`: the setting toggle and its confirma
 
 ## 10. Follow-ups this spec creates
 
-- Overrides on nested instances, as a Built from column, once a user asks for it.
+- Non-binding overrides (visibility, text, size) as a Built from column, once a user asks for it.
 - Batch documentation of a pattern with its sub-components in one pass.
 - Serializer pruning of boundary instance internals, decided by the timing build.
