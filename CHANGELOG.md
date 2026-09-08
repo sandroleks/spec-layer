@@ -8,6 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Free library publishing.** A free plan publishes one Figma file as a
+  library with 10 changed publishes per UTC month; Pro keeps 10 libraries
+  with no fixed cap and the same fair-use flag AI writing has. A publish
+  counts only when it commits, and republishing a bundle whose hash equals
+  the stored one is answered as unchanged, without a write or a count.
+  Library ownership is proved by whichever identity the request carries, the
+  license key or the Figma identity, so a library created while free stays
+  writable after upgrading and a Pro library stays writable after the
+  license lapses. Publish responses carry the quota headers, `GET /v1/quota`
+  gains a `publish` snapshot, and the plugin's publish screen replaces its
+  paywall with a definition line and an updates meter. Publish refusals for
+  the allowance (402, 409, 429) carry the quota headers too. Rotation has no
+  tier check. Pull is unchanged.
+
 - An **About** section at the foot of the plugin's Settings screen, giving
   **Plugin version** and **Extractor version** as labelled rows and a
   **Documentation** link to `https://spec-layer.com/docs/`. The plugin version
@@ -296,6 +310,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   footer now links instead of a bare mailto.
 
 ### Changed
+
+- The plugin sends `X-Figma-User` alongside the license bearer whenever it
+  knows both, and publish and rotate keep sending a lapsed key because it
+  proves ownership. AI writing still meters against the license when one is
+  present.
 
 - Quick search lists documents, not destinations. The palette used to lead with
   the five rail workflows, which the rail already shows; it now opens on the

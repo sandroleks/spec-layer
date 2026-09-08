@@ -337,7 +337,7 @@ action. The rows below start there.
       the token collections with their modes, and carries no key. A second run
       reports the file unchanged.
 - [ ] Copy for an AI agent: the button sits between **Copy setup command** and
-      **Rotate key**, is present on a locked (free) screen, and copies a
+      **Rotate key**, is present on a free plan, and copies a
       numbered message whose first command is `npx --yes spec-layer setup` with
       the same id and key as the setup command, followed by
       `npx --yes spec-layer skill --install`. Pasting the message into a coding
@@ -367,10 +367,19 @@ action. The rows below start there.
       command then fails.
 - [ ] Gone library: publish, then rotate the license key (or publish the same
       file with another Pro license). The screen reports the library is gone
-      or belongs to another license, publishes nothing, and the next publish
+      or belongs to another account, publishes nothing, and the next publish
       creates a new library.
-- [ ] Free license: publish shows the Pro copy and publishes nothing. The
-      Library footer's **Publish** still opens the screen.
+- [ ] Free plan publish and pull (no license key entered): the screen opens
+      with the definition line and "10 of 10 free updates left this month";
+      Publish creates a library and shows the setup command; the CLI setup
+      command pulls it. Publish again without changes: the status line reads
+      "Nothing changed since the last publish." and the meter still shows 9.
+      Edit a token and publish: the meter shows 8. Open a second file and
+      publish: the status names the first file and offers Upgrade to Pro.
+- [ ] Free plan at the cap: after 10 changed publishes in one month the status
+      line names the reset date and Publish stays enabled.
+- [ ] Lapsed Pro key with a library published while Pro: Publish updates it
+      and the meter appears; Rotate key works.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
 
