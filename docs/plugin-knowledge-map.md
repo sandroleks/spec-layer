@@ -66,7 +66,11 @@ the Library footer's `Publish` action and rendered by `screens/publish.ts`. It
 is deliberately not a sixth rail destination, so `PluginView` stays five
 entries and `sidebar.ts` keeps its exhaustive icon map. `ui-vnext.ts` tracks
 which of the two is showing in a Library-local `libraryPane` flag, which means
-the rail stays on Library while publishing.
+the rail stays on Library while publishing. The screen opens with a status
+block (last published, library id, free updates). The date comes from the file:
+`main.ts` stores it in root plugin data under `speclayer.publish.publishedAt`,
+beside the library id, written by the `setPublishedAt` message the publish
+controller sends after a created, updated, or unchanged publish.
 
 The command palette searches connected Library documents only: recent
 component docs before typing, every connected document once a query is typed.

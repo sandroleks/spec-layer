@@ -27,6 +27,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   screen reads its updates meter off the response rather than waiting for the
   next quota fetch. Rotation has no tier check. Pull is unchanged.
 
+- **Publish screen status block.** The Publish for developers screen opens
+  with a label-and-value list: `Not published yet`, or the last publish date
+  and time in local time with the library id, plus the free plan's updates
+  row. The date is stored in the file beside the library id (root plugin
+  data `speclayer.publish.publishedAt`, written by a new `setPublishedAt`
+  message after a created, updated, or unchanged publish), so every editor
+  sees it in every session; a library published by an earlier build reads
+  `Not recorded` until its next publish, never a guessed date. The Developer
+  setup group links to the CLI reference at `spec-layer.com/docs/cli/` and
+  puts **Rotate key** on its own row under that link, apart from the two copy
+  buttons. The definition caption and the free-updates caption are folded
+  into the status block, and "What gets published" is one sentence shorter.
+
 - An **About** section at the foot of the plugin's Settings screen, giving
   **Plugin version** and **Extractor version** as labelled rows and a
   **Documentation** link to `https://spec-layer.com/docs/`. The plugin version

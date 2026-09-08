@@ -1,7 +1,7 @@
 # Publish screen: status block, docs link, and a recorded publish date
 
 Date: 2026-09-08
-Status: approved, not yet implemented
+Status: implemented on `feat/publish-screen-status`, 2026-09-08
 Builds on: `2026-09-08-free-publish-quota-design.md`,
 `2026-09-02-publish-identity-and-storage-hardening-design.md`
 

@@ -318,8 +318,9 @@ action. The rows below start there.
       Library lands on the list, not the publish screen.
 - [ ] Publish (Pro license, file with foundation + 2 component docs): the footer
       reports "Collecting sources" then "Uploading library" while it runs and
-      the primary reads "Publishing…"; the screen then shows the setup command.
-      Response arrived in under 30s.
+      the primary reads "Publishing…"; the screen then shows the setup command,
+      a **Last published** row with the local date and time, and the library
+      id. Response arrived in under 30s.
 - [ ] Pull: run the copied setup command in an empty directory; `.speclayer/`
       contains bundle.json, manifest.json, ai/foundation.yaml, and one YAML per
       component; the YAML matches what Copy for AI puts on the clipboard.
@@ -336,8 +337,9 @@ action. The rows below start there.
       writes that file; the file lists every pulled component with its path,
       the token collections with their modes, and carries no key. A second run
       reports the file unchanged.
-- [ ] Copy for an AI agent: the button sits between **Copy setup command** and
-      **Rotate key**, is present on a free plan, and copies a
+- [ ] Copy for an AI agent: the button sits beside **Copy setup command**, with
+      the **CLI documentation** link and then **Rotate key** on their own
+      lines below the pair, is present on a free plan, and copies a
       numbered message whose first command is `npx --yes spec-layer setup` with
       the same id and key as the setup command, followed by
       `npx --yes spec-layer skill --install`. Pasting the message into a coding
@@ -362,20 +364,28 @@ action. The rows below start there.
       B gets its own library id and key; pulling A's id still returns A's
       components.
 - [ ] Second device (or a second Figma account on the same file): the publish
-      screen shows the library id, "not on this device", and only **Rotate
-      key**. Rotating shows the full setup command; the first device's old
-      command then fails.
+      screen shows the library id, "not on this device", the **CLI
+      documentation** link, and only **Rotate key**. The **Last published**
+      row shows the same date the first device saw. Rotating shows the full
+      setup command; the first device's old command then fails.
 - [ ] Gone library: publish, then rotate the license key (or publish the same
       file with another Pro license). The screen reports the library is gone
-      or belongs to another account, publishes nothing, and the next publish
-      creates a new library.
+      or belongs to another account, publishes nothing, the status block
+      returns to "Not published yet", and the next publish creates a new
+      library.
+- [ ] Recorded date: publish, close the plugin, reopen it and open Publish. The
+      **Last published** row shows the publish time without a new publish. The
+      **CLI documentation** link opens spec-layer.com/docs/cli/ in the
+      browser.
 - [ ] Free plan publish and pull (no license key entered): the screen opens
-      with the definition line and "10 of 10 free updates left this month";
-      Publish creates a library and shows the setup command; the CLI setup
-      command pulls it. Publish again without changes: the status line reads
-      "Nothing changed since the last publish." and the meter still shows 9.
-      Edit a token and publish: the meter shows 8. Open a second file and
-      publish: the status names the first file and offers Upgrade to Pro.
+      with "Not published yet" and a **Free updates** row reading "10 of 10
+      left this month"; Publish creates a library and shows the setup command;
+      the CLI setup command pulls it. Publish again without changes: the status
+      line reads "Nothing changed since the last publish.", the Free updates
+      row still shows 9, and the Last published row keeps the earlier time.
+      Edit a token and publish: the Free updates row shows 8. Open a second
+      file and publish: the status names the first file and offers Upgrade to
+      Pro.
 - [ ] Free plan at the cap: after 10 changed publishes in one month the status
       line names the reset date and Publish stays enabled.
 - [ ] Lapsed Pro key with a library published while Pro: Publish updates it
