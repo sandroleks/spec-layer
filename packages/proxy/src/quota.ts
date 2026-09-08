@@ -6,6 +6,27 @@ export const RATE_LIMIT_PER_MIN = 10;
 export const RESERVATION_TTL_MS = 120_000;
 export const RESPONSE_TTL_MS = 24 * 3600_000;
 
+export const PUBLISH_MONTHLY_LIMIT = 10;
+
+export interface QuotaLimits {
+  /** null disables the first-sight boost window. */
+  boostLimit: number | null;
+  boostWindowMs: number;
+  monthlyLimit: number;
+}
+
+export type QuotaProfile = 'ai' | 'publish';
+
+/**
+ * Two things the engine counts, with different shapes. AI writing has a boost
+ * because a new user tries many components at once. Publishing is a whole-file
+ * action a few times a week, so a flat monthly number is the honest one.
+ */
+export const QUOTA_PROFILES: Record<QuotaProfile, QuotaLimits> = {
+  ai: { boostLimit: BOOST_LIMIT, boostWindowMs: BOOST_WINDOW_MS, monthlyLimit: MONTHLY_LIMIT },
+  publish: { boostLimit: null, boostWindowMs: 0, monthlyLimit: PUBLISH_MONTHLY_LIMIT },
+};
+
 export type Tier = 'free' | 'pro';
 
 export interface QuotaSnapshot {
@@ -46,7 +67,7 @@ function nextMonthStart(now: number): string {
 export class QuotaEngine {
   private s: State;
 
-  constructor(json?: string) {
+  constructor(json?: string, private limits: QuotaLimits = QUOTA_PROFILES.ai) {
     this.s = json ? { ...fresh(), ...(JSON.parse(json) as State) } : fresh();
   }
 
@@ -56,22 +77,23 @@ export class QuotaEngine {
   // that a quota peek (GET /v1/quota before any generation) reports boost
   // limits rather than falling through to the monthly rules.
   private inBoost(now: number): boolean {
+    if (this.limits.boostLimit === null) return false;
     const first = this.s.firstSeen ?? now;
-    return now < first + BOOST_WINDOW_MS;
+    return now < first + this.limits.boostWindowMs;
   }
 
   private freeUsage(now: number): { used: number; limit: number; resetsAt: string } {
     const first = this.s.firstSeen ?? now;
-    if (this.inBoost(now)) {
+    if (this.inBoost(now) && this.limits.boostLimit !== null) {
       return {
         used: this.s.boostUsed,
-        limit: BOOST_LIMIT,
-        resetsAt: new Date(first + BOOST_WINDOW_MS).toISOString(),
+        limit: this.limits.boostLimit,
+        resetsAt: new Date(first + this.limits.boostWindowMs).toISOString(),
       };
     }
     return {
       used: this.s.months[monthKey(now)] ?? 0,
-      limit: MONTHLY_LIMIT,
+      limit: this.limits.monthlyLimit,
       resetsAt: nextMonthStart(now),
     };
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD } from '../src/quota';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -124,5 +124,36 @@ describe('QuotaEngine rate limit + pro', () => {
     }));
     const r = e.reserve('pro', 'p1', T0);
     expect(r).toEqual({ kind: 'proceed', flagged: true });
+  });
+});
+
+describe('QuotaEngine publish profile', () => {
+  it('has no boost window: the monthly limit applies from first sight', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    const snap = e.snapshot('free', T0);
+    expect(snap.limit).toBe(PUBLISH_MONTHLY_LIMIT);
+    expect(snap.resetsAt).toBe('2026-08-01T00:00:00.000Z');
+    burn(e, PUBLISH_MONTHLY_LIMIT, T0, 'p');
+    const r = e.reserve('free', 'p-over', T0 + PUBLISH_MONTHLY_LIMIT * 60_000);
+    expect(r).toEqual({ kind: 'exhausted', resetsAt: '2026-08-01T00:00:00.000Z' });
+  });
+
+  it('resets on the next UTC month', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    burn(e, PUBLISH_MONTHLY_LIMIT, T0, 'p');
+    const august = Date.parse('2026-08-01T00:00:00Z');
+    expect(e.reserve('free', 'p-aug', august).kind).toBe('proceed');
+  });
+
+  it('rehydrates with the same profile', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    burn(e, 3, T0, 'p');
+    const again = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
+    expect(again.snapshot('free', T0 + 3 * 60_000).used).toBe(3);
+  });
+
+  it('the ai profile is the default and keeps the boost window', () => {
+    expect(QUOTA_PROFILES.ai).toEqual({ boostLimit: BOOST_LIMIT, boostWindowMs: BOOST_WINDOW_MS, monthlyLimit: MONTHLY_LIMIT });
+    expect(new QuotaEngine().snapshot('free', T0).limit).toBe(BOOST_LIMIT);
   });
 });
