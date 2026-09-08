@@ -3,12 +3,17 @@ import type { ProxyQuota } from '@spec-layer/extractor';
 import {
   authHeaders, fetchQuota, activateLicense, deactivateLicense, PROXY_URL,
   CHECKOUT_URL, effectiveAuth, generationErrorCopy, isQuotaExhausted,
-  licenseExternalUrl,
+  licenseExternalUrl, publishAuth,
 } from '../src/ui/proxy';
 
 describe('authHeaders', () => {
-  it('prefers the license key', () => {
-    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' })).toEqual({ Authorization: 'Bearer LK' });
+  it('sends the license key and the figma identity together when both are known', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' }))
+      .toEqual({ Authorization: 'Bearer LK', 'X-Figma-User': 'u1' });
+  });
+  it('sends only the bearer without a figma identity', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: null }))
+      .toEqual({ Authorization: 'Bearer LK' });
   });
   it('falls back to the figma user id', () => {
     expect(authHeaders({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' })).toEqual({ 'X-Figma-User': 'u1' });
@@ -21,11 +26,18 @@ describe('authHeaders', () => {
 describe('instance-aware auth', () => {
   it('sends key:instanceId in the bearer when an instance is known', () => {
     expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' }))
-      .toEqual({ Authorization: 'Bearer LK:i1' });
+      .toEqual({ Authorization: 'Bearer LK:i1', 'X-Figma-User': 'u1' });
   });
   it('falls back to the bare key without an instance', () => {
     expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' }))
-      .toEqual({ Authorization: 'Bearer LK' });
+      .toEqual({ Authorization: 'Bearer LK', 'X-Figma-User': 'u1' });
+  });
+});
+
+describe('publishAuth', () => {
+  it('keeps the key even when the license is known inactive, since it proves ownership', () => {
+    expect(publishAuth('LK', 'i1', 'u1')).toEqual({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' });
+    expect(publishAuth(null, null, 'u1')).toEqual({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' });
   });
 });
 

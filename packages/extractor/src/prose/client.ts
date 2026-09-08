@@ -96,6 +96,8 @@ export interface ProxyQuota {
   resetsAt: string;
   /** Why a stored key is not granting pro; only present on license identities. */
   licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable';
+  /** Library publish allowance, same shape. Absent from proxies that predate it. */
+  publish?: { tier: 'free' | 'pro'; used: number; limit: number | null; remaining: number | null; resetsAt: string };
 }
 
 export type ProseProxyErrorCode =

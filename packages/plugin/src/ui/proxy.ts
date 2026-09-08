@@ -31,14 +31,33 @@ export interface ProxyAuth {
   figmaUserId: string | null;
 }
 
-/** License wins over the free identity — mirrors the proxy's own precedence. */
+/**
+ * Both proofs travel together. The proxy meters AI writing against the license
+ * when one is present, and library ownership is proved by whichever identity
+ * created the library, so sending both costs nothing and lets a plan change
+ * hands without a migration.
+ */
 export function authHeaders(auth: ProxyAuth): Record<string, string> | null {
+  const headers: Record<string, string> = {};
   if (auth.licenseKey) {
     const bearer = auth.licenseInstanceId ? `${auth.licenseKey}:${auth.licenseInstanceId}` : auth.licenseKey;
-    return { Authorization: `Bearer ${bearer}` };
+    headers.Authorization = `Bearer ${bearer}`;
   }
-  if (auth.figmaUserId) return { 'X-Figma-User': auth.figmaUserId };
-  return null;
+  if (auth.figmaUserId) headers['X-Figma-User'] = auth.figmaUserId;
+  return Object.keys(headers).length ? headers : null;
+}
+
+/**
+ * The identity for publish and rotate. Unlike effectiveAuth, a key known to be
+ * inactive is still sent: it no longer buys Pro, but it proves ownership of
+ * the libraries it published, and the Figma header carries the free tier.
+ */
+export function publishAuth(
+  licenseKey: string | null,
+  licenseInstanceId: string | null,
+  figmaUserId: string | null,
+): ProxyAuth {
+  return { licenseKey, licenseInstanceId: licenseKey ? licenseInstanceId : null, figmaUserId };
 }
 
 /**
