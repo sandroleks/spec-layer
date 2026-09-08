@@ -84,7 +84,7 @@ npm run check --prefix apps/website      # after Task 12
   ```
 - `identityFromHeaders` is unchanged.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `packages/proxy/test/identity.test.ts`, inside a new `describe`:
 
@@ -120,12 +120,12 @@ describe('callerProofs', () => {
 
 Merge the import into the existing import line from `'../src/identity'`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/proxy/test/identity.test.ts`
 Expected: FAIL, `callerProofs` is not exported.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `packages/proxy/src/identity.ts`:
 
@@ -156,12 +156,12 @@ export function callerProofs(headers: Headers, salt: string): CallerProofs {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run packages/proxy/test/identity.test.ts`
 Expected: PASS, all cases including the untouched `identity` block.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/identity.ts packages/proxy/test/identity.test.ts
@@ -194,7 +194,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   ```
 - The existing constants `BOOST_LIMIT`, `BOOST_WINDOW_MS`, `MONTHLY_LIMIT`, `PRO_SOFT_THRESHOLD`, `RATE_LIMIT_PER_MIN` stay exported with the same values.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `packages/proxy/test/quota.test.ts`:
 
@@ -235,12 +235,12 @@ describe('QuotaEngine publish profile', () => {
 
 Merge the import into the existing import line from `'../src/quota'`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/proxy/test/quota.test.ts`
 Expected: FAIL, `QUOTA_PROFILES` is not exported.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/proxy/src/quota.ts`, after the existing constants add:
 
@@ -306,12 +306,12 @@ Replace `inBoost` and `freeUsage`:
 
 `reserve`, `commit`, `release`, `snapshot` are unchanged; `commit` already guards `boostUsed` with `inBoost`, which is now `false` for the publish profile.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run packages/proxy/test/quota.test.ts`
 Expected: PASS, the existing free-tier, idempotency, and rate-limit cases still pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/quota.ts packages/proxy/test/quota.test.ts
@@ -333,7 +333,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Produces: `quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient` on `HandlerDeps`, default `'ai'`. `handlers.ts` re-exports `type QuotaProfile` from `./quota`.
 - The DO request payload gains `profile?: QuotaProfile`.
 
-- [ ] **Step 1: Update the test fixtures to the new signature**
+- [x] **Step 1: Update the test fixtures to the new signature**
 
 In both `packages/proxy/test/handlers.test.ts` and `packages/proxy/test/router.test.ts`, replace the `memQuota` function with:
 
@@ -356,12 +356,12 @@ function memQuota(now: () => number) {
 
 Extend each file's import from `'../src/quota'` with `QUOTA_PROFILES, type QuotaProfile`.
 
-- [ ] **Step 2: Run the proxy suite to see the type error**
+- [x] **Step 2: Run the proxy suite to see the type error**
 
 Run: `npx vitest run packages/proxy && npm run typecheck`
 Expected: vitest passes (the runtime ignores the extra parameter); typecheck FAILS because `HandlerDeps.quotaFor` does not accept a second parameter.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/proxy/src/handlers.ts`:
 
@@ -412,12 +412,12 @@ function doQuotaClient(ns: DurableObjectNamespace, identityId: string, profile: 
 
 and in `worker.fetch`: `quotaFor: (id, profile) => doQuotaClient(env.QUOTA, id, profile),`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npx vitest run packages/proxy && npm run typecheck`
 Expected: both PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/handlers.ts packages/proxy/src/index.ts packages/proxy/test/handlers.test.ts packages/proxy/test/router.test.ts
@@ -445,7 +445,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   `tierIdentity` is `lic:<sha>` for Pro, else `free:<figmaHash>` when present, else `lic:<sha>`. `owners` lists every identity the caller proved.
 - This task does not add quota counting or new headers; Task 5 does.
 
-- [ ] **Step 1: Update the test helpers and write the failing tests**
+- [x] **Step 1: Update the test helpers and write the failing tests**
 
 In `packages/proxy/test/libraries.test.ts`:
 
@@ -568,12 +568,12 @@ In `describe('handleRotate')`, replace `rejects a lapsed license` with:
   });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run packages/proxy/test/libraries.test.ts`
 Expected: FAIL on the new cases (401 where 201 is expected, `LIBRARY_LIMITS` missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/proxy/src/libraries.ts`:
 
@@ -675,12 +675,12 @@ The new meta's `licenseId` becomes `caller.tierIdentity`, and the owner record k
 
 In `handleRotate`, replace `proCaller` with `resolveCaller` and pass `caller.owners` to `ownedMeta`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/proxy/test/libraries.test.ts && npm run typecheck`
 Expected: PASS except the single `X-Tier` assertion marked `// Task 5`, which reports `null`. Everything else green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/libraries.ts packages/proxy/test/libraries.test.ts
@@ -704,7 +704,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Produces: `export function quotaHeaders(s: QuotaSnapshot): Record<string, string>` in `quota.ts`. It moves there from `handlers.ts` so `libraries.ts` can import it without a circular import between the two handler modules.
 - Produces: publish responses with `X-Tier` and `X-Quota-*`; `402 { error: 'quota_exhausted', resetsAt }`; `429 { error: 'rate_limited', retryAfterMs }`; a cached replay `200 { libraryId, publishedAt, unchanged: true }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `describe('handlePublish')`:
 
@@ -775,12 +775,12 @@ Import `vi` from vitest and `PRO_SOFT_THRESHOLD` from `'../src/quota'`. The `mem
 
 Remove the `// Task 5` note from the Task 4 test.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run packages/proxy/test/libraries.test.ts`
 Expected: FAIL, no quota headers, `unchanged` missing, 200 where 402 is expected.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Move `quotaHeaders` out of `packages/proxy/src/handlers.ts` into `packages/proxy/src/quota.ts`, exported, with the same body:
 
@@ -880,12 +880,12 @@ In `handlePublish`, after body validation and the `stored`/`bundleHash` computat
 
 Note the reservation is taken after ownership and the library count, so a stranger can never replay a cached response and a blocked create never consumes an update.
 
-- [ ] **Step 4: Run the suite**
+- [x] **Step 4: Run the suite**
 
 Run: `npx vitest run packages/proxy && npm run typecheck && npm run lint`
 Expected: PASS. If `router.test.ts` `routes POST /v1/libraries to publish` fails on `quotaFor`, its `baseDeps` already uses `memQuota` from Task 3, so it passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/libraries.ts packages/proxy/src/quota.ts packages/proxy/src/handlers.ts packages/proxy/test/libraries.test.ts
@@ -905,7 +905,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: the quota body gains `publish: QuotaSnapshot`. Existing top-level fields are unchanged.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `packages/proxy/test/router.test.ts`, beside the existing quota cases:
 
@@ -943,12 +943,12 @@ Add to `packages/proxy/test/router.test.ts`, beside the existing quota cases:
 
 Import `hashFigmaId` from `'../src/identity'`. `baseDeps()` uses `salt: 'salt'`, which is what the third case hashes with.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `npx vitest run packages/proxy/test/router.test.ts`
 Expected: FAIL, `publish` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `handleQuota`, after `tier` and `identityId` are resolved, compute the publish identity with the same rule `resolveCaller` uses, then include the snapshot:
 
@@ -966,12 +966,12 @@ In `handleQuota`, after `tier` and `identityId` are resolved, compute the publis
 
 Import `callerProofs` from `./identity`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npx vitest run packages/proxy && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/proxy/src/handlers.ts packages/proxy/test/router.test.ts
@@ -987,7 +987,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `packages/proxy/README.md`
 
-- [ ] **Step 1: Rewrite the affected sections**
+- [x] **Step 1: Rewrite the affected sections**
 
 Under `## API`, replace the auth paragraph with:
 
@@ -1072,7 +1072,7 @@ Add to the accepted-risks list:
   that owns every library published so far.
 ```
 
-- [ ] **Step 2: Check and commit**
+- [x] **Step 2: Check and commit**
 
 Run: `npm run check:nul && grep -c "—" packages/proxy/README.md` (the README may already contain em dashes; do not add new ones).
 
@@ -1102,7 +1102,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   export function publishAuth(licenseKey: string | null, licenseInstanceId: string | null, figmaUserId: string | null): ProxyAuth;
   ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/plugin/test/proxy.test.ts`, change the first `authHeaders` case and add two:
 
@@ -1130,12 +1130,12 @@ describe('publishAuth', () => {
 
 Update the `instance-aware auth` cases to expect `'X-Figma-User': 'u1'` alongside the bearer where `figmaUserId: 'u1'` is passed. Import `publishAuth`.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `npx vitest run packages/plugin/test/proxy.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/extractor/src/prose/client.ts`, add to `ProxyQuota`:
 
@@ -1177,12 +1177,12 @@ export function publishAuth(
 }
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npx vitest run packages/plugin/test/proxy.test.ts packages/plugin/test/publish.test.ts && npm run typecheck`
 Expected: PASS. Every `AUTH` fixture in `publish.test.ts` has `figmaUserId: null`, so its header expectations do not change.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/extractor/src/prose/client.ts packages/plugin/src/ui/proxy.ts packages/plugin/test/proxy.test.ts packages/plugin/test/publish.test.ts
@@ -1211,7 +1211,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   ```
 - Deletes: `publishLocked`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Delete the `describe('publishLocked', ...)` block from `packages/plugin/test/publishScreen.test.ts` and its import. Add to `packages/plugin/test/allowance.test.ts`:
 
@@ -1271,12 +1271,12 @@ describe('formatResetDate', () => {
 
 Import `ProxyQuota` type from `@spec-layer/extractor` if the file does not already.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `npx vitest run packages/plugin/test/allowance.test.ts packages/plugin/test/publishScreen.test.ts`
 Expected: allowance FAILS on missing exports; publishScreen still passes.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/plugin/src/ui/viewModel/allowance.ts`, delete `publishLocked` and its doc comment. Append:
 
@@ -1317,12 +1317,12 @@ export function publishAllowanceCopy(state: PublishAllowance): string | null {
 }
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npx vitest run packages/plugin/test/allowance.test.ts packages/plugin/test/publishScreen.test.ts && npm run typecheck`
 Expected: allowance PASSES. Typecheck FAILS in `ui-vnext.ts` (imports `publishLocked`). That is fixed in Task 11; proceed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/plugin/src/ui/viewModel/allowance.ts packages/plugin/test/allowance.test.ts packages/plugin/test/publishScreen.test.ts
@@ -1352,7 +1352,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   ```
 - `PublishState` is unchanged. `onPublishSources` sets `message` for `unchanged`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/plugin/test/publish.test.ts`, replace the cases that assert `'Publishing needs an active Pro license.'` and `'Rotating the key needs an active Pro license.'`:
 
@@ -1422,12 +1422,12 @@ In the controller block (near line 382, the one with `sourcesMsg`, `publish = aw
   });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `npx vitest run packages/plugin/test/publish.test.ts`
 Expected: FAIL on the new messages and the `unchanged` kind.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/plugin/src/ui/publish.ts`:
 
@@ -1492,12 +1492,12 @@ In `onPublishSources` add a case:
 
 Also update `GONE_MESSAGE`: replace "belongs to another license" with "belongs to another account".
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npx vitest run packages/plugin/test/publish.test.ts && grep -n "Pro license" packages/plugin/src/ui/publish.ts`
 Expected: PASS, and the grep prints nothing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/plugin/src/ui/publish.ts packages/plugin/test/publish.test.ts
@@ -1526,7 +1526,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   export const LIBRARY_DEFINITION = 'A library is this Figma file, published for developers to pull with the CLI.';
   ```
 
-- [ ] **Step 1: Rewrite the screen tests**
+- [x] **Step 1: Rewrite the screen tests**
 
 In `packages/plugin/test/publishScreen.test.ts`:
 
@@ -1581,12 +1581,12 @@ describe('publish screen definition and allowance', () => {
 
 In `packages/plugin/test/licenseScreen.test.ts` line 68, change the expectation to `'Up to 10 published Figma files, no monthly cap on AI writing or updates'`.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `npx vitest run packages/plugin/test/publishScreen.test.ts packages/plugin/test/licenseScreen.test.ts`
 Expected: FAIL (signature and copy).
 
-- [ ] **Step 3: Implement the screen**
+- [x] **Step 3: Implement the screen**
 
 In `packages/plugin/src/ui/screens/publish.ts`:
 
@@ -1639,7 +1639,7 @@ In `packages/plugin/src/ui/design-system/patterns.css`, directly after the `.sl-
 
 In `packages/plugin/src/ui/screens/license.ts`, change the Pro `detail` string to `'Up to 10 published Figma files, no monthly cap on AI writing or updates'`.
 
-- [ ] **Step 4: Wire `ui-vnext.ts`**
+- [x] **Step 4: Wire `ui-vnext.ts`**
 
 - Replace the import of `publishLocked` with `publishAllowance`.
 - Delete `isPublishLocked()`.
@@ -1647,7 +1647,7 @@ In `packages/plugin/src/ui/screens/license.ts`, change the Pro `detail` string t
 - Import `publishAuth` from `./proxy`. In the three publish call sites (the `[data-publish]` click handler, the `[data-publish-rotate]` click handler, and the `'publishSources'` message case), replace `effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive)` with `publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId)` and delete the two `if (isPublishLocked()) return;` guards and their comments.
 - In `refreshQuota`, the trailing comment about "the unlocked primary" becomes: "The publish screen paints its updates line from the plan, and the first quota answer usually lands after the panel has drawn a screen."
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npx vitest run packages/plugin && npm run typecheck && npm run lint && npm run build:plugin && npm run check:sandbox`
 Expected: all PASS. Then grep for stale copy:
@@ -1658,7 +1658,7 @@ grep -rn "Pro plan required\|Publishing is part of Pro\|needs Pro\|publishLocked
 
 Expected: no output.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/plugin/src/ui/screens/publish.ts packages/plugin/src/ui/screens/license.ts packages/plugin/src/ui/ui-vnext.ts packages/plugin/src/ui/design-system/patterns.css packages/plugin/test/publishScreen.test.ts packages/plugin/test/licenseScreen.test.ts
@@ -1677,7 +1677,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 These two files carry uncommitted edits from another session. Make only the string replacements below, stage only these two files, and leave every other hunk as it is.
 
-- [ ] **Step 1: Replace strings in `index.html`**
+- [x] **Step 1: Replace strings in `index.html`**
 
 Each replacement is one exact substring; use the Edit tool.
 
@@ -1689,7 +1689,7 @@ Each replacement is one exact substring; use the Edit tool.
 5. After the `</details>` that closes `What uses my AI writing allowance?`, insert:
    `<details><summary>What counts as a publish update?</summary><p>One successful publish that changed the library counts as one update. Failed publishes do not count. Publishing again with nothing changed does not count. Pulling with the CLI never counts.</p></details>`
 
-- [ ] **Step 2: Replace the quickstart notice**
+- [x] **Step 2: Replace the quickstart notice**
 
 In `apps/website/content/docs/quickstart.html`: `Canvas documentation and Copy for AI are free. Publishing a library requires Pro.` → `Canvas documentation, Copy for AI, and publishing one Figma file are free.`
 
@@ -1699,12 +1699,12 @@ Then grep the quickstart for any other `Pro` prerequisite in its publish section
 grep -n -i "pro\b" apps/website/content/docs/quickstart.html
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `npm run check --prefix apps/website`
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/website/content/index.html apps/website/content/docs/quickstart.html
@@ -1724,7 +1724,7 @@ If `git diff --cached` shows hunks unrelated to the strings above, the other ses
 - Modify: `docs/superpowers/specs/2026-07-11-freemium-model-design.md`
 - Modify: `packages/plugin/TESTING.md`
 
-- [ ] **Step 1: CHANGELOG**
+- [x] **Step 1: CHANGELOG**
 
 Under `## [Unreleased]` → `### Added`, add as the first entry:
 
@@ -1752,7 +1752,7 @@ Under `### Changed` (create the heading if absent), add:
   present.
 ```
 
-- [ ] **Step 2: Freemium spec pointer**
+- [x] **Step 2: Freemium spec pointer**
 
 At the top of `docs/superpowers/specs/2026-07-11-freemium-model-design.md`, after the `**Scope:**` line, add:
 
@@ -1762,7 +1762,7 @@ allowance for publishing and the ownership rule are specified in
 `2026-09-08-free-publish-quota-design.md`; the Pro tier table below predates it.
 ```
 
-- [ ] **Step 3: TESTING.md**
+- [x] **Step 3: TESTING.md**
 
 In `## Publish and pull`, replace the row
 
@@ -1791,7 +1791,7 @@ In the row `Copy for an AI agent`, change `is present on a locked (free) screen`
 
 In the `Gone library` row, change `or belongs to another license` to `or belongs to another account`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `npm run check:nul`
 
@@ -1806,7 +1806,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ### Task 14: Full gate and pull request
 
-- [ ] **Step 1: Run the full local gate**
+- [x] **Step 1: Run the full local gate**
 
 Run: `npm run check`
 Expected: lint, typecheck, NUL scan, tests, plugin build, CLI build, bundle smoke, sandbox scan, and proxy deploy dry run all PASS. Read the exit code directly; do not pipe.
@@ -1814,7 +1814,7 @@ Expected: lint, typecheck, NUL scan, tests, plugin build, CLI build, bundle smok
 Run: `npm run check --prefix apps/website`
 Expected: PASS.
 
-- [ ] **Step 2: Mark the plan's checkboxes and commit the plan file**
+- [x] **Step 2: Mark the plan's checkboxes and commit the plan file**
 
 ```bash
 git add docs/superpowers/plans/2026-09-08-free-publish-quota.md
@@ -1823,7 +1823,7 @@ git commit -m "docs: free publish quota implementation plan
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 3: Push and open the pull request**
+- [x] **Step 3: Push and open the pull request**
 
 ```bash
 git push -u origin spec/free-publish-quota
@@ -1852,6 +1852,6 @@ EOF
 
 If the push returns 403, the active `gh` account is not the repository owner. Stop and ask the user to switch accounts; do not retry.
 
-- [ ] **Step 4: Report**
+- [x] **Step 4: Report**
 
 State the PR URL, the test counts from `npm run check`, and that the proxy must be deployed before the plugin is republished.
