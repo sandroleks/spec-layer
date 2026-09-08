@@ -457,7 +457,7 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     '<div class="sl-footer-actions">' +
     /*
      * Never disabled, unlike the two beside it. It navigates: it opens the
-     * Publish for developers screen and starts nothing, so a refresh or a
+     * Publish screen and starts nothing, so a refresh or a
      * batch update in flight is no reason to withhold it, and the publish
      * screen's own primary is what disables itself while publishing.
      */

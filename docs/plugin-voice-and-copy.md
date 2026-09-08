@@ -61,10 +61,10 @@ storage unit ("Create 8 frames"), and a batch scope ("Update all 3").
 | Selected component | `Copy for AI` | `Create docs` |
 | Foundations | `Refresh sources` | `Create docs` |
 | Library | `Publish`, `Refresh library` | `Update all docs` |
-| Publish for developers | none | `Publish library` |
+| Publish | `Read documentation` | `Publish library` |
 
 6. **A footer action that only navigates still names an act, not a place.** The
-   Library's `Publish` opens the Publish for developers screen and starts
+   Library's `Publish` opens the Publish screen and starts
    nothing. It is not "Developer access" or "Publishing options": the user came
    to publish, and naming the destination instead would make the row read as
    three different categories again. It is the one footer action that is never

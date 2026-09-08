@@ -27,6 +27,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   screen reads its updates meter off the response rather than waiting for the
   next quota fetch. Rotation has no tier check. Pull is unchanged.
 
+- **Publish screen redesign.** The screen is titled **Publish**, since the
+  agent prompt it hands out is for a coding agent and not only a developer,
+  with a status pill (**Published** or **Not published**) beside the title and
+  one line under it for the last publish date and time in local time plus the
+  free plan's updates left. The date is stored in the file beside the library
+  id (root plugin data `speclayer.publish.publishedAt`, written by a new
+  `setPublishedAt` message after a created, updated, or unchanged publish), so
+  every editor sees it in every session; a library published by an earlier
+  build reads "date not recorded" until its next publish, never a guessed
+  date. The body is the two things a reader came for: the developer setup
+  command and the AI agent prompt, each shown in full in its own block with a
+  **Copy**, then **Rotate key** on its own row. The explanatory paragraphs,
+  the definition caption, the rotate consequence line and the in-body result
+  line are gone: publish and rotate successes are toasts, only errors stay on
+  screen, and a **Read documentation** footer button opens the publish and
+  pull workflow at `spec-layer.com/docs/quickstart/#publish-pull`. A device
+  that knows the library id but never held the key (a second computer, a
+  teammate) is told the key is stored on the device that published, to ask
+  that person for the setup command or rotate here, and that rotating stops
+  the current key for everyone; a teammate whose rotate the server refuses as
+  not the owner reads "Only the account that published this library can
+  rotate its key." instead of an HTTP status.
+
 - An **About** section at the foot of the plugin's Settings screen, giving
   **Plugin version** and **Extractor version** as labelled rows and a
   **Documentation** link to `https://spec-layer.com/docs/`. The plugin version

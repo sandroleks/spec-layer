@@ -8,6 +8,8 @@ export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 export const SITE_URL = 'https://spec-layer.com/';
 // The documentation index, linked from Settings > About.
 export const DOCS_URL = 'https://spec-layer.com/docs/';
+// The publish and pull workflow, linked from the Publish screen's footer.
+export const PUBLISH_DOCS_URL = 'https://spec-layer.com/docs/quickstart/#publish-pull';
 export const LINKEDIN_URL = 'https://www.linkedin.com/in/alexkurchev/';
 
 /** One routing table for every external action on the License screen/header. */

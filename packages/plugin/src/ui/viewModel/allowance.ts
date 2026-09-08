@@ -138,6 +138,21 @@ export function formatResetDate(iso: string): string {
   return `${SHORT_MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
+/**
+ * The moment a publish happened, in the user's local time: "8 Sept 2026,
+ * 14:32". Local, not UTC, because this is when the user pressed Publish, not
+ * a server boundary; `formatResetDate` keeps its UTC rule for the month reset.
+ * `locale` exists for deterministic tests; the plugin passes none. Null for
+ * anything unparsable, so the caller can say "Not recorded" instead of
+ * inventing a date.
+ */
+export function formatPublishedAt(iso: string, locale?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+}
+
 export function publishAllowanceCopy(state: PublishAllowance): string | null {
   if (state.kind === 'hidden') return null;
   const reset = formatResetDate(state.resetsAt);

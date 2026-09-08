@@ -511,7 +511,7 @@ describe('publish controller', () => {
       skipped: [],
       fileKey: 'F1',
       fileName: 'Design System',
-      publishInfo: { libraryId: null, pullKey: null },
+      publishInfo: { libraryId: null, pullKey: null, publishedAt: null },
       ...overrides,
     };
   }
@@ -520,6 +520,7 @@ describe('publish controller', () => {
   let sent: UiToMain[];
   let repaintCount: number;
   let quotaSnapshots: Array<import('../src/ui/publish').PublishQuotaSnapshot>;
+  let notified: string[];
 
   beforeEach(async () => {
     vi.resetModules();
@@ -527,10 +528,12 @@ describe('publish controller', () => {
     sent = [];
     repaintCount = 0;
     quotaSnapshots = [];
+    notified = [];
     publish.setPublishHost({
       repaint: () => { repaintCount += 1; },
       send: (msg) => { sent.push(msg); },
       onPublishQuota: (snapshot) => { quotaSnapshots.push(snapshot); },
+      notify: (message) => { notified.push(message); },
     });
   });
 
@@ -581,7 +584,9 @@ describe('publish controller', () => {
     expect(state.libraryId).toBe('lib_new');
     expect(state.pullKey).toBe('sl_pull');
     expect(state.lastPublishedAt).toBe('2026-09-01T00:00:01.000Z');
-    expect(state.message).toBe('Published. Anyone with the key can pull this version.');
+    // Success is a toast, not a line under the blocks.
+    expect(state.message).toBeNull();
+    expect(notified).toEqual(['Published. Anyone with the key can pull this version.']);
     expect(sent).toContainEqual({
       type: 'setPublishInfo', libraryId: 'lib_new', pullKey: 'sl_pull',
     });
@@ -652,7 +657,8 @@ describe('publish controller', () => {
     // The pull key never changes on an update: only a create or a rotate mint
     // a new one.
     expect(state.pullKey).toBe('sl_pull_1');
-    expect(state.message).toBe('Published. Developers get this version on their next pull.');
+    expect(state.message).toBeNull();
+    expect(notified).toContain('Published. Developers get this version on their next pull.');
     expect(updateFetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -704,7 +710,7 @@ describe('publish controller', () => {
       return jsonResponse(200, { libraryId: 'lib_file', publishedAt: '2026-09-01T00:00:02.000Z' });
     });
     await publish.onPublishSources(
-      sourcesMsg({ publishInfo: { libraryId: 'lib_file', pullKey: 'sl_file' } }), AUTH, fetcher,
+      sourcesMsg({ publishInfo: { libraryId: 'lib_file', pullKey: 'sl_file', publishedAt: null } }), AUTH, fetcher,
     );
     const state = publish.publishState();
     expect(state.status).toBe('done');
@@ -723,7 +729,7 @@ describe('publish controller', () => {
   });
 
   it('onPublishSourcesError sets an honest error, without touching any stored key', () => {
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_1' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_1', publishedAt: null });
     publish.onPublishSourcesError('the selection has no components');
     const state = publish.publishState();
     expect(state.status).toBe('error');
@@ -736,7 +742,7 @@ describe('publish controller', () => {
   });
 
   it('onPublishInfo seeds libraryId/pullKey only while idle', () => {
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_seed', pullKey: 'sl_seed' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_seed', pullKey: 'sl_seed', publishedAt: null });
     expect(publish.publishState().libraryId).toBe('lib_seed');
     expect(publish.publishState().pullKey).toBe('sl_seed');
     expect(repaintCount).toBeGreaterThan(0);
@@ -744,9 +750,74 @@ describe('publish controller', () => {
     // Once a publish has started this session, a slow/stale publishInfo reply
     // must not clobber what already happened.
     publish.onPublishClick(AUTH);
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_other', pullKey: 'sl_other' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_other', pullKey: 'sl_other', publishedAt: null });
     expect(publish.publishState().libraryId).toBe('lib_seed');
     expect(publish.publishState().pullKey).toBe('sl_seed');
+  });
+
+  it('records the publish date in the file after a create, an update, and an unchanged publish', async () => {
+    publish.onPublishClick(AUTH);
+    await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_1', pullKey: 'sl_1', publishedAt: '2026-09-01T00:00:01.000Z',
+    })));
+    expect(sent).toContainEqual({
+      type: 'setPublishedAt', libraryId: 'lib_1', publishedAt: '2026-09-01T00:00:01.000Z',
+    });
+
+    publish.onPublishClick(AUTH);
+    await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(200, {
+      libraryId: 'lib_1', publishedAt: '2026-09-02T00:00:01.000Z',
+    })));
+    expect(sent).toContainEqual({
+      type: 'setPublishedAt', libraryId: 'lib_1', publishedAt: '2026-09-02T00:00:01.000Z',
+    });
+
+    publish.onPublishClick(AUTH);
+    await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(200, {
+      libraryId: 'lib_1', publishedAt: '2026-09-02T00:00:01.000Z', unchanged: true,
+    })));
+    // The unchanged answer carries the stored library's existing date, which
+    // is the true last-published time, so it is recorded too.
+    expect(sent.filter((m) => m.type === 'setPublishedAt')).toHaveLength(3);
+    expect(publish.publishState().lastPublishedAt).toBe('2026-09-02T00:00:01.000Z');
+  });
+
+  it('records no date after a failed publish', async () => {
+    publish.onPublishClick(AUTH);
+    await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(500, {})));
+    expect(sent.some((m) => m.type === 'setPublishedAt')).toBe(false);
+  });
+
+  it('seeds the date from the file while idle', () => {
+    publish.onPublishInfo({
+      type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_1', publishedAt: '2026-08-30T09:12:00.000Z',
+    });
+    expect(publish.publishState().lastPublishedAt).toBe('2026-08-30T09:12:00.000Z');
+  });
+
+  it('falls back to the date carried by publishSources when the session has none', async () => {
+    publish.onPublishClick(AUTH);
+    // The publish fails, so the only date the state can hold is the one the
+    // main thread read from the file in the same round trip as the sources.
+    await publish.onPublishSources(
+      sourcesMsg({
+        publishInfo: { libraryId: 'lib_1', pullKey: 'sl_1', publishedAt: '2026-08-30T09:12:00.000Z' },
+      }),
+      AUTH, vi.fn(async () => jsonResponse(500, {})),
+    );
+    expect(publish.publishState().lastPublishedAt).toBe('2026-08-30T09:12:00.000Z');
+  });
+
+  it('drops the date with the id when the library is gone', async () => {
+    publish.onPublishInfo({
+      type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_1', publishedAt: '2026-08-30T09:12:00.000Z',
+    });
+    publish.onPublishClick(AUTH);
+    await publish.onPublishSources(
+      sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(404, { error: 'not_found' })),
+    );
+    expect(publish.publishState().lastPublishedAt).toBeNull();
+    expect(publish.publishState().libraryId).toBeNull();
   });
 
   it('onRotateClick replaces the stored key', async () => {
@@ -762,7 +833,8 @@ describe('publish controller', () => {
     expect(state.pullKey).toBe('sl_rotated');
     expect(state.libraryId).toBe('lib_1');
     expect(state.status).toBe('done');
-    expect(state.message).toBe(
+    expect(state.message).toBeNull();
+    expect(notified).toContain(
       'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
     );
     expect(sent).toContainEqual({
@@ -771,7 +843,7 @@ describe('publish controller', () => {
   });
 
   it('ignores rotate while a publish is collecting or uploading', async () => {
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old', publishedAt: null });
     publish.onPublishClick(AUTH);
     const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_rotated' }));
     await publish.onRotateClick(AUTH, rotateFetcher);
@@ -781,7 +853,7 @@ describe('publish controller', () => {
   });
 
   it('a rotate that succeeds after a failed publish reads as done, not as an error', async () => {
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old' });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: 'sl_old', publishedAt: null });
     publish.onPublishSourcesError('the file has no docs');
     expect(publish.publishState().status).toBe('error');
     const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_rotated' }));
@@ -791,7 +863,7 @@ describe('publish controller', () => {
   });
 
   it('rotates with only a library id known, so a second device can recover a key', async () => {
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: null });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: null, publishedAt: null });
     const rotateFetcher = vi.fn(async () => jsonResponse(200, { pullKey: 'sl_fresh' }));
     await publish.onRotateClick(AUTH, rotateFetcher);
     expect(publish.publishState().pullKey).toBe('sl_fresh');
@@ -813,15 +885,34 @@ describe('publish controller', () => {
     expect(state.pullKey).toBe('sl_old');
   });
 
+  it('explains a not_owner refusal in plain words, since a teammate can reach the button', async () => {
+    // A teammate sees the file's library id but never held the key, and the
+    // server refuses their rotate because ownership is the publisher's.
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: null, publishedAt: null });
+    const rotateFetcher = vi.fn(async () => jsonResponse(403, { error: 'not_owner' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe('Only the account that published this library can rotate its key.');
+    expect(state.pullKey).toBeNull();
+    expect(notified).toEqual([]);
+  });
+
   it('reports nothing changed on an unchanged republish and keeps the key', async () => {
     const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z', unchanged: true }));
-    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null });
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
     const s = publish.publishState();
     expect(s.status).toBe('done');
-    expect(s.message).toBe('Nothing changed since the last publish.');
+    expect(s.message).toBeNull();
+    expect(notified).toEqual(['Nothing changed since the last publish.']);
     expect(s.pullKey).toBe(KEY);
-    expect(sent).toEqual([]);
+    // No new key, so nothing rewrites the stored one. The date is recorded
+    // because the unchanged answer carries the stored library's real one.
+    expect(sent.filter((m) => m.type === 'setPublishInfo')).toEqual([]);
+    expect(sent).toEqual([
+      { type: 'setPublishedAt', libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z' },
+    ]);
   });
 });
 

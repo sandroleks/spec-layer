@@ -192,6 +192,12 @@ export async function rotatePullKey(
   }
   const body = await bodyOf(res);
   if (res.ok) return { kind: 'rotated', pullKey: String(body.pullKey) };
+  // Ownership is proved by the identity that published (the license key or
+  // the Figma account), so a teammate looking at the file's id can reach the
+  // button and be refused. Say why, rather than quoting the status code.
+  if (res.status === 403 || body.error === 'not_owner') {
+    return { kind: 'error', message: 'Only the account that published this library can rotate its key.' };
+  }
   return { kind: 'error', message: `Rotating the key failed with HTTP ${res.status}.` };
 }
 
@@ -255,10 +261,18 @@ export interface PublishHost {
    * spending an update.
    */
   onPublishQuota(snapshot: PublishQuotaSnapshot): void;
+  /**
+   * A success to announce as a toast. Successes leave the screen (a published
+   * library shows its commands, a rotated key shows its new command), so the
+   * confirmation is a passing notice, not a line that sits under the blocks
+   * until the next action. Errors stay in `state.message` instead, where the
+   * screen keeps them on view.
+   */
+  notify(message: string): void;
 }
 
 const noopPublishHost: PublishHost = {
-  repaint: () => {}, send: () => {}, onPublishQuota: () => {},
+  repaint: () => {}, send: () => {}, onPublishQuota: () => {}, notify: () => {},
 };
 let host: PublishHost = noopPublishHost;
 
@@ -312,7 +326,8 @@ export async function onPublishSources(
   // that has not landed yet can no longer cost us a republish.
   const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
   const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
-  state = { ...state, status: 'uploading', libraryId, pullKey };
+  const lastPublishedAt = state.lastPublishedAt ?? msg.publishInfo.publishedAt;
+  state = { ...state, status: 'uploading', libraryId, pullKey, lastPublishedAt };
   host.repaint();
 
   const bundle = buildPublishBundle(msg, new Date().toISOString());
@@ -329,9 +344,11 @@ export async function onPublishSources(
         libraryId: outcome.libraryId,
         pullKey: outcome.pullKey,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Published. Anyone with the key can pull this version.',
+        message: null,
       };
       host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
+      host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Published. Anyone with the key can pull this version.');
       break;
     case 'updated':
       state = {
@@ -339,23 +356,31 @@ export async function onPublishSources(
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Published. Developers get this version on their next pull.',
+        message: null,
       };
+      host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Published. Developers get this version on their next pull.');
       break;
     case 'unchanged':
+      // The unchanged answer carries the stored library's existing date, which
+      // is the true last-published time, so it is recorded like the others.
       state = {
         ...state,
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Nothing changed since the last publish.',
+        message: null,
       };
+      host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Nothing changed since the last publish.');
       break;
     case 'gone':
       // Never recreate on the user's behalf: the developers pulling the old id
       // would be stranded without anyone being told. Drop the stale identity
       // here and in the file so the next click is a deliberate new library.
-      state = { ...state, status: 'error', libraryId: null, pullKey: null, message: GONE_MESSAGE };
+      state = {
+        ...state, status: 'error', libraryId: null, pullKey: null, lastPublishedAt: null, message: GONE_MESSAGE,
+      };
       host.send({ type: 'clearPublishInfo' });
       break;
     case 'error':
@@ -375,15 +400,16 @@ export function onPublishSourcesError(message: string): void {
 }
 
 /**
- * Seed libraryId/pullKey from what was last persisted for this file, so a
- * fresh session's Library screen can show the setup command and Rotate
- * action without waiting for a publish. Only takes effect while idle: once a
- * publish (or rotate) has run this session, that in-memory result is the
- * truth, and a slow publishInfo reply landing afterward must not clobber it.
+ * Seed libraryId, pullKey and lastPublishedAt from what was last persisted
+ * for this file, so a fresh session's publish screen can show the setup
+ * command, the Rotate action and the last publish date without waiting for a
+ * publish. Only takes effect while idle: once a publish (or rotate) has run
+ * this session, that in-memory result is the truth, and a slow publishInfo
+ * reply landing afterward must not clobber it.
  */
 export function onPublishInfo(msg: PublishInfoMsg): void {
   if (state.status !== 'idle') return;
-  state = { ...state, libraryId: msg.libraryId, pullKey: msg.pullKey };
+  state = { ...state, libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt };
   host.repaint();
 }
 
@@ -403,9 +429,10 @@ export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Pr
       ...state,
       status: 'done',
       pullKey: outcome.pullKey,
-      message: 'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
+      message: null,
     };
     host.send({ type: 'setPublishInfo', libraryId, pullKey: outcome.pullKey });
+    host.notify('Key rotated. The old key stops working within about a minute. Share the new command with your developers.');
   } else {
     state = { ...state, status: 'error', message: outcome.message };
   }
