@@ -42,7 +42,7 @@ export interface SkillInput {
   profile: RepoProfile;
   /** Platforms the guide is written for, after any --platform override. */
   platforms: Platform[];
-  platformSource: 'flag' | 'detected' | 'none';
+  platformSource: 'flag' | 'config' | 'detected' | 'none';
   outDir: string;
   config: CliConfig | null;
   pull: PullSummary | null;
@@ -148,7 +148,7 @@ function stackSection(input: SkillInput): string[] {
       '',
     );
   } else {
-    const label = platformSource === 'flag' ? 'chosen with --platform' : 'detected';
+    const label = platformSource === 'flag' ? 'chosen with --platform' : platformSource === 'config' ? 'set in speclayer.json' : 'detected';
     lines.push(`Target platform${platforms.length > 1 ? 's' : ''} (${label}): ${platforms.join(', ')}.`, '');
   }
 

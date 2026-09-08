@@ -402,6 +402,66 @@ describe('runPull with dtcg options', () => {
   });
 });
 
+describe('runPull with outputs', () => {
+  let cwd: string;
+  const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
+  const KEY = `sl_${'a'.repeat(48)}`;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-outputs-'));
+  });
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('pull honours an empty outputs list and re-projects when the outputs block changes', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'], outputs: [] }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(false);
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'styles/tokens.css', case: 'camel' }],
+    }));
+    const second = makeIo();
+    const fetcher = stub200();
+    expect(await runPull(cwd, { key: KEY }, {}, second, fetcher)).toBe(0);
+    // A changed outputs block must not send If-None-Match, or the 304 would skip the re-projection.
+    const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+    expect(headers['If-None-Match']).toBeUndefined();
+    const css = readFileSync(join(cwd, 'styles/tokens.css'), 'utf8');
+    expect(css).toContain('web/css/camel.');
+    expect(css).toContain('--primitivesColorChainBridge: var(--primitivesColorChainMiddle);');
+  });
+
+  it('pull --platform web adds the default output for the run without rewriting speclayer.json', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY, platform: ['web'] }, {}, io, stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(readConfig(cwd)).toEqual({ libraryId: LIB, outDir: '.speclayer' });
+  });
+
+  it('pull refuses a foreign file at the output path and leaves the record untouched', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    mkdirSync(join(cwd, 'spec-layer'));
+    writeFileSync(join(cwd, 'spec-layer/tokens.css'), 'body {}\n');
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
+    expect(io.errLines[0]).toBe('spec-layer/tokens.css exists and was not written by spec-layer. Choose another path or remove the file.');
+    expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(false);
+  });
+
+  it('rejects an unknown --platform on pull before fetching', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    const io = makeIo();
+    const fetcher = stub200();
+    expect(await runPull(cwd, { key: KEY, platform: ['Web'] }, {}, io, fetcher)).toBe(1);
+    expect(io.errLines[0]).toBe('--platform takes web, ios, android, flutter, not "Web".');
+    expect((fetcher as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
 describe('runInit with a selection', () => {
   let cwd: string;
   beforeEach(() => {
@@ -881,6 +941,44 @@ describe('runSetup', () => {
     }
   });
 
+  it('setup --platform web stores platforms and a default output, and pull writes the css file', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY, platform: ['web'] }, {}, io, stub200())).toBe(0);
+    expect(readConfig(cwd)).toMatchObject({
+      platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+    });
+    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/outputs/web-css.map.json'))).toBe(true);
+    expect(io.outLines).toContain('Wrote spec-layer/tokens.css (web/css, kebab names).');
+  });
+
+  it('setup without a platform in an empty directory writes no output and says which flag to pass', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+    expect(readConfig(cwd)).not.toHaveProperty('outputs');
+    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
+    expect(io.outLines).toContain('No target platform detected, so no token file was written for your code. Pass --platform web|ios|android|flutter, or add outputs to speclayer.json.');
+  });
+
+  it('setup detects web from package.json and writes the output without a flag', async () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: { react: '^19' } }));
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+    expect(readConfig(cwd)).toMatchObject({ platforms: ['web'] });
+    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+  });
+
+  it('list prints path for artifacts and a row per output', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY, platform: ['web'] }, {}, io, stub200())).toBe(0);
+    const list = makeIo();
+    expect(runList(cwd, {}, list)).toBe(0);
+    const text = list.outLines.join('\n');
+    expect(text).toContain('components/button.yaml');
+    expect(text).toMatch(/output\s+web\/css\s+spec-layer\/tokens\.css/);
+  });
+
   it('never prints the key', async () => {
     gitInit();
     const io = makeIo();
@@ -1035,7 +1133,7 @@ describe('runSkill', () => {
   it('--agent overrides detection and --platform overrides the detected target', () => {
     mkdirSync(join(cwd, '.claude'));
     const io = makeIo();
-    expect(runSkill(cwd, { install: true, agent: ['copilot', 'copilot'], platform: 'ios' }, io)).toBe(0);
+    expect(runSkill(cwd, { install: true, agent: ['copilot', 'copilot'], platform: ['ios'] }, io)).toBe(0);
     expect(io.outLines).toEqual(expect.arrayContaining([
       'Wrote .github/instructions/spec-layer.instructions.md (copilot, named with --agent).',
     ]));
@@ -1047,7 +1145,7 @@ describe('runSkill', () => {
 
   it('rejects an unknown --platform or --agent before writing anything', () => {
     const bad = makeIo();
-    expect(runSkill(cwd, { install: true, platform: 'Web' }, bad)).toBe(1);
+    expect(runSkill(cwd, { install: true, platform: ['Web'] }, bad)).toBe(1);
     expect(bad.errLines[0]).toBe('--platform takes web, ios, android, flutter, not "Web".');
     const badAgent = makeIo();
     expect(runSkill(cwd, { install: true, agent: ['codex'] }, badAgent)).toBe(1);
