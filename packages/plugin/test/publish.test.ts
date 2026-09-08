@@ -144,6 +144,7 @@ describe('buildPublishBundle', () => {
 describe('publishBundle', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
   const BUNDLE = buildPublishBundle(baseSources(), GENERATED_AT);
+  const LIB = 'lib_' + 'b'.repeat(24);
 
   function jsonResponse(status: number, body: unknown): Response {
     return {
@@ -193,10 +194,51 @@ describe('publishBundle', () => {
       .toEqual({ kind: 'gone' });
   });
 
-  it('maps 401 license errors to plugin-voice copy', async () => {
-    const fetcher = vi.fn(async () => jsonResponse(401, { error: 'license_not_active' }));
+  it('maps 401 to a plain sign-in problem, not a Pro requirement', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(401, { error: 'unauthenticated' }));
     const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs an active Pro license.' });
+    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
+  });
+
+  it('maps 402 to the monthly updates message with the reset date', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'You have used your 10 free updates for this month. Upgrade to Pro or publish again after Oct 1.',
+    });
+  });
+
+  it('maps a free library_limit to the one-file message naming the other file', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, {
+      error: 'library_limit', limit: 1, existing: { libraryId: 'lib_' + 'a'.repeat(24), fileName: 'Marketing DS' },
+    }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'Free plans publish one Figma file. This account already publishes Marketing DS. Upgrade to Pro to publish up to 10 files.',
+    });
+  });
+
+  it('says "another file" when the existing library has no stored name', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, {
+      error: 'library_limit', limit: 1, existing: { libraryId: 'lib_' + 'a'.repeat(24), fileName: null },
+    }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect((outcome as { message: string }).message)
+      .toBe('Free plans publish one Figma file. This account already publishes another file. Upgrade to Pro to publish up to 10 files.');
+  });
+
+  it('maps a Pro library_limit to the count', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 10 }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({ kind: 'error', message: 'This plan already publishes 10 Figma files, which is the limit.' });
+  });
+
+  it('reports an unchanged republish as its own outcome', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z', unchanged: true }));
+    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
+    expect(outcome).toEqual({ kind: 'unchanged', libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z' });
   });
 
   it('maps 429 rate limiting to copy', async () => {
@@ -223,7 +265,7 @@ describe('publishBundle', () => {
     const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'This license already publishes 3 libraries, which is the limit.',
+      message: 'This plan already publishes 3 Figma files, which is the limit.',
     });
   });
 
@@ -248,7 +290,7 @@ describe('publishBundle', () => {
     const fetcher = vi.fn();
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
     const outcome = await publishBundle(BUNDLE, { auth: noAuth, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs an active Pro license.' });
+    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -266,7 +308,7 @@ describe('rotatePullKey', () => {
       ok: false, status: 401, json: async () => ({}),
     } as unknown as Response));
     expect(await rotatePullKey('lib_1', AUTH, unauthorizedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key needs an active Pro license.',
+      kind: 'error', message: 'Rotating the key failed with HTTP 401.',
     });
 
     const serverErrorFetch = vi.fn(async () => ({
@@ -284,7 +326,7 @@ describe('rotatePullKey', () => {
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
     const unusedFetch = vi.fn();
     expect(await rotatePullKey('lib_1', noAuth, unusedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key needs an active Pro license.',
+      kind: 'error', message: 'Rotating the key needs a signed-in Figma account or a license key.',
     });
     expect(unusedFetch).not.toHaveBeenCalled();
   });
@@ -380,6 +422,8 @@ describe('setupCommand', () => {
 
 describe('publish controller', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
+  const LIB = 'lib_1';
+  const KEY = 'sl_old';
 
   function jsonResponse(status: number, body: unknown): Response {
     return {
@@ -515,7 +559,7 @@ describe('publish controller', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'That library is gone or belongs to another license. Nothing was published. '
+      'That library is gone or belongs to another account. Nothing was published. '
       + 'Publish again to create a new library, then share its setup command with your developers.',
     );
     // The stale identity is dropped locally and in the file, so the next
@@ -649,8 +693,19 @@ describe('publish controller', () => {
     await publish.onRotateClick(AUTH, rotateFetcher);
     const state = publish.publishState();
     expect(state.status).toBe('error');
-    expect(state.message).toBe('Rotating the key needs an active Pro license.');
+    expect(state.message).toBe('Rotating the key failed with HTTP 401.');
     expect(state.pullKey).toBe('sl_old');
+  });
+
+  it('reports nothing changed on an unchanged republish and keeps the key', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z', unchanged: true }));
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY });
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
+    const s = publish.publishState();
+    expect(s.status).toBe('done');
+    expect(s.message).toBe('Nothing changed since the last publish.');
+    expect(s.pullKey).toBe(KEY);
+    expect(sent).toEqual([]);
   });
 });
 
