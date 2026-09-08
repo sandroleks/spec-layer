@@ -13,12 +13,13 @@ export function slugify(name: string): string {
 }
 
 /**
- * Every artifact in the bundle; aiPath is null when the selection left it
+ * Every artifact in the bundle; path is null when the selection left it
  * unwritten. For the foundation this is the DTCG resolver path
- * (`tokens/resolver.json`); for a component it is its AI YAML path.
+ * (`tokens/resolver.json`); for a component it is its YAML path under
+ * `components/`.
  */
 export interface ManifestArtifact {
-  kind: 'foundation' | 'component'; name: string; contentHash: string; aiPath: string | null;
+  kind: 'foundation' | 'component'; name: string; contentHash: string; path: string | null;
 }
 export interface Manifest {
   libraryId: string;
@@ -40,7 +41,20 @@ export interface Manifest {
 export function readManifest(outDir: string): Manifest | null {
   const path = join(outDir, 'manifest.json');
   if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, 'utf8')) as Manifest; } catch { return null; }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Manifest & {
+      artifacts: Array<ManifestArtifact & { aiPath?: string | null }>;
+    };
+    // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
+    // list, skill, and status keep working until the next pull rewrites it.
+    parsed.artifacts = parsed.artifacts.map((artifact) => {
+      const { aiPath, ...rest } = artifact as ManifestArtifact & { aiPath?: string | null };
+      return {
+        ...rest, path: rest.path ?? aiPath ?? null,
+      } as ManifestArtifact;
+    });
+    return parsed;
+  } catch { return null; }
 }
 
 /** The whole bundle as last pulled, or null when nothing was pulled. */
@@ -118,7 +132,7 @@ export function writeBundleFiles(opts: {
     put('bundle.json', opts.raw);
     const artifacts: ManifestArtifact[] = [];
     if (opts.bundle.foundation) {
-      let aiPath: string | null = null;
+      let path: string | null = null;
       if (selection.foundation) {
         // A shape check on the wire, so a malformed artifact fails in one
         // sentence rather than deep inside the projection. This does not
@@ -129,20 +143,20 @@ export function writeBundleFiles(opts: {
         }
         const files = dtcgExportFiles(foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {}));
         for (const [name, text] of Object.entries(files)) put(`tokens/${name}`, text);
-        aiPath = 'tokens/resolver.json';
+        path = 'tokens/resolver.json';
       }
       artifacts.push({
         kind: 'foundation', name: 'foundation',
         contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash,
-        aiPath,
+        path,
       });
     }
     opts.bundle.components.forEach((component, i) => {
-      const aiPath = selected[i] ? `ai/components/${slugs[i]}.yaml` : null;
-      if (aiPath) put(aiPath, component.ai);
+      const path = selected[i] ? `components/${slugs[i]}.yaml` : null;
+      if (path) put(path, component.ai);
       artifacts.push({
         kind: 'component', name: component.name,
-        contentHash: component.artifact.spec_layer.export.content_hash, aiPath,
+        contentHash: component.artifact.spec_layer.export.content_hash, path,
       });
     });
     const manifest: Manifest = {

@@ -131,7 +131,7 @@ describe('runPull', () => {
     expect(code).toBe(0);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(true);
     const output = io.outLines.join('\n');
     expect(output).toMatch(/1 component/);
@@ -208,12 +208,12 @@ describe('runPull', () => {
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const beforeBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
-    const beforeButton = readFileSync(join(cwd, '.speclayer/ai/components/button.yaml'), 'utf8');
+    const beforeButton = readFileSync(join(cwd, '.speclayer/components/button.yaml'), 'utf8');
     const beforeManifest = readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8');
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const afterBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
-    const afterButton = readFileSync(join(cwd, '.speclayer/ai/components/button.yaml'), 'utf8');
+    const afterButton = readFileSync(join(cwd, '.speclayer/components/button.yaml'), 'utf8');
     const afterManifest = readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8');
 
     expect(afterBundle).toBe(beforeBundle);
@@ -305,7 +305,7 @@ describe('runPull with a selection', () => {
 
     expect(code).toBe(0);
     expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/components'))).toBe(false);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
     expect(io.outLines.join('\n')).toMatch(/foundation \+ 0 of 3 components/);
   });
@@ -316,9 +316,9 @@ describe('runPull with a selection', () => {
     const code = await runPull(cwd, { component: ['card', 'icon-button'] }, ENV, io, stubThree());
 
     expect(code).toBe(0);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/card.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/icon-button.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/icon-button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
     expect(io.outLines.join('\n')).toMatch(/foundation \+ 2 of 3 components/);
   });
 
@@ -336,12 +336,12 @@ describe('runPull with a selection', () => {
     runInit(cwd, { id: 'lib_abc', component: ['Card'] }, makeIo());
 
     await runPull(cwd, {}, ENV, makeIo(), stubThree());
-    expect(existsSync(join(cwd, '.speclayer/ai/components/card.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
 
     await runPull(cwd, { component: ['Button'] }, ENV, makeIo(), stubThree());
-    expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/card.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(false);
   });
 
   it('fails on an unknown component name, lists the available ones, and writes nothing', async () => {
@@ -465,7 +465,7 @@ describe('runList', () => {
     expect(out).toMatch(/2026-09-01T00:00:00\.000Z/);
     expect(out).toMatch(/foundation\s+foundation\s+tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
-    expect(out).toMatch(/component\s+Card\s+ai\/components\/card\.yaml\s+b{64}/);
+    expect(out).toMatch(/component\s+Card\s+components\/card\.yaml\s+b{64}/);
   });
 });
 
@@ -589,7 +589,7 @@ describe('runPull safety and freshness', () => {
     expect(code).toBe(0);
     expect(headerOf(fetcher, 'If-None-Match')).toBe(`"${JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8')).bundleHash}"`);
     expect(io.outLines.join('\n')).toMatch(/Already up to date/);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
   });
 
   it('does not send a hash when the selection differs from the last pull, so the files are re-projected', async () => {
@@ -600,8 +600,8 @@ describe('runPull safety and freshness', () => {
 
     expect(code).toBe(0);
     expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
-    expect(existsSync(join(cwd, '.speclayer/ai/components/button.yaml'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer/ai/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
   });
 
   it('refuses to use the working directory itself as the output directory', async () => {
@@ -1002,7 +1002,7 @@ describe('runSkill', () => {
     const io = makeIo();
     expect(runSkill(cwd, {}, io)).toBe(0);
     const guide = io.writes.join('');
-    expect(guide).toContain('- Button: `.speclayer/ai/components/button.yaml`');
+    expect(guide).toContain('- Button: `.speclayer/components/button.yaml`');
     expect(guide).toContain('### Token collections');
     expect(guide).toContain('- `resolver.json`: sets, modifiers, and resolution order.');
     expect(guide).toContain('Library `lib_x`, published 2026-09-01T00:00:00.000Z by plugin 5.0.0');
@@ -1070,7 +1070,7 @@ describe('runSkill', () => {
     expect(parsed.platforms).toEqual(['web']);
     expect(parsed.platform_source).toBe('detected');
     expect(parsed.detected.frameworks).toEqual(['vue']);
-    expect(parsed.pull.components).toEqual([{ name: 'Button', path: '.speclayer/ai/components/button.yaml' }]);
+    expect(parsed.pull.components).toEqual([{ name: 'Button', path: '.speclayer/components/button.yaml' }]);
     expect(parsed.pull.foundation.written).toBe(true);
     expect(parsed.install_targets).toEqual([{ host: 'agents-md', path: 'AGENTS.md', mode: 'block' }]);
   });

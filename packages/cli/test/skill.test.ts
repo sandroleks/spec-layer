@@ -23,7 +23,7 @@ function input(overrides: Partial<SkillInput> = {}): SkillInput {
 const PULL: NonNullable<SkillInput['pull']> = {
   outDir: '.speclayer', libraryId: 'lib_x', publishedAt: '2026-09-01T00:00:00.000Z', pluginVersion: '5.0.0',
   components: [
-    { name: 'Button', path: '.speclayer/ai/components/button.yaml' },
+    { name: 'Button', path: '.speclayer/components/button.yaml' },
     { name: 'Text field', path: null },
   ],
   foundation: {
@@ -46,7 +46,7 @@ describe('buildSkillGuide', () => {
 
   it('lists the components, collections, modes, and token files from the pull', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
-    expect(guide).toContain('- Button: `.speclayer/ai/components/button.yaml`');
+    expect(guide).toContain('- Button: `.speclayer/components/button.yaml`');
     expect(guide).toContain('- Text field: not written (excluded by the selection). `spec-layer show component "Text field"` prints it.');
     expect(guide).toContain('- `Primitives`: one mode, always applied.');
     expect(guide).toContain('- `Theme`: modes `Light`, `Dark`, default `Light`.');

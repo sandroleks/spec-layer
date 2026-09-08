@@ -78,7 +78,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
   const absOut = join(cwd, outDir);
   const components = manifest.artifacts
     .filter((a) => a.kind === 'component')
-    .map((a) => ({ name: a.name, path: a.aiPath ? `${outDir}/${a.aiPath}` : null }));
+    .map((a) => ({ name: a.name, path: a.path ? `${outDir}/${a.path}` : null }));
   const foundationEntry = manifest.artifacts.find((a) => a.kind === 'foundation') ?? null;
   let foundation: PullSummary['foundation'] = null;
   if (foundationEntry) {
@@ -99,7 +99,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
       }
     }
     foundation = {
-      written: foundationEntry.aiPath !== null && resolver !== null,
+      written: foundationEntry.path !== null && resolver !== null,
       sets: resolver ? Object.keys(resolver.sets ?? {}) : [],
       modifiers: resolver
         ? Object.entries(resolver.modifiers ?? {}).map(([name, m]) => ({
@@ -264,7 +264,7 @@ function pullSection(input: SkillInput): string[] {
   } else {
     lines.push('- This library has no Foundation, so there is no tokens/ directory.');
   }
-  lines.push(`- ${code(`${outDir}/ai/components/`)}: one YAML per component.`);
+  lines.push(`- ${code(`${outDir}/components/`)}: one YAML per component.`);
   lines.push('');
 
   if (pull.foundation && (pull.foundation.sets.length || pull.foundation.modifiers.length)) {
@@ -333,7 +333,7 @@ export function buildSkillGuide(input: SkillInput): string {
   );
   lines.push('## How to use it', '');
   lines.push(`1. Run ${code('npx spec-layer status')}. Exit 0 means the local copy is current; exit 2 means run ${code('npx spec-layer pull')} first.`);
-  lines.push(`2. Building or changing a component: read its YAML under ${code(`${outDir}/ai/components/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
+  lines.push(`2. Building or changing a component: read its YAML under ${code(`${outDir}/components/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
   lines.push(`5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);

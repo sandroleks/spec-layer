@@ -332,7 +332,7 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     return 1;
   }
   io.out(`Library ${manifest.libraryId}, published ${manifest.publishedAt}.`);
-  const rows = manifest.artifacts.map((a) => [a.kind, a.name, a.aiPath ?? 'not written', a.contentHash]);
+  const rows = manifest.artifacts.map((a) => [a.kind, a.name, a.path ?? 'not written', a.contentHash]);
   const widths = [0, 1, 2].map((i) => Math.max(...rows.map((r) => r[i].length)));
   for (const row of rows) {
     io.out(row.map((cell, i) => (i < 3 ? cell.padEnd(widths[i]) : cell)).join('  '));
