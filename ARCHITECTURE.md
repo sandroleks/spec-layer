@@ -85,24 +85,32 @@ serialize quota updates per hashed identity. Per-isolate IP throttles blunt
 simple abuse, while deployment-level rate rules remain the production
 backstop.
 
-`packages/proxy/src/libraries.ts` adds three Pro-only `/v1/libraries` routes
-that store and serve a published library bundle without ever deriving it: the
-proxy is a blind blob store keyed by license identity, not a second
-implementation of v5 extraction.
+`packages/proxy/src/libraries.ts` adds three `/v1/libraries` routes that store
+and serve a published library bundle without ever deriving it: the proxy is a
+blind blob store keyed by a proved identity, not a second implementation of v5
+extraction. Publish and rotate accept a license bearer, a Figma identity
+header, or both; ownership is any identity the request proves, so a library
+created on a free plan stays writable after upgrading, and one created on Pro
+stays writable after the license lapses as long as the key is still sent. Pull
+is key-only and needs no identity at all.
 
-- `POST /v1/libraries` (Pro license required): publishes a bundle. Omitting
-  `libraryId` creates a new library, checked against a per-license cap of
-  `LIBRARY_LIMIT` (10); a returned 201 carries the only copy of the pull key
-  the server ever hands back (`sl_` + 24 random bytes as hex). Passing an
-  owned `libraryId` overwrites it in place (200) and does not return a key,
-  since the key does not change. The bundle body is capped at
-  `MAX_BUNDLE_BYTES` (5,000,000 UTF-8 bytes of the request body).
+- `POST /v1/libraries` (license bearer and/or Figma identity): publishes a
+  bundle. Omitting `libraryId` creates a new library, checked against
+  `LIBRARY_LIMITS` (free 1, pro 10) across every identity the caller proves; a
+  returned 201 carries the only copy of the pull key the server ever hands
+  back (`sl_` + 24 random bytes as hex). Passing an owned `libraryId`
+  overwrites it in place (200) and does not return a key, since the key does
+  not change. A free caller also spends from a monthly publish allowance
+  (`PUBLISH_MONTHLY_LIMIT`, 10 changed publishes per UTC month), refused with
+  402; a republish whose content matches the stored one is a no-op that
+  neither writes nor counts. The bundle body is capped at `MAX_BUNDLE_BYTES`
+  (5,000,000 UTF-8 bytes of the request body).
 - `GET /v1/libraries/:libraryId` (pull key required, `Authorization: Bearer
   sl_...`): returns the stored bundle verbatim, with `ETag` and
   `X-Published-At` headers; an `If-None-Match` matching the current
   `bundleHash` gets a bare 304.
-- `POST /v1/libraries/:libraryId/rotate` (Pro license required, caller must
-  own the library): issues a new pull key. The old key stops working once
+- `POST /v1/libraries/:libraryId/rotate` (caller must own the library; there
+  is no tier check): issues a new pull key. The old key stops working once
   the KV write propagates, which can take up to about a minute.
 
 KV layout, all under the `libraryStore` binding. The records a publish writes
@@ -112,13 +120,18 @@ without clobbering each other:
 - `lib:<libraryId>:bundle` — the published bundle JSON, served as-is to a
   pull request.
 - `lib:<libraryId>:meta` — a `LibraryMeta` JSON record: `licenseId`,
-  `publishedAt`, `bundleHash`, `size` (bytes), `fileName`. Libraries
-  published before September 2026 also carry a legacy `keyHash` here, which
-  pull falls back to.
+  `publishedAt`, `bundleHash`, `contentHash`, `size` (bytes), `fileName`.
+  `bundleHash` is sha256 of the stored bytes and serves the pull `ETag`;
+  `contentHash` is `libraryBundleContentHash`, which ignores each artifact's
+  export envelope so a rebuild of unchanged sources matches, and is what the
+  unchanged-republish rule compares. Libraries published before September
+  2026 also carry a legacy `keyHash` here, which pull falls back to, and
+  those published before `contentHash` existed carry no `contentHash`, so
+  their first republish is treated as changed.
 - `lib:<libraryId>:key` — sha256 of the current pull key (the key itself is
   never stored). Rotate writes only this record.
 - `libowner:<licenseId>:<libraryId>` — one record per owned library, counted
-  by prefix to enforce `LIBRARY_LIMIT`, so concurrent creates never
+  by prefix to enforce `LIBRARY_LIMITS`, so concurrent creates never
   read-modify-write a shared list. A legacy `libowner:<licenseId>` array is
   expanded into these records the first time that license publishes.
 
