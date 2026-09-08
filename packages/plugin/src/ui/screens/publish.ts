@@ -10,6 +10,7 @@
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { setupCommand, type PublishState } from '../publish';
+import { publishAllowanceCopy, type PublishAllowance } from '../viewModel/allowance';
 import { progressMarkup } from './progress';
 
 function esc(value: string): string {
@@ -44,16 +45,12 @@ const BEFORE_FIRST_PUBLISH =
   'here once it has run.';
 
 /**
- * Shown instead of the publish action on a free plan.
- *
- * Publishing is a Pro action the proxy already enforces (`proCaller` in
- * packages/proxy/src/libraries.ts answers 401 to every other tier). Stating the
- * plan up front saves a free plan a collection pass over every component in
- * the file that would end in that refusal.
+ * Defines the noun the screen counts. "Library" is the technical name the CLI
+ * and proxy use; the allowance below counts Figma files and updates, so the
+ * two have to be tied together once, where both are visible.
  */
-const PRO_ONLY =
-  'Publishing is part of Pro. Upgrade to publish this library, and to get the ' +
-  'key and setup command developers need.';
+export const LIBRARY_DEFINITION =
+  'A library is this Figma file, published for developers to pull with the CLI.';
 
 /** Statuses where a publish is in flight, so the primary is working. */
 function isBusy(state: PublishState): boolean {
@@ -82,24 +79,19 @@ export function publishHeaderMarkup(): string {
  * status line. Everything here varies in height with state, which is why it
  * belongs in the scroll body rather than the fixed-height footer band.
  */
-export function publishScrollMarkup(state: PublishState, locked: boolean): string {
+export function publishScrollMarkup(state: PublishState, allowance: PublishAllowance): string {
   const busy = isBusy(state);
   // Rotating during an upload would race the publish on the server, so the
   // control is disabled while the footer reports work in progress.
-  // Rotating is a Pro call too, so a locked screen offers no rotate control and
-  // no consequence line for one. What a lapsed license already published stays
-  // pullable, and the command it needs is still shown below.
-  const rotateButton = locked
-    ? ''
-    : '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
-      `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>`;
+  const rotateButton =
+    '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
+    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>`;
   // Names the action, since it sits under a row of two: the consequence
   // belongs to rotating, not to the copy button beside it. "Within about a
   // minute" is what the server can actually promise.
-  const rotateHint = locked
-    ? ''
-    : '<p class="sl-publish-hint">Rotating cuts off everyone using the current key ' +
-      'within about a minute.</p>';
+  const rotateHint =
+    '<p class="sl-publish-hint">Rotating cuts off everyone using the current key ' +
+    'within about a minute.</p>';
   // The id lives in the file; the key lives on the device that published or
   // rotated last. Both halves are needed for a command a developer can
   // actually run, so with only the id the screen says so and offers the one
@@ -110,11 +102,9 @@ export function publishScrollMarkup(state: PublishState, locked: boolean): strin
       '<div class="sl-settings-section-heading"><h2>Developer setup</h2>' +
       `<p>This file is published as <code>${esc(state.libraryId)}</code>. ` +
       'The pull key is not on this device, so the setup command cannot be shown here. ' +
-      (locked
-        ? 'Issuing a new key needs Pro.'
-        : 'Rotate the key to issue a new one.') +
+      'Rotate the key to issue a new one.' +
       '</p></div>' +
-      (rotateButton ? `<div class="sl-publish-command-actions">${rotateButton}</div>` : '') +
+      `<div class="sl-publish-command-actions">${rotateButton}</div>` +
       rotateHint +
       '</section>'
     )
@@ -156,26 +146,17 @@ export function publishScrollMarkup(state: PublishState, locked: boolean): strin
   const statusLine = state.message
     ? `<p class="sl-publish-status${state.status === 'error' ? ' is-error' : ''}">${esc(state.message)}</p>`
     : '';
-  // Its own group, above the key it gates: on a free plan this is the answer to
-  // "what happens if I press the button", and the footer's primary is an
-  // Upgrade rather than a Publish because of it.
-  const paywall = locked
-    ? (
-      '<section class="sl-publish-group">' +
-      '<div class="sl-settings-section-heading"><h2>Pro plan required</h2>' +
-      `<p>${PRO_ONLY}</p></div>` +
-      '</section>'
-    )
-    : '';
+  const allowanceLine = publishAllowanceCopy(allowance);
   return (
     '<div class="sl-publish-body">' +
+    `<p class="sl-publish-definition">${LIBRARY_DEFINITION}</p>` +
     '<section class="sl-publish-group">' +
     '<div class="sl-settings-section-heading"><h2>What gets published</h2>' +
     `<p>${WHAT_GETS_PUBLISHED}</p>` +
-    (setup || locked ? '' : `<p>${BEFORE_FIRST_PUBLISH}</p>`) +
+    (!setup ? `<p>${BEFORE_FIRST_PUBLISH}</p>` : '') +
     '</div>' +
     '</section>' +
-    paywall +
+    (allowanceLine ? `<p class="sl-publish-allowance">${esc(allowanceLine)}</p>` : '') +
     setup +
     // Last, not inside either group: the message reports whichever action ran
     // last, and both Publish (the footer) and Rotate key (above) can set it.
@@ -194,26 +175,7 @@ export function publishScrollMarkup(state: PublishState, locked: boolean): strin
  * an ellipsis, the same button working rather than a new action, and the
  * progress labels carry no ellipsis because `sl-work-dots` animates one.
  */
-export function publishFooterMarkup(state: PublishState, locked: boolean): string {
-  /*
-   * Locked: no Publish at all, rather than a disabled one. A disabled primary
-   * says "not right now" about work the plan will never do, and there is
-   * nowhere to wait for. The two ways out are both real actions instead, in the
-   * order the Library footer uses (secondary first, primary last): the key you
-   * may already own, then the plan you do not. Both are the controls the
-   * License screen and the header already offer, so this adds no new route.
-   */
-  if (locked) {
-    return (
-      '<div class="sl-footer-actions">' +
-      '<button class="sl-button" data-tone="secondary" type="button" ' +
-      `data-view="license">${icon('key', 15)}<span>Enter a license key</span></button>` +
-      '<button class="sl-button sl-publish-submit" data-tone="primary" ' +
-      'type="button" data-license-open="upgrade">' +
-      `<span>Upgrade to Pro</span>${icon('externalLink', 15)}</button>` +
-      '</div>'
-    );
-  }
+export function publishFooterMarkup(state: PublishState): string {
   const busy = isBusy(state);
   const progress = busy
     ? (
@@ -235,13 +197,13 @@ export function publishFooterMarkup(state: PublishState, locked: boolean): strin
 }
 
 export function renderPublishScreen(
-  refs: ShellRefs, state: PublishState, locked: boolean,
+  refs: ShellRefs, state: PublishState, allowance: PublishAllowance,
 ): void {
   refs.screen.className = 'sl-screen sl-publish-screen';
   refs.pageHeader.innerHTML = publishHeaderMarkup();
   refs.pageHeader.hidden = false;
-  refs.scroll.innerHTML = publishScrollMarkup(state, locked);
+  refs.scroll.innerHTML = publishScrollMarkup(state, allowance);
   refs.scroll.scrollTop = 0;
-  refs.footer.innerHTML = publishFooterMarkup(state, locked);
+  refs.footer.innerHTML = publishFooterMarkup(state);
   refs.footer.hidden = false;
 }

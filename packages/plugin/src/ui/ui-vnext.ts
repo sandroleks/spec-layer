@@ -24,7 +24,7 @@ import type {
   LicenseState,
   PluginView,
 } from './viewModel/contracts';
-import { allowanceState, publishLocked } from './viewModel/allowance';
+import { allowanceState, publishAllowance } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { setRailBadge } from './shell/sidebar';
@@ -116,6 +116,7 @@ import {
   groupErrorCopy,
   isQuotaExhausted,
   licenseExternalUrl,
+  publishAuth,
 } from './proxy';
 import { copyText, renderManualCopyModal } from './clipboard';
 import {
@@ -323,11 +324,6 @@ function paintAllowance(): void {
   renderAllowance(refs.header, allowanceState(state.quota, quotaFetched));
 }
 
-/** Whether publishing is behind the paywall right now. See viewModel/allowance. */
-function isPublishLocked(): boolean {
-  return publishLocked(allowanceState(state.quota, quotaFetched));
-}
-
 function paint(): void {
   switch (view) {
     case 'component':
@@ -358,7 +354,7 @@ function paint(): void {
     case 'library':
       {
         if (libraryPane === 'publish') {
-          renderPublishScreen(refs, publishState(), isPublishLocked());
+          renderPublishScreen(refs, publishState(), publishAllowance(state.quota));
           return;
         }
         const model = currentLibraryModel();
@@ -487,10 +483,8 @@ async function refreshQuota(syncLicense = true): Promise<void> {
   quotaFetched = true;
   if (syncLicense) licenseScreenState = resolvedLicenseState();
   paintAllowance();
-  // The publish screen is painted against the plan too, and the first quota
-  // answer usually lands after the panel has already drawn a screen. Without
-  // this, a free plan that opened Publish early keeps the unlocked primary
-  // until something else repaints.
+  // The publish screen paints its updates line from the plan, and the first
+  // quota answer usually lands after the panel has drawn a screen.
   if (view === 'license' || (view === 'library' && libraryPane === 'publish')) paint();
 }
 
@@ -1503,12 +1497,8 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-publish]')) {
-    // The locked screen renders no Publish control, so this is only reachable
-    // through a DOM that outlived the plan it was painted against. Sending the
-    // bundle anyway would collect every component in the file for a 401.
-    if (isPublishLocked()) return;
     onPublishClick(
-      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
     );
     return;
   }
@@ -1538,9 +1528,8 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-publish-rotate]')) {
-    if (isPublishLocked()) return;
     void onRotateClick(
-      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
     );
     return;
   }
@@ -2541,7 +2530,7 @@ window.onmessage = (event: MessageEvent): void => {
     case 'publishSources':
       void onPublishSources(
         msg,
-        effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+        publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
       );
       return;
 

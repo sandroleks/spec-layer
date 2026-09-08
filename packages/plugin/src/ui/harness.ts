@@ -36,6 +36,7 @@ import { renderSettingsScreen, type SettingsScreenState } from './screens/settin
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
 import type { PublishState } from './publish';
+import type { PublishAllowance } from './viewModel/allowance';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
   renderLicenseScreen,
@@ -566,15 +567,18 @@ if (view === 'library') {
     param('pane', 'list') === 'publish' ? 'publish' : 'list';
   const publishFixture =
     PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
-  // `?pane=publish&plan=free` is the paywalled screen. Its own param rather
-  // than a PUBLISH_FIXTURES entry, since the lock crosses every publish state:
-  // a lapsed license still holds a key, and that pairing is the one worth
-  // looking at.
-  const publishLockedFixture = param('plan', 'pro') === 'free';
+  // `?pane=publish&plan=free` shows the free plan's updates line. Its own
+  // param rather than a PUBLISH_FIXTURES entry, since the allowance crosses
+  // every publish state: a lapsed license still holds a key, and that pairing
+  // is the one worth looking at.
+  const publishAllowanceFixture: PublishAllowance =
+    param('plan', 'pro') === 'free'
+      ? { kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }
+      : { kind: 'hidden' };
 
   const renderLibraryFixture = () => {
     if (libraryPane === 'publish') {
-      renderPublishScreen(refs, publishFixture, publishLockedFixture);
+      renderPublishScreen(refs, publishFixture, publishAllowanceFixture);
       return;
     }
     const model = buildLibraryModel(LIBRARY_ENTRIES, {

@@ -135,7 +135,7 @@ function planCard(model: LicenseScreenModel): string {
   // per-minute rate limit still apply, so "unlimited" is the word voice rule 6
   // tells us not to use here.
   const detail = isPro
-    ? 'No monthly cap on AI writing or library maintenance'
+    ? 'Up to 10 published Figma files, no monthly cap on AI writing or updates'
     : isUnknown
       ? 'Verification is temporarily unavailable'
       : 'For lighter AI-assisted documentation';
