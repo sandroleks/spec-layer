@@ -436,6 +436,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Publish for developers** no longer carries a header sized for a second
+  line it does not have. Its title sat 34px above the first section where
+  every other screen puts it 15px, which had been true since the screen
+  shipped. The page header's default is now the single-line bar that five of
+  the six screens want, and the component screen, whose header really does
+  carry an eyebrow above the title, states its two-line height itself. That
+  removes the trap behind this and behind the Settings gap: a screen that
+  loses its second line no longer keeps a header sized for one. Library,
+  Foundations, License and Settings drop overrides that only existed to undo
+  the old default, and every one of the six screens measures the same header
+  height and title gap as before.
+
 - Quick search no longer flashes once per typed letter. Every keystroke
   replaced the whole palette, which restarted the panel's entry animation and
   rebuilt the input under the caret; a render now patches the mounted list in
