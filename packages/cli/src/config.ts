@@ -62,7 +62,19 @@ function parsePlatforms(value: unknown): Platform[] {
 /** `outputs` lists the files the team's build compiles; each entry is validated by the format registry. */
 function parseOutputs(value: unknown): OutputConfig[] {
   if (!Array.isArray(value)) throw new Error('speclayer.json "outputs" must be an array.');
-  return value.map((v, i) => parseOutput(v, i));
+  const outputs = value.map((v, i) => parseOutput(v, i));
+
+  // Check for duplicate platform/format pairs
+  const seen = new Set<string>();
+  for (const output of outputs) {
+    const key = `${output.platform}/${output.format}`;
+    if (seen.has(key)) {
+      throw new Error(`speclayer.json "outputs" lists ${output.platform}/${output.format} more than once. Keep one entry per platform and format.`);
+    }
+    seen.add(key);
+  }
+
+  return outputs;
 }
 
 export function readConfig(cwd: string): CliConfig | null {

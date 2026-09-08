@@ -343,6 +343,17 @@ describe('config platforms and outputs block', () => {
     });
   });
 
+  it('rejects two outputs for the same platform and format', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_x',
+      outputs: [
+        { platform: 'web', format: 'css', path: 'a.css' },
+        { platform: 'web', format: 'css', path: 'b.css' },
+      ],
+    }));
+    expect(() => readConfig(cwd)).toThrow('speclayer.json "outputs" lists web/css more than once. Keep one entry per platform and format.');
+  });
+
   it('rejects a platforms value that is not a list of known platforms', () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', platforms: ['Web'] }));
     expect(() => readConfig(cwd)).toThrow('speclayer.json "platforms" must be an array of web, ios, android, flutter.');
