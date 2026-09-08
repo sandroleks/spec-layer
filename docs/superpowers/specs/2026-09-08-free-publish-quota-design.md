@@ -76,8 +76,8 @@ the CLI."
 
 ### Identity
 
-`identityFromHeaders` in `packages/proxy/src/identity.ts` returns both proofs
-when both headers are present. The result carries an optional license key with
+A new `callerProofs()` in `packages/proxy/src/identity.ts` returns both proofs
+when both headers are present, and `identityFromHeaders` is unchanged. The result carries an optional license key with
 its instance id and an optional Figma hash. Tier is `pro` only when a key is
 present and `checkLicense` reports active; otherwise `free`. The "license wins"
 rule for the AI quota identity is unchanged: a request with a bearer meters AI
@@ -168,10 +168,13 @@ first for this reason.
 ### Auth headers
 
 `authHeaders` in `packages/plugin/src/ui/proxy.ts` sends `X-Figma-User`
-alongside `Authorization` whenever both are known. When the license is known
-inactive, the bearer is still sent, since it now proves ownership of libraries
-published under it, and the Figma header carries the free tier. The AI writing
-path is unaffected because the proxy still lets the license win for AI metering.
+alongside `Authorization` whenever both are known. Publish and rotate build
+their identity with a new `publishAuth()` that keeps a license key even when
+it is known inactive, since the key proves ownership of libraries published
+under it, and the Figma header carries the free tier. AI writing and the quota
+probe keep using `effectiveAuth()`, which drops an inactive key, because the
+proxy answers 401 to an inactive bearer on the AI path and the license still
+wins for AI metering when a bearer is present.
 
 ### Publish screen
 
@@ -179,7 +182,7 @@ path is unaffected because the proxy still lets the license win for AI metering.
 The definition line sits at the top of the screen. Under the primary action,
 one line reads the `publish` snapshot from the quota response:
 
-- Free: "3 of 10 free updates left this month, resets 1 Oct"
+- Free: "3 of 10 free updates left this month, resets Oct 1"
 - Pro: nothing. The row collapses, as the header does for `Pro plan active`.
 - Not yet fetched or unavailable: nothing. The server is the authority and the
   publish result carries the answer.
@@ -188,7 +191,7 @@ At zero remaining the button stays enabled. Result lines, written to the
 existing result slot:
 
 - `402`: "You have used your 10 free updates for this month. Upgrade to Pro or
-  publish again after 1 Oct."
+  publish again after Oct 1."
 - `403` with `existing`: "Free plans publish one Figma file. This account
   already publishes <file name>. Upgrade to Pro to publish up to 10 files."
   When `fileName` is `null`: "…already publishes another file."
@@ -196,15 +199,15 @@ existing result slot:
 - Success: unchanged from today, plus the updates line refreshes from the
   response headers.
 
-Dates are formatted the way the header's AI meter formats `resetsAt`. There is
+Dates are formatted in UTC as short month and day, "Oct 1", matching the proxy's UTC month boundary. There is
 no replace action for the library limit, since developers may be pulling the
 other library.
 
 ### Copy
 
 Every "needs an active Pro license" string in `packages/plugin/src/ui/publish.ts`
-is removed. The License screen's Pro feature list changes "Publish libraries"
-to "Publish up to 10 Figma files, with unlimited updates". All copy follows
+is removed. The License screen's Pro plan card detail line changes from "No monthly cap on AI writing or library maintenance"
+to "Up to 10 published Figma files, no monthly cap on AI writing or updates". All copy follows
 `docs/plugin-voice-and-copy.md`: sentence case, second person, no em dashes, no
 hype words.
 
