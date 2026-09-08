@@ -218,6 +218,15 @@ describe('handlePublish', () => {
     expect(res.status).toBe(200);
   });
 
+  it('rejects a lapsed bearer-only update to its own library (legacy client)', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    await seedFree(d);
+    const changed = { ...BUNDLE, fileName: 'Renamed' };
+    const res = await handlePublish(publishReq({ libraryId, bundle: changed }), d);
+    expect(res.status).toBe(401);
+    expect((await res.json() as { error: string }).error).toBe('license_not_active');
+  });
+
   it('caps a free identity at one library and names the existing one', async () => {
     const d = deps();
     const first = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
@@ -544,10 +553,7 @@ describe('handleRotate', () => {
   it('rotates for a lapsed license that owns the library', async () => {
     const { deps: d, libraryId } = await publishedLibrary();
     await seedFree(d);
-    // A bare lapsed license with no Figma proof cannot resolve a caller at
-    // all (see the "legacy client" case above), so this owner also proves
-    // the Figma identity, the way the analogous republish case above does.
-    const res = await handleRotate(rotateReq(libraryId, { ...bearer(), ...figma() }), d, libraryId);
+    const res = await handleRotate(rotateReq(libraryId), d, libraryId);
     expect(res.status).toBe(200);
     expect((await res.json() as { pullKey: string }).pullKey).toMatch(PULL_KEY_RE);
   });

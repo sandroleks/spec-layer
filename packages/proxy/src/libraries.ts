@@ -1,7 +1,7 @@
 import { sha256 } from 'js-sha256';
 import { LibraryBundleError, parseLibraryBundle } from '@spec-layer/extractor';
 import { callerProofs, licenseIdentityId } from './identity';
-import { checkLicense, type LibraryStore } from './license';
+import { checkLicense, type LibraryStore, type LicenseReason } from './license';
 import type { HandlerDeps } from './handlers';
 import type { Tier } from './quota';
 
@@ -57,12 +57,21 @@ interface Caller {
   tierIdentity: string;
   /** Every identity the request proved. Any of them may own a library. */
   owners: string[];
+  /** The reason checkLicense gave when a bearer was present and not active, else null. */
+  licenseReason: LicenseReason | null;
+  /** The free:<figmaHash> identity when a Figma proof was present, else null. */
+  figmaIdentity: string | null;
 }
 
 /**
  * Who is calling and what they can prove. A bearer proves the license identity
  * whether or not the license is active, because possession of the key is the
  * proof of ownership; only the tier depends on the license being active.
+ *
+ * This never 401s on tier alone: a caller with any proof gets a Caller back,
+ * with `licenseReason` set when a bearer was present and not active. Callers
+ * that need a tier (publish) gate on that field themselves; callers that only
+ * need ownership (rotate) do not.
  */
 async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | Response> {
   const proofs = callerProofs(req.headers, deps.salt);
@@ -70,6 +79,7 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
   const owners: string[] = [];
   let tier: Tier = 'free';
   let licenseId: string | null = null;
+  let licenseReason: LicenseReason | null = null;
   if (proofs.license) {
     licenseId = licenseIdentityId(proofs.license.key);
     owners.push(licenseId);
@@ -77,12 +87,12 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
       fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now,
     });
     if (lic.tier === 'pro') tier = 'pro';
-    else if (!proofs.figmaHash) return json(401, { error: 'license_not_active', reason: lic.reason });
+    else licenseReason = lic.reason;
   }
   const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
   if (figmaId) owners.push(figmaId);
   const tierIdentity = tier === 'pro' ? (licenseId as string) : (figmaId ?? (licenseId as string));
-  return { tier, tierIdentity, owners };
+  return { tier, tierIdentity, owners, licenseReason, figmaIdentity: figmaId };
 }
 
 /** The library's meta when the caller owns it, else the error Response. */
@@ -122,6 +132,11 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   if (!deps.licenseLimiter.allow(`libpub:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
+  // A legacy plugin build that sends only a lapsed bearer gets the answer it
+  // always got: publish needs a tier, rotate does not.
+  if (caller.tier === 'free' && caller.licenseReason && !caller.figmaIdentity) {
+    return json(401, { error: 'license_not_active', reason: caller.licenseReason });
+  }
 
   const declared = Number(req.headers.get('content-length') ?? 0);
   if (declared > MAX_BUNDLE_BYTES) {
@@ -170,6 +185,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const limit = LIBRARY_LIMITS[caller.tier];
   if (owned.length >= limit) {
     if (caller.tier === 'free') {
+      // The free limit is 1, so a free caller at the limit owns exactly one id.
       const existingRaw = await store.get(metaKey(owned[0]));
       const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
       return json(403, {
