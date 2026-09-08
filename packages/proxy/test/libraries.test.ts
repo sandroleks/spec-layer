@@ -445,6 +445,22 @@ describe('handlePublish', () => {
     const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: 'v10' } }, figma()), d);
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: 'quota_exhausted', resetsAt: '2026-08-01T00:00:00.000Z' });
+    expect(res.headers.get('X-Tier')).toBe('free');
+    expect(res.headers.get('X-Quota-Remaining')).toBe('0');
+  });
+
+  it('creates two distinct libraries from identical bundles', async () => {
+    const d = deps();
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    const second = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const a = await first.json() as { libraryId: string; pullKey: string };
+    const b = await second.json() as { libraryId: string; pullKey: string };
+    expect(a.libraryId).not.toBe(b.libraryId);
+    expect(b.pullKey).toMatch(PULL_KEY_RE);
+    expect(await d.libraryStore.get(`lib:${b.libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE));
   });
 
   it('never blocks a Pro publish and flags fair use past the soft threshold', async () => {

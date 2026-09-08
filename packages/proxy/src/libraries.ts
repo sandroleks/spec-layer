@@ -207,7 +207,13 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true });
   }
 
-  const cacheKey = `publish:${libraryId ?? 'new'}:${bundleHash}`;
+  // A create is a new library by definition, so its reservation must never
+  // replay an earlier one: the id is generated up front and folded into the
+  // cache key itself, so two creates from byte-identical bundles can never
+  // collide. The `unchanged` case for an *existing* library is handled by the
+  // stored-hash comparison above, not by this cache.
+  const newId = libraryId ? null : newLibraryId();
+  const cacheKey = libraryId ? `publish:${libraryId}:${bundleHash}` : `publish:new:${newId}`;
   const reserved = await quota.reserve(caller.tier, cacheKey);
   switch (reserved.kind) {
     case 'cached': {
@@ -215,11 +221,11 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       return respond(200, { ...prior, unchanged: true });
     }
     case 'pending':
-      return json(409, { error: 'publish_pending' });
+      return respond(409, { error: 'publish_pending' });
     case 'exhausted':
-      return json(402, { error: 'quota_exhausted', resetsAt: reserved.resetsAt });
+      return respond(402, { error: 'quota_exhausted', resetsAt: reserved.resetsAt });
     case 'rate_limited':
-      return json(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
+      return respond(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
     case 'proceed':
       break;
     default:
@@ -239,21 +245,21 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       deps.log('library_publish', { libraryId, size: bytes.byteLength });
       return respond(200, { libraryId, publishedAt });
     }
-    const newId = newLibraryId();
+    const id = newId as string; // set above whenever libraryId is null
     const pullKey = newPullKey();
     const created: LibraryMeta = {
       licenseId: caller.tierIdentity, publishedAt, bundleHash, size: bytes.byteLength, fileName,
     };
-    await store.put(bundleKey(newId), stored);
+    await store.put(bundleKey(id), stored);
     await Promise.all([
-      store.put(metaKey(newId), JSON.stringify(created)),
-      store.put(keyRecord(newId), sha256(pullKey)),
-      store.put(`${ownerPrefix(caller.tierIdentity)}${newId}`, publishedAt),
+      store.put(metaKey(id), JSON.stringify(created)),
+      store.put(keyRecord(id), sha256(pullKey)),
+      store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
-    await quota.commit(cacheKey, JSON.stringify({ libraryId: newId, publishedAt }));
-    deps.log('library_publish', { libraryId: newId, size: bytes.byteLength, created: true });
-    return respond(201, { libraryId: newId, pullKey, publishedAt });
+    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt }));
+    deps.log('library_publish', { libraryId: id, size: bytes.byteLength, created: true });
+    return respond(201, { libraryId: id, pullKey, publishedAt });
   } catch (err) {
     await quota.release(cacheKey);
     throw err;
