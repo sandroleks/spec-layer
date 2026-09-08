@@ -4,6 +4,7 @@ import { route } from '../src/handlers';
 import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { quotaObjectName } from '../src/index';
 import { SlidingWindowLimiter } from '../src/ratelimit';
+import { hashFigmaId } from '../src/identity';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -49,10 +50,45 @@ describe('route', () => {
   it('GET /v1/quota returns the snapshot for a free identity', async () => {
     const res = await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), baseDeps());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      tier: 'free', used: 0, limit: 20, remaining: 20,
-      resetsAt: new Date(Date.parse('2026-07-01T00:00:00Z') + 30 * 864e5).toISOString(),
-    });
+    const body = await res.json() as { tier: string; used: number; limit: number; remaining: number; resetsAt: string; publish: { tier: string; used: number; limit: number; remaining: number; resetsAt: string } };
+    expect(body.tier).toBe('free');
+    expect(body.used).toBe(0);
+    expect(body.limit).toBe(20);
+    expect(body.remaining).toBe(20);
+    expect(body.publish.tier).toBe('free');
+    expect(body.publish.used).toBe(0);
+    expect(body.publish.limit).toBe(10);
+    expect(body.publish.remaining).toBe(10);
+  });
+
+  it('GET /v1/quota carries the publish snapshot for a free identity', async () => {
+    const res = await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), baseDeps());
+    const body = await res.json() as { tier: string; limit: number; publish: { tier: string; used: number; limit: number | null; resetsAt: string } };
+    expect(body.limit).toBe(20);
+    expect(body.publish).toEqual({ tier: 'free', used: 0, limit: 10, remaining: 10, resetsAt: '2026-08-01T00:00:00.000Z' });
+  });
+
+  it('GET /v1/quota reports an unlimited publish snapshot for pro', async () => {
+    const d = baseDeps();
+    await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: d.now() }));
+    const res = await route(new Request('https://p.test/v1/quota', { headers: { Authorization: `Bearer ${UUID_KEY}` } }), d);
+    const body = await res.json() as { publish: { tier: string; limit: number | null } };
+    expect(body.publish.tier).toBe('pro');
+    expect(body.publish.limit).toBeNull();
+  });
+
+  it('GET /v1/quota meters publishing under the Figma identity when a key is not active', async () => {
+    const d = baseDeps();
+    d.fetcher = vi.fn(async () => new Response(
+      JSON.stringify({ valid: false, license_key: { status: 'expired' } }), { status: 200 },
+    )) as unknown as typeof fetch;
+    await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').commit('seed', '{}');
+    const res = await route(new Request('https://p.test/v1/quota', {
+      headers: { Authorization: `Bearer ${UUID_KEY}`, 'X-Figma-User': 'u1' },
+    }), d);
+    const body = await res.json() as { tier: string; publish: { used: number } };
+    expect(body.tier).toBe('free');
+    expect(body.publish.used).toBe(1);
   });
 
   it('GET /v1/quota is 401 without identity', async () => {

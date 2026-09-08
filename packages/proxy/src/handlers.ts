@@ -3,7 +3,7 @@ import {
   PROSE_SYSTEM_PROMPT,
   proseFewShot,
 } from '@spec-layer/extractor';
-import { identityFromHeaders, licenseIdentityId } from './identity';
+import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
 import { handlePublish, handlePull, handleRotate } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
@@ -269,14 +269,18 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   } else {
     identityId = `free:${identity.id}`;
   }
+  const proofs = callerProofs(req.headers, deps.salt);
+  const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
+  const publishIdentity = tier === 'pro' ? identityId : (figmaId ?? identityId);
+  const publish = await deps.quotaFor(publishIdentity, 'publish').snapshot(tier);
   const s = await deps.quotaFor(identityId).snapshot(tier);
   if (identity.kind === 'license' && tier === 'free') {
     // licResult is always non-null here: the `identity.kind === 'license'` branch above
     // always assigns it. The `licResult &&` guard exists only to satisfy TS control-flow
     // analysis (it can't see that `tier === 'free'` implies the license branch ran).
-    return json(200, { ...s, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
+    return json(200, { ...s, publish, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
   }
-  return json(200, s);
+  return json(200, { ...s, publish });
 }
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {
