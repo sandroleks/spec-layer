@@ -885,6 +885,19 @@ describe('publish controller', () => {
     expect(state.pullKey).toBe('sl_old');
   });
 
+  it('explains a not_owner refusal in plain words, since a teammate can reach the button', async () => {
+    // A teammate sees the file's library id but never held the key, and the
+    // server refuses their rotate because ownership is the publisher's.
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_1', pullKey: null, publishedAt: null });
+    const rotateFetcher = vi.fn(async () => jsonResponse(403, { error: 'not_owner' }));
+    await publish.onRotateClick(AUTH, rotateFetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe('Only the account that published this library can rotate its key.');
+    expect(state.pullKey).toBeNull();
+    expect(notified).toEqual([]);
+  });
+
   it('reports nothing changed on an unchanged republish and keeps the key', async () => {
     const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z', unchanged: true }));
     publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null });

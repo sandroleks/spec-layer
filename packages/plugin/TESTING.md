@@ -366,11 +366,14 @@ action. The rows below start there.
       B gets its own library id and key; pulling A's id still returns A's
       components.
 - [ ] Second device (or a second Figma account on the same file): the publish
-      screen shows the **Published** pill, the library id, "not on this
-      device", and only **Rotate key**, with no command or prompt block. The
-      Last published line shows the same date the first device saw. Rotating
-      shows a "Key rotated" toast and both blocks; the first device's old
-      command then fails.
+      screen shows the **Published** pill, the library id, that the key is
+      stored on the device that published, and only **Rotate key**, with no
+      command or prompt block. The Last published line shows the same date the
+      first device saw. On the same account, rotating shows a "Key rotated"
+      toast and both blocks, and the first device's old command then fails. On
+      a different Figma account with no license, rotating shows "Only the
+      account that published this library can rotate its key." and nothing
+      changes.
 - [ ] Gone library: publish, then rotate the license key (or publish the same
       file with another Pro license). The screen reports the library is gone
       or belongs to another account, publishes nothing, the pill returns to

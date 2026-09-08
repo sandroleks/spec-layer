@@ -107,10 +107,17 @@ boundary, so `formatResetDate` keeps its UTC rule and this one does not.
   `agentSetupMessage(id, key)` and its Copy is `data-publish-copy-agent`. Then
   `Rotate key` in its own `.sl-publish-rotate` row (secondary tone, `is-danger`,
   disabled while a publish is in flight). No consequence line.
-- **Id known, key not on this device:** a Developer setup block whose body is
-  the sentence "Published as `lib_…`. The pull key is not on this device.
-  Rotate the key to issue a new one.", then the rotate row. No code block, no
-  Copy, no agent block.
+- **Id known, key not on this device** (a second computer, a teammate, or
+  cleared plugin storage; the server hands the key out only on create and
+  rotate, and the file is readable by every editor): a Developer setup block
+  whose body is "This file is published as `lib_…`. The pull key is stored on
+  the device that published it. Ask that person for the setup command, or
+  rotate the key to issue a new one here. Rotating stops the current key
+  working for everyone within about a minute.", then the rotate row. No code
+  block, no Copy, no agent block. This is the one place the rotate consequence
+  is stated. A rotate the server refuses with 403 `not_owner` (a teammate who
+  did not publish) reads "Only the account that published this library can
+  rotate its key." in the error line.
 - **Error line:** `<p class="sl-publish-status is-error">` with
   `state.message`, rendered only when `status === 'error'`. Successes never
   render here.

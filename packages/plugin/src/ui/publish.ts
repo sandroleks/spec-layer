@@ -192,6 +192,12 @@ export async function rotatePullKey(
   }
   const body = await bodyOf(res);
   if (res.ok) return { kind: 'rotated', pullKey: String(body.pullKey) };
+  // Ownership is proved by the identity that published (the license key or
+  // the Figma account), so a teammate looking at the file's id can reach the
+  // button and be refused. Say why, rather than quoting the status code.
+  if (res.status === 403 || body.error === 'not_owner') {
+    return { kind: 'error', message: 'Only the account that published this library can rotate its key.' };
+  }
   return { kind: 'error', message: `Rotating the key failed with HTTP ${res.status}.` };
 }
 

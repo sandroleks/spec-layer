@@ -222,8 +222,14 @@ describe('publish screen body', () => {
   it('shows the library id and rotate, but no command or prompt, when the key is not on this device', () => {
     const markup = proScroll(state({ libraryId: LIBRARY_ID, pullKey: null }));
     expect(markup).toContain(`<code>${LIBRARY_ID}</code>`);
-    expect(markup).toContain('not on this device');
-    expect(markup).toContain('Rotate the key to issue a new one.');
+    // Says where the key is and names both ways out, and this is the one
+    // place the rotate consequence is stated: rotating from a device that
+    // never had the key cuts off developers the reader may not know about.
+    expect(markup).toContain('stored on the device that published it');
+    expect(markup).toContain('Ask that person for the setup command');
+    expect(markup).toContain('rotate the key to issue a new one here');
+    expect(markup).toContain('stops the current key working for everyone within about a minute');
+    expect(proScroll(PUBLISHED)).not.toContain('stops the current key');
     expect(markup).toContain('data-publish-rotate');
     expect(markup).not.toContain('sl-publish-code');
     expect(markup).not.toContain('data-publish-copy-command');

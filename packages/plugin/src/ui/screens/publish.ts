@@ -141,14 +141,19 @@ export function publishScrollMarkup(
       rotateRow;
   } else if (state.libraryId) {
     // The id lives in the file; the key lives on the device that published or
-    // rotated last. Both halves are needed for a command a developer can
-    // actually run, so with only the id the screen says so and offers the one
-    // way to get a key: rotate.
+    // rotated last, because the server hands it out only then and the file is
+    // readable by every editor. Both halves are needed for a command a
+    // developer can actually run, so with only the id the screen says where
+    // the key is and names both ways out: ask, or rotate. This is the one
+    // place the rotate consequence is stated, since rotating from here cuts
+    // off developers the reader may not know about.
     body =
       '<section class="sl-publish-block">' +
       '<div class="sl-publish-block-head"><h2>Developer setup</h2></div>' +
-      `<p class="sl-publish-note">Published as <code>${esc(state.libraryId)}</code>. ` +
-      'The pull key is not on this device. Rotate the key to issue a new one.</p>' +
+      `<p class="sl-publish-note">This file is published as <code>${esc(state.libraryId)}</code>. ` +
+      'The pull key is stored on the device that published it. Ask that person ' +
+      'for the setup command, or rotate the key to issue a new one here. ' +
+      'Rotating stops the current key working for everyone within about a minute.</p>' +
       '</section>' +
       rotateRow;
   } else {
