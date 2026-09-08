@@ -1,8 +1,8 @@
 # Repository delivery: platform outputs and the two adoption paths
 
 **Date:** 2026-09-08
-**Status:** Proposal, second draft after review. Decisions 1 to 4 and 6 in section 12 are open; the rest were taken on 2026-09-08.
-**Scope:** What `spec-layer pull` and the plugin's Copy for AI put into a repository, for a project started from scratch and for an existing repository. Adds a platform output model and one deterministic projection, CSS. Changes no hash, no schema, no extraction.
+**Status:** Approved in review on 2026-09-08 with the recommendations in section 12 as written. Ready for an implementation plan.
+**Scope:** What `spec-layer pull` and the plugin's Copy for AI put into a repository, for a project started from scratch and for an existing repository. Adds a platform output model and one deterministic projection, CSS, and renames the component directory. Changes no hash, no schema, no extraction.
 **Reads with:** `packages/cli/README.md`, `docs/superpowers/specs/2026-09-03-dtcg-foundation-export-design.md`, `docs/strategy/2026-09-08-market-positioning.md`, `docs/strategy/2026-09-02-design-conformance-pivot.md` section 6.4.
 
 ## 1. Problem
@@ -111,11 +111,23 @@ spec-layer/
   bundle.json
   manifest.json
   tokens/                       unchanged
-  ai/components/*.yaml          unchanged
+  components/*.yaml             was ai/components/, see 3.1
   outputs/
     web-css.map.json            DTCG path -> emitted name, and where the name came from
     web-css.report.json         what this output could not express
 ```
+
+### 3.1 The component directory
+
+`ai/components/` is renamed `components/`, beside `tokens/`. The old name
+described the consumer; the two directories should name what they hold, and
+in parallel. The manifest field `aiPath` becomes `path` for the same reason,
+and the CLI reads `aiPath` from a manifest written by an earlier version so
+`list`, `skill`, and `status` keep working until the next pull rewrites it.
+No migration is needed on disk: `pull` replaces the managed directory
+wholesale, and the component files are byte-identical under the new path.
+The bundle's `ai` field and the plugin's **Copy for AI** are unchanged; they
+are the wire format and the button, not the directory.
 
 The person starting from scratch imports one file and has the tokens as
 custom properties with the alias graph intact. The person with a pipeline
@@ -387,7 +399,7 @@ output, and prints the flag to use. The guide's web section then says:
 - Switch modes by setting `data-theme` on `<html>`; the guide lists the modes
   and the default. Wire it to `prefers-color-scheme` yourself if you want the
   OS to choose.
-- Build each component from `.speclayer/ai/components/<slug>.yaml`. Its
+- Build each component from `.speclayer/components/<slug>.yaml`. Its
   `bindings` name the token per part, property, and condition; the CSS name
   for each is in `.speclayer/outputs/web-css.map.json`.
 
@@ -421,7 +433,7 @@ never over a file that is not ours. Four points:
   the file is importable as-is. Mapping into Tailwind's namespaces stays with
   the team, as the guide already says.
 
-Components stay in `.speclayer/ai/components/`. Placing a brief beside the
+Components stay in `.speclayer/components/`. Placing a brief beside the
 team's own component file would need the anatomy-to-code mapping the
 conformance proposal calls `speclayer.map.json`, which does not exist yet.
 
@@ -440,8 +452,10 @@ change.
 - `setup`, `init`, `pull`: repeatable `--platform`. `setup` and `init` store
   it; `pull` overrides for the run. `setup` and `init` write the default
   `outputs` entries. `pull` lists every output path it wrote.
-- `list` gains the outputs with their paths; `tools` describes what `pull`
-  now writes outside `outDir`.
+- `list` gains the outputs with their paths and prints `path` instead of
+  `aiPath`; `tools` describes what `pull` now writes outside `outDir`.
+- `files.ts` writes `components/<slug>.yaml` and a manifest with `path`;
+  `readManifest` accepts `aiPath` from older manifests.
 - `skill`: the web section gains the import line, the `data-theme` switch,
   the map lookup for names, and the "one source, not two" sentence when a
   pipeline is detected. The sentence telling the agent to derive nothing
@@ -451,7 +465,9 @@ change.
   --install` today. It cannot know the platform; the command is unchanged.
 - `packages/cli/README.md`, the website's outputs and CLI pages, and
   `CHANGELOG.md` document the outputs block, the default path, the casing
-  table, and the commit policy.
+  table, the commit policy, and the `components/` rename. The README's
+  version note gains: "`components/` in place of `ai/components/`, and
+  `path` in place of `aiPath` in the manifest, need 0.6.0 or later."
 
 ## 10. Invariants
 
@@ -488,7 +504,9 @@ change.
   transitive dependencies; one becomes an explicit extractor dev dependency.
   Every declaration must be a valid custom property with a non-empty value,
   and every `var()` target must be declared in the same file.
-- CLI: `setup --platform web` writes the config entry and the file; `pull`
+- CLI: `pull` writes `components/<slug>.yaml` and `path` in the manifest;
+  a manifest with `aiPath` is still read. `setup --platform web` writes the
+  config entry and the file; `pull`
   refuses a foreign file at the path, a path outside the root, and a path
   inside `outDir`; an existing file with our header is replaced; a changed
   `outputs` block makes `status` report behind; `"outputs": []` writes
@@ -508,10 +526,11 @@ Taken on 2026-09-08:
 - Derived-name casing is selectable: `kebab`, `camel`, `pascal`, `snake`,
   `constant`.
 - Deliverables are written in place at a declared path outside `.speclayer/`;
-  the record stays inside it. Recommended in this draft for the reasons in
-  section 3; awaiting confirmation.
+  the record stays inside it, for the reasons in section 3.
+- `ai/components/` becomes `components/`, and `aiPath` becomes `path`.
+- The five recommendations below, confirmed in review as written.
 
-Open, with the recommendation first:
+Confirmed, with the alternative each was weighed against:
 
 1. **Derive names at all** when `code_syntax` is absent, by the rule in 4.3
    with provenance in the map. The alternative, declared names only,
