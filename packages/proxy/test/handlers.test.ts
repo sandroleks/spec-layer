@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import { handleProse, type QuotaClient } from '../src/handlers';
-import { QuotaEngine, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
+import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import { PROSE_SYSTEM_PROMPT, proseFewShot } from '@spec-layer/extractor';
 
@@ -20,8 +20,8 @@ class MemKV {
 /** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
 function memQuota(now: () => number) {
   const engines = new Map<string, QuotaEngine>();
-  return (id: string) => {
-    const e = engines.get(id) ?? new QuotaEngine();
+  return (id: string, profile: QuotaProfile = 'ai') => {
+    const e = engines.get(id) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
     engines.set(id, e);
     return {
       reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),

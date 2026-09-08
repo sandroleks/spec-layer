@@ -1,5 +1,5 @@
 import { route, type HandlerDeps, type QuotaClient } from './handlers';
-import { QuotaEngine, type ReserveResult, type QuotaSnapshot, type Tier } from './quota';
+import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type ReserveResult, type QuotaSnapshot, type Tier } from './quota';
 import { SlidingWindowLimiter } from './ratelimit';
 
 const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
@@ -21,11 +21,11 @@ export class QuotaDO implements DurableObject {
 
   async fetch(req: Request): Promise<Response> {
     const stored = await this.state.storage.get<string>('engine');
-    const engine = new QuotaEngine(stored ?? undefined);
-    const { op, tier, cacheKey, body, now } = (await req.json()) as {
+    const { op, tier, cacheKey, body, now, profile } = (await req.json()) as {
       op: 'reserve' | 'commit' | 'release' | 'snapshot';
-      tier: Tier; cacheKey?: string; body?: string; now: number;
+      tier: Tier; cacheKey?: string; body?: string; now: number; profile?: QuotaProfile;
     };
+    const engine = new QuotaEngine(stored ?? undefined, QUOTA_PROFILES[profile ?? 'ai']);
     let out: unknown = null;
     if (op === 'reserve') out = engine.reserve(tier, cacheKey as string, now);
     else if (op === 'commit') engine.commit(cacheKey as string, body as string, now);
@@ -36,10 +36,10 @@ export class QuotaDO implements DurableObject {
   }
 }
 
-function doQuotaClient(ns: DurableObjectNamespace, identityId: string): QuotaClient {
+function doQuotaClient(ns: DurableObjectNamespace, identityId: string, profile: QuotaProfile = 'ai'): QuotaClient {
   const stub = ns.get(ns.idFromName(identityId));
   const call = async (payload: Record<string, unknown>) => {
-    const res = await stub.fetch('https://do/quota', { method: 'POST', body: JSON.stringify({ ...payload, now: Date.now() }) });
+    const res = await stub.fetch('https://do/quota', { method: 'POST', body: JSON.stringify({ ...payload, profile, now: Date.now() }) });
     return res.json();
   };
   return {
@@ -58,7 +58,7 @@ const worker = {
       fetcher: fetch.bind(globalThis),
       licenseCache: env.LICENSE_CACHE,
       now: () => Date.now(),
-      quotaFor: (id) => doQuotaClient(env.QUOTA, id),
+      quotaFor: (id, profile) => doQuotaClient(env.QUOTA, id, profile),
       log: (event, fields) => console.log(JSON.stringify({ event, ...fields })),
       licenseLimiter,
       requestLimiter,

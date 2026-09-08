@@ -6,10 +6,11 @@ import {
 import { identityFromHeaders, licenseIdentityId } from './identity';
 import { handlePublish, handlePull, handleRotate } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
-import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
+import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
 export { licenseIdentityId };
+export type { QuotaProfile };
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
@@ -24,7 +25,8 @@ export interface HandlerDeps {
   fetcher: typeof fetch;
   licenseCache: KVLike;
   now(): number;
-  quotaFor(identityId: string): QuotaClient;
+  /** One engine per identity and profile. `profile` defaults to 'ai'. */
+  quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
   licenseLimiter: SlidingWindowLimiter;
   requestLimiter: SlidingWindowLimiter;
