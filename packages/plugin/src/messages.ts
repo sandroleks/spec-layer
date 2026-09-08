@@ -168,7 +168,15 @@ export type MainToUi =
 /** What identifies a published library: the id lives in the file (root plugin
  *  data, shared by every editor) and the pull key lives per user in
  *  clientStorage, since it is a secret and the file is not. */
-export interface PublishInfo { libraryId: string | null; pullKey: string | null }
+/** `publishedAt` is the ISO time of the last publish the plugin recorded,
+ *  stored in the file beside the id because it is a fact about the library,
+ *  not a secret. Null when the file was published by a build that did not
+ *  record it. */
+export interface PublishInfo {
+  libraryId: string | null;
+  pullKey: string | null;
+  publishedAt: string | null;
+}
 
 export type UiToMain =
   | { type: 'requestSelection' }
@@ -213,6 +221,10 @@ export type UiToMain =
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }
   | { type: 'setPublishInfo'; libraryId: string; pullKey: string }
+  /** Record when this file's library was last published. Ignored by the main
+   *  thread when `libraryId` is not the id the file holds, so a slow reply for
+   *  a library the file has since dropped cannot label the new one. */
+  | { type: 'setPublishedAt'; libraryId: string; publishedAt: string }
   /** Drop the file's stored library id after the server said it is gone or
    *  belongs to another license, so the next publish creates a new one. */
   | { type: 'clearPublishInfo' };

@@ -334,17 +334,20 @@ function pageOf(node: BaseNode): PageNode | null {
  * keyed by that id. A second device therefore sees the id without the key.
  */
 const PUBLISH_LIBRARY_KEY = 'speclayer.publish.libraryId';
+/** ISO time of the last recorded publish. Lives in the file, like the id. */
+const PUBLISH_DATE_KEY = 'speclayer.publish.publishedAt';
 const publishKeyStorageKey = (libraryId: string): string => `publishKey:${libraryId}`;
 
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
-  if (!libraryId) return { libraryId: null, pullKey: null };
+  if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null };
   let pullKey: string | null = null;
   try {
     const raw = await figma.clientStorage.getAsync(publishKeyStorageKey(libraryId)) as unknown;
     pullKey = typeof raw === 'string' && raw ? raw : null;
   } catch { pullKey = null; }
-  return { libraryId, pullKey };
+  const publishedAt = figma.root.getPluginData(PUBLISH_DATE_KEY) || null;
+  return { libraryId, pullKey, publishedAt };
 }
 
 function readRegistry() {
@@ -1429,9 +1432,20 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
     }
 
+    case 'setPublishedAt': {
+      // Only for the library this file currently holds. A reply that races a
+      // clearPublishInfo, or belongs to an id the file no longer stores, must
+      // not date the wrong library.
+      if (figma.root.getPluginData(PUBLISH_LIBRARY_KEY) === msg.libraryId) {
+        figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
+      }
+      break;
+    }
+
     case 'clearPublishInfo': {
       const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY);
       figma.root.setPluginData(PUBLISH_LIBRARY_KEY, '');
+      figma.root.setPluginData(PUBLISH_DATE_KEY, '');
       if (libraryId) {
         try { await figma.clientStorage.deleteAsync(publishKeyStorageKey(libraryId)); } catch { /* nothing to drop */ }
       }
