@@ -555,9 +555,25 @@ if (view === 'library') {
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-09-01T09:12:00.000Z',
     },
+    // A second device: the id is in the file, the key is not on this machine.
+    idOnly: {
+      status: 'idle',
+      message: null,
+      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+      pullKey: null,
+      lastPublishedAt: '2026-08-30T09:12:00.000Z',
+    },
+    // Published by a build that stored no date: the status block says so.
+    unrecorded: {
+      status: 'idle',
+      message: null,
+      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+      pullKey: `sl_${'0f'.repeat(24)}`,
+      lastPublishedAt: null,
+    },
     error: {
       status: 'error',
-      message: 'Publishing needs an active Pro license.',
+      message: 'Could not reach the publish service. Check your connection and try again.',
       libraryId: null,
       pullKey: null,
       lastPublishedAt: null,
