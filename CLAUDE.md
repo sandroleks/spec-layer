@@ -85,7 +85,12 @@ test suite.
 drift), `foundationContentHash` (Foundation canvas drift), `semanticContentHash`
 (exported v5 artifact identity). Keep them separate. Do not let v5 identity
 fields leak into a canvas hash, or every existing document falsely reports an
-update.
+update. A fourth, bundle-level hash sits outside those three:
+`libraryBundleContentHash` (`packages/extractor/src/libraryBundleHash.ts`)
+answers "did this publish change what developers pull", by hashing the bundle
+with each artifact's per-export envelope (`export.id`, `export.generated_at`)
+removed. It never feeds a canvas hash or an artifact identity, and the proxy
+keeps the raw byte hash separately for the pull `ETag`.
 
 **Rendered implies hashed, and hashed implies rendered.** A foundation unit's
 hash covers exactly what its frame draws, in both directions. AI-written group

@@ -33,3 +33,4 @@ export * from './validate';
 export * from './resolution';
 export * from './v5/index';
 export * from './libraryBundle';
+export * from './libraryBundleHash';
