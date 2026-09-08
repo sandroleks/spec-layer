@@ -307,13 +307,31 @@
   background: var(--sl-color-canvas);
 }
 
+/*
+ * The single-line bar is the default, because five of the six screens that
+ * draw a header have a title and nothing else. It used to be the other way
+ * round: the 67px two-line bar was the base and every title-only screen
+ * overrode it back down, so a screen that lost its second line silently kept
+ * a header sized for it. That is not hypothetical. Settings dropped its
+ * subtitle and sat at 34px under the title against 15px everywhere else, and
+ * Publish had been doing the same since it shipped.
+ *
+ * The component screen is the one genuinely two-line header, and it says so
+ * itself below rather than being assumed by the default.
+ */
 .sl-page-header {
-  min-height: 67px;
+  min-height: 48px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--sl-space-12);
-  padding: var(--sl-space-10) var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
+  padding: var(--sl-space-10) var(--sl-space-12) var(--sl-space-6) var(--sl-space-14);
+}
+
+/* Eyebrow above the title: the only header carrying two lines. */
+.sl-component-screen .sl-page-header {
+  min-height: 67px;
+  padding-bottom: var(--sl-space-8);
 }
 
 .sl-page-header-copy {
@@ -750,10 +768,6 @@
   background: var(--sl-color-accent-soft);
 }
 
-.sl-library-screen .sl-page-header {
-  min-height: 48px;
-  padding: var(--sl-space-10) var(--sl-space-12) var(--sl-space-6) var(--sl-space-14);
-}
 
 .sl-library-screen .sl-screen-scroll {
   overflow-x: hidden;
@@ -1645,10 +1659,6 @@
   font-size: var(--sl-font-size-support);
 }
 
-.sl-foundation-screen .sl-page-header {
-  min-height: 48px;
-  padding-bottom: var(--sl-space-6);
-}
 
 .sl-foundation-toolbar > span {
   color: var(--sl-color-text-muted);
@@ -1788,16 +1798,13 @@
   padding: 0 var(--sl-space-16) var(--sl-space-20);
 }
 
+/* Settings and License indent one step further than the other screens. */
 .sl-settings-screen .sl-page-header {
   padding-left: var(--sl-space-16);
 }
 
 .sl-settings-section {
   min-width: 0;
-}
-
-.sl-frame-theme-section {
-  padding-top: var(--sl-space-14);
 }
 
 .sl-settings-section-heading {
@@ -1811,8 +1818,7 @@
   font-weight: var(--sl-font-weight-semibold);
 }
 
-.sl-settings-section-heading p,
-.sl-logo-setting p {
+.sl-settings-section-heading p {
   margin: 0;
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-support);
@@ -1891,15 +1897,6 @@
 }
 
 .sl-custom-theme-controls h3,
-.sl-logo-setting h3 {
-  margin: 0 0 var(--sl-space-8);
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
-  font-weight: var(--sl-font-weight-bold);
-  letter-spacing: var(--sl-tracking-caps-wide);
-  text-transform: uppercase;
-}
-
 .sl-theme-color-grid,
 .sl-theme-font-grid {
   display: grid;
@@ -2093,20 +2090,8 @@
   line-height: var(--sl-line-height-body);
 }
 
-.sl-logo-setting {
-  margin-top: var(--sl-space-16);
-  padding-top: var(--sl-space-14);
-  border-top: 1px solid var(--sl-color-border-muted);
-}
-
-/*
- * About: build versions, at the foot of Settings.
- *
- * It borrows the Logo section's rule-and-gap separator rather than inventing
- * one, so the two breaks in this screen read as the same break. It is a
- * sibling of the frame-theme section, not a child, which is why the margin is
- * on the section itself here and on the h3 there.
- */
+/* Every section after the first is separated the same way. */
+.sl-logo-setting,
 .sl-about-section {
   margin-top: var(--sl-space-16);
   padding-top: var(--sl-space-14);
@@ -2156,16 +2141,11 @@
   text-decoration: underline;
 }
 
-.sl-logo-setting h3 {
-  margin-bottom: var(--sl-space-6);
-}
-
 .sl-logo-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sl-space-8);
-  margin-top: var(--sl-space-8);
 }
 
 .sl-logo-actions .sl-button {
@@ -2209,19 +2189,6 @@
 /* --------------------------------------------------------------------------
  * License — plan, quota, activation, and device connection
  * ----------------------------------------------------------------------- */
-
-/*
- * Title-only header, so it uses the 48px bar the other single-line screens use
- * (.sl-library-screen, .sl-foundation-screen). Left on the 67px base — which is
- * sized for Settings' title *and* subtitle — the min-height had 26px of dead
- * space under the h1, putting 38px between the title and the plan card while
- * every gap below the card is 12-16. Matching those two screens puts the title
- * 15px above the first block, same as Foundations.
- */
-.sl-license-screen .sl-page-header {
-  min-height: 48px;
-  padding-bottom: var(--sl-space-6);
-}
 
 .sl-license-screen .sl-screen-scroll {
   padding-bottom: var(--sl-space-16);

@@ -50,6 +50,46 @@ describe('settings screen presentation', () => {
 });
 
 /**
+ * Logo used to be an uppercase `<h3>` nested inside the frame-theme section,
+ * so it read as a caps label among two sentence-case headings and claimed to
+ * be part of frame theming. It is a peer of Frame theme and About, and its
+ * heading is the same one they use.
+ */
+describe('logo section', () => {
+  const state = {
+    theme: { ...THEME_PRESETS[0].theme },
+    customMode: false,
+    logoAttached: false,
+    pluginVersion: '5.0.0',
+  };
+
+  it('heads Logo with the shared section heading, not a caps label', () => {
+    const markup = settingsScrollMarkup(state);
+    expect(markup).toContain(
+      '<div class="sl-settings-section-heading"><h2 id="sl-logo-heading">Logo</h2>',
+    );
+    expect(markup).not.toContain('<h3 id="sl-logo-heading">');
+  });
+
+  it('sits beside Frame theme rather than inside it', () => {
+    const markup = settingsScrollMarkup(state);
+    const theme = markup.indexOf('sl-frame-theme-section');
+    const logo = markup.indexOf('sl-logo-setting');
+    const about = markup.indexOf('sl-about-section');
+    expect(theme).toBeLessThan(logo);
+    expect(logo).toBeLessThan(about);
+    // The frame-theme section closes before Logo opens.
+    expect(markup.slice(theme, logo)).toContain('</section>');
+  });
+
+  it('keeps the heading as the accessible name for the section', () => {
+    const markup = settingsScrollMarkup(state);
+    expect(markup).toContain('aria-labelledby="sl-logo-heading"');
+    expect(markup).toContain('id="sl-logo-heading"');
+  });
+});
+
+/**
  * The vNext Settings migration shipped the two font fields as bare inputs, so
  * the only way to set one was to type a family name exactly right; the host's
  * font list was fetched and then used for nothing but a warning afterwards. The

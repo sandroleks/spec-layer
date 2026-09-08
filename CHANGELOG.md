@@ -37,7 +37,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   an extractor bump, which the plugin version alone cannot show. An unstamped
   build renders no plugin row rather than a plausible one. Settings lost its
   page subtitle, which said "Generated frame appearance": the Frame theme
-  heading below it already said that, and About made it untrue.
+  heading below it already said that, and About made it untrue. Its page
+  header moves to the 48px single-line bar the other title-only screens use,
+  since the 67px default was sized for that subtitle, and the frame-theme
+  section drops the top padding that used to separate it from that subtitle.
+  **Logo** becomes a peer of Frame theme and About rather than a block inside
+  frame theming, and takes the same section heading they use; it had been an
+  uppercase caps label, the only one of the three in that style.
 
 - `spec-layer skill` and `spec-layer tools` (CLI 0.5.0), for the coding agent
   that receives the setup command. `tools` prints every command with whether
@@ -429,6 +435,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   120 KB. No behaviour change.
 
 ### Fixed
+
+- **Publish for developers** no longer carries a header sized for a second
+  line it does not have. Its title sat 34px above the first section where
+  every other screen puts it 15px, which had been true since the screen
+  shipped. The page header's default is now the single-line bar that five of
+  the six screens want, and the component screen, whose header really does
+  carry an eyebrow above the title, states its two-line height itself. That
+  removes the trap behind this and behind the Settings gap: a screen that
+  loses its second line no longer keeps a header sized for one. Library,
+  Foundations, License and Settings drop overrides that only existed to undo
+  the old default, and every one of the six screens measures the same header
+  height and title gap as before.
 
 - Quick search no longer flashes once per typed letter. Every keystroke
   replaced the whole palette, which restarted the panel's entry animation and
