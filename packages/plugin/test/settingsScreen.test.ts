@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import { THEME_PRESETS } from '../src/brandColors';
+import { DOCS_URL } from '../src/ui/proxy';
 import {
   FONT_DEFAULT_LABEL,
   FONT_DEFAULT_VALUE,
@@ -9,10 +11,12 @@ import {
 } from '../src/ui/screens/settings';
 
 describe('settings screen presentation', () => {
-  it('renders the approved title and subtitle', () => {
+  it('titles the page without claiming it is only frame appearance', () => {
+    // About is not frame appearance, and the "Frame theme" heading directly
+    // below already said it, so the subtitle was both wrong and a repeat.
     const markup = settingsHeaderMarkup();
     expect(markup).toContain('<h1>Settings</h1>');
-    expect(markup).toContain('Generated frame appearance');
+    expect(markup).not.toContain('Generated frame appearance');
   });
 
   it('shows five frame-theme choices with Tech selected', () => {
@@ -20,6 +24,7 @@ describe('settings screen presentation', () => {
       theme: { ...THEME_PRESETS[2].theme },
       customMode: false,
       logoAttached: false,
+      pluginVersion: '5.0.0',
     });
     expect(markup.match(/data-theme-preset=/g)).toHaveLength(5);
     expect(markup).toContain('data-theme-preset="Tech" aria-pressed="true"');
@@ -32,6 +37,7 @@ describe('settings screen presentation', () => {
       theme: { ...THEME_PRESETS[0].theme },
       customMode: true,
       logoAttached: true,
+      pluginVersion: '5.0.0',
       colorError: 'Enter a valid color.',
     });
     expect(markup).toContain('sl-custom-theme-controls');
@@ -55,6 +61,7 @@ describe('font fields', () => {
     theme: { ...THEME_PRESETS[0].theme },
     customMode: true,
     logoAttached: false,
+    pluginVersion: '5.0.0',
   };
 
   it('renders each font field as a combobox with a browse affordance', () => {
@@ -135,6 +142,7 @@ describe('colour swatches', () => {
     theme: { ...THEME_PRESETS[0].theme },
     customMode: true,
     logoAttached: false,
+    pluginVersion: '5.0.0',
   };
 
   it('renders every swatch as a real colour input paired with its hex field', () => {
@@ -175,5 +183,62 @@ describe('colour swatches', () => {
     const swatch = markup.indexOf('data-theme-swatch="headerBg"');
     expect(field).toBeGreaterThan(-1);
     expect(field).toBeLessThan(swatch);
+  });
+});
+
+/**
+ * The version had nowhere to be read. It is stamped into every connected
+ * document as `pluginVersion`, and TESTING.md's release gate asks for the
+ * published version to match it, but the plugin never showed it on screen.
+ *
+ * The extractor version rides along because it answers a different question:
+ * a Library that reports "rebuild needed" on every row is an EXTRACTOR_VERSION
+ * bump, and the plugin version alone cannot tell you that.
+ */
+describe('about section', () => {
+  const state = {
+    theme: { ...THEME_PRESETS[0].theme },
+    customMode: false,
+    logoAttached: false,
+  };
+
+  it('labels each version, so a bare number cannot read as something else', () => {
+    // "Spec Layer 5.0.0" over "Extractor 2" said neither what the numbers
+    // were nor what the second one counted.
+    const markup = settingsScrollMarkup({ ...state, pluginVersion: '5.0.0' });
+    expect(markup).toContain('<h2>About</h2>');
+    expect(markup).toContain('<dt>Plugin version</dt><dd>5.0.0</dd>');
+    expect(markup).toContain(`<dt>Extractor version</dt><dd>${EXTRACTOR_VERSION}</dd>`);
+    // A sibling section, not a child of the frame-theme one: About is not
+    // frame appearance, and nesting it there would say that it is.
+    const theme = markup.indexOf('sl-frame-theme-section');
+    const about = markup.indexOf('sl-about-section');
+    expect(theme).toBeGreaterThan(-1);
+    expect(about).toBeGreaterThan(theme);
+    expect(markup.slice(theme, about)).toContain('</section>');
+  });
+
+  it('drops the whole plugin row rather than guessing at an unstamped build', () => {
+    // pluginBuild() is null whenever the esbuild define is absent. Never
+    // fabricate: no 0.0.0, no runtime read of package.json.
+    const markup = settingsScrollMarkup({ ...state, pluginVersion: null });
+    expect(markup).toContain('<h2>About</h2>');
+    expect(markup).not.toContain('Plugin version');
+    expect(markup).toContain(`<dt>Extractor version</dt><dd>${EXTRACTOR_VERSION}</dd>`);
+  });
+
+  it('links to the documentation the way the rail links out', () => {
+    const markup = settingsScrollMarkup({ ...state, pluginVersion: '5.0.0' });
+    expect(markup).toContain(`href="${DOCS_URL}"`);
+    expect(markup).toContain('target="_blank" rel="noopener"');
+    expect(markup).toContain('Documentation');
+  });
+
+  it('renders the versions as plain selectable text, with no copy button', () => {
+    const markup = settingsScrollMarkup({ ...state, pluginVersion: '5.0.0' });
+    const start = markup.indexOf('sl-about-section');
+    expect(start).toBeGreaterThan(-1);
+    const about = markup.slice(start);
+    expect(about).not.toContain('<button');
   });
 });
