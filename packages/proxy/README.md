@@ -78,8 +78,7 @@ Limits per tier: free 1 library and 10 changed publishes per UTC month; Pro 10
 libraries and no fixed publish cap (`fair_use_flag` at the soft threshold).
 A publish is counted only when its KV write commits. Republishing a bundle
 whose hash equals the stored one returns `200 { libraryId, publishedAt, unchanged: true }` with no write and no count; the quota engine's 24-hour response cache still protects retries of a changed publish.
-Every publish response carries `X-Tier` and the `X-Quota-*` headers for the
-publish allowance.
+Successful publishes, the `unchanged` reply, and the quota refusals (402, 409, 429) carry `X-Tier` and the `X-Quota-*` headers for the publish allowance; other errors do not.
 
 Errors: `400` invalid JSON or bundle shape, `400
 {"error":"unsupported bundle version","version":"2.0.0"}`, `401` no identity,
@@ -115,9 +114,10 @@ up to about a minute. Errors: `401`,
   review at ≥1,000/month (`fair_use_flag` log).
 - Publishing: free 10 changed publishes per UTC calendar month, no boost
   window, one library; Pro 10 libraries, no fixed cap, flagged at the same
-  soft threshold. Counted in a separate Durable Object per identity
-  (`publish:<identity>`), keyed by bundle hash so unchanged republishes are
-  free. Pull is not metered.
+  soft threshold. Every create counts; an update whose bundle hash equals the
+  stored one is a no-op that does not count; a changed update counts once,
+  with the 24-hour response cache protecting retries. Counted in a separate
+  Durable Object per identity (`publish:<identity>`). Pull is not metered.
 - Quota engine rate limit: 10 uncached generation reservations/min per
   identity, both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
