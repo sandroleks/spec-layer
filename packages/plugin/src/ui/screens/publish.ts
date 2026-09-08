@@ -10,7 +10,10 @@
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { setupCommand, type PublishState } from '../publish';
-import { publishAllowanceCopy, type PublishAllowance } from '../viewModel/allowance';
+import { CLI_DOCS_URL } from '../proxy';
+import {
+  formatPublishedAt, formatResetDate, type PublishAllowance,
+} from '../viewModel/allowance';
 import { progressMarkup } from './progress';
 
 function esc(value: string): string {
@@ -22,13 +25,13 @@ function esc(value: string): string {
 }
 
 /**
- * Two groups, because this screen holds two different concerns: what leaving
- * this file means, and the key a developer needs. "Anyone with the key can
- * pull it" has to sit next to the key it is about.
+ * A status block, then two groups, because this screen holds two different
+ * concerns: what leaving this file means, and the key a developer needs.
+ * "Anyone with the key can pull it" has to sit next to the key it is about.
  */
 const WHAT_GETS_PUBLISHED =
-  "This library's AI context: the foundation document and every connected " +
-  'component document. Publishing replaces the version published before it.';
+  'The foundation document and every connected component document in this ' +
+  'file, published as AI context. Publishing replaces the version before it.';
 
 const DEVELOPER_SETUP =
   'Developers run this in their repo. It stores the pull key so later pulls '
@@ -45,12 +48,40 @@ const BEFORE_FIRST_PUBLISH =
   'here once it has run.';
 
 /**
- * Defines the noun the screen counts. "Library" is the technical name the CLI
- * and proxy use; the allowance below counts Figma files and updates, so the
- * two have to be tied together once, where both are visible.
+ * The status block: label and value rows, each present only when it has a
+ * true value. "Not recorded" covers a library published by a build before
+ * the date was stored; the next publish records one. Never a guessed date.
+ * `locale` is for deterministic tests; the plugin passes none.
  */
-const LIBRARY_DEFINITION =
-  'A library is this Figma file, published for developers to pull with the CLI.';
+function factsMarkup(state: PublishState, allowance: PublishAllowance, locale?: string): string {
+  const row = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const rows: string[] = [];
+  if (!state.libraryId) {
+    rows.push(row('Status', 'Not published yet'));
+  } else {
+    const when = state.lastPublishedAt ? formatPublishedAt(state.lastPublishedAt, locale) : null;
+    rows.push(row('Last published', when ? esc(when) : 'Not recorded'));
+    rows.push(row('Library id', `<code>${esc(state.libraryId)}</code>`));
+  }
+  if (allowance.kind === 'free') {
+    const reset = formatResetDate(allowance.resetsAt);
+    const tail = reset ? `, resets ${reset}` : '';
+    const count = allowance.remaining <= 0
+      ? `None left this month${tail}`
+      : `${allowance.remaining} of ${allowance.limit} left this month${tail}`;
+    rows.push(row('Free updates', count));
+  }
+  return `<dl class="sl-publish-facts">${rows.join('')}</dl>`;
+}
+
+/**
+ * The way to the CLI reference, in the same shape as the Settings docs link
+ * (an anchor with target _blank is the plugin's one established way to leave
+ * the iframe). Shown wherever there is a library to pull.
+ */
+const DOCS_LINK =
+  `<a class="sl-publish-docs" href="${CLI_DOCS_URL}" target="_blank" rel="noopener">` +
+  `CLI documentation${icon('externalLink', 14)}</a>`;
 
 /** Statuses where a publish is in flight, so the primary is working. */
 function isBusy(state: PublishState): boolean {
@@ -75,21 +106,27 @@ export function publishHeaderMarkup(): string {
 }
 
 /**
- * What publishing does, the setup command once there is one, and the last
- * status line. Everything here varies in height with state, which is why it
- * belongs in the scroll body rather than the fixed-height footer band.
+ * The status block, what publishing does, the setup command once there is
+ * one, and the last result line. Everything here varies in height with
+ * state, which is why it belongs in the scroll body rather than the
+ * fixed-height footer band.
  */
-export function publishScrollMarkup(state: PublishState, allowance: PublishAllowance): string {
+export function publishScrollMarkup(
+  state: PublishState, allowance: PublishAllowance, locale?: string,
+): string {
   const busy = isBusy(state);
   // Rotating during an upload would race the publish on the server, so the
-  // control is disabled while the footer reports work in progress.
-  const rotateButton =
+  // control is disabled while the footer reports work in progress. Its own
+  // row: the one destructive action on the screen, kept apart from copying,
+  // with its consequence directly beneath it. `is-danger` sets only the label
+  // colour, which composes with the secondary tone's surface and border
+  // instead of replacing them the way `data-tone="danger"` would. "Within
+  // about a minute" is what the server can actually promise.
+  const rotateRow =
+    '<div class="sl-publish-rotate">' +
     '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
-    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>`;
-  // Names the action, since it sits under a row of two: the consequence
-  // belongs to rotating, not to the copy button beside it. "Within about a
-  // minute" is what the server can actually promise.
-  const rotateHint =
+    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>` +
+    '</div>' +
     '<p class="sl-publish-hint">Rotating cuts off everyone using the current key ' +
     'within about a minute.</p>';
   // The id lives in the file; the key lives on the device that published or
@@ -104,8 +141,8 @@ export function publishScrollMarkup(state: PublishState, allowance: PublishAllow
       'The pull key is not on this device, so the setup command cannot be shown here. ' +
       'Rotate the key to issue a new one.' +
       '</p></div>' +
-      `<div class="sl-publish-command-actions">${rotateButton}</div>` +
-      rotateHint +
+      DOCS_LINK +
+      rotateRow +
       '</section>'
     )
     : '';
@@ -128,35 +165,24 @@ export function publishScrollMarkup(state: PublishState, allowance: PublishAllow
        */
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-publish-copy-agent>Copy for an AI agent</button>' +
-      /*
-       * Copying is the action taken every time; rotating cuts off every
-       * developer already pulling this library. Both are real buttons in one
-       * row, so the weighting is carried by colour rather than by placement:
-       * `is-danger` sets only the label colour, which composes with the
-       * secondary tone's surface and border instead of replacing them the way
-       * `data-tone="danger"` would. Second in the row, since copy is what the
-       * user came for.
-       */
-      rotateButton +
       '</div>' +
-      rotateHint +
+      DOCS_LINK +
+      rotateRow +
       '</section>'
     )
     : idOnly;
   const statusLine = state.message
     ? `<p class="sl-publish-status${state.status === 'error' ? ' is-error' : ''}">${esc(state.message)}</p>`
     : '';
-  const allowanceLine = publishAllowanceCopy(allowance);
   return (
     '<div class="sl-publish-body">' +
-    `<p class="sl-publish-definition">${LIBRARY_DEFINITION}</p>` +
+    factsMarkup(state, allowance, locale) +
     '<section class="sl-publish-group">' +
     '<div class="sl-settings-section-heading"><h2>What gets published</h2>' +
     `<p>${WHAT_GETS_PUBLISHED}</p>` +
     (!setup ? `<p>${BEFORE_FIRST_PUBLISH}</p>` : '') +
     '</div>' +
     '</section>' +
-    (allowanceLine ? `<p class="sl-publish-allowance">${esc(allowanceLine)}</p>` : '') +
     setup +
     // Last, not inside either group: the message reports whichever action ran
     // last, and both Publish (the footer) and Rotate key (above) can set it.

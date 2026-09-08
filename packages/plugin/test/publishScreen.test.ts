@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { setupCommand, type PublishState } from '../src/ui/publish';
+import { CLI_DOCS_URL } from '../src/ui/proxy';
 import { ICON_PATHS } from '../src/ui/shell/icons';
 import type { PublishAllowance } from '../src/ui/viewModel/allowance';
 import {
@@ -74,10 +75,10 @@ describe('publish screen body', () => {
     const markup = proScroll(state());
     expect(markup).toContain('<h2>What gets published</h2>');
     expect(markup).toContain(
-      "This library's AI context: the foundation document and every connected "
-      + 'component document.',
+      'The foundation document and every connected component document in this '
+      + 'file, published as AI context.',
     );
-    expect(markup).toContain('Publishing replaces the version published before it.');
+    expect(markup).toContain('Publishing replaces the version before it.');
     // No key yet, so the whole Developer setup group is absent - and the
     // screen says where the key will come from rather than leaving a void.
     expect(markup).not.toContain('Developer setup');
@@ -119,12 +120,14 @@ describe('publish screen body', () => {
   });
 
   /**
-   * Rotating sits beside copying as a real button, flagged by colour rather
-   * than by placement. `is-danger` sets only the label colour, so it composes
-   * with the secondary tone's surface and border; `data-tone="danger"` would
-   * replace them with a filled red block and out-shout the footer's primary.
+   * Rotating is the one destructive action on the screen. It keeps the
+   * secondary tone with `is-danger` on the label (`data-tone="danger"` would
+   * replace the surface with a filled red block and out-shout the footer's
+   * primary), and it sits in its own row under the docs link, not in the copy
+   * row: two copy buttons and a cut-off in one row made the consequence line
+   * read as belonging to all three.
    */
-  it('puts rotate beside copy as a secondary button in danger colour', () => {
+  it('puts rotate in its own row after the copy row and the docs link', () => {
     const markup = proScroll(PUBLISHED);
     const copy = /<button[^>]*data-publish-copy-command[^>]*>/.exec(markup)?.[0] ?? '';
     const rotate = /<button[^>]*data-publish-rotate[^>]*>/.exec(markup)?.[0] ?? '';
@@ -132,20 +135,20 @@ describe('publish screen body', () => {
     expect(rotate).toContain('data-tone="secondary"');
     expect(rotate).toContain('is-danger');
     expect(rotate).not.toContain('data-tone="danger"');
-    // Both live in the one actions row, copy first.
-    const row = /<div class="sl-publish-command-actions">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
-    expect(row).toContain('data-publish-copy-command');
-    expect(row).toContain('data-publish-rotate');
-    expect(row.indexOf('data-publish-copy-command'))
-      .toBeLessThan(row.indexOf('data-publish-rotate'));
+    const copyRow = /<div class="sl-publish-command-actions">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
+    expect(copyRow).toContain('data-publish-copy-command');
+    expect(copyRow).toContain('data-publish-copy-agent');
+    expect(copyRow).not.toContain('data-publish-rotate');
+    const rotateRow = /<div class="sl-publish-rotate">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
+    expect(rotateRow).toContain('data-publish-rotate');
+    expect(markup.indexOf('sl-publish-command-actions'))
+      .toBeLessThan(markup.indexOf('sl-publish-docs'));
+    expect(markup.indexOf('sl-publish-docs'))
+      .toBeLessThan(markup.indexOf('sl-publish-rotate'));
   });
 
-  /**
-   * The hint sits under a row of two buttons, so it has to name the action it
-   * belongs to. Unnamed it reads as a consequence of the pair, and copying a
-   * command invalidates nothing.
-   */
-  it('names rotating in the consequence under the two-button row', () => {
+  /** The consequence belongs to rotating, so it sits directly under that button. */
+  it('keeps the rotate consequence directly under the rotate button', () => {
     const markup = proScroll(PUBLISHED);
     expect(markup).toContain(
       'Rotating cuts off everyone using the current key within about a minute.',
@@ -359,6 +362,22 @@ describe('publish screen styling', () => {
    * The lift has to be derived from the type and control tokens, not typed as a
    * px: a hard number silently stops aligning the moment either one changes.
    */
+  /**
+   * One grid for both label-and-value lists and one rule for both outbound
+   * docs links, as selector lists, so the two screens cannot drift apart. The
+   * captions the status block replaced leave no rules behind.
+   */
+  it('shares the About list grid and the docs link style rather than copying them', () => {
+    expect(css).toMatch(/\.sl-about-versions,\s*\.sl-publish-facts\s*\{/);
+    expect(css).toMatch(/\.sl-about-docs,\s*\.sl-publish-docs\s*\{/);
+    expect(rule('.sl-publish-definition')).toBe('');
+    expect(rule('.sl-publish-allowance')).toBe('');
+    expect(rule('.sl-publish-rotate')).toMatch(/margin-top/);
+    // `rule` finds the first `.sl-publish-facts {`, which is the tail of the
+    // shared selector list; the gap lives in the block's own rule after it.
+    expect(css).toMatch(/\n\.sl-publish-facts \{\s*margin-bottom/);
+  });
+
   it('centres the back control on the title line using tokens, not a magic px', () => {
     const back = rule('.sl-publish-back');
     expect(back).toMatch(/height:\s*var\(--sl-control-sm\)/);
@@ -403,8 +422,6 @@ describe('Copy for an AI agent', () => {
     const row = /<div class="sl-publish-command-actions">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
     expect(row.indexOf('data-publish-copy-command'))
       .toBeLessThan(row.indexOf('data-publish-copy-agent'));
-    expect(row.indexOf('data-publish-copy-agent'))
-      .toBeLessThan(row.indexOf('data-publish-rotate'));
     // Half a command is a command that fails, for an agent as much as a person.
     expect(proScroll(state({ libraryId: LIBRARY_ID }))).not.toContain('data-publish-copy-agent');
     expect(proScroll(state())).not.toContain('data-publish-copy-agent');
@@ -413,26 +430,75 @@ describe('Copy for an AI agent', () => {
 
 const FREE: PublishAllowance = { kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' };
 
-describe('publish screen definition and allowance', () => {
-  it('defines a library in one line at the top of every state', () => {
+describe('publish screen status block', () => {
+  const facts = (markup: string) =>
+    /<dl class="sl-publish-facts">([\s\S]*?)<\/dl>/.exec(markup)?.[1] ?? '';
+
+  it('opens every state with the status block, above What gets published', () => {
     for (const status of ALL_STATES) {
       const markup = publishScrollMarkup(state({ status }), FREE);
-      expect(markup).toContain('A library is this Figma file, published for developers to pull with the CLI.');
-      expect(markup.indexOf('A library is this Figma file')).toBeLessThan(markup.indexOf('<h2>What gets published</h2>'));
+      expect(markup).toContain('<dl class="sl-publish-facts">');
+      expect(markup.indexOf('sl-publish-facts'))
+        .toBeLessThan(markup.indexOf('<h2>What gets published</h2>'));
     }
   });
 
-  it('shows the updates line on a free plan and nothing on pro or unknown', () => {
-    expect(publishScrollMarkup(state(), FREE)).toContain('3 of 10 free updates left this month, resets Oct 1');
-    expect(publishScrollMarkup(state(), { kind: 'hidden' })).not.toContain('free updates');
+  it('says not published yet, and nothing else, before the first publish', () => {
+    const rows = facts(proScroll(state()));
+    expect(rows).toContain('<dt>Status</dt><dd>Not published yet</dd>');
+    expect(rows).not.toContain('Last published');
+    expect(rows).not.toContain('Library id');
+  });
+
+  it('shows the recorded date in local time and the library id once published', () => {
+    const rows = facts(publishScrollMarkup(PUBLISHED, { kind: 'hidden' }, 'en-GB'));
+    expect(rows).not.toContain('Not published yet');
+    // PUBLISHED is stamped 2026-09-01T00:00:00Z; the hour depends on the
+    // machine's zone, and so can the calendar day, so only the shape is fixed.
+    expect(rows).toMatch(/<dt>Last published<\/dt><dd>\d{1,2} \w{3,4} 2026, \d{2}:\d{2}<\/dd>/);
+    expect(rows).toContain(`<dt>Library id</dt><dd><code>${LIBRARY_ID}</code></dd>`);
+  });
+
+  /**
+   * Never fabricate. A library published by a build that stored no date, or a
+   * date that does not parse, says so rather than showing today.
+   */
+  it('reads "Not recorded" for an id without a date, never an invented one', () => {
+    expect(facts(proScroll(state({ libraryId: LIBRARY_ID, pullKey: PULL_KEY, lastPublishedAt: null }))))
+      .toContain('<dt>Last published</dt><dd>Not recorded</dd>');
+    expect(facts(proScroll(state({ libraryId: LIBRARY_ID, lastPublishedAt: 'garbage' }))))
+      .toContain('<dd>Not recorded</dd>');
+    expect(facts(proScroll(state({ libraryId: LIBRARY_ID, lastPublishedAt: null }))))
+      .not.toContain('2026');
+  });
+
+  it('shows the free updates row on a free plan and no row on pro or unknown', () => {
+    expect(facts(publishScrollMarkup(state(), FREE)))
+      .toContain('<dt>Free updates</dt><dd>3 of 10 left this month, resets Oct 1</dd>');
+    expect(facts(publishScrollMarkup(state(), { ...FREE, remaining: 0 })))
+      .toContain('<dt>Free updates</dt><dd>None left this month, resets Oct 1</dd>');
+    expect(publishScrollMarkup(state(), { kind: 'hidden' })).not.toContain('Free updates');
   });
 
   it('keeps Publish enabled at zero remaining, since the server decides', () => {
-    const zero: PublishAllowance = { ...FREE, remaining: 0 };
-    expect(publishScrollMarkup(state(), zero)).toContain('No free updates left this month, resets Oct 1');
     const footer = publishFooterMarkup(state());
     expect(footer).toContain('data-publish');
     expect(footer).not.toContain('disabled');
+  });
+
+  it('drops the old definition and allowance captions', () => {
+    for (const status of ALL_STATES) {
+      const markup = publishScrollMarkup(state({ status }), FREE);
+      expect(markup).not.toContain('A library is this Figma file');
+      expect(markup).not.toContain('sl-publish-definition');
+      expect(markup).not.toContain('sl-publish-allowance');
+    }
+  });
+
+  it('escapes the library id and the formatted date rather than trusting them as markup', () => {
+    const markup = proScroll(state({ libraryId: 'lib_<b>x</b>', lastPublishedAt: null }));
+    expect(markup).toContain('lib_&lt;b&gt;x&lt;/b&gt;');
+    expect(markup).not.toContain('<b>x</b>');
   });
 
   it('always offers rotate to a device holding the key, on every plan', () => {
@@ -449,5 +515,26 @@ describe('publish screen definition and allowance', () => {
     ].join('');
     expect(all).not.toContain('—');
     expect(all).not.toContain('Pro plan required');
+  });
+});
+
+describe('publish screen docs link', () => {
+  it('links to the CLI reference under the setup command, the way Settings links to the docs', () => {
+    const markup = proScroll(PUBLISHED);
+    const link = /<a class="sl-publish-docs"[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(link).toContain(`href="${CLI_DOCS_URL}"`);
+    expect(link).toContain('target="_blank"');
+    expect(link).toContain('rel="noopener"');
+    expect(markup).toContain('CLI documentation');
+    expect(markup).toContain(ICON_PATHS.externalLink);
+    expect(CLI_DOCS_URL).toBe('https://spec-layer.com/docs/cli/');
+  });
+
+  it('offers the docs link to a device without the key too', () => {
+    expect(proScroll(state({ libraryId: LIBRARY_ID, pullKey: null }))).toContain('sl-publish-docs');
+  });
+
+  it('shows no docs link before the first publish, since there is nothing to pull yet', () => {
+    expect(proScroll(state())).not.toContain('sl-publish-docs');
   });
 });

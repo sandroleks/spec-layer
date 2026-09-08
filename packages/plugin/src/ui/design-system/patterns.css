@@ -1334,16 +1334,22 @@
   font-size: var(--sl-font-size-caption);
 }
 
-.sl-publish-definition {
-  margin: 0 0 var(--sl-space-8);
-  color: var(--sl-color-text-quiet);
+/*
+ * The status block at the top shares the About list's grid (see
+ * .sl-about-versions, further down, where the selector list lives). Only the
+ * library id row carries a code span, so it sizes down to the caption scale
+ * the command box uses rather than sitting a size above its label.
+ */
+.sl-publish-facts code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--sl-font-size-caption);
+  font-variant-ligatures: none;
 }
 
-.sl-publish-allowance {
-  margin: var(--sl-space-4) 0 0;
-  color: var(--sl-color-text-quiet);
-  font-size: var(--sl-font-size-caption);
+/* The destructive action's own row, spaced like the copy row above it. */
+.sl-publish-rotate {
+  display: flex;
+  margin-top: var(--sl-space-10);
 }
 
 /*
@@ -2118,7 +2124,8 @@
  * flex row per line: the grid keeps both values on one edge, so two labels of
  * different lengths cannot leave their numbers ragged.
  */
-.sl-about-versions {
+.sl-about-versions,
+.sl-publish-facts {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: var(--sl-space-4) var(--sl-space-12);
@@ -2127,22 +2134,40 @@
   line-height: var(--sl-line-height-body);
 }
 
+/*
+ * The publish screen's status block is followed by a group, so it carries the
+ * same gap the groups keep between each other. After the shared rule, since
+ * that one resets every margin.
+ */
+.sl-publish-facts {
+  margin-bottom: var(--sl-space-16);
+}
+
 /* Each row is a wrapper div, so the pairs stay associated in the markup. */
-.sl-about-versions > div {
+.sl-about-versions > div,
+.sl-publish-facts > div {
   display: contents;
 }
 
-.sl-about-versions dt {
+.sl-about-versions dt,
+.sl-publish-facts dt {
   color: var(--sl-color-text-muted);
 }
 
-.sl-about-versions dd {
+.sl-about-versions dd,
+.sl-publish-facts dd {
   margin: 0;
   color: var(--sl-color-text);
   font-variant-numeric: tabular-nums;
 }
 
-.sl-about-docs {
+/*
+ * Outbound docs links: Settings > About to the docs index, and the publish
+ * screen's Developer setup to the CLI reference. One rule, so they cannot
+ * drift apart.
+ */
+.sl-about-docs,
+.sl-publish-docs {
   display: inline-flex;
   align-items: center;
   gap: var(--sl-space-4);
@@ -2152,7 +2177,8 @@
   text-decoration: none;
 }
 
-.sl-about-docs:hover {
+.sl-about-docs:hover,
+.sl-publish-docs:hover {
   text-decoration: underline;
 }
 
