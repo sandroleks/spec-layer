@@ -103,19 +103,37 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
   }
 }
 
+export type PublishAllowance =
+  | { kind: 'hidden' }
+  | { kind: 'free'; remaining: number; limit: number; resetsAt: string };
+
 /**
- * Whether the publish screen is behind the paywall.
- *
- * Publishing is a Pro action the proxy already enforces: `proCaller` in
- * packages/proxy/src/libraries.ts answers 401 to every other tier. This is the
- * UI half, so a free plan is told before it spends a collection pass over every
- * component in the file and gets the refusal back as an error line.
- *
- * Only a confirmed free plan locks it. 'loading' and 'unknown' mean the server
- * has not told us anything, and demoting a Pro user who is briefly offline is
- * worse than letting the publish attempt carry the answer, which is the same
- * split the header's copy makes above.
+ * The publish screen's updates line. Pro and "not told yet" both hide it: the
+ * server is the authority, and the publish result carries the answer when the
+ * meter could not.
  */
-export function publishLocked(state: AllowanceState): boolean {
-  return state.kind === 'free';
+export function publishAllowance(quota: ProxyQuota | null): PublishAllowance {
+  const publish = quota?.publish;
+  if (!publish || publish.tier === 'pro') return { kind: 'hidden' };
+  const limit = publish.limit ?? 0;
+  const remaining = publish.remaining ?? Math.max(0, limit - publish.used);
+  return { kind: 'free', remaining: Math.max(0, remaining), limit, resetsAt: publish.resetsAt };
+}
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** 'Oct 1' in UTC, matching the proxy's UTC month boundary. Empty when unparsable. */
+export function formatResetDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${SHORT_MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
+export function publishAllowanceCopy(state: PublishAllowance): string | null {
+  if (state.kind === 'hidden') return null;
+  const reset = formatResetDate(state.resetsAt);
+  const tail = reset ? `, resets ${reset}` : '';
+  if (state.remaining <= 0) return `No free updates left this month${tail}`;
+  return `${state.remaining} of ${state.limit} free updates left this month${tail}`;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
-import { allowanceState, allowanceCopy, LOW_REMAINING } from '../src/ui/viewModel/allowance';
+import { allowanceState, allowanceCopy, LOW_REMAINING, publishAllowance, publishAllowanceCopy, formatResetDate } from '../src/ui/viewModel/allowance';
 
 const free = (over: Partial<ProxyQuota> = {}): ProxyQuota => ({
   tier: 'free', used: 1, limit: 5, remaining: 4, resetsAt: '2026-08-01T00:00:00Z', ...over,
@@ -134,5 +134,55 @@ describe('allowanceCopy', () => {
     // and reads as exhausted (fillPct 100), which is accurate: 0 of 0 is out.
     const copy = allowanceCopy({ kind: 'free', remaining: 0, limit: 0, resetsAt: '' });
     expect(copy.fillPct).toBe(100);
+  });
+});
+
+const withPublish = (publish: NonNullable<ProxyQuota['publish']>): ProxyQuota =>
+  ({ tier: publish.tier, used: 0, limit: 20, remaining: 20, resetsAt: '', publish });
+
+describe('publishAllowance', () => {
+  it('hides for null, for pro, and for a proxy that sends no publish field', () => {
+    expect(publishAllowance(null)).toEqual({ kind: 'hidden' });
+    expect(publishAllowance({ tier: 'pro', used: 0, limit: null, remaining: null, resetsAt: '' })).toEqual({ kind: 'hidden' });
+    expect(publishAllowance(withPublish({ tier: 'pro', used: 3, limit: null, remaining: null, resetsAt: '' }))).toEqual({ kind: 'hidden' });
+  });
+
+  it('reports a free allowance', () => {
+    expect(publishAllowance(withPublish({ tier: 'free', used: 7, limit: 10, remaining: 3, resetsAt: '2026-10-01T00:00:00.000Z' })))
+      .toEqual({ kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' });
+  });
+
+  it('never reports a negative remaining', () => {
+    expect(publishAllowance(withPublish({ tier: 'free', used: 12, limit: 10, remaining: null, resetsAt: '' })))
+      .toMatchObject({ remaining: 0 });
+  });
+});
+
+describe('publishAllowanceCopy', () => {
+  it('names updates and the reset date', () => {
+    expect(publishAllowanceCopy({ kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }))
+      .toBe('3 of 10 free updates left this month, resets Oct 1');
+  });
+  it('drops the reset clause when the date is unknown', () => {
+    expect(publishAllowanceCopy({ kind: 'free', remaining: 10, limit: 10, resetsAt: '' }))
+      .toBe('10 of 10 free updates left this month');
+  });
+  it('says so at zero', () => {
+    expect(publishAllowanceCopy({ kind: 'free', remaining: 0, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }))
+      .toBe('No free updates left this month, resets Oct 1');
+  });
+  it('returns null when hidden', () => {
+    expect(publishAllowanceCopy({ kind: 'hidden' })).toBeNull();
+  });
+});
+
+describe('formatResetDate', () => {
+  it('formats in UTC as short month and day', () => {
+    expect(formatResetDate('2026-10-01T00:00:00.000Z')).toBe('Oct 1');
+    expect(formatResetDate('2026-12-31T23:59:59.000Z')).toBe('Dec 31');
+  });
+  it('returns an empty string for garbage', () => {
+    expect(formatResetDate('')).toBe('');
+    expect(formatResetDate('nope')).toBe('');
   });
 });

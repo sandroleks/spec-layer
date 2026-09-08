@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { setupCommand, type PublishState } from '../src/ui/publish';
 import { ICON_PATHS } from '../src/ui/shell/icons';
-import { publishLocked } from '../src/ui/viewModel/allowance';
 import {
   publishFooterMarkup,
   publishHeaderMarkup,
@@ -485,21 +484,6 @@ describe('publish screen on a free plan', () => {
       ...ALL_STATES.map((status) => lockedFooter(state({ status }))),
     ].join('');
     expect(all).not.toContain('—');
-  });
-});
-
-/**
- * Which plans see the paywall. 'loading' and 'unknown' are "the server has not
- * told us", and locking on those would demote a Pro user who is briefly
- * offline, which is the same call allowanceCopy makes for the header.
- */
-describe('publishLocked', () => {
-  it('locks a known free plan and nothing else', () => {
-    expect(publishLocked({ kind: 'free', remaining: 8, limit: 10, resetsAt: '' })).toBe(true);
-    expect(publishLocked({ kind: 'free', remaining: 0, limit: 10, resetsAt: '' })).toBe(true);
-    expect(publishLocked({ kind: 'pro' })).toBe(false);
-    expect(publishLocked({ kind: 'loading' })).toBe(false);
-    expect(publishLocked({ kind: 'unknown', message: 'Plan status unavailable' })).toBe(false);
   });
 });
 
