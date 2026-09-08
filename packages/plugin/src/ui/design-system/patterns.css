@@ -1788,7 +1788,16 @@
   padding: 0 var(--sl-space-16) var(--sl-space-20);
 }
 
+/*
+ * Title-only since the "Generated frame appearance" subtitle went, so it takes
+ * the 48px single-line bar the other title-only screens use (.sl-library-screen,
+ * .sl-foundation-screen, .sl-license-screen). Left on the 67px base, which is
+ * sized for the two-line header the component screen still has, the min-height
+ * held 26px of dead space under the h1 and pushed Frame theme 34px down.
+ */
 .sl-settings-screen .sl-page-header {
+  min-height: 48px;
+  padding-bottom: var(--sl-space-6);
   padding-left: var(--sl-space-16);
 }
 

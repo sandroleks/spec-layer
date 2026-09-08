@@ -37,7 +37,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   an extractor bump, which the plugin version alone cannot show. An unstamped
   build renders no plugin row rather than a plausible one. Settings lost its
   page subtitle, which said "Generated frame appearance": the Frame theme
-  heading below it already said that, and About made it untrue.
+  heading below it already said that, and About made it untrue. Its page
+  header moves to the 48px single-line bar the other title-only screens use,
+  since the 67px default was sized for that subtitle.
 
 - `spec-layer skill` and `spec-layer tools` (CLI 0.5.0), for the coding agent
   that receives the setup command. `tools` prints every command with whether
