@@ -8,9 +8,8 @@ import type { Tier } from './quota';
 
 /** UTF-8 bytes of the request body. Every size check here uses the same unit. */
 export const MAX_BUNDLE_BYTES = 5_000_000;
+/** How many libraries one identity may own, per tier. */
 export const LIBRARY_LIMITS: Record<Tier, number> = { free: 1, pro: 10 };
-/** The Pro limit, kept for callers that predate per-tier limits. */
-export const LIBRARY_LIMIT = LIBRARY_LIMITS.pro;
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 export const PULL_KEY_RE = /^sl_[0-9a-f]{48}$/;
 

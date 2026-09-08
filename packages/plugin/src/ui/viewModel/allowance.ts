@@ -1,10 +1,14 @@
 /**
- * allowance.ts — the header's AI writing control, as a pure function.
+ * allowance.ts — the two allowance readouts, as pure functions: the header's
+ * AI writing control (`allowanceState` / `allowanceCopy`) and the publish
+ * screen's monthly updates line (`publishAllowance` /
+ * `publishAllowanceCopy`), plus the UTC date formatter both share with the
+ * publish error copy.
  *
- * The header shows this on every screen, so it has to survive every quota
- * shape the proxy can return without changing height or lying about the plan.
- * Two states the server cannot distinguish for us are separated here by the
- * `fetched` flag: "we have not asked yet" (loading) and "we asked and got
+ * The header shows its control on every screen, so it has to survive every
+ * quota shape the proxy can return without changing height or lying about the
+ * plan. Two states the server cannot distinguish for us are separated here by
+ * the `fetched` flag: "we have not asked yet" (loading) and "we asked and got
  * nothing" (unknown). Reporting the second as the first would spin forever;
  * reporting it as free would demote a Pro user who is briefly offline.
  */
@@ -115,7 +119,11 @@ export type PublishAllowance =
 export function publishAllowance(quota: ProxyQuota | null): PublishAllowance {
   const publish = quota?.publish;
   if (!publish || publish.tier === 'pro') return { kind: 'hidden' };
-  const limit = publish.limit ?? 0;
+  // A free plan whose limit the server did not state is not a plan with no
+  // updates left. Hiding the line says nothing; a `0 of 0` line would say
+  // something false.
+  if (publish.limit === null) return { kind: 'hidden' };
+  const limit = publish.limit;
   const remaining = publish.remaining ?? Math.max(0, limit - publish.used);
   return { kind: 'free', remaining: Math.max(0, remaining), limit, resetsAt: publish.resetsAt };
 }

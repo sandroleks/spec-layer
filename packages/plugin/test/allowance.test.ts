@@ -147,6 +147,12 @@ describe('publishAllowance', () => {
     expect(publishAllowance(withPublish({ tier: 'pro', used: 3, limit: null, remaining: null, resetsAt: '' }))).toEqual({ kind: 'hidden' });
   });
 
+  it('hides a free allowance whose limit the server did not state', () => {
+    // `0 of 0 free updates left` would be a count the proxy never gave.
+    expect(publishAllowance(withPublish({ tier: 'free', used: 0, limit: null, remaining: null, resetsAt: '' })))
+      .toEqual({ kind: 'hidden' });
+  });
+
   it('reports a free allowance', () => {
     expect(publishAllowance(withPublish({ tier: 'free', used: 7, limit: 10, remaining: 3, resetsAt: '2026-10-01T00:00:00.000Z' })))
       .toEqual({ kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' });

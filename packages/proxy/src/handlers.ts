@@ -271,6 +271,9 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   }
   const proofs = callerProofs(req.headers, deps.salt);
   const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
+  // Same rule as `resolveCaller`'s `tierIdentity` in libraries.ts: Pro counts
+  // under the license, free under the Figma identity. The two must agree, or
+  // this meter reports a different bucket than a publish spends from.
   const publishIdentity = tier === 'pro' ? identityId : (figmaId ?? identityId);
   const publish = await deps.quotaFor(publishIdentity, 'publish').snapshot(tier);
   const s = await deps.quotaFor(identityId).snapshot(tier);

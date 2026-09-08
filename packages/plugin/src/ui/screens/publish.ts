@@ -49,7 +49,7 @@ const BEFORE_FIRST_PUBLISH =
  * and proxy use; the allowance below counts Figma files and updates, so the
  * two have to be tied together once, where both are visible.
  */
-export const LIBRARY_DEFINITION =
+const LIBRARY_DEFINITION =
   'A library is this Figma file, published for developers to pull with the CLI.';
 
 /** Statuses where a publish is in flight, so the primary is working. */
