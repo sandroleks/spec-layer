@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT } from '../src/quota';
+import { quotaObjectName } from '../src/index';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
+
+describe('quotaObjectName', () => {
+  it('returns the bare identity id for the ai profile', () => {
+    expect(quotaObjectName('user123', 'ai')).toBe('user123');
+  });
+
+  it('prefixes the identity id with the profile name for non-ai profiles', () => {
+    expect(quotaObjectName('user123', 'publish')).toBe('publish:user123');
+  });
+});
 
 /** Reserve+commit n times with distinct keys, spaced 1 min apart (avoids rate limit). */
 function burn(e: QuotaEngine, n: number, at: number, prefix = 'k') {

@@ -5,6 +5,15 @@ import { SlidingWindowLimiter } from './ratelimit';
 const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
 const requestLimiter = new SlidingWindowLimiter(60, 60_000);
 
+/**
+ * One Durable Object per identity and profile. The AI profile keeps the bare
+ * identity as its name so every existing object's state stays reachable; other
+ * profiles are prefixed so their counts never share storage with it.
+ */
+export function quotaObjectName(identityId: string, profile: QuotaProfile): string {
+  return profile === 'ai' ? identityId : `${profile}:${identityId}`;
+}
+
 export interface Env {
   LICENSE_CACHE: KVNamespace;
   QUOTA: DurableObjectNamespace;
@@ -37,7 +46,7 @@ export class QuotaDO implements DurableObject {
 }
 
 function doQuotaClient(ns: DurableObjectNamespace, identityId: string, profile: QuotaProfile = 'ai'): QuotaClient {
-  const stub = ns.get(ns.idFromName(identityId));
+  const stub = ns.get(ns.idFromName(quotaObjectName(identityId, profile)));
   const call = async (payload: Record<string, unknown>) => {
     const res = await stub.fetch('https://do/quota', { method: 'POST', body: JSON.stringify({ ...payload, profile, now: Date.now() }) });
     return res.json();
