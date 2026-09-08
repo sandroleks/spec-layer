@@ -548,9 +548,10 @@ if (view === 'library') {
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
     },
+    // Success is a toast, so a published screen carries no message of its own.
     published: {
       status: 'done',
-      message: 'Published. Developers get this version on their next pull.',
+      message: null,
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-09-01T09:12:00.000Z',

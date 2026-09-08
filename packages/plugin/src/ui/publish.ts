@@ -255,10 +255,18 @@ export interface PublishHost {
    * spending an update.
    */
   onPublishQuota(snapshot: PublishQuotaSnapshot): void;
+  /**
+   * A success to announce as a toast. Successes leave the screen (a published
+   * library shows its commands, a rotated key shows its new command), so the
+   * confirmation is a passing notice, not a line that sits under the blocks
+   * until the next action. Errors stay in `state.message` instead, where the
+   * screen keeps them on view.
+   */
+  notify(message: string): void;
 }
 
 const noopPublishHost: PublishHost = {
-  repaint: () => {}, send: () => {}, onPublishQuota: () => {},
+  repaint: () => {}, send: () => {}, onPublishQuota: () => {}, notify: () => {},
 };
 let host: PublishHost = noopPublishHost;
 
@@ -330,10 +338,11 @@ export async function onPublishSources(
         libraryId: outcome.libraryId,
         pullKey: outcome.pullKey,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Published. Anyone with the key can pull this version.',
+        message: null,
       };
       host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Published. Anyone with the key can pull this version.');
       break;
     case 'updated':
       state = {
@@ -341,9 +350,10 @@ export async function onPublishSources(
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Published. Developers get this version on their next pull.',
+        message: null,
       };
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Published. Developers get this version on their next pull.');
       break;
     case 'unchanged':
       // The unchanged answer carries the stored library's existing date, which
@@ -353,9 +363,10 @@ export async function onPublishSources(
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
-        message: 'Nothing changed since the last publish.',
+        message: null,
       };
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
+      host.notify('Nothing changed since the last publish.');
       break;
     case 'gone':
       // Never recreate on the user's behalf: the developers pulling the old id
@@ -412,9 +423,10 @@ export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Pr
       ...state,
       status: 'done',
       pullKey: outcome.pullKey,
-      message: 'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
+      message: null,
     };
     host.send({ type: 'setPublishInfo', libraryId, pullKey: outcome.pullKey });
+    host.notify('Key rotated. The old key stops working within about a minute. Share the new command with your developers.');
   } else {
     state = { ...state, status: 'error', message: outcome.message };
   }

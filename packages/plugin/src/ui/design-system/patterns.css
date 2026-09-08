@@ -1214,25 +1214,63 @@
 }
 
 /*
- * Two groups: what publishing does, and the key developers need. The rule
- * between them appears only when the second one does, so a library that has
- * never been published shows one group and no stray divider.
+ * Title and status pill on one line. The header is `align-items: flex-start`
+ * for the sake of two-line headers elsewhere; inside this copy block the pill
+ * centres on the title's line box.
  */
-.sl-publish-group + .sl-publish-group {
-  margin-top: var(--sl-space-16);
-  padding-top: var(--sl-space-16);
-  border-top: 1px solid var(--sl-color-border-muted);
+.sl-publish-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sl-space-8);
 }
 
 /*
- * The shared heading block's `p` has `margin: 0`, which was safe while every
- * screen using it rendered exactly one paragraph. This screen renders a second
- * one before the first publish, so the two need separating. Scoped here rather
- * than added to `.sl-settings-section-heading p`, which Settings and License
- * also use.
+ * One muted line under the header: last published, free updates left. Parts
+ * are spans in a wrapping row so a long date and a long allowance can break
+ * between each other at 480px without a separator glyph to orphan.
  */
-.sl-publish-group .sl-settings-section-heading p + p {
-  margin-top: var(--sl-space-8);
+.sl-publish-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-4) var(--sl-space-12);
+  margin: 0 0 var(--sl-space-12);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+}
+
+.sl-publish-intro,
+.sl-publish-note {
+  margin: 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
+}
+
+.sl-publish-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--sl-font-size-caption);
+  font-variant-ligatures: none;
+}
+
+/* The two setup blocks are peers, spaced like the groups they replaced. */
+.sl-publish-block + .sl-publish-block {
+  margin-top: var(--sl-space-16);
+}
+
+/* Label left, Copy right, on one line above the text it copies. */
+.sl-publish-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sl-space-8);
+  margin-bottom: var(--sl-space-6);
+}
+
+.sl-publish-block-head h2 {
+  margin: 0;
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
 }
 
 /*
@@ -1269,35 +1307,44 @@
  * from the back control, to opposite ends of the row. On this screen the two
  * are one unit, so the row packs from the start instead.
  */
+/*
+ * Title-only (the pill sits on the title's line), so it takes the 48px
+ * single-line bar the other title-only screens use (.sl-library-screen,
+ * .sl-foundation-screen, .sl-license-screen, .sl-settings-screen). On the 67px
+ * base, sized for the component screen's two-line header, the bar held dead
+ * space under the h1 and pushed the body down against every other screen.
+ * The header's own `justify-content: space-between` would push the title away
+ * from the back control, to opposite ends of the row; here the two are one
+ * unit, so the row packs from the start instead.
+ */
 .sl-publish-screen .sl-page-header {
+  min-height: 48px;
+  padding-bottom: var(--sl-space-6);
   justify-content: flex-start;
   gap: var(--sl-space-6);
 }
 
 /*
- * The command a developer copies whole.
+ * The text a reader copies whole: the developer command, or the agent prompt.
  *
- * This used to scroll horizontally on one line, to avoid wrapping mid-flag.
- * As a section at the bottom of the Library list that was the lesser evil; on
- * its own screen it was the worse one. The visible slice was the start of the
- * key, so the reader met a truncated secret with no verb attached, and the
- * `npx spec-layer pull` half that says what the thing DOES sat off-screen
- * behind a scrollbar that is easy to miss in a 480px panel.
- *
- * So it wraps instead, and the whole command is visible at once. Wrapping
+ * The command used to scroll horizontally on one line, to avoid wrapping
+ * mid-flag. The visible slice was the start of the key, so the reader met a
+ * truncated secret with no verb attached, and the half that says what the
+ * thing DOES sat off-screen behind a scrollbar that is easy to miss in a 480px
+ * panel. So it wraps instead, and the whole text is visible at once. Wrapping
  * inserts no characters, so selecting it by hand still copies a runnable
- * command, and the Copy setup command button below is the path that matters.
+ * command, and the Copy button above is the path that matters.
  */
-.sl-publish-command {
+.sl-publish-code {
   min-width: 0;
-  margin-top: var(--sl-space-10);
+  margin: 0;
   padding: var(--sl-space-8) var(--sl-space-10);
   background: var(--sl-color-surface-subdued);
   border: 1px solid var(--sl-color-border-muted);
   border-radius: var(--sl-radius-md);
 }
 
-.sl-publish-command > code {
+.sl-publish-code > code {
   display: block;
   color: var(--sl-color-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1318,38 +1365,13 @@
   font-variant-ligatures: none;
 }
 
-.sl-publish-command-actions {
-  min-width: 0;
-  display: flex;
-  /* Three buttons at the panel's 480px do not always fit on one line. */
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sl-space-6);
-  margin-top: var(--sl-space-8);
-}
-
-.sl-publish-hint {
-  margin: var(--sl-space-4) 0 0;
-  color: var(--sl-color-text-quiet);
-  font-size: var(--sl-font-size-caption);
-}
-
 /*
- * The status block at the top shares the About list's grid (see
- * .sl-about-versions, further down, where the selector list lives). Only the
- * library id row carries a code span, so it sizes down to the caption scale
- * the command box uses rather than sitting a size above its label.
+ * The destructive action's own row, after the setup blocks and spaced like
+ * them, so it reads as a separate step rather than a third copy control.
  */
-.sl-publish-facts code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--sl-font-size-caption);
-  font-variant-ligatures: none;
-}
-
-/* The destructive action's own row, spaced like the copy row above it. */
 .sl-publish-rotate {
   display: flex;
-  margin-top: var(--sl-space-10);
+  margin-top: var(--sl-space-16);
 }
 
 /*
@@ -2124,8 +2146,7 @@
  * flex row per line: the grid keeps both values on one edge, so two labels of
  * different lengths cannot leave their numbers ragged.
  */
-.sl-about-versions,
-.sl-publish-facts {
+.sl-about-versions {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: var(--sl-space-4) var(--sl-space-12);
@@ -2134,40 +2155,22 @@
   line-height: var(--sl-line-height-body);
 }
 
-/*
- * The publish screen's status block is followed by a group, so it carries the
- * same gap the groups keep between each other. After the shared rule, since
- * that one resets every margin.
- */
-.sl-publish-facts {
-  margin-bottom: var(--sl-space-16);
-}
-
 /* Each row is a wrapper div, so the pairs stay associated in the markup. */
-.sl-about-versions > div,
-.sl-publish-facts > div {
+.sl-about-versions > div {
   display: contents;
 }
 
-.sl-about-versions dt,
-.sl-publish-facts dt {
+.sl-about-versions dt {
   color: var(--sl-color-text-muted);
 }
 
-.sl-about-versions dd,
-.sl-publish-facts dd {
+.sl-about-versions dd {
   margin: 0;
   color: var(--sl-color-text);
   font-variant-numeric: tabular-nums;
 }
 
-/*
- * Outbound docs links: Settings > About to the docs index, and the publish
- * screen's Developer setup to the CLI reference. One rule, so they cannot
- * drift apart.
- */
-.sl-about-docs,
-.sl-publish-docs {
+.sl-about-docs {
   display: inline-flex;
   align-items: center;
   gap: var(--sl-space-4);
@@ -2177,8 +2180,7 @@
   text-decoration: none;
 }
 
-.sl-about-docs:hover,
-.sl-publish-docs:hover {
+.sl-about-docs:hover {
   text-decoration: underline;
 }
 

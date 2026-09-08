@@ -312,15 +312,17 @@ action. The rows below start there.
       wrapping in the widest state (trigger a failed source check so the primary
       reads "Refresh to retry"). **Publish** stays enabled during a refresh and
       during Update all docs, unlike the two beside it.
-- [ ] The screen: **Publish** opens "Publish for developers" with the rail still
+- [ ] The screen: **Publish** opens "Publish" with the rail still
       on Library. The back control and Escape both return to the list, and the
       list is where it was, not scrolled. Leaving by the rail and returning to
       Library lands on the list, not the publish screen.
 - [ ] Publish (Pro license, file with foundation + 2 component docs): the footer
       reports "Collecting sources" then "Uploading library" while it runs and
-      the primary reads "Publishing…"; the screen then shows the setup command,
-      a **Last published** row with the local date and time, and the library
-      id. Response arrived in under 30s.
+      the primary reads "Publishing…"; a toast reads "Published. Anyone with
+      the key can pull this version."; the screen then shows the **Published**
+      pill, a Last published line with the local date and time, and the
+      Developer setup and AI agent setup blocks with their full text visible
+      and a **Copy** each. Response arrived in under 30s.
 - [ ] Pull: run the copied setup command in an empty directory; `.speclayer/`
       contains bundle.json, manifest.json, ai/foundation.yaml, and one YAML per
       component; the YAML matches what Copy for AI puts on the clipboard.
@@ -337,9 +339,9 @@ action. The rows below start there.
       writes that file; the file lists every pulled component with its path,
       the token collections with their modes, and carries no key. A second run
       reports the file unchanged.
-- [ ] Copy for an AI agent: the button sits beside **Copy setup command**, with
-      the **CLI documentation** link and then **Rotate key** on their own
-      lines below the pair, is present on a free plan, and copies a
+- [ ] AI agent setup: the block shows the full numbered message under its own
+      **Copy**, below the Developer setup block and above **Rotate key**, is
+      present on a free plan, and Copy puts on the clipboard a
       numbered message whose first command is `npx --yes spec-layer setup` with
       the same id and key as the setup command, followed by
       `npx --yes spec-layer skill --install`. Pasting the message into a coding
@@ -364,28 +366,27 @@ action. The rows below start there.
       B gets its own library id and key; pulling A's id still returns A's
       components.
 - [ ] Second device (or a second Figma account on the same file): the publish
-      screen shows the library id, "not on this device", the **CLI
-      documentation** link, and only **Rotate key**. The **Last published**
-      row shows the same date the first device saw. Rotating shows the full
-      setup command; the first device's old command then fails.
+      screen shows the **Published** pill, the library id, "not on this
+      device", and only **Rotate key**, with no command or prompt block. The
+      Last published line shows the same date the first device saw. Rotating
+      shows a "Key rotated" toast and both blocks; the first device's old
+      command then fails.
 - [ ] Gone library: publish, then rotate the license key (or publish the same
       file with another Pro license). The screen reports the library is gone
-      or belongs to another account, publishes nothing, the status block
-      returns to "Not published yet", and the next publish creates a new
-      library.
+      or belongs to another account, publishes nothing, the pill returns to
+      **Not published**, and the next publish creates a new library.
 - [ ] Recorded date: publish, close the plugin, reopen it and open Publish. The
-      **Last published** row shows the publish time without a new publish. The
-      **CLI documentation** link opens spec-layer.com/docs/cli/ in the
-      browser.
+      Last published line shows the publish time without a new publish.
+      **Read documentation** in the footer opens
+      spec-layer.com/docs/quickstart/#publish-pull in the browser.
 - [ ] Free plan publish and pull (no license key entered): the screen opens
-      with "Not published yet" and a **Free updates** row reading "10 of 10
-      left this month"; Publish creates a library and shows the setup command;
-      the CLI setup command pulls it. Publish again without changes: the status
-      line reads "Nothing changed since the last publish.", the Free updates
-      row still shows 9, and the Last published row keeps the earlier time.
-      Edit a token and publish: the Free updates row shows 8. Open a second
-      file and publish: the status names the first file and offers Upgrade to
-      Pro.
+      with the **Not published** pill and "10 of 10 free updates left this
+      month"; Publish creates a library and shows both blocks; the developer
+      command pulls it. Publish again without changes: a toast reads "Nothing
+      changed since the last publish.", the line still shows 9, and the Last
+      published line keeps the earlier time. Edit a token and publish: the
+      line shows 8. Open a second file and publish: the error line names the
+      first file and offers Upgrade to Pro.
 - [ ] Free plan at the cap: after 10 changed publishes in one month the status
       line names the reset date and Publish stays enabled.
 - [ ] Lapsed Pro key with a library published while Pro: Publish updates it

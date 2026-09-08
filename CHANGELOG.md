@@ -27,18 +27,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   screen reads its updates meter off the response rather than waiting for the
   next quota fetch. Rotation has no tier check. Pull is unchanged.
 
-- **Publish screen status block.** The Publish for developers screen opens
-  with a label-and-value list: `Not published yet`, or the last publish date
-  and time in local time with the library id, plus the free plan's updates
-  row. The date is stored in the file beside the library id (root plugin
-  data `speclayer.publish.publishedAt`, written by a new `setPublishedAt`
-  message after a created, updated, or unchanged publish), so every editor
-  sees it in every session; a library published by an earlier build reads
-  `Not recorded` until its next publish, never a guessed date. The Developer
-  setup group links to the CLI reference at `spec-layer.com/docs/cli/` and
-  puts **Rotate key** on its own row under that link, apart from the two copy
-  buttons. The definition caption and the free-updates caption are folded
-  into the status block, and "What gets published" is one sentence shorter.
+- **Publish screen redesign.** The screen is titled **Publish**, since the
+  agent prompt it hands out is for a coding agent and not only a developer,
+  with a status pill (**Published** or **Not published**) beside the title and
+  one line under it for the last publish date and time in local time plus the
+  free plan's updates left. The date is stored in the file beside the library
+  id (root plugin data `speclayer.publish.publishedAt`, written by a new
+  `setPublishedAt` message after a created, updated, or unchanged publish), so
+  every editor sees it in every session; a library published by an earlier
+  build reads "date not recorded" until its next publish, never a guessed
+  date. The body is the two things a reader came for: the developer setup
+  command and the AI agent prompt, each shown in full in its own block with a
+  **Copy**, then **Rotate key** on its own row. The explanatory paragraphs,
+  the definition caption, the rotate consequence line and the in-body result
+  line are gone: publish and rotate successes are toasts, only errors stay on
+  screen, and a **Read documentation** footer button opens the publish and
+  pull workflow at `spec-layer.com/docs/quickstart/#publish-pull`. The header
+  takes the 48px single-line bar the other title-only screens use.
 
 - An **About** section at the foot of the plugin's Settings screen, giving
   **Plugin version** and **Extractor version** as labelled rows and a

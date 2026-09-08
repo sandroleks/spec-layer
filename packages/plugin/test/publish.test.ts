@@ -520,6 +520,7 @@ describe('publish controller', () => {
   let sent: UiToMain[];
   let repaintCount: number;
   let quotaSnapshots: Array<import('../src/ui/publish').PublishQuotaSnapshot>;
+  let notified: string[];
 
   beforeEach(async () => {
     vi.resetModules();
@@ -527,10 +528,12 @@ describe('publish controller', () => {
     sent = [];
     repaintCount = 0;
     quotaSnapshots = [];
+    notified = [];
     publish.setPublishHost({
       repaint: () => { repaintCount += 1; },
       send: (msg) => { sent.push(msg); },
       onPublishQuota: (snapshot) => { quotaSnapshots.push(snapshot); },
+      notify: (message) => { notified.push(message); },
     });
   });
 
@@ -581,7 +584,9 @@ describe('publish controller', () => {
     expect(state.libraryId).toBe('lib_new');
     expect(state.pullKey).toBe('sl_pull');
     expect(state.lastPublishedAt).toBe('2026-09-01T00:00:01.000Z');
-    expect(state.message).toBe('Published. Anyone with the key can pull this version.');
+    // Success is a toast, not a line under the blocks.
+    expect(state.message).toBeNull();
+    expect(notified).toEqual(['Published. Anyone with the key can pull this version.']);
     expect(sent).toContainEqual({
       type: 'setPublishInfo', libraryId: 'lib_new', pullKey: 'sl_pull',
     });
@@ -652,7 +657,8 @@ describe('publish controller', () => {
     // The pull key never changes on an update: only a create or a rotate mint
     // a new one.
     expect(state.pullKey).toBe('sl_pull_1');
-    expect(state.message).toBe('Published. Developers get this version on their next pull.');
+    expect(state.message).toBeNull();
+    expect(notified).toContain('Published. Developers get this version on their next pull.');
     expect(updateFetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -827,7 +833,8 @@ describe('publish controller', () => {
     expect(state.pullKey).toBe('sl_rotated');
     expect(state.libraryId).toBe('lib_1');
     expect(state.status).toBe('done');
-    expect(state.message).toBe(
+    expect(state.message).toBeNull();
+    expect(notified).toContain(
       'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
     );
     expect(sent).toContainEqual({
@@ -884,7 +891,8 @@ describe('publish controller', () => {
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
     const s = publish.publishState();
     expect(s.status).toBe('done');
-    expect(s.message).toBe('Nothing changed since the last publish.');
+    expect(s.message).toBeNull();
+    expect(notified).toEqual(['Nothing changed since the last publish.']);
     expect(s.pullKey).toBe(KEY);
     // No new key, so nothing rewrites the stored one. The date is recorded
     // because the unchanged answer carries the stored library's real one.

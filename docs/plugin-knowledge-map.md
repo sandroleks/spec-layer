@@ -61,13 +61,14 @@ mounts a shared shell and owns five workflows:
 4. Settings.
 5. License.
 
-The Library has a second screen behind it: Publish for developers, reached from
-the Library footer's `Publish` action and rendered by `screens/publish.ts`. It
-is deliberately not a sixth rail destination, so `PluginView` stays five
-entries and `sidebar.ts` keeps its exhaustive icon map. `ui-vnext.ts` tracks
-which of the two is showing in a Library-local `libraryPane` flag, which means
-the rail stays on Library while publishing. The screen opens with a status
-block (last published, library id, free updates). The date comes from the file:
+The Library has a second screen behind it: Publish, reached from the Library
+footer's `Publish` action and rendered by `screens/publish.ts`. It is
+deliberately not a sixth rail destination, so `PluginView` stays five entries
+and `sidebar.ts` keeps its exhaustive icon map. `ui-vnext.ts` tracks which of
+the two is showing in a Library-local `libraryPane` flag, which means the rail
+stays on Library while publishing. The header carries a status pill and a meta
+line (last published, free updates); successes are toasts through the publish
+host's `notify`, and only errors render in the body. The date comes from the file:
 `main.ts` stores it in root plugin data under `speclayer.publish.publishedAt`,
 beside the library id, written by the `setPublishedAt` message the publish
 controller sends after a created, updated, or unchanged publish.

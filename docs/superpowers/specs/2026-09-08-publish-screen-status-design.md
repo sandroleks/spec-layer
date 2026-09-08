@@ -27,96 +27,112 @@ Three things a user asks of this screen are missing or hidden:
 Builds before `8bdc071` also showed a "Pro plan required" group. That is
 already gone on `main`; this design does not reintroduce plan gating.
 
+## Revision, same day
+
+The first build (a label-and-value status block, a CLI docs link in the body,
+trimmed paragraphs) was reviewed in the harness and revised to the design
+below. The review asked for: the same single-line header bar Settings got, a
+title that does not say "for developers" since the agent prompt is for a
+coding agent, a status pill instead of a status list, no explanatory
+paragraphs (the website docs carry them), both the developer command and the
+agent prompt visible in full with their own Copy, the documentation as a
+footer secondary, successes as toasts rather than a line under the blocks, and
+no "rotating cuts off everyone" line. The storage half is unchanged.
+
 ## Decision summary
 
-- **One status block at the top**, a label and value list in the shape of the
-  About section in Settings, replaces the definition and allowance captions.
+- **Title "Publish" with a status pill.** The h1 names the act alone, like the
+  Library footer button that opens the screen; a `.sl-badge` beside it reads
+  **Published** (success tone) or **Not published**.
+- **One meta line under the header** carries the last publish date and time in
+  local time and, on a free plan, the updates left. It replaces the definition
+  and allowance captions.
 - **The publish date is stored in the file**, beside the library id, so every
   editor of the file sees it in every session. The date is a fact about the
   file's library, not a secret, so root plugin data is the right home.
-- **A CLI documentation link** sits under the setup command, styled like the
-  Settings docs link, pointing at `https://spec-layer.com/docs/cli/`.
-- **Rotate key moves to its own line** under the docs link, with its consequence
-  hint, visibly separate from copying.
+- **Two copy blocks, no paragraphs.** Developer setup (the `npx spec-layer
+  setup` command) and AI agent setup (the agent prompt), each shown in full
+  with its own **Copy**. The website documentation explains publishing; the
+  screen does not.
+- **Documentation is a footer secondary**, `Read documentation`, an anchor to
+  `https://spec-layer.com/docs/quickstart/#publish-pull`, before the primary.
+- **Successes are toasts.** The publish host gains `notify(message)`; created,
+  updated, unchanged and rotated call it and leave `message` null. Only errors
+  render in the body, where they stay until the next action.
+- **Rotate key is its own row** after the blocks, with no consequence line.
 - **No proxy change.** The plugin knows every date it publishes; an owner-facing
   metadata route would buy nothing here.
 
 ## Screen
 
-Header and footer are unchanged: the back control and "Publish for developers"
-above, the single Publish primary (or the progress line) below.
+### Header
 
-Scroll body, top to bottom:
+Back control, `<h1>Publish</h1>`, and a `.sl-badge` pill: `Published`
+(`data-tone="success"`) when a library id is known, `Not published` otherwise.
+The header takes the 48px single-line bar (`min-height: 48px; padding-bottom:
+var(--sl-space-6)`) that Library, Foundations, License and Settings use; the
+67px base is for the component screen's two-line header.
 
-### 1. Status block
+### Meta line
 
-A `<dl class="sl-publish-facts">` with one wrapper `<div>` per row, sharing the
-grid rules `.sl-about-versions` already defines. Rows, in order, each present
-only when it has a true value to show:
+One muted `<p class="sl-publish-meta">` of spans, each present only when it has
+a true value:
 
-| Row | Shown when | Value |
+| Part | Shown when | Text |
 |---|---|---|
-| Status | no library id is known | `Not published yet` |
-| Last published | a library id is known | the recorded date in the user's local time, e.g. `8 Sep 2026, 14:32`; `Not recorded` when the id is known but no date is |
-| Library id | a library id is known | the id in `<code>` |
-| Free updates | the free allowance is known | `3 of 10 left this month, resets Oct 1`; `None left this month, resets Oct 1` at zero |
+| Last published | a library id is known | `Last published 8 Sept 2026, 14:32` in the user's local time; `Last published date not recorded` when the id is known but no date is |
+| Free updates | the free allowance is known | `3 of 10 free updates left this month, resets Oct 1`; `No free updates left this month, resets Oct 1` at zero |
 
 "Not recorded" covers a library published by a build before this one, which
 stored the id but no date. It is transient: the next publish records one.
 Never a guessed date, never today's date.
 
-The date is formatted by a new pure function `formatPublishedAt(iso, locale?)`
-in `viewModel/allowance.ts`, next to `formatResetDate`, using
+The date is formatted by `formatPublishedAt(iso, locale?)` in
+`viewModel/allowance.ts`, next to `formatResetDate`, using
 `Intl.DateTimeFormat` with `dateStyle: 'medium'` and `timeStyle: 'short'`. It
-returns `null` for an empty or unparsable string, and the row then says
-"Not recorded". The optional locale exists so tests are deterministic; the
-plugin passes none and gets the user's locale. Local time, not UTC: this is
-the moment the user pressed Publish, not a server boundary, so
-`formatResetDate` keeps its UTC rule and this one does not.
+returns `null` for an empty or unparsable string. The optional locale exists
+so tests are deterministic; the plugin passes none and gets the user's locale.
+Local time, not UTC: this is the moment the user pressed Publish, not a server
+boundary, so `formatResetDate` keeps its UTC rule and this one does not.
 
-The allowance row reuses `publishAllowance` and the same numbers
-`publishAllowanceCopy` produces today, re-phrased for a labelled row. Pro and
-"not yet fetched" show no row, as before.
+### Body
 
-### 2. What gets published
+- **Before the first publish:** one paragraph, "Publishes this file's
+  foundation and component docs as context for developers and coding agents.
+  The setup commands appear here after the first publish." Nothing else.
+- **Id and key known:** two `.sl-publish-block` sections, each a head row
+  (`<h2>` left, small secondary `Copy` right) over a `<pre class="sl-publish-code">`
+  with the full text: **Developer setup** holds `setupCommand(id, key)` and
+  its Copy is `data-publish-copy-command`; **AI agent setup** holds
+  `agentSetupMessage(id, key)` and its Copy is `data-publish-copy-agent`. Then
+  `Rotate key` in its own `.sl-publish-rotate` row (secondary tone, `is-danger`,
+  disabled while a publish is in flight). No consequence line.
+- **Id known, key not on this device:** a Developer setup block whose body is
+  the sentence "Published as `lib_…`. The pull key is not on this device.
+  Rotate the key to issue a new one.", then the rotate row. No code block, no
+  Copy, no agent block.
+- **Error line:** `<p class="sl-publish-status is-error">` with
+  `state.message`, rendered only when `status === 'error'`. Successes never
+  render here.
 
-Heading unchanged. One paragraph:
+### Footer
 
-> The foundation document and every connected component document in this
-> file, published as AI context. Publishing replaces the version before it.
+`Read documentation` as `<a class="sl-button sl-publish-docs"
+data-tone="secondary" target="_blank" rel="noopener">` to `PUBLISH_DOCS_URL`
+(`https://spec-layer.com/docs/quickstart/#publish-pull`, a constant beside
+`DOCS_URL` in `ui/proxy.ts`), then the `Publish library` primary, with the
+progress line above both while a publish runs. The order is the Library
+footer's: secondary first, primary last.
 
-Before the first publish, a second paragraph:
+### Toasts
 
-> Publishing creates the key and setup command developers need. They appear
-> here once it has run.
-
-The "A library is this Figma file" definition caption is removed. The status
-block's "Library id" row and this paragraph's "in this file" together carry
-what it said.
-
-### 3. Developer setup
-
-Present only when a key is known, as today. Heading, the existing paragraph,
-the command box, then:
-
-- A row of the two copy buttons, `Copy setup command` and `Copy for an AI
-  agent`, unchanged.
-- A link, `CLI documentation`, with the external-link glyph, to
-  `CLI_DOCS_URL` (`https://spec-layer.com/docs/cli/`, a new constant beside
-  `DOCS_URL` in `ui/proxy.ts`). Same markup as the Settings docs link:
-  `<a target="_blank" rel="noopener">`, since that is the plugin's established
-  way to leave the iframe.
-- Its own line: the `Rotate key` button (secondary tone, `is-danger`, disabled
-  while a publish is in flight, as today) with the existing consequence hint
-  beneath it.
-
-The id-only case (id known, key not on this device) keeps its current
-paragraph and rotate control, and gains the same docs link, since the
-developer still needs the CLI.
-
-### 4. Result line
-
-Unchanged. Last, after both groups, toned by status.
+`PublishHost` gains `notify(message: string)`. The controller calls it and sets
+`message: null` on: created ("Published. Anyone with the key can pull this
+version."), updated ("Published. Developers get this version on their next
+pull."), unchanged ("Nothing changed since the last publish."), and rotated
+("Key rotated. The old key stops working within about a minute. Share the new
+command with your developers."). `ui-vnext.ts` routes `notify` to
+`nativeNotify`, which is `figma.notify` on the main thread.
 
 ## Storing the date
 
@@ -155,14 +171,17 @@ label the new one. `clearPublishInfo` clears it with the id.
 
 ## Styling
 
-- `.sl-publish-facts` joins the `.sl-about-versions` rulesets as a selector
-  list, so the two lists cannot drift apart. It adds a bottom margin of its
-  own before the first group.
-- `.sl-publish-docs` joins the `.sl-about-docs` rulesets the same way.
-- `.sl-publish-rotate` is a new row wrapper with the same top margin as the
-  copy row, so the destructive action reads as its own step.
-- `.sl-publish-definition` and `.sl-publish-allowance` rules are removed with
-  their markup.
+- `.sl-publish-title` lays the h1 and the pill out on one centred row.
+- `.sl-publish-meta` is a wrapping flex row of spans with a column gap, so a
+  long date and a long allowance break between each other at 480px.
+- `.sl-publish-block-head` is label left, Copy right; `.sl-publish-code`
+  inherits the old command box look (subdued surface, muted border, `pre-wrap`,
+  `overflow-wrap: anywhere`, ligatures off so `--id` cannot render as a dash).
+- `.sl-publish-rotate` is the destructive action's own row.
+- Removed with their markup: `.sl-publish-group + .sl-publish-group`, the
+  `p + p` heading rule, `.sl-publish-command`, `.sl-publish-command-actions`,
+  `.sl-publish-hint`, `.sl-publish-definition`, `.sl-publish-allowance`. The
+  About section's rules in Settings are untouched.
 
 ## Copy
 

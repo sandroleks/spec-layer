@@ -282,6 +282,9 @@ setPublishHost({
     paintAllowance();
     if (view === 'library') paint();
   },
+  // Publish and rotate successes are toasts; the screen itself shows only
+  // errors, which need to stay on view.
+  notify: (message) => nativeNotify(message),
 });
 
 /**
