@@ -190,9 +190,9 @@ instruction not to edit. It carries no timestamp and no CLI version, so the
 file changes only when the design data or the output options change.
 
 `manifest.json` records the resolved `outputs` beside `dtcg`. A change to
-either re-projects on the next pull without a republish, and `status`
-reports the local copy behind when the manifest's outputs differ from the
-config's, the same freshness rule the DTCG block has today.
+either makes the next `pull` fetch and re-project even when the bundle has
+not moved, the same freshness rule the DTCG block has today. `status`
+compares the bundle hash only, as it does now.
 
 ### 4.3 Names
 
