@@ -1,0 +1,42 @@
+[
+  {
+    "code": "mode_selector_shared",
+    "severity": "warning",
+    "path": "Primitives",
+    "message": "2 collections with modes share the selector template [data-theme=\"{mode}\"]; one attribute cannot carry both axes. Declare a selector per collection under outputs[].modes.",
+    "details": {
+      "modifiers": [
+        "Primitives",
+        "Semantic"
+      ],
+      "selector": "[data-theme=\"{mode}\"]"
+    }
+  },
+  {
+    "code": "mode_selector_shared",
+    "severity": "warning",
+    "path": "Semantic",
+    "message": "2 collections with modes share the selector template [data-theme=\"{mode}\"]; one attribute cannot carry both axes. Declare a selector per collection under outputs[].modes.",
+    "details": {
+      "modifiers": [
+        "Primitives",
+        "Semantic"
+      ],
+      "selector": "[data-theme=\"{mode}\"]"
+    }
+  },
+  {
+    "code": "value_converted",
+    "severity": "info",
+    "message": "letterSpacing was restated from 0% as 0em.",
+    "details": {
+      "property": "letterSpacing",
+      "from": {
+        "unit": "%",
+        "value": 0
+      },
+      "to": "0em"
+    },
+    "path": "Typography styles.Body.Regular"
+  }
+]

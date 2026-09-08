@@ -1,0 +1,90 @@
+{
+  "Effect styles.Shadow.Card": {
+    "name": "--effectStylesShadowCard",
+    "source": "derived"
+  },
+  "Primitives.color.chain.bridge": {
+    "name": "--primitivesColorChainBridge",
+    "source": "derived"
+  },
+  "Primitives.color.chain.middle": {
+    "name": "--primitivesColorChainMiddle",
+    "source": "derived"
+  },
+  "Primitives.color.chain.terminal": {
+    "name": "--primitivesColorChainTerminal",
+    "source": "derived"
+  },
+  "Primitives.color.exact.red": {
+    "name": "--color-exact-red",
+    "source": "code_syntax"
+  },
+  "Primitives.color.lossy.teal": {
+    "name": "--primitivesColorLossyTeal",
+    "source": "derived"
+  },
+  "Primitives.color.shared": {
+    "name": "--primitivesColorShared",
+    "source": "derived"
+  },
+  "Primitives.cycle.a": {
+    "name": "--primitivesCycleA",
+    "source": "derived"
+  },
+  "Primitives.cycle.b": {
+    "name": "--primitivesCycleB",
+    "source": "derived"
+  },
+  "Primitives.effect.shadow.blur": {
+    "name": "--effect-shadow-blur",
+    "source": "code_syntax"
+  },
+  "Primitives.number.unknown-scope": {
+    "name": "--primitivesNumberUnknownScope",
+    "source": "derived"
+  },
+  "Primitives.spacing.gap": {
+    "name": "--spacing-gap",
+    "source": "code_syntax"
+  },
+  "Primitives.typography.family.body": {
+    "name": "--primitivesTypographyFamilyBody",
+    "source": "derived"
+  },
+  "Primitives.typography.weight.strong": {
+    "name": "--primitivesTypographyWeightStrong",
+    "source": "derived"
+  },
+  "Semantic.color.surface.primary": {
+    "name": "--color-surface-primary",
+    "source": "code_syntax"
+  },
+  "Typography styles.Body.Regular.fontFamily": {
+    "name": "--typographyStylesBodyRegularFontFamily",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.fontSize": {
+    "name": "--typographyStylesBodyRegularFontSize",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.fontWeight": {
+    "name": "--typographyStylesBodyRegularFontWeight",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.letterSpacing": {
+    "name": "--typographyStylesBodyRegularLetterSpacing",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.lineHeight": {
+    "name": "--typographyStylesBodyRegularLineHeight",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.textDecoration": {
+    "name": "--typographyStylesBodyRegularTextDecoration",
+    "source": "derived"
+  },
+  "Typography styles.Body.Regular.textTransform": {
+    "name": "--typographyStylesBodyRegularTextTransform",
+    "source": "derived"
+  }
+}
