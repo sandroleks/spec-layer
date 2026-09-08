@@ -199,26 +199,30 @@ person, no em dashes, no hype words. Row labels are nouns, not sentences.
 
 Unit, in `packages/plugin/test`:
 
-- `publishScreen.test.ts`: the status block's four rows and when each is
-  absent; "Not published yet" before the first publish; "Not recorded" for an
-  id without a date; the local-time date for a recorded one; the docs link's
-  href, `target`, and `rel`; rotate in its own row after the docs link, no
-  longer inside the copy row; the definition caption gone; the styling tests
-  updated for the shared selectors.
-- `allowance.test.ts` (or the file that holds `formatResetDate` tests):
-  `formatPublishedAt` with a fixed locale, an empty string, and garbage.
+- `publishScreen.test.ts`: the title and pill in both states; the meta line
+  (local-time date, "date not recorded", the free allowance, nothing on Pro
+  before the first publish); the intro sentence only before the first publish;
+  both copy blocks with their full text and their own Copy; rotate in its own
+  row with no consequence line; the key-elsewhere state's copy and controls;
+  only errors rendered as a result line; the footer's documentation anchor
+  before the primary; the 48px header rule; no rules left for retired markup.
+- `allowance.test.ts`: `formatPublishedAt` with a fixed locale, an empty
+  string, and garbage.
 - `publish.test.ts`: `setPublishedAt` sent after created, updated, and
   unchanged, not after an error; `onPublishInfo` seeds the date; the
-  `publishSources` fallback; `gone` clears it.
+  `publishSources` fallback; `gone` clears it; successes call `notify` and
+  leave `message` null; a 403 `not_owner` rotate reads the plain sentence.
 
-Harness (`ui/harness.ts`): the `PUBLISH_FIXTURES` gain an `idOnly` state and
-the `published` state keeps its date, so `?pane=publish&publish=<name>` shows
-every branch of the status block; `?plan=free` still shows the allowance row.
+Harness (`ui/harness.ts`): the `PUBLISH_FIXTURES` gain `idOnly` and
+`unrecorded` states and the `published` state carries no message, so
+`?pane=publish&publish=<name>` shows every branch; `?plan=free` shows the
+allowance in the meta line.
 
-Manual, in `packages/plugin/TESTING.md`, "Publish and pull": the first
-publish row also checks the Last published row appears with the local time;
-the second-device row checks it shows the same date; a new row reopens the
-plugin and confirms the date survived.
+Manual, in `packages/plugin/TESTING.md`, "Publish and pull": the publish rows
+check the pill, the meta line, the toasts and both blocks; the second-device
+row covers the same account rotating and a different account being refused; a
+new row reopens the plugin and confirms the date survived and that Read
+documentation opens the workflow page.
 
 ## Out of scope
 

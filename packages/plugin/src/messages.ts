@@ -167,11 +167,10 @@ export type MainToUi =
 
 /** What identifies a published library: the id lives in the file (root plugin
  *  data, shared by every editor) and the pull key lives per user in
- *  clientStorage, since it is a secret and the file is not. */
-/** `publishedAt` is the ISO time of the last publish the plugin recorded,
- *  stored in the file beside the id because it is a fact about the library,
- *  not a secret. Null when the file was published by a build that did not
- *  record it. */
+ *  clientStorage, since it is a secret and the file is not. `publishedAt` is
+ *  the ISO time of the last publish the plugin recorded, stored in the file
+ *  beside the id because it is a fact about the library, not a secret; null
+ *  when the file was published by a build that did not record it. */
 export interface PublishInfo {
   libraryId: string | null;
   pullKey: string | null;

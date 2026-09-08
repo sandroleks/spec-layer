@@ -17,7 +17,7 @@ import type { ShellRefs } from '../shell/shell';
 import { agentSetupMessage, setupCommand, type PublishState } from '../publish';
 import { PUBLISH_DOCS_URL } from '../proxy';
 import {
-  formatPublishedAt, formatResetDate, type PublishAllowance,
+  formatPublishedAt, publishAllowanceCopy, type PublishAllowance,
 } from '../viewModel/allowance';
 import { progressMarkup } from './progress';
 
@@ -84,13 +84,10 @@ function metaMarkup(state: PublishState, allowance: PublishAllowance, locale?: s
     const when = state.lastPublishedAt ? formatPublishedAt(state.lastPublishedAt, locale) : null;
     parts.push(when ? `Last published ${esc(when)}` : 'Last published date not recorded');
   }
-  if (allowance.kind === 'free') {
-    const reset = formatResetDate(allowance.resetsAt);
-    const tail = reset ? `, resets ${reset}` : '';
-    parts.push(allowance.remaining <= 0
-      ? `No free updates left this month${tail}`
-      : `${allowance.remaining} of ${allowance.limit} free updates left this month${tail}`);
-  }
+  // The allowance sentence is the view model's, shared with the publish error
+  // copy, so the meter and the 402 line can never disagree on the numbers.
+  const allowanceLine = publishAllowanceCopy(allowance);
+  if (allowanceLine) parts.push(esc(allowanceLine));
   if (parts.length === 0) return '';
   return `<p class="sl-publish-meta">${parts.map((p) => `<span>${p}</span>`).join('')}</p>`;
 }

@@ -1193,7 +1193,7 @@
 }
 
 /*
- * The Publish for developers screen's body (see screens/publish.ts).
+ * The Publish screen's body (see screens/publish.ts).
  *
  * This block used to style a section appended after the Library's row list,
  * and it carried a top border to divide itself from that list. As a screen
