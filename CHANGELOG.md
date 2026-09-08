@@ -8,6 +8,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- An **About** section at the foot of the plugin's Settings screen, giving
+  **Plugin version** and **Extractor version** as labelled rows and a
+  **Documentation** link to `https://spec-layer.com/docs/`. The plugin version
+  was already stamped into every connected document and compared against the
+  Figma listing by the release gate, but it had never been readable on screen.
+  The extractor version sits beside it because the two answer different
+  questions: a Library reporting a needed rebuild on every row is reacting to
+  an extractor bump, which the plugin version alone cannot show. An unstamped
+  build renders no plugin row rather than a plausible one. Settings lost its
+  page subtitle, which said "Generated frame appearance": the Frame theme
+  heading below it already said that, and About made it untrue.
+
 - `spec-layer skill` and `spec-layer tools` (CLI 0.5.0), for the coding agent
   that receives the setup command. `tools` prints every command with whether
   it reaches the network, whether it needs the pull key, what it writes, and

@@ -6,12 +6,14 @@
  * validation, and resolved values.
  */
 
+import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
   resolveTheme,
   type BrandTheme,
 } from '../../brandColors';
+import { DOCS_URL } from '../proxy';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 
@@ -27,6 +29,13 @@ export interface SettingsScreenState {
   fontWarning?: string;
   /** Which font field has its list open, if any. */
   fontMenuField?: FontField | null;
+  /**
+   * The build's stamped plugin version, or null when the build did not stamp
+   * one. Passed in rather than read here: this module is presentation only,
+   * and ui-vnext.ts already owns the `__PLUGIN_VERSION__` define through
+   * pluginBuild().
+   */
+  pluginVersion: string | null;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -209,11 +218,48 @@ function logoControls(state: SettingsScreenState): string {
   );
 }
 
-export function settingsHeaderMarkup(): string {
+/**
+ * The About section: two labelled versions and the way out to the docs.
+ *
+ * Both numbers carry their label. An unlabelled "Extractor 2" says neither
+ * that it is a version nor what it counts, and the plugin version beside it
+ * read as part of the product name.
+ *
+ * They answer different questions. The plugin version is what the release
+ * gate in TESTING.md compares against the Figma listing, and what every
+ * connected document already carries as `pluginVersion`. The extractor
+ * version is what a Library asking for a rebuild on every row is reacting to,
+ * which is why it says so in a line underneath rather than leaving the reader
+ * to infer it.
+ *
+ * Plain text, no copy button. It is a dozen characters and the iframe already
+ * lets you select them.
+ */
+function aboutSection(state: SettingsScreenState): string {
+  // Never fabricate. An unstamped build knows no version, so the row is
+  // absent rather than filled with a plausible one.
+  const plugin = state.pluginVersion
+    ? `<div><dt>Plugin version</dt><dd>${esc(state.pluginVersion)}</dd></div>`
+    : '';
   return (
-    '<div class="sl-page-header-copy"><h1>Settings</h1>' +
-    '<p>Generated frame appearance</p></div>'
+    '<section class="sl-settings-section sl-about-section">' +
+    '<div class="sl-settings-section-heading"><h2>About</h2></div>' +
+    '<dl class="sl-about-versions">' +
+    plugin +
+    `<div><dt>Extractor version</dt><dd>${esc(EXTRACTOR_VERSION)}</dd></div>` +
+    '</dl>' +
+    // Same shape as the rail's outbound links, which is the plugin's one
+    // established way to leave the iframe.
+    `<a class="sl-about-docs" href="${DOCS_URL}" target="_blank" rel="noopener">` +
+    `Documentation${icon('externalLink', 14)}</a>` +
+    '</section>'
   );
+}
+
+export function settingsHeaderMarkup(): string {
+  // No subtitle. It said "Generated frame appearance", which the Frame theme
+  // heading directly below already says, and which About makes untrue.
+  return '<div class="sl-page-header-copy"><h1>Settings</h1></div>';
 }
 
 export function settingsScrollMarkup(state: SettingsScreenState): string {
@@ -235,7 +281,8 @@ export function settingsScrollMarkup(state: SettingsScreenState): string {
     '</div>' +
     customControls(state) +
     logoControls(state) +
-    '</section>'
+    '</section>' +
+    aboutSection(state)
   );
 }
 

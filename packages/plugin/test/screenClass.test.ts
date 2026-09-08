@@ -112,6 +112,7 @@ const SCREENS: Array<{ name: string; expected: string; render: (refs: ShellRefs)
       theme: { ...THEME_PRESETS[0].theme },
       customMode: false,
       logoAttached: false,
+      pluginVersion: '5.0.0',
     }),
   },
   {

@@ -720,6 +720,9 @@ if (view === 'settings') {
     theme: { ...fixtureTheme },
     customMode: frameTheme === 'custom',
     logoAttached: param('logo', 'empty') === 'attached',
+    // Fixture, not a real build: `?version=` with no value shows the
+    // unstamped branch, the way `?logo=` flips the logo one.
+    pluginVersion: param('version', '5.0.0') || null,
   };
   let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
   const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);

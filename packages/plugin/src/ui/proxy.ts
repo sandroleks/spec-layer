@@ -6,6 +6,8 @@ export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout/bu
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // Marketing / author links surfaced as icons in the tab bar.
 export const SITE_URL = 'https://spec-layer.com/';
+// The documentation index, linked from Settings > About.
+export const DOCS_URL = 'https://spec-layer.com/docs/';
 export const LINKEDIN_URL = 'https://www.linkedin.com/in/alexkurchev/';
 
 /** One routing table for every external action on the License screen/header. */

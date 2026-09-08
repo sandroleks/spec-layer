@@ -2087,6 +2087,63 @@
   border-top: 1px solid var(--sl-color-border-muted);
 }
 
+/*
+ * About: build versions, at the foot of Settings.
+ *
+ * It borrows the Logo section's rule-and-gap separator rather than inventing
+ * one, so the two breaks in this screen read as the same break. It is a
+ * sibling of the frame-theme section, not a child, which is why the margin is
+ * on the section itself here and on the h3 there.
+ */
+.sl-about-section {
+  margin-top: var(--sl-space-16);
+  padding-top: var(--sl-space-14);
+  border-top: 1px solid var(--sl-color-border-muted);
+}
+
+/*
+ * Label on the left, value on the right, as a two-column grid rather than a
+ * flex row per line: the grid keeps both values on one edge, so two labels of
+ * different lengths cannot leave their numbers ragged.
+ */
+.sl-about-versions {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sl-space-4) var(--sl-space-12);
+  margin: 0;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
+}
+
+/* Each row is a wrapper div, so the pairs stay associated in the markup. */
+.sl-about-versions > div {
+  display: contents;
+}
+
+.sl-about-versions dt {
+  color: var(--sl-color-text-muted);
+}
+
+.sl-about-versions dd {
+  margin: 0;
+  color: var(--sl-color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-about-docs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sl-space-4);
+  margin-top: var(--sl-space-10);
+  color: var(--sl-color-accent);
+  font-size: var(--sl-font-size-support);
+  text-decoration: none;
+}
+
+.sl-about-docs:hover {
+  text-decoration: underline;
+}
+
 .sl-logo-setting h3 {
   margin-bottom: var(--sl-space-6);
 }
