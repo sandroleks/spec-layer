@@ -9,8 +9,8 @@
 import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext,
-  type FoundationArtifactV5, type YamlValue, type SerializedFoundation,
+  buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
+  type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
 } from '@spec-layer/extractor';
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
@@ -85,10 +85,24 @@ export type PublishOutcome =
   | { kind: 'gone' }
   | { kind: 'error'; message: string };
 
+/** The publish half of the proxy's quota, as the response headers state it. */
+export type PublishQuotaSnapshot = NonNullable<ProxyQuota['publish']>;
+
+export interface PublishResult {
+  outcome: PublishOutcome;
+  /**
+   * The publish allowance the response reported, or null when it carried no
+   * quota headers (a network failure, or a refusal the proxy answers before
+   * it reaches the quota engine). The proxy sends them on 200, 201, 402, 409,
+   * and 429, so a spent update is visible without a second round trip.
+   */
+  quota: PublishQuotaSnapshot | null;
+}
+
 const NO_IDENTITY = 'Publishing needs a signed-in Figma account or a license key.';
 const ROTATE_NO_IDENTITY = 'Rotating the key needs a signed-in Figma account or a license key.';
 
-export const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Free plans publish one Figma file.';
+const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Free plans publish one Figma file.';
 
 /** Bytes as "5.6 MB", with no decimal when it is whole, or the raw value when it is not a number. */
 function megabytes(bytes: unknown): string {
@@ -104,6 +118,9 @@ function publishErrorCopy(status: number, body: Record<string, unknown>): string
     const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
     const after = reset ? ` or publish again after ${reset}` : '';
     return `You have used your 10 free updates for this month. Upgrade to Pro${after}.`;
+  }
+  if (status === 409 || error === 'publish_pending') {
+    return 'A publish is already running. Give it a moment and try again.';
   }
   if (error === 'bundle_too_large') return `This library is larger than the publish limit (${megabytes(body.size)} of ${megabytes(body.limit)}).`;
   if (error === 'library_limit') {
@@ -125,9 +142,9 @@ async function bodyOf(res: Response): Promise<Record<string, unknown>> {
 export async function publishBundle(
   bundle: PublishBundleV1,
   opts: { auth: ProxyAuth; libraryId: string | null; fetcher?: typeof fetch },
-): Promise<PublishOutcome> {
+): Promise<PublishResult> {
   const headers = authHeaders(opts.auth);
-  if (!headers) return { kind: 'error', message: NO_IDENTITY };
+  if (!headers) return { outcome: { kind: 'error', message: NO_IDENTITY }, quota: null };
   const doFetch = opts.fetcher ?? fetch;
   let res: Response;
   try {
@@ -137,18 +154,28 @@ export async function publishBundle(
       body: JSON.stringify({ ...(opts.libraryId ? { libraryId: opts.libraryId } : {}), bundle }),
     });
   } catch {
-    return { kind: 'error', message: 'Could not reach the publish service. Check your connection and try again.' };
+    return {
+      outcome: {
+        kind: 'error',
+        message: 'Could not reach the publish service. Check your connection and try again.',
+      },
+      quota: null,
+    };
   }
   const body = await bodyOf(res);
+  // Read the allowance off every answer that states one, refusals included: a
+  // 402 is exactly when the screen's count matters most.
+  const quota = parseQuotaHeaders(res.headers);
+  const result = (outcome: PublishOutcome): PublishResult => ({ outcome, quota });
   if (res.status === 201) {
-    return { kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey), publishedAt: String(body.publishedAt) };
+    return result({ kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey), publishedAt: String(body.publishedAt) });
   }
   if (res.ok && body.unchanged === true) {
-    return { kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) };
+    return result({ kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
   }
-  if (res.ok) return { kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) };
-  if (opts.libraryId && (res.status === 404 || body.error === 'not_owner')) return { kind: 'gone' };
-  return { kind: 'error', message: publishErrorCopy(res.status, body) };
+  if (res.ok) return result({ kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
+  if (opts.libraryId && (res.status === 404 || body.error === 'not_owner')) return result({ kind: 'gone' });
+  return result({ kind: 'error', message: publishErrorCopy(res.status, body) });
 }
 
 export async function rotatePullKey(
@@ -218,9 +245,21 @@ function createPublishState(): PublishState {
 
 let state: PublishState = createPublishState();
 
-export interface PublishHost { repaint(): void; send(msg: UiToMain): void }
+export interface PublishHost {
+  repaint(): void;
+  send(msg: UiToMain): void;
+  /**
+   * A publish allowance the proxy just stated. The controller cannot repaint
+   * the meter itself: the quota lives in the panel's state, and without this
+   * the screen would keep showing the count from the last quota fetch after
+   * spending an update.
+   */
+  onPublishQuota(snapshot: PublishQuotaSnapshot): void;
+}
 
-const noopPublishHost: PublishHost = { repaint: () => {}, send: () => {} };
+const noopPublishHost: PublishHost = {
+  repaint: () => {}, send: () => {}, onPublishQuota: () => {},
+};
 let host: PublishHost = noopPublishHost;
 
 export function setPublishHost(nextHost: PublishHost): void {
@@ -277,7 +316,10 @@ export async function onPublishSources(
   host.repaint();
 
   const bundle = buildPublishBundle(msg, new Date().toISOString());
-  const outcome = await publishBundle(bundle, { auth, libraryId, fetcher });
+  const { outcome, quota } = await publishBundle(bundle, { auth, libraryId, fetcher });
+  // Before the repaint below, so one paint shows both the result and the count
+  // it left behind.
+  if (quota) host.onPublishQuota(quota);
 
   switch (outcome.kind) {
     case 'created':

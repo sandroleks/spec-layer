@@ -263,6 +263,25 @@ setPublishHost({
     if (view === 'library') paint();
   },
   send,
+  // The publish response is the freshest statement of the updates allowance,
+  // and the only one until the next quota fetch. Merged into the same quota
+  // the header reads so the panel keeps one source for the plan.
+  onPublishQuota: (snapshot) => {
+    const hadQuota = state.quota !== null;
+    state.quota = {
+      ...(state.quota ?? { tier: snapshot.tier, used: 0, limit: null, remaining: null, resetsAt: '' }),
+      publish: snapshot,
+    };
+    quotaFetched = true;
+    if (!hadQuota) {
+      // The shell above states the tier and nothing else about AI writing,
+      // which this response does not speak for. Ask for the real numbers so
+      // the header stops standing on a placeholder.
+      void refreshQuota(false);
+    }
+    paintAllowance();
+    if (view === 'library') paint();
+  },
 });
 
 /**
