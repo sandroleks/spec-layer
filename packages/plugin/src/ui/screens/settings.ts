@@ -204,9 +204,9 @@ function customControls(state: SettingsScreenState): string {
 
 function logoControls(state: SettingsScreenState): string {
   return (
-    '<section class="sl-logo-setting" aria-labelledby="sl-logo-heading">' +
-    '<h3 id="sl-logo-heading">Logo</h3>' +
-    '<p>Optional. Appears in the header of generated frames.</p>' +
+    '<section class="sl-settings-section sl-logo-setting" aria-labelledby="sl-logo-heading">' +
+    '<div class="sl-settings-section-heading"><h2 id="sl-logo-heading">Logo</h2>' +
+    '<p>Optional. Appears in the header of generated frames.</p></div>' +
     '<div class="sl-logo-actions">' +
     '<button class="sl-button" data-tone="secondary" type="button" data-settings-logo-capture>' +
     `${state.logoAttached ? 'Replace with selected node' : 'Use selected node as logo'}</button>` +
@@ -280,8 +280,8 @@ export function settingsScrollMarkup(state: SettingsScreenState): string {
     themeChoice('Custom', state.customMode, true) +
     '</div>' +
     customControls(state) +
-    logoControls(state) +
     '</section>' +
+    logoControls(state) +
     aboutSection(state)
   );
 }

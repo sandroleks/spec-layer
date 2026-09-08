@@ -39,7 +39,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   page subtitle, which said "Generated frame appearance": the Frame theme
   heading below it already said that, and About made it untrue. Its page
   header moves to the 48px single-line bar the other title-only screens use,
-  since the 67px default was sized for that subtitle.
+  since the 67px default was sized for that subtitle, and the frame-theme
+  section drops the top padding that used to separate it from that subtitle.
+  **Logo** becomes a peer of Frame theme and About rather than a block inside
+  frame theming, and takes the same section heading they use; it had been an
+  uppercase caps label, the only one of the three in that style.
 
 - `spec-layer skill` and `spec-layer tools` (CLI 0.5.0), for the coding agent
   that receives the setup command. `tools` prints every command with whether

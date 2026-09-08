@@ -1805,10 +1805,6 @@
   min-width: 0;
 }
 
-.sl-frame-theme-section {
-  padding-top: var(--sl-space-14);
-}
-
 .sl-settings-section-heading {
   margin-bottom: var(--sl-space-10);
 }
@@ -1820,8 +1816,7 @@
   font-weight: var(--sl-font-weight-semibold);
 }
 
-.sl-settings-section-heading p,
-.sl-logo-setting p {
+.sl-settings-section-heading p {
   margin: 0;
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-support);
@@ -1900,15 +1895,6 @@
 }
 
 .sl-custom-theme-controls h3,
-.sl-logo-setting h3 {
-  margin: 0 0 var(--sl-space-8);
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
-  font-weight: var(--sl-font-weight-bold);
-  letter-spacing: var(--sl-tracking-caps-wide);
-  text-transform: uppercase;
-}
-
 .sl-theme-color-grid,
 .sl-theme-font-grid {
   display: grid;
@@ -2102,20 +2088,8 @@
   line-height: var(--sl-line-height-body);
 }
 
-.sl-logo-setting {
-  margin-top: var(--sl-space-16);
-  padding-top: var(--sl-space-14);
-  border-top: 1px solid var(--sl-color-border-muted);
-}
-
-/*
- * About: build versions, at the foot of Settings.
- *
- * It borrows the Logo section's rule-and-gap separator rather than inventing
- * one, so the two breaks in this screen read as the same break. It is a
- * sibling of the frame-theme section, not a child, which is why the margin is
- * on the section itself here and on the h3 there.
- */
+/* Every section after the first is separated the same way. */
+.sl-logo-setting,
 .sl-about-section {
   margin-top: var(--sl-space-16);
   padding-top: var(--sl-space-14);
@@ -2165,16 +2139,11 @@
   text-decoration: underline;
 }
 
-.sl-logo-setting h3 {
-  margin-bottom: var(--sl-space-6);
-}
-
 .sl-logo-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sl-space-8);
-  margin-top: var(--sl-space-8);
 }
 
 .sl-logo-actions .sl-button {
