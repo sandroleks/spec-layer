@@ -1,12 +1,15 @@
 import { sha256 } from 'js-sha256';
 import { LibraryBundleError, parseLibraryBundle } from '@spec-layer/extractor';
-import { identityFromHeaders, licenseIdentityId } from './identity';
+import { callerProofs, licenseIdentityId } from './identity';
 import { checkLicense, type LibraryStore } from './license';
 import type { HandlerDeps } from './handlers';
+import type { Tier } from './quota';
 
 /** UTF-8 bytes of the request body. Every size check here uses the same unit. */
 export const MAX_BUNDLE_BYTES = 5_000_000;
-export const LIBRARY_LIMIT = 10;
+export const LIBRARY_LIMITS: Record<Tier, number> = { free: 1, pro: 10 };
+/** The Pro limit, kept for callers that predate per-tier limits. */
+export const LIBRARY_LIMIT = LIBRARY_LIMITS.pro;
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 export const PULL_KEY_RE = /^sl_[0-9a-f]{48}$/;
 
@@ -48,49 +51,76 @@ function randomHex(bytes: number): string {
 export const newLibraryId = (): string => `lib_${randomHex(12)}`;
 export const newPullKey = (): string => `sl_${randomHex(24)}`;
 
-/** License-authenticated Pro caller, or the error Response to return. */
-async function proCaller(req: Request, deps: HandlerDeps): Promise<{ licenseId: string } | Response> {
-  const identity = identityFromHeaders(req.headers, deps.salt);
-  if (!identity || identity.kind !== 'license') return json(401, { error: 'unauthenticated' });
-  const lic = await checkLicense(identity.key, identity.instanceId, {
-    fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now,
-  });
-  if (lic.tier !== 'pro') return json(401, { error: 'license_not_active', reason: lic.reason });
-  return { licenseId: licenseIdentityId(identity.key) };
+interface Caller {
+  tier: Tier;
+  /** Identity the quota is counted under: license for Pro, else Figma, else license. */
+  tierIdentity: string;
+  /** Every identity the request proved. Any of them may own a library. */
+  owners: string[];
+}
+
+/**
+ * Who is calling and what they can prove. A bearer proves the license identity
+ * whether or not the license is active, because possession of the key is the
+ * proof of ownership; only the tier depends on the license being active.
+ */
+async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | Response> {
+  const proofs = callerProofs(req.headers, deps.salt);
+  if (!proofs.license && !proofs.figmaHash) return json(401, { error: 'unauthenticated' });
+  const owners: string[] = [];
+  let tier: Tier = 'free';
+  let licenseId: string | null = null;
+  if (proofs.license) {
+    licenseId = licenseIdentityId(proofs.license.key);
+    owners.push(licenseId);
+    const lic = await checkLicense(proofs.license.key, proofs.license.instanceId, {
+      fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now,
+    });
+    if (lic.tier === 'pro') tier = 'pro';
+    else if (!proofs.figmaHash) return json(401, { error: 'license_not_active', reason: lic.reason });
+  }
+  const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
+  if (figmaId) owners.push(figmaId);
+  const tierIdentity = tier === 'pro' ? (licenseId as string) : (figmaId ?? (licenseId as string));
+  return { tier, tierIdentity, owners };
 }
 
 /** The library's meta when the caller owns it, else the error Response. */
 async function ownedMeta(
-  store: LibraryStore, libraryId: string, licenseId: string,
+  store: LibraryStore, libraryId: string, owners: string[],
 ): Promise<LibraryMeta | Response> {
   const metaRaw = await store.get(metaKey(libraryId));
   if (metaRaw === null) return json(404, { error: 'not_found' });
   const meta = JSON.parse(metaRaw) as LibraryMeta;
-  if (meta.licenseId !== licenseId) return json(403, { error: 'not_owner' });
+  if (!owners.includes(meta.licenseId)) return json(403, { error: 'not_owner' });
   return meta;
 }
 
 /**
- * Ids this license owns. A legacy array is expanded into per-library records
- * first and then deleted, so a concurrent create in the same window can only
- * over-count, never lose an id.
+ * Ids owned by any of the caller's proved identities. A legacy array is
+ * expanded into per-library records first and then deleted, so a concurrent
+ * create in the same window can only over-count, never lose an id.
  */
-async function ownedLibraryIds(store: LibraryStore, licenseId: string): Promise<string[]> {
-  const prefix = ownerPrefix(licenseId);
-  const legacyRaw = await store.get(legacyOwnerKey(licenseId));
-  if (legacyRaw !== null) {
-    const legacy = JSON.parse(legacyRaw) as string[];
-    await Promise.all(legacy.map((id) => store.put(`${prefix}${id}`, '1')));
-    await store.delete(legacyOwnerKey(licenseId));
+async function ownedLibraryIds(store: LibraryStore, owners: string[]): Promise<string[]> {
+  const all: string[] = [];
+  for (const owner of owners) {
+    const prefix = ownerPrefix(owner);
+    const legacyRaw = await store.get(legacyOwnerKey(owner));
+    if (legacyRaw !== null) {
+      const legacy = JSON.parse(legacyRaw) as string[];
+      await Promise.all(legacy.map((id) => store.put(`${prefix}${id}`, '1')));
+      await store.delete(legacyOwnerKey(owner));
+    }
+    const { keys } = await store.list({ prefix });
+    all.push(...keys.map((k) => k.name.slice(prefix.length)));
   }
-  const { keys } = await store.list({ prefix });
-  return keys.map((k) => k.name.slice(prefix.length));
+  return all;
 }
 
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!deps.licenseLimiter.allow(`libpub:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
-  const caller = await proCaller(req, deps);
+  const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
 
   const declared = Number(req.headers.get('content-length') ?? 0);
@@ -126,7 +156,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
       return json(400, { error: 'invalid libraryId' });
     }
-    const meta = await ownedMeta(store, body.libraryId, caller.licenseId);
+    const meta = await ownedMeta(store, body.libraryId, caller.owners);
     if (meta instanceof Response) return meta;
     const next: LibraryMeta = { ...meta, publishedAt, bundleHash, size: bytes.byteLength, fileName };
     // Bundle first: meta must never describe a bundle that is not there yet.
@@ -136,18 +166,29 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     return json(200, { libraryId: body.libraryId, publishedAt });
   }
 
-  const owned = await ownedLibraryIds(store, caller.licenseId);
-  if (owned.length >= LIBRARY_LIMIT) return json(403, { error: 'library_limit', limit: LIBRARY_LIMIT });
+  const owned = await ownedLibraryIds(store, caller.owners);
+  const limit = LIBRARY_LIMITS[caller.tier];
+  if (owned.length >= limit) {
+    if (caller.tier === 'free') {
+      const existingRaw = await store.get(metaKey(owned[0]));
+      const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
+      return json(403, {
+        error: 'library_limit', limit,
+        existing: { libraryId: owned[0], fileName: existing?.fileName ?? null },
+      });
+    }
+    return json(403, { error: 'library_limit', limit });
+  }
   const libraryId = newLibraryId();
   const pullKey = newPullKey();
   const meta: LibraryMeta = {
-    licenseId: caller.licenseId, publishedAt, bundleHash, size: bytes.byteLength, fileName,
+    licenseId: caller.tierIdentity, publishedAt, bundleHash, size: bytes.byteLength, fileName,
   };
   await store.put(bundleKey(libraryId), stored);
   await Promise.all([
     store.put(metaKey(libraryId), JSON.stringify(meta)),
     store.put(keyRecord(libraryId), sha256(pullKey)),
-    store.put(`${ownerPrefix(caller.licenseId)}${libraryId}`, publishedAt),
+    store.put(`${ownerPrefix(caller.tierIdentity)}${libraryId}`, publishedAt),
   ]);
   deps.log('library_publish', { libraryId, size: bytes.byteLength, created: true });
   return json(201, { libraryId, pullKey, publishedAt });
@@ -156,9 +197,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!deps.licenseLimiter.allow(`librot:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
-  const caller = await proCaller(req, deps);
+  const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
-  const meta = await ownedMeta(deps.libraryStore, libraryId, caller.licenseId);
+  const meta = await ownedMeta(deps.libraryStore, libraryId, caller.owners);
   if (meta instanceof Response) return meta;
   const pullKey = newPullKey();
   // Only the key record changes. Meta belongs to publish.

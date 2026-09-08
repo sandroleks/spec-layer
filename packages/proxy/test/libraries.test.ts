@@ -9,10 +9,13 @@ import {
   LIBRARY_ID_RE,
   PULL_KEY_RE,
   MAX_BUNDLE_BYTES,
-  LIBRARY_LIMIT,
+  LIBRARY_LIMITS,
   type LibraryMeta,
 } from '../src/libraries';
+import { hashFigmaId } from '../src/identity';
 import { SlidingWindowLimiter } from '../src/ratelimit';
+import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
+import { quotaObjectName } from '../src/index';
 import type { HandlerDeps } from '../src/handlers';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -28,6 +31,22 @@ class MemKV {
   }
 }
 
+/** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
+function memQuota(now: () => number) {
+  const engines = new Map<string, QuotaEngine>();
+  return (id: string, profile: QuotaProfile = 'ai') => {
+    const key = quotaObjectName(id, profile);
+    const e = engines.get(key) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
+    engines.set(key, e);
+    return {
+      reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),
+      commit: async (k: string, b: string) => e.commit(k, b, now()),
+      release: async (k: string) => e.release(k),
+      snapshot: async (tier: Tier): Promise<QuotaSnapshot> => e.snapshot(tier, now()),
+    };
+  };
+}
+
 const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
 
 const BUNDLE = {
@@ -37,13 +56,15 @@ const BUNDLE = {
   components: [{ name: 'Button', ai: 'component: Button\n', artifact: { spec_layer: { export: { content_hash: 'bbb' } } } }],
 };
 
-function publishReq(body: unknown, key = UUID_KEY) {
+function publishReq(body: unknown, headers: Record<string, string> = { Authorization: `Bearer ${UUID_KEY}` }) {
   return new Request('https://proxy.test/v1/libraries', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${key}` },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
 }
+const bearer = (key = UUID_KEY) => ({ Authorization: `Bearer ${key}` });
+const figma = (id = 'u1') => ({ 'X-Figma-User': id });
 
 function pullReq(libraryId: string, key: string, etag?: string) {
   return new Request(`https://proxy.test/v1/libraries/${libraryId}`, {
@@ -52,10 +73,10 @@ function pullReq(libraryId: string, key: string, etag?: string) {
   });
 }
 
-function rotateReq(libraryId: string, key = UUID_KEY) {
+function rotateReq(libraryId: string, headers: Record<string, string> = { Authorization: `Bearer ${UUID_KEY}` }) {
   return new Request(`https://proxy.test/v1/libraries/${libraryId}/rotate`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}` },
+    headers,
   });
 }
 
@@ -65,21 +86,20 @@ async function publishedLibrary(
   key = UUID_KEY,
 ) {
   await seedPro(d, key);
-  const res = await handlePublish(publishReq({ bundle: BUNDLE }, key), d);
+  const res = await handlePublish(publishReq({ bundle: BUNDLE }, bearer(key)), d);
   const body = await res.json() as { libraryId: string; pullKey: string };
   return { deps: d, libraryId: body.libraryId, pullKey: body.pullKey };
 }
 
 function deps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
+  const now = overrides.now ?? (() => Date.parse('2026-07-01T00:00:00Z'));
   return {
     salt: 'salt',
     anthropicKey: 'sk-ant-test',
     fetcher: (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch,
     licenseCache: new MemKV(),
-    now: () => Date.parse('2026-07-01T00:00:00Z'),
-    quotaFor: () => {
-      throw new Error('quotaFor should not be called by library handlers');
-    },
+    now,
+    quotaFor: memQuota(now),
     log: () => {},
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
@@ -119,13 +139,20 @@ describe('handlePublish', () => {
     expect(await res.json()).toEqual({ error: 'unauthenticated' });
   });
 
-  it('rejects a free-tier license', async () => {
+  it('publishes as free when the license is not active but a Figma identity is present', async () => {
+    const d = deps();
+    await seedFree(d);
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(201);
+    expect(res.headers.get('X-Tier')).toBe('free'); // Task 5
+  });
+
+  it('rejects a lapsed license with no Figma identity (legacy client)', async () => {
     const d = deps();
     await seedFree(d);
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     expect(res.status).toBe(401);
-    const body = await res.json() as { error: string };
-    expect(body.error).toBe('license_not_active');
+    expect((await res.json() as { error: string }).error).toBe('license_not_active');
   });
 
   it('creates a library on first publish', async () => {
@@ -159,6 +186,60 @@ describe('handlePublish', () => {
     for (const value of d.libraryStore.map.values()) {
       expect(value).not.toContain(body.pullKey);
     }
+  });
+
+  it('creates a library for a free Figma identity, owned by that identity', async () => {
+    const d = deps();
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    expect(res.status).toBe(201);
+    const { libraryId } = await res.json() as { libraryId: string };
+    const meta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`))!) as LibraryMeta;
+    expect(meta.licenseId).toBe(`free:${hashFigmaId('u1', 'salt')}`);
+  });
+
+  it('lets a Pro caller sending both headers update a library created while free', async () => {
+    const d = deps();
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    await seedPro(d);
+    const changed = {
+      ...BUNDLE,
+      components: [...BUNDLE.components, { name: 'Card', ai: 'component: Card\n', artifact: { spec_layer: { export: { content_hash: 'ccc' } } } }],
+    };
+    const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(200);
+  });
+
+  it('lets a lapsed license update the library it created while Pro', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    await seedFree(d);
+    const changed = { ...BUNDLE, fileName: 'Renamed' };
+    const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(200);
+  });
+
+  it('caps a free identity at one library and names the existing one', async () => {
+    const d = deps();
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId } = await first.json() as { libraryId: string };
+    const res = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Second' } }, figma()), d);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'library_limit', limit: 1, existing: { libraryId, fileName: 'Test File' },
+    });
+  });
+
+  it('counts libraries across both proved identities', async () => {
+    const d = deps();
+    await seedPro(d);
+    await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const licenseId = `lic:${sha256(UUID_KEY)}`;
+    for (let i = 0; i < LIBRARY_LIMITS.pro - 1; i += 1) {
+      await d.libraryStore.put(`libowner:${licenseId}:lib_${String(i).padStart(24, '0')}`, '1');
+    }
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(403);
+    expect((await res.json() as { limit: number }).limit).toBe(LIBRARY_LIMITS.pro);
   });
 
   it('republishes to an owned library without rotating the key', async () => {
@@ -195,7 +276,7 @@ describe('handlePublish', () => {
     const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     const { libraryId } = await first.json() as { libraryId: string };
 
-    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, OTHER_UUID_KEY), d);
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, bearer(OTHER_UUID_KEY)), d);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'not_owner' });
   });
@@ -235,7 +316,7 @@ describe('handlePublish', () => {
 
   it('measures multi-byte text in bytes on both the header check and the body check', async () => {
     // 1.8M three-byte characters: under the cap in UTF-16 code units, over it in bytes.
-    const bundle = { ...BUNDLE, components: [{ ...BUNDLE.components[0], ai: '\u6f22'.repeat(1_800_000) }] };
+    const bundle = { ...BUNDLE, components: [{ ...BUNDLE.components[0], ai: '漢'.repeat(1_800_000) }] };
     const payload = JSON.stringify({ bundle });
     const d = deps();
     await seedPro(d);
@@ -278,20 +359,20 @@ describe('handlePublish', () => {
     const d = deps();
     await seedPro(d);
     const licenseId = `lic:${sha256(UUID_KEY)}`;
-    for (let i = 0; i < LIBRARY_LIMIT; i += 1) {
+    for (let i = 0; i < LIBRARY_LIMITS.pro; i += 1) {
       await d.libraryStore.put(`libowner:${licenseId}:lib_${String(i).padStart(24, '0')}`, '1');
     }
 
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'library_limit', limit: LIBRARY_LIMIT });
+    expect(await res.json()).toEqual({ error: 'library_limit', limit: LIBRARY_LIMITS.pro });
   });
 
   it('migrates a legacy owner array to per-library keys and counts both', async () => {
     const d = deps();
     await seedPro(d);
     const licenseId = `lic:${sha256(UUID_KEY)}`;
-    const legacy = Array.from({ length: LIBRARY_LIMIT - 1 }, (_, i) => `lib_${String(i).padStart(24, '0')}`);
+    const legacy = Array.from({ length: LIBRARY_LIMITS.pro - 1 }, (_, i) => `lib_${String(i).padStart(24, '0')}`);
     await d.libraryStore.put(`libowner:${licenseId}`, JSON.stringify(legacy));
 
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
@@ -452,21 +533,33 @@ describe('handleRotate', () => {
     const d = deps();
     await seedPro(d, UUID_KEY);
     await seedPro(d, OTHER_UUID_KEY);
-    const publishRes = await handlePublish(publishReq({ bundle: BUNDLE }, UUID_KEY), d);
+    const publishRes = await handlePublish(publishReq({ bundle: BUNDLE }, bearer(UUID_KEY)), d);
     const { libraryId } = await publishRes.json() as { libraryId: string };
 
-    const res = await handleRotate(rotateReq(libraryId, OTHER_UUID_KEY), d, libraryId);
+    const res = await handleRotate(rotateReq(libraryId, bearer(OTHER_UUID_KEY)), d, libraryId);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'not_owner' });
   });
 
-  it('rejects a lapsed license', async () => {
+  it('rotates for a lapsed license that owns the library', async () => {
     const { deps: d, libraryId } = await publishedLibrary();
     await seedFree(d);
-    const res = await handleRotate(rotateReq(libraryId), d, libraryId);
-    expect(res.status).toBe(401);
-    const body = await res.json() as { error: string };
-    expect(body.error).toBe('license_not_active');
+    // A bare lapsed license with no Figma proof cannot resolve a caller at
+    // all (see the "legacy client" case above), so this owner also proves
+    // the Figma identity, the way the analogous republish case above does.
+    const res = await handleRotate(rotateReq(libraryId, { ...bearer(), ...figma() }), d, libraryId);
+    expect(res.status).toBe(200);
+    expect((await res.json() as { pullKey: string }).pullKey).toMatch(PULL_KEY_RE);
+  });
+
+  it('rotates for a free owner and refuses a stranger', async () => {
+    const d = deps();
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    expect((await handleRotate(rotateReq(libraryId, figma('u1')), d, libraryId)).status).toBe(200);
+    const stranger = await handleRotate(rotateReq(libraryId, figma('u2')), d, libraryId);
+    expect(stranger.status).toBe(403);
+    expect(await stranger.json()).toEqual({ error: 'not_owner' });
   });
 
   it('404s an unknown library', async () => {
