@@ -42,8 +42,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the definition caption, the rotate consequence line and the in-body result
   line are gone: publish and rotate successes are toasts, only errors stay on
   screen, and a **Read documentation** footer button opens the publish and
-  pull workflow at `spec-layer.com/docs/quickstart/#publish-pull`. The header
-  takes the 48px single-line bar the other title-only screens use. A device
+  pull workflow at `spec-layer.com/docs/quickstart/#publish-pull`. A device
   that knows the library id but never held the key (a second computer, a
   teammate) is told the key is stored on the device that published, to ask
   that person for the setup command or rotate here, and that rotating stops

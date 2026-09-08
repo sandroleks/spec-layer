@@ -377,13 +377,17 @@ describe('publish screen styling', () => {
     new RegExp(`\\n${selector.replace(/[.+*?^$(){}|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
 
   /**
-   * Title-only screens sit on the 48px single-line bar; the 67px base is for
-   * the component screen's eyebrow-plus-title. Settings had the same bug.
+   * Title-only screens sit on the 48px single-line bar, which is the
+   * page-header default since #44; only the component screen's
+   * eyebrow-plus-title header is taller. This screen must not restate the
+   * default (a second copy would drift) and must not grow past it.
    */
-  it('takes the single-line header bar the other title-only screens use', () => {
+  it('sits on the default single-line header bar without restating it', () => {
+    expect(rule('.sl-page-header')).toMatch(/min-height:\s*48px/);
     const header = rule('.sl-publish-screen .sl-page-header');
-    expect(header).toMatch(/min-height:\s*48px/);
-    expect(header).toMatch(/padding-bottom:\s*var\(--sl-space-6\)/);
+    expect(header).not.toMatch(/min-height/);
+    expect(header).not.toMatch(/padding/);
+    expect(header).toMatch(/justify-content:\s*flex-start/);
   });
 
   /**

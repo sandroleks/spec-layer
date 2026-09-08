@@ -69,9 +69,10 @@ no "rotating cuts off everyone" line. The storage half is unchanged.
 
 Back control, `<h1>Publish</h1>`, and a `.sl-badge` pill: `Published`
 (`data-tone="success"`) when a library id is known, `Not published` otherwise.
-The header takes the 48px single-line bar (`min-height: 48px; padding-bottom:
-var(--sl-space-6)`) that Library, Foundations, License and Settings use; the
-67px base is for the component screen's two-line header.
+The header sits on the 48px single-line bar, which #44 made the page-header
+default (the component screen's two-line header is the one taller exception),
+so the publish rule only packs the back control and title together and does
+not restate the height.
 
 ### Meta line
 

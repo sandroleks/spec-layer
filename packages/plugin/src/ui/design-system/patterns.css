@@ -1317,23 +1317,14 @@
 }
 
 /*
- * The header's own `justify-content: space-between` would push the title away
- * from the back control, to opposite ends of the row. On this screen the two
- * are one unit, so the row packs from the start instead.
- */
-/*
- * Title-only (the pill sits on the title's line), so it takes the 48px
- * single-line bar the other title-only screens use (.sl-library-screen,
- * .sl-foundation-screen, .sl-license-screen, .sl-settings-screen). On the 67px
- * base, sized for the component screen's two-line header, the bar held dead
- * space under the h1 and pushed the body down against every other screen.
- * The header's own `justify-content: space-between` would push the title away
- * from the back control, to opposite ends of the row; here the two are one
- * unit, so the row packs from the start instead.
+ * Title-only (the pill sits on the title's line), so the 48px single-line
+ * page-header default applies as is; only the component screen's two-line
+ * header is taller, and it says so itself. The header's own `justify-content:
+ * space-between` would push the title away from the back control, to opposite
+ * ends of the row; here the two are one unit, so the row packs from the start
+ * instead.
  */
 .sl-publish-screen .sl-page-header {
-  min-height: 48px;
-  padding-bottom: var(--sl-space-6);
   justify-content: flex-start;
   gap: var(--sl-space-6);
 }
