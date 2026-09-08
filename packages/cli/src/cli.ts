@@ -17,7 +17,7 @@ Commands:
   show    foundation | component NAME [--canonical]
                                                  print one artifact (foundation: the DTCG document; component: its AI YAML; --canonical for JSON)
   tools   [--json]                               list every command with what it reaches and writes
-  skill   [--install] [--agent HOST]... [--platform P] [--json]
+  skill   [--install] [--agent HOST]... [--platform P]... [--json]
                                                  print a guide for a coding agent, adapted to this repo and the last pull;
                                                  --install writes it for claude, cursor, copilot, windsurf, gemini, or agents-md
 
@@ -27,7 +27,7 @@ Selection (setup, pull and init; flags replace the include block in speclayer.js
 
 Options:
   --api URL   override the API origin (default https://api.spec-layer.com)
-  --platform web|ios|android|flutter   the target this repo builds for (repeatable); setup and init store it, pull uses it for the run
+  --platform web|ios|android|flutter   the target this repo builds for (repeatable); applies to setup, init, pull, and skill; setup and init store it, pull uses it for the run
 The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
 
 const io: Io = {

@@ -34,6 +34,12 @@ const PULL: NonNullable<SkillInput['pull']> = {
     unitlessNumbers: 3,
     reportCounts: { unit_not_expressible: 2 },
   },
+  outputs: [],
+};
+
+const PULL_WITH_CSS: NonNullable<SkillInput['pull']> = {
+  ...PULL,
+  outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab', modeSelector: '[data-theme="{mode}"]', modes: {} }],
 };
 
 describe('buildSkillGuide', () => {
@@ -114,6 +120,42 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain('Never edit files under `design/context/`');
     // The flag reference still states the default; no path may use it.
     expect(guide).not.toMatch(/`\.speclayer\//);
+  });
+});
+
+describe('buildSkillGuide outputs', () => {
+  const web: RepoProfile = { ...EMPTY_PROFILE, platforms: ['web'] };
+
+  it('tells the agent to import the css file, switch modes with data-theme, and read names from the map', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('- `spec-layer/tokens.css`: web/css token file, kebab names, modes under `[data-theme="{mode}"]`.');
+    expect(guide).toContain('Import `spec-layer/tokens.css` from the root stylesheet');
+    expect(guide).toContain('set `data-theme` on `<html>`');
+    expect(guide).toContain('`.speclayer/outputs/web-css.map.json`');
+    expect(guide).toContain('source "code_syntax" when the designer declared it in Figma, "derived" when the CLI built it from the DTCG path');
+    expect(guide).not.toContain('derive nothing');
+  });
+
+  it('says the css is a projection of tokens/ when a pipeline is present', () => {
+    const sd: RepoProfile = { ...web, tokenTools: ['style-dictionary'], styleDictionaryMajor: 5 };
+    const guide = buildSkillGuide(input({ profile: sd, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('`spec-layer/tokens.css` is a projection of the same `tokens/` files, not a second source. Import one or the other.');
+  });
+
+  it('names the flag when web is targeted but no output was written', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL }));
+    expect(guide).toContain('No token file was written for web.');
+    expect(guide).toContain('`"outputs"` in `speclayer.json`');
+  });
+
+  it('labels a platform that came from the config', () => {
+    const guide = buildSkillGuide(input({ platforms: ['web'], platformSource: 'config', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('Target platform (set in speclayer.json): web.');
+  });
+
+  it('warns never to edit the output path in step 6', () => {
+    const guide = buildSkillGuide(input({ pull: PULL_WITH_CSS }));
+    expect(guide).toContain('Never edit `spec-layer/tokens.css` either: pull replaces it in place.');
   });
 });
 

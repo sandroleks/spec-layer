@@ -36,6 +36,9 @@ export interface PullSummary {
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
   } | null;
+  outputs: Array<{
+    platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
+  }>;
 }
 
 export interface SkillInput {
@@ -112,6 +115,10 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
   return {
     outDir, libraryId: manifest.libraryId, publishedAt: manifest.publishedAt,
     pluginVersion: manifest.pluginVersion, components, foundation,
+    outputs: (manifest.outputs ?? []).map((o) => ({
+      platform: o.platform, format: o.format, path: o.path, case: o.case,
+      modeSelector: o.modeSelector ?? '[data-theme="{mode}"]', modes: o.modes ?? {},
+    })),
   };
 }
 
@@ -157,13 +164,35 @@ function stackSection(input: SkillInput): string[] {
     const tokensDir = `${input.outDir}/tokens/`;
     if (platform === 'web') {
       lines.push('### Web', '');
+      const cssOut = pull?.outputs.find((o) => o.platform === 'web' && o.format === 'css') ?? null;
+      const mapPath = `${input.outDir}/outputs/web-css.map.json`;
       lines.push(
-        `Token identifiers for code live in ${code(`${tokensDir}spec-layer.meta.json`)} under each token's `
-        + `${code('code_syntax.WEB')}, when the designer declared one in Figma. Use that identifier as the CSS custom property `
-        + 'or theme key. When a token has no WEB entry, derive nothing: use the DTCG path as it appears in the token file '
-        + `(for example ${code('{Collection.group.name}')}) and say in your change that the code name is not declared in Figma.`,
+        `The CSS custom property for every token is in ${code(mapPath)}: `
+        + 'source "code_syntax" when the designer declared it in Figma, "derived" when the CLI built it from the DTCG path '
+        + `by the stated rule (${cssOut ? cssOut.case : 'kebab'} case, collection root included). Use those names; never invent a third. `
+        + `${code(`${tokensDir}spec-layer.meta.json`)} still holds the raw ${code('code_syntax.WEB')} the designer declared.`,
+        '',
       );
-      lines.push('');
+      if (cssOut) {
+        lines.push(
+          `Import ${code(cssOut.path)} from the root stylesheet. It holds every set and every default mode at ${code(':root')}; `
+          + `every other mode is a block under ${code(cssOut.modeSelector)}. To switch, set ${code('data-theme')} on ${code('<html>')} `
+          + '(or whatever the selector names). Wire it to prefers-color-scheme yourself if the OS should choose; the file never assumes that.',
+          '',
+        );
+        if (profile.tokenTools.includes('style-dictionary') || profile.tokenTools.includes('tokens-studio')) {
+          lines.push(
+            `${code(cssOut.path)} is a projection of the same ${code('tokens/')} files, not a second source. Import one or the other.`,
+            '',
+          );
+        }
+      } else if (pull?.foundation?.written) {
+        lines.push(
+          'No token file was written for web. Add `"outputs"` in `speclayer.json` (or run `spec-layer pull --platform web` once) '
+          + `and pull again; the default lands at ${code('spec-layer/tokens.css')}.`,
+          '',
+        );
+      }
       if (profile.tokenTools.includes('tailwind')) {
         lines.push(
           `Tailwind is present (${code('tailwindcss')}). Map DTCG ${code('color')} tokens to the theme's color scale and `
@@ -265,6 +294,10 @@ function pullSection(input: SkillInput): string[] {
     lines.push('- This library has no Foundation, so there is no tokens/ directory.');
   }
   lines.push(`- ${code(`${outDir}/components/`)}: one YAML per component.`);
+  for (const o of pull.outputs) {
+    lines.push(`- ${code(o.path)}: ${o.platform}/${o.format} token file, ${o.case} names, modes under ${code(o.modeSelector)}.`
+      + ` Names and provenance: ${code(`${outDir}/outputs/${o.platform}-${o.format}.map.json`)}; what it could not express: ${code(`${outDir}/outputs/${o.platform}-${o.format}.report.json`)}.`);
+  }
   lines.push('');
 
   if (pull.foundation && (pull.foundation.sets.length || pull.foundation.modifiers.length)) {
@@ -337,7 +370,10 @@ export function buildSkillGuide(input: SkillInput): string {
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
   lines.push(`5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);
-  lines.push(`6. Never edit files under ${code(outDir + '/')}: the next pull replaces the whole directory. Configuration lives in ${code('speclayer.json')}. Never commit ${code(CREDENTIALS_NAME)}, and never print or copy the pull key.`);
+  const outputNote = input.pull?.outputs.length
+    ? ` Never edit ${input.pull.outputs.map((o) => code(o.path)).join(', ')} either: pull replaces ${input.pull.outputs.length === 1 ? 'it' : 'them'} in place.`
+    : '';
+  lines.push(`6. Never edit files under ${code(outDir + '/')}: the next pull replaces the whole directory.${outputNote} Configuration lives in ${code('speclayer.json')}. Never commit ${code(CREDENTIALS_NAME)}, and never print or copy the pull key.`);
   lines.push('');
   lines.push(...pullSection(input));
   lines.push(...stackSection(input));
