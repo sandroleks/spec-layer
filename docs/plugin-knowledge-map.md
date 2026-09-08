@@ -68,7 +68,14 @@ entries and `sidebar.ts` keeps its exhaustive icon map. `ui-vnext.ts` tracks
 which of the two is showing in a Library-local `libraryPane` flag, which means
 the rail stays on Library while publishing.
 
-The command palette searches workflows and connected Library documents.
+The command palette searches connected Library documents only: recent
+component docs before typing, every connected document once a query is typed.
+Activating a result opens the Library and reveals that document's row
+(`revealLibraryRow` in `screens/library.ts`, marked in the list by
+`revealedDocId`), which is why the palette carries no rail destinations. It is
+mounted once and updated in place by `patchGlobalSearch`: re-inserting the
+layer per keystroke restarted the panel's entry animation and rebuilt the live
+input.
 `actions.ts` owns reusable operations; `viewModel/` derives display state;
 `screens/` renders workflow markup; `shell/` owns persistent navigation and
 header behavior.

@@ -44,9 +44,9 @@ import {
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { renderLibraryScreen } from './screens/library';
+import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
-import { globalSearchMarkup } from './screens/search';
+import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
   applyGroupBulk,
   applyVariantBulk,
@@ -187,6 +187,13 @@ let libraryFilter: LibraryFilter = 'all';
  */
 let libraryPane: 'list' | 'publish' = 'list';
 let libraryExpandedDocId: string | null = null;
+/**
+ * The row the global search palette last opened, marked in the list until the
+ * user refreshes, changes filter, or leaves the Library. Search now lists
+ * documents rather than rail destinations, so activating a result has to land
+ * the user on a specific row in a list of many, not just on the screen.
+ */
+let libraryRevealDocId: string | null = null;
 let libraryMenuDocId: string | null = null;
 let libraryMenuRestore: HTMLElement | null = null;
 let libraryRefreshing = false;
@@ -376,6 +383,7 @@ function paint(): void {
         renderLibraryScreen(refs, {
           ...model,
           menuDocId: libraryMenuDocId,
+          revealedDocId: libraryRevealDocId,
           loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
           refreshing: libraryRefreshing || pendingChecks,
           checksIncomplete: failedChecks,
@@ -408,6 +416,7 @@ function navigateToView(
 ): void {
   view = next;
   closeFontMenu();
+  if (view !== 'library') libraryRevealDocId = null;
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
   // Arriving at the Library always lands on the list. Leaving the publish
@@ -736,6 +745,7 @@ function refreshLibrary(): void {
   libraryRefreshing = true;
   libraryMenuDocId = null;
   libraryExpandedDocId = null;
+  libraryRevealDocId = null;
   libraryLiveProjection.clear();
   libraryChanges.clear();
   if (view === 'library') paint();
@@ -1009,8 +1019,10 @@ function currentSearchModel(): SearchModel {
   return buildSearchModel(
     libraryEntries.map((entry) => ({
       docId: entry.docId,
+      kind: entry.kind,
       label: entry.label,
       sourceLabel: entry.sourceLabel,
+      generatedAt: entry.generatedAt,
     })),
     searchQuery,
     searchActiveIndex,
@@ -1024,24 +1036,35 @@ function ensureLibraryLoaded(): void {
   send({ type: 'requestLibrary' });
 }
 
+/**
+ * Renders, or updates, the palette.
+ *
+ * Mounting is a one-shot insert; every render after that patches the mounted
+ * DOM in place. The panel animates in, so replacing the layer on each
+ * keystroke restarted that animation and the palette blinked once per typed
+ * letter. Patching also means the live input element is never rebuilt, which
+ * is what the caret and IME composition depend on.
+ */
 function renderGlobalSearch(focusInput = false): void {
   const existing = refs.root.querySelector<HTMLElement>('[data-global-search-dialog]');
   if (!searchOpen) {
     existing?.remove();
     return;
   }
-  const oldInput = existing?.querySelector<HTMLInputElement>('[data-global-search-input]');
-  const hadInputFocus = document.activeElement === oldInput;
-  const selectionStart = oldInput?.selectionStart ?? searchQuery.length;
-  const markup = globalSearchMarkup(currentSearchModel(), {
+  const model = currentSearchModel();
+  const options = {
     libraryLoading: libraryRefreshing && libraryEntries.length === 0,
-  });
-  if (existing) existing.outerHTML = markup;
-  else refs.root.insertAdjacentHTML('beforeend', markup);
+  };
+  if (!existing) {
+    refs.root.insertAdjacentHTML('beforeend', globalSearchMarkup(model, options));
+  } else {
+    patchGlobalSearch(refs.root, model, options);
+  }
   const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
-  if (input && (focusInput || hadInputFocus)) {
+  if (input && focusInput && document.activeElement !== input) {
     input.focus();
-    input.setSelectionRange(selectionStart, selectionStart);
+    const caret = input.value.length;
+    input.setSelectionRange(caret, caret);
   }
 }
 
@@ -1228,44 +1251,46 @@ function closeGlobalSearch(restoreFocus = true): void {
   searchRestoreTarget = null;
 }
 
+/**
+ * Moves the active pointer. The clamp comes from the model rather than being
+ * repeated here, and the re-render is the same in-place patch typing uses, so
+ * the input keeps both its focus and its caret while the arrows move.
+ */
 function setSearchActiveIndex(index: number): void {
-  const model = currentSearchModel();
-  searchActiveIndex = model.results.length
-    ? Math.min(Math.max(0, index), model.results.length - 1)
-    : 0;
-  const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
-  if (input) {
-    if (model.results.length) {
-      input.setAttribute(
-        'aria-activedescendant',
-        `sl-global-search-result-${searchActiveIndex}`,
-      );
-    } else {
-      input.removeAttribute('aria-activedescendant');
-    }
-  }
-  for (
-    const result of refs.root.querySelectorAll<HTMLButtonElement>('[data-search-index]')
-  ) {
-    const active = Number(result.dataset.searchIndex) === searchActiveIndex;
-    result.classList.toggle('is-active', active);
-    result.setAttribute('aria-selected', String(active));
-  }
+  searchActiveIndex = index;
+  renderGlobalSearch();
+  // buildSearchModel is what clamps a pointer to the list it rendered, so the
+  // clamped value is read back rather than recomputed here.
+  searchActiveIndex = currentSearchModel().activeIndex;
   refs.root.querySelector<HTMLElement>(
     `#sl-global-search-result-${searchActiveIndex}`,
   )?.scrollIntoView({ block: 'nearest' });
 }
 
+/**
+ * Opens the picked document in the Library.
+ *
+ * The Library is where a document can be read, updated, copied, and opened on
+ * canvas, so search hands off to the row rather than jumping the canvas
+ * straight to the frame: the row's own Open action still does that, and it is
+ * one click away once the user is here. The filter is reset because a result
+ * the palette matched must not land on a filter that hides it.
+ */
 function activateSearchResult(result: SearchResult | undefined): void {
   if (!result) return;
-  closeGlobalSearch();
-  if (result.kind === 'workflow') {
-    navigateToView(result.view);
-    return;
-  }
+  closeGlobalSearch(false);
   libraryFilter = 'all';
+  libraryExpandedDocId = null;
+  libraryRevealDocId = result.docId;
   navigateToView('library', { refreshLibrary: false });
-  send({ type: 'focusNode', nodeId: result.docId });
+  // After the paint navigateToView just did: focus belongs on the row now,
+  // which is why closeGlobalSearch above was told not to restore it to the
+  // header Search button.
+  requestAnimationFrame(() => {
+    if (view === 'library' && libraryPane === 'list') {
+      revealLibraryRow(refs, result.docId);
+    }
+  });
 }
 
 function trapSearchFocus(event: KeyboardEvent): boolean {
@@ -1434,6 +1459,7 @@ document.addEventListener('click', (event) => {
   if (libraryFilterButton?.dataset.libraryFilter) {
     libraryFilter = libraryFilterButton.dataset.libraryFilter as LibraryFilter;
     libraryExpandedDocId = null;
+    libraryRevealDocId = null;
     libraryMenuDocId = null;
     paintAndFocus(`[data-library-filter="${libraryFilter}"]`);
     return;
@@ -2544,6 +2570,7 @@ window.onmessage = (event: MessageEvent): void => {
       libraryLiveProjection.delete(msg.docId);
       libraryChanges.delete(msg.docId);
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
+      if (libraryRevealDocId === msg.docId) libraryRevealDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
       syncLibraryBadge();
       if (view === 'library') paint();

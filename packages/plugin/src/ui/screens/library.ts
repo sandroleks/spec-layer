@@ -51,6 +51,13 @@ export interface LibraryScreenPresentation
   updatingAll?: boolean;
   updatingDocId?: string | null;
   progress?: ProgressPresentation | null;
+  /**
+   * The row the global search palette just opened, if any. It is marked and
+   * scrolled to, which is how a palette that lists documents hands the user
+   * off to a list of many rows without losing the one they picked. The host
+   * clears it on the next refresh, filter change, or screen change.
+   */
+  revealedDocId?: string | null;
 }
 
 function esc(value: string): string {
@@ -301,6 +308,7 @@ function libraryRowMarkup(
   row: LibraryRowPresentation,
   menuDocId: string | null,
   busy: boolean,
+  revealed = false,
 ): string {
   const update = isUpdate(row);
   const expanded = update && row.expanded;
@@ -335,7 +343,8 @@ function libraryRowMarkup(
     );
 
   return (
-    `<article class="sl-library-row${expanded ? ' is-expanded' : ''}" ` +
+    '<article class="sl-library-row' +
+    `${expanded ? ' is-expanded' : ''}${revealed ? ' is-revealed' : ''}" ` +
     `data-doc-id="${esc(row.docId)}" data-expanded="${expanded}">` +
     '<div class="sl-library-summary">' +
     jump +
@@ -400,7 +409,12 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
     : model.rows.length
       ? (
         '<div class="sl-library-list">' +
-        model.rows.map((row) => libraryRowMarkup(row, model.menuDocId, busy)).join('') +
+        model.rows.map((row) => libraryRowMarkup(
+          row,
+          model.menuDocId,
+          busy,
+          row.docId === model.revealedDocId,
+        )).join('') +
         '</div>'
       )
       : emptyMarkup(model.filter, model.allRows.length > 0);
@@ -525,6 +539,62 @@ function placeOpenRowMenu(refs: ShellRefs): void {
     height: menu.offsetHeight,
   });
   if (top !== null) menu.style.top = `${top}px`;
+}
+
+export interface RevealMetrics {
+  /** The scroll container's current offset. */
+  scrollTop: number;
+  /** Viewport y of the row being revealed, and of the container itself. */
+  rowTop: number;
+  viewTop: number;
+  viewHeight: number;
+  rowHeight: number;
+  /** The container's full scrollable height, which clamps the result. */
+  scrollHeight: number;
+}
+
+/**
+ * Scroll offset that brings a revealed row into view, centred vertically and
+ * clamped to the scrollable range. Pure so the arithmetic can be tested
+ * without a layout engine; see revealLibraryRow for the caller.
+ */
+export function revealScrollTop(metrics: RevealMetrics): number {
+  const { scrollTop, rowTop, viewTop, viewHeight, rowHeight } = metrics;
+  const centred = scrollTop + (rowTop - viewTop)
+    - Math.max(0, (viewHeight - rowHeight) / 2);
+  const lowest = Math.max(0, metrics.scrollHeight - viewHeight);
+  return Math.round(Math.min(Math.max(0, centred), lowest));
+}
+
+/**
+ * Brings one Library row into view and puts focus on it.
+ *
+ * Called once, right after the paint that first marks the row, rather than
+ * from renderLibraryScreen: source checks repaint this screen several times
+ * while a reveal is still marked, and a renderer that scrolled on every paint
+ * would drag the list back under the user each time one landed. The
+ * `is-revealed` mark is what survives those repaints; this is the one-time
+ * move.
+ */
+export function revealLibraryRow(refs: ShellRefs, docId: string): void {
+  const selector = `.sl-library-row[data-doc-id="${docId.replace(/["\\]/g, '\\$&')}"]`;
+  const row = refs.scroll.querySelector<HTMLElement>(selector);
+  if (!row) return;
+  refs.scroll.scrollTop = revealScrollTop({
+    scrollTop: refs.scroll.scrollTop,
+    rowTop: row.getBoundingClientRect().top,
+    viewTop: refs.scroll.getBoundingClientRect().top,
+    viewHeight: refs.scroll.clientHeight,
+    rowHeight: row.offsetHeight,
+    scrollHeight: refs.scroll.scrollHeight,
+  });
+  // Explicit order, not one selector list: a row without an openable frame
+  // renders its identity as a static div, which querySelector would return
+  // first and focus() would then do nothing with.
+  const target = row.querySelector<HTMLElement>('button.sl-library-jump')
+    ?? row.querySelector<HTMLElement>('[data-library-disclosure]')
+    ?? row.querySelector<HTMLElement>('[data-library-menu]');
+  target?.focus({ preventScroll: true });
 }
 
 export function renderLibraryScreen(

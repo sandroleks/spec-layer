@@ -33,10 +33,10 @@ import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
-import { renderLibraryScreen } from './screens/library';
+import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
 import type { PublishState } from './publish';
-import { globalSearchMarkup } from './screens/search';
+import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
   renderLicenseScreen,
   type LicenseScreenModel,
@@ -419,53 +419,67 @@ if (view === 'foundations') {
   });
 }
 
+/**
+ * The connected documents both the Library screen and the search palette read,
+ * the way ui-vnext.ts has one `libraryEntries` behind both. One fixture on
+ * purpose: a palette listing documents the Library does not have could not
+ * show what activating a result actually does.
+ */
+const LIBRARY_NAMES = [
+  'buttonPrimary',
+  'buttonText',
+  'inputField',
+  'checkbox',
+  'radioGroup',
+  'selectMenu',
+  'searchField',
+  'navigationItem',
+  'tooltip',
+  'dialog',
+  'toast',
+  'avatar',
+  'badge',
+  'pagination',
+  'Foundations · Semantic',
+  'Foundations · Typography',
+];
+const LIBRARY_NOW = Date.UTC(2026, 6, 29, 12);
+const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
+  docId: `doc-${index + 1}`,
+  kind: name.startsWith('Foundations') ? 'foundation' : 'component',
+  label: name,
+  componentName: name,
+  pageName: name.startsWith('Foundations') ? 'Foundations' : 'Documentation',
+  // Page-only for components, collection name for foundations — the shape
+  // main.ts actually sends (see its sourceLabel comment).
+  sourceLabel: name.startsWith('Foundations')
+    ? name.replace('Foundations · ', '')
+    : 'Components',
+  generatedAt: LIBRARY_NOW - (index + 1) * 3_600_000,
+  sourceNodeId: name.startsWith('Foundations') ? '' : `source-${index + 1}`,
+  sourceExists: true,
+  selfEdited: index === 6,
+  storedContentHash: `stored-${index + 1}`,
+  ...(name.startsWith('Foundations')
+    ? {
+      currentContentHash: `stored-${index + 1}`,
+      foundationIcon: name.endsWith('Typography')
+        ? ('typography' as const)
+        : ('color' as const),
+    }
+    : {}),
+}));
+
+/**
+ * Set by the Library fixture so the search palette can hand off to a row the
+ * way ui-vnext.ts does. It stays null on every other screen, matching the
+ * plugin, which cannot reveal a row on a screen it is not showing.
+ */
+let revealLibraryFixtureRow: ((docId: string) => void) | null = null;
+
 if (view === 'library') {
-  const names = [
-    'buttonPrimary',
-    'buttonText',
-    'inputField',
-    'checkbox',
-    'radioGroup',
-    'selectMenu',
-    'searchField',
-    'navigationItem',
-    'tooltip',
-    'dialog',
-    'toast',
-    'avatar',
-    'badge',
-    'pagination',
-    'Foundations · Semantic',
-    'Foundations · Typography',
-  ];
-  const now = Date.UTC(2026, 6, 29, 12);
-  const entries: LibraryEntry[] = names.map((name, index) => ({
-    docId: `doc-${index + 1}`,
-    kind: name.startsWith('Foundations') ? 'foundation' : 'component',
-    label: name,
-    componentName: name,
-    pageName: name.startsWith('Foundations') ? 'Foundations' : 'Documentation',
-    // Page-only for components, collection name for foundations — the shape
-    // main.ts actually sends (see its sourceLabel comment).
-    sourceLabel: name.startsWith('Foundations')
-      ? name.replace('Foundations · ', '')
-      : 'Components',
-    generatedAt: now - (index + 1) * 3_600_000,
-    sourceNodeId: name.startsWith('Foundations') ? '' : `source-${index + 1}`,
-    sourceExists: true,
-    selfEdited: index === 6,
-    storedContentHash: `stored-${index + 1}`,
-    ...(name.startsWith('Foundations')
-      ? {
-        currentContentHash: `stored-${index + 1}`,
-        foundationIcon: name.endsWith('Typography')
-          ? ('typography' as const)
-          : ('color' as const),
-      }
-      : {}),
-  }));
   const drift = new Map<string, LibraryDriftState>(
-    entries.map((entry, index) => [
+    LIBRARY_ENTRIES.map((entry, index) => [
       entry.docId,
       index < 3 ? 'drifted' : 'inSync',
     ]),
@@ -475,7 +489,7 @@ if (view === 'library') {
   // componentChangeGroups returns for one rebound fill plus a swapped icon
   // token across a variant set, so the two-line item can be looked at.
   const changes = new Map<string, LibraryChangeResult>([
-    [entries[0].docId, { state: 'ready', groups: [
+    [LIBRARY_ENTRIES[0].docId, { state: 'ready', groups: [
       { label: 'Tokens', items: [
         {
           text: 'Container / fill: color/surface/primary/default changed to colors/gray/1000',
@@ -489,12 +503,17 @@ if (view === 'library') {
       ] },
       { label: 'Unbound values', items: [{ text: 'Label / padding (hardcoded value): 8 changed to 12' }] },
     ] }],
-    [entries[1].docId, { state: 'unavailable', reason: 'noBaseline' }],
+    [LIBRARY_ENTRIES[1].docId, { state: 'unavailable', reason: 'noBaseline' }],
   ]);
   let expandedDocId: string | null =
-    param('state', 'expanded') === 'expanded' ? entries[0].docId : null;
+    param('state', 'expanded') === 'expanded' ? LIBRARY_ENTRIES[0].docId : null;
   let menuDocId: string | null =
-    param('menu', 'closed') === 'open' ? entries[0].docId : null;
+    param('menu', 'closed') === 'open' ? LIBRARY_ENTRIES[0].docId : null;
+  // `?reveal=1` marks the row the global search palette would have opened,
+  // which is the only way to look at that state outside a real search.
+  let revealedDocId: string | null = param('reveal', '0') === '1'
+    ? LIBRARY_ENTRIES[LIBRARY_ENTRIES.length - 1].docId
+    : null;
   let refreshing = param('state', 'expanded') === 'refreshing';
   let updatingAll = param('state', 'expanded') === 'updating';
 
@@ -558,12 +577,12 @@ if (view === 'library') {
       renderPublishScreen(refs, publishFixture, publishLockedFixture);
       return;
     }
-    const model = buildLibraryModel(entries, {
+    const model = buildLibraryModel(LIBRARY_ENTRIES, {
       drift,
       changes,
       filter: libraryFilter,
       expandedDocId,
-      now,
+      now: LIBRARY_NOW,
     });
     // Boolean, not a count. The plugin also holds it steady while checks
     // resolve; this fixture has no in-flight checks to hold it across.
@@ -571,6 +590,7 @@ if (view === 'library') {
     renderLibraryScreen(refs, {
       ...model,
       menuDocId,
+      revealedDocId,
       refreshing,
       updatingAll,
       progress: updatingAll
@@ -583,12 +603,21 @@ if (view === 'library') {
           ? {
               label: 'Checking source changes',
               current: 3,
-              total: entries.length,
+              total: LIBRARY_ENTRIES.length,
             }
           : null,
     });
   };
   renderLibraryFixture();
+
+  revealLibraryFixtureRow = (docId: string) => {
+    libraryPane = 'list';
+    menuDocId = null;
+    expandedDocId = null;
+    revealedDocId = docId;
+    renderLibraryFixture();
+    revealLibraryRow(refs, docId);
+  };
 
   /** Mirrors ui-vnext.ts's setLibraryPane, including where focus lands. */
   const setPane = (next: 'list' | 'publish', focusSelector: string) => {
@@ -656,7 +685,7 @@ if (view === 'library') {
       updatingAll = true;
       renderLibraryFixture();
       window.setTimeout(() => {
-        for (const entry of entries.slice(0, 3)) drift.set(entry.docId, 'inSync');
+        for (const entry of LIBRARY_ENTRIES.slice(0, 3)) drift.set(entry.docId, 'inSync');
         updatingAll = false;
         expandedDocId = null;
         renderLibraryFixture();
@@ -673,8 +702,8 @@ if (view === 'library') {
       drift.set(docId, 'inSync');
       expandedDocId = null;
     } else if (action.dataset.libraryAction === 'remove') {
-      const index = entries.findIndex((entry) => entry.docId === docId);
-      if (index >= 0) entries.splice(index, 1);
+      const index = LIBRARY_ENTRIES.findIndex((entry) => entry.docId === docId);
+      if (index >= 0) LIBRARY_ENTRIES.splice(index, 1);
       drift.delete(docId);
     }
     renderLibraryFixture();
@@ -915,39 +944,44 @@ if (view === 'license') {
   });
 }
 
-// sourceLabel is the source's page (or a foundation's collection), never the
-// doc name — that's the row title. Mixed pages here on purpose: the palette's
-// subtitle only earns its place when it locates something.
-const SEARCH_DOCUMENTS: SearchDocument[] = [
-  { docId: 'buttonText', label: 'buttonText', sourceLabel: 'Components' },
-  { docId: 'inputField', label: 'inputField', sourceLabel: 'Components' },
-  { docId: 'radio', label: 'radio', sourceLabel: 'Forms' },
-  { docId: 'checkbox', label: 'checkbox', sourceLabel: 'Forms' },
-  { docId: 'buttonIcon', label: 'buttonIcon', sourceLabel: 'Components' },
-  { docId: 'buttonPrimary', label: 'buttonPrimary', sourceLabel: 'Components' },
-  { docId: 'buttonSegmented', label: 'buttonSegmented', sourceLabel: 'Components' },
-  { docId: 'mappedColors', label: 'Mapped Colors', sourceLabel: 'Mapped Colors' },
-  { docId: 'typography', label: 'Foundation · typography', sourceLabel: 'Text styles' },
-];
+// The same projection ui-vnext.ts's currentSearchModel builds from
+// libraryEntries: docId, kind, label, source, and the generation time the
+// palette's default recent list is ordered by. Re-derived per render, not
+// captured once, so removing a doc in the Library fixture also takes it out
+// of the palette.
+const searchDocuments = (): SearchDocument[] => LIBRARY_ENTRIES.map((entry) => ({
+  docId: entry.docId,
+  kind: entry.kind,
+  label: entry.label,
+  sourceLabel: entry.sourceLabel,
+  generatedAt: entry.generatedAt,
+}));
 let harnessSearchOpen = param('search', 'closed') === 'open';
 let harnessSearchQuery = param('query', '');
 let harnessSearchIndex = Number(param('active', '0')) || 0;
 
+// Mount once, patch after, exactly as ui-vnext.ts does: replacing the layer
+// per keystroke restarts the panel's entry animation.
 const renderHarnessSearch = (focusInput = false) => {
-  refs.root.querySelector('[data-global-search-dialog]')?.remove();
-  if (!harnessSearchOpen) return;
+  const mounted = refs.root.querySelector('[data-global-search-dialog]');
+  if (!harnessSearchOpen) {
+    mounted?.remove();
+    return;
+  }
   const model = buildSearchModel(
-    SEARCH_DOCUMENTS,
+    searchDocuments(),
     harnessSearchQuery,
     harnessSearchIndex,
   );
   harnessSearchIndex = model.activeIndex;
-  refs.root.insertAdjacentHTML('beforeend', globalSearchMarkup(model));
+  if (mounted) patchGlobalSearch(refs.root, model);
+  else refs.root.insertAdjacentHTML('beforeend', globalSearchMarkup(model));
   if (focusInput) {
     requestAnimationFrame(() => {
       const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
-      input?.focus();
-      input?.setSelectionRange(harnessSearchQuery.length, harnessSearchQuery.length);
+      if (!input || document.activeElement === input) return;
+      input.focus();
+      input.setSelectionRange(harnessSearchQuery.length, harnessSearchQuery.length);
     });
   }
 };
@@ -958,27 +992,11 @@ const closeHarnessSearch = () => {
   requestAnimationFrame(() => refs.searchButton.focus());
 };
 
+// Mirrors ui-vnext.ts: the pointer move is the same in-place patch as typing,
+// so the input keeps its focus and caret.
 const setHarnessSearchIndex = (index: number) => {
-  const model = buildSearchModel(
-    SEARCH_DOCUMENTS,
-    harnessSearchQuery,
-    index,
-  );
-  harnessSearchIndex = model.activeIndex;
-  const input = refs.root.querySelector<HTMLInputElement>('[data-global-search-input]');
-  if (input && model.results.length) {
-    input.setAttribute(
-      'aria-activedescendant',
-      `sl-global-search-result-${harnessSearchIndex}`,
-    );
-  }
-  for (
-    const result of refs.root.querySelectorAll<HTMLButtonElement>('[data-search-index]')
-  ) {
-    const active = Number(result.dataset.searchIndex) === harnessSearchIndex;
-    result.classList.toggle('is-active', active);
-    result.setAttribute('aria-selected', String(active));
-  }
+  harnessSearchIndex = index;
+  renderHarnessSearch();
 };
 
 refs.searchButton.addEventListener('click', () => {
@@ -1011,10 +1029,10 @@ document.addEventListener('click', (event) => {
   }
   const result = target.closest<HTMLButtonElement>('[data-search-index]');
   if (!result) return;
-  const nextView = result.dataset.searchView as PluginView | undefined;
+  const docId = result.dataset.searchDocId;
   closeHarnessSearch();
-  if (nextView) setActiveView(refs, nextView);
-  else setActiveView(refs, 'library');
+  setActiveView(refs, 'library');
+  if (docId) revealLibraryFixtureRow?.(docId);
 });
 
 document.addEventListener('keydown', (event) => {
@@ -1061,7 +1079,7 @@ document.addEventListener('keydown', (event) => {
     && event.target.matches('[data-global-search-input]');
   if (!input) return;
   const model = buildSearchModel(
-    SEARCH_DOCUMENTS,
+    searchDocuments(),
     harnessSearchQuery,
     harnessSearchIndex,
   );
@@ -1080,7 +1098,10 @@ document.addEventListener('keydown', (event) => {
     renderHarnessSearch(true);
   } else if (event.key === 'Enter' && model.results.length) {
     event.preventDefault();
+    const picked = model.results[model.activeIndex];
     closeHarnessSearch();
+    setActiveView(refs, 'library');
+    revealLibraryFixtureRow?.(picked.docId);
   }
 });
 

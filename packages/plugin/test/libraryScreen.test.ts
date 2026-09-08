@@ -7,6 +7,7 @@ import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
   libraryScrollMarkup,
+  revealScrollTop,
   rowMenuTop,
   type LibraryRowPresentation,
   type LibraryScreenPresentation,
@@ -523,6 +524,92 @@ describe('component vs foundation row differentiation', () => {
     }));
     const identity = /<span class="sl-library-identity">(.*?)<\/span>/s.exec(markup)?.[1];
     expect(identity).toBe('<strong>buttonText</strong>');
+  });
+});
+
+describe('search reveal', () => {
+  it('marks only the row the global search palette opened', () => {
+    const markup = libraryScrollMarkup(model({ revealedDocId: 'buttonPrimary' }));
+    expect(markup.match(/is-revealed/g)).toHaveLength(1);
+    expect(markup).toContain(
+      '<article class="sl-library-row is-revealed" data-doc-id="buttonPrimary" ' +
+      'data-expanded="false">',
+    );
+  });
+
+  it('marks nothing when no row was revealed, and marks an expanded row too', () => {
+    expect(libraryScrollMarkup(model())).not.toContain('is-revealed');
+    expect(libraryScrollMarkup(model({ revealedDocId: 'buttonText' })))
+      .toContain('class="sl-library-row is-expanded is-revealed"');
+  });
+
+  it('drops the mark when the revealed doc is not in the filtered rows', () => {
+    const markup = libraryScrollMarkup(model({
+      filter: 'sync',
+      revealedDocId: 'buttonText',
+    }));
+    expect(markup).not.toContain('is-revealed');
+  });
+});
+
+/**
+ * revealScrollTop centres the row search picked. A 528px viewport over a
+ * 1200px list is the real plugin panel with a dozen rows in it.
+ */
+describe('revealScrollTop', () => {
+  const VIEW = { viewTop: 96, viewHeight: 528, scrollHeight: 1200 };
+  const ROW_HEIGHT = 49;
+
+  it('centres a row further down the list', () => {
+    // Row 800px into the list, viewed from the top: 800 - (528 - 49) / 2.
+    expect(revealScrollTop({
+      ...VIEW,
+      scrollTop: 0,
+      rowTop: 96 + 800,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(561);
+  });
+
+  it('accounts for where the list is already scrolled to', () => {
+    // The same row, now 200px above the fold, is at the same offset.
+    expect(revealScrollTop({
+      ...VIEW,
+      scrollTop: 400,
+      rowTop: 96 + 400,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(561);
+  });
+
+  it('never scrolls past either end of the list', () => {
+    expect(revealScrollTop({
+      ...VIEW,
+      scrollTop: 300,
+      rowTop: 96,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(61);
+    expect(revealScrollTop({
+      ...VIEW,
+      scrollTop: 0,
+      rowTop: 96 + 40,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(0);
+    expect(revealScrollTop({
+      ...VIEW,
+      scrollTop: 0,
+      rowTop: 96 + 1180,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(1200 - 528);
+  });
+
+  it('is a no-op offset for a list shorter than its viewport', () => {
+    expect(revealScrollTop({
+      viewTop: 96,
+      viewHeight: 528,
+      scrollHeight: 200,
+      scrollTop: 0,
+      rowTop: 96 + 150,
+      rowHeight: ROW_HEIGHT,
+    })).toBe(0);
   });
 });
 

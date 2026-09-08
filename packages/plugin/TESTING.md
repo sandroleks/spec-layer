@@ -381,7 +381,14 @@ action. The rows below start there.
 2. Test valid, empty, and invalid custom colors, the native color picker, font
    search/fallback, and generated component and Foundation Sections.
 3. Attach and remove a logo. Confirm an oversized logo is rejected clearly.
-4. Use global search to open every workflow and a connected Library document.
+4. Global search: opening it with no query lists recent component docs, newest
+   first, and no workflow rows. Typing matches component and foundation docs by
+   name and by source, and the panel does not flash or jump as each letter is
+   typed. Enter and a click both open the Library, scroll to that
+   document's row, mark it, and leave focus on the row; the mark survives the
+   source checks that follow and clears on Refresh, a filter change, and
+   leaving the Library. A file with foundation docs but no component docs says
+   so rather than reporting no matches.
 5. Tab and Shift+Tab reach every input and action logically. Focus remains
    visible in light and dark Figma themes.
 6. Reduced-motion mode avoids nonessential animation. Errors remain visible

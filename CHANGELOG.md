@@ -285,6 +285,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Quick search lists documents, not destinations. The palette used to lead with
+  the five rail workflows, which the rail already shows; it now opens on the
+  six most recently generated component docs and searches every connected
+  document, components and foundations, once you type. Picking a result opens
+  the Library, scrolls to that document's row, marks it, and puts focus on it,
+  instead of jumping the canvas to the frame. The row's own Open action still
+  does that.
+- Quick search rows are one line: a quiet glyph, the document name, and its
+  source only when that adds something. The icon tile, the second text line,
+  the hover chevron, and the header Clear button are gone, and a foundation
+  doc no longer prints its collection name twice.
 - Clicking anything that is not a component no longer shows a toast on the
   canvas. The panel's empty state already says what to select.
 - The plugin asks Figma once per distinct variable or style id during a
@@ -383,6 +394,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Quick search no longer flashes once per typed letter. Every keystroke
+  replaced the whole palette, which restarted the panel's entry animation and
+  rebuilt the input under the caret; a render now patches the mounted list in
+  place and leaves the input alone.
 - `spec-layer pull` re-projects `tokens/` when the `dtcg` block in
   `speclayer.json` changes. It used to answer "Already up to date" because
   freshness compared only the selection; the manifest now records the dtcg

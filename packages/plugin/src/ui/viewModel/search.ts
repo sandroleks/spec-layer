@@ -1,91 +1,68 @@
-import type { IconName } from '../shell/icons';
-import type { PluginView } from './contracts';
-
 /**
- * The command palette searches the five stable workflow destinations and the
- * current Library rows. The host remains responsible for opening a workflow
- * or focusing a connected documentation frame.
+ * The command palette searches connected Library documents and nothing else.
+ * With no query typed it lists the most recently generated component docs, so
+ * the palette opens on something useful rather than on a list of rail
+ * destinations the sidebar already shows. The host remains responsible for
+ * opening the Library and revealing the row the user picked.
  */
 export interface SearchDocument {
   docId: string;
+  /** Which document type this row is, mirroring `LibraryEntry.kind`. */
+  kind: 'component' | 'foundation';
   label: string;
   sourceLabel: string;
-}
-
-export interface SearchWorkflowDefinition {
-  view: PluginView;
-  label: string;
-  detail: string;
-  icon: IconName;
-}
-
-export interface SearchWorkflowResult extends SearchWorkflowDefinition {
-  kind: 'workflow';
-  index: number;
+  /**
+   * Last successful generation time, copied from the doc link. Orders the
+   * default recent list. A missing or invalid value sorts last rather than
+   * reading as brand new.
+   */
+  generatedAt: number;
 }
 
 export interface SearchDocumentResult extends SearchDocument {
-  kind: 'document';
   index: number;
 }
 
-export type SearchResult = SearchWorkflowResult | SearchDocumentResult;
+export type SearchResult = SearchDocumentResult;
 
 export interface SearchModel {
   query: string;
-  workflowResults: SearchWorkflowResult[];
-  documentResults: SearchDocumentResult[];
-  /** Workflow results followed by Library results, matching their visual order. */
-  results: SearchResult[];
+  /**
+   * True while no query is typed, which is when `results` is the recent
+   * component list rather than a match set. The presentation layer titles the
+   * group from this, and it is the difference between "nothing documented yet"
+   * and "no matches".
+   */
+  recent: boolean;
+  results: SearchDocumentResult[];
   /** Always zero when there are no results, otherwise clamped to a valid result. */
   activeIndex: number;
 }
 
-export const SEARCH_WORKFLOWS: readonly SearchWorkflowDefinition[] = [
-  {
-    view: 'component',
-    label: 'Component docs',
-    detail: 'Document the current Figma selection',
-    icon: 'fileDescription',
-  },
-  {
-    view: 'library',
-    label: 'Library',
-    detail: 'Maintain connected documentation',
-    icon: 'folder',
-  },
-  {
-    view: 'foundations',
-    label: 'Foundation docs',
-    detail: 'Generate system documentation',
-    icon: 'layoutGrid',
-  },
-  {
-    view: 'settings',
-    label: 'Settings',
-    detail: 'Generated frame appearance',
-    icon: 'settings',
-  },
-  {
-    view: 'license',
-    label: 'License',
-    detail: 'Plan and license',
-    icon: 'key',
-  },
-] as const;
+/** Recent components shown before typing. */
+const RECENT_LIMIT = 6;
+/** Matches shown for a typed query, which can reach both document kinds. */
+const QUERY_LIMIT = 8;
 
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
 function matches(query: string, ...values: string[]): boolean {
-  return !query || values.join('\n').toLocaleLowerCase().includes(query);
+  return values.join('\n').toLocaleLowerCase().includes(query);
+}
+
+function recency(document: SearchDocument): number {
+  return Number.isFinite(document.generatedAt) ? document.generatedAt : 0;
 }
 
 /**
- * Builds the complete presentation state. Four Library results are useful
- * before typing; a focused query can show up to eight without overwhelming the
- * native 480 × 680 plugin frame.
+ * Builds the complete presentation state.
+ *
+ * No query lists component docs newest first: the palette's job before typing
+ * is "take me back to what I was documenting". A query searches every
+ * connected document, components and foundations alike, in registry order —
+ * recency is not a relevance signal once the user has said what they want.
  */
 export function buildSearchModel(
   documents: readonly SearchDocument[],
@@ -93,35 +70,26 @@ export function buildSearchModel(
   requestedActiveIndex = 0,
 ): SearchModel {
   const normalizedQuery = normalized(query);
-  const matchingWorkflows = SEARCH_WORKFLOWS.filter((workflow) =>
-    matches(normalizedQuery, workflow.label, workflow.detail));
-  const matchingDocuments = documents
-    .filter((document) =>
-      matches(normalizedQuery, document.label, document.sourceLabel))
-    .slice(0, normalizedQuery ? 8 : 4);
+  const recent = !normalizedQuery;
+  const matching = recent
+    ? [...documents]
+      .filter((document) => document.kind === 'component')
+      .sort((left, right) => recency(right) - recency(left))
+      .slice(0, RECENT_LIMIT)
+    : documents
+      .filter((document) =>
+        matches(normalizedQuery, document.label, document.sourceLabel))
+      .slice(0, QUERY_LIMIT);
 
-  const workflowResults: SearchWorkflowResult[] = matchingWorkflows.map(
-    (workflow, index) => ({ ...workflow, kind: 'workflow', index }),
-  );
-  const documentResults: SearchDocumentResult[] = matchingDocuments.map(
-    (document, offset) => ({
-      ...document,
-      kind: 'document',
-      index: workflowResults.length + offset,
-    }),
-  );
-  const results: SearchResult[] = [...workflowResults, ...documentResults];
+  const results: SearchDocumentResult[] = matching.map((document, index) => ({
+    ...document,
+    index,
+  }));
   const activeIndex = results.length
     ? Math.min(Math.max(0, requestedActiveIndex), results.length - 1)
     : 0;
 
-  return {
-    query,
-    workflowResults,
-    documentResults,
-    results,
-    activeIndex,
-  };
+  return { query, recent, results, activeIndex };
 }
 
 export type SearchNavigationKey =
