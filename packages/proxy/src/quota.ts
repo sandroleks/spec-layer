@@ -37,6 +37,16 @@ export interface QuotaSnapshot {
   resetsAt: string;
 }
 
+export function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
+  return {
+    'X-Tier': s.tier,
+    'X-Quota-Used': String(s.used),
+    'X-Quota-Limit': s.limit === null ? 'unlimited' : String(s.limit),
+    'X-Quota-Remaining': s.remaining === null ? 'unlimited' : String(s.remaining),
+    'X-Quota-Resets-At': s.resetsAt,
+  };
+}
+
 export type ReserveResult =
   | { kind: 'proceed'; flagged?: boolean }
   | { kind: 'cached'; body: string }

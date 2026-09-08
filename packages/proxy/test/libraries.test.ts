@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import {
   handlePublish,
@@ -14,7 +14,7 @@ import {
 } from '../src/libraries';
 import { hashFigmaId } from '../src/identity';
 import { SlidingWindowLimiter } from '../src/ratelimit';
-import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
+import { QuotaEngine, QUOTA_PROFILES, PRO_SOFT_THRESHOLD, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { quotaObjectName } from '../src/index';
 import type { HandlerDeps } from '../src/handlers';
 
@@ -144,7 +144,7 @@ describe('handlePublish', () => {
     await seedFree(d);
     const res = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
     expect(res.status).toBe(201);
-    expect(res.headers.get('X-Tier')).toBe('free'); // Task 5
+    expect(res.headers.get('X-Tier')).toBe('free');
   });
 
   it('rejects a lapsed license with no Figma identity (legacy client)', async () => {
@@ -407,6 +407,69 @@ describe('handlePublish', () => {
     expect(first.status).toBe(201);
     const second = await handlePublish(req(), d);
     expect(second.status).toBe(429);
+  });
+
+  it('counts a free publish and returns quota headers', async () => {
+    const d = deps();
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    expect(res.headers.get('X-Tier')).toBe('free');
+    expect(res.headers.get('X-Quota-Used')).toBe('1');
+    expect(res.headers.get('X-Quota-Limit')).toBe('10');
+    expect(res.headers.get('X-Quota-Remaining')).toBe('9');
+    expect(res.headers.get('X-Quota-Resets-At')).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('replays an unchanged republish without counting or writing', async () => {
+    const d = deps();
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId, publishedAt } = await created.json() as { libraryId: string; publishedAt: string };
+    const puts = d.libraryStore.map.size;
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, figma()), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ libraryId, publishedAt, unchanged: true });
+    expect(res.headers.get('X-Quota-Used')).toBe('1');
+    expect(d.libraryStore.map.size).toBe(puts);
+  });
+
+  it('refuses the eleventh changed publish in a month with 402', async () => {
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    for (let i = 1; i < 10; i += 1) {
+      t += 60_000;
+      const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: `v${i}` } }, figma()), d);
+      expect(res.status).toBe(200);
+    }
+    t += 60_000;
+    const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: 'v10' } }, figma()), d);
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: 'quota_exhausted', resetsAt: '2026-08-01T00:00:00.000Z' });
+  });
+
+  it('never blocks a Pro publish and flags fair use past the soft threshold', async () => {
+    const log = vi.fn();
+    const t = Date.parse('2026-07-01T00:00:00Z');
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t), log });
+    await seedPro(d);
+    const engine = d.quotaFor(`lic:${sha256(UUID_KEY)}`, 'publish');
+    // Seed committed usage directly: reserve() also feeds the engine's shared
+    // per-minute rate limiter, and 1000 calls at this frozen clock would trip
+    // it before the real publish below ever runs.
+    for (let i = 0; i < PRO_SOFT_THRESHOLD; i += 1) {
+      await engine.commit(`seed${i}`, '{}');
+    }
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(res.status).toBe(201);
+    expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
+    expect(log).toHaveBeenCalledWith('fair_use_flag', expect.objectContaining({ tier: 'pro' }));
+  });
+
+  it('does not count a create that fails validation', async () => {
+    const d = deps();
+    await handlePublish(publishReq({ bundle: { schema: 'nope' } }, figma()), d);
+    const snap = await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').snapshot('free');
+    expect(snap.used).toBe(0);
   });
 });
 

@@ -6,6 +6,7 @@ import {
 import { identityFromHeaders, licenseIdentityId } from './identity';
 import { handlePublish, handlePull, handleRotate } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
+import { quotaHeaders } from './quota';
 import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
@@ -37,16 +38,6 @@ export interface HandlerDeps {
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
-
-function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
-  return {
-    'X-Tier': s.tier,
-    'X-Quota-Used': String(s.used),
-    'X-Quota-Limit': s.limit === null ? 'unlimited' : String(s.limit),
-    'X-Quota-Remaining': s.remaining === null ? 'unlimited' : String(s.remaining),
-    'X-Quota-Resets-At': s.resetsAt,
-  };
-}
 
 interface ProseRequest {
   model?: unknown;

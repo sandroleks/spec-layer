@@ -2,6 +2,7 @@ import { sha256 } from 'js-sha256';
 import { LibraryBundleError, parseLibraryBundle } from '@spec-layer/extractor';
 import { callerProofs, licenseIdentityId } from './identity';
 import { checkLicense, type LibraryStore, type LicenseReason } from './license';
+import { quotaHeaders } from './quota';
 import type { HandlerDeps } from './handlers';
 import type { Tier } from './quota';
 
@@ -167,47 +168,96 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const bundleHash = sha256(stored);
   const store = deps.libraryStore;
 
+  const quota = deps.quotaFor(caller.tierIdentity, 'publish');
+  const respond = async (status: number, payload: Record<string, unknown>) =>
+    json(status, payload, quotaHeaders(await quota.snapshot(caller.tier)));
+
+  let libraryId: string | null = null;
+  let meta: LibraryMeta | null = null;
   if (body.libraryId !== undefined) {
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
       return json(400, { error: 'invalid libraryId' });
     }
-    const meta = await ownedMeta(store, body.libraryId, caller.owners);
-    if (meta instanceof Response) return meta;
-    const next: LibraryMeta = { ...meta, publishedAt, bundleHash, size: bytes.byteLength, fileName };
-    // Bundle first: meta must never describe a bundle that is not there yet.
-    await store.put(bundleKey(body.libraryId), stored);
-    await store.put(metaKey(body.libraryId), JSON.stringify(next));
-    deps.log('library_publish', { libraryId: body.libraryId, size: bytes.byteLength });
-    return json(200, { libraryId: body.libraryId, publishedAt });
+    const owned = await ownedMeta(store, body.libraryId, caller.owners);
+    if (owned instanceof Response) return owned;
+    libraryId = body.libraryId;
+    meta = owned;
+  } else {
+    const owned = await ownedLibraryIds(store, caller.owners);
+    const limit = LIBRARY_LIMITS[caller.tier];
+    if (owned.length >= limit) {
+      if (caller.tier === 'free') {
+        // The free limit is 1, so a free caller at the limit owns exactly one id.
+        const existingRaw = await store.get(metaKey(owned[0]));
+        const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
+        return json(403, {
+          error: 'library_limit', limit,
+          existing: { libraryId: owned[0], fileName: existing?.fileName ?? null },
+        });
+      }
+      return json(403, { error: 'library_limit', limit });
+    }
   }
 
-  const owned = await ownedLibraryIds(store, caller.owners);
-  const limit = LIBRARY_LIMITS[caller.tier];
-  if (owned.length >= limit) {
-    if (caller.tier === 'free') {
-      // The free limit is 1, so a free caller at the limit owns exactly one id.
-      const existingRaw = await store.get(metaKey(owned[0]));
-      const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
-      return json(403, {
-        error: 'library_limit', limit,
-        existing: { libraryId: owned[0], fileName: existing?.fileName ?? null },
-      });
-    }
-    return json(403, { error: 'library_limit', limit });
+  // Same bytes already published to this exact target: no write, no quota spent.
+  // Checked against the target's own stored hash rather than the quota cache,
+  // so it can never be confused with a different library that happens to share
+  // a content hash.
+  if (libraryId && meta && meta.bundleHash === bundleHash) {
+    return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true });
   }
-  const libraryId = newLibraryId();
-  const pullKey = newPullKey();
-  const meta: LibraryMeta = {
-    licenseId: caller.tierIdentity, publishedAt, bundleHash, size: bytes.byteLength, fileName,
-  };
-  await store.put(bundleKey(libraryId), stored);
-  await Promise.all([
-    store.put(metaKey(libraryId), JSON.stringify(meta)),
-    store.put(keyRecord(libraryId), sha256(pullKey)),
-    store.put(`${ownerPrefix(caller.tierIdentity)}${libraryId}`, publishedAt),
-  ]);
-  deps.log('library_publish', { libraryId, size: bytes.byteLength, created: true });
-  return json(201, { libraryId, pullKey, publishedAt });
+
+  const cacheKey = `publish:${libraryId ?? 'new'}:${bundleHash}`;
+  const reserved = await quota.reserve(caller.tier, cacheKey);
+  switch (reserved.kind) {
+    case 'cached': {
+      const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string };
+      return respond(200, { ...prior, unchanged: true });
+    }
+    case 'pending':
+      return json(409, { error: 'publish_pending' });
+    case 'exhausted':
+      return json(402, { error: 'quota_exhausted', resetsAt: reserved.resetsAt });
+    case 'rate_limited':
+      return json(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
+    case 'proceed':
+      break;
+    default:
+      return json(500, { error: 'internal' });
+  }
+  if (reserved.kind === 'proceed' && reserved.flagged) {
+    deps.log('fair_use_flag', { identityId: caller.tierIdentity, tier: caller.tier, surface: 'publish' });
+  }
+
+  try {
+    if (libraryId && meta) {
+      const next: LibraryMeta = { ...meta, publishedAt, bundleHash, size: bytes.byteLength, fileName };
+      // Bundle first: meta must never describe a bundle that is not there yet.
+      await store.put(bundleKey(libraryId), stored);
+      await store.put(metaKey(libraryId), JSON.stringify(next));
+      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt }));
+      deps.log('library_publish', { libraryId, size: bytes.byteLength });
+      return respond(200, { libraryId, publishedAt });
+    }
+    const newId = newLibraryId();
+    const pullKey = newPullKey();
+    const created: LibraryMeta = {
+      licenseId: caller.tierIdentity, publishedAt, bundleHash, size: bytes.byteLength, fileName,
+    };
+    await store.put(bundleKey(newId), stored);
+    await Promise.all([
+      store.put(metaKey(newId), JSON.stringify(created)),
+      store.put(keyRecord(newId), sha256(pullKey)),
+      store.put(`${ownerPrefix(caller.tierIdentity)}${newId}`, publishedAt),
+    ]);
+    // The replay body never carries the pull key: it is handed out exactly once.
+    await quota.commit(cacheKey, JSON.stringify({ libraryId: newId, publishedAt }));
+    deps.log('library_publish', { libraryId: newId, size: bytes.byteLength, created: true });
+    return respond(201, { libraryId: newId, pullKey, publishedAt });
+  } catch (err) {
+    await quota.release(cacheKey);
+    throw err;
+  }
 }
 
 export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
