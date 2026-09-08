@@ -13,7 +13,7 @@ import type { DtcgExport, DtcgJson, DtcgTree } from '../dtcg';
 import { compareCodeUnits } from '../diagnostics';
 import { canonicalNumber } from '../precision';
 import {
-  joinWords, pathWords, resolveNames, sortReport,
+  resolveNames, sortReport,
   type NameCase, type OutputMapEntry, type OutputReportEntry,
 } from './naming';
 
@@ -118,7 +118,18 @@ const collectionSlug = (file: string): string => file.split('.')[0];
 // Values
 // ---------------------------------------------------------------------------
 
-interface Ctx { names: Map<string, string>; report: OutputReportEntry[]; path: string; mode?: string }
+/**
+ * `names` is the permanent, never-shrinking assignment from `resolveNames`
+ * (a path missing here collided and was already reported); `alive` is the
+ * current fixed-point pass's set of paths that actually got a declaration,
+ * and is what a reference is checked against. Every non-collided leaf is
+ * still attempted every pass regardless of whether its own path is in
+ * `alive`, so its own omission is freshly reported in whichever pass turns
+ * out to be the stable one.
+ */
+interface Ctx {
+  names: Map<string, string>; alive: Set<string>; report: OutputReportEntry[]; path: string; mode?: string;
+}
 
 const REF = /^\{(.+)\}$/;
 
@@ -138,7 +149,7 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
   if (typeof value === 'string') {
     const ref = REF.exec(value);
     if (ref) {
-      const name = ctx.names.get(ref[1]);
+      const name = ctx.alive.has(ref[1]) ? ctx.names.get(ref[1]) : undefined;
       if (name !== undefined) return `var(${name})`;
       report(ctx, {
         code: 'reference_target_omitted', severity: 'warning',
@@ -198,12 +209,30 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
 
 const TEXT_TRANSFORM: Record<string, string> = { original: 'none', upper: 'uppercase', lower: 'lowercase', title: 'capitalize' };
 const TEXT_DECORATION: Record<string, string> = { none: 'none', underline: 'underline', strikethrough: 'line-through' };
-const TYPOGRAPHY_MEMBERS: Array<[key: string, suffix: string[], type: string]> = [
-  ['fontFamily', ['font', 'family'], 'fontFamily'],
-  ['fontSize', ['font', 'size'], 'dimension'],
-  ['fontWeight', ['font', 'weight'], 'fontWeight'],
-  ['lineHeight', ['line', 'height'], 'number'],
-  ['letterSpacing', ['letter', 'spacing'], 'dimension'],
+
+/** `$value` members a typography leaf may carry, each its own custom property. */
+const TYPOGRAPHY_MEMBERS: ReadonlyArray<readonly [key: string, type: string]> = [
+  ['fontFamily', 'fontFamily'],
+  ['fontSize', 'dimension'],
+  ['fontWeight', 'fontWeight'],
+  ['lineHeight', 'number'],
+  ['letterSpacing', 'dimension'],
+];
+/** `$extensions` members resolved through a lookup table, keyed by their CSS-facing member name. */
+const TEXT_MEMBERS: ReadonlyArray<readonly [key: string, extKey: string, table: Record<string, string>]> = [
+  ['textTransform', 'textCase', TEXT_TRANSFORM],
+  ['textDecoration', 'textDecoration', TEXT_DECORATION],
+];
+/**
+ * Every DTCG path segment a typography leaf may register a name under. These
+ * are ordinary paths as far as `resolveNames` is concerned: a member path
+ * that collides with a token path omits both and reports `name_collision`,
+ * exactly like two tokens would. The style's own path is never registered;
+ * nothing is ever emitted under it.
+ */
+const TYPOGRAPHY_MEMBER_KEYS: readonly string[] = [
+  ...TYPOGRAPHY_MEMBERS.map(([key]) => key),
+  ...TEXT_MEMBERS.map(([key]) => key),
 ];
 
 function converted(ctx: Ctx, property: string, from: DtcgTree, to: string): void {
@@ -214,58 +243,76 @@ function converted(ctx: Ctx, property: string, from: DtcgTree, to: string): void
   });
 }
 
-/** Members the DTCG projection parked under $extensions because the format had no home for them. CSS does. */
+/** A member the DTCG projection parked under $extensions because the format had no home for it. CSS does. */
 function extensionDimension(
-  ctx: Ctx, ext: DtcgTree, key: string, suffix: string[], member: (s: string[]) => string, percentTo: (n: number) => string,
+  ctx: Ctx, ext: DtcgTree, key: string, name: string, percentTo: (n: number) => string,
 ): string | null {
   const d = asRecord(ext[key]);
   if (!d || typeof d.value !== 'number' || typeof d.unit !== 'string') return null;
   if (d.unit === '%') {
     const to = percentTo(canonicalNumber(d.value / 100));
     converted(ctx, key, d, to);
-    return `${member(suffix)}: ${to};`;
+    return `${name}: ${to};`;
   }
-  return `${member(suffix)}: ${d.value}${d.unit};`;
+  return `${name}: ${d.value}${d.unit};`;
 }
 
-function typographyDecls(ctx: Ctx, leaf: Leaf, member: (suffix: string[]) => string): string[] {
+/**
+ * Declarations for one typography leaf's members, plus the member paths that
+ * actually got one. `names` is keyed by `${leaf.path}.${memberKey}`; a member
+ * with no name (collided, or already pruned in a later fixed-point pass) is
+ * skipped without a fresh report, since resolveNames already reported it.
+ */
+function typographyDecls(
+  ctx: Ctx, leaf: Leaf, names: Map<string, string>,
+): { decls: string[]; declaredPaths: string[] } {
   const decls: string[] = [];
+  const declaredPaths: string[] = [];
   const value = asRecord(leaf.value) ?? {};
-  for (const [key, suffix, type] of TYPOGRAPHY_MEMBERS) {
-    if (!(key in value)) continue;
-    const css = cssValue(ctx, type, value[key], key);
-    if (css !== null) decls.push(`${member(suffix)}: ${css};`);
-  }
   const ext = leaf.ext ?? {};
+  const nameFor = (key: string): string | undefined => names.get(`${leaf.path}.${key}`);
+
+  for (const [key, type] of TYPOGRAPHY_MEMBERS) {
+    if (!(key in value)) continue;
+    const name = nameFor(key);
+    if (name === undefined) continue; // collided; already reported by resolveNames
+    const css = cssValue(ctx, type, value[key], key);
+    if (css !== null) { decls.push(`${name}: ${css};`); declaredPaths.push(`${leaf.path}.${key}`); }
+  }
   // A px line height could not be a DTCG multiplier; CSS states px directly.
   // A % letter spacing is a fraction of the font size, which is what em means.
   if (!('lineHeight' in value)) {
-    const d = extensionDimension(ctx, ext, 'lineHeight', ['line', 'height'], member, (n) => String(n));
-    if (d) decls.push(d);
+    const name = nameFor('lineHeight');
+    if (name !== undefined) {
+      const d = extensionDimension(ctx, ext, 'lineHeight', name, (n) => String(n));
+      if (d) { decls.push(d); declaredPaths.push(`${leaf.path}.lineHeight`); }
+    }
   }
   if (!('letterSpacing' in value)) {
-    const d = extensionDimension(ctx, ext, 'letterSpacing', ['letter', 'spacing'], member, (n) => `${n}em`);
-    if (d) decls.push(d);
+    const name = nameFor('letterSpacing');
+    if (name !== undefined) {
+      const d = extensionDimension(ctx, ext, 'letterSpacing', name, (n) => `${n}em`);
+      if (d) { decls.push(d); declaredPaths.push(`${leaf.path}.letterSpacing`); }
+    }
   }
-  const tables: Array<[string, string[], Record<string, string>]> = [
-    ['textCase', ['text', 'transform'], TEXT_TRANSFORM],
-    ['textDecoration', ['text', 'decoration'], TEXT_DECORATION],
-  ];
-  for (const [key, suffix, table] of tables) {
-    const raw = ext[key];
+  for (const [key, extKey, table] of TEXT_MEMBERS) {
+    const raw = ext[extKey];
     if (typeof raw !== 'string') continue;
+    const name = nameFor(key);
+    if (name === undefined) continue; // collided; already reported by resolveNames
     const css = table[raw];
     if (css !== undefined) {
-      decls.push(`${member(suffix)}: ${css};`);
+      decls.push(`${name}: ${css};`);
+      declaredPaths.push(`${leaf.path}.${key}`);
     } else {
       report(ctx, {
         code: 'not_expressible', severity: 'info',
-        message: `CSS text properties have no form for ${key} "${raw}"; it was omitted.`,
-        details: { property: key, value: raw },
+        message: `CSS text properties have no form for ${extKey} "${raw}"; it was omitted.`,
+        details: { property: extKey, value: raw },
       });
     }
   }
-  return decls;
+  return { decls, declaredPaths };
 }
 
 const SHADOW_MEMBERS: Array<[key: string, type: string]> = [
@@ -304,48 +351,48 @@ function headerText(header: OutputHeader, nameCase: NameCase): string {
     + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
 }
 
-export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
-  const nameCase = options.case ?? CSS_DEFAULTS.case;
-  const root = options.root ?? CSS_DEFAULTS.root;
-  const template = options.modeSelector ?? CSS_DEFAULTS.modeSelector;
-  const sources = sourcesOf(exp.resolver);
+interface EmitResult {
+  blocks: Map<string, string[]>;
+  entries: OutputReportEntry[];
+  /** Every path (token, shadow, or typography member) that got a declaration this pass. */
+  declared: Set<string>;
+}
 
-  const leavesByFile = new Map<string, Leaf[]>();
-  const paths = new Set<string>();
-  for (const s of sources) {
-    if (!leavesByFile.has(s.file)) {
-      const out: Leaf[] = [];
-      collectLeaves(exp.files[s.file] ?? {}, [], out);
-      leavesByFile.set(s.file, out);
-    }
-    for (const leaf of leavesByFile.get(s.file) ?? []) paths.add(leaf.path);
-  }
-
-  const resolved = resolveNames([...paths], exp.meta, {
-    codeSyntaxKey: 'WEB', acceptDeclared: acceptCssDeclared, affix: (body) => `--${body}`, nameCase,
-  });
-  const entries: OutputReportEntry[] = [...resolved.report];
-  const memberOf = (path: string) => (suffix: string[]) => `--${joinWords([...pathWords(path), ...suffix], nameCase)}`;
-
+/**
+ * One attempt at writing every block. `names` (permanent) and `alive`
+ * (this pass's fixed-point guess) are closed over by the caller, along with
+ * everything else `cssOutput` needs (sources, leaves, selectors), so a
+ * fixed-point retry is just another call with a smaller `alive`.
+ */
+function emitPass(
+  sources: Source[], leavesByFile: Map<string, Leaf[]>, names: Map<string, string>, alive: Set<string>,
+  root: string, template: string, modes: Record<string, string> | undefined,
+): EmitResult {
+  const entries: OutputReportEntry[] = [];
+  const declared = new Set<string>();
   const blocks = new Map<string, string[]>();
   for (const s of sources) {
-    const perCollection = options.modes?.[s.collection];
+    const perCollection = modes?.[s.collection];
     const selector = s.isDefault ? root : (perCollection ?? template)
       .replace(/\{mode\}/g, modeSlug(s.file))
       .replace(/\{collection\}/g, collectionSlug(s.file));
     const decls: string[] = [];
     for (const leaf of leavesByFile.get(s.file) ?? []) {
-      const name = resolved.names.get(leaf.path);
-      if (name === undefined) continue; // collided; already reported
-      const ctx: Ctx = { names: resolved.names, report: entries, path: leaf.path, ...(s.mode !== null ? { mode: s.mode } : {}) };
+      const ctx: Ctx = { names, alive, report: entries, path: leaf.path, ...(s.mode !== null ? { mode: s.mode } : {}) };
       if (leaf.type === 'typography') {
-        decls.push(...typographyDecls(ctx, leaf, memberOf(leaf.path)));
-      } else if (leaf.type === 'shadow') {
-        const d = shadowDecl(ctx, leaf, name);
-        if (d !== null) decls.push(d);
+        const t = typographyDecls(ctx, leaf, names);
+        decls.push(...t.decls);
+        for (const p of t.declaredPaths) declared.add(p);
       } else {
-        const v = cssValue(ctx, leaf.type, leaf.value);
-        if (v !== null) decls.push(`${name}: ${v};`);
+        const name = names.get(leaf.path);
+        if (name === undefined) continue; // collided; already reported by resolveNames
+        if (leaf.type === 'shadow') {
+          const d = shadowDecl(ctx, leaf, name);
+          if (d !== null) { decls.push(d); declared.add(leaf.path); }
+        } else {
+          const v = cssValue(ctx, leaf.type, leaf.value);
+          if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); }
+        }
       }
     }
     if (decls.length === 0) continue;
@@ -353,6 +400,68 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     lines.push(`  /* ${s.collection}${s.mode !== null ? `, ${s.mode}` : ''} */`, ...decls.map((d) => `  ${d}`));
     blocks.set(selector, lines);
   }
+  return { blocks, entries, declared };
+}
+
+export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
+  const nameCase = options.case ?? CSS_DEFAULTS.case;
+  const root = options.root ?? CSS_DEFAULTS.root;
+  const template = options.modeSelector ?? CSS_DEFAULTS.modeSelector;
+  const sources = sourcesOf(exp.resolver);
+
+  const leavesByFile = new Map<string, Leaf[]>();
+  for (const s of sources) {
+    if (!leavesByFile.has(s.file)) {
+      const out: Leaf[] = [];
+      collectLeaves(exp.files[s.file] ?? {}, [], out);
+      leavesByFile.set(s.file, out);
+    }
+  }
+
+  // A typography leaf never registers its own path (nothing is emitted
+  // under it); it registers one path per member instead, so a member name
+  // that collides with a token's name is caught by resolveNames like any
+  // other collision. A shadow leaf, like a plain token, registers its path.
+  const candidatePaths = new Set<string>();
+  for (const leaves of leavesByFile.values()) {
+    for (const leaf of leaves) {
+      if (leaf.type === 'typography') {
+        for (const key of TYPOGRAPHY_MEMBER_KEYS) candidatePaths.add(`${leaf.path}.${key}`);
+      } else {
+        candidatePaths.add(leaf.path);
+      }
+    }
+  }
+
+  const resolved = resolveNames([...candidatePaths], exp.meta, {
+    codeSyntaxKey: 'WEB', acceptDeclared: acceptCssDeclared, affix: (body) => `--${body}`, nameCase,
+  });
+  const names = resolved.names; // permanent: a path missing here collided, and is done
+  const emit = (alive: Set<string>) => emitPass(sources, leavesByFile, names, alive, root, template, options.modes);
+
+  // Fixed point on which names a reference may resolve through. A name
+  // stops being a valid reference target the moment nothing actually
+  // declares it under it; that can in turn strand whatever referenced it, so
+  // shrink `alive` to exactly what got declared and try again. Every
+  // non-collided leaf is attempted every pass regardless of whether its own
+  // path is currently in `alive` (only *other* leaves' references check
+  // that), so the pass where `alive` finally stops shrinking still carries a
+  // fresh, complete set of omission reports: nothing needs to be carried
+  // over from an earlier pass.
+  let alive = new Set(names.keys());
+  let pass = emit(alive);
+  for (;;) {
+    if (pass.declared.size === alive.size) break;
+    alive = pass.declared;
+    pass = emit(alive);
+  }
+
+  const map: Record<string, OutputMapEntry> = {};
+  for (const [path, entry] of Object.entries(resolved.map)) {
+    if (alive.has(path)) map[path] = entry;
+  }
+
+  const entries: OutputReportEntry[] = [...resolved.report, ...pass.entries];
 
   const shared = [...new Set(sources
     .filter((s) => !s.isDefault && options.modes?.[s.collection] === undefined)
@@ -367,7 +476,7 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     }
   }
 
-  const body = [...blocks].flatMap(([selector, lines]) => [`${selector} {`, ...lines, '}', '']);
+  const body = [...pass.blocks].flatMap(([selector, lines]) => [`${selector} {`, ...lines, '}', '']);
   const text = `${[headerText(header, nameCase), '', ...body].join('\n').trimEnd()}\n`;
-  return { text, map: resolved.map, report: sortReport(entries) };
+  return { text, map, report: sortReport(entries) };
 }

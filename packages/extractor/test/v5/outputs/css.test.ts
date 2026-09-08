@@ -202,6 +202,13 @@ describe('cssOutput styles', () => {
     expect(text).not.toMatch(/font: /);
   });
 
+  it('maps a typography member by its member path, and never the style path itself', () => {
+    const { map } = cssOutput(styled, HEADER);
+    expect(map['Typography styles.Body.fontSize']).toEqual({ name: '--typography-styles-body-font-size', source: 'derived' });
+    expect(map).not.toHaveProperty('Typography styles.Body');
+    expect(map).not.toHaveProperty('Effect styles.Blur');
+  });
+
   it('keeps a lineHeight already in $value, and reports what it restated or could not say', () => {
     expect(text).toContain('  --typography-styles-caps-line-height: 1.2;');
     expect(text).not.toContain('--typography-styles-caps-line-height: 1.4');
@@ -220,6 +227,70 @@ describe('cssOutput styles', () => {
     expect(report).toContainEqual(expect.objectContaining({
       code: 'not_expressible', path: 'Effect styles.Blur', details: { reason: 'no_visible_shadow' },
     }));
+  });
+});
+
+describe('cssOutput names match declared properties', () => {
+  it('omits a token whose value cannot be expressed, and a token that references it, with no var() to an undeclared property', () => {
+    const exp: DtcgExport = {
+      files: {
+        'base.default.json': {
+          Base: {
+            bad: { $type: 'color', $value: { colorSpace: 'srgb' } },
+            ref: { $type: 'color', $value: '{Base.bad}' },
+          },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Base: { sources: [{ $ref: 'base.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Base' }],
+      },
+      meta: {},
+      report: [],
+    };
+    const { text, map, report } = cssOutput(exp, HEADER);
+    expect(map).not.toHaveProperty('Base.bad');
+    expect(map).not.toHaveProperty('Base.ref');
+    expect(text).not.toMatch(/var\(--base-bad\)/);
+    expect(text).not.toContain('--base-ref:');
+    expect(report).toContainEqual(expect.objectContaining({
+      code: 'not_expressible', path: 'Base.bad',
+    }));
+    expect(report).toContainEqual(expect.objectContaining({
+      code: 'reference_target_omitted', path: 'Base.ref', details: { target: 'Base.bad' },
+    }));
+  });
+
+  it('omits both sides of a member/token name collision and reports name_collision for both paths', () => {
+    // Two sources of one set: a token at Body.font.size, and a typography style at
+    // Body whose fontSize member derives the same kebab name ("font"+"Size" split
+    // the same way as "font"+"size"). Different files, so no structural conflict
+    // in either tree; the collision is purely in the derived name.
+    const exp: DtcgExport = {
+      files: {
+        'base.default.json': {
+          'Typography styles': { Body: { font: { size: { $type: 'dimension', $value: { value: 20, unit: 'px' } } } } },
+        },
+        'styles.typography.json': {
+          'Typography styles': { Body: { $type: 'typography', $value: { fontSize: { value: 16, unit: 'px' } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { 'Typography styles': { sources: [{ $ref: 'base.default.json' }, { $ref: 'styles.typography.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Typography styles' }],
+      },
+      meta: {},
+      report: [],
+    };
+    const { map, report } = cssOutput(exp, HEADER);
+    expect(map).not.toHaveProperty('Typography styles.Body.font.size');
+    expect(map).not.toHaveProperty('Typography styles.Body.fontSize');
+    const collisions = report.filter((r) => r.code === 'name_collision');
+    expect(collisions.map((r) => r.path).sort()).toEqual(['Typography styles.Body.font.size', 'Typography styles.Body.fontSize']);
   });
 });
 
