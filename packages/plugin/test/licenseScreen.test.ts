@@ -65,7 +65,7 @@ describe('license screen presentation', () => {
   it('renders the Pro plan and the connected device', () => {
     const markup = licenseScrollMarkup(model('pro'));
     expect(markup).toContain('Pro plan');
-    expect(markup).toContain('No monthly cap on AI writing or library maintenance');
+    expect(markup).toContain('Up to 10 published Figma files, no monthly cap on AI writing or updates');
     expect(markup).toContain('Connected license');
     expect(markup).toContain('•••• •••• •••• 64PN');
     expect(markup).toContain('Remove key');

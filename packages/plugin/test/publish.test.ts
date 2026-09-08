@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import type { SerializedFoundation } from '@spec-layer/extractor';
+import { sha256 } from 'js-sha256';
+import { libraryBundleContentHash, type SerializedFoundation } from '@spec-layer/extractor';
 import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
   agentSetupMessage, buildPublishBundle, publishBundle, rotatePullKey, setupCommand,
@@ -132,6 +133,23 @@ describe('buildPublishBundle', () => {
     }
   });
 
+  it('keeps one content identity across build times, though the bytes differ', () => {
+    // The bug this pins: every artifact's export envelope carries the build
+    // timestamp, so a byte hash of the bundle changes on every click of
+    // Publish and the proxy can never see an unchanged republish.
+    const sources = baseSources();
+    const first = buildPublishBundle(sources, '2026-09-01T00:00:00.000Z');
+    const second = buildPublishBundle(sources, '2026-09-01T00:00:05.000Z');
+    expect(sha256(JSON.stringify(first))).not.toBe(sha256(JSON.stringify(second)));
+    expect(libraryBundleContentHash(first)).toBe(libraryBundleContentHash(second));
+  });
+
+  it('changes its content identity when a source changes', () => {
+    const base = libraryBundleContentHash(buildPublishBundle(baseSources(), GENERATED_AT));
+    const renamed = buildPublishBundle(baseSources({ fileName: 'Renamed' }), GENERATED_AT);
+    expect(libraryBundleContentHash(renamed)).not.toBe(base);
+  });
+
   it('is deterministic for a fixed generatedAt', () => {
     // Two calls with identical inputs produce identical JSON.stringify output.
     const sources = baseSources();
@@ -144,14 +162,22 @@ describe('buildPublishBundle', () => {
 describe('publishBundle', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
   const BUNDLE = buildPublishBundle(baseSources(), GENERATED_AT);
+  const LIB = 'lib_' + 'b'.repeat(24);
 
-  function jsonResponse(status: number, body: unknown): Response {
+  /** A response with real headers, since publishBundle reads the quota off them. */
+  function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
     return {
       status,
       ok: status >= 200 && status < 300,
+      headers: new Headers(headers),
       json: async () => body,
     } as unknown as Response;
   }
+
+  const PUBLISH_QUOTA_HEADERS = {
+    'X-Tier': 'free', 'X-Quota-Used': '3', 'X-Quota-Limit': '10',
+    'X-Quota-Remaining': '7', 'X-Quota-Resets-At': '2026-10-01T00:00:00.000Z',
+  };
 
   it('creates on 201 and returns the pull key', async () => {
     const fetcher: typeof fetch = vi.fn(async (_url, init) => {
@@ -162,7 +188,7 @@ describe('publishBundle', () => {
         libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
       });
     });
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'created', libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
     });
@@ -177,7 +203,7 @@ describe('publishBundle', () => {
         libraryId: 'lib_existing', publishedAt: '2026-09-01T00:00:02.000Z',
       });
     });
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_existing', fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_existing', fetcher });
     expect(outcome).toEqual({
       kind: 'updated', libraryId: 'lib_existing', publishedAt: '2026-09-01T00:00:02.000Z',
     });
@@ -185,23 +211,102 @@ describe('publishBundle', () => {
 
   it('maps 404/not_owner on republish to gone', async () => {
     const notFound = vi.fn(async () => jsonResponse(404, {}));
-    expect(await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_gone', fetcher: notFound }))
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_gone', fetcher: notFound })).outcome)
       .toEqual({ kind: 'gone' });
 
     const notOwner = vi.fn(async () => jsonResponse(403, { error: 'not_owner' }));
-    expect(await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_stolen', fetcher: notOwner }))
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_stolen', fetcher: notOwner })).outcome)
       .toEqual({ kind: 'gone' });
   });
 
-  it('maps 401 license errors to plugin-voice copy', async () => {
-    const fetcher = vi.fn(async () => jsonResponse(401, { error: 'license_not_active' }));
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs an active Pro license.' });
+  it('maps 401 to a plain sign-in problem, not a Pro requirement', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(401, { error: 'unauthenticated' }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
+  });
+
+  it('maps 402 to the monthly updates message with the reset date', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'You have used your 10 free updates for this month. Upgrade to Pro or publish again after Oct 1.',
+    });
+  });
+
+  it('maps a free library_limit to the one-file message naming the other file', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, {
+      error: 'library_limit', limit: 1, existing: { libraryId: 'lib_' + 'a'.repeat(24), fileName: 'Marketing DS' },
+    }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'Free plans publish one Figma file. This account already publishes Marketing DS. Upgrade to Pro to publish up to 10 files.',
+    });
+  });
+
+  it('says "another file" when the existing library has no stored name', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, {
+      error: 'library_limit', limit: 1, existing: { libraryId: 'lib_' + 'a'.repeat(24), fileName: null },
+    }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect((outcome as { message: string }).message)
+      .toBe('Free plans publish one Figma file. This account already publishes another file. Upgrade to Pro to publish up to 10 files.');
+  });
+
+  it('maps a Pro library_limit to the count', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 10 }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect(outcome).toEqual({ kind: 'error', message: 'This plan already publishes 10 Figma files, which is the limit.' });
+  });
+
+  it('reports an unchanged republish as its own outcome', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z', unchanged: true }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
+    expect(outcome).toEqual({ kind: 'unchanged', libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z' });
+  });
+
+  it('returns the publish allowance the response headers state', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(
+      200, { libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z' }, PUBLISH_QUOTA_HEADERS,
+    ));
+    const { outcome, quota } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
+    expect(outcome.kind).toBe('updated');
+    expect(quota).toEqual({
+      tier: 'free', used: 3, limit: 10, remaining: 7, resetsAt: '2026-10-01T00:00:00.000Z',
+    });
+  });
+
+  it('returns the allowance from a 402 refusal too', async () => {
+    const exhausted = {
+      ...PUBLISH_QUOTA_HEADERS, 'X-Quota-Used': '10', 'X-Quota-Remaining': '0',
+    };
+    const fetcher = vi.fn(async () => jsonResponse(
+      402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }, exhausted,
+    ));
+    const { outcome, quota } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
+    expect(outcome.kind).toBe('error');
+    expect(quota).toMatchObject({ used: 10, remaining: 0 });
+  });
+
+  it('returns a null allowance when the response carried no quota headers', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: 'x' }));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher })).quota).toBeNull();
+    const offline = vi.fn(async () => { throw new Error('offline'); });
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher: offline })).quota).toBeNull();
+  });
+
+  it('maps 409 publish_pending to a wait-and-retry message', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(409, { error: 'publish_pending' }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
+    expect(outcome).toEqual({
+      kind: 'error', message: 'A publish is already running. Give it a moment and try again.',
+    });
   });
 
   it('maps 429 rate limiting to copy', async () => {
     const fetcher = vi.fn(async () => jsonResponse(429, {}));
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error', message: 'Too many requests just now. Give it a minute.',
     });
@@ -211,7 +316,7 @@ describe('publishBundle', () => {
     const fetcher = vi.fn(async () => jsonResponse(413, {
       error: 'bundle_too_large', size: 5_640_000, limit: 5_000_000,
     }));
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
       message: 'This library is larger than the publish limit (5.6 MB of 5 MB).',
@@ -220,16 +325,16 @@ describe('publishBundle', () => {
 
   it('maps library_limit (403) with the count', async () => {
     const fetcher = vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 3 }));
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'This license already publishes 3 libraries, which is the limit.',
+      message: 'This plan already publishes 3 Figma files, which is the limit.',
     });
   });
 
   it('maps an unmapped status to a generic HTTP message', async () => {
     const fetcher = vi.fn(async () => jsonResponse(500, {}));
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error', message: 'Publishing failed with HTTP 500.',
     });
@@ -237,7 +342,7 @@ describe('publishBundle', () => {
 
   it('maps network failure to unreachable copy', async () => {
     const fetcher = vi.fn(async () => { throw new Error('network down'); });
-    const outcome = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
       message: 'Could not reach the publish service. Check your connection and try again.',
@@ -247,8 +352,8 @@ describe('publishBundle', () => {
   it('refuses locally with no license identity, never hitting the network', async () => {
     const fetcher = vi.fn();
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
-    const outcome = await publishBundle(BUNDLE, { auth: noAuth, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs an active Pro license.' });
+    const { outcome } = await publishBundle(BUNDLE, { auth: noAuth, libraryId: null, fetcher });
+    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -266,7 +371,7 @@ describe('rotatePullKey', () => {
       ok: false, status: 401, json: async () => ({}),
     } as unknown as Response));
     expect(await rotatePullKey('lib_1', AUTH, unauthorizedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key needs an active Pro license.',
+      kind: 'error', message: 'Rotating the key failed with HTTP 401.',
     });
 
     const serverErrorFetch = vi.fn(async () => ({
@@ -284,7 +389,7 @@ describe('rotatePullKey', () => {
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
     const unusedFetch = vi.fn();
     expect(await rotatePullKey('lib_1', noAuth, unusedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key needs an active Pro license.',
+      kind: 'error', message: 'Rotating the key needs a signed-in Figma account or a license key.',
     });
     expect(unusedFetch).not.toHaveBeenCalled();
   });
@@ -294,10 +399,12 @@ describe('voice: no em dashes in error copy', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
   const NO_AUTH: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
 
-  function jsonResponse(status: number, body: unknown): Response {
+  /** A response with real headers, since publishBundle reads the quota off them. */
+  function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
     return {
       status,
       ok: status >= 200 && status < 300,
+      headers: new Headers(headers),
       json: async () => body,
     } as unknown as Response;
   }
@@ -315,6 +422,8 @@ describe('voice: no em dashes in error copy', () => {
     const publishCases: Array<{ auth: ProxyAuth; libraryId: string | null; fetcher: typeof fetch }> = [
       // 401 license_not_active
       { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(401, { error: 'license_not_active' })) },
+      // 409 publish_pending
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(409, { error: 'publish_pending' })) },
       // 429 rate limited
       { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(429, {})) },
       // 403 library_limit with a limit value
@@ -329,7 +438,7 @@ describe('voice: no em dashes in error copy', () => {
       { auth: NO_AUTH, libraryId: null, fetcher: vi.fn() },
     ];
     for (const testCase of publishCases) {
-      const outcome = await publishBundle(bundle, testCase);
+      const { outcome } = await publishBundle(bundle, testCase);
       if (outcome.kind === 'error') messages.push(outcome.message);
     }
 
@@ -380,11 +489,15 @@ describe('setupCommand', () => {
 
 describe('publish controller', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
+  const LIB = 'lib_1';
+  const KEY = 'sl_old';
 
-  function jsonResponse(status: number, body: unknown): Response {
+  /** A response with real headers, since publishBundle reads the quota off them. */
+  function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
     return {
       status,
       ok: status >= 200 && status < 300,
+      headers: new Headers(headers),
       json: async () => body,
     } as unknown as Response;
   }
@@ -406,15 +519,18 @@ describe('publish controller', () => {
   let publish: typeof import('../src/ui/publish');
   let sent: UiToMain[];
   let repaintCount: number;
+  let quotaSnapshots: Array<import('../src/ui/publish').PublishQuotaSnapshot>;
 
   beforeEach(async () => {
     vi.resetModules();
     publish = await import('../src/ui/publish');
     sent = [];
     repaintCount = 0;
+    quotaSnapshots = [];
     publish.setPublishHost({
       repaint: () => { repaintCount += 1; },
       send: (msg) => { sent.push(msg); },
+      onPublishQuota: (snapshot) => { quotaSnapshots.push(snapshot); },
     });
   });
 
@@ -471,6 +587,50 @@ describe('publish controller', () => {
     });
   });
 
+  it('hands the host the allowance a create reports, before repainting', async () => {
+    const headers = {
+      'X-Tier': 'free', 'X-Quota-Used': '1', 'X-Quota-Limit': '10',
+      'X-Quota-Remaining': '9', 'X-Quota-Resets-At': '2026-10-01T00:00:00.000Z',
+    };
+    publish.onPublishClick(AUTH);
+    const repaintsBeforePublish = repaintCount;
+    const fetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
+    }, headers));
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(quotaSnapshots).toEqual([{
+      tier: 'free', used: 1, limit: 10, remaining: 9, resetsAt: '2026-10-01T00:00:00.000Z',
+    }]);
+    // The meter is handed over while the result is still being applied, so one
+    // paint shows both. This is why the count is not a fetch behind the screen.
+    expect(repaintCount).toBeGreaterThan(repaintsBeforePublish);
+  });
+
+  it('hands the host the allowance a 402 refusal reports', async () => {
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async () => jsonResponse(402, {
+      error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z',
+    }, {
+      'X-Tier': 'free', 'X-Quota-Used': '10', 'X-Quota-Limit': '10',
+      'X-Quota-Remaining': '0', 'X-Quota-Resets-At': '2026-10-01T00:00:00.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(publish.publishState().status).toBe('error');
+    expect(quotaSnapshots).toEqual([{
+      tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z',
+    }]);
+  });
+
+  it('leaves the allowance alone when the response carried no quota headers', async () => {
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async () => jsonResponse(201, {
+      libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
+    }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(publish.publishState().status).toBe('done');
+    expect(quotaSnapshots).toEqual([]);
+  });
+
   it('republishes with the known libraryId', async () => {
     publish.onPublishClick(AUTH);
     const createFetcher = vi.fn(async () => jsonResponse(201, {
@@ -515,7 +675,7 @@ describe('publish controller', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'That library is gone or belongs to another license. Nothing was published. '
+      'That library is gone or belongs to another account. Nothing was published. '
       + 'Publish again to create a new library, then share its setup command with your developers.',
     );
     // The stale identity is dropped locally and in the file, so the next
@@ -649,8 +809,19 @@ describe('publish controller', () => {
     await publish.onRotateClick(AUTH, rotateFetcher);
     const state = publish.publishState();
     expect(state.status).toBe('error');
-    expect(state.message).toBe('Rotating the key needs an active Pro license.');
+    expect(state.message).toBe('Rotating the key failed with HTTP 401.');
     expect(state.pullKey).toBe('sl_old');
+  });
+
+  it('reports nothing changed on an unchanged republish and keeps the key', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z', unchanged: true }));
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY });
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
+    const s = publish.publishState();
+    expect(s.status).toBe('done');
+    expect(s.message).toBe('Nothing changed since the last publish.');
+    expect(s.pullKey).toBe(KEY);
+    expect(sent).toEqual([]);
   });
 });
 

@@ -1334,6 +1334,18 @@
   font-size: var(--sl-font-size-caption);
 }
 
+.sl-publish-definition {
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text-quiet);
+  font-size: var(--sl-font-size-caption);
+}
+
+.sl-publish-allowance {
+  margin: var(--sl-space-4) 0 0;
+  color: var(--sl-color-text-quiet);
+  font-size: var(--sl-font-size-caption);
+}
+
 /*
  * Reports whichever action ran last, so it follows both groups. It needs the
  * same air between it and the group above as the groups have between them;

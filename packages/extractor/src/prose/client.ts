@@ -96,6 +96,8 @@ export interface ProxyQuota {
   resetsAt: string;
   /** Why a stored key is not granting pro; only present on license identities. */
   licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable';
+  /** Library publish allowance, same shape. Absent from proxies that predate it. */
+  publish?: { tier: 'free' | 'pro'; used: number; limit: number | null; remaining: number | null; resetsAt: string };
 }
 
 export type ProseProxyErrorCode =
@@ -115,7 +117,13 @@ const PROXY_ERROR_BY_STATUS: Record<number, ProseProxyErrorCode> = {
   409: 'generation_pending', 429: 'rate_limited',
 };
 
-function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
+/**
+ * The `X-Tier` / `X-Quota-*` headers as a snapshot, or null when the response
+ * carried none. Exported because publish responses carry the same headers for
+ * the publish allowance, and the plugin reads them there to refresh its
+ * updates meter without a second round trip.
+ */
+export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
   const tier = headers.get('X-Tier');
   if (tier !== 'free' && tier !== 'pro') return null;
   const num = (v: string | null): number | null =>

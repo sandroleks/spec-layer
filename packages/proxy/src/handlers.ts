@@ -3,13 +3,15 @@ import {
   PROSE_SYSTEM_PROMPT,
   proseFewShot,
 } from '@spec-layer/extractor';
-import { identityFromHeaders, licenseIdentityId } from './identity';
+import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
 import { handlePublish, handlePull, handleRotate } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
-import type { QuotaSnapshot, ReserveResult, Tier } from './quota';
+import { quotaHeaders } from './quota';
+import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 
 export { licenseIdentityId };
+export type { QuotaProfile };
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
@@ -24,7 +26,8 @@ export interface HandlerDeps {
   fetcher: typeof fetch;
   licenseCache: KVLike;
   now(): number;
-  quotaFor(identityId: string): QuotaClient;
+  /** One engine per identity and profile. `profile` defaults to 'ai'. */
+  quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
   licenseLimiter: SlidingWindowLimiter;
   requestLimiter: SlidingWindowLimiter;
@@ -35,16 +38,6 @@ export interface HandlerDeps {
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
-
-function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
-  return {
-    'X-Tier': s.tier,
-    'X-Quota-Used': String(s.used),
-    'X-Quota-Limit': s.limit === null ? 'unlimited' : String(s.limit),
-    'X-Quota-Remaining': s.remaining === null ? 'unlimited' : String(s.remaining),
-    'X-Quota-Resets-At': s.resetsAt,
-  };
-}
 
 interface ProseRequest {
   model?: unknown;
@@ -276,14 +269,21 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   } else {
     identityId = `free:${identity.id}`;
   }
+  const proofs = callerProofs(req.headers, deps.salt);
+  const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
+  // Same rule as `resolveCaller`'s `tierIdentity` in libraries.ts: Pro counts
+  // under the license, free under the Figma identity. The two must agree, or
+  // this meter reports a different bucket than a publish spends from.
+  const publishIdentity = tier === 'pro' ? identityId : (figmaId ?? identityId);
+  const publish = await deps.quotaFor(publishIdentity, 'publish').snapshot(tier);
   const s = await deps.quotaFor(identityId).snapshot(tier);
   if (identity.kind === 'license' && tier === 'free') {
     // licResult is always non-null here: the `identity.kind === 'license'` branch above
     // always assigns it. The `licResult &&` guard exists only to satisfy TS control-flow
     // analysis (it can't see that `tier === 'free'` implies the license branch ran).
-    return json(200, { ...s, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
+    return json(200, { ...s, publish, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
   }
-  return json(200, s);
+  return json(200, { ...s, publish });
 }
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {

@@ -308,5 +308,5 @@ the report are not token files; exclude them from token globs.
 
 ## Requirements
 
-Node 22 or newer. Publishing requires a Spec Layer Pro license; pulling does
-not.
+Node 22 or newer. Publishing one Figma file is free; Pro publishes up to ten.
+Pulling needs only the library id and pull key.

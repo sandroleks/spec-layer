@@ -85,7 +85,12 @@ test suite.
 drift), `foundationContentHash` (Foundation canvas drift), `semanticContentHash`
 (exported v5 artifact identity). Keep them separate. Do not let v5 identity
 fields leak into a canvas hash, or every existing document falsely reports an
-update.
+update. A fourth, bundle-level hash sits outside those three:
+`libraryBundleContentHash` (`packages/extractor/src/libraryBundleHash.ts`)
+answers "did this publish change what developers pull", by hashing the bundle
+with each artifact's per-export envelope (`export.id`, `export.generated_at`)
+removed. It never feeds a canvas hash or an artifact identity, and the proxy
+keeps the raw byte hash separately for the pull `ETag`.
 
 **Rendered implies hashed, and hashed implies rendered.** A foundation unit's
 hash covers exactly what its frame draws, in both directions. AI-written group
@@ -188,6 +193,11 @@ Open, in rough priority order:
    the Figma sandbox, reusing the canonical validator and hash rather than
    writing a second interpretation of v5.
 5. Community listing update and version alignment for the 5.0.0 plugin release.
+6. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets a
+   library and 10 updates per self-asserted Figma identity, so a client that
+   lies about `X-Figma-User` can shop for fresh buckets and the per-IP rate
+   limiter is the only ceiling. See the accepted risks in
+   `packages/proxy/README.md`.
 
 Explicitly not doing: remote MCP or agentic vision enrichment, new Markdown
 sections, a hosted composition layer. Those were considered and rejected; the

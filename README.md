@@ -35,15 +35,16 @@ AI-written prose uses a model.
 
 ## Free and Pro
 
-Every documentation feature is free and works without an account. Publishing a
-library needs Pro, because it stores the bundle on the Spec Layer proxy;
-pulling one only needs the CLI and a pull key.
+Every documentation feature is free and works without an account. Publishing is
+too, within a free allowance: one Figma file as a library and 10 changed
+publishes a month. Pro raises that to 10 files with no fixed update cap.
+Pulling one only needs the CLI and a pull key.
 
 | | Free | Pro |
 |---|---|---|
 | Canvas documentation and updates | Yes | Yes |
 | Copy for AI | Yes | Yes |
-| Publish a library for the CLI | — | Yes |
+| Publish a library for the CLI | 1 file, 10 updates a month | 10 files, unlimited updates |
 | AI writing | 20 uses in the first month, then 10/month | No fixed monthly cap for normal individual use |
 | Priority support | — | Yes |
 

@@ -9,11 +9,12 @@
 import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext,
-  type FoundationArtifactV5, type YamlValue, type SerializedFoundation,
+  buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
+  type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
 } from '@spec-layer/extractor';
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
+import { formatResetDate } from './viewModel/allowance';
 import type { MainToUi, PublishComponentSource, UiToMain } from '../messages';
 
 export interface PublishSources {
@@ -80,8 +81,28 @@ export function buildPublishBundle(sources: PublishSources, generatedAt: string)
 export type PublishOutcome =
   | { kind: 'created'; libraryId: string; pullKey: string; publishedAt: string }
   | { kind: 'updated'; libraryId: string; publishedAt: string }
+  | { kind: 'unchanged'; libraryId: string; publishedAt: string }
   | { kind: 'gone' }
   | { kind: 'error'; message: string };
+
+/** The publish half of the proxy's quota, as the response headers state it. */
+export type PublishQuotaSnapshot = NonNullable<ProxyQuota['publish']>;
+
+export interface PublishResult {
+  outcome: PublishOutcome;
+  /**
+   * The publish allowance the response reported, or null when it carried no
+   * quota headers (a network failure, or a refusal the proxy answers before
+   * it reaches the quota engine). The proxy sends them on 200, 201, 402, 409,
+   * and 429, so a spent update is visible without a second round trip.
+   */
+  quota: PublishQuotaSnapshot | null;
+}
+
+const NO_IDENTITY = 'Publishing needs a signed-in Figma account or a license key.';
+const ROTATE_NO_IDENTITY = 'Rotating the key needs a signed-in Figma account or a license key.';
+
+const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Free plans publish one Figma file.';
 
 /** Bytes as "5.6 MB", with no decimal when it is whole, or the raw value when it is not a number. */
 function megabytes(bytes: unknown): string {
@@ -92,9 +113,24 @@ function megabytes(bytes: unknown): string {
 
 function publishErrorCopy(status: number, body: Record<string, unknown>): string {
   const error = typeof body.error === 'string' ? body.error : '';
-  if (status === 401) return 'Publishing needs an active Pro license.';
+  if (status === 401) return NO_IDENTITY;
+  if (status === 402) {
+    const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
+    const after = reset ? ` or publish again after ${reset}` : '';
+    return `You have used your 10 free updates for this month. Upgrade to Pro${after}.`;
+  }
+  if (status === 409 || error === 'publish_pending') {
+    return 'A publish is already running. Give it a moment and try again.';
+  }
   if (error === 'bundle_too_large') return `This library is larger than the publish limit (${megabytes(body.size)} of ${megabytes(body.limit)}).`;
-  if (error === 'library_limit') return `This license already publishes ${String(body.limit)} libraries, which is the limit.`;
+  if (error === 'library_limit') {
+    const existing = body.existing as { fileName?: unknown } | undefined;
+    if (existing) {
+      const name = typeof existing.fileName === 'string' && existing.fileName ? existing.fileName : 'another file';
+      return `${PUBLISH_LIMIT_MESSAGE_PREFIX} This account already publishes ${name}. Upgrade to Pro to publish up to 10 files.`;
+    }
+    return `This plan already publishes ${String(body.limit)} Figma files, which is the limit.`;
+  }
   if (status === 429) return 'Too many requests just now. Give it a minute.';
   return `Publishing failed with HTTP ${status}.`;
 }
@@ -106,9 +142,9 @@ async function bodyOf(res: Response): Promise<Record<string, unknown>> {
 export async function publishBundle(
   bundle: PublishBundleV1,
   opts: { auth: ProxyAuth; libraryId: string | null; fetcher?: typeof fetch },
-): Promise<PublishOutcome> {
+): Promise<PublishResult> {
   const headers = authHeaders(opts.auth);
-  if (!headers) return { kind: 'error', message: 'Publishing needs an active Pro license.' };
+  if (!headers) return { outcome: { kind: 'error', message: NO_IDENTITY }, quota: null };
   const doFetch = opts.fetcher ?? fetch;
   let res: Response;
   try {
@@ -118,22 +154,35 @@ export async function publishBundle(
       body: JSON.stringify({ ...(opts.libraryId ? { libraryId: opts.libraryId } : {}), bundle }),
     });
   } catch {
-    return { kind: 'error', message: 'Could not reach the publish service. Check your connection and try again.' };
+    return {
+      outcome: {
+        kind: 'error',
+        message: 'Could not reach the publish service. Check your connection and try again.',
+      },
+      quota: null,
+    };
   }
   const body = await bodyOf(res);
+  // Read the allowance off every answer that states one, refusals included: a
+  // 402 is exactly when the screen's count matters most.
+  const quota = parseQuotaHeaders(res.headers);
+  const result = (outcome: PublishOutcome): PublishResult => ({ outcome, quota });
   if (res.status === 201) {
-    return { kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey), publishedAt: String(body.publishedAt) };
+    return result({ kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey), publishedAt: String(body.publishedAt) });
   }
-  if (res.ok) return { kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) };
-  if (opts.libraryId && (res.status === 404 || body.error === 'not_owner')) return { kind: 'gone' };
-  return { kind: 'error', message: publishErrorCopy(res.status, body) };
+  if (res.ok && body.unchanged === true) {
+    return result({ kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
+  }
+  if (res.ok) return result({ kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
+  if (opts.libraryId && (res.status === 404 || body.error === 'not_owner')) return result({ kind: 'gone' });
+  return result({ kind: 'error', message: publishErrorCopy(res.status, body) });
 }
 
 export async function rotatePullKey(
   libraryId: string, auth: ProxyAuth, fetcher?: typeof fetch,
 ): Promise<{ kind: 'rotated'; pullKey: string } | { kind: 'error'; message: string }> {
   const headers = authHeaders(auth);
-  if (!headers) return { kind: 'error', message: 'Rotating the key needs an active Pro license.' };
+  if (!headers) return { kind: 'error', message: ROTATE_NO_IDENTITY };
   const doFetch = fetcher ?? fetch;
   let res: Response;
   try {
@@ -143,7 +192,6 @@ export async function rotatePullKey(
   }
   const body = await bodyOf(res);
   if (res.ok) return { kind: 'rotated', pullKey: String(body.pullKey) };
-  if (res.status === 401) return { kind: 'error', message: 'Rotating the key needs an active Pro license.' };
   return { kind: 'error', message: `Rotating the key failed with HTTP ${res.status}.` };
 }
 
@@ -197,9 +245,21 @@ function createPublishState(): PublishState {
 
 let state: PublishState = createPublishState();
 
-export interface PublishHost { repaint(): void; send(msg: UiToMain): void }
+export interface PublishHost {
+  repaint(): void;
+  send(msg: UiToMain): void;
+  /**
+   * A publish allowance the proxy just stated. The controller cannot repaint
+   * the meter itself: the quota lives in the panel's state, and without this
+   * the screen would keep showing the count from the last quota fetch after
+   * spending an update.
+   */
+  onPublishQuota(snapshot: PublishQuotaSnapshot): void;
+}
 
-const noopPublishHost: PublishHost = { repaint: () => {}, send: () => {} };
+const noopPublishHost: PublishHost = {
+  repaint: () => {}, send: () => {}, onPublishQuota: () => {},
+};
 let host: PublishHost = noopPublishHost;
 
 export function setPublishHost(nextHost: PublishHost): void {
@@ -233,7 +293,7 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>): strin
 }
 
 const GONE_MESSAGE =
-  'That library is gone or belongs to another license. Nothing was published. '
+  'That library is gone or belongs to another account. Nothing was published. '
   + 'Publish again to create a new library, then share its setup command with your developers.';
 
 export async function onPublishSources(
@@ -256,7 +316,10 @@ export async function onPublishSources(
   host.repaint();
 
   const bundle = buildPublishBundle(msg, new Date().toISOString());
-  const outcome = await publishBundle(bundle, { auth, libraryId, fetcher });
+  const { outcome, quota } = await publishBundle(bundle, { auth, libraryId, fetcher });
+  // Before the repaint below, so one paint shows both the result and the count
+  // it left behind.
+  if (quota) host.onPublishQuota(quota);
 
   switch (outcome.kind) {
     case 'created':
@@ -277,6 +340,15 @@ export async function onPublishSources(
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
         message: 'Published. Developers get this version on their next pull.',
+      };
+      break;
+    case 'unchanged':
+      state = {
+        ...state,
+        status: 'done',
+        libraryId: outcome.libraryId,
+        lastPublishedAt: outcome.publishedAt,
+        message: 'Nothing changed since the last publish.',
       };
       break;
     case 'gone':

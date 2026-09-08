@@ -4,6 +4,10 @@
 **Status:** Approved design (brainstorm complete)
 **Scope:** The standalone Figma plugin only. The docs app, CLI, and MCP directions are out of scope.
 
+**Note (2026-09-08):** Library publishing is no longer Pro-only. The free
+allowance for publishing and the ownership rule are specified in
+`2026-09-08-free-publish-quota-design.md`; the Pro tier table below predates it.
+
 ---
 
 ## 1. Summary
