@@ -193,6 +193,11 @@ Open, in rough priority order:
    the Figma sandbox, reusing the canonical validator and hash rather than
    writing a second interpretation of v5.
 5. Community listing update and version alignment for the 5.0.0 plugin release.
+6. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets a
+   library and 10 updates per self-asserted Figma identity, so a client that
+   lies about `X-Figma-User` can shop for fresh buckets and the per-IP rate
+   limiter is the only ceiling. See the accepted risks in
+   `packages/proxy/README.md`.
 
 Explicitly not doing: remote MCP or agentic vision enrichment, new Markdown
 sections, a hosted composition layer. Those were considered and rejected; the

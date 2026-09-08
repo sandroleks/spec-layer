@@ -76,8 +76,15 @@ lapses as long as the key is still sent.
 
 Limits per tier: free 1 library and 10 changed publishes per UTC month; Pro 10
 libraries and no fixed publish cap (`fair_use_flag` at the soft threshold).
-A publish is counted only when its KV write commits. Republishing a bundle
-whose hash equals the stored one returns `200 { libraryId, publishedAt, unchanged: true }` with no write and no count; the quota engine's 24-hour response cache still protects retries of a changed publish.
+A publish is counted only when its KV write commits. "Changed" is decided on a
+content identity (`libraryBundleContentHash`), which ignores each artifact's
+export id and timestamp, so a rebuild of unchanged sources matches even though
+its bytes differ; `bundleHash`, the sha256 of the stored bytes, is kept only
+for the pull `ETag`. Republishing content equal to the stored one returns
+`200 { libraryId, publishedAt, unchanged: true }` with no write and no count.
+The quota engine's 24-hour response cache still protects retries of a changed
+publish, keyed by the transition (stored content hash to new one) so a revert
+inside that window is a fresh reservation rather than a replay.
 Successful publishes, the `unchanged` reply, and the quota refusals (402, 409, 429) carry `X-Tier` and the `X-Quota-*` headers for the publish allowance; other errors do not.
 
 Errors: `400` invalid JSON or bundle shape, `400
@@ -114,10 +121,12 @@ up to about a minute. Errors: `401`,
   review at ≥1,000/month (`fair_use_flag` log).
 - Publishing: free 10 changed publishes per UTC calendar month, no boost
   window, one library; Pro 10 libraries, no fixed cap, flagged at the same
-  soft threshold. Every create counts; an update whose bundle hash equals the
-  stored one is a no-op that does not count; a changed update counts once,
-  with the 24-hour response cache protecting retries. Counted in a separate
-  Durable Object per identity (`publish:<identity>`). Pull is not metered.
+  soft threshold. Every create counts; an update whose content identity equals
+  the stored one is a no-op that does not count, where "content identity"
+  ignores each artifact's export id and timestamp; a changed update counts
+  once, with the 24-hour response cache protecting retries of that same
+  transition. Counted in a separate Durable Object per identity
+  (`publish:<identity>`). Pull is not metered.
 - Quota engine rate limit: 10 uncached generation reservations/min per
   identity, both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
@@ -180,10 +189,16 @@ cache inside the DO; prompts and prose are never logged.
   subscription's overall activation limit, so a bare key can't be shared
   past that ceiling. Bare-key bearers can be sunset once no legacy builds
   remain in the wild.
-- **Free libraries are owned by a client-supplied identity.** The Figma user id
-  is hashed with a server salt but is not a secret, so a free library has the
-  same spoofing exposure the free AI quota accepts. Pro libraries are owned by
-  the license hash and are as protected as before.
+- **Free publishing budgets are per client-supplied identity.** The Figma user
+  id is hashed with a server salt, but it is not a secret and nothing
+  authenticates it. Each self-asserted identity therefore gets its own budget
+  of 1 library and 10 updates a month, over up to 5 MB of KV that never
+  expires. A client that lies about `X-Figma-User` can shop for fresh buckets,
+  and a lapsed Pro owner can do the same for its own library, because
+  ownership passes on the key while the counter follows the Figma identity.
+  The per-IP limiter is the only ceiling on that. A per-IP monthly publish
+  ceiling is deferred and tracked in CLAUDE.md's open list. Pro libraries are
+  owned by the license hash and are as protected as before.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.

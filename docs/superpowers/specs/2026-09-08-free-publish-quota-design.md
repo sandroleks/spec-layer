@@ -1,7 +1,7 @@
 # Free library publishing with a monthly update allowance
 
 Date: 2026-09-08
-Status: approved design, not yet implemented
+Status: implemented on `spec/free-publish-quota`, 2026-09-08
 Builds on: `2026-07-11-freemium-model-design.md`,
 `2026-09-01-library-publish-cli-design.md`,
 `2026-09-02-publish-identity-and-storage-hardening-design.md`
@@ -35,9 +35,10 @@ writing.
   get 1 library and 10 updates per UTC calendar month. Pro plans keep 10
   libraries and have no fixed update cap, flagged for fair-use review at the
   existing soft threshold.
-- **Unchanged republishes are free.** The publish quota key is the bundle hash,
-  so pressing Publish twice never costs an update. This mirrors the AI writing
-  idempotency rule and the FAQ language that describes it.
+- **Unchanged republishes are free.** A publish is compared against the stored
+  bundle's content identity, so pressing Publish twice never costs an update.
+  This mirrors the AI writing idempotency rule and the FAQ language that
+  describes it. See Limits for why the comparison cannot be on bytes.
 - **Failed publishes are free.** Only a committed KV write counts, the same
   rule AI writing follows.
 - **Pull is untouched.** No tier, no quota, no new headers. The per-IP rate
@@ -103,7 +104,7 @@ A caller's *owner identities* are:
 
 ### Limits
 
-`LIBRARY_LIMIT` becomes per tier:
+`LIBRARY_LIMITS` replaces the single `LIBRARY_LIMIT`, per tier:
 
 | Tier | Libraries | Updates per month |
 |---|---|---|
@@ -119,11 +120,31 @@ identity: the license identity for Pro, the Figma identity for free.
 The publish instance uses a flat monthly limit of 10 with the boost window
 disabled. `snapshot` and the `X-Quota-*` header shape are shared unchanged.
 
-The reservation cache key is `publish:<libraryId>:<bundleHash>` for an update
-and `publish:new:<bundleHash>` for a create. A committed key within the
-24-hour response TTL is served as a no-op success carrying the stored response
-body, so an unchanged republish returns the same `libraryId` and
-`publishedAt` without a KV write and without counting.
+"Unchanged" is decided on a content identity, not on bytes:
+`libraryBundleContentHash` (`packages/extractor/src/libraryBundleHash.ts`)
+hashes a canonical JSON of the bundle with each artifact's
+`spec_layer.export.id` and `spec_layer.export.generated_at` removed. Those two
+fields carry the build timestamp, so a byte hash of the same sources changes on
+every click of Publish and would make this rule unreachable. The stored
+`LibraryMeta` carries both hashes: `contentHash` answers "changed?", and
+`bundleHash` (sha256 of the stored bytes) serves the pull `ETag`. A meta
+written before `contentHash` existed has none, which can never equal a
+computed hash, so its first republish reads as changed and gains one.
+
+The comparison runs against the target library's own stored `contentHash`,
+before any reservation, so it can never be confused with a different library
+that happens to share a content hash.
+
+The reservation cache key names the transition, not the destination:
+`publish:<libraryId>:<storedContentHash ?? 'none'>-><newContentHash>` for an
+update, and `publish:new:<newLibraryId>` for a create. A committed key within
+the 24-hour response TTL is served as a no-op success carrying the stored
+response body, so a genuine retry of the same publish neither writes nor
+counts, while publishing A, then B, then A again inside that window is a new
+reservation that writes and counts. Keying an update by its destination alone
+would have replayed that third publish and answered `unchanged` while KV still
+held B; keying a create by its bundle would have replayed one create for a
+second identical library.
 
 Order of checks on publish, after the per-IP rate limit and body validation:
 
@@ -134,6 +155,27 @@ Order of checks on publish, after the per-IP rate limit and body validation:
    here. `cached` returns the stored response.
 4. Write bundle, then meta and owner records, as today.
 5. Commit the reservation with the response body. A failed write releases it.
+
+### Implementation notes (2026-09-08)
+
+Five deviations from the design above were reviewed and accepted while
+implementing it; this section is the current truth where they disagree.
+
+1. **The publish Durable Object name comes from a helper, not a literal.**
+   `quotaObjectName(identityId, profile)` in `packages/proxy/src/index.ts`
+   derives the name, so the AI and publish profiles cannot collide; the spec's
+   `publish:<identityId>` describes the shape it produces.
+2. **The legacy 401 for a lapsed bearer-only caller lives in `handlePublish`,
+   not in `resolveCaller`.** Rotation is ownership only, with no tier check, so
+   the gate had to move to the one route that needs a tier.
+3. **An unchanged republish is detected by comparing the target's stored
+   content hash**, not by the reservation cache alone. The cache-key scheme
+   the design described could replay one create across two libraries.
+4. **Each create reserves under `publish:new:<newLibraryId>`**, with the id
+   generated up front, so two creates from identical bundles cannot collide.
+5. **Quota refusals carry the quota headers.** 402, 409, and 429 answer with
+   `X-Tier` and `X-Quota-*`, which the design only promised on successes; a
+   402 is when the count matters most.
 
 ### Responses
 

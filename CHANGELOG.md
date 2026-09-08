@@ -11,16 +11,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Free library publishing.** A free plan publishes one Figma file as a
   library with 10 changed publishes per UTC month; Pro keeps 10 libraries
   with no fixed cap and the same fair-use flag AI writing has. A publish
-  counts only when it commits, and republishing a bundle whose hash equals
-  the stored one is answered as unchanged, without a write or a count.
+  counts only when it commits, and republishing content equal to what is
+  stored is answered as unchanged, without a write or a count. "Equal" is a
+  content identity that ignores each artifact's export id and timestamp, so a
+  rebuild of unchanged sources matches even though its bytes differ; the byte
+  hash is kept for the pull `ETag`. The retry cache is keyed by the transition
+  a publish performs, so reverting to an earlier bundle writes and counts.
   Library ownership is proved by whichever identity the request carries, the
   license key or the Figma identity, so a library created while free stays
   writable after upgrading and a Pro library stays writable after the
   license lapses. Publish responses carry the quota headers, `GET /v1/quota`
   gains a `publish` snapshot, and the plugin's publish screen replaces its
   paywall with a definition line and an updates meter. Publish refusals for
-  the allowance (402, 409, 429) carry the quota headers too. Rotation has no
-  tier check. Pull is unchanged.
+  the allowance (402, 409, 429) carry the quota headers too, and the publish
+  screen reads its updates meter off the response rather than waiting for the
+  next quota fetch. Rotation has no tier check. Pull is unchanged.
 
 - An **About** section at the foot of the plugin's Settings screen, giving
   **Plugin version** and **Extractor version** as labelled rows and a
