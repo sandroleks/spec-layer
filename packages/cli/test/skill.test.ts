@@ -39,7 +39,18 @@ const PULL: NonNullable<SkillInput['pull']> = {
 
 const PULL_WITH_CSS: NonNullable<SkillInput['pull']> = {
   ...PULL,
-  outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab', modeSelector: '[data-theme="{mode}"]', modes: {} }],
+  outputs: [{
+    platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab',
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: true,
+  }],
+};
+
+const PULL_CSS_NOT_WRITTEN: NonNullable<SkillInput['pull']> = {
+  ...PULL,
+  outputs: [{
+    platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab',
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: false,
+  }],
 };
 
 describe('buildSkillGuide', () => {
@@ -146,6 +157,24 @@ describe('buildSkillGuide outputs', () => {
     const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL }));
     expect(guide).toContain('No token file was written for web.');
     expect(guide).toContain('`"outputs"` in `speclayer.json`');
+    expect(guide).not.toContain('web-css.map.json');
+  });
+
+  it('says a configured web output was not written, not that it exists, when the foundation was excluded', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_CSS_NOT_WRITTEN }));
+    expect(guide).toContain(
+      'A web/css output is configured at `spec-layer/tokens.css` but was not written, because the last pull did not write the Foundation. '
+      + 'Pull with the Foundation selected to write it.',
+    );
+    expect(guide).not.toContain('Import `spec-layer/tokens.css` from the root stylesheet');
+    expect(guide).not.toContain('web-css.map.json');
+    expect(guide).not.toContain('No token file was written for web.');
+  });
+
+  it('falls back to spec-layer.meta.json for web when there is no pull at all', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: null }));
+    expect(guide).toContain("Token identifiers for code live in `.speclayer/tokens/spec-layer.meta.json` under each token's `code_syntax.WEB`");
+    expect(guide).not.toContain('web-css.map.json');
   });
 
   it('labels a platform that came from the config', () => {

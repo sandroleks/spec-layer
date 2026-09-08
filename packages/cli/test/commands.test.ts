@@ -986,6 +986,25 @@ describe('runSetup', () => {
     const everything = [...io.outLines, ...io.errLines, ...io.writes].join('\n');
     expect(everything).not.toContain(KEY);
   });
+
+  // `--only components` (no --component) is `{ foundation: false, components: null }`
+  // (selectionFromFlags in selection.ts). Passing it to `runSetup` would persist
+  // that selection into speclayer.json's `include` block and re-read it in the
+  // same call, which trips an unrelated, pre-existing gap in config.ts's
+  // parseInclude: it never accepts an explicit `components: null` on read,
+  // only an omitted field. That gap is out of scope for this fix (it is not
+  // one of the two reviewer findings), so the selection here is passed as a
+  // one-off pull flag instead of round-tripped through config.
+  it('list reports a configured web output as "not written" when a pull excludes the foundation', async () => {
+    expect(runInit(cwd, { id: LIB, platform: ['web'] }, makeIo())).toBe(0);
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY, only: 'components' }, {}, io, stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(false);
+    const list = makeIo();
+    expect(runList(cwd, {}, list)).toBe(0);
+    const text = list.outLines.join('\n');
+    expect(text).toMatch(/output\s+web\/css\s+not written/);
+  });
 });
 
 describe('stored key errors', () => {

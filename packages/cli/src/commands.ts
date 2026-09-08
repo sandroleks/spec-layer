@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
@@ -405,7 +406,10 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     io.out(row.map((cell, i) => (i < 3 ? cell.padEnd(widths[i]) : cell)).join('  '));
   }
   for (const o of manifest.outputs ?? []) {
-    io.out(['output'.padEnd(widths[0]), `${o.platform}/${o.format}`.padEnd(widths[1]), o.path].join('  '));
+    // manifest.outputs records the configured list regardless of whether the
+    // Foundation was written; the map file is the on-disk proof the path is real.
+    const written = existsSync(join(outDir, 'outputs', `${o.platform}-${o.format}.map.json`));
+    io.out(['output'.padEnd(widths[0]), `${o.platform}/${o.format}`.padEnd(widths[1]), written ? o.path : 'not written'].join('  '));
   }
   return 0;
 }
