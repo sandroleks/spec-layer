@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
+import { libraryBundleContentHash } from '@spec-layer/extractor';
 import {
   handlePublish,
   handlePull,
@@ -49,12 +50,30 @@ function memQuota(now: () => number) {
 
 const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
 
-const BUNDLE = {
+/**
+ * An artifact with the export envelope a real one carries. `id` and
+ * `generated_at` are the two fields the plugin restamps on every build, so a
+ * test can move them alone to imitate a rebuild of unchanged sources.
+ */
+const artifact = (contentHash: string, generatedAt: string) => ({
+  spec_layer: {
+    kind: 'component',
+    export: {
+      id: `export:${generatedAt}`, generated_at: generatedAt,
+      deterministic: true, content_hash: contentHash,
+    },
+  },
+});
+
+/** The bundle the plugin would assemble from fixed sources at `generatedAt`. */
+const bundleAt = (generatedAt: string) => ({
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'Test File',
   pluginVersion: '5.0.0', extractorVersion: '2',
-  foundation: { ai: 'tokens: {}\n', artifact: { spec_layer: { export: { content_hash: 'aaa' } } } },
-  components: [{ name: 'Button', ai: 'component: Button\n', artifact: { spec_layer: { export: { content_hash: 'bbb' } } } }],
-};
+  foundation: { ai: 'tokens: {}\n', artifact: artifact('aaa', generatedAt) },
+  components: [{ name: 'Button', ai: 'component: Button\n', artifact: artifact('bbb', generatedAt) }],
+});
+
+const BUNDLE = bundleAt('2026-07-01T00:00:00.000Z');
 
 function publishReq(body: unknown, headers: Record<string, string> = { Authorization: `Bearer ${UUID_KEY}` }) {
   return new Request('https://proxy.test/v1/libraries', {
@@ -177,6 +196,8 @@ describe('handlePublish', () => {
     expect(await d.libraryStore.get(`lib:${body.libraryId}:key`)).toBe(sha256(body.pullKey));
     expect(meta.licenseId).toBe(`lic:${sha256(UUID_KEY)}`);
     expect(meta.bundleHash).toBe(sha256(JSON.stringify(BUNDLE)));
+    // The byte hash serves the pull ETag; the content hash answers "changed?".
+    expect(meta.contentHash).toBe(libraryBundleContentHash(BUNDLE));
 
     // One ownership record per library, so concurrent creates never overwrite a list.
     expect(await d.libraryStore.get(`libowner:lic:${sha256(UUID_KEY)}:${body.libraryId}`)).not.toBeNull();
@@ -424,11 +445,53 @@ describe('handlePublish', () => {
     const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
     const { libraryId, publishedAt } = await created.json() as { libraryId: string; publishedAt: string };
     const puts = d.libraryStore.map.size;
-    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, figma()), d);
+    // What a second click of Publish actually sends: the same sources rebuilt,
+    // so only the export envelope's timestamps moved. The bytes differ; the
+    // content does not.
+    const rebuilt = bundleAt('2026-07-01T00:05:00.000Z');
+    expect(JSON.stringify(rebuilt)).not.toBe(JSON.stringify(BUNDLE));
+    const res = await handlePublish(publishReq({ libraryId, bundle: rebuilt }, figma()), d);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ libraryId, publishedAt, unchanged: true });
     expect(res.headers.get('X-Quota-Used')).toBe('1');
     expect(d.libraryStore.map.size).toBe(puts);
+    // The first bytes are still the published ones: no write happened.
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE));
+  });
+
+  it('writes and counts a revert to an earlier bundle within the response TTL', async () => {
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
+    const a = { ...BUNDLE, fileName: 'A' };
+    const b = { ...BUNDLE, fileName: 'B' };
+    const created = await handlePublish(publishReq({ bundle: a }, figma()), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    t += 60_000;
+    expect((await handlePublish(publishReq({ libraryId, bundle: b }, figma()), d)).status).toBe(200);
+    // Back to A, well inside the 24-hour response cache. Keyed by destination
+    // alone this would replay A's first reservation and answer `unchanged`
+    // while KV still held B; keyed by the transition it is a new reservation.
+    t += 60_000;
+    const res = await handlePublish(publishReq({ libraryId, bundle: a }, figma()), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty('unchanged');
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(a));
+    expect(res.headers.get('X-Quota-Used')).toBe('3');
+  });
+
+  it('replays a retry of the same transition', async () => {
+    const d = deps();
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    const changed = { ...BUNDLE, fileName: 'Renamed' };
+    const first = await handlePublish(publishReq({ libraryId, bundle: changed }, figma()), d);
+    expect(first.status).toBe(200);
+    const publishedAt = (await first.json() as { publishedAt: string }).publishedAt;
+    const retry = await handlePublish(publishReq({ libraryId, bundle: changed }, figma()), d);
+    expect(retry.status).toBe(200);
+    // Same transition, so the committed reservation answers it: one update spent.
+    expect(await retry.json()).toEqual({ libraryId, publishedAt, unchanged: true });
+    expect(retry.headers.get('X-Quota-Used')).toBe('2');
   });
 
   it('refuses the eleventh changed publish in a month with 402', async () => {

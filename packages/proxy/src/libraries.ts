@@ -1,5 +1,5 @@
 import { sha256 } from 'js-sha256';
-import { LibraryBundleError, parseLibraryBundle } from '@spec-layer/extractor';
+import { LibraryBundleError, libraryBundleContentHash, parseLibraryBundle } from '@spec-layer/extractor';
 import { callerProofs, licenseIdentityId } from './identity';
 import { checkLicense, type LibraryStore, type LicenseReason } from './license';
 import { quotaHeaders } from './quota';
@@ -20,7 +20,15 @@ export interface LibraryMeta {
   keyHash?: string;
   licenseId: string;
   publishedAt: string;
+  /** sha256 of the stored bytes. The pull `ETag`, and nothing else. */
   bundleHash: string;
+  /**
+   * `libraryBundleContentHash` of the stored bundle: what a developer pulls,
+   * with the per-export envelope removed, so a rebuild of unchanged sources
+   * matches. Absent on libraries published before it existed, and a missing
+   * value can never equal a computed one, so those read as changed.
+   */
+  contentHash?: string;
   size: number;
   fileName: string | null;
 }
@@ -166,6 +174,11 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const fileName = typeof bundle.fileName === 'string' ? bundle.fileName : null;
   const publishedAt = new Date(deps.now()).toISOString();
   const bundleHash = sha256(stored);
+  // Two hashes, two questions. The byte hash is the pull ETag. The content
+  // hash is "did this change what developers pull", which the byte hash cannot
+  // answer: the plugin stamps a fresh generatedAt into every artifact's export
+  // envelope, so the bytes differ on every click of Publish.
+  const contentHash = libraryBundleContentHash(bundle);
   const store = deps.libraryStore;
 
   const quota = deps.quotaFor(caller.tierIdentity, 'publish');
@@ -199,21 +212,31 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     }
   }
 
-  // Same bytes already published to this exact target: no write, no quota spent.
-  // Checked against the target's own stored hash rather than the quota cache,
-  // so it can never be confused with a different library that happens to share
-  // a content hash.
-  if (libraryId && meta && meta.bundleHash === bundleHash) {
+  // The same content already published to this exact target: no write, no quota
+  // spent. Checked against the target's own stored hash rather than the quota
+  // cache, so it can never be confused with a different library that happens
+  // to share a content hash. `meta.contentHash` is undefined on libraries
+  // published before it was stored, which never equals a computed hash, so
+  // those republish once and gain one.
+  if (libraryId && meta && meta.contentHash === contentHash) {
     return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true });
   }
 
   // A create is a new library by definition, so its reservation must never
   // replay an earlier one: the id is generated up front and folded into the
-  // cache key itself, so two creates from byte-identical bundles can never
-  // collide. The `unchanged` case for an *existing* library is handled by the
+  // cache key itself, so two creates from identical bundles can never collide.
+  // The `unchanged` case for an *existing* library is handled by the
   // stored-hash comparison above, not by this cache.
+  //
+  // An update is keyed by the transition it performs, not by its destination.
+  // Keyed by destination alone, publish A, then B, then A again would replay
+  // A's committed reservation inside the 24-hour response TTL and answer
+  // `unchanged` while KV still held B. A genuine retry of the same transition
+  // still replays, because it names the same pair.
   const newId = libraryId ? null : newLibraryId();
-  const cacheKey = libraryId ? `publish:${libraryId}:${bundleHash}` : `publish:new:${newId}`;
+  const cacheKey = libraryId
+    ? `publish:${libraryId}:${meta?.contentHash ?? 'none'}->${contentHash}`
+    : `publish:new:${newId}`;
   const reserved = await quota.reserve(caller.tier, cacheKey);
   switch (reserved.kind) {
     case 'cached': {
@@ -237,7 +260,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
   try {
     if (libraryId && meta) {
-      const next: LibraryMeta = { ...meta, publishedAt, bundleHash, size: bytes.byteLength, fileName };
+      const next: LibraryMeta = {
+        ...meta, publishedAt, bundleHash, contentHash, size: bytes.byteLength, fileName,
+      };
       // Bundle first: meta must never describe a bundle that is not there yet.
       await store.put(bundleKey(libraryId), stored);
       await store.put(metaKey(libraryId), JSON.stringify(next));
@@ -248,7 +273,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     const id = newId as string; // set above whenever libraryId is null
     const pullKey = newPullKey();
     const created: LibraryMeta = {
-      licenseId: caller.tierIdentity, publishedAt, bundleHash, size: bytes.byteLength, fileName,
+      licenseId: caller.tierIdentity, publishedAt, bundleHash, contentHash,
+      size: bytes.byteLength, fileName,
     };
     await store.put(bundleKey(id), stored);
     await Promise.all([
