@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
-import { allowanceState, allowanceCopy, LOW_REMAINING, publishAllowance, publishAllowanceCopy, formatResetDate } from '../src/ui/viewModel/allowance';
+import { allowanceState, allowanceCopy, LOW_REMAINING, publishAllowance, publishAllowanceCopy, formatResetDate, formatPublishedAt } from '../src/ui/viewModel/allowance';
 
 const free = (over: Partial<ProxyQuota> = {}): ProxyQuota => ({
   tier: 'free', used: 1, limit: 5, remaining: 4, resetsAt: '2026-08-01T00:00:00Z', ...over,
@@ -190,5 +190,20 @@ describe('formatResetDate', () => {
   it('returns an empty string for garbage', () => {
     expect(formatResetDate('')).toBe('');
     expect(formatResetDate('nope')).toBe('');
+  });
+});
+
+describe('formatPublishedAt', () => {
+  it('formats a medium date and a short time in the given locale', () => {
+    // 12:00 UTC lands on the same calendar day in every timezone this repo
+    // runs tests in, so the date part is stable; the hour is asserted loosely.
+    const out = formatPublishedAt('2026-09-08T12:00:00.000Z', 'en-GB');
+    expect(out).not.toBeNull();
+    expect(out).toMatch(/8 Sept? 2026/);
+    expect(out).toMatch(/\d{2}:\d{2}/);
+  });
+  it('returns null for empty or unparsable input, never a made-up date', () => {
+    expect(formatPublishedAt('', 'en-GB')).toBeNull();
+    expect(formatPublishedAt('nope', 'en-GB')).toBeNull();
   });
 });
