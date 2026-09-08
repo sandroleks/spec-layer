@@ -5,15 +5,26 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default. No job here writes to the repository.
 permissions:
   contents: read
 
+# Supersede in-flight runs for the same branch or pull request, but never
+# cancel a run on main: those are the ones a release is judged against.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
+  # The job id is the required status check context on main. Do not rename it.
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

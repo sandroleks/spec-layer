@@ -1,0 +1,40 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so newly published queries reach an unchanged main.
+    - cron: '17 4 * * 1'
+
+# Not a required status check: CodeQL findings are advisory and land in the
+# Security tab. Keeping it out of the merge gate avoids blocking a release on
+# a query update rather than on a code change.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze:
+    name: Analyze JavaScript and TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+      # No build step: this repository is analyzed by source, and a build
+      # would only add the bundlers' output to the scan surface.
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
