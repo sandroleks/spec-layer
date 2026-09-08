@@ -32,12 +32,19 @@ describe('instance-aware auth', () => {
     expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: null, figmaUserId: 'u1' }))
       .toEqual({ Authorization: 'Bearer LK', 'X-Figma-User': 'u1' });
   });
+  it('sends only the instance-bound bearer without a figma identity', () => {
+    expect(authHeaders({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: null }))
+      .toEqual({ Authorization: 'Bearer LK:i1' });
+  });
 });
 
 describe('publishAuth', () => {
   it('keeps the key even when the license is known inactive, since it proves ownership', () => {
     expect(publishAuth('LK', 'i1', 'u1')).toEqual({ licenseKey: 'LK', licenseInstanceId: 'i1', figmaUserId: 'u1' });
     expect(publishAuth(null, null, 'u1')).toEqual({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' });
+  });
+  it('drops a stale instance id when there is no key', () => {
+    expect(publishAuth(null, 'i1', 'u1')).toEqual({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' });
   });
 });
 
