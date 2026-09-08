@@ -7,8 +7,12 @@ holds the Anthropic key so the plugin never sees it.
 
 ## API
 
-Auth on every endpoint: `Authorization: Bearer <license-key>` (pro) **or**
-`X-Figma-User: <figma-user-id>` (free; stored only as a salted SHA-256 hash).
+Auth on every endpoint: `Authorization: Bearer <license-key>` (Pro, or a
+lapsed key proving ownership) and/or `X-Figma-User: <figma-user-id>` (free;
+stored only as a salted SHA-256 hash). AI writing meters against the license
+when a bearer is present. Library endpoints read both headers: the tier comes
+from the license when it is active, and a library is owned by any identity the
+caller proves.
 
 ### `POST /v1/prose`
 
@@ -34,7 +38,10 @@ failure (quota not decremented).
 
 ### `GET /v1/quota`
 
-→ `{ tier, used, limit, remaining, resetsAt }` for the quota meter.
+→ `{ tier, used, limit, remaining, resetsAt, publish: { tier, used, limit, remaining, resetsAt } }`.
+The top-level fields are the AI writing allowance; `publish` is the library
+publish allowance, metered under the license identity on Pro and the Figma
+identity otherwise.
 
 ### `POST /v1/license/activate`
 
@@ -51,25 +58,37 @@ plugin's Remove key action releases). 400 on a missing key or instanceId,
 
 ### `POST /v1/libraries`
 
-Pro license required. Body: `{ "libraryId"?: "lib_...", "bundle": <library
-bundle> }`. The bundle must carry `schema: "spec-layer-library-bundle"`, a
-string `version`, and a `components` array; the proxy validates that shape and
-nothing else. It never derives, re-validates, or re-projects v5 output.
+Body: `{ "libraryId"?: "lib_...", "bundle": <library bundle> }`. The bundle
+must carry `schema: "spec-layer-library-bundle"`, a string `version`, and a
+`components` array; the proxy validates that shape and nothing else. It never
+derives, re-validates, or re-projects v5 output.
 
 Omitting `libraryId` creates a library (201) and returns
 `{ libraryId, pullKey, publishedAt }`. That response is the only copy of the
-pull key the server ever hands back; only its SHA-256 is stored. Publishing is
-capped at `LIBRARY_LIMIT` (10) libraries per license.
+pull key the server ever hands back; only its SHA-256 is stored. A new library
+is owned by the license identity on Pro and by the Figma identity on free.
 
 Passing an owned `libraryId` overwrites the bundle in place (200) and returns
-`{ libraryId, publishedAt }` with no key, since the key does not change.
+`{ libraryId, publishedAt }`. Ownership passes when any identity in the
+request owns the library, so a library created on a free plan stays writable
+after upgrading, and a library created on Pro stays writable after the license
+lapses as long as the key is still sent.
+
+Limits per tier: free 1 library and 10 changed publishes per UTC month; Pro 10
+libraries and no fixed publish cap (`fair_use_flag` at the soft threshold).
+A publish is counted only when its KV write commits. Republishing a bundle
+whose hash equals the stored one returns `200 { libraryId, publishedAt, unchanged: true }` with no write and no count; the quota engine's 24-hour response cache still protects retries of a changed publish.
+Every publish response carries `X-Tier` and the `X-Quota-*` headers for the
+publish allowance.
 
 Errors: `400` invalid JSON or bundle shape, `400
-{"error":"unsupported bundle version","version":"2.0.0"}` for a bundle major
-this proxy does not know, `401` unauthenticated or license not active, `403 {"error":"not_owner"}` or
-`403 {"error":"library_limit","limit":10}`, `404` unknown `libraryId`,
-`413 {"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate
-limited per IP.
+{"error":"unsupported bundle version","version":"2.0.0"}`, `401` no identity,
+or a lapsed key with no Figma identity, `402
+{"error":"quota_exhausted","resetsAt":…}`, `403 {"error":"not_owner"}`,
+`403 {"error":"library_limit","limit":1,"existing":{"libraryId":…,"fileName":…}}`
+on free (`fileName` may be null; Pro gets `limit: 10` and no `existing`),
+`404` unknown `libraryId`, `409 {"error":"publish_pending"}`, `413
+{"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate limited.
 
 ### `GET /v1/libraries/:libraryId`
 
@@ -83,7 +102,7 @@ Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 
 ### `POST /v1/libraries/:libraryId/rotate`
 
-Pro license required, and the caller must own the library. Returns
+The caller must own the library; there is no tier check. Returns
 `{ pullKey }`. The previous key stops working once the KV write propagates,
 up to about a minute. Errors: `401`,
 `403 {"error":"not_owner"}`, `404`, `429`.
@@ -94,6 +113,11 @@ up to about a minute. Errors: `401`,
   calendar month. Only uncached, successful generations count.
 - Pro: no fixed monthly quota for normal individual use; flagged for fair-use
   review at ≥1,000/month (`fair_use_flag` log).
+- Publishing: free 10 changed publishes per UTC calendar month, no boost
+  window, one library; Pro 10 libraries, no fixed cap, flagged at the same
+  soft threshold. Counted in a separate Durable Object per identity
+  (`publish:<identity>`), keyed by bundle hash so unchanged republishes are
+  free. Pull is not metered.
 - Quota engine rate limit: 10 uncached generation reservations/min per
   identity, both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
@@ -156,6 +180,13 @@ cache inside the DO; prompts and prose are never logged.
   subscription's overall activation limit, so a bare key can't be shared
   past that ceiling. Bare-key bearers can be sunset once no legacy builds
   remain in the wild.
+- **Free libraries are owned by a client-supplied identity.** The Figma user id
+  is hashed with a server salt but is not a secret, so a free library has the
+  same spoofing exposure the free AI quota accepts. Pro libraries are owned by
+  the license hash and are as protected as before.
+- **Deploy order.** The proxy ships before any plugin build that sends both
+  headers. A bearer-only client keeps working: it proves the license identity
+  that owns every library published so far.
 
 ## Bindings & secrets
 
