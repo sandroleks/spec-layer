@@ -31,3 +31,28 @@ export function identityFromHeaders(headers: Headers, salt: string): Identity | 
   if (figma) return { kind: 'free', id: hashFigmaId(figma, salt) };
   return null;
 }
+
+export interface CallerProofs {
+  license: { key: string; instanceId: string | null } | null;
+  figmaHash: string | null;
+}
+
+/**
+ * Every identity a request can prove, side by side. `identityFromHeaders`
+ * picks one for AI metering; library ownership needs all of them, because a
+ * library created on a free plan is owned by the Figma identity and the same
+ * person later publishes with a license key.
+ */
+export function callerProofs(headers: Headers, salt: string): CallerProofs {
+  const auth = headers.get('Authorization') ?? '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  let license: CallerProofs['license'] = null;
+  if (bearer) {
+    const sep = bearer.indexOf(':');
+    license = sep === -1
+      ? { key: bearer, instanceId: null }
+      : { key: bearer.slice(0, sep), instanceId: bearer.slice(sep + 1) || null };
+  }
+  const figma = (headers.get('X-Figma-User') ?? '').trim();
+  return { license, figmaHash: figma ? hashFigmaId(figma, salt) : null };
+}

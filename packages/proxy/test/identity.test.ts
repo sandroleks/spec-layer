@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashFigmaId, identityFromHeaders } from '../src/identity';
+import { hashFigmaId, identityFromHeaders, callerProofs } from '../src/identity';
 
 describe('identity', () => {
   it('hashes a figma id with the salt (stable, salt-sensitive)', () => {
@@ -34,5 +34,31 @@ describe('identity', () => {
     expect(identityFromHeaders(new Headers(), 's')).toBeNull();
     expect(identityFromHeaders(new Headers({ Authorization: 'Bearer ' }), 's')).toBeNull();
     expect(identityFromHeaders(new Headers({ 'X-Figma-User': '' }), 's')).toBeNull();
+  });
+});
+
+describe('callerProofs', () => {
+  it('returns both proofs when both headers are present', () => {
+    const h = new Headers({ Authorization: 'Bearer KEY:inst-9', 'X-Figma-User': 'u1' });
+    expect(callerProofs(h, 's')).toEqual({
+      license: { key: 'KEY', instanceId: 'inst-9' },
+      figmaHash: hashFigmaId('u1', 's'),
+    });
+  });
+
+  it('returns only the license with a bare bearer', () => {
+    expect(callerProofs(new Headers({ Authorization: 'Bearer KEY' }), 's'))
+      .toEqual({ license: { key: 'KEY', instanceId: null }, figmaHash: null });
+  });
+
+  it('returns only the figma hash with no bearer', () => {
+    expect(callerProofs(new Headers({ 'X-Figma-User': 'u1' }), 's'))
+      .toEqual({ license: null, figmaHash: hashFigmaId('u1', 's') });
+  });
+
+  it('returns no proofs for empty headers', () => {
+    expect(callerProofs(new Headers(), 's')).toEqual({ license: null, figmaHash: null });
+    expect(callerProofs(new Headers({ Authorization: 'Bearer ', 'X-Figma-User': ' ' }), 's'))
+      .toEqual({ license: null, figmaHash: null });
   });
 });
