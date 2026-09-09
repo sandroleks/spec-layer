@@ -137,8 +137,10 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
   for (const o of outputs) io.out(`Token file for ${o.platform}: ${o.path} (${o.format}, ${o.case} names), written by the next pull.`);
   // `source` is 'config' only when a config was passed in, and init always
-  // passes null, so 'flag' is the only source worth naming here.
-  if (source === 'flag') {
+  // passes null, so 'flag' and 'detected' are the only sources worth naming
+  // here: a platform init named or found on disk deserves the same note as
+  // one it wrote to speclayer.json for.
+  if (source === 'flag' || source === 'detected') {
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));
   }
@@ -339,16 +341,23 @@ export async function runPull(
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
   // Ask for a 304 only when the last pull wrote the same files this one would
-  // AND every one of those files is still on disk; a changed selection, dtcg
-  // block, or outputs block needs the bundle again to re-project, and so does
-  // a deliverable or its record map a developer (or a clean) deleted, since a
-  // 304 would leave it missing rather than restoring it.
+  // AND, when that includes the Foundation, every one of those files is
+  // still on disk; a changed selection, dtcg block, or outputs block needs
+  // the bundle again to re-project, and so does a deliverable or its record
+  // map a developer (or a clean) deleted, since a 304 would leave it missing
+  // rather than restoring it. Outputs are only ever written alongside the
+  // Foundation (writeBundleFiles), so a pull that never writes it - `--only
+  // components`, `include: { foundation: false }`, or a library with none -
+  // has no on-disk files to check, and the existence clause would otherwise
+  // never see a match and redownload the bundle on every run.
   const manifest = manifestAt(join(cwd, opts.outDir));
+  const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
+  const willWriteFoundation = selection.foundation && foundationOnDisk;
   const etag = manifest && sameOutput(
     { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs },
     { selection, dtcg: opts.dtcg, outputs },
-  ) && outputs.every((o) => existsSync(resolve(cwd, o.path))
-    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`)))
+  ) && (!willWriteFoundation || outputs.every((o) => existsSync(resolve(cwd, o.path))
+    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`))))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({

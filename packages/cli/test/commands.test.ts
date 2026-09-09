@@ -134,6 +134,18 @@ describe('runInit', () => {
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
     expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
   });
+
+  it('names the missing format for a platform found by detection too, not only --platform', () => {
+    writeFileSync(join(cwd, 'Package.swift'), '// swift-tools-version:5.9\n');
+    const io = makeIo();
+
+    const code = runInit(cwd, { id: 'lib_abc' }, io);
+
+    expect(code).toBe(0);
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['ios'] });
+    expect(readConfig(cwd)).not.toHaveProperty('outputs');
+    expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
+  });
 });
 
 describe('runPull', () => {
@@ -715,6 +727,27 @@ describe('runPull safety and freshness', () => {
     expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
   });
 
+  it('still sends the hash on a 304 check when the pull never writes the Foundation, ' +
+    'so an --only components style config does not redownload forever', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['web'],
+      include: { foundation: false, components: null },
+    }));
+    await runPull(cwd, {}, ENV, makeIo(), stub200());
+    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
+
+    const io = makeIo();
+    const fetcher = stub200();
+
+    const code = await runPull(cwd, {}, ENV, io, fetcher);
+
+    expect(code).toBe(0);
+    expect(headerOf(fetcher, 'If-None-Match')).toBe(
+      `"${JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8')).bundleHash}"`,
+    );
+    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
+  });
+
   it('refuses to use the working directory itself as the output directory', async () => {
     writeFileSync(join(cwd, 'keep.txt'), 'mine');
     const io = makeIo();
@@ -1038,18 +1071,14 @@ describe('runSetup', () => {
     expect(everything).not.toContain(KEY);
   });
 
-  // `--only components` (no --component) is `{ foundation: false, components: null }`
-  // (selectionFromFlags in selection.ts). Passing it to `runSetup` would persist
-  // that selection into speclayer.json's `include` block and re-read it in the
-  // same call, which trips an unrelated, pre-existing gap in config.ts's
-  // parseInclude: it never accepts an explicit `components: null` on read,
-  // only an omitted field. That gap is out of scope for this fix (it is not
-  // one of the two reviewer findings), so the selection here is passed as a
-  // one-off pull flag instead of round-tripped through config.
   it('list reports a configured web output as "not written" when a pull excludes the foundation', async () => {
-    expect(runInit(cwd, { id: LIB, platform: ['web'] }, makeIo())).toBe(0);
+    // `--only components` (no --component) persists `{ foundation: false,
+    // components: null }` into speclayer.json's `include` block
+    // (selectionFromFlags in selection.ts); config.ts's parseInclude reads
+    // that same shape back on the pull below.
+    expect(runInit(cwd, { id: LIB, platform: ['web'], only: 'components' }, makeIo())).toBe(0);
     const io = makeIo();
-    expect(await runPull(cwd, { key: KEY, only: 'components' }, {}, io, stub200())).toBe(0);
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
     expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(false);
     const list = makeIo();
     expect(runList(cwd, {}, list)).toBe(0);

@@ -491,6 +491,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the old default, and every one of the six screens measures the same header
   height and title gap as before.
 
+- `spec-layer init --only components` and `setup --only components` wrote an
+  `include` block that the next command refused to read as "not valid JSON".
+  The stored `"components": null` now reads as every component, which is
+  what the flag meant.
 - Quick search no longer flashes once per typed letter. Every keystroke
   replaced the whole palette, which restarted the panel's entry animation and
   rebuilt the input under the caret; a render now patches the mounted list in

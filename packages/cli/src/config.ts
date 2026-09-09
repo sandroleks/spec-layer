@@ -22,13 +22,13 @@ function parseInclude(value: unknown): Selection {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw invalidConfig();
   const record = value as Record<string, unknown>;
   if (record.foundation !== undefined && typeof record.foundation !== 'boolean') throw invalidConfig();
-  if (record.components !== undefined
+  if (record.components !== undefined && record.components !== null
     && !(Array.isArray(record.components) && record.components.every((c) => typeof c === 'string'))) {
     throw invalidConfig();
   }
   return {
     foundation: record.foundation === undefined ? true : record.foundation,
-    components: record.components === undefined ? null : record.components as string[],
+    components: (record.components ?? null) as string[] | null,
   };
 }
 

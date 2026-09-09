@@ -223,6 +223,11 @@ describe('config include block', () => {
     expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
   });
 
+  it('round-trips the include block writeConfig writes for --only components (components: null)', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: false, components: null } });
+    expect(readConfig(tmpDir)?.include).toEqual({ foundation: false, components: null });
+  });
+
   it('writeConfig persists include and omits it when not given', () => {
     writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: true, components: ['Card'] } });
     expect(JSON.parse(readFileSync(join(tmpDir, 'speclayer.json'), 'utf8')))
