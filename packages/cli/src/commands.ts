@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { CSS_INDEX_FILE, type DtcgOptions } from '@spec-layer/extractor';
+import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
   readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
@@ -15,7 +15,7 @@ import { ensureIgnored } from './gitignore';
 import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
 import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
 import {
-  FORMATS, defaultOutputs, outputId, withDefaults, type OutputConfig,
+  FORMATS, defaultOutputs, outputId, readIndexImports, withDefaults, type OutputConfig,
 } from './outputs';
 import { toolsJson, toolsText } from './tools';
 import { cliVersion } from './version';
@@ -325,15 +325,19 @@ export async function runSetup(
   return 0;
 }
 
-/** Whether every file a rendered output put on disk, per its record map plus index.css, is still there; false when the map is missing or unreadable. */
+/**
+ * Whether every part file the last pull wrote is still on disk. The record
+ * map only proves the output was rendered at all; the list of files it wrote
+ * comes from index.css's own imports, since a map entry names only the file
+ * that first declares a token, which for a two-mode collection is always the
+ * default mode's file, so a non-default mode file never appears in the map.
+ * False when the map is missing or index.css is missing or unreadable.
+ */
 function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolean {
   const mapPath = join(cwd, outDir, 'outputs', `${outputId(o)}.map.json`);
   if (!existsSync(mapPath)) return false;
-  let map: Record<string, { file?: string }>;
-  try { map = JSON.parse(readFileSync(mapPath, 'utf8')) as Record<string, { file?: string }>; } catch { return false; }
-  const files = new Set<string>([CSS_INDEX_FILE]);
-  for (const entry of Object.values(map)) if (typeof entry.file === 'string') files.add(entry.file);
-  return [...files].every((f) => existsSync(resolve(cwd, o.path, f)));
+  const imports = readIndexImports(cwd, o);
+  return imports !== null && imports.every((f) => existsSync(resolve(cwd, o.path, f)));
 }
 
 export async function runPull(
@@ -357,9 +361,11 @@ export async function runPull(
   // AND every one of those files is still on disk; a changed selection, dtcg
   // block, outputs block, or componentSpecsDir needs the bundle again to
   // re-project, and so does a deleted brief, a deliverable directory a
-  // developer (or a clean) removed, a part file named in its record map, or
-  // index.css, since a 304 would leave any of those missing rather than
-  // restoring it. Outputs are only ever written alongside the Foundation
+  // developer (or a clean) removed, or a part file index.css imports (which
+  // is not always every file the record map names, since a map entry names
+  // only the file that first declares a token), since a 304 would leave any
+  // of those missing rather than restoring it. Outputs are only ever written
+  // alongside the Foundation
   // (writeBundleFiles), so a pull that never writes it - `--only components`,
   // `include: { foundation: false }`, or a library with none - has no
   // deliverable files to check, and the existence clause would otherwise

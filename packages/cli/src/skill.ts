@@ -8,6 +8,7 @@ import {
   CODE_SYNTAX_KEY, type AgentHost, type Platform, type RepoProfile,
 } from './detect';
 import type { Manifest } from './files';
+import { readIndexImports } from './outputs';
 import { GLOBAL_FLAGS, KEY_RESOLUTION, TOOLS } from './tools';
 
 /**
@@ -43,7 +44,7 @@ export interface PullSummary {
     platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
     /** Whether `<outDir>/outputs/<platform>-<format>.map.json` exists: the on-disk proof the file was rendered. */
     written: boolean;
-    /** The files the record map names plus index.css, in map order; empty when not written. */
+    /** The part files index.css imports, in import order, then index.css; empty when not written. */
     files: string[];
   }>;
 }
@@ -127,13 +128,14 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     outputs: (manifest.outputs ?? []).map((o) => {
       // manifest.outputs records the configured list regardless of whether the
       // Foundation was written; the map file exists only when it was actually
-      // rendered, so it is the on-disk proof a sentence can point to.
+      // rendered, so it is the on-disk proof a sentence can point to. The file
+      // list itself comes from index.css's own imports, not the map: a map
+      // entry names only the file that first declares a token, so a
+      // non-default mode file never appears there.
       const mapPath = join(absOut, 'outputs', `${o.platform}-${o.format}.map.json`);
       const map = readJson(mapPath) as Record<string, { file?: string }> | null;
-      const files = map
-        ? [...new Set(Object.values(map).map((e) => e.file).filter((f): f is string => typeof f === 'string'))]
-        : [];
-      if (map) files.push(CSS_INDEX_FILE);
+      const imports = map ? readIndexImports(cwd, o) : null;
+      const files = imports !== null ? [...imports, CSS_INDEX_FILE] : [];
       return {
         platform: o.platform, format: o.format, path: o.path, case: o.case,
         modeSelector: o.modeSelector ?? '[data-theme="{mode}"]', modes: o.modes ?? {},

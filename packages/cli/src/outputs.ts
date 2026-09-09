@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, NAME_CASES, cssOutput, type CssOutput, type DtcgExport, type NameCase,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, NAME_CASES, cssOutput, type CssOutput, type DtcgExport, type NameCase,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
 import { visibleDirProblem } from './visibleDir';
@@ -112,6 +114,20 @@ export function renderOutput(
       return exhaustive;
     }
   }
+}
+
+/**
+ * The part files an output's index.css imports, in order, or null when
+ * index.css is missing or unreadable. index.css is the authoritative list of
+ * what the last pull wrote: the record map names only the file that first
+ * declares each token, which for a two-mode collection is always the default
+ * mode's file, so a non-default mode file never appears in the map.
+ */
+export function readIndexImports(cwd: string, o: OutputConfig): string[] | null {
+  const path = resolve(cwd, o.path, CSS_INDEX_FILE);
+  let text: string;
+  try { text = readFileSync(path, 'utf8'); } catch { return null; }
+  return [...text.matchAll(/^@import "\.\/([^"\n]+)";$/gm)].map((m) => m[1]);
 }
 
 export const LEGACY_CSS_PATH_NOTE = (path: string): string =>
