@@ -1,16 +1,13 @@
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
-} from 'node:fs';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
-import {
   CSS_HEADER_PREFIX, NAME_CASES, cssOutput, type CssOutput, type DtcgExport, type NameCase,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
+import { visibleDirProblem } from './visibleDir';
 
 /**
- * Platform outputs: the files the team's build compiles, written in place at a
+ * Platform outputs: the directories the team's build compiles, written in place at a
  * declared path outside the swapped output directory. Spec:
- * docs/superpowers/specs/2026-09-08-repository-delivery-design.md, section 4.
+ * 2026-09-09-css-token-directory-design.md.
  * One format exists today; the registry is where the next one is added.
  */
 
@@ -29,7 +26,7 @@ export interface OutputConfig {
 
 interface FormatSpec {
   platform: Platform; format: OutputFormat;
-  /** Where the file lands when the config names none; null means a path is required. */
+  /** Where the directory lands when the config names none; null means a path is required. */
   defaultPath: string | null;
   defaultCase: NameCase;
   /** The first bytes of a file this format writes; anything else at the path is not ours. */
@@ -37,7 +34,7 @@ interface FormatSpec {
 }
 
 export const FORMATS: readonly FormatSpec[] = [
-  { platform: 'web', format: 'css', defaultPath: 'spec-layer/tokens.css', defaultCase: 'kebab', headerPrefix: CSS_HEADER_PREFIX },
+  { platform: 'web', format: 'css', defaultPath: 'tokens', defaultCase: 'kebab', headerPrefix: CSS_HEADER_PREFIX },
 ];
 
 export const knownFormats = (): string => FORMATS.map((f) => `${f.platform}/${f.format}`).join(', ');
@@ -117,40 +114,13 @@ export function renderOutput(
   }
 }
 
-const inside = (parent: string, child: string): boolean => {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-};
+export const LEGACY_CSS_PATH_NOTE = (path: string): string =>
+  `${path} names a file; spec-layer 0.7.0 writes a directory. `
+  + 'Set outputs[].path to a directory, for example "tokens", delete the old file, and pull again.';
 
-/** Why a deliverable cannot be written at its path, or null when it can. */
-export function outputPathProblem(cwd: string, outDir: string, o: OutputConfig): string | null {
-  const root = resolve(cwd);
-  const abs = resolve(cwd, o.path);
-  if (!inside(root, abs) || abs === root) return `${o.path} is outside this directory. Choose a path inside the repository.`;
-  if (inside(resolve(cwd, outDir), abs)) {
-    return `${o.path} is inside ${outDir}, which pull replaces wholesale. Choose a path outside it.`;
-  }
-  if (existsSync(abs)) {
-    const prefix = specOf(o.platform, o.format)?.headerPrefix ?? CSS_HEADER_PREFIX;
-    let head: string;
-    try { head = readFileSync(abs, 'utf8').slice(0, prefix.length); } catch { return `${o.path} exists and could not be read.`; }
-    if (head !== prefix) return `${o.path} exists and was not written by spec-layer. Choose another path or remove the file.`;
-  }
-  return null;
-}
-
-/** Writes to <path>.partial, then renames over the target, so a reader never sees a half file. */
-export function writeOutputFile(cwd: string, o: OutputConfig, text: string): void {
-  const abs = resolve(cwd, o.path);
-  mkdirSync(dirname(abs), { recursive: true });
-  const partial = `${abs}.partial`;
-  writeFileSync(partial, text);
-  try {
-    renameSync(partial, abs);
-  } catch (err) {
-    // A failed rename must not leave the .partial file behind for the next
-    // write to trip over, or for a reader to mistake for a real deliverable.
-    rmSync(partial, { force: true });
-    throw err;
-  }
+/** Why a deliverable directory cannot be written at its path, or null when it can. `others` are this pull's other visible directories. */
+export function outputPathProblem(cwd: string, outDir: string, o: OutputConfig, others: string[] = []): string | null {
+  if (/\.css$/i.test(o.path)) return LEGACY_CSS_PATH_NOTE(o.path);
+  const marker = specOf(o.platform, o.format)?.headerPrefix ?? CSS_HEADER_PREFIX;
+  return visibleDirProblem(cwd, outDir, o.path, marker, others);
 }

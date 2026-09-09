@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  defaultOutputs, outputId, outputPathProblem, parseOutput, withDefaults, writeOutputFile, type OutputConfig,
+  defaultOutputs, outputId, outputPathProblem, parseOutput, withDefaults, type OutputConfig,
 } from '../src/outputs';
 
-const WEB: OutputConfig = { platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' };
+const WEB: OutputConfig = { platform: 'web', format: 'css', path: 'tokens', case: 'kebab' };
 
 describe('defaults', () => {
   it('gives web a css output at the default path and other platforms nothing yet', () => {
@@ -16,7 +16,7 @@ describe('defaults', () => {
   });
 
   it('adds a default only for platforms without an entry', () => {
-    const custom: OutputConfig = { ...WEB, path: 'src/tokens.css', case: 'camel' };
+    const custom: OutputConfig = { ...WEB, path: 'src/tokens', case: 'camel' };
     expect(withDefaults([custom], ['web'])).toEqual([custom]);
     expect(withDefaults([], ['web'])).toEqual([WEB]);
   });
@@ -30,10 +30,10 @@ describe('parseOutput', () => {
   it('fills the default path and case and keeps selectors', () => {
     expect(parseOutput({ platform: 'web', format: 'css' }, 0)).toEqual(WEB);
     expect(parseOutput({
-      platform: 'web', format: 'css', path: 'a.css', case: 'snake', root: 'html',
+      platform: 'web', format: 'css', path: 'styles/tokens', case: 'snake', root: 'html',
       modeSelector: '.{mode}', modes: { Theme: '[data-t="{mode}"]' },
     }, 0)).toEqual({
-      platform: 'web', format: 'css', path: 'a.css', case: 'snake', root: 'html',
+      platform: 'web', format: 'css', path: 'styles/tokens', case: 'snake', root: 'html',
       modeSelector: '.{mode}', modes: { Theme: '[data-t="{mode}"]' },
     });
   });
@@ -54,41 +54,35 @@ describe('parseOutput', () => {
   });
 });
 
-describe('outputPathProblem and writeOutputFile', () => {
+describe('outputPathProblem', () => {
   let cwd: string;
   beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-out-')); });
   afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
 
-  it('allows a new path inside the directory and refuses one outside or inside outDir', () => {
+  it('allows a new directory inside the repository and delegates the directory rules', () => {
     expect(outputPathProblem(cwd, '.speclayer', WEB)).toBeNull();
-    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '../tokens.css' }))
-      .toBe('../tokens.css is outside this directory. Choose a path inside the repository.');
-    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '/etc/tokens.css' })).toContain('is outside this directory');
-    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '.speclayer/web/tokens.css' }))
-      .toBe('.speclayer/web/tokens.css is inside .speclayer, which pull replaces wholesale. Choose a path outside it.');
-    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '.speclayer' })).toContain('is inside .speclayer');
+    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '../tokens' }))
+      .toBe('../tokens is outside this directory. Choose a path inside the repository.');
+    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: '.speclayer/web' }))
+      .toBe('.speclayer/web is inside .speclayer, which pull replaces wholesale. Choose a path outside it.');
+    expect(outputPathProblem(cwd, '.speclayer', WEB, ['component-specs'])).toBeNull();
+    expect(outputPathProblem(cwd, '.speclayer', WEB, ['tokens/x'])).toBe('tokens and tokens/x overlap. Give each output its own directory.');
   });
 
-  it('refuses an existing file without the header and accepts one with it', () => {
-    mkdirSync(join(cwd, 'spec-layer'));
-    writeFileSync(join(cwd, WEB.path), ':root { --mine: red; }\n');
+  it('refuses the 0.6.0 single-file path with the two-step fix', () => {
+    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: 'spec-layer/tokens.css' })).toBe(
+      'spec-layer/tokens.css names a file; spec-layer 0.7.0 writes a directory. '
+      + 'Set outputs[].path to a directory, for example "tokens", delete the old file, and pull again.',
+    );
+    expect(outputPathProblem(cwd, '.speclayer', { ...WEB, path: 'Styles/TOKENS.CSS' })).toContain('names a file');
+  });
+
+  it('refuses a directory holding a file without the CSS header and accepts one with it', () => {
+    mkdirSync(join(cwd, 'tokens'));
+    writeFileSync(join(cwd, 'tokens/mine.css'), ':root { --mine: red; }\n');
     expect(outputPathProblem(cwd, '.speclayer', WEB))
-      .toBe('spec-layer/tokens.css exists and was not written by spec-layer. Choose another path or remove the file.');
-    writeFileSync(join(cwd, WEB.path), '/* Generated by spec-layer from library x */\n');
+      .toBe('tokens holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    writeFileSync(join(cwd, 'tokens/mine.css'), '/* Generated by spec-layer from library x */\n');
     expect(outputPathProblem(cwd, '.speclayer', WEB)).toBeNull();
-  });
-
-  it('writes through a .partial rename and creates parent directories', () => {
-    writeOutputFile(cwd, { ...WEB, path: 'deep/er/tokens.css' }, '/* Generated by spec-layer */\n');
-    expect(readFileSync(join(cwd, 'deep/er/tokens.css'), 'utf8')).toBe('/* Generated by spec-layer */\n');
-    expect(existsSync(join(cwd, 'deep/er/tokens.css.partial'))).toBe(false);
-  });
-
-  it('removes the .partial file when the rename fails, and still throws', () => {
-    // A directory sitting at the target path makes renameSync fail; the
-    // .partial file must not be left behind for the next write to trip over.
-    mkdirSync(join(cwd, 'tokens.css'));
-    expect(() => writeOutputFile(cwd, { ...WEB, path: 'tokens.css' }, '/* Generated by spec-layer */\n')).toThrow();
-    expect(existsSync(join(cwd, 'tokens.css.partial'))).toBe(false);
   });
 });
