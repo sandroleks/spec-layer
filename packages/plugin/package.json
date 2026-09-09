@@ -8,7 +8,7 @@
     "@spec-layer/extractor": "*"
   },
   "devDependencies": {
-    "@figma/plugin-typings": "1.128.0",
+    "@figma/plugin-typings": "1.138.0",
     "esbuild": "^0.28.1"
   }
 }
