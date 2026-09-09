@@ -15,10 +15,6 @@ coverage/
 **/.spec-cache/
 **/.spec-data/
 
-# Screen recordings and marketing video source: tens of MB each, and git can
-# never forget a blob once it lands. These are working files, not shipped assets.
-screenshots/*.mp4
-
 # Local pull of our own published library, for testing the developer-facing
 # loop against real Figma data. `spec-layer pull` writes .speclayer/ and
 # `spec-layer init` writes speclayer.json; both are working files here, not
@@ -27,24 +23,6 @@ screenshots/*.mp4
 .speclayer/
 speclayer.json
 
-# Generated deployment archives are delivered out of band, not source-controlled.
-# A release record keeps its per-file hashes (candidate.json, live-assets.json),
-# which prove what shipped without carrying the payload; `npm run check:production
-# --prefix apps/website` rebuilds the bytes those hashes describe.
-docs/handoffs/*.zip
-docs/handoffs/*.tar.gz
-docs/reviews/**/*.zip
-docs/reviews/**/*.tar.gz
-
-# Delivery bundle of files that are already tracked individually beside it.
-# docs/brand/assets-v1/render.mjs regenerates it.
-docs/brand/assets-v1/*.zip
-
-# Superseded full-resolution concept art. Synthetic Image Gen proposals, never
-# an approved implementation target; the shipped visuals are the real renderer
-# captures in docs/brand/assets-v1/captures/.
-docs/brand/proposals/
-
-# Generated website delivery variants; rebuild from approved originals.
-apps/website/public/styles.bundle.css
-apps/website/public/screenshots/responsive/
+# The prose tree, the internal vault, the marketing site, and the capture
+# library now live in a separate private repository, so the ignore rules that
+# covered their generated archives and delivery variants went with them.

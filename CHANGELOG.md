@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Removed
+
+- **The non-public trees.** `apps/website` (the marketing site), `docs/` (the
+  prose specs, plans, reviews, brand system, and writing guides),
+  `project-docs/` (the archived vault), and `screenshots/` (the capture
+  library) are no longer part of this repository; they are maintained
+  privately. This repository is the open-source product: the plugin, the
+  extractor, the proxy, the CLI, the shared brand package, their tests, and
+  the published JSON Schemas. No shipping code changed.
+- The two tests asserting that the website's schema copies stayed
+  byte-identical to the extractor's. There is no second copy left to drift, so
+  the assertion had nothing to compare. The contract they protected is
+  unchanged and is now checked end to end by `npm run check:site-live`, which
+  compares the live `spec-layer.com/schemas/**` bytes against
+  `packages/extractor/src/v5/schema/*.json` directly. The site is deployed
+  from the private repository, so a schema change here is not live until that
+  side redeploys, and the live check is what proves it.
+
+### Changed
+
+- CI no longer builds the website; `verify` is `npm run check:ci` alone. The
+  job id is unchanged, so the required status check on `main` still applies.
+- `npm run check:nul` scans `packages/` and `scripts/`. The prose trees it also
+  covered, where the NUL trap bit three times, are scanned in the private
+  repository instead.
+
 ## [5.0.0] - 2026-09-09
 
 ### Added

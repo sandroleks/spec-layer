@@ -30,25 +30,30 @@ packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
 packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
 packages/cli/          spec-layer CLI: setup, init, pull, status, list, show, tools, skill; delivery plus pure platform projections, no extraction
 packages/brand/        @spec-layer/brand: shared tokens, identity assets, contrast gate
-apps/website/          static site generator: marketing, docs, policies, published JSON schemas
-docs/                  current specs, plans, reviews, brand system, writing guides
-project-docs/          ARCHIVED historical vault, not a source of truth
 ```
 
-npm workspaces cover `packages/*` only; `apps/website` sits outside the
-workspace and runs its own scripts with `--prefix apps/website`. Node >= 22,
+npm workspaces cover `packages/*`, which is now the whole tree. Node >= 22,
 TypeScript, Vitest, esbuild. No framework.
+
+The marketing site (`apps/website`), the prose tree (`docs/`), the archived
+vault (`project-docs/`), and the capture library (`screenshots/`) were removed
+from this repository in September 2026 and are maintained privately. This is
+the open-source repository: it carries the shipping code, its tests, and the
+published JSON Schemas, and nothing that is not meant to be public. Do not
+re-add those trees here, and do not write a new pointer to a file this
+repository does not contain. Source comments still cite the design documents a
+rule came from; those are provenance for the maintainers, left as they were
+written, and are not an invitation to add more.
 
 ## Commands
 
 ```bash
 npm run check                        # full local gate
-npm test                             # vitest run (133 files, 2499 tests, 9 todo, ~15s)
+npm test                             # vitest run (133 files, 2507 tests, 9 todo, ~17s)
 npm run typecheck
 npm run lint
 npm run build:plugin                 # runs the brand build first, so a contrast failure stops it
 npm run build:cli
-npm run check --prefix apps/website  # website build plus its own checks
 npm run check:site-live              # live spec-layer.com schemas against the committed files
 ```
 
@@ -56,35 +61,32 @@ npm run check:site-live              # live spec-layer.com schemas against the c
 CLI bundle smoke test, sandbox scan, proxy deploy dry run.
 
 CI (`.github/workflows/ci.yml`) runs `npm run check:ci`, which adds coverage
-thresholds and a full dependency audit, then both website build modes. Its job
-id is `verify`, which is the required status check on `main`; do not rename it.
+thresholds and a full dependency audit. Its job id is `verify`, which is the
+required status check on `main`; do not rename it.
 CodeQL runs weekly and per pull request and is deliberately advisory, not a
 merge gate. Never verify CI or a gate through a pipe that swallows the exit
 code; read the status directly.
 
 ## Where current truth lives
 
+These all live in this repository:
+
 | Question | Document |
 |---|---|
 | How the system fits together | `ARCHITECTURE.md` |
-| Orientation for the plugin runtime | `docs/plugin-knowledge-map.md` |
 | What shipped, in detail | `CHANGELOG.md` |
-| Foundation Context v5 contract | `docs/specs/foundation-context-v5.md` |
-| Component Context v5 contract | `docs/specs/component-context-v5.md` |
-| What v5 has and has not been graded on | `docs/specs/foundation-v5-status.md` |
+| Foundation Context v5 contract | `packages/extractor/src/v5/schema/foundation-5.1.0.json` |
+| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.1.0.json` |
 | Manual Figma test matrix and release gate | `packages/plugin/TESTING.md` |
-| Shared brand and UI design system | `packages/brand/README.md`, `docs/brand/system-v1/README.md` |
-| Reviews and their evidence | `docs/reviews/` |
-| Executed plans, decision history | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
-| Plugin UI copy rules | `docs/plugin-voice-and-copy.md` |
-| AI prose voice | `docs/prose-style-guide.md` |
+| Shared brand and UI design system | `packages/brand/README.md` |
+| Proxy behaviour and accepted risks | `packages/proxy/README.md` |
 
-`docs/feature-backlog-2026-07.md` is a July snapshot. Its tier 0 and tier 1
-items are largely shipped; treat the status section below as current priority,
-not that file.
-
-`project-docs/` describes retired surfaces. See its `ARCHIVE-NOTICE.md` before
-trusting anything in it.
+The prose specs, the plugin knowledge map, the review evidence, the executed
+plans, and the voice and copy guides moved to the private repository. The
+schemas above are the enforceable v5 contract and stay here; the prose that
+explains them does not. When you need a rule from one of those guides and it
+is not in this repository, ask rather than reconstructing it, and never
+reference a path here that a reader of this repository cannot open.
 
 ## Invariants
 
@@ -134,11 +136,12 @@ to `'3'` belongs to the Component Frame Quality plan below.
 known defect, and fixing it moves every canvas hash, so it is deliberately
 held for the next `EXTRACTOR_VERSION` bump rather than fixed in passing.
 
-**Keep the extractor and website schemas byte-identical.**
-`packages/extractor/src/v5/schema/*.json` and
-`apps/website/public/schemas/**` must match, and the published URL must serve
-the committed bytes before a release. `npm run check:site-live` checks the
-live site against the committed files.
+**The published schema URL must serve the committed bytes.**
+`packages/extractor/src/v5/schema/*.json` is the only copy of the schemas now,
+and `spec-layer.com/schemas/**` must serve exactly those bytes before a
+release. `npm run check:site-live` checks the live site against them. The site
+is deployed from the private repository, so a schema change here is not live
+until that side is redeployed; the check is what proves it.
 
 **Keep the AI profile downstream.** `v5/aiContext.ts` projects a validated
 artifact for prompt size. It never participates in a hash and never justifies
@@ -158,12 +161,13 @@ themes and must never pick up the product palette.
 
 **NUL bytes.** Some separator idioms emit raw `0x00` that lint, tests, and
 `git diff` all hide. `npm run check:nul` covers git-tracked text under
-`packages/`, `scripts/`, `apps/`, and `docs/`, plus the root documents. This has
-bitten the repo three times.
+`packages/` and `scripts/`, plus the root documents. This has bitten the repo
+three times, every time in a plan document; those now live privately and are
+scanned there.
 
-**No em dashes in plugin UI copy.** Ever. See `docs/plugin-voice-and-copy.md`
-for the full voice rules; sentence case, second person, no hype words, honest
-about limits.
+**No em dashes in plugin UI copy.** Ever. Sentence case, second person, no hype
+words, honest about limits, and never a claim the extractor cannot back. The
+full voice guide is in the private repository.
 
 **Fixtures must be synthetic or explicitly publishable.** No customer files, no
 private Figma URLs, no proprietary component exports, no credentials. A real
@@ -172,7 +176,7 @@ descriptions, and diagnostics before it can be committed.
 
 ## Where things stand (2026-09-09)
 
-`main` is clean, green, and fully pushed: 133 test files, 2499 tests passing,
+`main` is clean, green, and fully pushed: 133 test files, 2507 tests passing,
 9 todo.
 
 Shipped and merged. `CHANGELOG.md` is the detailed log; this is the shape of it:
@@ -216,19 +220,17 @@ Shipped and merged. `CHANGELOG.md` is the detailed log; this is the shape of it:
   reads, foundation dump posted once per read, in-panel confirmation dialogs,
   no non-component toast, Copy for AI on the component screen and per
   Foundations row, minified bundles, compact DTCG clipboard with a kilobyte
-  size notice. Design in
-  `docs/superpowers/specs/2026-09-05-review-quick-wins-design.md`.
+  size notice.
 - **Shared design system.** `packages/brand` is the single token source, with a
   contrast gate. Phases 1 to 4 are complete: the plugin and the website both
   consume it, and the released artwork and captures are integrated. Phase 5,
   native Figma verification and release, is planned.
-- **Website.** `apps/website` is live at `spec-layer.com` and serves the
-  committed schemas; `npm run check:site-live` passes. The 2026-09-08 SEO pass
-  is deployed: HTTP www routing fixed, sitemap submitted, WebP gallery variants
+- **Website.** The site is live at `spec-layer.com` and serves the committed
+  schemas; `npm run check:site-live` passes. The 2026-09-08 SEO pass is
+  deployed: HTTP www routing fixed, sitemap submitted, WebP gallery variants
   generated, the brand and site stylesheets flattened into one delivered file,
-  and robots ownership consolidated at the edge. Evidence and the measured
-  limits are in `docs/reviews/2026-09-08-seo-audit/` and
-  `docs/reviews/2026-09-08-seo-fixes/`.
+  and robots ownership consolidated at the edge. The site source and its
+  evidence now live in the private repository.
 - **Repository hardening** (2026-09-08). `main` requires a squash-merged pull
   request passing `verify`, with linear history and up-to-date branches; a tag
   ruleset protects `v*`. `CODEOWNERS` had pointed at a non-collaborator, so
@@ -241,11 +243,11 @@ Open, in rough priority order:
 
 1. **The manual Figma matrix in `packages/plugin/TESTING.md` has never been run
    against a development build.** This is the standing release blocker; unit
-   tests cannot reach it. `docs/reviews/2026-09-05-matrix-run.md` is the
-   recording template and is still blank, including the three questions the
-   2026-09-05 review could not answer: whether `window.confirm` shows a dialog
-   in the plugin iframe, how often the non-component toast fires, and the real
-   size and paste behaviour of the DTCG clipboard.
+   tests cannot reach it. The recording template lives in the private
+   repository and is still blank, including the three questions the 2026-09-05
+   review could not answer: whether `window.confirm` shows a dialog in the
+   plugin iframe, how often the non-component toast fires, and the real size
+   and paste behaviour of the DTCG clipboard.
 2. **Plugin republish and listing.** The plugin has not republished at schema
    `5.1.0`, so a pulled sidecar still carries no `code_syntax`. A live
    `spec-layer pull` of a real 5.0.0 library on 2026-09-03 wrote a complete
@@ -254,15 +256,12 @@ Open, in rough priority order:
    works end to end. The Community listing update and version alignment for the
    5.0.0 plugin release ride along with the republish, as does publishing CLI
    `0.7.0`.
-3. **Component Frame Quality Round 1**, planned and not started. Plan:
-   `docs/superpowers/plans/2026-09-07-component-frame-quality.md`; design:
-   `docs/superpowers/specs/2026-09-06-component-frame-quality-design.md`. It
-   replaces the Configuration section with a Properties table, trims the
-   Anatomy legend, fixes the radius gap check and the anatomy wrapper descent,
-   and is the change that bumps `EXTRACTOR_VERSION` to `'3'` and makes
-   `hash.ts` locale-safe.
-4. **Patterns and nested components**, design only:
-   `docs/superpowers/specs/2026-09-06-patterns-and-nested-components-design.md`.
+3. **Component Frame Quality Round 1**, planned and not started; the plan and
+   design are in the private repository. It replaces the Configuration section
+   with a Properties table, trims the Anatomy legend, fixes the radius gap
+   check and the anatomy wrapper descent, and is the change that bumps
+   `EXTRACTOR_VERSION` to `'3'` and makes `hash.ts` locale-safe.
+4. **Patterns and nested components**, design only, in the private repository.
 5. **Real design-system grading** for v5 criteria 3, 10, and 11. The synthetic
    golden passes; a reviewed real artifact does not exist in-repo, and cannot be
    committed without explicit approval. Criterion 9 (style lifecycle) is
@@ -292,9 +291,9 @@ bet is deterministic extraction depth.
   explaining. Commits carry a `Co-Authored-By` trailer.
 - A pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) rejects
   known secret patterns.
-- Update `CHANGELOG.md` alongside behavior changes, and the relevant
-  `docs/specs` or status document alongside contract changes. Recent commits do
-  all three in one change; match that.
+- Update `CHANGELOG.md` alongside behavior changes, and the JSON Schema plus
+  the status section above alongside contract changes. Recent commits do all
+  three in one change; match that.
 - Dependabot raises grouped npm updates weekly and GitHub Actions updates
   monthly.
 - Dead code hides behind its own tests here. Judge whether plugin code is live

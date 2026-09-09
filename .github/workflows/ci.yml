@@ -30,7 +30,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:ci
-      - name: Verify website preview build
-        run: npm run check --prefix apps/website
-      - name: Verify website production build
-        run: npm run check:production --prefix apps/website

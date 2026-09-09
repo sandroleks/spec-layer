@@ -26,11 +26,6 @@ describe('Component Context v5 schema', () => {
     ).toBe(true);
   });
 
-  it('keeps the published website copy byte-identical', () => {
-    expect(readFileSync('apps/website/public/schemas/component-context/v5.json', 'utf8'))
-      .toBe(componentSchemaText);
-  });
-
   it('rejects a resolved binding whose source identity is absent', () => {
     const artifact = structuredClone(buildComponentV5GoldenArtifact());
     artifact.references.used[0].source_id = '';

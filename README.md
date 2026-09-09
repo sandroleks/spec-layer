@@ -189,12 +189,15 @@ packages/plugin/       Figma serializer, canvas renderer, and plugin UI
 packages/extractor/    deterministic extraction and YAML context generation
 packages/proxy/        Cloudflare Worker for AI writing, quotas, licensing, libraries
 packages/cli/          spec-layer CLI: pulls a published library into a repo
-apps/website/          marketing site, documentation, policies, and public schemas
-docs/                  product specs, plans, reviews, and writing guidance
+packages/brand/        shared design tokens, identity assets, and the contrast gate
 ```
 
-Release history is in [CHANGELOG.md](CHANGELOG.md). Current product plans are in
-the [feature backlog](docs/feature-backlog-2026-07.md).
+The marketing site, the product specs, plans, and reviews, and the internal
+capture library are maintained in a separate private repository. The canonical
+JSON Schemas ship here, in `packages/extractor/src/v5/schema/`, and are
+published at `spec-layer.com/schemas/`.
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

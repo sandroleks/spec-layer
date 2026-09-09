@@ -16,11 +16,11 @@
  * and a dozen source-level NUL escapes used the same way — neither of which a
  * NUL-only scan catches. Both are widened for here.
  *
- * Scope: git-tracked text files under the npm workspaces (`packages/`), this
- * repo's own tooling (`scripts/`), the static site and docs (`apps/`), and the
- * prose tree (`docs/`), plus the root package.json and the top-level documents
- * named in SOURCE_FILES. The prose trees were excluded at first and the trap
- * bit plan documents there three times, so they are in. Extensions are an
+ * Scope: git-tracked text files under the npm workspaces (`packages/`) and
+ * this repo's own tooling (`scripts/`), plus the root package.json and the
+ * top-level documents named in SOURCE_FILES. The prose trees this also
+ * covered, where the trap bit three times, now live in a separate private
+ * repository and are scanned there instead. Extensions are an
  * allowlist rather than a blacklist: the repo tracks legitimate binary assets
  * (png, jpg) that contain NUL bytes as a normal part of their format, and
  * those must never be scanned regardless of location.
@@ -46,7 +46,7 @@ const TEXT_EXTENSIONS = new Set([
  */
 const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
-const SOURCE_ROOTS = ['packages/', 'scripts/', 'apps/', 'docs/'];
+const SOURCE_ROOTS = ['packages/', 'scripts/'];
 const SOURCE_FILES = new Set(['package.json', 'README.md', 'ARCHITECTURE.md', 'CLAUDE.md', 'CHANGELOG.md', 'SECURITY.md']);
 
 function trackedFiles() {
