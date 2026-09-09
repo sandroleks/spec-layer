@@ -103,8 +103,14 @@ export function dtcgPathOf(collectionName: string, tokenName: string): string {
   return [...dtcgSegments(collectionName).segments, ...dtcgSegments(tokenName).segments].join('.');
 }
 
-const slug = (s: string): string =>
+/**
+ * The file-name slug the DTCG record and the CSS output share: lowercase,
+ * every run outside a-z0-9 becomes `-`, ends trimmed, `unnamed` when nothing
+ * is left. Exported so the CSS projection names its files by the same rule.
+ */
+export const dtcgSlug = (s: string): string =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
+const slug = dtcgSlug;
 
 /** The names the export writes itself. A collection file must never land on
  *  one of them: a collection named "Styles" with a mode "Typography" would
