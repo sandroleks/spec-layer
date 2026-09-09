@@ -44,6 +44,8 @@ export interface PullSummary {
     platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
     /** Whether `<outDir>/outputs/<platform>-<format>.map.json` exists: the on-disk proof the file was rendered. */
     written: boolean;
+    /** True when the map exists but index.css is missing or unreadable, so the file list in `files` cannot be trusted; false whenever `written` is true, and false when the map itself is missing (the Foundation was never written). */
+    indexMissing: boolean;
     /** The part files index.css imports, in import order, then index.css; empty when not written. */
     files: string[];
   }>;
@@ -142,7 +144,13 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
         // index.css must be readable, not just the map, or a deleted index.css
         // (with the map still on disk from an interrupted pull) would report
         // written with an empty file list, a sentence that claims files exist.
-        written: map !== null && imports !== null, files,
+        written: map !== null && imports !== null,
+        // Distinguishes "the map is on disk but index.css is gone" from "the
+        // map itself never existed" (the Foundation was excluded), so the
+        // guide can name the actual cause instead of always blaming the
+        // Foundation.
+        indexMissing: map !== null && imports === null,
+        files,
       };
     }),
   };
@@ -225,7 +233,13 @@ function stackSection(input: SkillInput): string[] {
           '',
         );
         const configuredNotWritten = pull?.outputs.find((o) => o.platform === 'web' && !o.written) ?? null;
-        if (configuredNotWritten) {
+        if (configuredNotWritten?.indexMissing) {
+          lines.push(
+            `A web/css output is configured at ${code(`${configuredNotWritten.path}/`)} but its ${code('index.css')} is missing, so the file list is unknown. `
+            + `Run ${code('npx spec-layer pull')} to write it again.`,
+            '',
+          );
+        } else if (configuredNotWritten) {
           lines.push(
             `A web/css output is configured at ${code(`${configuredNotWritten.path}/`)} but was not written, because the last pull did not write the Foundation. `
             + 'Pull with the Foundation selected to write it.',
@@ -344,7 +358,9 @@ function pullSection(input: SkillInput): string[] {
     lines.push(o.written
       ? `- ${code(`${o.path}/`)}: ${o.platform}/${o.format} token files, ${o.case} names: ${o.files.join(', ')}. Non-default modes are under ${code(o.modeSelector)}, each in its own file.`
         + ` Names and provenance: ${code(`${outDir}/outputs/${o.platform}-${o.format}.map.json`)}; what it could not express: ${code(`${outDir}/outputs/${o.platform}-${o.format}.report.json`)}.`
-      : `- ${code(`${o.path}/`)}: ${o.platform}/${o.format} token files, configured but not written by the last pull (the Foundation was not written). Nothing is on disk at that path from Spec Layer.`);
+      : o.indexMissing
+        ? `- ${code(`${o.path}/`)}: ${o.platform}/${o.format} token files, but ${code('index.css')} is missing; run ${code('npx spec-layer pull')} to restore the directory.`
+        : `- ${code(`${o.path}/`)}: ${o.platform}/${o.format} token files, configured but not written by the last pull (the Foundation was not written). Nothing is on disk at that path from Spec Layer.`);
   }
   lines.push('');
 

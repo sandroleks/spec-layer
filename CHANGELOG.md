@@ -24,7 +24,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `file`. A `speclayer.json` from 0.6.0 (`"path": "spec-layer/tokens.css"`)
   is refused with the two-step fix: set `path` to a directory and delete the
   old file. `.speclayer/` keeps the bundle, manifest, DTCG record, and output
-  maps and reports. Design:
+  maps and reports. When `componentSpecsDir` or an output path changes
+  between pulls, `pull` names the previous directory so you can delete it; it
+  never removes a directory itself. Design:
   `docs/superpowers/specs/2026-09-09-css-token-directory-design.md`.
 - **Platform outputs** (CLI 0.6.0, published 2026-09-09). `spec-layer pull`
   writes a token file your build compiles, in place at a path declared under

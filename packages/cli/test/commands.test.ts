@@ -569,6 +569,20 @@ describe('runPull with outputs', () => {
     expect(existsSync(join(cwd, 'styles/tokens/index.css'))).toBe(true);
   });
 
+  it('does not treat a pre-existing component-specs/ as a previous pull on a genuine first pull', async () => {
+    // No manifest exists yet, so there is no "previous pull" to compare against;
+    // an unrelated folder that happens to be named after the default must not
+    // be reported as stale.
+    mkdirSync(join(cwd, 'component-specs'));
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer', componentSpecsDir: 'design/specs',
+    }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'design/specs/button.yaml'))).toBe(true);
+    expect(io.outLines.some((l) => l.includes('The previous pull wrote'))).toBe(false);
+  });
+
   it('names a platform with no output format and writes nothing for it', async () => {
     const io = makeIo();
     const code = await runPull(cwd, { id: LIB, key: KEY, platform: ['ios'] }, {}, io, stub200());
@@ -1373,8 +1387,11 @@ describe('runSkill', () => {
 
     const io = makeIo();
     expect(runSkill(cwd, { json: true }, io)).toBe(0);
-    const parsed = JSON.parse(io.writes.join('')) as { pull: { outputs: Array<{ written: boolean; files: string[] }> } };
+    const parsed = JSON.parse(io.writes.join('')) as {
+      pull: { outputs: Array<{ written: boolean; indexMissing: boolean; files: string[] }> };
+    };
     expect(parsed.pull.outputs[0].written).toBe(false);
+    expect(parsed.pull.outputs[0].indexMissing).toBe(true);
     expect(parsed.pull.outputs[0].files).toEqual([]);
   });
 

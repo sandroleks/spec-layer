@@ -435,7 +435,7 @@ export async function runPull(
       io.out(`The previous pull wrote ${previous}/; this one wrote ${current}/. Delete ${previous}/ if nothing else uses it.`);
     }
   };
-  staleDirNote(manifest?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR, opts.componentSpecsDir);
+  if (manifest) staleDirNote(manifest.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR, opts.componentSpecsDir);
   for (const prev of manifest?.outputs ?? []) {
     const current = outputs.find((o) => outputId(o) === outputId(prev));
     if (current) staleDirNote(prev.path, current.path);

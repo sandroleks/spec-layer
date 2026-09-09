@@ -42,16 +42,29 @@ const PULL_WITH_CSS: NonNullable<SkillInput['pull']> = {
   ...PULL,
   outputs: [{
     platform: 'web', format: 'css', path: 'tokens', case: 'kebab',
-    modeSelector: '[data-theme="{mode}"]', modes: {}, written: true,
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: true, indexMissing: false,
     files: ['primitives.css', 'theme.light.css', 'theme.dark.css', 'index.css'],
   }],
 };
 
+// The map file never existed: the Foundation was excluded from the pull.
 const PULL_CSS_NOT_WRITTEN: NonNullable<SkillInput['pull']> = {
   ...PULL,
   outputs: [{
     platform: 'web', format: 'css', path: 'tokens', case: 'kebab',
-    modeSelector: '[data-theme="{mode}"]', modes: {}, written: false,
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: false, indexMissing: false,
+    files: [],
+  }],
+};
+
+// The map file is still on disk, but index.css was deleted (or is unreadable),
+// so the file list cannot be trusted: a different cause than the Foundation
+// having been excluded, and the guide must say so distinctly.
+const PULL_CSS_INDEX_MISSING: NonNullable<SkillInput['pull']> = {
+  ...PULL,
+  outputs: [{
+    platform: 'web', format: 'css', path: 'tokens', case: 'kebab',
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: false, indexMissing: true,
     files: [],
   }],
 };
@@ -180,6 +193,19 @@ describe('buildSkillGuide outputs', () => {
     const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_CSS_NOT_WRITTEN }));
     expect(guide).toContain('A web/css output is configured at `tokens/` but was not written, because the last pull did not write the Foundation. '
       + 'Pull with the Foundation selected to write it.');
+    expect(guide).not.toContain('its `index.css` is missing');
+    expect(guide).not.toContain('Import `tokens/index.css` from the root stylesheet');
+    expect(guide).not.toContain('web-css.map.json');
+    expect(guide).not.toContain('No token file was written for web.');
+  });
+
+  it('says index.css is missing, not that the Foundation was excluded, when the map is still on disk', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_CSS_INDEX_MISSING }));
+    expect(guide).toContain(
+      'A web/css output is configured at `tokens/` but its `index.css` is missing, so the file list is unknown. '
+      + 'Run `npx spec-layer pull` to write it again.',
+    );
+    expect(guide).not.toContain('because the last pull did not write the Foundation');
     expect(guide).not.toContain('Import `tokens/index.css` from the root stylesheet');
     expect(guide).not.toContain('web-css.map.json');
     expect(guide).not.toContain('No token file was written for web.');
@@ -202,6 +228,22 @@ describe('buildSkillGuide outputs', () => {
     expect(guide).toContain('2. Building or changing a component: read its YAML under `component-specs/`');
     expect(guide).toContain('6. Never edit files under `.speclayer/` or `component-specs/`: the next pull replaces or removes them.');
     expect(guide).toContain('after a pull that adds components, after changing `outputs` or `componentSpecsDir`, or when the codebase changes stack');
+  });
+
+  it('names the Foundation exclusion in the disk section when the map never existed', () => {
+    const guide = buildSkillGuide(input({ pull: PULL_CSS_NOT_WRITTEN }));
+    expect(guide).toContain(
+      '- `tokens/`: web/css token files, configured but not written by the last pull (the Foundation was not written). '
+      + 'Nothing is on disk at that path from Spec Layer.',
+    );
+  });
+
+  it('names the missing index.css in the disk section, not the Foundation exclusion, when the map is on disk', () => {
+    const guide = buildSkillGuide(input({ pull: PULL_CSS_INDEX_MISSING }));
+    expect(guide).toContain(
+      '- `tokens/`: web/css token files, but `index.css` is missing; run `npx spec-layer pull` to restore the directory.',
+    );
+    expect(guide).not.toContain('configured but not written by the last pull (the Foundation was not written)');
   });
 });
 
