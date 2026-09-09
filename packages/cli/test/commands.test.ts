@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
 } from '../src/commands';
 import { readConfig } from '../src/config';
+import { readIndexImports } from '../src/outputs';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
   const outLines: string[] = [];
@@ -41,12 +42,15 @@ function realFoundationArtifact() {
   return artifact;
 }
 
+/** writeBundleFiles refuses a component brief that does not begin with the Spec Layer marker. */
+const brief = (body: string): string => `spec_layer:\n  kind: component\n${body}`;
+
 const GOOD_BUNDLE = {
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'DS',
   pluginVersion: '5.0.0', extractorVersion: '2',
   foundation: { ai: 'foundation: yes\n', artifact: realFoundationArtifact() },
   components: [
-    { name: 'Button', ai: 'button: yes\n', artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
+    { name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
   ],
 };
 
@@ -98,7 +102,7 @@ describe('runInit', () => {
     const code = runInit(cwd, { id: 'lib_abc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer' });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
     expect(io.outLines.join('\n')).toMatch(/spec-layer setup/);
   });
 
@@ -119,10 +123,10 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
-    expect(io.outLines).toContain('Token file for web: spec-layer/tokens.css (css, kebab names), written by the next pull.');
+    expect(io.outLines).toContain('Token files for web: tokens/ (css, kebab names), written by the next pull.');
   });
 
   it('--platform ios names the missing format and writes no output entry', () => {
@@ -132,7 +136,7 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
-    expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
+    expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
   });
 
   it('names the missing format for a platform found by detection too, not only --platform', () => {
@@ -142,9 +146,9 @@ describe('runInit', () => {
     const code = runInit(cwd, { id: 'lib_abc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['ios'] });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
-    expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
+    expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
   });
 });
 
@@ -166,7 +170,7 @@ describe('runPull', () => {
     expect(code).toBe(0);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(true);
     const output = io.outLines.join('\n');
     expect(output).toMatch(/1 component/);
@@ -243,12 +247,12 @@ describe('runPull', () => {
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const beforeBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
-    const beforeButton = readFileSync(join(cwd, '.speclayer/components/button.yaml'), 'utf8');
+    const beforeButton = readFileSync(join(cwd, 'component-specs/button.yaml'), 'utf8');
     const beforeManifest = readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8');
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const afterBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
-    const afterButton = readFileSync(join(cwd, '.speclayer/components/button.yaml'), 'utf8');
+    const afterButton = readFileSync(join(cwd, 'component-specs/button.yaml'), 'utf8');
     const afterManifest = readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8');
 
     expect(afterBundle).toBe(beforeBundle);
@@ -315,9 +319,9 @@ describe('runStatus', () => {
 const THREE_BUNDLE = {
   ...GOOD_BUNDLE,
   components: [
-    { name: 'Button', ai: 'button: yes\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-    { name: 'Card', ai: 'card: yes\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
-    { name: 'Icon Button', ai: 'icon: yes\n', artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
+    { name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+    { name: 'Card', ai: brief('card: yes\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+    { name: 'Icon Button', ai: brief('icon: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
   ],
 };
 const stubThree = () => stub200(JSON.stringify(THREE_BUNDLE));
@@ -340,7 +344,7 @@ describe('runPull with a selection', () => {
 
     expect(code).toBe(0);
     expect(existsSync(join(cwd, '.speclayer/tokens/resolver.json'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs'))).toBe(false);
     expect(existsSync(join(cwd, '.speclayer/bundle.json'))).toBe(true);
     expect(io.outLines.join('\n')).toMatch(/foundation \+ 0 of 3 components/);
   });
@@ -351,9 +355,9 @@ describe('runPull with a selection', () => {
     const code = await runPull(cwd, { component: ['card', 'icon-button'] }, ENV, io, stubThree());
 
     expect(code).toBe(0);
-    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components/icon-button.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/icon-button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(false);
     expect(io.outLines.join('\n')).toMatch(/foundation \+ 2 of 3 components/);
   });
 
@@ -371,12 +375,12 @@ describe('runPull with a selection', () => {
     runInit(cwd, { id: 'lib_abc', component: ['Card'] }, makeIo());
 
     await runPull(cwd, {}, ENV, makeIo(), stubThree());
-    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(false);
 
     await runPull(cwd, { component: ['Button'] }, ENV, makeIo(), stubThree());
-    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(true);
-    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(false);
   });
 
   it('fails on an unknown component name, lists the available ones, and writes nothing', async () => {
@@ -453,10 +457,10 @@ describe('runPull with outputs', () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'], outputs: [] }));
     const io = makeIo();
     expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(false);
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
       libraryId: LIB, outDir: '.speclayer', platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'styles/tokens.css', case: 'camel' }],
+      outputs: [{ platform: 'web', format: 'css', path: 'styles/tokens', case: 'camel' }],
     }));
     const second = makeIo();
     const fetcher = stub200();
@@ -464,16 +468,19 @@ describe('runPull with outputs', () => {
     // A changed outputs block must not send If-None-Match, or the 304 would skip the re-projection.
     const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
     expect(headers['If-None-Match']).toBeUndefined();
-    const css = readFileSync(join(cwd, 'styles/tokens.css'), 'utf8');
-    expect(css).toContain('web/css/camel.');
-    expect(css).toContain('--primitivesColorChainBridge: var(--primitivesColorChainMiddle);');
+    const index = readFileSync(join(cwd, 'styles/tokens/index.css'), 'utf8');
+    expect(index).toContain('web/css/camel.');
+    const dir = join(cwd, 'styles/tokens');
+    const joined = readdirSync(dir).filter((name) => !name.startsWith('.'))
+      .map((name) => readFileSync(join(dir, name), 'utf8')).join('\n');
+    expect(joined).toContain('--primitivesColorChainBridge: var(--primitivesColorChainMiddle);');
   });
 
   it('pull --platform web adds the default output for the run without rewriting speclayer.json', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
     const io = makeIo();
     expect(await runPull(cwd, { key: KEY, platform: ['web'] }, {}, io, stub200())).toBe(0);
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
     expect(readConfig(cwd)).toEqual({ libraryId: LIB, outDir: '.speclayer' });
   });
 
@@ -481,9 +488,9 @@ describe('runPull with outputs', () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
     const first = makeIo();
     expect(await runPull(cwd, { key: KEY }, {}, first, stub200())).toBe(0);
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
 
-    rmSync(join(cwd, 'spec-layer/tokens.css'));
+    rmSync(join(cwd, 'tokens/index.css'));
 
     const second = makeIo();
     const fetcher = stub200();
@@ -493,25 +500,118 @@ describe('runPull with outputs', () => {
     const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
     expect(headers['If-None-Match']).toBeUndefined();
     expect(second.outLines.join('\n')).not.toContain('Already up to date');
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
-    expect(readFileSync(join(cwd, 'spec-layer/tokens.css'), 'utf8')).toContain('Generated by spec-layer');
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+    expect(readFileSync(join(cwd, 'tokens/index.css'), 'utf8')).toContain('Generated by spec-layer');
+  });
+
+  it('restores a deleted non-default mode file that only index.css names', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+    const outputConfig = { platform: 'web' as const, format: 'css' as const, path: 'tokens', case: 'kebab' as const };
+    const imports = readIndexImports(cwd, outputConfig);
+    expect(imports).not.toBeNull();
+    const map = JSON.parse(readFileSync(join(cwd, '.speclayer/outputs/web-css.map.json'), 'utf8')) as Record<string, { file: string }>;
+    const mapFiles = new Set(Object.values(map).map((e) => e.file));
+    // The synthetic foundation's Primitives and Semantic collections each carry
+    // a non-default mode; a map entry only ever names the file that first
+    // declares a token, which is always the default mode's file, so at least
+    // one file index.css imports must be absent from the map.
+    const nonDefaultModeFile = (imports as string[]).find((f) => !mapFiles.has(f));
+    expect(nonDefaultModeFile, 'expected a part file index.css names that the map does not').toBeDefined();
+    rmSync(join(cwd, 'tokens', nonDefaultModeFile as string));
+
+    const io = makeIo();
+    const fetcher = stub200();
+    expect(await runPull(cwd, { key: KEY }, {}, io, fetcher)).toBe(0);
+    const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+    expect(headers['If-None-Match']).toBeUndefined();
+    expect(existsSync(join(cwd, 'tokens', nonDefaultModeFile as string))).toBe(true);
+    expect(readdirSync(join(cwd, 'tokens')).sort()).toEqual([...(imports as string[]), 'index.css'].sort());
+  });
+
+  it('restores a deleted brief and re-projects when componentSpecsDir changes', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+    rmSync(join(cwd, 'component-specs/button.yaml'));
+
+    const second = makeIo();
+    const secondFetcher = stub200();
+    expect(await runPull(cwd, { key: KEY }, {}, second, secondFetcher)).toBe(0);
+    const secondHeaders = (secondFetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+    expect(secondHeaders['If-None-Match']).toBeUndefined();
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', componentSpecsDir: 'specs' }));
+    const third = makeIo();
+    const thirdFetcher = stub200();
+    expect(await runPull(cwd, { key: KEY }, {}, third, thirdFetcher)).toBe(0);
+    const thirdHeaders = (thirdFetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+    expect(thirdHeaders['If-None-Match']).toBeUndefined();
+    expect(existsSync(join(cwd, 'specs/button.yaml'))).toBe(true);
+    // The old directory is named, not deleted: the note only points at it.
+    expect(third.outLines).toContain('The previous pull wrote component-specs/; this one wrote specs/. Delete component-specs/ if nothing else uses it.');
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+  });
+
+  it('notes the old directory when outputs[].path changes, without deleting it', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'styles/tokens', case: 'kebab' }],
+    }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
+    expect(io.outLines).toContain('The previous pull wrote tokens/; this one wrote styles/tokens/. Delete tokens/ if nothing else uses it.');
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'styles/tokens/index.css'))).toBe(true);
+  });
+
+  it('does not treat a pre-existing component-specs/ as a previous pull on a genuine first pull', async () => {
+    // No manifest exists yet, so there is no "previous pull" to compare against;
+    // an unrelated folder that happens to be named after the default must not
+    // be reported as stale.
+    mkdirSync(join(cwd, 'component-specs'));
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer', componentSpecsDir: 'design/specs',
+    }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'design/specs/button.yaml'))).toBe(true);
+    expect(io.outLines.some((l) => l.includes('The previous pull wrote'))).toBe(false);
   });
 
   it('names a platform with no output format and writes nothing for it', async () => {
     const io = makeIo();
     const code = await runPull(cwd, { id: LIB, key: KEY, platform: ['ios'] }, {}, io, stub200());
     expect(code).toBe(0);
-    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
-    expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
+    expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
   });
 
   it('pull refuses a foreign file at the output path and leaves the record untouched', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
-    mkdirSync(join(cwd, 'spec-layer'));
-    writeFileSync(join(cwd, 'spec-layer/tokens.css'), 'body {}\n');
+    mkdirSync(join(cwd, 'tokens'));
+    writeFileSync(join(cwd, 'tokens/mine.css'), 'body {}\n');
     const io = makeIo();
     expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
-    expect(io.errLines[0]).toBe('spec-layer/tokens.css exists and was not written by spec-layer. Choose another path or remove the file.');
+    expect(io.errLines[0]).toBe('tokens holds files spec-layer did not write. Set outputs[].path in speclayer.json to another path, or move them.');
+    expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(false);
+  });
+
+  it('pull refuses the 0.6.0 file path with the two-step fix', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer',
+      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+    }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
+    expect(io.errLines[0]).toBe(
+      'spec-layer/tokens.css names a file; spec-layer 0.7.0 writes a directory. '
+      + 'Set outputs[].path to a directory, for example "tokens", delete the old file, and pull again.',
+    );
     expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(false);
   });
 
@@ -586,9 +686,9 @@ describe('runList', () => {
     const out = io.outLines.join('\n');
     expect(out).toMatch(/lib_abc/);
     expect(out).toMatch(/2026-09-01T00:00:00\.000Z/);
-    expect(out).toMatch(/foundation\s+foundation\s+tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
+    expect(out).toMatch(/foundation\s+foundation\s+\.speclayer\/tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
-    expect(out).toMatch(/component\s+Card\s+components\/card\.yaml\s+b{64}/);
+    expect(out).toMatch(/component\s+Card\s+component-specs\/card\.yaml\s+b{64}/);
   });
 });
 
@@ -629,7 +729,7 @@ describe('runShow', () => {
     const code = runShow(cwd, {}, ['component', 'icon-button'], io);
 
     expect(code).toBe(0);
-    expect(io.writes).toEqual(['icon: yes\n']);
+    expect(io.writes).toEqual([brief('icon: yes\n')]);
   });
 
   it('--canonical prints the canonical artifact as two-space json', async () => {
@@ -655,8 +755,8 @@ describe('runShow', () => {
 
   it('refuses to pick one of several components sharing a name', async () => {
     const dupes = { ...GOOD_BUNDLE, components: [
-      { name: 'Button', ai: 'a\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-      { name: 'button', ai: 'b\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+      { name: 'Button', ai: brief('a\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+      { name: 'button', ai: brief('b\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
     ] };
     await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(dupes)));
     const io = makeIo();
@@ -712,7 +812,7 @@ describe('runPull safety and freshness', () => {
     expect(code).toBe(0);
     expect(headerOf(fetcher, 'If-None-Match')).toBe(`"${JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8')).bundleHash}"`);
     expect(io.outLines.join('\n')).toMatch(/Already up to date/);
-    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
   });
 
   it('does not send a hash when the selection differs from the last pull, so the files are re-projected', async () => {
@@ -723,8 +823,8 @@ describe('runPull safety and freshness', () => {
 
     expect(code).toBe(0);
     expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
-    expect(existsSync(join(cwd, '.speclayer/components/button.yaml'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
   });
 
   it('still sends the hash on a 304 check when the pull never writes the Foundation, ' +
@@ -734,7 +834,7 @@ describe('runPull safety and freshness', () => {
       include: { foundation: false, components: null },
     }));
     await runPull(cwd, {}, ENV, makeIo(), stub200());
-    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
 
     const io = makeIo();
     const fetcher = stub200();
@@ -745,7 +845,7 @@ describe('runPull safety and freshness', () => {
     expect(headerOf(fetcher, 'If-None-Match')).toBe(
       `"${JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf8')).bundleHash}"`,
     );
-    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
   });
 
   it('refuses to use the working directory itself as the output directory', async () => {
@@ -953,7 +1053,7 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: rotated }, {}, io, stub200())).toBe(0);
 
     expect(readConfig(cwd)).toEqual({
-      libraryId: LIB, outDir: 'design-context',
+      libraryId: LIB, outDir: 'design-context', componentSpecsDir: 'component-specs',
       include: { foundation: true, components: ['Button'] },
     });
     expect(io.outLines.join('\n')).toContain('design-context');
@@ -971,7 +1071,7 @@ describe('runSetup', () => {
     )).toBe(0);
 
     expect(readConfig(cwd)).toEqual({
-      libraryId: LIB, outDir: 'other', include: { foundation: true, components: [] },
+      libraryId: LIB, outDir: 'other', componentSpecsDir: 'component-specs', include: { foundation: true, components: [] },
     });
   });
 
@@ -1030,19 +1130,20 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: KEY, platform: ['web'] }, {}, io, stub200())).toBe(0);
     expect(readConfig(cwd)).toMatchObject({
       platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+      outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/outputs/web-css.map.json'))).toBe(true);
-    expect(io.outLines).toContain('Wrote spec-layer/tokens.css (web/css, kebab names).');
+    expect(io.outLines.some((l) => /^Wrote tokens\/ \(\d+ files, web\/css, kebab names\)\.$/.test(l))).toBe(true);
+    expect(io.outLines).toContain('Wrote component-specs/ (1 file).');
   });
 
   it('setup without a platform in an empty directory writes no output and says which flag to pass', async () => {
     const io = makeIo();
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
-    expect(existsSync(join(cwd, 'spec-layer'))).toBe(false);
-    expect(io.outLines).toContain('No target platform detected, so no token file was written for your code. Pass --platform web|ios|android|flutter, or add outputs to speclayer.json.');
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
+    expect(io.outLines).toContain('No target platform detected, so no token files were written for your code. Pass --platform web|ios|android|flutter, or add outputs to speclayer.json.');
   });
 
   it('setup detects web from package.json and writes the output without a flag', async () => {
@@ -1050,7 +1151,7 @@ describe('runSetup', () => {
     const io = makeIo();
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
     expect(readConfig(cwd)).toMatchObject({ platforms: ['web'] });
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
   });
 
   it('list prints path for artifacts and a row per output', async () => {
@@ -1059,8 +1160,8 @@ describe('runSetup', () => {
     const list = makeIo();
     expect(runList(cwd, {}, list)).toBe(0);
     const text = list.outLines.join('\n');
-    expect(text).toContain('components/button.yaml');
-    expect(text).toMatch(/output\s+web\/css\s+spec-layer\/tokens\.css/);
+    expect(text).toContain('component-specs/button.yaml');
+    expect(text).toMatch(/output\s+web\/css\s+tokens/);
   });
 
   it('never prints the key', async () => {
@@ -1079,7 +1180,7 @@ describe('runSetup', () => {
     expect(runInit(cwd, { id: LIB, platform: ['web'], only: 'components' }, makeIo())).toBe(0);
     const io = makeIo();
     expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
-    expect(existsSync(join(cwd, 'spec-layer/tokens.css'))).toBe(false);
+    expect(existsSync(join(cwd, 'tokens'))).toBe(false);
     const list = makeIo();
     expect(runList(cwd, {}, list)).toBe(0);
     const text = list.outLines.join('\n');
@@ -1199,7 +1300,7 @@ describe('runSkill', () => {
     const io = makeIo();
     expect(runSkill(cwd, {}, io)).toBe(0);
     const guide = io.writes.join('');
-    expect(guide).toContain('- Button: `.speclayer/components/button.yaml`');
+    expect(guide).toContain('- Button: `component-specs/button.yaml`');
     expect(guide).toContain('### Token collections');
     expect(guide).toContain('- `resolver.json`: sets, modifiers, and resolution order.');
     expect(guide).toContain('Library `lib_x`, published 2026-09-01T00:00:00.000Z by plugin 5.0.0');
@@ -1261,15 +1362,37 @@ describe('runSkill', () => {
     const parsed = JSON.parse(io.writes.join('')) as {
       platforms: string[]; platform_source: string;
       detected: { frameworks: string[] };
-      pull: { components: Array<{ name: string; path: string | null }>; foundation: { written: boolean; sets: string[] } };
+      pull: {
+        components: Array<{ name: string; path: string | null }>; foundation: { written: boolean; sets: string[] };
+        outputs: Array<{ files: string[] }>;
+      };
       install_targets: Array<{ host: string; path: string }>;
     };
     expect(parsed.platforms).toEqual(['web']);
     expect(parsed.platform_source).toBe('detected');
     expect(parsed.detected.frameworks).toEqual(['vue']);
-    expect(parsed.pull.components).toEqual([{ name: 'Button', path: '.speclayer/components/button.yaml' }]);
+    expect(parsed.pull.components).toEqual([{ name: 'Button', path: 'component-specs/button.yaml' }]);
     expect(parsed.pull.foundation.written).toBe(true);
+    const imports = readIndexImports(cwd, { platform: 'web', format: 'css', path: 'tokens', case: 'kebab' });
+    expect(imports).not.toBeNull();
+    expect(parsed.pull.outputs[0].files).toEqual([...(imports as string[]), 'index.css']);
     expect(parsed.install_targets).toEqual([{ host: 'agents-md', path: 'AGENTS.md', mode: 'block' }]);
+  });
+
+  it('reports a css output as not written when index.css is missing, even though the map is still on disk', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'] }));
+    await runPull(cwd, { key: 'sl_k' }, {}, makeIo(), stub200());
+    expect(existsSync(join(cwd, '.speclayer/outputs/web-css.map.json'))).toBe(true);
+    rmSync(join(cwd, 'tokens/index.css'));
+
+    const io = makeIo();
+    expect(runSkill(cwd, { json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.writes.join('')) as {
+      pull: { outputs: Array<{ written: boolean; indexMissing: boolean; files: string[] }> };
+    };
+    expect(parsed.pull.outputs[0].written).toBe(false);
+    expect(parsed.pull.outputs[0].indexMissing).toBe(true);
+    expect(parsed.pull.outputs[0].files).toEqual([]);
   });
 
   it('errors with a plain message on a corrupt speclayer.json', () => {

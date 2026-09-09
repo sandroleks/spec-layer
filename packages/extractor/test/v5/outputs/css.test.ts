@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CSS_HEADER_PREFIX, acceptCssDeclared, cssOutput, foundationDtcg, type DtcgExport,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, acceptCssDeclared, cssFileNames, cssOutput, dtcgSlug, foundationDtcg,
+  type CssOutput, type CssSource, type DtcgExport,
 } from '../../../src/index';
 import { syntheticArtifact } from '../dtcgFixture';
 
 const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc', platform: 'web', format: 'css' };
+
+/** Every part file joined, for assertions that do not care which file a line is in. */
+const joined = (out: CssOutput): string => Object.values(out.files).join('\n');
 
 const color = (hex: string, alpha = 1) => ({
   $type: 'color', $value: { colorSpace: 'srgb', components: [0, 0, 0], alpha, hex },
@@ -43,6 +47,87 @@ function small(overrides: Partial<DtcgExport> = {}): DtcgExport {
   };
 }
 
+describe('cssOutput files', () => {
+  it('writes one file per source, named by collection for a set and collection.mode for a modifier, plus index.css last', () => {
+    const out = cssOutput(small(), HEADER);
+    expect(Object.keys(out.files)).toEqual(['base.css', 'theme.light.css', 'theme.dark.css', 'index.css']);
+    expect(out.files['base.css']).toContain(':root {\n  /* Base */\n');
+    expect(out.files['theme.light.css']).toContain(':root {\n  /* Theme, Light */\n');
+    expect(out.files['theme.dark.css']).toContain('[data-theme="dark"] {\n  /* Theme, Dark */\n');
+    for (const text of Object.values(out.files)) expect(text.startsWith(CSS_HEADER_PREFIX)).toBe(true);
+  });
+
+  it('holds exactly one selector block per part file and only imports in index.css', () => {
+    const out = cssOutput(small(), HEADER);
+    for (const [name, text] of Object.entries(out.files)) {
+      if (name === CSS_INDEX_FILE) continue;
+      expect(text.match(/^\S.*\{$/gm), name).toHaveLength(1);
+    }
+    expect(out.files[CSS_INDEX_FILE]).toBe(
+      `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
+      + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */\n\n'
+      + '/* Base */\n@import "./base.css";\n'
+      + '/* Theme, Light */\n@import "./theme.light.css";\n'
+      + '/* Theme, Dark */\n@import "./theme.dark.css";\n',
+    );
+  });
+
+  it('writes no file and no import for a source whose every token was omitted, and no index when nothing is declared', () => {
+    const exp = small();
+    exp.files['theme.dark.json'] = { Theme: { surface: { $type: 'color', $value: '{Base.color.missing}' } } };
+    const out = cssOutput(exp, HEADER);
+    expect(out.files['theme.dark.css']).toBeUndefined();
+    expect(out.files[CSS_INDEX_FILE]).not.toContain('theme.dark.css');
+    expect(out.report.some((r) => r.code === 'reference_target_omitted' && r.mode === 'Dark')).toBe(true);
+
+    const empty: DtcgExport = { ...small(), files: { 'base.default.json': { Base: {} }, 'theme.light.json': {}, 'theme.dark.json': {} } };
+    expect(cssOutput(empty, HEADER).files).toEqual({});
+  });
+
+  it('records in the map the file that first declares each name, the default context for a modifier', () => {
+    const out = cssOutput(small(), HEADER);
+    expect(out.map['Base.color.red']).toEqual({ name: '--red', source: 'code_syntax', file: 'base.css' });
+    expect(out.map['Theme.surface']).toEqual({ name: '--theme-surface', source: 'derived', file: 'theme.light.css' });
+    for (const entry of Object.values(out.map)) expect(out.files[entry.file], entry.file).toBeDefined();
+  });
+
+  it('keeps var() across files valid: every reference names a property declared in some file', () => {
+    const out = cssOutput(small(), HEADER);
+    const declared = new Set([...joined(out).matchAll(/^\s+(--[^:]+):/gm)].map((m) => m[1]));
+    for (const m of joined(out).matchAll(/var\((--[^),\s]+)/g)) expect(declared.has(m[1]), m[1]).toBe(true);
+  });
+});
+
+describe('cssFileNames', () => {
+  const set = (collection: string, file: string): CssSource => ({ collection, mode: null, file, isDefault: true });
+  const ctx = (collection: string, mode: string, file: string, isDefault: boolean): CssSource => ({ collection, mode, file, isDefault });
+
+  it('slugs the resolver label for a set and appends the DTCG mode slug for a modifier context', () => {
+    const names = cssFileNames([
+      set('Effect styles', 'styles.effects.json'),
+      set('Foundation', 'foundation.mode-1.json'),
+      ctx('Semantic Colors', 'Light', 'semantic-colors.light.json', true),
+      ctx('Semantic Colors', 'Dark', 'semantic-colors.dark.json', false),
+    ]);
+    expect([...names.entries()]).toEqual([
+      ['styles.effects.json', 'effect-styles.css'],
+      ['foundation.mode-1.json', 'foundation.css'],
+      ['semantic-colors.light.json', 'semantic-colors.light.css'],
+      ['semantic-colors.dark.json', 'semantic-colors.dark.css'],
+    ]);
+  });
+
+  it('reserves index.css and suffixes collisions in source order', () => {
+    const names = cssFileNames([
+      set('Index', 'index.mode-1.json'),
+      set('Base', 'base.default.json'),
+      set('base', 'base-2.default.json'),
+      set('***', 'unnamed.default.json'),
+    ]);
+    expect([...names.values()]).toEqual(['index-2.css', 'base.css', 'base-2.css', 'unnamed.css']);
+  });
+});
+
 describe('acceptCssDeclared', () => {
   it('accepts a custom property, prefixes a bare identifier, rejects anything else', () => {
     expect(acceptCssDeclared('--colors-blue-500')).toBe('--colors-blue-500');
@@ -53,7 +138,7 @@ describe('acceptCssDeclared', () => {
 });
 
 describe('cssOutput values', () => {
-  const text = cssOutput(small(), HEADER).text;
+  const text = joined(cssOutput(small(), HEADER));
 
   it('starts with the header carrying library, hash, and output triple, and no timestamp', () => {
     expect(text.startsWith(`${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.`)).toBe(true);
@@ -73,10 +158,11 @@ describe('cssOutput values', () => {
   });
 
   it('keeps aliases as var() and scopes non-default modes under data-theme', () => {
-    const root = text.slice(text.indexOf(':root {'), text.indexOf('}', text.indexOf(':root {')));
-    expect(root).toContain('  /* Base */');
-    expect(root).toContain('  /* Theme, Light */');
-    expect(root).toContain('  --theme-surface: var(--red);');
+    // Base and Theme's default context each land at :root, but in their own
+    // file now, so each gets its own :root block rather than sharing one.
+    expect(text).toContain(':root {\n  /* Base */');
+    expect(text).toContain(':root {\n  /* Theme, Light */');
+    expect(text).toContain('  --theme-surface: var(--red);');
     const dark = text.slice(text.indexOf('[data-theme="dark"] {'));
     expect(dark).toContain('  /* Theme, Dark */');
     expect(dark).toContain('  --theme-surface: var(--base-color-glass);');
@@ -87,7 +173,7 @@ describe('cssOutput values', () => {
     const legacy = small({
       files: { ...small().files, 'base.default.json': { Base: { c: { $type: 'color', $value: '#11223380' }, d: { $type: 'dimension', $value: '1rem' } } } },
     });
-    const out = cssOutput(legacy, HEADER).text;
+    const out = joined(cssOutput(legacy, HEADER));
     expect(out).toContain('  --base-c: #11223380;');
     expect(out).toContain('  --base-d: 1rem;');
   });
@@ -100,7 +186,7 @@ describe('cssOutput comments', () => {
     exp.files['evil.default.json'] = { [evil]: { ink: color('#000000') } };
     exp.resolver.sets[evil] = { sources: [{ $ref: 'evil.default.json' }] };
     exp.resolver.resolutionOrder.push({ $ref: `#/sets/${evil}` });
-    const text = cssOutput(exp, { ...HEADER, libraryId: 'lib_x */ body { display: none } /*' }).text;
+    const text = joined(cssOutput(exp, { ...HEADER, libraryId: 'lib_x */ body { display: none } /*' }));
     // The name's `*/` no longer closes the comment, so the rule stays inside it.
     expect(text).not.toContain('Brand */');
     expect(text).toContain('  /* Brand * / * { display: none } /* */');
@@ -111,13 +197,15 @@ describe('cssOutput comments', () => {
 describe('cssOutput names, modes, and reports', () => {
   it('records provenance for every emitted name', () => {
     const { map } = cssOutput(small(), HEADER);
-    expect(map['Base.color.red']).toEqual({ name: '--red', source: 'code_syntax' });
-    expect(map['Base.space.gap']).toEqual({ name: '--gap', source: 'code_syntax' });
-    expect(map['Theme.surface']).toEqual({ name: '--theme-surface', source: 'derived' });
+    expect(map['Base.color.red']).toEqual({ name: '--red', source: 'code_syntax', file: 'base.css' });
+    expect(map['Base.space.gap']).toEqual({ name: '--gap', source: 'code_syntax', file: 'base.css' });
+    expect(map['Theme.surface']).toEqual({ name: '--theme-surface', source: 'derived', file: 'theme.light.css' });
   });
 
   it('applies the chosen case to derived names only', () => {
-    const { text, map } = cssOutput(small(), HEADER, { case: 'camel' });
+    const out = cssOutput(small(), HEADER, { case: 'camel' });
+    const text = joined(out);
+    const { map } = out;
     expect(text).toContain('  --themeSurface: var(--red);');
     expect(text).toContain('web/css/camel.');
     expect(map['Base.color.red'].name).toBe('--red');
@@ -126,7 +214,9 @@ describe('cssOutput names, modes, and reports', () => {
   it('omits a reference whose target was omitted and reports it', () => {
     const exp = small();
     exp.files['theme.light.json'] = { Theme: { surface: { $type: 'color', $value: '{Base.color.missing}' } } };
-    const { text, report } = cssOutput(exp, HEADER);
+    const out = cssOutput(exp, HEADER);
+    const text = joined(out);
+    const { report } = out;
     expect(text).not.toContain('--theme-surface: var(--base-color-missing)');
     expect(report).toContainEqual(expect.objectContaining({
       code: 'reference_target_omitted', path: 'Theme.surface', mode: 'Light', details: { target: 'Base.color.missing' },
@@ -134,12 +224,12 @@ describe('cssOutput names, modes, and reports', () => {
   });
 
   it('honours root, modeSelector, {collection}, and a per-collection selector', () => {
-    const { text } = cssOutput(small(), HEADER, {
+    const text = joined(cssOutput(small(), HEADER, {
       root: 'html', modeSelector: '.{collection}-{mode}',
-    });
+    }));
     expect(text).toContain('html {');
     expect(text).toContain('.theme-dark {');
-    const per = cssOutput(small(), HEADER, { modes: { Theme: '[data-mode="{mode}"]' } }).text;
+    const per = joined(cssOutput(small(), HEADER, { modes: { Theme: '[data-mode="{mode}"]' } }));
     expect(per).toContain('[data-mode="dark"] {');
   });
 
@@ -204,7 +294,9 @@ describe('cssOutput styles', () => {
     meta: {},
     report: [],
   };
-  const { text, report } = cssOutput(styled, HEADER);
+  const styledOut = cssOutput(styled, HEADER);
+  const text = joined(styledOut);
+  const { report } = styledOut;
 
   it('writes typography as one custom property per member, never a font shorthand', () => {
     expect(text).toContain('  --typography-styles-body-font-family: var(--base-fam);');
@@ -219,7 +311,7 @@ describe('cssOutput styles', () => {
 
   it('maps a typography member by its member path, and never the style path itself', () => {
     const { map } = cssOutput(styled, HEADER);
-    expect(map['Typography styles.Body.fontSize']).toEqual({ name: '--typography-styles-body-font-size', source: 'derived' });
+    expect(map['Typography styles.Body.fontSize']).toEqual({ name: '--typography-styles-body-font-size', source: 'derived', file: 'typography-styles.css' });
     expect(map).not.toHaveProperty('Typography styles.Body');
     expect(map).not.toHaveProperty('Effect styles.Blur');
   });
@@ -265,7 +357,9 @@ describe('cssOutput names match declared properties', () => {
       meta: {},
       report: [],
     };
-    const { text, map, report } = cssOutput(exp, HEADER);
+    const out = cssOutput(exp, HEADER);
+    const text = joined(out);
+    const { map, report } = out;
     expect(map).not.toHaveProperty('Base.bad');
     expect(map).not.toHaveProperty('Base.ref');
     expect(text).not.toMatch(/var\(--base-bad\)/);
@@ -331,7 +425,9 @@ describe('cssOutput names match declared properties', () => {
       meta: {},
       report: [],
     };
-    const { text, map, report } = cssOutput(exp, HEADER);
+    const out = cssOutput(exp, HEADER);
+    const text = joined(out);
+    const { map, report } = out;
     expect(map).toHaveProperty('Typography styles.Cap.font.family');
     expect(map).not.toHaveProperty('Typography styles.Cap.fontFamily');
     expect(text).toContain('  --typography-styles-cap-font-family: "Georgia";');
@@ -341,7 +437,9 @@ describe('cssOutput names match declared properties', () => {
 
 describe('cssOutput on the synthetic foundation', () => {
   it('emits the declared names, the duplicate mode slug, and the shared-selector report', () => {
-    const { text, report } = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
+    const out = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
+    const text = joined(out);
+    const { report } = out;
     expect(text).toContain('  --color-exact-red: #ff0000;');
     expect(text).toContain('  --spacing-gap: 8px;');
     expect(text).toContain('  --color-surface-primary: #ffffff;');
@@ -355,5 +453,28 @@ describe('cssOutput on the synthetic foundation', () => {
     const a = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
     const b = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
     expect(a).toEqual(b);
+  });
+});
+
+describe('dtcgSlug', () => {
+  it('lowercases, collapses non-alphanumeric runs to a dash, and trims the ends', () => {
+    expect(dtcgSlug('  Semantic Colors ')).toBe('semantic-colors');
+  });
+
+  it('falls back to "unnamed" when nothing but dashes survives', () => {
+    expect(dtcgSlug('---')).toBe('unnamed');
+  });
+
+  it('trims a single leading and trailing dash', () => {
+    expect(dtcgSlug('-a-')).toBe('a');
+  });
+
+  it('handles a plain multi-word name', () => {
+    expect(dtcgSlug('Effect styles')).toBe('effect-styles');
+  });
+
+  it('completes in linear time on a long run of dashes before a character', () => {
+    const input = '-'.repeat(20000) + 'x';
+    expect(dtcgSlug(input)).toBe('x');
   });
 });

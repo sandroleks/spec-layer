@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR } from '../src/config';
+import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR } from '../src/config';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -344,7 +344,7 @@ describe('config platforms and outputs block', () => {
     }));
     expect(readConfig(cwd)).toEqual({
       libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+      outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
   });
 
@@ -374,5 +374,47 @@ describe('config platforms and outputs block', () => {
     });
     writeConfig(cwd, { libraryId: 'lib_x', outDir: '.speclayer' });
     expect(JSON.parse(readFileSync(join(cwd, 'speclayer.json'), 'utf8'))).toEqual({ libraryId: 'lib_x', outDir: '.speclayer' });
+  });
+});
+
+describe('componentSpecsDir', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), 'sl-cfg-')); });
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('round-trips through writeConfig and readConfig, after outDir', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'design/specs' });
+    expect(readConfig(tmpDir)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'design/specs' });
+    const text = readFileSync(join(tmpDir, 'speclayer.json'), 'utf8');
+    expect(text.indexOf('"outDir"')).toBeLessThan(text.indexOf('"componentSpecsDir"'));
+  });
+
+  it('is absent when not written, and resolveOptions applies the default', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer' });
+    expect(readConfig(tmpDir)).not.toHaveProperty('componentSpecsDir');
+    expect(resolveOptions(tmpDir, {}, {}, () => null).componentSpecsDir).toBe(DEFAULT_COMPONENT_SPECS_DIR);
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'specs' });
+    expect(resolveOptions(tmpDir, {}, {}, () => null).componentSpecsDir).toBe('specs');
+  });
+
+  it('rejects a non-string or empty value', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: 3 }));
+    expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: '' }));
+    expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
+  });
+
+  it('normalizes backslashes, a leading ./, and trailing slashes', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: '.\\specs\\sub\\' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs/sub');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: './specs/' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: 'specs' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs');
+  });
+
+  it('rejects a value that normalizes to empty', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: './' }));
+    expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
   });
 });

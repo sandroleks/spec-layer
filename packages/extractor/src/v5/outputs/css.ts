@@ -9,7 +9,7 @@
  * lands in a block under a declared selector template. Nothing about a
  * mode's name chooses a media query.
  */
-import type { DtcgExport, DtcgJson, DtcgTree } from '../dtcg';
+import { dtcgSlug, type DtcgExport, type DtcgJson, type DtcgTree } from '../dtcg';
 import { compareCodeUnits } from '../diagnostics';
 import { canonicalNumber } from '../precision';
 import {
@@ -26,7 +26,9 @@ export interface CssOutputOptions {
   /** Per-collection template, keyed by the resolver's collection label. */
   modes?: Record<string, string>;
 }
-export interface CssOutput { text: string; map: Record<string, OutputMapEntry>; report: OutputReportEntry[] }
+export interface CssMapEntry extends OutputMapEntry { file: string }
+export interface CssOutput { files: Record<string, string>; map: Record<string, CssMapEntry>; report: OutputReportEntry[] }
+export const CSS_INDEX_FILE = 'index.css';
 export interface OutputHeader { libraryId: string; contentHash: string; platform: string; format: string }
 
 export const CSS_DEFAULTS: { case: NameCase; root: string; modeSelector: string } = {
@@ -73,7 +75,8 @@ function collectLeaves(tree: DtcgJson, prefix: string[], out: Leaf[]): void {
   }
 }
 
-interface Source { collection: string; mode: string | null; file: string; isDefault: boolean }
+export interface CssSource { collection: string; mode: string | null; file: string; isDefault: boolean }
+type Source = CssSource;
 
 const unpointer = (s: string): string => s.replace(/~1/g, '/').replace(/~0/g, '~');
 const refFile = (src: DtcgJson): string | null => {
@@ -113,6 +116,31 @@ function sourcesOf(resolver: DtcgExport['resolver']): Source[] {
 /** `primitives.light-2.json` -> `light-2`: the mode part of the file name the DTCG projection chose. */
 const modeSlug = (file: string): string => file.replace(/\.json$/, '').split('.').slice(1).join('.');
 const collectionSlug = (file: string): string => file.split('.')[0];
+
+/**
+ * The CSS file each DTCG source file writes. A set (one mode by construction)
+ * is named by its resolver label alone; a modifier context appends the mode
+ * slug the DTCG projection chose for its file. index.css is reserved; a taken
+ * name gets -2, -3, ... in source order, the same rule fileNameFor applies
+ * to the JSON record. Spec section 3.
+ */
+export function cssFileNames(sources: CssSource[]): Map<string, string> {
+  const taken = new Set<string>([CSS_INDEX_FILE]);
+  const out = new Map<string, string>();
+  for (const s of sources) {
+    if (out.has(s.file)) continue;
+    const base = s.mode === null ? dtcgSlug(s.collection) : `${dtcgSlug(s.collection)}.${modeSlug(s.file)}`;
+    let candidate = `${base}.css`;
+    let n = 1;
+    while (taken.has(candidate)) {
+      n += 1;
+      candidate = `${base}-${n}.css`;
+    }
+    taken.add(candidate);
+    out.set(s.file, candidate);
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Values
@@ -373,11 +401,15 @@ function headerText(header: OutputHeader, nameCase: NameCase): string {
     + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
 }
 
+interface Block { selector: string; comment: string; decls: string[] }
 interface EmitResult {
-  blocks: Map<string, string[]>;
+  /** One block per DTCG source file that declared anything, in source order. */
+  blocks: Map<string, Block>;
   entries: OutputReportEntry[];
   /** Every path (token, shadow, or typography member) that got a declaration this pass. */
   declared: Set<string>;
+  /** The DTCG source file that first declared each path, in source order. */
+  firstFile: Map<string, string>;
 }
 
 /**
@@ -392,37 +424,41 @@ function emitPass(
 ): EmitResult {
   const entries: OutputReportEntry[] = [];
   const declared = new Set<string>();
-  const blocks = new Map<string, string[]>();
+  const firstFile = new Map<string, string>();
+  const blocks = new Map<string, Block>();
   for (const s of sources) {
     const perCollection = modes?.[s.collection];
     const selector = s.isDefault ? root : (perCollection ?? template)
       .replace(/\{mode\}/g, modeSlug(s.file))
       .replace(/\{collection\}/g, collectionSlug(s.file));
     const decls: string[] = [];
+    const declaredHere: string[] = [];
     for (const leaf of leavesByFile.get(s.file) ?? []) {
       const ctx: Ctx = { names, alive, report: entries, path: leaf.path, ...(s.mode !== null ? { mode: s.mode } : {}) };
       if (leaf.type === 'typography') {
         const t = typographyDecls(ctx, leaf, names);
         decls.push(...t.decls);
-        for (const p of t.declaredPaths) declared.add(p);
+        for (const p of t.declaredPaths) { declared.add(p); declaredHere.push(p); }
       } else {
         const name = names.get(leaf.path);
         if (name === undefined) continue; // collided; already reported by resolveNames
         if (leaf.type === 'shadow') {
           const d = shadowDecl(ctx, leaf, name);
-          if (d !== null) { decls.push(d); declared.add(leaf.path); }
+          if (d !== null) { decls.push(d); declared.add(leaf.path); declaredHere.push(leaf.path); }
         } else {
           const v = cssValue(ctx, leaf.type, leaf.value);
-          if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); }
+          if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); declaredHere.push(leaf.path); }
         }
       }
     }
     if (decls.length === 0) continue;
-    const lines = blocks.get(selector) ?? [];
-    lines.push(`  /* ${commentSafe(`${s.collection}${s.mode !== null ? `, ${s.mode}` : ''}`)} */`, ...decls.map((d) => `  ${d}`));
-    blocks.set(selector, lines);
+    for (const p of declaredHere) if (!firstFile.has(p)) firstFile.set(p, s.file);
+    const comment = `/* ${commentSafe(`${s.collection}${s.mode !== null ? `, ${s.mode}` : ''}`)} */`;
+    const existing = blocks.get(s.file);
+    if (existing) existing.decls.push(...decls);
+    else blocks.set(s.file, { selector, comment, decls });
   }
-  return { blocks, entries, declared };
+  return { blocks, entries, declared, firstFile };
 }
 
 export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
@@ -486,9 +522,11 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     pass = emit(alive);
   }
 
-  const map: Record<string, OutputMapEntry> = {};
+  const fileNames = cssFileNames(sources);
+  const map: Record<string, CssMapEntry> = {};
   for (const [path, entry] of Object.entries(resolved.map)) {
-    if (alive.has(path)) map[path] = entry;
+    const from = pass.firstFile.get(path);
+    if (alive.has(path) && from !== undefined) map[path] = { ...entry, file: fileNames.get(from) as string };
   }
 
   const entries: OutputReportEntry[] = [...resolved.report, ...pass.entries];
@@ -506,7 +544,14 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     }
   }
 
-  const body = [...pass.blocks].flatMap(([selector, lines]) => [`${selector} {`, ...lines, '}', '']);
-  const text = `${[headerText(header, nameCase), '', ...body].join('\n').trimEnd()}\n`;
-  return { text, map, report: sortReport(entries) };
+  const head = headerText(header, nameCase);
+  const files: Record<string, string> = {};
+  const imports: string[] = [];
+  for (const [source, block] of pass.blocks) {
+    const name = fileNames.get(source) as string;
+    files[name] = `${head}\n\n${block.selector} {\n  ${block.comment}\n${block.decls.map((d) => `  ${d}`).join('\n')}\n}\n`;
+    imports.push(block.comment, `@import "./${name}";`);
+  }
+  if (imports.length > 0) files[CSS_INDEX_FILE] = `${head}\n\n${imports.join('\n')}\n`;
+  return { files, map, report: sortReport(entries) };
 }

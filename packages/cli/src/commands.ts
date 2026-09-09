@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, type CliConfig, type ResolvedOptions,
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
 import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
@@ -15,7 +15,7 @@ import { ensureIgnored } from './gitignore';
 import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
 import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
 import {
-  FORMATS, defaultOutputs, outputId, withDefaults, type OutputConfig,
+  FORMATS, defaultOutputs, outputId, readIndexImports, withDefaults, type OutputConfig,
 } from './outputs';
 import { toolsJson, toolsText } from './tools';
 import { cliVersion } from './version';
@@ -39,16 +39,17 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection, the dtcg options, and the outputs. */
+/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where briefs land. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
+  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
+  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
   const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
   return selectionKey(a.selection) === selectionKey(b.selection)
-    && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? []);
+    && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? [])
+    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR);
 }
 
 function sortKeys(value: unknown): unknown {
@@ -93,7 +94,7 @@ function outputsForRun(
   return config?.outputs ?? defaultOutputs(platforms);
 }
 
-const NO_PLATFORM_NOTE = `No target platform detected, so no token file was written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
+const NO_PLATFORM_NOTE = `No target platform detected, so no token files were written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
 
 /** Platforms this run named or configured that have no registered output format (only web/css exists today). */
 function platformsMissingFormat(platforms: Platform[]): Platform[] {
@@ -108,7 +109,7 @@ function platformsMissingFormat(platforms: Platform[]): Platform[] {
  * never asked to be told about.
  */
 function missingFormatNote(platforms: Platform[]): string {
-  return `No token file exists yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
+  return `No token files exist yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
 }
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -131,11 +132,11 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, {
-    libraryId: flags.id, outDir, ...(include ? { include } : {}),
+    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR, ...(include ? { include } : {}),
     ...(platforms.length > 0 ? { platforms } : {}), ...(outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
-  for (const o of outputs) io.out(`Token file for ${o.platform}: ${o.path} (${o.format}, ${o.case} names), written by the next pull.`);
+  for (const o of outputs) io.out(`Token files for ${o.platform}: ${o.path}/ (${o.format}, ${o.case} names), written by the next pull.`);
   // `source` is 'config' only when a config was passed in, and init always
   // passes null, so 'flag' and 'detected' are the only sources worth naming
   // here: a platform init named or found on disk deserves the same note as
@@ -250,6 +251,7 @@ export async function runSetup(
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
+  const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
   // Platforms follow the same rule as include: a flag wins, else what the
@@ -258,7 +260,7 @@ export async function runSetup(
   const { platforms } = resolvePlatforms(cwd, fromFlags, existing);
   const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
-    libraryId: flags.id, outDir,
+    libraryId: flags.id, outDir, componentSpecsDir,
     ...(keptInclude ? { include: keptInclude } : {}),
     ...(keptDtcg ? { dtcg: keptDtcg } : {}),
     ...(platforms.length > 0 ? { platforms } : {}),
@@ -323,6 +325,21 @@ export async function runSetup(
   return 0;
 }
 
+/**
+ * Whether every part file the last pull wrote is still on disk. The record
+ * map only proves the output was rendered at all; the list of files it wrote
+ * comes from index.css's own imports, since a map entry names only the file
+ * that first declares a token, which for a two-mode collection is always the
+ * default mode's file, so a non-default mode file never appears in the map.
+ * False when the map is missing or index.css is missing or unreadable.
+ */
+function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolean {
+  const mapPath = join(cwd, outDir, 'outputs', `${outputId(o)}.map.json`);
+  if (!existsSync(mapPath)) return false;
+  const imports = readIndexImports(cwd, o);
+  return imports !== null && imports.every((f) => existsSync(resolve(cwd, o.path, f)));
+}
+
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
@@ -341,23 +358,31 @@ export async function runPull(
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
   // Ask for a 304 only when the last pull wrote the same files this one would
-  // AND, when that includes the Foundation, every one of those files is
-  // still on disk; a changed selection, dtcg block, or outputs block needs
-  // the bundle again to re-project, and so does a deliverable or its record
-  // map a developer (or a clean) deleted, since a 304 would leave it missing
-  // rather than restoring it. Outputs are only ever written alongside the
-  // Foundation (writeBundleFiles), so a pull that never writes it - `--only
-  // components`, `include: { foundation: false }`, or a library with none -
-  // has no on-disk files to check, and the existence clause would otherwise
+  // AND every one of those files is still on disk; a changed selection, dtcg
+  // block, outputs block, or componentSpecsDir needs the bundle again to
+  // re-project, and so does a deleted brief, a deliverable directory a
+  // developer (or a clean) removed, or a part file index.css imports (which
+  // is not always every file the record map names, since a map entry names
+  // only the file that first declares a token), since a 304 would leave any
+  // of those missing rather than restoring it. Outputs are only ever written
+  // alongside the Foundation
+  // (writeBundleFiles), so a pull that never writes it - `--only components`,
+  // `include: { foundation: false }`, or a library with none - has no
+  // deliverable files to check, and the existence clause would otherwise
   // never see a match and redownload the bundle on every run.
   const manifest = manifestAt(join(cwd, opts.outDir));
   const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
   const willWriteFoundation = selection.foundation && foundationOnDisk;
+  // A manifest from 0.6.0 carries outDir-relative component paths; they will
+  // not exist at the working directory, so the check below forces a re-fetch
+  // that rewrites them. That is the intended migration.
+  const briefsOnDisk = (manifest?.artifacts ?? [])
+    .filter((a) => a.kind === 'component' && a.path !== null)
+    .every((a) => existsSync(resolve(cwd, a.path as string)));
   const etag = manifest && sameOutput(
-    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs },
-    { selection, dtcg: opts.dtcg, outputs },
-  ) && (!willWriteFoundation || outputs.every((o) => existsSync(resolve(cwd, o.path))
-    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`))))
+    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs, componentSpecsDir: manifest.componentSpecsDir },
+    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir },
+  ) && briefsOnDisk && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({
@@ -373,17 +398,19 @@ export async function runPull(
     return 0;
   }
   let written: string[];
-  let outputPaths: string[] = [];
+  let componentSpecs: { path: string; files: string[] };
+  let outputResults: Array<{ path: string; files: string[] }>;
   try {
     const bundle = parseBundle(result.raw);
     const selected = selectComponents(bundle, selection);
     const writeResult = writeBundleFiles({
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
-      dtcg: opts.dtcg, platforms, outputs,
+      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir,
     });
     written = writeResult.written;
-    outputPaths = writeResult.outputs;
+    componentSpecs = writeResult.componentSpecs;
+    outputResults = writeResult.outputs;
     io.out(
       `Pulled ${bundle.fileName ?? opts.libraryId}: ${describePull(bundle, selection, selected)} ` +
       `(published ${result.publishedAt}).`,
@@ -392,12 +419,28 @@ export async function runPull(
     io.err(errorText(err));
     return 1;
   }
+  const count = (n: number) => `${n} file${n === 1 ? '' : 's'}`;
   io.out(`Wrote ${written.length} files under ${opts.outDir}/.`);
-  for (const path of outputPaths) {
-    const o = outputs.find((x) => x.path === path);
-    if (o) io.out(`Wrote ${path} (${o.platform}/${o.format}, ${o.case} names).`);
+  if (componentSpecs.files.length > 0) io.out(`Wrote ${componentSpecs.path}/ (${count(componentSpecs.files.length)}).`);
+  for (const r of outputResults) {
+    const o = outputs.find((x) => x.path === r.path);
+    if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
   }
-  if (outputPaths.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
+  // A renamed componentSpecsDir or outputs[].path leaves a full set of marked
+  // files at the old location; nothing else notices, since the old directory
+  // is never touched. Name it rather than delete it: only the developer knows
+  // whether something else still reads from there.
+  const staleDirNote = (previous: string, current: string): void => {
+    if (previous !== current && existsSync(resolve(cwd, previous))) {
+      io.out(`The previous pull wrote ${previous}/; this one wrote ${current}/. Delete ${previous}/ if nothing else uses it.`);
+    }
+  };
+  if (manifest) staleDirNote(manifest.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR, opts.componentSpecsDir);
+  for (const prev of manifest?.outputs ?? []) {
+    const current = outputs.find((o) => outputId(o) === outputId(prev));
+    if (current) staleDirNote(prev.path, current.path);
+  }
+  if (outputResults.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
   if (source === 'flag' || source === 'config') {
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));

@@ -1,90 +1,112 @@
 {
   "Effect styles.Shadow.Card": {
     "name": "--effectStylesShadowCard",
-    "source": "derived"
+    "source": "derived",
+    "file": "effect-styles.css"
   },
   "Primitives.color.chain.bridge": {
     "name": "--primitivesColorChainBridge",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.color.chain.middle": {
     "name": "--primitivesColorChainMiddle",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.color.chain.terminal": {
     "name": "--primitivesColorChainTerminal",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.color.exact.red": {
     "name": "--color-exact-red",
-    "source": "code_syntax"
+    "source": "code_syntax",
+    "file": "primitives.light.css"
   },
   "Primitives.color.lossy.teal": {
     "name": "--primitivesColorLossyTeal",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.color.shared": {
     "name": "--primitivesColorShared",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.cycle.a": {
     "name": "--primitivesCycleA",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.dark.css"
   },
   "Primitives.cycle.b": {
     "name": "--primitivesCycleB",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.dark.css"
   },
   "Primitives.effect.shadow.blur": {
     "name": "--effect-shadow-blur",
-    "source": "code_syntax"
+    "source": "code_syntax",
+    "file": "primitives.light.css"
   },
   "Primitives.number.unknown-scope": {
     "name": "--primitivesNumberUnknownScope",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.spacing.gap": {
     "name": "--spacing-gap",
-    "source": "code_syntax"
+    "source": "code_syntax",
+    "file": "primitives.light.css"
   },
   "Primitives.typography.family.body": {
     "name": "--primitivesTypographyFamilyBody",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Primitives.typography.weight.strong": {
     "name": "--primitivesTypographyWeightStrong",
-    "source": "derived"
+    "source": "derived",
+    "file": "primitives.light.css"
   },
   "Semantic.color.surface.primary": {
     "name": "--color-surface-primary",
-    "source": "code_syntax"
+    "source": "code_syntax",
+    "file": "semantic.light.css"
   },
   "Typography styles.Body.Regular.fontFamily": {
     "name": "--typographyStylesBodyRegularFontFamily",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.fontSize": {
     "name": "--typographyStylesBodyRegularFontSize",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.fontWeight": {
     "name": "--typographyStylesBodyRegularFontWeight",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.letterSpacing": {
     "name": "--typographyStylesBodyRegularLetterSpacing",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.lineHeight": {
     "name": "--typographyStylesBodyRegularLineHeight",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.textDecoration": {
     "name": "--typographyStylesBodyRegularTextDecoration",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   },
   "Typography styles.Body.Regular.textTransform": {
     "name": "--typographyStylesBodyRegularTextTransform",
-    "source": "derived"
+    "source": "derived",
+    "file": "typography-styles.css"
   }
 }

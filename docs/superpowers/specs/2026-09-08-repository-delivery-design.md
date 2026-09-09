@@ -1,5 +1,10 @@
 # Repository delivery: platform outputs and the two adoption paths
 
+> Sections 3.1 and 5.1 are superseded by
+> `2026-09-09-css-token-directory-design.md`: the web output is a `tokens/`
+> directory of one file per collection and mode, and briefs live in
+> `component-specs/`.
+
 **Date:** 2026-09-08
 **Status:** Approved in review on 2026-09-08 with the recommendations in section 12 as written. Ready for an implementation plan.
 **Scope:** What `spec-layer pull` and the plugin's Copy for AI put into a repository, for a project started from scratch and for an existing repository. Adds a platform output model and one deterministic projection, CSS, and renames the component directory. Changes no hash, no schema, no extraction.
