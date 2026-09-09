@@ -52,10 +52,20 @@ function parseDtcg(value: unknown): DtcgOptions {
   return out;
 }
 
-/** `componentSpecsDir` is the visible directory the component briefs are written to, relative to the working directory. */
+/**
+ * `componentSpecsDir` is the visible directory the component briefs are
+ * written to, relative to the working directory. Normalized so a value typed
+ * or committed on Windows (backslashes, a leading `./`) means the same thing
+ * as it does on every other platform, and so a trailing slash does not make
+ * two settings compare as different when they name the same directory.
+ */
 function parseComponentSpecsDir(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('speclayer.json "componentSpecsDir" must be a non-empty string.');
-  return value;
+  let dir = value.replace(/\\/g, '/');
+  if (dir.startsWith('./')) dir = dir.slice(2);
+  dir = dir.replace(/\/+$/, '');
+  if (dir.length === 0) throw new Error('speclayer.json "componentSpecsDir" must be a non-empty string.');
+  return dir;
 }
 
 /** `platforms` names the targets this repository builds for; pull and skill read it before detecting. */

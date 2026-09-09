@@ -148,7 +148,7 @@ export function writeBundleFiles(opts: {
   // staged, so a refusal leaves the record and the team's tree exactly as
   // they were.
   const outputPaths = outputs.map((o) => o.path);
-  const specsProblem = visibleDirProblem(opts.cwd, outDirRel, componentSpecsDir, COMPONENT_SPEC_MARKER, outputPaths);
+  const specsProblem = visibleDirProblem(opts.cwd, outDirRel, componentSpecsDir, COMPONENT_SPEC_MARKER, outputPaths, 'componentSpecsDir');
   if (specsProblem) throw new Error(specsProblem);
   for (const o of outputs) {
     const problem = outputPathProblem(opts.cwd, outDirRel, o, [componentSpecsDir, ...outputPaths.filter((p) => p !== o.path)]);

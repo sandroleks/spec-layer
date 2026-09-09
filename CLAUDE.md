@@ -43,7 +43,7 @@ TypeScript, Vitest, esbuild. No framework.
 
 ```bash
 npm run check                        # full local gate
-npm test                             # vitest run (132 files, 2458 tests, 9 todo, ~15s)
+npm test                             # vitest run (133 files, 2495 tests, 9 todo, ~15s)
 npm run typecheck
 npm run lint
 npm run build:plugin                 # runs the brand build first, so a contrast failure stops it
@@ -172,7 +172,7 @@ descriptions, and diagnostics before it can be committed.
 
 ## Where things stand (2026-09-09)
 
-`main` is clean, green, and fully pushed: 132 test files, 2458 tests passing,
+`main` is clean, green, and fully pushed: 133 test files, 2495 tests passing,
 9 todo.
 
 Shipped and merged. `CHANGELOG.md` is the detailed log; this is the shape of it:

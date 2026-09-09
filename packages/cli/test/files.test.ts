@@ -123,6 +123,23 @@ describe('writeBundleFiles', () => {
     expect(manifest?.artifacts.some((a) => 'aiPath' in a)).toBe(false);
   });
 
+  it('replaces a CRLF-checked-out brief already on disk in component-specs/', () => {
+    // A Git for Windows checkout with core.autocrlf=true turns the CLI's own
+    // committed briefs into `spec_layer:\r\n  kind: component`; the marker
+    // check must still recognise them as ours, or a Windows pull refuses its
+    // own files.
+    const bundle = makeBundle();
+    mkdirSync(join(tmpDir, 'component-specs'), { recursive: true });
+    writeFileSync(join(tmpDir, 'component-specs/button.yaml'), 'spec_layer:\r\n  kind: component\r\nname: old\r\n');
+    const { componentSpecs } = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+      libraryId: 'lib-1', publishedAt: 'p', bundleHash: 'h',
+      selection: { foundation: false, components: null },
+    });
+    expect(componentSpecs.files).toEqual(['button.yaml']);
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
+  });
+
   it('writes bundle.json byte-for-byte, ai yaml per artifact, and a manifest', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
     const raw = JSON.stringify(bundle);
@@ -425,7 +442,7 @@ describe('writeBundleFiles', () => {
     expect(() => writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
       publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', outputs: [WEB],
-    })).toThrow('tokens holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    })).toThrow('tokens holds files spec-layer did not write. Set outputs[].path in speclayer.json to another path, or move them.');
     expect(existsSync(outDir)).toBe(false);
     expect(existsSync(join(tmpDir, 'component-specs'))).toBe(false);
     expect(readFileSync(join(tmpDir, 'tokens/mine.css'), 'utf8')).toBe(':root { --mine: 1; }\n');
@@ -437,7 +454,7 @@ describe('writeBundleFiles', () => {
     writeFileSync(join(tmpDir, 'component-specs/mine.yaml'), 'name: mine\n');
     expect(() => writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h',
-    })).toThrow('component-specs holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    })).toThrow('component-specs holds files spec-layer did not write. Set componentSpecsDir in speclayer.json to another path, or move them.');
     expect(existsSync(outDir)).toBe(false);
   });
 

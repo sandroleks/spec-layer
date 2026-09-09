@@ -18,21 +18,37 @@ const inside = (parent: string, child: string): boolean => {
 
 const isDotfile = (name: string): boolean => name.startsWith('.');
 
-/** Whether the file at `abs` begins with `marker`. Reads only that many bytes. */
+/**
+ * Whether the file at `abs` begins with `marker`. Reads only enough bytes for
+ * `marker` itself, plus one byte per `\n` it contains, so a CRLF checkout of
+ * a marker that spans lines (a Git for Windows repository with
+ * core.autocrlf=true) still reads the whole prefix. `\r\n` is then folded
+ * back to `\n` before the comparison, so the check does not care which line
+ * ending the file on disk uses.
+ */
 export function carriesMarker(abs: string, marker: string): boolean {
-  const want = Buffer.from(marker, 'utf8');
+  const newlines = (marker.match(/\n/g) ?? []).length;
+  const wantBytes = Buffer.byteLength(marker, 'utf8') + newlines;
   const fd = openSync(abs, 'r');
   try {
-    const got = Buffer.alloc(want.length);
-    const read = readSync(fd, got, 0, want.length, 0);
-    return read === want.length && got.equals(want);
+    const buf = Buffer.alloc(wantBytes);
+    const read = readSync(fd, buf, 0, wantBytes, 0);
+    const text = buf.subarray(0, read).toString('utf8').replace(/\r\n/g, '\n');
+    return text.startsWith(marker);
   } finally {
     closeSync(fd);
   }
 }
 
-/** Why `dir` cannot be written as a visible directory, or null when it can. `others` are the other visible directories of this pull. */
-export function visibleDirProblem(cwd: string, outDir: string, dir: string, marker: string, others: string[] = []): string | null {
+/**
+ * Why `dir` cannot be written as a visible directory, or null when it can.
+ * `others` are the other visible directories of this pull. `configKey` names
+ * the speclayer.json field that controls this path, so the refusal tells the
+ * reader exactly what to edit.
+ */
+export function visibleDirProblem(
+  cwd: string, outDir: string, dir: string, marker: string, others: string[], configKey: string,
+): string | null {
   const root = resolve(cwd);
   const abs = resolve(cwd, dir);
   if (!inside(root, abs) || abs === root) return `${dir} is outside this directory. Choose a path inside the repository.`;
@@ -43,7 +59,7 @@ export function visibleDirProblem(cwd: string, outDir: string, dir: string, mark
   }
   if (!existsSync(abs)) return null;
   if (!lstatSync(abs).isDirectory()) return `${dir} exists and is not a directory. Choose another path or remove the file.`;
-  const foreign = `${dir} holds files spec-layer did not write. Choose another path in speclayer.json or move them.`;
+  const foreign = `${dir} holds files spec-layer did not write. Set ${configKey} in speclayer.json to another path, or move them.`;
   for (const entry of readdirSync(abs, { withFileTypes: true })) {
     if (isDotfile(entry.name)) continue;
     if (!entry.isFile()) return foreign;

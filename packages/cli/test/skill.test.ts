@@ -147,7 +147,10 @@ describe('buildSkillGuide outputs', () => {
       '- `tokens/`: web/css token files, kebab names: primitives.css, theme.light.css, theme.dark.css, index.css. '
       + 'Non-default modes are under `[data-theme="{mode}"]`, each in its own file.',
     );
-    expect(guide).toContain('Import `tokens/index.css` from the root stylesheet');
+    expect(guide).toContain(
+      'Import `tokens/index.css` from the root stylesheet. It imports one file per collection and mode: '
+      + 'primitives.css, theme.light.css, theme.dark.css. ',
+    );
     expect(guide).toContain('Each entry names the file that declares the property.');
     expect(guide).toContain('set `data-theme` on `<html>`');
     expect(guide).toContain(

@@ -548,6 +548,25 @@ describe('runPull with outputs', () => {
     const thirdHeaders = (thirdFetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
     expect(thirdHeaders['If-None-Match']).toBeUndefined();
     expect(existsSync(join(cwd, 'specs/button.yaml'))).toBe(true);
+    // The old directory is named, not deleted: the note only points at it.
+    expect(third.outLines).toContain('The previous pull wrote component-specs/; this one wrote specs/. Delete component-specs/ if nothing else uses it.');
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+  });
+
+  it('notes the old directory when outputs[].path changes, without deleting it', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: LIB, outDir: '.speclayer', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'styles/tokens', case: 'kebab' }],
+    }));
+    const io = makeIo();
+    expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(0);
+    expect(io.outLines).toContain('The previous pull wrote tokens/; this one wrote styles/tokens/. Delete tokens/ if nothing else uses it.');
+    expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+    expect(existsSync(join(cwd, 'styles/tokens/index.css'))).toBe(true);
   });
 
   it('names a platform with no output format and writes nothing for it', async () => {
@@ -564,7 +583,7 @@ describe('runPull with outputs', () => {
     writeFileSync(join(cwd, 'tokens/mine.css'), 'body {}\n');
     const io = makeIo();
     expect(await runPull(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
-    expect(io.errLines[0]).toBe('tokens holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    expect(io.errLines[0]).toBe('tokens holds files spec-layer did not write. Set outputs[].path in speclayer.json to another path, or move them.');
     expect(existsSync(join(cwd, '.speclayer/manifest.json'))).toBe(false);
   });
 
@@ -1344,6 +1363,19 @@ describe('runSkill', () => {
     expect(imports).not.toBeNull();
     expect(parsed.pull.outputs[0].files).toEqual([...(imports as string[]), 'index.css']);
     expect(parsed.install_targets).toEqual([{ host: 'agents-md', path: 'AGENTS.md', mode: 'block' }]);
+  });
+
+  it('reports a css output as not written when index.css is missing, even though the map is still on disk', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'] }));
+    await runPull(cwd, { key: 'sl_k' }, {}, makeIo(), stub200());
+    expect(existsSync(join(cwd, '.speclayer/outputs/web-css.map.json'))).toBe(true);
+    rmSync(join(cwd, 'tokens/index.css'));
+
+    const io = makeIo();
+    expect(runSkill(cwd, { json: true }, io)).toBe(0);
+    const parsed = JSON.parse(io.writes.join('')) as { pull: { outputs: Array<{ written: boolean; files: string[] }> } };
+    expect(parsed.pull.outputs[0].written).toBe(false);
+    expect(parsed.pull.outputs[0].files).toEqual([]);
   });
 
   it('errors with a plain message on a corrupt speclayer.json', () => {

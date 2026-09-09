@@ -139,7 +139,10 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
       return {
         platform: o.platform, format: o.format, path: o.path, case: o.case,
         modeSelector: o.modeSelector ?? '[data-theme="{mode}"]', modes: o.modes ?? {},
-        written: map !== null, files,
+        // index.css must be readable, not just the map, or a deleted index.css
+        // (with the map still on disk from an interrupted pull) would report
+        // written with an empty file list, a sentence that claims files exist.
+        written: map !== null && imports !== null, files,
       };
     }),
   };
@@ -200,8 +203,9 @@ function stackSection(input: SkillInput): string[] {
           + `${code(`${tokensDir}spec-layer.meta.json`)} still holds the raw ${code('code_syntax.WEB')} the designer declared.`,
           '',
         );
+        const partFiles = cssOut.files.filter((f) => f !== CSS_INDEX_FILE);
         lines.push(
-          `Import ${code(`${cssOut.path}/index.css`)} from the root stylesheet. It imports one file per collection and mode: ${cssOut.files.join(', ')}. `
+          `Import ${code(`${cssOut.path}/index.css`)} from the root stylesheet. It imports one file per collection and mode: ${partFiles.join(', ')}. `
           + `Sets and default modes are at ${code(':root')}; every other mode is a block under ${code(cssOut.modeSelector)} in its own file, so a mode can also be imported alone. `
           + `To switch, set ${code('data-theme')} on ${code('<html>')} (or whatever the selector names). `
           + `To let the OS choose, set that collection's selector to ${code(':root')} under ${code('outputs[].modes')} and import the mode's file yourself under ${code('@media (prefers-color-scheme: dark)')}; the CLI never assumes that.`,

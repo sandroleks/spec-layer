@@ -21,40 +21,56 @@ describe('visibleDir', () => {
     expect(carriesMarker(join(cwd, 'short.css'), CSS)).toBe(false);
   });
 
+  it('carriesMarker tolerates a CRLF checkout of an LF marker', () => {
+    writeFileSync(join(cwd, 'crlf.yaml'), 'spec_layer:\r\n  kind: component\r\nname: x\r\n');
+    expect(carriesMarker(join(cwd, 'crlf.yaml'), YAML)).toBe(true);
+    writeFileSync(join(cwd, 'wrong-kind.yaml'), 'spec_layer:\n  kind: foundation\n');
+    expect(carriesMarker(join(cwd, 'wrong-kind.yaml'), YAML)).toBe(false);
+    writeFileSync(join(cwd, 'prefix-match.yaml'), 'spec_layer:\n  kind: componentX\n');
+    expect(carriesMarker(join(cwd, 'prefix-match.yaml'), YAML)).toBe(true);
+  });
+
   it('accepts a missing directory, and refuses one outside the repository, the root itself, or inside outDir', () => {
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS)).toBeNull();
-    expect(visibleDirProblem(cwd, '.speclayer', '../tokens', CSS)).toBe('../tokens is outside this directory. Choose a path inside the repository.');
-    expect(visibleDirProblem(cwd, '.speclayer', '.', CSS)).toBe('. is outside this directory. Choose a path inside the repository.');
-    expect(visibleDirProblem(cwd, '.speclayer', '.speclayer/tokens', CSS))
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, [], 'outputs[].path')).toBeNull();
+    expect(visibleDirProblem(cwd, '.speclayer', '../tokens', CSS, [], 'outputs[].path')).toBe('../tokens is outside this directory. Choose a path inside the repository.');
+    expect(visibleDirProblem(cwd, '.speclayer', '.', CSS, [], 'outputs[].path')).toBe('. is outside this directory. Choose a path inside the repository.');
+    expect(visibleDirProblem(cwd, '.speclayer', '.speclayer/tokens', CSS, [], 'outputs[].path'))
       .toBe('.speclayer/tokens is inside .speclayer, which pull replaces wholesale. Choose a path outside it.');
   });
 
   it('refuses a directory that overlaps another visible directory', () => {
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['tokens'])).toBe('tokens and tokens overlap. Give each output its own directory.');
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens/specs', YAML, ['tokens'])).toBe('tokens/specs and tokens overlap. Give each output its own directory.');
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['tokens/specs'])).toBe('tokens and tokens/specs overlap. Give each output its own directory.');
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['component-specs'])).toBeNull();
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['tokens'], 'outputs[].path')).toBe('tokens and tokens overlap. Give each output its own directory.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens/specs', YAML, ['tokens'], 'componentSpecsDir')).toBe('tokens/specs and tokens overlap. Give each output its own directory.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['tokens/specs'], 'outputs[].path')).toBe('tokens and tokens/specs overlap. Give each output its own directory.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, ['component-specs'], 'outputs[].path')).toBeNull();
   });
 
   it('refuses a file at the path, and a directory holding anything without the marker, but ignores dotfiles', () => {
     writeFileSync(join(cwd, 'tokens'), 'x');
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS)).toBe('tokens exists and is not a directory. Choose another path or remove the file.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, [], 'outputs[].path')).toBe('tokens exists and is not a directory. Choose another path or remove the file.');
     mkdirSync(join(cwd, 'specs'));
     writeFileSync(join(cwd, 'specs/.DS_Store'), 'junk');
     writeFileSync(join(cwd, 'specs/.gitkeep'), '');
-    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML)).toBeNull();
+    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML, [], 'componentSpecsDir')).toBeNull();
     writeFileSync(join(cwd, 'specs/mine.yaml'), 'name: mine\n');
-    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML)).toBe('specs holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML, [], 'componentSpecsDir')).toBe('specs holds files spec-layer did not write. Set componentSpecsDir in speclayer.json to another path, or move them.');
     rmSync(join(cwd, 'specs/mine.yaml'));
     mkdirSync(join(cwd, 'specs/sub'));
-    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML)).toBe('specs holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    expect(visibleDirProblem(cwd, '.speclayer', 'specs', YAML, [], 'componentSpecsDir')).toBe('specs holds files spec-layer did not write. Set componentSpecsDir in speclayer.json to another path, or move them.');
+  });
+
+  it('names the config key passed in, not a fixed one', () => {
+    mkdirSync(join(cwd, 'tokens'));
+    writeFileSync(join(cwd, 'tokens/mine.css'), 'body {}\n');
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, [], 'outputs[].path'))
+      .toBe('tokens holds files spec-layer did not write. Set outputs[].path in speclayer.json to another path, or move them.');
   });
 
   it('accepts a directory holding only marked files', () => {
     mkdirSync(join(cwd, 'tokens'));
     writeFileSync(join(cwd, 'tokens/index.css'), `${CSS} */\n`);
     writeFileSync(join(cwd, 'tokens/base.css'), `${CSS} */\n:root {}\n`);
-    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS)).toBeNull();
+    expect(visibleDirProblem(cwd, '.speclayer', 'tokens', CSS, [], 'outputs[].path')).toBeNull();
   });
 
   it('writes files atomically with the last file last, creating the directory', () => {

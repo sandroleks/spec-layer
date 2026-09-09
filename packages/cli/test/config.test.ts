@@ -403,4 +403,18 @@ describe('componentSpecsDir', () => {
     writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: '' }));
     expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
   });
+
+  it('normalizes backslashes, a leading ./, and trailing slashes', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: '.\\specs\\sub\\' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs/sub');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: './specs/' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: 'specs' }));
+    expect(readConfig(tmpDir)?.componentSpecsDir).toBe('specs');
+  });
+
+  it('rejects a value that normalizes to empty', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: './' }));
+    expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
+  });
 });

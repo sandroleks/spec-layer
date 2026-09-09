@@ -426,6 +426,20 @@ export async function runPull(
     const o = outputs.find((x) => x.path === r.path);
     if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
   }
+  // A renamed componentSpecsDir or outputs[].path leaves a full set of marked
+  // files at the old location; nothing else notices, since the old directory
+  // is never touched. Name it rather than delete it: only the developer knows
+  // whether something else still reads from there.
+  const staleDirNote = (previous: string, current: string): void => {
+    if (previous !== current && existsSync(resolve(cwd, previous))) {
+      io.out(`The previous pull wrote ${previous}/; this one wrote ${current}/. Delete ${previous}/ if nothing else uses it.`);
+    }
+  };
+  staleDirNote(manifest?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR, opts.componentSpecsDir);
+  for (const prev of manifest?.outputs ?? []) {
+    const current = outputs.find((o) => outputId(o) === outputId(prev));
+    if (current) staleDirNote(prev.path, current.path);
+  }
   if (outputResults.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
   if (source === 'flag' || source === 'config') {
     const missing = platformsMissingFormat(platforms);

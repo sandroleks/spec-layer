@@ -138,5 +138,5 @@ export const LEGACY_CSS_PATH_NOTE = (path: string): string =>
 export function outputPathProblem(cwd: string, outDir: string, o: OutputConfig, others: string[] = []): string | null {
   if (/\.css$/i.test(o.path)) return LEGACY_CSS_PATH_NOTE(o.path);
   const marker = specOf(o.platform, o.format)?.headerPrefix ?? CSS_HEADER_PREFIX;
-  return visibleDirProblem(cwd, outDir, o.path, marker, others);
+  return visibleDirProblem(cwd, outDir, o.path, marker, others, 'outputs[].path');
 }

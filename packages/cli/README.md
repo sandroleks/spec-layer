@@ -412,9 +412,9 @@ A repository that already builds tokens with Style Dictionary can keep reading
 `.speclayer/tokens/`: the CSS files are a projection of the same record, not a
 second source, so import one or the other.
 
-Commit `.speclayer/`, `speclayer.json`, and the output paths. A repository
-that would rather regenerate in CI ignores them and runs `pull` there;
-`status` exits `2` when a pull is due.
+Commit `.speclayer/`, `speclayer.json`, `component-specs/`, and the output
+paths. A repository that would rather regenerate in CI ignores them and runs
+`pull` there; `status` exits `2` when a pull is due.
 
 ## Exit codes
 
