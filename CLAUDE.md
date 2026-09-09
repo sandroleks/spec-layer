@@ -24,7 +24,7 @@ landing site are the whole product boundary.
 packages/plugin/       Figma serializer, canvas renderers, iframe UI (vanilla DOM)
 packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
 packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
-packages/cli/          spec-layer CLI: setup, pull, status, skill, tools; delivery only, no extraction
+packages/cli/          spec-layer CLI: setup, init, pull, status, list, show, tools, skill; delivery plus pure platform projections, no extraction
 apps/website/          static site generator: marketing, docs, policies, published JSON schemas
 docs/                  current specs, plans, reviews, writing guides
 project-docs/          ARCHIVED historical vault, not a source of truth
@@ -162,7 +162,9 @@ Shipped and merged:
   catalogue, the last pull, and a root-only reading of the repository's stack
   (`detect.ts`), to the instruction file of each detected agent host.
   `setup` names it as the next step, and the Publish screen's **Copy for an
-  AI agent** copies the setup command followed by it.
+  AI agent** copies the setup command followed by it. CLI `0.6.0` adds
+  platform outputs (`web` / `css` written in place at `outputs[].path`) and
+  renames `ai/components/` to `components/`; not yet published.
 - **2026-09-05 review quick wins.** Memoized resolver lookups, bulk variable
   reads, foundation dump posted once per read, in-panel confirmation dialogs,
   no non-component toast, Copy for AI on the component screen and per
