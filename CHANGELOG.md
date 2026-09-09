@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-09-09
+
 ### Added
 
 - **Visible outputs** (CLI 0.7.0). The web token output is a directory,
@@ -775,5 +777,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Workspace packages are private implementation modules and are not published to npm.
 - GitHub synchronization, drift detection, and an MCP server remain roadmap items.
 
+[5.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.0.0
 [1.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v1.0.0
 [0.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v0.1.0
