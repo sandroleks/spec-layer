@@ -189,8 +189,13 @@ a visible directory:
 - exists and is not a directory;
 - holds any entry, other than a dotfile, that is not a regular file beginning
   with its marker: "`component-specs/` holds files spec-layer did not write.
-  Choose another path in `speclayer.json` or move them." Dotfiles
+  Set `componentSpecsDir` in `speclayer.json` to another path, or move
+  them." The tokens directory names `outputs[].path` instead. Dotfiles
   (`.DS_Store`, `.gitkeep`) are ignored, never read, never removed.
+
+The marker comparison tolerates `\r\n` where the marker has `\n`. A Git for
+Windows checkout with `core.autocrlf` rewrites committed briefs with CRLF
+line endings, and the CLI must still recognise its own files.
 
 The name is deliberately not `components/`, which most front-end repositories
 already use for their own source. A repository that does have a
@@ -246,6 +251,14 @@ The missing `componentSpecsDir` takes its default, and the first 0.7.0 pull
 writes `component-specs/` while its swap of `.speclayer/` drops the old
 `.speclayer/components/`, so no stale copy remains there. `status` is
 unaffected: it compares the bundle hash only.
+
+Changing `componentSpecsDir` or an `outputs[].path` later leaves the
+previous directory in place, since `pull` only ever removes files inside the
+directories it writes. When the previous manifest names a different path
+that still exists, `pull` prints one line: "The previous pull wrote `<old>/`;
+this one wrote `<new>/`. Delete `<old>/` if nothing else uses it." It does
+not delete the old directory; the files carry the marker, but the decision to
+remove a directory from the team's tree is the team's.
 
 This is CLI **0.7.0**. The default path and the config's meaning changed, and
 the published 0.6.0 is a day old.
