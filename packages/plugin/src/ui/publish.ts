@@ -111,9 +111,22 @@ function megabytes(bytes: unknown): string {
   return `${Number.isInteger(mb) ? String(mb) : mb.toFixed(1)} MB`;
 }
 
+const NOT_OWNER =
+  'This library was published by another account, or from a device that no longer holds its key. Nothing was published.';
+
 function publishErrorCopy(status: number, body: Record<string, unknown>): string {
   const error = typeof body.error === 'string' ? body.error : '';
-  if (status === 401) return NO_IDENTITY;
+  if (status === 401) {
+    // A bearer-only request with a key that is not buying Pro. Say what the
+    // proxy said about the key rather than asking for one already entered.
+    if (error === 'license_not_active') {
+      return body.reason === 'unreachable'
+        ? 'Could not check your license key just now. Nothing was published. Try again in a minute.'
+        : 'This license key is not active. Renew it in Settings, or sign in to Figma to publish on the free plan.';
+    }
+    return NO_IDENTITY;
+  }
+  if (error === 'not_owner') return NOT_OWNER;
   if (status === 402) {
     const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
     const after = reset ? ` or publish again after ${reset}` : '';
@@ -127,7 +140,12 @@ function publishErrorCopy(status: number, body: Record<string, unknown>): string
     const existing = body.existing as { fileName?: unknown } | undefined;
     if (existing) {
       const name = typeof existing.fileName === 'string' && existing.fileName ? existing.fileName : 'another file';
-      return `${PUBLISH_LIMIT_MESSAGE_PREFIX} This account already publishes ${name}. Upgrade to Pro to publish up to 10 files.`;
+      // A lapsed Pro license still owns every library it created, so the
+      // count can exceed one; name the first and say how many there are.
+      const owned = typeof body.owned === 'number' && body.owned > 1
+        ? `${body.owned} files, including ${name}`
+        : name;
+      return `${PUBLISH_LIMIT_MESSAGE_PREFIX} This account already publishes ${owned}. Upgrade to Pro to publish up to 10 files.`;
     }
     return `This plan already publishes ${String(body.limit)} Figma files, which is the limit.`;
   }
@@ -139,9 +157,17 @@ async function bodyOf(res: Response): Promise<Record<string, unknown>> {
   try { return await res.json() as Record<string, unknown>; } catch { return {}; }
 }
 
+/**
+ * The library's pull key travels with every write to it. A Figma identity is
+ * not a secret, so for a library created on a free plan the proxy accepts an
+ * update or a rotate only from a caller who also holds the key it handed out.
+ */
+const withPullKey = (headers: Record<string, string>, pullKey: string | null | undefined): Record<string, string> =>
+  pullKey ? { ...headers, 'X-Pull-Key': pullKey } : headers;
+
 export async function publishBundle(
   bundle: PublishBundleV1,
-  opts: { auth: ProxyAuth; libraryId: string | null; fetcher?: typeof fetch },
+  opts: { auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch },
 ): Promise<PublishResult> {
   const headers = authHeaders(opts.auth);
   if (!headers) return { outcome: { kind: 'error', message: NO_IDENTITY }, quota: null };
@@ -150,7 +176,7 @@ export async function publishBundle(
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries`, {
       method: 'POST',
-      headers: { ...headers, 'content-type': 'application/json' },
+      headers: { ...withPullKey(headers, opts.libraryId ? opts.pullKey : null), 'content-type': 'application/json' },
       body: JSON.stringify({ ...(opts.libraryId ? { libraryId: opts.libraryId } : {}), bundle }),
     });
   } catch {
@@ -174,19 +200,22 @@ export async function publishBundle(
     return result({ kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
   }
   if (res.ok) return result({ kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
-  if (opts.libraryId && (res.status === 404 || body.error === 'not_owner')) return result({ kind: 'gone' });
+  // Only a library the proxy no longer has is gone. A 403 means it exists and
+  // someone else owns it (or this device lacks its key): the id in the file
+  // is still the one developers pull, so it must stay put.
+  if (opts.libraryId && res.status === 404) return result({ kind: 'gone' });
   return result({ kind: 'error', message: publishErrorCopy(res.status, body) });
 }
 
 export async function rotatePullKey(
-  libraryId: string, auth: ProxyAuth, fetcher?: typeof fetch,
+  libraryId: string, auth: ProxyAuth, fetcher?: typeof fetch, pullKey: string | null = null,
 ): Promise<{ kind: 'rotated'; pullKey: string } | { kind: 'error'; message: string }> {
   const headers = authHeaders(auth);
   if (!headers) return { kind: 'error', message: ROTATE_NO_IDENTITY };
   const doFetch = fetcher ?? fetch;
   let res: Response;
   try {
-    res = await doFetch(`${PROXY_URL}/v1/libraries/${libraryId}/rotate`, { method: 'POST', headers });
+    res = await doFetch(`${PROXY_URL}/v1/libraries/${libraryId}/rotate`, { method: 'POST', headers: withPullKey(headers, pullKey) });
   } catch {
     return { kind: 'error', message: 'Could not reach the publish service. Check your connection and try again.' };
   }
@@ -307,7 +336,7 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>): strin
 }
 
 const GONE_MESSAGE =
-  'That library is gone or belongs to another account. Nothing was published. '
+  'That library no longer exists on the publish service. Nothing was published. '
   + 'Publish again to create a new library, then share its setup command with your developers.';
 
 export async function onPublishSources(
@@ -331,7 +360,7 @@ export async function onPublishSources(
   host.repaint();
 
   const bundle = buildPublishBundle(msg, new Date().toISOString());
-  const { outcome, quota } = await publishBundle(bundle, { auth, libraryId, fetcher });
+  const { outcome, quota } = await publishBundle(bundle, { auth, libraryId, pullKey, fetcher });
   // Before the repaint below, so one paint shows both the result and the count
   // it left behind.
   if (quota) host.onPublishQuota(quota);
@@ -423,7 +452,7 @@ export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Pr
   // would re-enable Publish. The button is disabled while busy; this is the
   // guard behind it.
   if (!libraryId || isPublishBusy(state)) return;
-  const outcome = await rotatePullKey(libraryId, auth, fetcher);
+  const outcome = await rotatePullKey(libraryId, auth, fetcher, state.pullKey);
   if (outcome.kind === 'rotated') {
     state = {
       ...state,

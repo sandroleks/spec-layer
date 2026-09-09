@@ -129,6 +129,7 @@ import {
   publishState,
   setPublishHost,
   setupCommand,
+  type PublishQuotaSnapshot,
 } from './publish';
 
 const refs: ShellRefs = mountShell('component');
@@ -264,22 +265,16 @@ setPublishHost({
   },
   send,
   // The publish response is the freshest statement of the updates allowance,
-  // and the only one until the next quota fetch. Merged into the same quota
-  // the header reads so the panel keeps one source for the plan.
+  // and the only one until the next quota fetch. It says nothing about AI
+  // writing, so it never stands in for the quota the header reads: when no
+  // quota has arrived it is kept on its own and the real numbers are fetched.
   onPublishQuota: (snapshot) => {
-    const hadQuota = state.quota !== null;
-    state.quota = {
-      ...(state.quota ?? { tier: snapshot.tier, used: 0, limit: null, remaining: null, resetsAt: '' }),
-      publish: snapshot,
-    };
-    quotaFetched = true;
-    if (!hadQuota) {
-      // The shell above states the tier and nothing else about AI writing,
-      // which this response does not speak for. Ask for the real numbers so
-      // the header stops standing on a placeholder.
+    publishSnapshot = snapshot;
+    if (state.quota) {
+      state.quota = { ...state.quota, publish: snapshot };
+    } else {
       void refreshQuota(false);
     }
-    paintAllowance();
     if (view === 'library') paint();
   },
   // Publish and rotate successes are toasts; the screen itself shows only
@@ -293,6 +288,13 @@ setPublishHost({
  * those apart: one is a spinner, the other is "plan status unavailable".
  */
 let quotaFetched = false;
+
+/**
+ * The updates allowance the last publish response stated. Read by the publish
+ * screen when no quota fetch has landed (or the last one failed); a fetched
+ * quota's own `publish` field wins once it exists.
+ */
+let publishSnapshot: PublishQuotaSnapshot | null = null;
 
 /** The component name to keep on screen when a state change does not carry one. */
 function currentName(): string {
@@ -376,7 +378,7 @@ function paint(): void {
     case 'library':
       {
         if (libraryPane === 'publish') {
-          renderPublishScreen(refs, publishState(), publishAllowance(state.quota));
+          renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot));
           return;
         }
         const model = currentLibraryModel();

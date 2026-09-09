@@ -362,8 +362,14 @@ function shadowDecl(ctx: Ctx, leaf: Leaf, name: string): string | null {
 // The file
 // ---------------------------------------------------------------------------
 
+// Text that may sit inside a CSS block comment. Figma collection and mode
+// names are free text, so a name holding the comment terminator (asterisk,
+// slash) would close the comment and turn the rest of the name into a live
+// rule; a line break would split it.
+const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').replace(/[\r\n]+/g, ' ');
+
 function headerText(header: OutputHeader, nameCase: NameCase): string {
-  return `${CSS_HEADER_PREFIX} from library ${header.libraryId}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.\n`
+  return `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.\n`
     + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
 }
 
@@ -413,7 +419,7 @@ function emitPass(
     }
     if (decls.length === 0) continue;
     const lines = blocks.get(selector) ?? [];
-    lines.push(`  /* ${s.collection}${s.mode !== null ? `, ${s.mode}` : ''} */`, ...decls.map((d) => `  ${d}`));
+    lines.push(`  /* ${commentSafe(`${s.collection}${s.mode !== null ? `, ${s.mode}` : ''}`)} */`, ...decls.map((d) => `  ${d}`));
     blocks.set(selector, lines);
   }
   return { blocks, entries, declared };

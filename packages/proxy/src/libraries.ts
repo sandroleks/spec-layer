@@ -103,14 +103,31 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
   return { tier, tierIdentity, owners, licenseReason, figmaIdentity: figmaId };
 }
 
-/** The library's meta when the caller owns it, else the error Response. */
+/** The `X-Pull-Key` header, else null. Writes to a free-plan library must carry it. */
+const pullKeyOf = (req: Request): string | null => (req.headers.get('X-Pull-Key') ?? '').trim() || null;
+
+/**
+ * The library's meta when the caller owns it, else the error Response.
+ *
+ * A license bearer is a secret, so possession proves ownership on its own. A
+ * Figma identity is a client-asserted header that anyone who knows the user id
+ * can send, so for a library created on a free plan it proves nothing by
+ * itself: the write must also carry the library's current pull key, which
+ * only the publish that created it (or the last rotate) ever handed out.
+ */
 async function ownedMeta(
-  store: LibraryStore, libraryId: string, owners: string[],
+  store: LibraryStore, libraryId: string, owners: string[], pullKey: string | null,
 ): Promise<LibraryMeta | Response> {
   const metaRaw = await store.get(metaKey(libraryId));
   if (metaRaw === null) return json(404, { error: 'not_found' });
   const meta = JSON.parse(metaRaw) as LibraryMeta;
   if (!owners.includes(meta.licenseId)) return json(403, { error: 'not_owner' });
+  if (meta.licenseId.startsWith('free:')) {
+    const keyHash = (await store.get(keyRecord(libraryId))) ?? meta.keyHash ?? null;
+    if (pullKey === null || keyHash === null || sha256(pullKey) !== keyHash) {
+      return json(403, { error: 'not_owner' });
+    }
+  }
   return meta;
 }
 
@@ -141,8 +158,12 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
   // A legacy plugin build that sends only a lapsed bearer gets the answer it
-  // always got: publish needs a tier, rotate does not.
-  if (caller.tier === 'free' && caller.licenseReason && !caller.figmaIdentity) {
+  // always got: publish needs a tier, rotate does not. An `unreachable`
+  // verdict is not a tier either: the license may well be active, so
+  // publishing it as free would meter, cap, and own the library under the
+  // wrong identity. Refuse without writing and let the client retry.
+  if (caller.tier === 'free' && caller.licenseReason
+    && (!caller.figmaIdentity || caller.licenseReason === 'unreachable')) {
     return json(401, { error: 'license_not_active', reason: caller.licenseReason });
   }
 
@@ -190,7 +211,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
       return json(400, { error: 'invalid libraryId' });
     }
-    const owned = await ownedMeta(store, body.libraryId, caller.owners);
+    const owned = await ownedMeta(store, body.libraryId, caller.owners, pullKeyOf(req));
     if (owned instanceof Response) return owned;
     libraryId = body.libraryId;
     meta = owned;
@@ -199,15 +220,16 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     const limit = LIBRARY_LIMITS[caller.tier];
     if (owned.length >= limit) {
       if (caller.tier === 'free') {
-        // The free limit is 1, so a free caller at the limit owns exactly one id.
+        // Usually exactly one id, but a lapsed Pro license still owns every
+        // library it created, so `owned` says how many and names the first.
         const existingRaw = await store.get(metaKey(owned[0]));
         const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
         return json(403, {
-          error: 'library_limit', limit,
+          error: 'library_limit', limit, owned: owned.length,
           existing: { libraryId: owned[0], fileName: existing?.fileName ?? null },
         });
       }
-      return json(403, { error: 'library_limit', limit });
+      return json(403, { error: 'library_limit', limit, owned: owned.length });
     }
   }
 
@@ -227,14 +249,18 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // The `unchanged` case for an *existing* library is handled by the
   // stored-hash comparison above, not by this cache.
   //
-  // An update is keyed by the transition it performs, not by its destination.
-  // Keyed by destination alone, publish A, then B, then A again would replay
-  // A's committed reservation inside the 24-hour response TTL and answer
-  // `unchanged` while KV still held B. A genuine retry of the same transition
-  // still replays, because it names the same pair.
+  // An update is keyed by the stored state it replaces, not by its
+  // destination. Keyed by destination alone, publish A, then B, then A again
+  // would replay A's committed reservation inside the 24-hour response TTL
+  // and answer `unchanged` while KV still held B; keyed by the content
+  // transition, A, B, A, B would do the same on the fourth publish. Every
+  // committed write moves `publishedAt`, so no two writes share a key, and a
+  // retry that arrives after the commit is answered by the stored-hash check
+  // above, not by this cache. Only a retry racing the write itself is
+  // replayed, which is what the reservation is for.
   const newId = libraryId ? null : newLibraryId();
   const cacheKey = libraryId
-    ? `publish:${libraryId}:${meta?.contentHash ?? 'none'}->${contentHash}`
+    ? `publish:${libraryId}:${meta?.publishedAt ?? 'none'}->${contentHash}`
     : `publish:new:${newId}`;
   const reserved = await quota.reserve(caller.tier, cacheKey);
   switch (reserved.kind) {
@@ -296,7 +322,7 @@ export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: s
   if (!deps.licenseLimiter.allow(`librot:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
-  const meta = await ownedMeta(deps.libraryStore, libraryId, caller.owners);
+  const meta = await ownedMeta(deps.libraryStore, libraryId, caller.owners, pullKeyOf(req));
   if (meta instanceof Response) return meta;
   const pullKey = newPullKey();
   // Only the key record changes. Meta belongs to publish.

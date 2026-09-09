@@ -209,20 +209,60 @@ describe('publishBundle', () => {
     });
   });
 
-  it('maps 404/not_owner on republish to gone', async () => {
+  it('maps 404 on republish to gone', async () => {
     const notFound = vi.fn(async () => jsonResponse(404, {}));
     expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_gone', fetcher: notFound })).outcome)
       .toEqual({ kind: 'gone' });
+  });
 
+  it('keeps a not_owner refusal as an error, never as gone', async () => {
+    // A teammate who is not the owner must not wipe the file's library id.
     const notOwner = vi.fn(async () => jsonResponse(403, { error: 'not_owner' }));
-    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_stolen', fetcher: notOwner })).outcome)
-      .toEqual({ kind: 'gone' });
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_theirs', fetcher: notOwner })).outcome)
+      .toEqual({
+        kind: 'error',
+        message: 'This library was published by another account, or from a device that no longer holds its key. Nothing was published.',
+      });
+  });
+
+  it('sends the pull key with a republish and never with a create', async () => {
+    const seen: Array<Record<string, string>> = [];
+    const fetcher = vi.fn(async (_url, init) => {
+      seen.push((init as RequestInit).headers as Record<string, string>);
+      return jsonResponse(200, { libraryId: 'lib_mine', publishedAt: '2026-09-01T00:00:02.000Z' });
+    });
+    await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_mine', pullKey: 'sl_pull', fetcher });
+    await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, pullKey: 'sl_pull', fetcher });
+    expect(seen[0]['X-Pull-Key']).toBe('sl_pull');
+    expect('X-Pull-Key' in seen[1]).toBe(false);
   });
 
   it('maps 401 to a plain sign-in problem, not a Pro requirement', async () => {
     const fetcher = vi.fn(async () => jsonResponse(401, { error: 'unauthenticated' }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
+  });
+
+  it('maps a 401 for a key that is not active to the key, not to signing in', async () => {
+    const expired = vi.fn(async () => jsonResponse(401, { error: 'license_not_active', reason: 'expired' }));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: expired })).outcome).toEqual({
+      kind: 'error',
+      message: 'This license key is not active. Renew it in Settings, or sign in to Figma to publish on the free plan.',
+    });
+    const unreachable = vi.fn(async () => jsonResponse(401, { error: 'license_not_active', reason: 'unreachable' }));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: unreachable })).outcome).toEqual({
+      kind: 'error',
+      message: 'Could not check your license key just now. Nothing was published. Try again in a minute.',
+    });
+  });
+
+  it('counts the libraries a lapsed license still owns in the free limit copy', async () => {
+    const fetcher = vi.fn(async () => jsonResponse(403, {
+      error: 'library_limit', limit: 1, owned: 3, existing: { libraryId: 'lib_' + 'a'.repeat(24), fileName: 'Marketing DS' },
+    }));
+    const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
+    expect((outcome as { message: string }).message)
+      .toBe('Free plans publish one Figma file. This account already publishes 3 files, including Marketing DS. Upgrade to Pro to publish up to 10 files.');
   });
 
   it('maps 402 to the monthly updates message with the reset date', async () => {
@@ -362,10 +402,12 @@ describe('rotatePullKey', () => {
   const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
 
   it('returns the new key on 200 and copy on error', async () => {
-    const okFetch = vi.fn(async () => ({
+    const okFetch = vi.fn(async (_url: unknown, _init?: RequestInit) => ({
       ok: true, status: 200, json: async () => ({ pullKey: 'sl_new_pull' }),
     } as unknown as Response));
-    expect(await rotatePullKey('lib_1', AUTH, okFetch)).toEqual({ kind: 'rotated', pullKey: 'sl_new_pull' });
+    expect(await rotatePullKey('lib_1', AUTH, okFetch, 'sl_current')).toEqual({ kind: 'rotated', pullKey: 'sl_new_pull' });
+    // The current key rides along so a free-plan owner can prove the library is theirs.
+    expect(okFetch.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-Pull-Key': 'sl_current' });
 
     const unauthorizedFetch = vi.fn(async () => ({
       ok: false, status: 401, json: async () => ({}),
@@ -662,6 +704,22 @@ describe('publish controller', () => {
     expect(updateFetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the identity on a not_owner refusal, so a teammate cannot strand the owner', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_theirs', pullKey: null, publishedAt: '2026-08-30T09:12:00.000Z' });
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async () => jsonResponse(403, { error: 'not_owner' }));
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'This library was published by another account, or from a device that no longer holds its key. Nothing was published.',
+    );
+    // The id in the file is still the one developers pull; nothing is cleared.
+    expect(state.libraryId).toBe('lib_theirs');
+    expect(state.lastPublishedAt).toBe('2026-08-30T09:12:00.000Z');
+    expect(sent).not.toContainEqual({ type: 'clearPublishInfo' });
+  });
+
   it('stops on a gone republish target, clears the identity, and never recreates', async () => {
     publish.onPublishClick(AUTH);
     const createFetcher = vi.fn(async () => jsonResponse(201, {
@@ -674,14 +732,16 @@ describe('publish controller', () => {
     const fetcher = vi.fn(async (_url, init) => {
       const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
       expect(body.libraryId).toBe('lib_old');
-      return jsonResponse(403, { error: 'not_owner' });
+      // The stored key rides along with every republish.
+      expect((init as RequestInit).headers).toMatchObject({ 'X-Pull-Key': 'sl_old' });
+      return jsonResponse(404, { error: 'not_found' });
     });
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
     const state = publish.publishState();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'That library is gone or belongs to another account. Nothing was published. '
+      'That library no longer exists on the publish service. Nothing was published. '
       + 'Publish again to create a new library, then share its setup command with your developers.',
     );
     // The stale identity is dropped locally and in the file, so the next

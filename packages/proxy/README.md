@@ -72,7 +72,10 @@ Passing an owned `libraryId` overwrites the bundle in place (200) and returns
 `{ libraryId, publishedAt }`. Ownership passes when any identity in the
 request owns the library, so a library created on a free plan stays writable
 after upgrading, and a library created on Pro stays writable after the license
-lapses as long as the key is still sent.
+lapses as long as the key is still sent. A library owned by a Figma identity
+must also carry its current pull key as `X-Pull-Key`: the Figma user id is not
+a secret, so on its own it proves nothing about a particular library, and
+without the key the answer is `403 {"error":"not_owner"}`.
 
 Limits per tier: free 1 library and 10 changed publishes per UTC month; Pro 10
 libraries and no fixed publish cap (`fair_use_flag` at the soft threshold).
@@ -108,7 +111,8 @@ Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 
 ### `POST /v1/libraries/:libraryId/rotate`
 
-The caller must own the library; there is no tier check. Returns
+The caller must own the library; there is no tier check. A free-plan owner
+sends the current key as `X-Pull-Key` beside the Figma header. Returns
 `{ pullKey }`. The previous key stops working once the KV write propagates,
 up to about a minute. Errors: `401`,
 `403 {"error":"not_owner"}`, `404`, `429`.
@@ -196,6 +200,8 @@ cache inside the DO; prompts and prose are never logged.
   expires. A client that lies about `X-Figma-User` can shop for fresh buckets,
   and a lapsed Pro owner can do the same for its own library, because
   ownership passes on the key while the counter follows the Figma identity.
+  What a lied-about header cannot do is write to someone else's library: a
+  free-owned library's update and rotate also need its current pull key.
   The per-IP limiter is the only ceiling on that. A per-IP monthly publish
   ceiling is deferred and tracked in CLAUDE.md's open list. Pro libraries are
   owned by the license hash and are as protected as before.

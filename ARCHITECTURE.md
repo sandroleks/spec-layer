@@ -91,8 +91,10 @@ blind blob store keyed by a proved identity, not a second implementation of v5
 extraction. Publish and rotate accept a license bearer, a Figma identity
 header, or both; ownership is any identity the request proves, so a library
 created on a free plan stays writable after upgrading, and one created on Pro
-stays writable after the license lapses as long as the key is still sent. Pull
-is key-only and needs no identity at all.
+stays writable after the license lapses as long as the key is still sent. The
+Figma header is client-asserted, so a library owned by a Figma identity is
+written only when the request also carries its current pull key
+(`X-Pull-Key`). Pull is key-only and needs no identity at all.
 
 - `POST /v1/libraries` (license bearer and/or Figma identity): publishes a
   bundle. Omitting `libraryId` creates a new library, checked against

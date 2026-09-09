@@ -143,23 +143,25 @@ const withPublish = (publish: NonNullable<ProxyQuota['publish']>): ProxyQuota =>
 describe('publishAllowance', () => {
   it('hides for null, for pro, and for a proxy that sends no publish field', () => {
     expect(publishAllowance(null)).toEqual({ kind: 'hidden' });
-    expect(publishAllowance({ tier: 'pro', used: 0, limit: null, remaining: null, resetsAt: '' })).toEqual({ kind: 'hidden' });
-    expect(publishAllowance(withPublish({ tier: 'pro', used: 3, limit: null, remaining: null, resetsAt: '' }))).toEqual({ kind: 'hidden' });
+    const noPublish: ProxyQuota = { tier: 'pro', used: 0, limit: null, remaining: null, resetsAt: '' };
+    expect(publishAllowance(noPublish.publish ?? null)).toEqual({ kind: 'hidden' });
+    expect(publishAllowance(withPublish({ tier: 'pro', used: 3, limit: null, remaining: null, resetsAt: '' }).publish ?? null))
+      .toEqual({ kind: 'hidden' });
   });
 
   it('hides a free allowance whose limit the server did not state', () => {
     // `0 of 0 free updates left` would be a count the proxy never gave.
-    expect(publishAllowance(withPublish({ tier: 'free', used: 0, limit: null, remaining: null, resetsAt: '' })))
+    expect(publishAllowance({ tier: 'free', used: 0, limit: null, remaining: null, resetsAt: '' }))
       .toEqual({ kind: 'hidden' });
   });
 
   it('reports a free allowance', () => {
-    expect(publishAllowance(withPublish({ tier: 'free', used: 7, limit: 10, remaining: 3, resetsAt: '2026-10-01T00:00:00.000Z' })))
+    expect(publishAllowance({ tier: 'free', used: 7, limit: 10, remaining: 3, resetsAt: '2026-10-01T00:00:00.000Z' }))
       .toEqual({ kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' });
   });
 
   it('never reports a negative remaining', () => {
-    expect(publishAllowance(withPublish({ tier: 'free', used: 12, limit: 10, remaining: null, resetsAt: '' })))
+    expect(publishAllowance({ tier: 'free', used: 12, limit: 10, remaining: null, resetsAt: '' }))
       .toMatchObject({ remaining: 0 });
   });
 });
