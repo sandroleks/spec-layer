@@ -77,6 +77,18 @@ must also carry its current pull key as `X-Pull-Key`: the Figma user id is not
 a secret, so on its own it proves nothing about a particular library, and
 without the key the answer is `403 {"error":"not_owner"}`.
 
+The same Figma-identity-plus-pull-key pair also recovers a Pro-created
+library once the license key that made it is gone (removed in Settings, or a
+device that never had it): every `LibraryMeta` records the Figma identity
+present at creation as `figmaOwnerHash`, alongside `licenseId` rather than
+instead of it, and `ownedMeta` accepts either proof. The license key is
+otherwise a Pro library's *only* proof of ownership, and it lives in
+per-device storage with no server-side recovery once it's gone; the Figma
+identity carries no extra privilege on its own, so this costs nothing beyond
+what a free-plan library already accepts. A library published before this
+field existed gets it backfilled the next time its real owner publishes with
+a Figma identity present, so no migration was needed.
+
 Limits per tier: free 1 library and 10 changed publishes per UTC month; Pro 10
 libraries and no fixed publish cap (`fair_use_flag` at the soft threshold).
 A publish is counted only when its KV write commits. "Changed" is decided on a
