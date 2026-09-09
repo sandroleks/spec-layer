@@ -36,7 +36,8 @@ export function seoHead({ title, description, path, breadcrumbs = [], notFound =
         '@type': 'ListItem', position: index + 1, name: item.name, item: absoluteUrl(item.path)
       })) });
   }
-  return `<title>${escapeHtml(title)}</title>
+  return `<link rel="preload" href="/fonts/manrope-700.ttf" as="font" type="font/ttf" crossorigin>
+<title>${escapeHtml(title)}</title>
 <meta name="theme-color" content="${websiteThemeColor}">
 <meta name="description" content="${escapeHtml(description)}">
 <meta name="robots" content="${robots}">
@@ -72,7 +73,7 @@ export async function generateSeo() {
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${canonicalPaths.map(path => `  <url><loc>${escapeHtml(absoluteUrl(path))}</loc></url>`).join('\n')}\n</urlset>\n`;
   await writeFile(new URL('public/sitemap.xml', root), sitemap);
   const crawlerPreferences = await readFile(new URL('content/robots.production.txt', root), 'utf8');
-  const robots = `${crawlerPreferences}\n${site.indexable ? `Sitemap: ${absoluteUrl('/sitemap.xml')}\n` : '# Private preview: HTML and response headers carry noindex.\n'}`;
+  const robots = `${site.indexable && site.cloudflareManagedRobots ? "# Cloudflare owns crawler groups on the public domain.\n" : crawlerPreferences}\n${site.indexable ? `Sitemap: ${absoluteUrl('/sitemap.xml')}\n` : '# Private preview: HTML and response headers carry noindex.\n'}`;
   await writeFile(new URL('public/robots.txt', root), robots);
   // Cloudflare static asset rules; HTML also carries its own robots directive.
   const headers = `${site.indexable ? '/404.html\n  X-Robots-Tag: noindex\n' : '/*\n  X-Robots-Tag: noindex, follow\n'}\n/sitemap.xml\n  Content-Type: application/xml; charset=utf-8\n`;

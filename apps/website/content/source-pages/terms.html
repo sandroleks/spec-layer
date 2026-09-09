@@ -40,7 +40,7 @@
 <main>
   <div class="wrap">
     <h1>Terms of Service</h1>
-    <p class="meta">Last updated 6 September 2026</p>
+    <p class="meta">Last updated 8 September 2026</p>
 
     <p>
       These terms govern your use of Spec Layer, a Figma plugin that turns components
@@ -59,13 +59,24 @@
       Spec Layer reads the components, variables, and styles in your Figma file and
       generates documentation frames on your canvas, including measurements, states,
       anatomy, tokens, and optional AI-written usage notes. It can also copy the same
-      design details to your clipboard as structured context for a coding agent, and, on the
-      Pro plan, publish a library so developers can pull it into a repository with
+      design details to your clipboard as structured context for a coding agent, and
+      publish a library so developers can pull it into a repository with
       the spec-layer command-line tool. That tool is distributed on npm under the MIT
       license and is covered by these terms when it talks to our service. A free
-      tier is available with no account and a limited AI allowance. A paid Pro
-      subscription removes the fixed monthly AI cap for normal individual use and
-      enables publishing, subject to the fair-use terms below.
+      tier is available with no account, a limited AI writing allowance, and publishing
+      for 1 Figma file with 10 updates per UTC calendar month. A paid Pro subscription
+      includes publishing for up to 10 Figma files, with no fixed cap on publishing
+      updates or AI writing for normal individual use, subject to the fair-use terms below.
+    </p>
+    <p>
+      A library is one Figma file published for developers to pull with the CLI.
+      Your first successful publish counts as one update. Subsequent successful
+      publishes count when they change the library; failed publishes and unchanged
+      republishes do not count. Publishing and AI writing allowances are separate.
+      Free publishing updates reset at 00:00 UTC on the first day of each calendar
+      month, with no first-month boost. CLI pulls do not use the update allowance
+      or require a Pro license. Free published libraries do not expire, and reaching
+      the update limit does not prevent developers from pulling the published version.
     </p>
 
     <h2>Accounts and license keys</h2>
