@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import {
   CSS_HEADER_PREFIX, NAME_CASES, cssOutput, type CssOutput, type DtcgExport, type NameCase,
@@ -102,7 +104,7 @@ export function renderOutput(
 ): CssOutput {
   switch (o.format) {
     case 'css':
-      return cssOutput(exp, header, {
+      return cssOutput(exp, { ...header, platform: o.platform, format: o.format }, {
         case: o.case,
         ...(o.root !== undefined ? { root: o.root } : {}),
         ...(o.modeSelector !== undefined ? { modeSelector: o.modeSelector } : {}),
@@ -143,5 +145,12 @@ export function writeOutputFile(cwd: string, o: OutputConfig, text: string): voi
   mkdirSync(dirname(abs), { recursive: true });
   const partial = `${abs}.partial`;
   writeFileSync(partial, text);
-  renameSync(partial, abs);
+  try {
+    renameSync(partial, abs);
+  } catch (err) {
+    // A failed rename must not leave the .partial file behind for the next
+    // write to trip over, or for a reader to mistake for a real deliverable.
+    rmSync(partial, { force: true });
+    throw err;
+  }
 }

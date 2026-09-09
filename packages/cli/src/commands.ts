@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
@@ -14,7 +14,9 @@ import { CREDENTIALS_NAME, writeCredentials } from './credentials';
 import { ensureIgnored } from './gitignore';
 import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
 import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
-import { defaultOutputs, withDefaults, type OutputConfig } from './outputs';
+import {
+  FORMATS, defaultOutputs, outputId, withDefaults, type OutputConfig,
+} from './outputs';
 import { toolsJson, toolsText } from './tools';
 import { cliVersion } from './version';
 
@@ -93,6 +95,22 @@ function outputsForRun(
 
 const NO_PLATFORM_NOTE = `No target platform detected, so no token file was written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
 
+/** Platforms this run named or configured that have no registered output format (only web/css exists today). */
+function platformsMissingFormat(platforms: Platform[]): Platform[] {
+  return platforms.filter((p) => !FORMATS.some((f) => f.platform === p));
+}
+
+/**
+ * A platform with no format is a capability gap, not a mistake, so this names
+ * it rather than staying silent. It only fires for a platform the run named
+ * with --platform or read from speclayer.json's `platforms`; a platform this
+ * run merely detected says nothing, since detection is a guess the caller
+ * never asked to be told about.
+ */
+function missingFormatNote(platforms: Platform[]): string {
+  return `No token file exists yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
+}
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export function runInit(cwd: string, flags: Flags, io: Io): number {
@@ -109,7 +127,7 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
-  const { platforms } = resolvePlatforms(cwd, fromFlags, null);
+  const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
   const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, {
@@ -118,6 +136,12 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
   for (const o of outputs) io.out(`Token file for ${o.platform}: ${o.path} (${o.format}, ${o.case} names), written by the next pull.`);
+  // `source` is 'config' only when a config was passed in, and init always
+  // passes null, so 'flag' is the only source worth naming here.
+  if (source === 'flag') {
+    const missing = platformsMissingFormat(platforms);
+    if (missing.length > 0) io.out(missingFormatNote(missing));
+  }
   io.out(`The pull key is not stored here. Run spec-layer setup to store it in ${CREDENTIALS_NAME}, or set SPEC_LAYER_KEY.`);
   return 0;
 }
@@ -314,13 +338,17 @@ export async function runPull(
   if (fromFlags === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
-  // Ask for a 304 only when the last pull wrote the same files this one would;
-  // a changed selection, dtcg block, or outputs block needs the bundle again to re-project.
+  // Ask for a 304 only when the last pull wrote the same files this one would
+  // AND every one of those files is still on disk; a changed selection, dtcg
+  // block, or outputs block needs the bundle again to re-project, and so does
+  // a deliverable or its record map a developer (or a clean) deleted, since a
+  // 304 would leave it missing rather than restoring it.
   const manifest = manifestAt(join(cwd, opts.outDir));
   const etag = manifest && sameOutput(
     { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs },
     { selection, dtcg: opts.dtcg, outputs },
-  )
+  ) && outputs.every((o) => existsSync(resolve(cwd, o.path))
+    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`)))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({
@@ -361,6 +389,10 @@ export async function runPull(
     if (o) io.out(`Wrote ${path} (${o.platform}/${o.format}, ${o.case} names).`);
   }
   if (outputPaths.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
+  if (source === 'flag' || source === 'config') {
+    const missing = platformsMissingFormat(platforms);
+    if (missing.length > 0) io.out(missingFormatNote(missing));
+  }
   return 0;
 }
 

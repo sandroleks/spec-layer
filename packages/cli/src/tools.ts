@@ -95,7 +95,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'skill',
-    usage: 'spec-layer skill [--install] [--agent claude|cursor|copilot|windsurf|gemini|agents-md]... [--platform web|ios|android|flutter] [--json] [--out DIR]',
+    usage: 'spec-layer skill [--install] [--agent claude|cursor|copilot|windsurf|gemini|agents-md]... [--platform web|ios|android|flutter]... [--json] [--out DIR]',
     summary: 'Prints a guide for a coding agent, adapted to this repository\'s stack and to the last pull; --install writes it where the agent reads instructions.',
     when: 'Right after setup, and again after a pull that adds components or after the codebase changes stack.',
     network: false, needsKey: false,
