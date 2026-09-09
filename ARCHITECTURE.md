@@ -167,9 +167,9 @@ and refuses a bundle whose major version it does not know. Eight commands:
   and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
   to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, a `tokens/`
-  directory for the Foundation, one `ai/components/<slug>.yaml` per component
+  directory for the Foundation, one `components/<slug>.yaml` per component
   (collision-safe slugs), and a `manifest.json` indexing every artifact by
-  content hash and ai-file path. The `tokens/` directory is projected from the
+  content hash and file path. The `tokens/` directory is projected from the
   canonical Foundation artifact in `bundle.json` by the extractor's
   `foundationDtcg`, after a Level 1 shape check on that artifact so a malformed
   bundle fails with a plain sentence rather than a stack trace; that check is
@@ -178,13 +178,21 @@ and refuses a bundle whose major version it does not know. Eight commands:
   `resolver.json`, style files, a `spec-layer.meta.json` Figma metadata
   sidecar, and `report.json` naming what the projection could not express.
   `ai/foundation.yaml` is no longer written; the manifest points the
-  foundation entry at `tokens/resolver.json` instead of an `ai` path. A
-  `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
+  foundation entry at `tokens/resolver.json` instead of an `ai` path.
+
+  `pull` also writes platform outputs: files the team's build compiles, one
+  per `outputs` entry in `speclayer.json`, written in place at the declared
+  path rather than inside the swapped directory. Each is a pure projection of
+  the DTCG export under `packages/extractor/src/v5/outputs/` (today `web` /
+  `css`), so v5 keeps one reader and no hash moves. The name map and report
+  for each output land in `.speclayer/outputs/`.
+
+  A `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
   and declares unit overrides for numbers whose scopes state no unit.
   A selection (`--only foundation|components`, repeatable `--component NAME`,
-  or the config's `include` block) narrows which of `tokens/` and `ai/` are
-  written; `bundle.json` always holds the whole library and the manifest lists
-  every artifact, with `aiPath: null` for the ones left unwritten. The unit of
+  or the config's `include` block) narrows which of `tokens/` and `components/`
+  are written; `bundle.json` always holds the whole library and the manifest
+  lists every artifact, with `path: null` for the ones left unwritten. The unit of
   selection is a whole bundle entry, never a slice of one, because slicing
   below an entry would need the extractor's alias-closure logic. When the
   last pull used the same selection, `pull` sends the manifest's hash as
@@ -197,7 +205,7 @@ and refuses a bundle whose major version it does not know. Eight commands:
   `If-None-Match` etag: a 304 means up to date (exit 0); a fresh body means
   the local pull is behind (exit 2) without writing anything, leaving `pull`
   to do the actual update.
-- `list` prints every artifact from the local manifest with its ai path or
+- `list` prints every artifact from the local manifest with its path or
   `not written`, and `show foundation` / `show component NAME` print one
   entry's `ai` field from the local `bundle.json` to stdout (or its canonical
   JSON with `--canonical`): the DTCG resolver document for `show foundation`,

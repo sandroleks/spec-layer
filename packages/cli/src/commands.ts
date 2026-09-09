@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
@@ -13,13 +14,16 @@ import { CREDENTIALS_NAME, writeCredentials } from './credentials';
 import { ensureIgnored } from './gitignore';
 import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
 import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
+import {
+  FORMATS, defaultOutputs, outputId, withDefaults, type OutputConfig,
+} from './outputs';
 import { toolsJson, toolsText } from './tools';
 import { cliVersion } from './version';
 
 export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
   only?: string; component?: string[]; canonical?: boolean;
-  json?: boolean; install?: boolean; agent?: string[]; platform?: string;
+  json?: boolean; install?: boolean; agent?: string[]; platform?: string[];
 };
 /** out/err add a newline per line; write emits exactly the given text, for piped output. */
 export type Io = { out(line: string): void; err(line: string): void; write(text: string): void };
@@ -35,15 +39,16 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection and on the dtcg options. */
+/** Two pulls write the same files when they agree on the selection, the dtcg options, and the outputs. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions },
-  b: { selection: Selection; dtcg?: DtcgOptions },
+  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
+  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
-  const dtcgKey = (d: DtcgOptions | undefined) => JSON.stringify(sortKeys(d ?? {}));
-  return selectionKey(a.selection) === selectionKey(b.selection) && dtcgKey(a.dtcg) === dtcgKey(b.dtcg);
+  const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
+  return selectionKey(a.selection) === selectionKey(b.selection)
+    && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? []);
 }
 
 function sortKeys(value: unknown): unknown {
@@ -52,6 +57,58 @@ function sortKeys(value: unknown): unknown {
     return Object.fromEntries(Object.keys(value as object).sort().map((k) => [k, sortKeys((value as Record<string, unknown>)[k])]));
   }
   return value;
+}
+
+/** --platform values as platforms, or null after printing the usage error. */
+function platformsFromFlags(flags: Flags, io: Io): Platform[] | null | undefined {
+  if (flags.platform === undefined || flags.platform.length === 0) return undefined;
+  const out: Platform[] = [];
+  for (const value of flags.platform) {
+    if (!isPlatform(value)) {
+      io.err(`--platform takes ${PLATFORMS.join(', ')}, not "${value}".`);
+      return null;
+    }
+    if (!out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+type PlatformSource = 'flag' | 'config' | 'detected' | 'none';
+
+/** Flags, then speclayer.json, then the repository root. */
+function resolvePlatforms(
+  cwd: string, fromFlags: Platform[] | undefined, config: { platforms?: Platform[] } | null,
+): { platforms: Platform[]; source: PlatformSource } {
+  if (fromFlags) return { platforms: fromFlags, source: 'flag' };
+  if (config?.platforms && config.platforms.length > 0) return { platforms: config.platforms, source: 'config' };
+  const detected = detectRepo(cwd).platforms;
+  return { platforms: detected, source: detected.length > 0 ? 'detected' : 'none' };
+}
+
+/** The outputs one pull writes: the config's list, or defaults for the platforms, plus defaults for platforms named by flag. */
+function outputsForRun(
+  fromFlags: Platform[] | undefined, config: { outputs?: OutputConfig[] } | null, platforms: Platform[],
+): OutputConfig[] {
+  if (fromFlags) return withDefaults(config?.outputs ?? [], fromFlags);
+  return config?.outputs ?? defaultOutputs(platforms);
+}
+
+const NO_PLATFORM_NOTE = `No target platform detected, so no token file was written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
+
+/** Platforms this run named or configured that have no registered output format (only web/css exists today). */
+function platformsMissingFormat(platforms: Platform[]): Platform[] {
+  return platforms.filter((p) => !FORMATS.some((f) => f.platform === p));
+}
+
+/**
+ * A platform with no format is a capability gap, not a mistake, so this names
+ * it rather than staying silent. It only fires for a platform the run named
+ * with --platform or read from speclayer.json's `platforms`; a platform this
+ * run merely detected says nothing, since detection is a guess the caller
+ * never asked to be told about.
+ */
+function missingFormatNote(platforms: Platform[]): string {
+  return `No token file exists yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
 }
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -68,9 +125,25 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
     io.err(errorText(err));
     return 1;
   }
+  const fromFlags = platformsFromFlags(flags, io);
+  if (fromFlags === null) return 1;
+  const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
+  const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
-  writeConfig(cwd, { libraryId: flags.id, outDir, ...(include ? { include } : {}) });
-  io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
+  writeConfig(cwd, {
+    libraryId: flags.id, outDir, ...(include ? { include } : {}),
+    ...(platforms.length > 0 ? { platforms } : {}), ...(outputs.length > 0 ? { outputs } : {}),
+  });
+  io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
+  for (const o of outputs) io.out(`Token file for ${o.platform}: ${o.path} (${o.format}, ${o.case} names), written by the next pull.`);
+  // `source` is 'config' only when a config was passed in, and init always
+  // passes null, so 'flag' and 'detected' are the only sources worth naming
+  // here: a platform init named or found on disk deserves the same note as
+  // one it wrote to speclayer.json for.
+  if (source === 'flag' || source === 'detected') {
+    const missing = platformsMissingFormat(platforms);
+    if (missing.length > 0) io.out(missingFormatNote(missing));
+  }
   io.out(`The pull key is not stored here. Run spec-layer setup to store it in ${CREDENTIALS_NAME}, or set SPEC_LAYER_KEY.`);
   return 0;
 }
@@ -174,15 +247,24 @@ export async function runSetup(
   // than failing the run.
   let existing: CliConfig | null = null;
   try { existing = readConfig(cwd); } catch { existing = null; }
+  const fromFlags = platformsFromFlags(flags, io);
+  if (fromFlags === null) return 1;
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
+  // Platforms follow the same rule as include: a flag wins, else what the
+  // committed config says, else detection. Outputs keep every entry the config
+  // already has and gain a default for any platform that has none.
+  const { platforms } = resolvePlatforms(cwd, fromFlags, existing);
+  const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
     libraryId: flags.id, outDir,
     ...(keptInclude ? { include: keptInclude } : {}),
     ...(keptDtcg ? { dtcg: keptDtcg } : {}),
+    ...(platforms.length > 0 ? { platforms } : {}),
+    ...(existing?.outputs !== undefined || outputs.length > 0 ? { outputs } : {}),
   });
-  io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}).`);
+  io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
   switch (ignored.kind) {
@@ -254,13 +336,28 @@ export async function runPull(
     io.err(errorText(err));
     return 1;
   }
-  // Ask for a 304 only when the last pull wrote the same files this one would;
-  // a changed selection or dtcg block needs the bundle again to re-project.
+  const fromFlags = platformsFromFlags(flags, io);
+  if (fromFlags === null) return 1;
+  const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
+  const outputs = outputsForRun(fromFlags, opts, platforms);
+  // Ask for a 304 only when the last pull wrote the same files this one would
+  // AND, when that includes the Foundation, every one of those files is
+  // still on disk; a changed selection, dtcg block, or outputs block needs
+  // the bundle again to re-project, and so does a deliverable or its record
+  // map a developer (or a clean) deleted, since a 304 would leave it missing
+  // rather than restoring it. Outputs are only ever written alongside the
+  // Foundation (writeBundleFiles), so a pull that never writes it - `--only
+  // components`, `include: { foundation: false }`, or a library with none -
+  // has no on-disk files to check, and the existence clause would otherwise
+  // never see a match and redownload the bundle on every run.
   const manifest = manifestAt(join(cwd, opts.outDir));
+  const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
+  const willWriteFoundation = selection.foundation && foundationOnDisk;
   const etag = manifest && sameOutput(
-    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg },
-    { selection, dtcg: opts.dtcg },
-  )
+    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs },
+    { selection, dtcg: opts.dtcg, outputs },
+  ) && (!willWriteFoundation || outputs.every((o) => existsSync(resolve(cwd, o.path))
+    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`))))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({
@@ -276,14 +373,17 @@ export async function runPull(
     return 0;
   }
   let written: string[];
+  let outputPaths: string[] = [];
   try {
     const bundle = parseBundle(result.raw);
     const selected = selectComponents(bundle, selection);
-    written = writeBundleFiles({
+    const writeResult = writeBundleFiles({
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
-      dtcg: opts.dtcg,
+      dtcg: opts.dtcg, platforms, outputs,
     });
+    written = writeResult.written;
+    outputPaths = writeResult.outputs;
     io.out(
       `Pulled ${bundle.fileName ?? opts.libraryId}: ${describePull(bundle, selection, selected)} ` +
       `(published ${result.publishedAt}).`,
@@ -293,6 +393,15 @@ export async function runPull(
     return 1;
   }
   io.out(`Wrote ${written.length} files under ${opts.outDir}/.`);
+  for (const path of outputPaths) {
+    const o = outputs.find((x) => x.path === path);
+    if (o) io.out(`Wrote ${path} (${o.platform}/${o.format}, ${o.case} names).`);
+  }
+  if (outputPaths.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
+  if (source === 'flag' || source === 'config') {
+    const missing = platformsMissingFormat(platforms);
+    if (missing.length > 0) io.out(missingFormatNote(missing));
+  }
   return 0;
 }
 
@@ -332,10 +441,16 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     return 1;
   }
   io.out(`Library ${manifest.libraryId}, published ${manifest.publishedAt}.`);
-  const rows = manifest.artifacts.map((a) => [a.kind, a.name, a.aiPath ?? 'not written', a.contentHash]);
+  const rows = manifest.artifacts.map((a) => [a.kind, a.name, a.path ?? 'not written', a.contentHash]);
   const widths = [0, 1, 2].map((i) => Math.max(...rows.map((r) => r[i].length)));
   for (const row of rows) {
     io.out(row.map((cell, i) => (i < 3 ? cell.padEnd(widths[i]) : cell)).join('  '));
+  }
+  for (const o of manifest.outputs ?? []) {
+    // manifest.outputs records the configured list regardless of whether the
+    // Foundation was written; the map file is the on-disk proof the path is real.
+    const written = existsSync(join(outDir, 'outputs', `${o.platform}-${o.format}.map.json`));
+    io.out(['output'.padEnd(widths[0]), `${o.platform}/${o.format}`.padEnd(widths[1]), written ? o.path : 'not written'].join('  '));
   }
   return 0;
 }
@@ -399,19 +514,9 @@ function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null
   try { config = readConfig(cwd); } catch (err) { io.err(errorText(err)); return null; }
   const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
   const profile = detectRepo(cwd);
-  let platforms: Platform[];
-  let platformSource: SkillInput['platformSource'];
-  if (flags.platform !== undefined) {
-    if (!isPlatform(flags.platform)) {
-      io.err(`--platform takes ${PLATFORMS.join(', ')}, not "${flags.platform}".`);
-      return null;
-    }
-    platforms = [flags.platform];
-    platformSource = 'flag';
-  } else {
-    platforms = profile.platforms;
-    platformSource = platforms.length > 0 ? 'detected' : 'none';
-  }
+  const fromFlags = platformsFromFlags(flags, io);
+  if (fromFlags === null) return null;
+  const { platforms, source: platformSource } = resolvePlatforms(cwd, fromFlags, config);
   const pull = summarizePull(cwd, outDir, readManifest(join(cwd, outDir)));
   return { profile, platforms, platformSource, outDir, config, pull, version: cliVersion() };
 }

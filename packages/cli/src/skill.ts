@@ -36,13 +36,18 @@ export interface PullSummary {
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
   } | null;
+  outputs: Array<{
+    platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
+    /** Whether `<outDir>/outputs/<platform>-<format>.map.json` exists: the on-disk proof the file was rendered. */
+    written: boolean;
+  }>;
 }
 
 export interface SkillInput {
   profile: RepoProfile;
   /** Platforms the guide is written for, after any --platform override. */
   platforms: Platform[];
-  platformSource: 'flag' | 'detected' | 'none';
+  platformSource: 'flag' | 'config' | 'detected' | 'none';
   outDir: string;
   config: CliConfig | null;
   pull: PullSummary | null;
@@ -78,7 +83,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
   const absOut = join(cwd, outDir);
   const components = manifest.artifacts
     .filter((a) => a.kind === 'component')
-    .map((a) => ({ name: a.name, path: a.aiPath ? `${outDir}/${a.aiPath}` : null }));
+    .map((a) => ({ name: a.name, path: a.path ? `${outDir}/${a.path}` : null }));
   const foundationEntry = manifest.artifacts.find((a) => a.kind === 'foundation') ?? null;
   let foundation: PullSummary['foundation'] = null;
   if (foundationEntry) {
@@ -99,7 +104,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
       }
     }
     foundation = {
-      written: foundationEntry.aiPath !== null && resolver !== null,
+      written: foundationEntry.path !== null && resolver !== null,
       sets: resolver ? Object.keys(resolver.sets ?? {}) : [],
       modifiers: resolver
         ? Object.entries(resolver.modifiers ?? {}).map(([name, m]) => ({
@@ -112,6 +117,14 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
   return {
     outDir, libraryId: manifest.libraryId, publishedAt: manifest.publishedAt,
     pluginVersion: manifest.pluginVersion, components, foundation,
+    outputs: (manifest.outputs ?? []).map((o) => ({
+      platform: o.platform, format: o.format, path: o.path, case: o.case,
+      modeSelector: o.modeSelector ?? '[data-theme="{mode}"]', modes: o.modes ?? {},
+      // manifest.outputs records the configured list regardless of whether the
+      // Foundation was written; the map file exists only when it was actually
+      // rendered, so it is the on-disk proof a sentence can point to.
+      written: existsSync(join(absOut, 'outputs', `${o.platform}-${o.format}.map.json`)),
+    })),
   };
 }
 
@@ -148,7 +161,7 @@ function stackSection(input: SkillInput): string[] {
       '',
     );
   } else {
-    const label = platformSource === 'flag' ? 'chosen with --platform' : 'detected';
+    const label = platformSource === 'flag' ? 'chosen with --platform' : platformSource === 'config' ? 'set in speclayer.json' : 'detected';
     lines.push(`Target platform${platforms.length > 1 ? 's' : ''} (${label}): ${platforms.join(', ')}.`, '');
   }
 
@@ -157,13 +170,53 @@ function stackSection(input: SkillInput): string[] {
     const tokensDir = `${input.outDir}/tokens/`;
     if (platform === 'web') {
       lines.push('### Web', '');
-      lines.push(
-        `Token identifiers for code live in ${code(`${tokensDir}spec-layer.meta.json`)} under each token's `
-        + `${code('code_syntax.WEB')}, when the designer declared one in Figma. Use that identifier as the CSS custom property `
-        + 'or theme key. When a token has no WEB entry, derive nothing: use the DTCG path as it appears in the token file '
-        + `(for example ${code('{Collection.group.name}')}) and say in your change that the code name is not declared in Figma.`,
-      );
-      lines.push('');
+      // cssOut only ever names a file the on-disk map proves was rendered;
+      // manifest.outputs (and so pull.outputs) can carry a configured entry
+      // that the last pull never wrote, and the guide must not imply that one exists.
+      const cssOut = pull?.outputs.find((o) => o.platform === 'web' && o.format === 'css' && o.written) ?? null;
+      if (cssOut) {
+        const mapPath = `${input.outDir}/outputs/web-css.map.json`;
+        lines.push(
+          `The CSS custom property for every token is in ${code(mapPath)}: `
+          + 'source "code_syntax" when the designer declared it in Figma, "derived" when the CLI built it from the DTCG path '
+          + `by the stated rule (${cssOut.case} case, collection root included). Use those names; never invent a third. `
+          + `${code(`${tokensDir}spec-layer.meta.json`)} still holds the raw ${code('code_syntax.WEB')} the designer declared.`,
+          '',
+        );
+        lines.push(
+          `Import ${code(cssOut.path)} from the root stylesheet. It holds every set and every default mode at ${code(':root')}; `
+          + `every other mode is a block under ${code(cssOut.modeSelector)}. To switch, set ${code('data-theme')} on ${code('<html>')} `
+          + '(or whatever the selector names). Wire it to prefers-color-scheme yourself if the OS should choose; the file never assumes that.',
+          '',
+        );
+        if (profile.tokenTools.includes('style-dictionary') || profile.tokenTools.includes('tokens-studio')) {
+          lines.push(
+            `${code(cssOut.path)} is a projection of the same ${code('tokens/')} files, not a second source. Import one or the other.`,
+            '',
+          );
+        }
+      } else {
+        lines.push(
+          `Token identifiers for code live in ${code(`${tokensDir}spec-layer.meta.json`)} under each token's `
+          + `${code(`code_syntax.${key}`)}, when the designer declared one in Figma. When a token has no WEB entry, use the DTCG path `
+          + 'as it appears in the token file and say in your change that the code name is not declared in Figma.',
+          '',
+        );
+        const configuredNotWritten = pull?.outputs.find((o) => o.platform === 'web' && !o.written) ?? null;
+        if (configuredNotWritten) {
+          lines.push(
+            `A web/css output is configured at ${code(configuredNotWritten.path)} but was not written, because the last pull did not write the Foundation. `
+            + 'Pull with the Foundation selected to write it.',
+            '',
+          );
+        } else if (pull?.foundation?.written) {
+          lines.push(
+            'No token file was written for web. Add `"outputs"` in `speclayer.json` (or run `spec-layer pull --platform web` once) '
+            + `and pull again; the default lands at ${code('spec-layer/tokens.css')}.`,
+            '',
+          );
+        }
+      }
       if (profile.tokenTools.includes('tailwind')) {
         lines.push(
           `Tailwind is present (${code('tailwindcss')}). Map DTCG ${code('color')} tokens to the theme's color scale and `
@@ -264,7 +317,13 @@ function pullSection(input: SkillInput): string[] {
   } else {
     lines.push('- This library has no Foundation, so there is no tokens/ directory.');
   }
-  lines.push(`- ${code(`${outDir}/ai/components/`)}: one YAML per component.`);
+  lines.push(`- ${code(`${outDir}/components/`)}: one YAML per component.`);
+  for (const o of pull.outputs) {
+    lines.push(o.written
+      ? `- ${code(o.path)}: ${o.platform}/${o.format} token file, ${o.case} names, modes under ${code(o.modeSelector)}.`
+        + ` Names and provenance: ${code(`${outDir}/outputs/${o.platform}-${o.format}.map.json`)}; what it could not express: ${code(`${outDir}/outputs/${o.platform}-${o.format}.report.json`)}.`
+      : `- ${code(o.path)}: ${o.platform}/${o.format} token file, configured but not written by the last pull (the Foundation was not written). Nothing is on disk at that path from Spec Layer.`);
+  }
   lines.push('');
 
   if (pull.foundation && (pull.foundation.sets.length || pull.foundation.modifiers.length)) {
@@ -333,11 +392,15 @@ export function buildSkillGuide(input: SkillInput): string {
   );
   lines.push('## How to use it', '');
   lines.push(`1. Run ${code('npx spec-layer status')}. Exit 0 means the local copy is current; exit 2 means run ${code('npx spec-layer pull')} first.`);
-  lines.push(`2. Building or changing a component: read its YAML under ${code(`${outDir}/ai/components/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
+  lines.push(`2. Building or changing a component: read its YAML under ${code(`${outDir}/components/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
   lines.push(`5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);
-  lines.push(`6. Never edit files under ${code(outDir + '/')}: the next pull replaces the whole directory. Configuration lives in ${code('speclayer.json')}. Never commit ${code(CREDENTIALS_NAME)}, and never print or copy the pull key.`);
+  const writtenOutputs = input.pull?.outputs.filter((o) => o.written) ?? [];
+  const outputNote = writtenOutputs.length
+    ? ` Never edit ${writtenOutputs.map((o) => code(o.path)).join(', ')} either: pull replaces ${writtenOutputs.length === 1 ? 'it' : 'them'} in place.`
+    : '';
+  lines.push(`6. Never edit files under ${code(outDir + '/')}: the next pull replaces the whole directory.${outputNote} Configuration lives in ${code('speclayer.json')}. Never commit ${code(CREDENTIALS_NAME)}, and never print or copy the pull key.`);
   lines.push('');
   lines.push(...pullSection(input));
   lines.push(...stackSection(input));

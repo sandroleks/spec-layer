@@ -8,6 +8,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Platform outputs** (CLI 0.6.0). `spec-layer pull` writes a token file
+  your build compiles, in place at a path declared under `outputs` in
+  `speclayer.json`, outside the swapped `.speclayer/` directory. The first
+  format is `web` / `css`: every set and default mode at `:root`, every other
+  mode under `[data-theme="<mode>"]`, aliases as `var()`, unitless numbers
+  bare, typography as one custom property per member, effects as one
+  `box-shadow`. Names come from the designer's `code_syntax.WEB` when Figma
+  declares one and otherwise from the DTCG path in a chosen case (`kebab`,
+  `camel`, `pascal`, `snake`, `constant`); two tokens that would share a name
+  are both omitted and reported. `.speclayer/outputs/web-css.map.json` records
+  every name with its provenance and `web-css.report.json` what CSS could not
+  say. `setup` and `init` take a repeatable `--platform` and store `platforms`
+  and a default output (`spec-layer/tokens.css` for web); `pull` refuses to
+  overwrite a file at that path that does not carry the Spec Layer header. The
+  projection reads the DTCG export in `packages/extractor/src/v5/outputs/`,
+  never the artifact, and feeds no hash.
+- **`components/`** replaces `ai/components/` in the pulled directory, and the
+  manifest field `aiPath` is now `path`. A manifest written by an earlier CLI
+  is still read.
+
 - **Free library publishing.** A free plan publishes one Figma file as a
   library with 10 changed publishes per UTC month; Pro keeps 10 libraries
   with no fixed cap and the same fair-use flag AI writing has. A publish
@@ -471,6 +491,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the old default, and every one of the six screens measures the same header
   height and title gap as before.
 
+- `spec-layer init --only components` and `setup --only components` wrote an
+  `include` block that the next command refused to read as "not valid JSON".
+  The stored `"components": null` now reads as every component, which is
+  what the flag meant.
 - Quick search no longer flashes once per typed letter. Every keystroke
   replaced the whole palette, which restarted the panel's entry animation and
   rebuilt the input under the caret; a render now patches the mounted list in

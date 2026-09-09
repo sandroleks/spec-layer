@@ -3,12 +3,17 @@ import { join } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
+import { isPlatform, PLATFORMS, type Platform } from './detect';
+import { parseOutput, type OutputConfig } from './outputs';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
 const CONFIG_NAME = 'speclayer.json';
 
-export interface CliConfig { libraryId?: string; outDir?: string; include?: Selection; dtcg?: DtcgOptions }
+export interface CliConfig {
+  libraryId?: string; outDir?: string; include?: Selection; dtcg?: DtcgOptions;
+  platforms?: Platform[]; outputs?: OutputConfig[];
+}
 
 const invalidConfig = () => new Error(`${CONFIG_NAME} is not valid JSON. Fix or delete it, then retry.`);
 
@@ -17,13 +22,13 @@ function parseInclude(value: unknown): Selection {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw invalidConfig();
   const record = value as Record<string, unknown>;
   if (record.foundation !== undefined && typeof record.foundation !== 'boolean') throw invalidConfig();
-  if (record.components !== undefined
+  if (record.components !== undefined && record.components !== null
     && !(Array.isArray(record.components) && record.components.every((c) => typeof c === 'string'))) {
     throw invalidConfig();
   }
   return {
     foundation: record.foundation === undefined ? true : record.foundation,
-    components: record.components === undefined ? null : record.components as string[],
+    components: (record.components ?? null) as string[] | null,
   };
 }
 
@@ -46,6 +51,32 @@ function parseDtcg(value: unknown): DtcgOptions {
   return out;
 }
 
+/** `platforms` names the targets this repository builds for; pull and skill read it before detecting. */
+function parsePlatforms(value: unknown): Platform[] {
+  if (!Array.isArray(value) || !value.every((p) => typeof p === 'string' && isPlatform(p))) {
+    throw new Error(`speclayer.json "platforms" must be an array of ${PLATFORMS.join(', ')}.`);
+  }
+  return [...new Set(value as Platform[])];
+}
+
+/** `outputs` lists the files the team's build compiles; each entry is validated by the format registry. */
+function parseOutputs(value: unknown): OutputConfig[] {
+  if (!Array.isArray(value)) throw new Error('speclayer.json "outputs" must be an array.');
+  const outputs = value.map((v, i) => parseOutput(v, i));
+
+  // Check for duplicate platform/format pairs
+  const seen = new Set<string>();
+  for (const output of outputs) {
+    const key = `${output.platform}/${output.format}`;
+    if (seen.has(key)) {
+      throw new Error(`speclayer.json "outputs" lists ${output.platform}/${output.format} more than once. Keep one entry per platform and format.`);
+    }
+    seen.add(key);
+  }
+
+  return outputs;
+}
+
 export function readConfig(cwd: string): CliConfig | null {
   const path = join(cwd, CONFIG_NAME);
   if (!existsSync(path)) return null;
@@ -58,17 +89,25 @@ export function readConfig(cwd: string): CliConfig | null {
     ...(typeof record.outDir === 'string' ? { outDir: record.outDir } : {}),
     ...(record.include !== undefined ? { include: parseInclude(record.include) } : {}),
     ...(record.dtcg !== undefined ? { dtcg: parseDtcg(record.dtcg) } : {}),
+    ...(record.platforms !== undefined ? { platforms: parsePlatforms(record.platforms) } : {}),
+    ...(record.outputs !== undefined ? { outputs: parseOutputs(record.outputs) } : {}),
   };
 }
 
 export function writeConfig(
-  cwd: string, config: { libraryId: string; outDir: string; include?: Selection; dtcg?: DtcgOptions },
+  cwd: string,
+  config: {
+    libraryId: string; outDir: string; include?: Selection; dtcg?: DtcgOptions;
+    platforms?: Platform[]; outputs?: OutputConfig[];
+  },
 ): void {
   const body = {
     libraryId: config.libraryId,
     outDir: config.outDir,
     ...(config.include ? { include: config.include } : {}),
     ...(config.dtcg ? { dtcg: config.dtcg } : {}),
+    ...(config.platforms && config.platforms.length > 0 ? { platforms: config.platforms } : {}),
+    ...(config.outputs ? { outputs: config.outputs } : {}),
   };
   writeFileSync(join(cwd, CONFIG_NAME), `${JSON.stringify(body, null, 2)}\n`);
 }
@@ -79,6 +118,10 @@ export interface ResolvedOptions {
   include?: Selection;
   /** The config's dtcg block, when it has one, for pull to pass through to writeBundleFiles. */
   dtcg?: DtcgOptions;
+  /** The config's platforms block, when it has one, for pull and skill to read before detecting. */
+  platforms?: Platform[];
+  /** The config's outputs block, when it has one, for pull to write deliverables from. */
+  outputs?: OutputConfig[];
   /**
    * Set when a credential file exists but was issued for another library, so
    * the caller can say that instead of reporting a plain missing key.
@@ -124,6 +167,8 @@ export function resolveOptions(
     key: supplied ?? storedKey,
     ...(config?.include ? { include: config.include } : {}),
     ...(config?.dtcg ? { dtcg: config.dtcg } : {}),
+    ...(config?.platforms ? { platforms: config.platforms } : {}),
+    ...(config?.outputs ? { outputs: config.outputs } : {}),
     ...(storedKeyFor ? { storedKeyFor } : {}),
   };
 }

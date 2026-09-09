@@ -23,7 +23,7 @@ function input(overrides: Partial<SkillInput> = {}): SkillInput {
 const PULL: NonNullable<SkillInput['pull']> = {
   outDir: '.speclayer', libraryId: 'lib_x', publishedAt: '2026-09-01T00:00:00.000Z', pluginVersion: '5.0.0',
   components: [
-    { name: 'Button', path: '.speclayer/ai/components/button.yaml' },
+    { name: 'Button', path: '.speclayer/components/button.yaml' },
     { name: 'Text field', path: null },
   ],
   foundation: {
@@ -34,6 +34,23 @@ const PULL: NonNullable<SkillInput['pull']> = {
     unitlessNumbers: 3,
     reportCounts: { unit_not_expressible: 2 },
   },
+  outputs: [],
+};
+
+const PULL_WITH_CSS: NonNullable<SkillInput['pull']> = {
+  ...PULL,
+  outputs: [{
+    platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab',
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: true,
+  }],
+};
+
+const PULL_CSS_NOT_WRITTEN: NonNullable<SkillInput['pull']> = {
+  ...PULL,
+  outputs: [{
+    platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab',
+    modeSelector: '[data-theme="{mode}"]', modes: {}, written: false,
+  }],
 };
 
 describe('buildSkillGuide', () => {
@@ -46,7 +63,7 @@ describe('buildSkillGuide', () => {
 
   it('lists the components, collections, modes, and token files from the pull', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
-    expect(guide).toContain('- Button: `.speclayer/ai/components/button.yaml`');
+    expect(guide).toContain('- Button: `.speclayer/components/button.yaml`');
     expect(guide).toContain('- Text field: not written (excluded by the selection). `spec-layer show component "Text field"` prints it.');
     expect(guide).toContain('- `Primitives`: one mode, always applied.');
     expect(guide).toContain('- `Theme`: modes `Light`, `Dark`, default `Light`.');
@@ -114,6 +131,60 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain('Never edit files under `design/context/`');
     // The flag reference still states the default; no path may use it.
     expect(guide).not.toMatch(/`\.speclayer\//);
+  });
+});
+
+describe('buildSkillGuide outputs', () => {
+  const web: RepoProfile = { ...EMPTY_PROFILE, platforms: ['web'] };
+
+  it('tells the agent to import the css file, switch modes with data-theme, and read names from the map', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('- `spec-layer/tokens.css`: web/css token file, kebab names, modes under `[data-theme="{mode}"]`.');
+    expect(guide).toContain('Import `spec-layer/tokens.css` from the root stylesheet');
+    expect(guide).toContain('set `data-theme` on `<html>`');
+    expect(guide).toContain('`.speclayer/outputs/web-css.map.json`');
+    expect(guide).toContain('source "code_syntax" when the designer declared it in Figma, "derived" when the CLI built it from the DTCG path');
+    expect(guide).not.toContain('derive nothing');
+  });
+
+  it('says the css is a projection of tokens/ when a pipeline is present', () => {
+    const sd: RepoProfile = { ...web, tokenTools: ['style-dictionary'], styleDictionaryMajor: 5 };
+    const guide = buildSkillGuide(input({ profile: sd, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('`spec-layer/tokens.css` is a projection of the same `tokens/` files, not a second source. Import one or the other.');
+  });
+
+  it('names the flag when web is targeted but no output was written', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL }));
+    expect(guide).toContain('No token file was written for web.');
+    expect(guide).toContain('`"outputs"` in `speclayer.json`');
+    expect(guide).not.toContain('web-css.map.json');
+  });
+
+  it('says a configured web output was not written, not that it exists, when the foundation was excluded', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_CSS_NOT_WRITTEN }));
+    expect(guide).toContain(
+      'A web/css output is configured at `spec-layer/tokens.css` but was not written, because the last pull did not write the Foundation. '
+      + 'Pull with the Foundation selected to write it.',
+    );
+    expect(guide).not.toContain('Import `spec-layer/tokens.css` from the root stylesheet');
+    expect(guide).not.toContain('web-css.map.json');
+    expect(guide).not.toContain('No token file was written for web.');
+  });
+
+  it('falls back to spec-layer.meta.json for web when there is no pull at all', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: null }));
+    expect(guide).toContain("Token identifiers for code live in `.speclayer/tokens/spec-layer.meta.json` under each token's `code_syntax.WEB`");
+    expect(guide).not.toContain('web-css.map.json');
+  });
+
+  it('labels a platform that came from the config', () => {
+    const guide = buildSkillGuide(input({ platforms: ['web'], platformSource: 'config', pull: PULL_WITH_CSS }));
+    expect(guide).toContain('Target platform (set in speclayer.json): web.');
+  });
+
+  it('warns never to edit the output path in step 6', () => {
+    const guide = buildSkillGuide(input({ pull: PULL_WITH_CSS }));
+    expect(guide).toContain('Never edit `spec-layer/tokens.css` either: pull replaces it in place.');
   });
 });
 

@@ -2,7 +2,7 @@ import type { BundleV1 } from './bundle';
 import { slugify } from './files';
 
 /**
- * Which bundle entries a pull writes. A component becomes one `ai/` YAML file;
+ * Which bundle entries a pull writes. A component becomes one `components/` YAML file;
  * the Foundation becomes the `tokens/` DTCG directory. The unit is a whole entry
  * (the Foundation, or one component): the CLI copies entries verbatim and
  * never slices below one, since anything narrower would need the extractor's

@@ -41,6 +41,14 @@ describe('the tool catalogue', () => {
     expect(text).not.toContain('—');
   });
 
+  it('names the platform flag and the output paths for setup, init, and pull', () => {
+    const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
+    for (const name of ['setup', 'init', 'pull']) expect(byName[name].usage).toContain('[--platform web|ios|android|flutter]...');
+    expect(byName.setup.writes).toContain('outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place');
+    expect(byName.pull.writes).toContain('outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place');
+    expect(byName.init.writes).toEqual(['speclayer.json']);
+  });
+
   it('prints stable JSON carrying the version', () => {
     const parsed = JSON.parse(toolsJson('9.9.9')) as { cli: string; version: string; tools: Array<{ name: string }> };
     expect(parsed.cli).toBe('spec-layer');

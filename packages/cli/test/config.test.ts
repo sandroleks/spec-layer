@@ -223,6 +223,11 @@ describe('config include block', () => {
     expect(() => readConfig(tmpDir)).toThrow(/speclayer.json is not valid JSON/);
   });
 
+  it('round-trips the include block writeConfig writes for --only components (components: null)', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: false, components: null } });
+    expect(readConfig(tmpDir)?.include).toEqual({ foundation: false, components: null });
+  });
+
   it('writeConfig persists include and omits it when not given', () => {
     writeConfig(tmpDir, { libraryId: 'lib_abc', outDir: '.speclayer', include: { foundation: true, components: ['Card'] } });
     expect(JSON.parse(readFileSync(join(tmpDir, 'speclayer.json'), 'utf8')))
@@ -324,5 +329,50 @@ describe('config dtcg block', () => {
     expect(() => readConfig(cwd)).toThrow(/speclayer.json/);
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_1', dtcg: { units: { 'a/*': 'em' } } }));
     expect(() => readConfig(cwd)).toThrow(/speclayer.json/);
+  });
+});
+
+describe('config platforms and outputs block', () => {
+  let cwd: string;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-cli-config-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('reads platforms and outputs, filling output defaults', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web', 'web'],
+      outputs: [{ platform: 'web', format: 'css' }],
+    }));
+    expect(readConfig(cwd)).toEqual({
+      libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+    });
+  });
+
+  it('rejects two outputs for the same platform and format', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
+      libraryId: 'lib_x',
+      outputs: [
+        { platform: 'web', format: 'css', path: 'a.css' },
+        { platform: 'web', format: 'css', path: 'b.css' },
+      ],
+    }));
+    expect(() => readConfig(cwd)).toThrow('speclayer.json "outputs" lists web/css more than once. Keep one entry per platform and format.');
+  });
+
+  it('rejects a platforms value that is not a list of known platforms', () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', platforms: ['Web'] }));
+    expect(() => readConfig(cwd)).toThrow('speclayer.json "platforms" must be an array of web, ios, android, flutter.');
+  });
+
+  it('writes platforms and outputs when given and omits them when not', () => {
+    writeConfig(cwd, { libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'], outputs: [
+      { platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' },
+    ] });
+    expect(JSON.parse(readFileSync(join(cwd, 'speclayer.json'), 'utf8'))).toEqual({
+      libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+    });
+    writeConfig(cwd, { libraryId: 'lib_x', outDir: '.speclayer' });
+    expect(JSON.parse(readFileSync(join(cwd, 'speclayer.json'), 'utf8'))).toEqual({ libraryId: 'lib_x', outDir: '.speclayer' });
   });
 });

@@ -29,17 +29,20 @@ const LOCAL_ONLY = { '0': 'success', '1': 'no local pull, or a usage error' };
 export const TOOLS: readonly Tool[] = [
   {
     name: 'setup',
-    usage: 'spec-layer setup --id lib_... --key sl_... [--out DIR] [--only foundation|components] [--component NAME]...',
+    usage: 'spec-layer setup --id lib_... --key sl_... [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
     summary: 'Records the library id, stores the pull key in a gitignored speclayer.local.json, then pulls.',
     when: 'Once, with the command the plugin\'s Publish screen hands out. Re-run it after the key is rotated.',
     network: true, needsKey: true,
-    writes: ['speclayer.json', 'speclayer.local.json', '.gitignore (one line, when inside a git repo)', '<outDir>/'],
+    writes: [
+      'speclayer.json', 'speclayer.local.json', '.gitignore (one line, when inside a git repo)', '<outDir>/',
+      'outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place',
+    ],
     exits: OK_OR_ERROR,
   },
   {
     name: 'init',
-    usage: 'spec-layer init --id lib_... [--out DIR] [--only foundation|components] [--component NAME]...',
-    summary: 'Writes speclayer.json so later commands need no flags. Stores no key and reaches no server.',
+    usage: 'spec-layer init --id lib_... [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
+    summary: 'Writes speclayer.json, with the platforms and default outputs, so later commands need no flags. Stores no key and reaches no server.',
     when: 'A repo that supplies the key from SPEC_LAYER_KEY instead of a stored file.',
     network: false, needsKey: false,
     writes: ['speclayer.json'],
@@ -47,11 +50,11 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'pull',
-    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--only foundation|components] [--component NAME]...',
+    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
     summary: 'Fetches the published library and writes it under the output directory (default .speclayer/).',
-    when: 'After setup, whenever status says the local copy is behind, or after changing the include or dtcg block.',
+    when: 'After setup, whenever status says the local copy is behind, or after changing the include or dtcg block, or the outputs block.',
     network: true, needsKey: true,
-    writes: ['<outDir>/'],
+    writes: ['<outDir>/', 'outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place'],
     exits: OK_OR_ERROR,
   },
   {
@@ -92,7 +95,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'skill',
-    usage: 'spec-layer skill [--install] [--agent claude|cursor|copilot|windsurf|gemini|agents-md]... [--platform web|ios|android|flutter] [--json] [--out DIR]',
+    usage: 'spec-layer skill [--install] [--agent claude|cursor|copilot|windsurf|gemini|agents-md]... [--platform web|ios|android|flutter]... [--json] [--out DIR]',
     summary: 'Prints a guide for a coding agent, adapted to this repository\'s stack and to the last pull; --install writes it where the agent reads instructions.',
     when: 'Right after setup, and again after a pull that adds components or after the codebase changes stack.',
     network: false, needsKey: false,

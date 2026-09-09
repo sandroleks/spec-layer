@@ -4,6 +4,8 @@ import {
   dtcgExportFiles, foundationDtcg, validateLevel1,
   type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
+import type { Platform } from './detect';
+import { outputId, outputPathProblem, renderOutput, writeOutputFile, type OutputConfig } from './outputs';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 
@@ -13,12 +15,13 @@ export function slugify(name: string): string {
 }
 
 /**
- * Every artifact in the bundle; aiPath is null when the selection left it
+ * Every artifact in the bundle; path is null when the selection left it
  * unwritten. For the foundation this is the DTCG resolver path
- * (`tokens/resolver.json`); for a component it is its AI YAML path.
+ * (`tokens/resolver.json`); for a component it is its YAML path under
+ * `components/`.
  */
 export interface ManifestArtifact {
-  kind: 'foundation' | 'component'; name: string; contentHash: string; aiPath: string | null;
+  kind: 'foundation' | 'component'; name: string; contentHash: string; path: string | null;
 }
 export interface Manifest {
   libraryId: string;
@@ -34,13 +37,30 @@ export interface Manifest {
    * re-project even when the bundle did not move.
    */
   dtcg?: DtcgOptions;
+  /** The targets this pull was made for, when known. */
+  platforms?: Platform[];
+  /** The outputs this pull wrote or was told to write; part of the freshness comparison. */
+  outputs?: OutputConfig[];
   artifacts: ManifestArtifact[];
 }
 
 export function readManifest(outDir: string): Manifest | null {
   const path = join(outDir, 'manifest.json');
   if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, 'utf8')) as Manifest; } catch { return null; }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Manifest & {
+      artifacts: Array<ManifestArtifact & { aiPath?: string | null }>;
+    };
+    // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
+    // list, skill, and status keep working until the next pull rewrites it.
+    parsed.artifacts = parsed.artifacts.map((artifact) => {
+      const { aiPath, ...rest } = artifact as ManifestArtifact & { aiPath?: string | null };
+      return {
+        ...rest, path: rest.path ?? aiPath ?? null,
+      } as ManifestArtifact;
+    });
+    return parsed;
+  } catch { return null; }
 }
 
 /** The whole bundle as last pulled, or null when nothing was pulled. */
@@ -99,15 +119,27 @@ function assertReplaceable(outDir: string, cwd: string): void {
 /** Stage into <outDir>.partial, then swap. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
-  selection?: Selection; dtcg?: DtcgOptions;
-}): string[] {
+  selection?: Selection; dtcg?: DtcgOptions; platforms?: Platform[]; outputs?: OutputConfig[];
+}): { written: string[]; outputs: string[] } {
   assertReplaceable(opts.outDir, opts.cwd);
   const selection = opts.selection ?? DEFAULT_SELECTION;
   const selected = selectComponents(opts.bundle, selection);
   const slugs = componentSlugs(opts.bundle);
+  const outputs = opts.outputs ?? [];
+  const willWriteFoundation = Boolean(opts.bundle.foundation) && selection.foundation;
+  // Every deliverable path is checked before anything is staged, so a refusal
+  // leaves both the record and the team's file exactly as they were.
+  if (willWriteFoundation) {
+    for (const o of outputs) {
+      const problem = outputPathProblem(opts.cwd, opts.outDir, o);
+      if (problem) throw new Error(problem);
+    }
+  }
   const staging = `${opts.outDir}.partial`;
   rmSync(staging, { recursive: true, force: true });
   const written: string[] = [];
+  const deliverables: Array<{ output: OutputConfig; text: string }> = [];
+  const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
   const put = (rel: string, content: string) => {
     const path = join(staging, rel);
     mkdirSync(dirname(path), { recursive: true });
@@ -118,7 +150,7 @@ export function writeBundleFiles(opts: {
     put('bundle.json', opts.raw);
     const artifacts: ManifestArtifact[] = [];
     if (opts.bundle.foundation) {
-      let aiPath: string | null = null;
+      let path: string | null = null;
       if (selection.foundation) {
         // A shape check on the wire, so a malformed artifact fails in one
         // sentence rather than deep inside the projection. This does not
@@ -127,22 +159,29 @@ export function writeBundleFiles(opts: {
         if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
           throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
         }
-        const files = dtcgExportFiles(foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {}));
-        for (const [name, text] of Object.entries(files)) put(`tokens/${name}`, text);
-        aiPath = 'tokens/resolver.json';
+        const exp = foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {});
+        for (const [name, text] of Object.entries(dtcgExportFiles(exp))) put(`tokens/${name}`, text);
+        path = 'tokens/resolver.json';
+        const header = { libraryId: opts.libraryId, contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash };
+        for (const output of outputs) {
+          const rendered = renderOutput(exp, output, header);
+          put(`outputs/${outputId(output)}.map.json`, json(rendered.map));
+          put(`outputs/${outputId(output)}.report.json`, json(rendered.report));
+          deliverables.push({ output, text: rendered.text });
+        }
       }
       artifacts.push({
         kind: 'foundation', name: 'foundation',
         contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash,
-        aiPath,
+        path,
       });
     }
     opts.bundle.components.forEach((component, i) => {
-      const aiPath = selected[i] ? `ai/components/${slugs[i]}.yaml` : null;
-      if (aiPath) put(aiPath, component.ai);
+      const path = selected[i] ? `components/${slugs[i]}.yaml` : null;
+      if (path) put(path, component.ai);
       artifacts.push({
         kind: 'component', name: component.name,
-        contentHash: component.artifact.spec_layer.export.content_hash, aiPath,
+        contentHash: component.artifact.spec_layer.export.content_hash, path,
       });
     });
     const manifest: Manifest = {
@@ -150,13 +189,22 @@ export function writeBundleFiles(opts: {
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
       selection, artifacts,
       ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
+      ...(opts.platforms && opts.platforms.length > 0 ? { platforms: opts.platforms } : {}),
+      ...(opts.outputs ? { outputs: opts.outputs } : {}),
     };
-    put('manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+    put('manifest.json', json(manifest));
   } catch (err) {
     rmSync(staging, { recursive: true, force: true });
     throw err;
   }
   rmSync(opts.outDir, { recursive: true, force: true });
   renameSync(staging, opts.outDir);
-  return written;
+  // Deliverables go last and in place: the record is complete before the
+  // team's file changes, and the file is never deleted, only replaced.
+  const outputPaths: string[] = [];
+  for (const d of deliverables) {
+    writeOutputFile(opts.cwd, d.output, d.text);
+    outputPaths.push(d.output.path);
+  }
+  return { written, outputs: outputPaths };
 }

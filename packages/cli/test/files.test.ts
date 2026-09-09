@@ -82,10 +82,38 @@ describe('writeBundleFiles', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it('reads a manifest written by an earlier CLI that used path', () => {
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({
+      libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2',
+      artifacts: [
+        { kind: 'foundation', name: 'foundation', contentHash: 'f', path: 'tokens/resolver.json' },
+        { kind: 'component', name: 'Button', contentHash: 'c', path: null },
+      ],
+    }));
+    const manifest = readManifest(outDir);
+    expect(manifest?.artifacts.map((a) => a.path)).toEqual(['tokens/resolver.json', null]);
+    expect(manifest?.artifacts.some((a) => 'path' in a)).toBe(true);
+  });
+
+  it('reads a manifest written by an earlier CLI that used aiPath', () => {
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({
+      libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2',
+      artifacts: [
+        { kind: 'foundation', name: 'foundation', contentHash: 'f', aiPath: 'tokens/resolver.json' },
+        { kind: 'component', name: 'Button', contentHash: 'c', aiPath: null },
+      ],
+    }));
+    const manifest = readManifest(outDir);
+    expect(manifest?.artifacts.map((a) => a.path)).toEqual(['tokens/resolver.json', null]);
+    expect(manifest?.artifacts.some((a) => 'aiPath' in a)).toBe(false);
+  });
+
   it('writes bundle.json byte-for-byte, ai yaml per artifact, and a manifest', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
     const raw = JSON.stringify(bundle);
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
@@ -94,7 +122,7 @@ describe('writeBundleFiles', () => {
     expect(written).toContain('tokens/resolver.json');
     expect(written).toContain('tokens/spec-layer.meta.json');
     expect(written).toContain('tokens/report.json');
-    expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
+    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     expect(manifest.libraryId).toBe('lib-1');
@@ -106,9 +134,9 @@ describe('writeBundleFiles', () => {
       {
         kind: 'foundation', name: 'foundation',
         contentHash: bundle.foundation!.artifact.spec_layer.export.content_hash,
-        aiPath: 'tokens/resolver.json',
+        path: 'tokens/resolver.json',
       },
-      { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), aiPath: 'ai/components/button.yaml' },
+      { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), path: 'components/button.yaml' },
     ]);
   });
 
@@ -121,20 +149,20 @@ describe('writeBundleFiles', () => {
       ],
     });
     const raw = JSON.stringify(bundle);
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
 
-    expect(written).toContain('ai/components/button.yaml');
-    expect(written).toContain('ai/components/button-2.yaml');
-    expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe('first\n');
-    expect(readFileSync(join(outDir, 'ai/components/button-2.yaml'), 'utf8')).toBe('second\n');
+    expect(written).toContain('components/button.yaml');
+    expect(written).toContain('components/button-2.yaml');
+    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe('first\n');
+    expect(readFileSync(join(outDir, 'components/button-2.yaml'), 'utf8')).toBe('second\n');
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
-    expect(manifest.artifacts.map((a) => a.aiPath)).toEqual([
-      'ai/components/button.yaml',
-      'ai/components/button-2.yaml',
+    expect(manifest.artifacts.map((a) => a.path)).toEqual([
+      'components/button.yaml',
+      'components/button-2.yaml',
     ]);
   });
 
@@ -152,30 +180,30 @@ describe('writeBundleFiles', () => {
       ],
     });
     const raw = JSON.stringify(bundle);
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
 
-    const componentPaths = written.filter((p) => p.startsWith('ai/components/'));
+    const componentPaths = written.filter((p) => p.startsWith('components/'));
     expect(new Set(componentPaths).size).toBe(3);
     expect(componentPaths).toEqual([
-      'ai/components/button.yaml',
-      'ai/components/button-2.yaml',
-      'ai/components/button-3.yaml',
+      'components/button.yaml',
+      'components/button-2.yaml',
+      'components/button-3.yaml',
     ]);
 
-    expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe('first\n');
-    expect(readFileSync(join(outDir, 'ai/components/button-2.yaml'), 'utf8')).toBe('second\n');
-    expect(readFileSync(join(outDir, 'ai/components/button-3.yaml'), 'utf8')).toBe('third\n');
+    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe('first\n');
+    expect(readFileSync(join(outDir, 'components/button-2.yaml'), 'utf8')).toBe('second\n');
+    expect(readFileSync(join(outDir, 'components/button-3.yaml'), 'utf8')).toBe('third\n');
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
-    const componentAiPaths = manifest.artifacts.filter((a) => a.kind === 'component').map((a) => a.aiPath);
+    const componentAiPaths = manifest.artifacts.filter((a) => a.kind === 'component').map((a) => a.path);
     expect(new Set(componentAiPaths).size).toBe(3);
     expect(componentAiPaths).toEqual([
-      'ai/components/button.yaml',
-      'ai/components/button-2.yaml',
-      'ai/components/button-3.yaml',
+      'components/button.yaml',
+      'components/button-2.yaml',
+      'components/button-3.yaml',
     ]);
   });
 
@@ -185,7 +213,7 @@ describe('writeBundleFiles', () => {
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
-    expect(existsSync(join(outDir, 'ai/components/button.yaml'))).toBe(true);
+    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(true);
     expect(existsSync(`${outDir}.partial`)).toBe(false);
 
     const bundle2 = makeBundle({
@@ -200,17 +228,17 @@ describe('writeBundleFiles', () => {
     });
 
     // Old files are gone.
-    expect(existsSync(join(outDir, 'ai/components/button.yaml'))).toBe(false);
+    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(false);
     expect(existsSync(join(outDir, 'ai/foundation.yaml'))).toBe(false);
     // New files are present.
-    expect(existsSync(join(outDir, 'ai/components/card.yaml'))).toBe(true);
+    expect(existsSync(join(outDir, 'components/card.yaml'))).toBe(true);
     // No staging dir left behind.
     expect(existsSync(`${outDir}.partial`)).toBe(false);
   });
 
   it('skips the foundation file when foundation is null', () => {
     const bundle = makeBundle({ foundation: null });
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
@@ -244,7 +272,7 @@ describe('writeBundleFiles', () => {
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
-    const originalButtonContent = readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8');
+    const originalButtonContent = readFileSync(join(outDir, 'components/button.yaml'), 'utf8');
     const originalResolverContent = readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8');
 
     // Force the mid-staging write of tokens/resolver.json to fail, simulating a disk
@@ -274,16 +302,16 @@ describe('writeBundleFiles', () => {
     // Staging directory was cleaned up by the catch branch.
     expect(existsSync(`${outDir}.partial`)).toBe(false);
     // The prior successful outDir is untouched: neither deleted nor half-overwritten.
-    expect(existsSync(join(outDir, 'ai/components/button.yaml'))).toBe(true);
-    expect(readFileSync(join(outDir, 'ai/components/button.yaml'), 'utf8')).toBe(originalButtonContent);
+    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(true);
+    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe(originalButtonContent);
     expect(existsSync(join(outDir, 'tokens/resolver.json'))).toBe(true);
     expect(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8')).toBe(originalResolverContent);
-    expect(existsSync(join(outDir, 'ai/components/card.yaml'))).toBe(false);
+    expect(existsSync(join(outDir, 'components/card.yaml'))).toBe(false);
   });
 
   it('writes the foundation as a tokens/ directory projected from the canonical artifact', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
       publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
@@ -295,7 +323,7 @@ describe('writeBundleFiles', () => {
     const resolver = JSON.parse(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8'));
     expect(resolver.version).toBe('2025.10');
     const manifest = readManifest(outDir)!;
-    expect(manifest.artifacts.find((a) => a.kind === 'foundation')?.aiPath).toBe('tokens/resolver.json');
+    expect(manifest.artifacts.find((a) => a.kind === 'foundation')?.path).toBe('tokens/resolver.json');
   });
 
   it('honours dtcg options from config', () => {
@@ -326,13 +354,13 @@ describe('writeBundleFiles', () => {
 
   it('writes no tokens/ when the selection excludes the foundation', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_1',
       publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
       selection: { foundation: false, components: null },
     });
     expect(written.some((f) => f.startsWith('tokens/'))).toBe(false);
-    expect(readManifest(outDir)!.artifacts.find((a) => a.kind === 'foundation')?.aiPath).toBeNull();
+    expect(readManifest(outDir)!.artifacts.find((a) => a.kind === 'foundation')?.path).toBeNull();
   });
 
   it('fails with a plain sentence when the foundation artifact is not a valid v5 artifact', () => {
@@ -342,6 +370,52 @@ describe('writeBundleFiles', () => {
       publishedAt: '2026-09-03T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     })).toThrow('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
     expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('writes the output record into outDir and the deliverable in place, and returns both', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const outputs = [{ platform: 'web' as const, format: 'css' as const, path: 'spec-layer/tokens.css', case: 'kebab' as const }];
+    const result = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
+      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', platforms: ['web'], outputs,
+    });
+    expect(result.written).toContain('outputs/web-css.map.json');
+    expect(result.written).toContain('outputs/web-css.report.json');
+    expect(result.outputs).toEqual(['spec-layer/tokens.css']);
+    const css = readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8');
+    expect(css.startsWith('/* Generated by spec-layer from library lib_x, foundation sha256:')).toBe(true);
+    expect(css).toContain('--color-exact-red: #ff0000;');
+    const manifest = readManifest(outDir) as Manifest;
+    expect(manifest.platforms).toEqual(['web']);
+    expect(manifest.outputs).toEqual(outputs);
+    const map = JSON.parse(readFileSync(join(outDir, 'outputs/web-css.map.json'), 'utf8'));
+    expect(map['Primitives.color.exact.red']).toEqual({ name: '--color-exact-red', source: 'code_syntax' });
+  });
+
+  it('refuses a foreign file at the output path before writing anything', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    mkdirSync(join(tmpDir, 'spec-layer'), { recursive: true });
+    writeFileSync(join(tmpDir, 'spec-layer/tokens.css'), ':root { --mine: 1; }\n');
+    expect(() => writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
+      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h',
+      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+    })).toThrow('spec-layer/tokens.css exists and was not written by spec-layer.');
+    expect(existsSync(outDir)).toBe(false);
+    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(':root { --mine: 1; }\n');
+  });
+
+  it('replaces its own earlier file in place and leaves it alone when the foundation is not selected', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const outputs = [{ platform: 'web' as const, format: 'css' as const, path: 'spec-layer/tokens.css', case: 'kebab' as const }];
+    const base = { outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h', outputs };
+    writeBundleFiles(base);
+    const first = readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8');
+    writeBundleFiles(base);
+    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(first);
+    const noFoundation = writeBundleFiles({ ...base, selection: { foundation: false, components: null } });
+    expect(noFoundation.outputs).toEqual([]);
+    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(first);
   });
 });
 
@@ -367,19 +441,19 @@ describe('writeBundleFiles with a selection', () => {
 
   it('writes only the selected component files and skips the foundation when deselected', () => {
     const bundle = twoComponents();
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
       selection: { foundation: false, components: ['card'] },
     });
 
-    expect(written).toEqual(['bundle.json', 'ai/components/card.yaml', 'manifest.json']);
+    expect(written).toEqual(['bundle.json', 'components/card.yaml', 'manifest.json']);
     expect(existsSync(join(outDir, 'ai/foundation.yaml'))).toBe(false);
-    expect(existsSync(join(outDir, 'ai/components/button.yaml'))).toBe(false);
-    expect(readFileSync(join(outDir, 'ai/components/card.yaml'), 'utf8')).toBe('card\n');
+    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(false);
+    expect(readFileSync(join(outDir, 'components/card.yaml'), 'utf8')).toBe('card\n');
   });
 
-  it('lists every artifact in the manifest, with a null aiPath for the ones not written, and records the selection', () => {
+  it('lists every artifact in the manifest, with a null path for the ones not written, and records the selection', () => {
     const bundle = twoComponents();
     writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
@@ -390,9 +464,9 @@ describe('writeBundleFiles with a selection', () => {
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     expect(manifest.selection).toEqual({ foundation: false, components: ['card'] });
     expect(manifest.artifacts).toEqual([
-      { kind: 'foundation', name: 'foundation', contentHash: 'f'.repeat(64), aiPath: null },
-      { kind: 'component', name: 'Button', contentHash: 'a'.repeat(64), aiPath: null },
-      { kind: 'component', name: 'Card', contentHash: 'b'.repeat(64), aiPath: 'ai/components/card.yaml' },
+      { kind: 'foundation', name: 'foundation', contentHash: 'f'.repeat(64), path: null },
+      { kind: 'component', name: 'Button', contentHash: 'a'.repeat(64), path: null },
+      { kind: 'component', name: 'Card', contentHash: 'b'.repeat(64), path: 'components/card.yaml' },
     ]);
   });
 
@@ -404,15 +478,15 @@ describe('writeBundleFiles with a selection', () => {
         { name: 'button', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
       ],
     });
-    const written = writeBundleFiles({
+    const { written } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
       selection: { foundation: true, components: ['button'] },
     });
 
     // Both share the name, so both are selected and both keep the slugs an unfiltered pull gives them.
-    expect(written).toContain('ai/components/button.yaml');
-    expect(written).toContain('ai/components/button-2.yaml');
+    expect(written).toContain('components/button.yaml');
+    expect(written).toContain('components/button-2.yaml');
   });
 
   it('records the default selection when none is given', () => {
