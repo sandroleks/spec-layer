@@ -30,6 +30,17 @@ export interface LibraryMeta {
   contentHash?: string;
   size: number;
   fileName: string | null;
+  /**
+   * The `free:<figmaHash>` identity present when this library was created (or
+   * last written by its owner), if any, kept alongside `licenseId` rather than
+   * instead of it. For a Pro-owned library it is a second, independent proof
+   * of ownership: the license key is the only other one, and it lives in
+   * per-device storage that "Remove license" (or a fresh device) can make
+   * disappear for good, with no way back in. Absent on libraries written
+   * before this field existed, or ones never published from a signed-in
+   * Figma session; `ownedMeta` backfills it opportunistically.
+   */
+  figmaOwnerHash?: string;
 }
 
 /**
@@ -106,14 +117,26 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
 /** The `X-Pull-Key` header, else null. Writes to a free-plan library must carry it. */
 const pullKeyOf = (req: Request): string | null => (req.headers.get('X-Pull-Key') ?? '').trim() || null;
 
+/** True when `pullKey` hashes to this library's current (or legacy) key record. */
+async function pullKeyMatches(store: LibraryStore, libraryId: string, meta: LibraryMeta, pullKey: string | null): Promise<boolean> {
+  if (pullKey === null) return false;
+  const keyHash = (await store.get(keyRecord(libraryId))) ?? meta.keyHash ?? null;
+  return keyHash !== null && sha256(pullKey) === keyHash;
+}
+
 /**
  * The library's meta when the caller owns it, else the error Response.
  *
  * A license bearer is a secret, so possession proves ownership on its own. A
  * Figma identity is a client-asserted header that anyone who knows the user id
- * can send, so for a library created on a free plan it proves nothing by
- * itself: the write must also carry the library's current pull key, which
- * only the publish that created it (or the last rotate) ever handed out.
+ * can send, so on its own it proves nothing: paired with the pull key — which
+ * only the publish that created the library (or the last rotate) ever handed
+ * out — it proves exactly as much as the license bearer does, and is checked
+ * the same way regardless of which identity originally created the library.
+ * That fallback matters most for a library created under a license key: the
+ * key is this library's *only* other proof of ownership, and it lives in
+ * per-device storage that "Remove license" (or a fresh device) can make
+ * disappear for good, with no way back in without it.
  */
 async function ownedMeta(
   store: LibraryStore, libraryId: string, owners: string[], pullKey: string | null,
@@ -121,14 +144,16 @@ async function ownedMeta(
   const metaRaw = await store.get(metaKey(libraryId));
   if (metaRaw === null) return json(404, { error: 'not_found' });
   const meta = JSON.parse(metaRaw) as LibraryMeta;
-  if (!owners.includes(meta.licenseId)) return json(403, { error: 'not_owner' });
-  if (meta.licenseId.startsWith('free:')) {
-    const keyHash = (await store.get(keyRecord(libraryId))) ?? meta.keyHash ?? null;
-    if (pullKey === null || keyHash === null || sha256(pullKey) !== keyHash) {
+  if (owners.includes(meta.licenseId)) {
+    if (meta.licenseId.startsWith('free:') && !(await pullKeyMatches(store, libraryId, meta, pullKey))) {
       return json(403, { error: 'not_owner' });
     }
+    return meta;
   }
-  return meta;
+  if (meta.figmaOwnerHash && owners.includes(meta.figmaOwnerHash) && (await pullKeyMatches(store, libraryId, meta, pullKey))) {
+    return meta;
+  }
+  return json(403, { error: 'not_owner' });
 }
 
 /**
@@ -287,6 +312,10 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     if (libraryId && meta) {
       const next: LibraryMeta = {
         ...meta, publishedAt, bundleHash, contentHash, size: bytes.byteLength, fileName,
+        // Plants the Figma-identity fallback on a library that predates it,
+        // the next time its real owner (who still holds whatever proved
+        // ownership just now) publishes with a Figma identity present.
+        ...(meta.figmaOwnerHash === undefined && caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
       };
       // Bundle first: meta must never describe a bundle that is not there yet.
       await store.put(bundleKey(libraryId), stored);
@@ -300,6 +329,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     const created: LibraryMeta = {
       licenseId: caller.tierIdentity, publishedAt, bundleHash, contentHash,
       size: bytes.byteLength, fileName,
+      ...(caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
     };
     await store.put(bundleKey(id), stored);
     await Promise.all([

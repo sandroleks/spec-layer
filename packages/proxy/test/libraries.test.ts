@@ -354,6 +354,59 @@ describe('handlePublish', () => {
     expect(await res.json()).toEqual({ error: 'not_found' });
   });
 
+  it('lets the creating Figma identity update a Pro-created library once the license key is gone, if it still holds the pull key', async () => {
+    const d = deps();
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    const { libraryId, pullKey } = await first.json() as { libraryId: string; pullKey: string };
+
+    // No bearer at all: the license key was removed from the plugin (or this
+    // is a device that never had it), exactly the "Remove license" trap.
+    const changed = { ...BUNDLE, fileName: 'Renamed' };
+    const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...figma(), ...pull(pullKey) }), d);
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses that same recovery without the pull key, even with the right Figma id', async () => {
+    const d = deps();
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    const { libraryId } = await first.json() as { libraryId: string };
+
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, figma()), d);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'not_owner' });
+  });
+
+  it('refuses that recovery for a Pro library published with no Figma identity to fall back on', async () => {
+    const d = deps();
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    const { libraryId, pullKey } = await first.json() as { libraryId: string; pullKey: string };
+
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, { ...figma(), ...pull(pullKey) }), d);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'not_owner' });
+  });
+
+  it('backfills the Figma fallback onto a library that predates it, the next time its real owner publishes', async () => {
+    const d = deps();
+    await seedPro(d);
+    // Simulate a library created before figmaOwnerHash existed: no bearer's
+    // Figma header on the create, so meta starts with the field unset.
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    const { libraryId } = await first.json() as { libraryId: string };
+    const beforeMeta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`))!) as LibraryMeta;
+    expect(beforeMeta.figmaOwnerHash).toBeUndefined();
+
+    // The owner publishes again while they still hold the key, this time
+    // with a Figma identity on the request.
+    const changed = { ...BUNDLE, fileName: 'Renamed' };
+    await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
+    const afterMeta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`))!) as LibraryMeta;
+    expect(afterMeta.figmaOwnerHash).toBe(`free:${hashFigmaId('u1', 'salt')}`);
+  });
+
   it('rejects a malformed bundle', async () => {
     const d = deps();
     await seedPro(d);
@@ -738,6 +791,19 @@ describe('handleRotate', () => {
     const res = await handleRotate(rotateReq(libraryId), d, libraryId);
     expect(res.status).toBe(200);
     expect((await res.json() as { pullKey: string }).pullKey).toMatch(PULL_KEY_RE);
+  });
+
+  it('lets the creating Figma identity rotate a Pro-created library with no license key at all, using the old pull key', async () => {
+    const d = deps();
+    await seedPro(d);
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    const { libraryId, pullKey } = await created.json() as { libraryId: string; pullKey: string };
+
+    const res = await handleRotate(rotateReq(libraryId, { ...figma(), ...pull(pullKey) }), d, libraryId);
+    expect(res.status).toBe(200);
+    const { pullKey: rotated } = await res.json() as { pullKey: string };
+    expect(rotated).toMatch(PULL_KEY_RE);
+    expect(rotated).not.toBe(pullKey);
   });
 
   it('rotates for a free owner holding the key and refuses a stranger', async () => {

@@ -528,6 +528,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`spec-layer pull` CSS** escapes `*/` and line breaks in the collection and
   mode names it writes into comments, so a Figma name cannot close the comment
   and inject a rule into `tokens.css`.
+- **Publish/rotate** no longer lock a Pro-created library's owner out for good
+  when the license key that made it is gone (removed in Settings, or a device
+  that never had it). The key was that library's only proof of ownership;
+  `LibraryMeta` now also records the Figma identity present at creation
+  (`figmaOwnerHash`), and `ownedMeta` accepts it paired with the pull key, the
+  same bar a free-plan library already accepts. A library published before
+  this existed gets the field backfilled the next time its real owner
+  publishes with a Figma identity present.
 - **Publish for developers** no longer carries a header sized for a second
   line it does not have. Its title sat 34px above the first section where
   every other screen puts it 15px, which had been true since the screen
