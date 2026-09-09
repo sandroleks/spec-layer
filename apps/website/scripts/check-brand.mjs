@@ -36,9 +36,10 @@ async function inspectCss(path) {
     if (target.endsWith('.css')) await inspectCss(target);
   }
 }
-await inspectCss(resolve(root, 'styles.css'));
+await inspectCss(resolve(root, 'styles.bundle.css'));
+assert.ok((await text(resolve(root, 'styles.bundle.css'))).includes(await text(resolve(root, 'brand/tokens.css'))), 'Bundled CSS must contain the exact shared palette');
 await inspectCss(resolve(root, 'docs.css'));
-assert.ok(visited.has(resolve(root, 'brand/tokens.css')), 'The website must actually load the shared palette');
+assert.doesNotMatch(await text(resolve(root, 'styles.bundle.css')), /@import\s/, 'Bundled styles must not create import waterfalls');
 async function checkHeads(path) {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const file = resolve(path, entry.name);

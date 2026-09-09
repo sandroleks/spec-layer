@@ -47,5 +47,21 @@ for (const path of ['/not-a-page', '/docs/not-a-page/']) {
   results.push({ path, status: response.status, noindex: true });
 }
 const report = { date: new Date().toISOString(), origin, mode: site.mode, results };
+if (origin === site.origin) {
+  for (const host of ['http://spec-layer.com', 'http://www.spec-layer.com', 'https://www.spec-layer.com', 'https://speclayer-landing.pages.dev']) {
+    for (const path of ['/', '/docs/cli/?audit=1']) {
+      const response = await fetch(host + path, { redirect: 'manual' });
+      assert.equal(response.status, 301, host + path);
+      assert.equal(response.headers.get('location'), site.origin + path, host + path);
+      results.push({ url: host + path, status: response.status, location: response.headers.get('location') });
+    }
+  }
+  const robots = await (await fetch(origin + '/robots.txt')).text();
+  const expected = await readFile(new URL('../content/robots.production.txt', import.meta.url), 'utf8');
+  const groups = text => [...text.matchAll(/^User-agent: .+$/gm)].map(match => match[0]).sort();
+  assert.deepEqual(groups(robots), groups(expected), 'Delivered crawler groups must match the preserved policy without duplicates');
+  for (const directive of ['Content-Signal: search=yes,ai-train=no,use=reference', 'Allow: /']) assert.ok(robots.includes(directive));
+  results.push({ path: '/robots.txt', crawlerPolicyPreserved: true, duplicateGroups: false });
+}
 if (process.env.HTTP_REPORT) await writeFile(process.env.HTTP_REPORT, JSON.stringify(report, null, 2) + '\n');
 console.log(`Verified ${results.length} delivered responses (${site.mode}): canonical pages, redirects, schemas, assets and errors.`);

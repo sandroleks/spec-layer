@@ -1,3 +1,4 @@
+import { optimizeAssets } from './scripts/optimize-assets.mjs';
 import { generateDocs } from './scripts/docs.mjs';
 import { generateSeo, redirects } from './scripts/seo.mjs';
 import { site } from './site.config.mjs';
@@ -8,8 +9,9 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 const root = resolve(import.meta.dirname, 'public');
-const types = { '.html':'text/html; charset=utf-8', '.css':'text/css', '.js':'text/javascript', '.svg':'image/svg+xml', '.png':'image/png', '.yaml':'text/yaml', '.ttf':'font/ttf', '.txt':'text/plain; charset=utf-8', '.json':'application/json; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.xml':'application/xml; charset=utf-8' };
+const types = { '.html':'text/html; charset=utf-8', '.css':'text/css', '.js':'text/javascript', '.svg':'image/svg+xml', '.png':'image/png', '.webp':'image/webp', '.yaml':'text/yaml', '.ttf':'font/ttf', '.txt':'text/plain; charset=utf-8', '.json':'application/json; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.xml':'application/xml; charset=utf-8' };
 await generateBrand();
+await optimizeAssets();
 await generateDocs();
 await generateSeo();
 await generatePages();

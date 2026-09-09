@@ -1,9 +1,11 @@
+import { optimizeAssets } from './scripts/optimize-assets.mjs';
 import { generateDocs } from './scripts/docs.mjs';
 import { generateSeo } from './scripts/seo.mjs';
 import { generatePages } from './scripts/pages.mjs';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { generateBrand } from './scripts/brand.mjs';
 await generateBrand();
+await optimizeAssets();
 await generateDocs();
 await generateSeo();
 await generatePages();

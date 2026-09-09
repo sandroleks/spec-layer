@@ -9,8 +9,9 @@ export const site = {
   origin: 'https://spec-layer.com',
   mode,
   indexable: mode === 'production',
-  homeTitle: 'Spec Layer | Figma design system documentation',
-  homeDescription: 'Document Figma components, variables, and styles. Share component YAML and DTCG design tokens with developers and AI coding agents through Spec Layer.',
+  cloudflareManagedRobots: true,
+  homeTitle: 'Figma design system documentation | Spec Layer',
+  homeDescription: 'Generate design system docs from Figma components, variables, and styles. Share specs and design tokens with your team and AI coding agents. Start free.',
   image: '/social/spec-layer.png',
   imageAlt: 'Spec Layer. Your design system. Ready to build. Documentation and context from Figma.',
 };

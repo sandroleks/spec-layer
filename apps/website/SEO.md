@@ -9,7 +9,7 @@ The final canonical origin is `https://spec-layer.com`, configured in `site.conf
 - Open Graph and large-image social card tags with absolute image URLs, dimensions, and alternative text.
 - `WebSite` identity on the homepage, `WebPage` data on content pages, and documentation breadcrumbs. No fabricated ratings, offers, publication dates, or search actions.
 - `sitemap.xml` with the homepage, six canonical documentation pages, and five support/policy pages. New registered pages are included automatically; aliases, downloads, and the error page are excluded. No synthetic last-modified dates.
-- `robots.txt`, preserving the existing domain's crawler preferences. Production adds the sitemap URL. Keep Cloudflare's managed robots settings aligned with `content/robots.production.txt`.
+- `robots.txt`, preserving the existing domain's crawler preferences. With `cloudflareManagedRobots: true`, production emits the sitemap and Cloudflare supplies crawler groups once. Preview retains the source groups. If moving away from Cloudflare's managed robots service, set this option to false to emit `content/robots.production.txt` in production too. Live checks verify that the delivered policy stays aligned.
 - Cloudflare-compatible `_redirects` for old documentation links and duplicate index URLs, plus `_headers` for the selected indexing mode. The local server applies the same redirect map.
 - A `404.html` with `noindex`, which prevents a missing route from being treated as a successful homepage on Cloudflare Pages.
 
@@ -33,7 +33,17 @@ The current Sites static preview does not apply the uploaded `_redirects` or `_h
 
 ## Social artwork
 
-`public/social/spec-layer.png` is a committed 1200 × 630 image using the site's typography and palette. `scripts/social.mjs` reproduces it using the existing monorepo `sharp` installation and the bundled Manrope font. Run `npm run social:render` from the full monorepo to update it; standalone website builds use the committed PNG and need no image dependency.
+`public/social/spec-layer.png` is a committed 1200 × 630 image using the site's typography and palette. `scripts/social.mjs` reproduces it using the existing monorepo `sharp` installation and the bundled Manrope font. Run `npm run social:render` from the full monorepo to update it. The gallery uses original PNG files without image processing.
+
+## Delivery improvements and search submission — 8 September 2026
+
+The build combines the shared tokens, brand CSS, and website CSS into `styles.bundle.css`, eliminating chained CSS imports. Source branding and fonts stay unchanged; the shared heading font is preloaded. Edit source styles rather than the generated bundle.
+
+The gallery uses the user's original PNGs, including their embedded transparency, corners, and shadows, for both display and full-size links on every viewport. Do not generate resized versions, crop, recompress, or substitute other captures. The original source folder is `screenshots/updated media/website gallery/`; copies under `public/screenshots/` must remain byte-identical. Builds remove the retired responsive-image directory and optimize only stylesheet delivery.
+
+The production Pages alias redirects to the custom domain through the account-level Bulk Redirect rule `Spec Layer production alias to custom domain`, using the list `spec_layer_production_domain`. It preserves paths and query strings and excludes deployment subdomains; Pages `_redirects` cannot define host-level redirects. Cloudflare's active www rule matches `http.host eq "www.spec-layer.com"`, redirects dynamically to `concat("https://spec-layer.com", http.request.uri.path)`, and preserves query strings for both HTTP and HTTPS requests. The live HTTP check covers all host and protocol variants.
+
+Search Console domain verification was already complete. The sitemap was submitted and processed successfully on 8 September, with 12 discovered pages. The initial performance baseline contained one impression and no query rows; content expansion should use meaningful query evidence once available. See the dated SEO review for release validation and indexing requests.
 
 ## URL preservation and launch handoff
 

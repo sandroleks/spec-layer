@@ -1,0 +1,26 @@
+{
+  "publishedAt": "2026-09-08T15:10:44.756277+00:00",
+  "url": "https://spec-layer.com",
+  "deployment": {
+    "Id": "bafbd7db-4925-4743-9730-a138ccfbedc1",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "5fc6d53",
+    "Deployment": "https://bafbd7db.speclayer-landing.pages.dev",
+    "Status": "40 seconds ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/bafbd7db-4925-4743-9730-a138ccfbedc1"
+  },
+  "rollbackDeployment": {
+    "Id": "8bb47ac0-c46c-4616-a5c2-803144745b62",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "5fc6d53",
+    "Deployment": "https://8bb47ac0.speclayer-landing.pages.dev",
+    "Status": "31 minutes ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/8bb47ac0-c46c-4616-a5c2-803144745b62"
+  },
+  "sourceIncludesUncommittedWebsiteChanges": true,
+  "sourcePatchSha256": "c8326f428b078df2a820bf471c7a13795ca3467edc24b886de8b7cd7f8713645",
+  "browserScenariosPassed": 44,
+  "httpChecksPassed": 50
+}
