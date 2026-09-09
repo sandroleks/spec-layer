@@ -7,7 +7,7 @@ import { cssOutput, foundationDtcg, type NameCase } from '../../../src/index';
 import { syntheticArtifact } from '../dtcgFixture';
 
 const GOLDEN_ROOT = fileURLToPath(new URL('../../fixtures/v5/synthetic-foundation-css/', import.meta.url));
-const HEADER = { libraryId: 'lib_synthetic', contentHash: 'sha256:synthetic' };
+const HEADER = { libraryId: 'lib_synthetic', contentHash: 'sha256:synthetic', platform: 'web', format: 'css' };
 
 function files(nameCase: NameCase): Record<string, string> {
   const out = cssOutput(foundationDtcg(syntheticArtifact()), HEADER, { case: nameCase });

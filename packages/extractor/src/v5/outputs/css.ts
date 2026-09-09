@@ -27,7 +27,7 @@ export interface CssOutputOptions {
   modes?: Record<string, string>;
 }
 export interface CssOutput { text: string; map: Record<string, OutputMapEntry>; report: OutputReportEntry[] }
-export interface OutputHeader { libraryId: string; contentHash: string }
+export interface OutputHeader { libraryId: string; contentHash: string; platform: string; format: string }
 
 export const CSS_DEFAULTS: { case: NameCase; root: string; modeSelector: string } = {
   case: 'kebab', root: ':root', modeSelector: '[data-theme="{mode}"]',
@@ -224,16 +224,32 @@ const TEXT_MEMBERS: ReadonlyArray<readonly [key: string, extKey: string, table: 
   ['textDecoration', 'textDecoration', TEXT_DECORATION],
 ];
 /**
- * Every DTCG path segment a typography leaf may register a name under. These
- * are ordinary paths as far as `resolveNames` is concerned: a member path
- * that collides with a token path omits both and reports `name_collision`,
- * exactly like two tokens would. The style's own path is never registered;
- * nothing is ever emitted under it.
+ * The DTCG path segments one typography leaf registers a name under: one per
+ * member it will actually emit, given its own `$value` and `$extensions` --
+ * the same conditions `typographyDecls` checks per member, gathered once so a
+ * path is only ever registered for a member the style would emit. These are
+ * ordinary paths as far as `resolveNames` is concerned: a member path that
+ * collides with a token path omits both and reports `name_collision`, exactly
+ * like two tokens would. The style's own path is never registered; nothing is
+ * ever emitted under it. A key absent here is never emitted, so reserving a
+ * name for it anyway would only ever waste a name or, worse, collide with an
+ * unrelated token that could otherwise have used it.
  */
-const TYPOGRAPHY_MEMBER_KEYS: readonly string[] = [
-  ...TYPOGRAPHY_MEMBERS.map(([key]) => key),
-  ...TEXT_MEMBERS.map(([key]) => key),
-];
+function typographyMemberKeys(value: DtcgTree, ext: DtcgTree): string[] {
+  const keys: string[] = [];
+  for (const [key] of TYPOGRAPHY_MEMBERS) {
+    if (key in value) keys.push(key);
+  }
+  for (const key of ['lineHeight', 'letterSpacing'] as const) {
+    if (key in value) continue; // already covered by the loop above
+    const d = asRecord(ext[key]);
+    if (d && typeof d.value === 'number' && typeof d.unit === 'string') keys.push(key);
+  }
+  for (const [key, extKey] of TEXT_MEMBERS) {
+    if (typeof ext[extKey] === 'string') keys.push(key);
+  }
+  return keys;
+}
 
 function converted(ctx: Ctx, property: string, from: DtcgTree, to: string): void {
   report(ctx, {
@@ -347,7 +363,7 @@ function shadowDecl(ctx: Ctx, leaf: Leaf, name: string): string | null {
 // ---------------------------------------------------------------------------
 
 function headerText(header: OutputHeader, nameCase: NameCase): string {
-  return `${CSS_HEADER_PREFIX} from library ${header.libraryId}, foundation ${header.contentHash}, web/css/${nameCase}.\n`
+  return `${CSS_HEADER_PREFIX} from library ${header.libraryId}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.\n`
     + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
 }
 
@@ -419,14 +435,18 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
   }
 
   // A typography leaf never registers its own path (nothing is emitted
-  // under it); it registers one path per member instead, so a member name
-  // that collides with a token's name is caught by resolveNames like any
-  // other collision. A shadow leaf, like a plain token, registers its path.
+  // under it); it registers one path per member it will actually emit
+  // instead, so a member name that collides with a token's name is caught by
+  // resolveNames like any other collision, and an absent member never
+  // reserves (or contests) a name it was never going to use. A shadow leaf,
+  // like a plain token, registers its path.
   const candidatePaths = new Set<string>();
   for (const leaves of leavesByFile.values()) {
     for (const leaf of leaves) {
       if (leaf.type === 'typography') {
-        for (const key of TYPOGRAPHY_MEMBER_KEYS) candidatePaths.add(`${leaf.path}.${key}`);
+        const value = asRecord(leaf.value) ?? {};
+        const ext = leaf.ext ?? {};
+        for (const key of typographyMemberKeys(value, ext)) candidatePaths.add(`${leaf.path}.${key}`);
       } else {
         candidatePaths.add(leaf.path);
       }
@@ -448,6 +468,10 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
   // that), so the pass where `alive` finally stops shrinking still carries a
   // fresh, complete set of omission reports: nothing needs to be carried
   // over from an earlier pass.
+  // Pruning `alive` to a fixed point is what guarantees every var() this file
+  // emits has a declaration somewhere in the file; it says nothing about
+  // which selector block that declaration lands in, so a reference across
+  // blocks (root reading a mode, or the reverse) is still valid CSS.
   let alive = new Set(names.keys());
   let pass = emit(alive);
   for (;;) {

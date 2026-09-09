@@ -4,7 +4,7 @@ import {
 } from '../../../src/index';
 import { syntheticArtifact } from '../dtcgFixture';
 
-const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc' };
+const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc', platform: 'web', format: 'css' };
 
 const color = (hex: string, alpha = 1) => ({
   $type: 'color', $value: { colorSpace: 'srgb', components: [0, 0, 0], alpha, hex },
@@ -291,6 +291,36 @@ describe('cssOutput names match declared properties', () => {
     expect(map).not.toHaveProperty('Typography styles.Body.fontSize');
     const collisions = report.filter((r) => r.code === 'name_collision');
     expect(collisions.map((r) => r.path).sort()).toEqual(['Typography styles.Body.font.size', 'Typography styles.Body.fontSize']);
+  });
+
+  it('registers a typography member path only when the leaf would emit it', () => {
+    // Cap carries only fontSize, so it never emits fontFamily; a real token at
+    // Cap.font.family derives the identical kebab name ("font"+"family" split
+    // the same way as "fontFamily") but must not collide with a member Cap
+    // was never going to declare.
+    const exp: DtcgExport = {
+      files: {
+        'base.default.json': {
+          'Typography styles': { Cap: { font: { family: { $type: 'fontFamily', $value: 'Georgia' } } } },
+        },
+        'styles.typography.json': {
+          'Typography styles': { Cap: { $type: 'typography', $value: { fontSize: { value: 12, unit: 'px' } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { 'Typography styles': { sources: [{ $ref: 'base.default.json' }, { $ref: 'styles.typography.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Typography styles' }],
+      },
+      meta: {},
+      report: [],
+    };
+    const { text, map, report } = cssOutput(exp, HEADER);
+    expect(map).toHaveProperty('Typography styles.Cap.font.family');
+    expect(map).not.toHaveProperty('Typography styles.Cap.fontFamily');
+    expect(text).toContain('  --typography-styles-cap-font-family: "Georgia";');
+    expect(report.some((r) => r.code === 'name_collision')).toBe(false);
   });
 });
 

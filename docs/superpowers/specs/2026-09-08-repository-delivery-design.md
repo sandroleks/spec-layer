@@ -192,7 +192,10 @@ file changes only when the design data or the output options change.
 `manifest.json` records the resolved `outputs` beside `dtcg`. A change to
 either makes the next `pull` fetch and re-project even when the bundle has
 not moved, the same freshness rule the DTCG block has today. `status`
-compares the bundle hash only, as it does now.
+compares the bundle hash only, as it does now. A pull also re-fetches and
+re-projects when any output's deliverable or its record map is missing on
+disk, so a deleted file comes back on the next pull rather than being
+reported up to date.
 
 ### 4.3 Names
 

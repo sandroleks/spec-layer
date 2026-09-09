@@ -310,7 +310,9 @@ the report are not token files; exclude them from token globs.
 ## Token files for your code
 
 `pull` also writes a file your build compiles, one per platform output. For
-the web that is a CSS file of custom properties:
+the web that is a CSS file of custom properties. The file is written only
+when that pull writes the Foundation; with `--only components` it is left
+exactly as it was, and `list` shows it as `not written`.
 
 ```css
 :root {
