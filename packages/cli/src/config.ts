@@ -8,10 +8,11 @@ import { parseOutput, type OutputConfig } from './outputs';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
+export const DEFAULT_COMPONENT_SPECS_DIR = 'component-specs';
 const CONFIG_NAME = 'speclayer.json';
 
 export interface CliConfig {
-  libraryId?: string; outDir?: string; include?: Selection; dtcg?: DtcgOptions;
+  libraryId?: string; outDir?: string; componentSpecsDir?: string; include?: Selection; dtcg?: DtcgOptions;
   platforms?: Platform[]; outputs?: OutputConfig[];
 }
 
@@ -51,6 +52,12 @@ function parseDtcg(value: unknown): DtcgOptions {
   return out;
 }
 
+/** `componentSpecsDir` is the visible directory the component briefs are written to, relative to the working directory. */
+function parseComponentSpecsDir(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error('speclayer.json "componentSpecsDir" must be a non-empty string.');
+  return value;
+}
+
 /** `platforms` names the targets this repository builds for; pull and skill read it before detecting. */
 function parsePlatforms(value: unknown): Platform[] {
   if (!Array.isArray(value) || !value.every((p) => typeof p === 'string' && isPlatform(p))) {
@@ -87,6 +94,7 @@ export function readConfig(cwd: string): CliConfig | null {
   return {
     ...(typeof record.libraryId === 'string' ? { libraryId: record.libraryId } : {}),
     ...(typeof record.outDir === 'string' ? { outDir: record.outDir } : {}),
+    ...(record.componentSpecsDir !== undefined ? { componentSpecsDir: parseComponentSpecsDir(record.componentSpecsDir) } : {}),
     ...(record.include !== undefined ? { include: parseInclude(record.include) } : {}),
     ...(record.dtcg !== undefined ? { dtcg: parseDtcg(record.dtcg) } : {}),
     ...(record.platforms !== undefined ? { platforms: parsePlatforms(record.platforms) } : {}),
@@ -97,13 +105,14 @@ export function readConfig(cwd: string): CliConfig | null {
 export function writeConfig(
   cwd: string,
   config: {
-    libraryId: string; outDir: string; include?: Selection; dtcg?: DtcgOptions;
+    libraryId: string; outDir: string; componentSpecsDir?: string; include?: Selection; dtcg?: DtcgOptions;
     platforms?: Platform[]; outputs?: OutputConfig[];
   },
 ): void {
   const body = {
     libraryId: config.libraryId,
     outDir: config.outDir,
+    ...(config.componentSpecsDir ? { componentSpecsDir: config.componentSpecsDir } : {}),
     ...(config.include ? { include: config.include } : {}),
     ...(config.dtcg ? { dtcg: config.dtcg } : {}),
     ...(config.platforms && config.platforms.length > 0 ? { platforms: config.platforms } : {}),
@@ -114,6 +123,8 @@ export function writeConfig(
 
 export interface ResolvedOptions {
   libraryId: string | null; outDir: string; api: string; key: string | null;
+  /** Where component briefs are written; the config's value or the default. */
+  componentSpecsDir: string;
   /** The config's include block, when it has one, for pull to fall back on. */
   include?: Selection;
   /** The config's dtcg block, when it has one, for pull to pass through to writeBundleFiles. */
@@ -162,6 +173,7 @@ export function resolveOptions(
   return {
     libraryId,
     outDir,
+    componentSpecsDir: config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR,
     // A trailing slash would build "//v1/..." paths the proxy router 404s on.
     api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
     key: supplied ?? storedKey,

@@ -98,7 +98,7 @@ describe('runInit', () => {
     const code = runInit(cwd, { id: 'lib_abc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer' });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
     expect(io.outLines.join('\n')).toMatch(/spec-layer setup/);
   });
 
@@ -119,10 +119,10 @@ describe('runInit', () => {
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
+      outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
-    expect(io.outLines).toContain('Token file for web: spec-layer/tokens.css (css, kebab names), written by the next pull.');
+    expect(io.outLines).toContain('Token files for web: tokens/ (css, kebab names), written by the next pull.');
   });
 
   it('--platform ios names the missing format and writes no output entry', () => {
@@ -142,7 +142,7 @@ describe('runInit', () => {
     const code = runInit(cwd, { id: 'lib_abc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['ios'] });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
     expect(io.outLines).toContain('No token file exists yet for ios: no output format is available for that platform. Web has css.');
   });
@@ -953,7 +953,7 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: rotated }, {}, io, stub200())).toBe(0);
 
     expect(readConfig(cwd)).toEqual({
-      libraryId: LIB, outDir: 'design-context',
+      libraryId: LIB, outDir: 'design-context', componentSpecsDir: 'component-specs',
       include: { foundation: true, components: ['Button'] },
     });
     expect(io.outLines.join('\n')).toContain('design-context');
@@ -971,7 +971,7 @@ describe('runSetup', () => {
     )).toBe(0);
 
     expect(readConfig(cwd)).toEqual({
-      libraryId: LIB, outDir: 'other', include: { foundation: true, components: [] },
+      libraryId: LIB, outDir: 'other', componentSpecsDir: 'component-specs', include: { foundation: true, components: [] },
     });
   });
 

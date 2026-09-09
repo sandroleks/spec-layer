@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, type CliConfig, type ResolvedOptions,
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
 import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
@@ -131,11 +131,11 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, {
-    libraryId: flags.id, outDir, ...(include ? { include } : {}),
+    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR, ...(include ? { include } : {}),
     ...(platforms.length > 0 ? { platforms } : {}), ...(outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
-  for (const o of outputs) io.out(`Token file for ${o.platform}: ${o.path} (${o.format}, ${o.case} names), written by the next pull.`);
+  for (const o of outputs) io.out(`Token files for ${o.platform}: ${o.path}/ (${o.format}, ${o.case} names), written by the next pull.`);
   // `source` is 'config' only when a config was passed in, and init always
   // passes null, so 'flag' and 'detected' are the only sources worth naming
   // here: a platform init named or found on disk deserves the same note as
@@ -250,6 +250,7 @@ export async function runSetup(
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
+  const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
   // Platforms follow the same rule as include: a flag wins, else what the
@@ -258,7 +259,7 @@ export async function runSetup(
   const { platforms } = resolvePlatforms(cwd, fromFlags, existing);
   const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
-    libraryId: flags.id, outDir,
+    libraryId: flags.id, outDir, componentSpecsDir,
     ...(keptInclude ? { include: keptInclude } : {}),
     ...(keptDtcg ? { dtcg: keptDtcg } : {}),
     ...(platforms.length > 0 ? { platforms } : {}),
