@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,9 @@ function realFoundation() {
   });
   return { ai: '{"version":"2025.10"}\n', artifact };
 }
+
+/** A component brief as the plugin publishes it: the marker lines first, then whatever body. */
+const brief = (body: string): string => `spec_layer:\n  kind: component\n${body}`;
 
 // Controls a single injected failure for the atomicity test below. Node's `node:fs`
 // module namespace is not configurable under ESM, so `vi.spyOn(fs, 'writeFileSync')`
@@ -53,11 +56,21 @@ function makeBundle(overrides: Partial<BundleV1> = {}): BundleV1 {
       artifact: { spec_layer: { export: { content_hash: 'f'.repeat(64) } } },
     },
     components: [
-      { name: 'Button', ai: 'button: yes\n', artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
+      { name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
     ],
     ...overrides,
   };
 }
+
+// twoComponents() carries the stub foundation from makeBundle(), which fails
+// validateLevel1 (it is only a content-hash stub, not a real v5 artifact), so
+// every writeBundleFiles call using it must deselect the foundation.
+const twoComponents = () => makeBundle({
+  components: [
+    { name: 'Button', ai: brief('button\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+    { name: 'Card', ai: brief('card\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+  ],
+});
 
 describe('slugify', () => {
   it('lowercases and hyphenates', () => {
@@ -122,7 +135,7 @@ describe('writeBundleFiles', () => {
     expect(written).toContain('tokens/resolver.json');
     expect(written).toContain('tokens/spec-layer.meta.json');
     expect(written).toContain('tokens/report.json');
-    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     expect(manifest.libraryId).toBe('lib-1');
@@ -130,13 +143,14 @@ describe('writeBundleFiles', () => {
     expect(manifest.bundleHash).toBe('h'.repeat(64));
     expect(manifest.pluginVersion).toBe('5.0.0');
     expect(manifest.extractorVersion).toBe('2');
+    expect(manifest.componentSpecsDir).toBe('component-specs');
     expect(manifest.artifacts).toEqual([
       {
         kind: 'foundation', name: 'foundation',
         contentHash: bundle.foundation!.artifact.spec_layer.export.content_hash,
-        path: 'tokens/resolver.json',
+        path: '.speclayer/tokens/resolver.json',
       },
-      { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), path: 'components/button.yaml' },
+      { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), path: 'component-specs/button.yaml' },
     ]);
   });
 
@@ -144,25 +158,25 @@ describe('writeBundleFiles', () => {
     const bundle = makeBundle({
       foundation: null,
       components: [
-        { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-        { name: 'button', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+        { name: 'Button', ai: brief('first\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+        { name: 'button', ai: brief('second\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
       ],
     });
     const raw = JSON.stringify(bundle);
-    const { written } = writeBundleFiles({
+    const { componentSpecs } = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
 
-    expect(written).toContain('components/button.yaml');
-    expect(written).toContain('components/button-2.yaml');
-    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe('first\n');
-    expect(readFileSync(join(outDir, 'components/button-2.yaml'), 'utf8')).toBe('second\n');
+    expect(componentSpecs.files).toContain('button.yaml');
+    expect(componentSpecs.files).toContain('button-2.yaml');
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(brief('first\n'));
+    expect(readFileSync(join(tmpDir, 'component-specs/button-2.yaml'), 'utf8')).toBe(brief('second\n'));
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     expect(manifest.artifacts.map((a) => a.path)).toEqual([
-      'components/button.yaml',
-      'components/button-2.yaml',
+      'component-specs/button.yaml',
+      'component-specs/button-2.yaml',
     ]);
   });
 
@@ -174,36 +188,35 @@ describe('writeBundleFiles', () => {
     const bundle = makeBundle({
       foundation: null,
       components: [
-        { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-        { name: 'Button 2', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
-        { name: 'button', ai: 'third\n', artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
+        { name: 'Button', ai: brief('first\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+        { name: 'Button 2', ai: brief('second\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+        { name: 'button', ai: brief('third\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
       ],
     });
     const raw = JSON.stringify(bundle);
-    const { written } = writeBundleFiles({
+    const { componentSpecs } = writeBundleFiles({
       outDir, cwd: tmpDir, raw, bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
 
-    const componentPaths = written.filter((p) => p.startsWith('components/'));
-    expect(new Set(componentPaths).size).toBe(3);
-    expect(componentPaths).toEqual([
-      'components/button.yaml',
-      'components/button-2.yaml',
-      'components/button-3.yaml',
+    expect(new Set(componentSpecs.files).size).toBe(3);
+    expect(componentSpecs.files).toEqual([
+      'button.yaml',
+      'button-2.yaml',
+      'button-3.yaml',
     ]);
 
-    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe('first\n');
-    expect(readFileSync(join(outDir, 'components/button-2.yaml'), 'utf8')).toBe('second\n');
-    expect(readFileSync(join(outDir, 'components/button-3.yaml'), 'utf8')).toBe('third\n');
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(brief('first\n'));
+    expect(readFileSync(join(tmpDir, 'component-specs/button-2.yaml'), 'utf8')).toBe(brief('second\n'));
+    expect(readFileSync(join(tmpDir, 'component-specs/button-3.yaml'), 'utf8')).toBe(brief('third\n'));
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
     const componentAiPaths = manifest.artifacts.filter((a) => a.kind === 'component').map((a) => a.path);
     expect(new Set(componentAiPaths).size).toBe(3);
     expect(componentAiPaths).toEqual([
-      'components/button.yaml',
-      'components/button-2.yaml',
-      'components/button-3.yaml',
+      'component-specs/button.yaml',
+      'component-specs/button-2.yaml',
+      'component-specs/button-3.yaml',
     ]);
   });
 
@@ -213,13 +226,13 @@ describe('writeBundleFiles', () => {
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
-    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(true);
+    expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(true);
     expect(existsSync(`${outDir}.partial`)).toBe(false);
 
     const bundle2 = makeBundle({
       foundation: null,
       components: [
-        { name: 'Card', ai: 'card: yes\n', artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
+        { name: 'Card', ai: brief('card: yes\n'), artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
       ],
     });
     writeBundleFiles({
@@ -228,10 +241,10 @@ describe('writeBundleFiles', () => {
     });
 
     // Old files are gone.
-    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(false);
+    expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(false);
     expect(existsSync(join(outDir, 'ai/foundation.yaml'))).toBe(false);
     // New files are present.
-    expect(existsSync(join(outDir, 'components/card.yaml'))).toBe(true);
+    expect(existsSync(join(tmpDir, 'component-specs/card.yaml'))).toBe(true);
     // No staging dir left behind.
     expect(existsSync(`${outDir}.partial`)).toBe(false);
   });
@@ -272,7 +285,7 @@ describe('writeBundleFiles', () => {
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle1), bundle: bundle1,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
-    const originalButtonContent = readFileSync(join(outDir, 'components/button.yaml'), 'utf8');
+    const originalButtonContent = readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8');
     const originalResolverContent = readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8');
 
     // Force the mid-staging write of tokens/resolver.json to fail, simulating a disk
@@ -285,7 +298,7 @@ describe('writeBundleFiles', () => {
     const bundle2 = makeBundle({
       foundation: realFoundation(),
       components: [
-        { name: 'Card', ai: 'card: yes\n', artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
+        { name: 'Card', ai: brief('card: yes\n'), artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
       ],
     });
 
@@ -302,11 +315,14 @@ describe('writeBundleFiles', () => {
     // Staging directory was cleaned up by the catch branch.
     expect(existsSync(`${outDir}.partial`)).toBe(false);
     // The prior successful outDir is untouched: neither deleted nor half-overwritten.
-    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(true);
-    expect(readFileSync(join(outDir, 'components/button.yaml'), 'utf8')).toBe(originalButtonContent);
+    // The visible component-specs/ directory was never touched either, because the
+    // failure happens while staging the swapped record, before the visible
+    // directories are written.
+    expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(true);
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(originalButtonContent);
     expect(existsSync(join(outDir, 'tokens/resolver.json'))).toBe(true);
     expect(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8')).toBe(originalResolverContent);
-    expect(existsSync(join(outDir, 'components/card.yaml'))).toBe(false);
+    expect(existsSync(join(tmpDir, 'component-specs/card.yaml'))).toBe(false);
   });
 
   it('writes the foundation as a tokens/ directory projected from the canonical artifact', () => {
@@ -323,7 +339,7 @@ describe('writeBundleFiles', () => {
     const resolver = JSON.parse(readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8'));
     expect(resolver.version).toBe('2025.10');
     const manifest = readManifest(outDir)!;
-    expect(manifest.artifacts.find((a) => a.kind === 'foundation')?.path).toBe('tokens/resolver.json');
+    expect(manifest.artifacts.find((a) => a.kind === 'foundation')?.path).toBe('.speclayer/tokens/resolver.json');
   });
 
   it('honours dtcg options from config', () => {
@@ -372,50 +388,116 @@ describe('writeBundleFiles', () => {
     expect(existsSync(outDir)).toBe(false);
   });
 
-  it('writes the output record into outDir and the deliverable in place, and returns both', () => {
+  const WEB = { platform: 'web' as const, format: 'css' as const, path: 'tokens', case: 'kebab' as const };
+
+  it('writes the output record into outDir and a tokens/ directory in place, and returns both', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
-    const outputs = [{ platform: 'web' as const, format: 'css' as const, path: 'spec-layer/tokens.css', case: 'kebab' as const }];
     const result = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
-      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', platforms: ['web'], outputs,
+      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', platforms: ['web'], outputs: [WEB],
     });
     expect(result.written).toContain('outputs/web-css.map.json');
     expect(result.written).toContain('outputs/web-css.report.json');
-    expect(result.outputs).toEqual(['spec-layer/tokens.css']);
-    const css = readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8');
-    expect(css.startsWith('/* Generated by spec-layer from library lib_x, foundation sha256:')).toBe(true);
-    expect(css).toContain('--color-exact-red: #ff0000;');
+    expect(result.outputs).toHaveLength(1);
+    expect(result.outputs[0].path).toBe('tokens');
+    expect(result.outputs[0].files.at(-1)).toBe('index.css');
+    expect(readdirSync(join(tmpDir, 'tokens')).sort()).toEqual([...result.outputs[0].files].sort());
+    const index = readFileSync(join(tmpDir, 'tokens/index.css'), 'utf8');
+    expect(index.startsWith('/* Generated by spec-layer from library lib_x, foundation sha256:')).toBe(true);
+    for (const name of result.outputs[0].files) {
+      if (name !== 'index.css') expect(index).toContain(`@import "./${name}";`);
+    }
+    const all = result.outputs[0].files.map((f) => readFileSync(join(tmpDir, 'tokens', f), 'utf8')).join('\n');
+    expect(all).toContain('--color-exact-red: #ff0000;');
     const manifest = readManifest(outDir) as Manifest;
     expect(manifest.platforms).toEqual(['web']);
-    expect(manifest.outputs).toEqual(outputs);
+    expect(manifest.outputs).toEqual([WEB]);
+    expect(manifest.componentSpecsDir).toBe('component-specs');
     const map = JSON.parse(readFileSync(join(outDir, 'outputs/web-css.map.json'), 'utf8'));
-    expect(map['Primitives.color.exact.red']).toEqual({ name: '--color-exact-red', source: 'code_syntax' });
+    expect(map['Primitives.color.exact.red']).toMatchObject({ name: '--color-exact-red', source: 'code_syntax' });
+    expect(result.outputs[0].files).toContain(map['Primitives.color.exact.red'].file);
   });
 
-  it('refuses a foreign file at the output path before writing anything', () => {
+  it('refuses a foreign file in the tokens directory before writing anything', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
-    mkdirSync(join(tmpDir, 'spec-layer'), { recursive: true });
-    writeFileSync(join(tmpDir, 'spec-layer/tokens.css'), ':root { --mine: 1; }\n');
+    mkdirSync(join(tmpDir, 'tokens'), { recursive: true });
+    writeFileSync(join(tmpDir, 'tokens/mine.css'), ':root { --mine: 1; }\n');
     expect(() => writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
-      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h',
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
-    })).toThrow('spec-layer/tokens.css exists and was not written by spec-layer.');
+      publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', outputs: [WEB],
+    })).toThrow('tokens holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
     expect(existsSync(outDir)).toBe(false);
-    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(':root { --mine: 1; }\n');
+    expect(existsSync(join(tmpDir, 'component-specs'))).toBe(false);
+    expect(readFileSync(join(tmpDir, 'tokens/mine.css'), 'utf8')).toBe(':root { --mine: 1; }\n');
   });
 
-  it('replaces its own earlier file in place and leaves it alone when the foundation is not selected', () => {
+  it('refuses a foreign file in the component specs directory before writing anything', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
-    const outputs = [{ platform: 'web' as const, format: 'css' as const, path: 'spec-layer/tokens.css', case: 'kebab' as const }];
-    const base = { outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h', outputs };
+    mkdirSync(join(tmpDir, 'component-specs'));
+    writeFileSync(join(tmpDir, 'component-specs/mine.yaml'), 'name: mine\n');
+    expect(() => writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h',
+    })).toThrow('component-specs holds files spec-layer did not write. Choose another path in speclayer.json or move them.');
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('refuses the 0.6.0 file path and overlapping directories', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const base = { outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h' };
+    expect(() => writeBundleFiles({ ...base, outputs: [{ ...WEB, path: 'spec-layer/tokens.css' }] })).toThrow('names a file; spec-layer 0.7.0 writes a directory.');
+    expect(() => writeBundleFiles({ ...base, outputs: [WEB], componentSpecsDir: 'tokens' })).toThrow('overlap');
+    expect(() => writeBundleFiles({ ...base, outputs: [WEB], componentSpecsDir: 'tokens/specs' })).toThrow('overlap');
+  });
+
+  it('refuses a brief that does not begin with the marker, before writing anything', () => {
+    const bundle = makeBundle({ foundation: null, components: [{ name: 'Odd', ai: 'name: Odd\n', artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } }] });
+    expect(() => writeBundleFiles({ outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h' }))
+      .toThrow('The published brief for Odd does not begin with the Spec Layer marker. Republish from the plugin, then pull again.');
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('replaces its own earlier files in place and leaves tokens/ alone when the foundation is not selected', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const base = { outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h', outputs: [WEB] };
     writeBundleFiles(base);
-    const first = readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8');
+    const first = readFileSync(join(tmpDir, 'tokens/index.css'), 'utf8');
     writeBundleFiles(base);
-    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(first);
+    expect(readFileSync(join(tmpDir, 'tokens/index.css'), 'utf8')).toBe(first);
     const noFoundation = writeBundleFiles({ ...base, selection: { foundation: false, components: null } });
     expect(noFoundation.outputs).toEqual([]);
-    expect(readFileSync(join(tmpDir, 'spec-layer/tokens.css'), 'utf8')).toBe(first);
+    expect(readFileSync(join(tmpDir, 'tokens/index.css'), 'utf8')).toBe(first);
+  });
+
+  it('removes a stale marked brief when the selection narrows, and a stale marked css file when a mode disappears', () => {
+    // twoComponents() carries the stub foundation, which fails validateLevel1, so every call here deselects it.
+    const bundle = twoComponents();
+    const base = { outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib-1', publishedAt: 'p', bundleHash: 'h', selection: { foundation: false, components: null } };
+    writeBundleFiles(base);
+    expect(readdirSync(join(tmpDir, 'component-specs')).sort()).toEqual(['button.yaml', 'card.yaml']);
+    writeFileSync(join(tmpDir, 'component-specs/.gitkeep'), '');
+    writeBundleFiles({ ...base, selection: { foundation: false, components: ['card'] } });
+    expect(readdirSync(join(tmpDir, 'component-specs')).sort()).toEqual(['.gitkeep', 'card.yaml']);
+    writeBundleFiles({ ...base, selection: { foundation: false, components: [] } });
+    expect(readdirSync(join(tmpDir, 'component-specs'))).toEqual(['.gitkeep']);
+
+    const withFoundation = makeBundle({ foundation: realFoundation() });
+    const fb = { outDir, cwd: tmpDir, raw: JSON.stringify(withFoundation), bundle: withFoundation, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h', outputs: [WEB] };
+    writeBundleFiles(fb);
+    writeFileSync(join(tmpDir, 'tokens/theme.gone.css'), '/* Generated by spec-layer stale */\n');
+    writeBundleFiles(fb);
+    expect(existsSync(join(tmpDir, 'tokens/theme.gone.css'))).toBe(false);
+  });
+
+  it('honours componentSpecsDir and records it in the manifest', () => {
+    const bundle = makeBundle({ foundation: null });
+    writeBundleFiles({ outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x', publishedAt: 'p', bundleHash: 'h', componentSpecsDir: 'design/specs' });
+    expect(readFileSync(join(tmpDir, 'design/specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
+    const manifest = readManifest(outDir) as Manifest;
+    expect(manifest.componentSpecsDir).toBe('design/specs');
+    // foundation: null means no foundation entry is pushed (see "skips the
+    // foundation file when foundation is null" above), so the lone component
+    // sits at index 0.
+    expect(manifest.artifacts[0].path).toBe('design/specs/button.yaml');
   });
 });
 
@@ -432,13 +514,6 @@ describe('writeBundleFiles with a selection', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  const twoComponents = () => makeBundle({
-    components: [
-      { name: 'Button', ai: 'button\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-      { name: 'Card', ai: 'card\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
-    ],
-  });
-
   it('writes only the selected component files and skips the foundation when deselected', () => {
     const bundle = twoComponents();
     const { written } = writeBundleFiles({
@@ -447,10 +522,11 @@ describe('writeBundleFiles with a selection', () => {
       selection: { foundation: false, components: ['card'] },
     });
 
-    expect(written).toEqual(['bundle.json', 'components/card.yaml', 'manifest.json']);
+    expect(written).toEqual(['bundle.json', 'manifest.json']);
+    expect(readdirSync(join(tmpDir, 'component-specs'))).toEqual(['card.yaml']);
     expect(existsSync(join(outDir, 'ai/foundation.yaml'))).toBe(false);
-    expect(existsSync(join(outDir, 'components/button.yaml'))).toBe(false);
-    expect(readFileSync(join(outDir, 'components/card.yaml'), 'utf8')).toBe('card\n');
+    expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(false);
+    expect(readFileSync(join(tmpDir, 'component-specs/card.yaml'), 'utf8')).toBe(brief('card\n'));
   });
 
   it('lists every artifact in the manifest, with a null path for the ones not written, and records the selection', () => {
@@ -466,7 +542,7 @@ describe('writeBundleFiles with a selection', () => {
     expect(manifest.artifacts).toEqual([
       { kind: 'foundation', name: 'foundation', contentHash: 'f'.repeat(64), path: null },
       { kind: 'component', name: 'Button', contentHash: 'a'.repeat(64), path: null },
-      { kind: 'component', name: 'Card', contentHash: 'b'.repeat(64), path: 'components/card.yaml' },
+      { kind: 'component', name: 'Card', contentHash: 'b'.repeat(64), path: 'component-specs/card.yaml' },
     ]);
   });
 
@@ -474,19 +550,19 @@ describe('writeBundleFiles with a selection', () => {
     const bundle = makeBundle({
       foundation: null,
       components: [
-        { name: 'Button', ai: 'first\n', artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
-        { name: 'button', ai: 'second\n', artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
+        { name: 'Button', ai: brief('first\n'), artifact: { spec_layer: { export: { content_hash: 'a'.repeat(64) } } } },
+        { name: 'button', ai: brief('second\n'), artifact: { spec_layer: { export: { content_hash: 'b'.repeat(64) } } } },
       ],
     });
-    const { written } = writeBundleFiles({
+    const { componentSpecs } = writeBundleFiles({
       outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
       selection: { foundation: true, components: ['button'] },
     });
 
     // Both share the name, so both are selected and both keep the slugs an unfiltered pull gives them.
-    expect(written).toContain('components/button.yaml');
-    expect(written).toContain('components/button-2.yaml');
+    expect(componentSpecs.files).toContain('button.yaml');
+    expect(componentSpecs.files).toContain('button-2.yaml');
   });
 
   it('records the default selection when none is given', () => {
