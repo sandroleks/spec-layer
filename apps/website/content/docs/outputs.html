@@ -68,4 +68,4 @@ tokens/
 <p>The CLI stages output in <code>.speclayer.partial</code> and swaps it into place. Keep your own source files outside this managed output directory.</p>
 <p>Pulling an unchanged published bundle with the same selection and token configuration produces no new writes. After a changed library is published, the next pull refreshes the bundle and manifest. CLI pulls do not use your publishing update allowance.</p>
 <p>Component YAML, token files, and semantic hashes stay stable when the underlying design data does not change. An unrelated foundation change can change the whole-foundation hash without changing a component whose dependency slice is unchanged.</p>
-<p>Output files declared under <code>outputs</code> are replaced in place, never deleted.</p></section>
+<p>Files under <code>outputs</code> and <code>componentSpecsDir</code> are replaced in place; a Spec Layer file the pull no longer writes is removed, and a file without the Spec Layer marker is never touched.</p></section>
