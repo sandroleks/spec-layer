@@ -17,10 +17,10 @@ Extraction, rendering, drift detection, and Copy for AI are **deterministic**.
 Only optional AI prose uses a model. That split is the product's core claim, so
 do not blur it.
 
-There is no web app and no Markdown export; both were deleted in August 2026.
-`apps/landing` was deleted in September 2026. The plugin, the extractor, the
-proxy, the CLI, the shared brand package, and the static site at
-`spec-layer.com` are the whole product boundary.
+There is no web app and no Markdown export. Both were built, deleted in 2026,
+and are not coming back. The plugin, the extractor, the proxy, the CLI, the
+shared brand package, and the site at `spec-layer.com` are the whole product
+boundary.
 
 ## Layout
 
@@ -81,12 +81,11 @@ These all live in this repository:
 | Shared brand and UI design system | `packages/brand/README.md` |
 | Proxy behaviour and accepted risks | `packages/proxy/README.md` |
 
-The prose specs, the plugin knowledge map, the review evidence, the executed
-plans, and the voice and copy guides moved to the private repository. The
-schemas above are the enforceable v5 contract and stay here; the prose that
-explains them does not. When you need a rule from one of those guides and it
-is not in this repository, ask rather than reconstructing it, and never
-reference a path here that a reader of this repository cannot open.
+The schemas above are the enforceable v5 contract. The prose that explains
+them, along with the plugin knowledge map, the review evidence, the executed
+plans, and the voice and copy guides, is in the private repository. When you
+need a rule from one of those and it is not here, ask rather than
+reconstructing it from memory.
 
 ## Invariants
 
@@ -179,99 +178,40 @@ descriptions, and diagnostics before it can be committed.
 `main` is clean, green, and fully pushed: 133 test files, 2507 tests passing,
 9 todo.
 
-Shipped and merged. `CHANGELOG.md` is the detailed log; this is the shape of it:
+5.0.0 is shipped on all three surfaces: the Figma Community listing, the
+GitHub release on tag `v5.0.0`, and `spec-layer@0.7.0` on npm. The listing
+serves schema `5.1.0`, so a pulled sidecar now carries `code_syntax`.
 
-- **Documentation surfaces.** Component documentation, Foundation
-  documentation, frame theming, licensing, AI writing. Library tracks every
-  generated Section with drift detection, in-place rebuild, hand-edit
-  preservation, and per-item change lists that name what moved, including
-  component token changes compared per variant. Quick search lists documents
-  and opens them in Library.
-- **Foundation Context v5 and Component Context v5**, schema `5.1.0`. Copy for
-  AI builds a validated artifact directly from the source model, preserving
-  stable ids, source scopes, RGBA precision, complete alias chains, external
-  references, composite typography and effect styles, and optional
-  `code_syntax`. A component copy joins Foundation v5 by stable Figma id and
-  embeds only its own dependency closure, with repeated bindings grouped under
-  ordered `paths`.
-- **DTCG Foundation export.** `v5/dtcg.ts` projects a validated Foundation
-  artifact into a Design Tokens Format Module 2025.10 resolver document. It is
-  the Foundation clipboard, the published bundle's `foundation.ai`, and what
-  `spec-layer pull` writes into `tokens/`, replacing Spec Layer's own YAML
-  everywhere except the component dependency slice. Diagnostic severity is
-  calibrated against real sources: `UNIT_METADATA_UNAVAILABLE` is a warning,
-  not an error, because a real 5.0.0 library reported 70 errors before that
-  recalibration and 64 of them were that one code.
-- **Delivery.** Production proxy at `api.spec-layer.com`, freemium flow, and
-  library publish. A free plan publishes one library and 10 updates a month;
-  the Publish screen states the allowance, links the CLI docs, and records the
-  last publish date. **CLI `0.5.0` is published on npm** (2026-09-06) and its
-  published bundle is byte-identical to a build of `main`. `spec-layer tools`
-  is the command catalogue with network, key, writes, and exit codes per
-  command; `spec-layer skill --install` writes a coding-agent guide built from
-  that catalogue, the last pull, and a root-only reading of the repository's
-  stack (`detect.ts`), into each detected agent host's instruction file.
-  `setup` names it as the next step, and the Publish screen's **Copy for an AI
-  agent** copies the setup command followed by it. **CLI `0.6.0` is
-  published** (2026-09-09). **CLI `0.7.0` is on `main` and unpublished**: the
-  web output is a `tokens/` directory with `index.css`, briefs live in
-  `component-specs/`, manifest paths are cwd-relative.
-- **2026-09-05 review quick wins.** Memoized resolver lookups, bulk variable
-  reads, foundation dump posted once per read, in-panel confirmation dialogs,
-  no non-component toast, Copy for AI on the component screen and per
-  Foundations row, minified bundles, compact DTCG clipboard with a kilobyte
-  size notice.
-- **Shared design system.** `packages/brand` is the single token source, with a
-  contrast gate. Phases 1 to 4 are complete: the plugin and the website both
-  consume it, and the released artwork and captures are integrated. Phase 5,
-  native Figma verification and release, is planned.
-- **Website.** The site is live at `spec-layer.com` and serves the committed
-  schemas; `npm run check:site-live` passes. The 2026-09-08 SEO pass is
-  deployed: HTTP www routing fixed, sitemap submitted, WebP gallery variants
-  generated, the brand and site stylesheets flattened into one delivered file,
-  and robots ownership consolidated at the edge. The site source and its
-  evidence now live in the private repository.
-- **Repository hardening** (2026-09-08). `main` requires a squash-merged pull
-  request passing `verify`, with linear history and up-to-date branches; a tag
-  ruleset protects `v*`. `CODEOWNERS` had pointed at a non-collaborator, so
-  code-owner review had never applied, and `SECURITY.md` told reporters to use
-  private vulnerability reporting while it was disabled; both are fixed. CodeQL
-  added. The GitHub-side settings are applied by API and are not version
-  controlled.
+**`CHANGELOG.md` is the record of what shipped and why.** This section restated
+it once and went stale for its trouble. Keep it to what is not yet in the
+changelog.
 
 Open, in rough priority order:
 
-1. **The manual Figma matrix in `packages/plugin/TESTING.md` has never been run
-   against a development build.** This is the standing release blocker; unit
-   tests cannot reach it. The recording template lives in the private
-   repository and is still blank, including the three questions the 2026-09-05
-   review could not answer: whether `window.confirm` shows a dialog in the
-   plugin iframe, how often the non-component toast fires, and the real size
-   and paste behaviour of the DTCG clipboard.
-2. **Plugin republish and listing.** The plugin has not republished at schema
-   `5.1.0`, so a pulled sidecar still carries no `code_syntax`. A live
-   `spec-layer pull` of a real 5.0.0 library on 2026-09-03 wrote a complete
-   `tokens/` directory of 15 files that Style Dictionary 5.5.2 built into 271
-   CSS variables with references resolved, which is the evidence that delivery
-   works end to end. The Community listing update and version alignment for the
-   5.0.0 plugin release ride along with the republish, as does publishing CLI
-   `0.7.0`.
-3. **Component Frame Quality Round 1**, planned and not started; the plan and
+1. **The manual Figma matrix in `packages/plugin/TESTING.md` has no recorded
+   run.** 5.0.0 shipped without one, so never cite a passing matrix as
+   evidence; unit tests cannot reach what it covers. Three questions the
+   2026-09-05 review could not answer are still open: whether `window.confirm`
+   shows a dialog in the plugin iframe, how often the non-component toast
+   fires, and the real size and paste behaviour of the DTCG clipboard.
+2. **Component Frame Quality Round 1**, planned and not started; the plan and
    design are in the private repository. It replaces the Configuration section
    with a Properties table, trims the Anatomy legend, fixes the radius gap
    check and the anatomy wrapper descent, and is the change that bumps
    `EXTRACTOR_VERSION` to `'3'` and makes `hash.ts` locale-safe.
-4. **Patterns and nested components**, design only, in the private repository.
-5. **Real design-system grading** for v5 criteria 3, 10, and 11. The synthetic
+3. **Patterns and nested components**, design only, in the private repository.
+4. **Real design-system grading** for v5 criteria 3, 10, and 11. The synthetic
    golden passes; a reviewed real artifact does not exist in-repo, and cannot be
    committed without explicit approval. Criterion 9 (style lifecycle) is
    ungradable from the current Plugin API.
-6. **v5 command tooling**: `validate`, `normalize`, and `diff` in
+5. **v5 command tooling**: `validate`, `normalize`, and `diff` in
    `packages/cli`, outside the Figma sandbox, reusing the canonical validator,
    hash, and `diffKeyed` rather than writing a second interpretation of v5.
-7. **Design system phase 5**: cross-surface checks, native Figma verification,
-   release notes, rollback.
-8. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets a
+6. **Design system phase 5.** Phases 1 to 4 are done: `packages/brand` is the
+   single token source with a contrast gate, and both the plugin and the site
+   consume it. Phase 5 is cross-surface checks, native Figma verification,
+   release notes, and rollback.
+7. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets a
    library and 10 updates per self-asserted Figma identity, so a client that
    lies about `X-Figma-User` can shop for fresh buckets and the per-IP rate
    limiter is the only ceiling. See the accepted risks in
@@ -284,16 +224,19 @@ bet is deterministic extraction depth.
 ## Working conventions
 
 - `main` is protected. Work on a branch and merge a squash pull request that
-  passes `verify`; do not push to `main`.
+  passes `verify`; do not push to `main`. Linear history and up-to-date
+  branches are required, and a ruleset protects `v*` tags. Those GitHub-side
+  settings are applied by API and are not version controlled, so they are not
+  visible in this repository.
 - Conventional commit subject: one line, lowercase, scoped, for example
   `feat(v5): group repeated component bindings`, `fix(proxy): ...`,
   `docs: ...`, `chore(plugin): ...`. Add a body when the change needs
   explaining. Commits carry a `Co-Authored-By` trailer.
 - A pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) rejects
   known secret patterns.
-- Update `CHANGELOG.md` alongside behavior changes, and the JSON Schema plus
-  the status section above alongside contract changes. Recent commits do all
-  three in one change; match that.
+- Update `CHANGELOG.md` alongside behavior changes and the JSON Schema
+  alongside contract changes, in the same commit. `CHANGELOG.md` is the only
+  place shipped work is described; do not mirror it into this file.
 - Dependabot raises grouped npm updates weekly and GitHub Actions updates
   monthly.
 - Dead code hides behind its own tests here. Judge whether plugin code is live
