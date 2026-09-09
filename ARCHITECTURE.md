@@ -169,9 +169,8 @@ and refuses a bundle whose major version it does not know. Eight commands:
   and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
   to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, a `tokens/`
-  directory for the Foundation, one `components/<slug>.yaml` per component
-  (collision-safe slugs), and a `manifest.json` indexing every artifact by
-  content hash and file path. The `tokens/` directory is projected from the
+  directory for the Foundation, and a `manifest.json` indexing every artifact
+  by content hash and file path. The `tokens/` directory is projected from the
   canonical Foundation artifact in `bundle.json` by the extractor's
   `foundationDtcg`, after a Level 1 shape check on that artifact so a malformed
   bundle fails with a plain sentence rather than a stack trace; that check is
@@ -182,24 +181,37 @@ and refuses a bundle whose major version it does not know. Eight commands:
   `ai/foundation.yaml` is no longer written; the manifest points the
   foundation entry at `tokens/resolver.json` instead of an `ai` path.
 
-  `pull` also writes platform outputs: files the team's build compiles, one
-  per `outputs` entry in `speclayer.json`, written in place at the declared
-  path rather than inside the swapped directory. Each is a pure projection of
-  the DTCG export under `packages/extractor/src/v5/outputs/` (today `web` /
-  `css`), so v5 keeps one reader and no hash moves. The name map and report
-  for each output land in `.speclayer/outputs/`.
+  One `<slug>.yaml` per component (collision-safe slugs) lands in
+  `component-specs/` at the repository root, configurable via
+  `componentSpecsDir` in `speclayer.json`, default `component-specs`.
+
+  `pull` also writes platform outputs: a directory the team's build compiles,
+  one per `outputs` entry in `speclayer.json`, written in place at the
+  declared path rather than inside the swapped `<outDir>/`. Each is a pure
+  projection of the DTCG export under `packages/extractor/src/v5/outputs/`
+  (today `web` / `css`, one CSS file per collection and mode plus an
+  `index.css`), so v5 keeps one reader and no hash moves. The name map and
+  report for each output land in `.speclayer/outputs/`.
+
+  Two visible directories are written in place and owned by marker;
+  the record under `.speclayer/` is swapped. `component-specs/` and the
+  platform output directory each hold only files that begin with a fixed
+  marker (the brief's opening `spec_layer:` lines, or the CSS header); `pull`
+  replaces or removes those files, ignores dotfiles, and refuses to run when
+  the directory holds anything else.
 
   A `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
   and declares unit overrides for numbers whose scopes state no unit.
   A selection (`--only foundation|components`, repeatable `--component NAME`,
-  or the config's `include` block) narrows which of `tokens/` and `components/`
-  are written; `bundle.json` always holds the whole library and the manifest
-  lists every artifact, with `path: null` for the ones left unwritten. The unit of
-  selection is a whole bundle entry, never a slice of one, because slicing
-  below an entry would need the extractor's alias-closure logic. When the
-  last pull used the same selection, `pull` sends the manifest's hash as
-  `If-None-Match` and a 304 writes nothing. Writes stage into
-  `<outDir>.partial` and rename into place, so a failed pull never leaves a
+  or the config's `include` block) narrows which of `tokens/` and
+  `component-specs/` are written; `bundle.json` always holds the whole library
+  and the manifest lists every artifact, with `path: null` for the ones left
+  unwritten. The unit of selection is a whole bundle entry, never a slice of
+  one, because slicing below an entry would need the extractor's
+  alias-closure logic. When the last pull used the same selection, `pull`
+  sends the manifest's hash as `If-None-Match` and a 304 writes nothing.
+  Writes stage into `<outDir>.partial` and rename into place, so a failed
+  pull never leaves a
   half-written directory, and the swap refuses a directory that is the
   working directory, a parent of it, or an existing non-empty directory the
   CLI did not write.

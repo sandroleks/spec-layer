@@ -60,7 +60,9 @@ against them. The Foundation landing under `tokens/` as Design Tokens Format
 Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 `tools` and `skill` need 0.5.0 or later. `components/` in place of
 `ai/components/`, `path` in place of `aiPath` in the manifest, and the
-`outputs` block need 0.6.0 or later.
+`outputs` block need 0.6.0 or later. `component-specs/` beside `tokens/`,
+`componentSpecsDir`, cwd-relative manifest paths, and the `tokens/` directory
+need 0.7.0 or later.
 
 ## Commands
 
@@ -146,7 +148,7 @@ carry no key and are meant to be committed with the rest of the repository.
 ## Pulling part of a library
 
 By default `pull` writes the Foundation and every documented component. When
-your repo implements only some of them, narrow what lands in `components/`:
+your repo implements only some of them, narrow what lands in `component-specs/`:
 
 ```bash
 npx spec-layer pull --only foundation            # tokens and styles, no components
@@ -177,7 +179,7 @@ That stores an `include` block in `speclayer.json`:
 Selection flags on `pull` replace the stored selection for that run; they are
 never merged with it.
 
-The selection only decides which `components/` files are written. `bundle.json`
+The selection only decides which `component-specs/` files are written. `bundle.json`
 always holds the whole library, so `list` and `show` can answer for any
 artifact, written or not, and `status` compares one hash.
 
@@ -244,7 +246,7 @@ matter what the ignore rules say.
 ```text
 .speclayer/
   bundle.json                the published bundle, verbatim
-  manifest.json               every artifact indexed by content hash and path, plus the selection and outputs
+  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, and componentSpecsDir
   tokens/                    the Foundation as Design Tokens Format Module 2025.10 files
     <collection>.<mode>.json one file per collection and mode, rooted at the collection name
     styles.typography.json   text styles as typography composites (when present)
@@ -252,19 +254,22 @@ matter what the ignore rules say.
     resolver.json            Design Tokens Resolver Module 2025.10: sets, modifiers, order
     spec-layer.meta.json     Figma ids, scopes, code syntax, publication, keyed by DTCG path
     report.json              what DTCG could not express, with reasons and stable ids
-  components/<name>.yaml     one file per selected component
   outputs/
-    web-css.map.json         DTCG path -> CSS custom property, with where the name came from
-    web-css.report.json      what the CSS file could not express
-spec-layer/
-  tokens.css                 the web token file, written in place at outputs[].path
+    web-css.map.json         DTCG path -> CSS custom property, where the name came from, and which file declares it
+    web-css.report.json      what the CSS files could not express
+component-specs/
+  <name>.yaml                one brief per selected component, byte-identical to Copy for AI
+tokens/
+  index.css                  imports every file below, in resolver order
+  <collection>.css           one file per single-mode collection, at :root
+  <collection>.<mode>.css    one file per mode of a multi-mode collection; the default at :root
 ```
 
-Point your agent at `.speclayer/components/` and `.speclayer/tokens/`, and
-import the token file for your platform from where `outputs` puts it. The
-component YAML is the same compact form the plugin's **Copy for AI** puts on
-your clipboard; `bundle.json` additionally holds the full canonical artifacts
-if you need them.
+Point your agent at `component-specs/` and `.speclayer/tokens/`, and import
+`tokens/index.css` from the platform's root stylesheet. The component YAML is
+the same compact form the plugin's **Copy for AI** puts on your clipboard;
+`bundle.json` additionally holds the full canonical artifacts if you need
+them.
 
 In `manifest.json`, an artifact the selection left unwritten has `"path":
 null`. A manifest from CLI 0.1.0 has no `selection` field and means
@@ -275,12 +280,19 @@ interrupted pull never leaves a half-written directory. `pull` refuses an
 output directory that is the current directory, a parent of it, or an existing
 non-empty directory it did not write, since the swap replaces that directory.
 
+`component-specs/` and `tokens/` are written in place, not swapped. `pull`
+owns exactly the files there that begin with its marker (the CSS header, or
+the brief's opening `spec_layer:` lines): it replaces or removes those,
+ignores dotfiles, and refuses to run when anything else is present. A
+repository that already uses a path can set `componentSpecsDir` or
+`outputs[].path`.
+
 When nothing changed since the last pull with the same selection, `pull`
 prints `Already up to date` and writes nothing. Every republish stamps a new
 export id and time into the canonical artifacts, so `bundle.json` and
 `manifest.json` change on each republish even when the content did not. The
-`components/` YAML files, the `tokens/` files, and the content hashes stay
-stable.
+`component-specs/` YAML files, the `.speclayer/tokens/` files, and the
+`tokens/` CSS stay stable.
 
 ## Configuring the token output
 
@@ -309,19 +321,26 @@ the report are not token files; exclude them from token globs.
 
 ## Token files for your code
 
-`pull` also writes a file your build compiles, one per platform output. For
-the web that is a CSS file of custom properties. The file is written only
-when that pull writes the Foundation; with `--only components` it is left
-exactly as it was, and `list` shows it as `not written`.
+`pull` also writes a `tokens/` directory at `outputs[].path`: one CSS file
+per collection and mode plus `index.css`, one per platform output. The
+directory is written only when that pull writes the Foundation; with
+`--only components` it is left exactly as it was, and `list` shows it as
+`not written`.
 
 ```css
+/* Generated by spec-layer from library lib_..., foundation sha256:..., web/css/kebab.
+   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */
+
 :root {
   /* Foundation */
   --foundation-colors-blue-500: #2e72d1;
   --foundation-spacing-200: 8px;
-  /* Mapped Colors, Light */
-  --mapped-colors-surface-primary-default: var(--foundation-colors-blue-500);
 }
+```
+
+```css
+/* Generated by spec-layer from library lib_..., foundation sha256:..., web/css/kebab.
+   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */
 
 [data-theme="dark"] {
   /* Mapped Colors, Dark */
@@ -329,23 +348,42 @@ exactly as it was, and `list` shows it as `not written`.
 }
 ```
 
-Sets and every collection's default mode sit at `:root`; every other mode is
-a block under `[data-theme="<mode>"]`. Aliases stay as `var()`. A number whose
-Figma scopes state no unit stays a bare number. Nothing about a mode's name
-selects a media query; wire `data-theme` to `prefers-color-scheme` yourself if
-the OS should choose.
+`index.css` holds the header, then one comment and one import per file, in
+resolver order, and no declarations of its own:
 
-The file is written **in place** at the path in `speclayer.json`, outside the
-managed directory, so your bundler keeps watching it and the diff shows up in
-review. It begins with a header naming the library and the Foundation's
-content hash, and `pull` refuses to overwrite a file at that path that lacks
-the header.
+```css
+/* Generated by spec-layer from library lib_..., foundation sha256:..., web/css/kebab.
+   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */
+
+/* Foundation */
+@import "./foundation.css";
+/* Mapped Colors, Dark */
+@import "./mapped-colors.dark.css";
+```
+
+A set, which has one mode by construction, writes one file named for the
+collection alone, at `:root`. A collection with modes writes one file per
+mode: the default mode's file sits at `:root`, every other mode's file under
+`[data-theme="<mode>"]`. Aliases stay as `var()`. A number whose Figma scopes
+state no unit stays a bare number. Nothing about a mode's name selects a
+media query. To let the OS choose a theme, set that collection's selector to
+`:root` under `modes` and import the mode's file yourself under `@media
+(prefers-color-scheme: dark)`. The CLI never assumes that.
+
+The directory is written **in place** at the path in `speclayer.json`,
+outside the managed directory, so your bundler keeps watching it and the diff
+shows up in review. Every file begins with a header naming the library and
+the Foundation's content hash; `pull` owns exactly the files there that begin
+with it, replacing or removing those, ignoring dotfiles, and refusing to run
+when anything else is present. A `speclayer.json` written by CLI 0.6.0 names
+a `.css` file at this path, and `pull` refuses it: set `path` to a directory
+and delete the old file.
 
 ```json
 {
   "platforms": ["web"],
   "outputs": [
-    { "platform": "web", "format": "css", "path": "spec-layer/tokens.css", "case": "kebab" }
+    { "platform": "web", "format": "css", "path": "tokens", "case": "kebab" }
   ]
 }
 ```
@@ -355,24 +393,24 @@ at the repository root, so the path is always on record. `pull` writes every
 entry; `"outputs": []` writes none. `case` chooses how derived names are
 spelled: `kebab` (default), `camel`, `pascal`, `snake`, or `constant`. A name
 the designer declared as `code_syntax` in Figma is used verbatim and never
-re-cased. `.speclayer/outputs/web-css.map.json` records every emitted name and
-whether it was declared or derived; two tokens that would share a name are
-both omitted and listed in `web-css.report.json`.
+re-cased. `.speclayer/outputs/web-css.map.json` records every emitted name,
+whether it was declared or derived, and which file declares it; two tokens
+that would share a name are both omitted and listed in `web-css.report.json`.
 
 Two collections with modes share one attribute by default, which cannot be
 right for both; the report says so, and `modes` declares a selector per
 collection:
 
 ```json
-{ "platform": "web", "format": "css", "path": "spec-layer/tokens.css",
+{ "platform": "web", "format": "css", "path": "tokens",
   "modes": { "Density": "[data-density=\"{mode}\"]" } }
 ```
 
 `root` and `modeSelector` override the defaults `:root` and
 `[data-theme="{mode}"]`; `{mode}` and `{collection}` are replaced by slugs.
 A repository that already builds tokens with Style Dictionary can keep reading
-`tokens/`: the CSS file is a projection of the same files, not a second
-source, so import one or the other.
+`.speclayer/tokens/`: the CSS files are a projection of the same record, not a
+second source, so import one or the other.
 
 Commit `.speclayer/`, `speclayer.json`, and the output paths. A repository
 that would rather regenerate in CI ignores them and runs `pull` there;

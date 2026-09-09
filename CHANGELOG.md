@@ -8,20 +8,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Platform outputs** (CLI 0.6.0). `spec-layer pull` writes a token file
-  your build compiles, in place at a path declared under `outputs` in
-  `speclayer.json`, outside the swapped `.speclayer/` directory. The first
-  format is `web` / `css`: every set and default mode at `:root`, every other
-  mode under `[data-theme="<mode>"]`, aliases as `var()`, unitless numbers
-  bare, typography as one custom property per member, effects as one
-  `box-shadow`. Names come from the designer's `code_syntax.WEB` when Figma
-  declares one and otherwise from the DTCG path in a chosen case (`kebab`,
-  `camel`, `pascal`, `snake`, `constant`); two tokens that would share a name
-  are both omitted and reported. `.speclayer/outputs/web-css.map.json` records
-  every name with its provenance and `web-css.report.json` what CSS could not
-  say. `setup` and `init` take a repeatable `--platform` and store `platforms`
-  and a default output (`spec-layer/tokens.css` for web); `pull` refuses to
-  overwrite a file at that path that does not carry the Spec Layer header. The
+- **Visible outputs** (CLI 0.7.0). The web token output is a directory,
+  default `tokens/`, with one CSS file per collection and mode
+  (`foundation.css`, `semantic-colors.light.css` at `:root`,
+  `semantic-colors.dark.css` under `[data-theme="dark"]`) and an `index.css`
+  that imports them in resolver order, so a team can import one mode alone
+  and wire `prefers-color-scheme` itself. Component briefs move out of the
+  hidden directory into `component-specs/` beside `tokens/`, configured by a
+  new `componentSpecsDir` key; the files are byte-identical to Copy for AI.
+  Both directories follow one rule: `pull` owns exactly the files that begin
+  with the directory's marker (the CSS header, or the brief's opening
+  `spec_layer: kind: component` lines), replaces or removes those, ignores
+  dotfiles, and refuses to run when anything else is present. Manifest paths
+  are now relative to the working directory. `web-css.map.json` entries gain
+  `file`. A `speclayer.json` from 0.6.0 (`"path": "spec-layer/tokens.css"`)
+  is refused with the two-step fix: set `path` to a directory and delete the
+  old file. `.speclayer/` keeps the bundle, manifest, DTCG record, and output
+  maps and reports. Design:
+  `docs/superpowers/specs/2026-09-09-css-token-directory-design.md`.
+- **Platform outputs** (CLI 0.6.0, published 2026-09-09). `spec-layer pull`
+  writes a token file your build compiles, in place at a path declared under
+  `outputs` in `speclayer.json`, outside the swapped `.speclayer/` directory.
+  The first format is `web` / `css`: every set and default mode at `:root`,
+  every other mode under `[data-theme="<mode>"]`, aliases as `var()`,
+  unitless numbers bare, typography as one custom property per member,
+  effects as one `box-shadow`. Names come from the designer's
+  `code_syntax.WEB` when Figma declares one and otherwise from the DTCG path
+  in a chosen case (`kebab`, `camel`, `pascal`, `snake`, `constant`); two
+  tokens that would share a name are both omitted and reported.
+  `.speclayer/outputs/web-css.map.json` records every name with its
+  provenance and `web-css.report.json` what CSS could not say. `setup` and
+  `init` take a repeatable `--platform` and store `platforms` and a default
+  output (`spec-layer/tokens.css` for web); `pull` refuses to overwrite a
+  file at that path that does not carry the Spec Layer header. The
   projection reads the DTCG export in `packages/extractor/src/v5/outputs/`,
   never the artifact, and feeds no hash.
 - **`components/`** replaces `ai/components/` in the pulled directory, and the

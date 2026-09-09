@@ -208,9 +208,10 @@ Shipped and merged. `CHANGELOG.md` is the detailed log; this is the shape of it:
   that catalogue, the last pull, and a root-only reading of the repository's
   stack (`detect.ts`), into each detected agent host's instruction file.
   `setup` names it as the next step, and the Publish screen's **Copy for an AI
-  agent** copies the setup command followed by it. **CLI `0.6.0` is on
-  `main` and unpublished**: it adds platform outputs (`web` and `css` written
-  in place at `outputs[].path`) and renames `ai/components/` to `components/`.
+  agent** copies the setup command followed by it. **CLI `0.6.0` is
+  published** (2026-09-09). **CLI `0.7.0` is on `main` and unpublished**: the
+  web output is a `tokens/` directory with `index.css`, briefs live in
+  `component-specs/`, manifest paths are cwd-relative.
 - **2026-09-05 review quick wins.** Memoized resolver lookups, bulk variable
   reads, foundation dump posted once per read, in-panel confirmation dialogs,
   no non-component toast, Copy for AI on the component screen and per
@@ -252,7 +253,7 @@ Open, in rough priority order:
    CSS variables with references resolved, which is the evidence that delivery
    works end to end. The Community listing update and version alignment for the
    5.0.0 plugin release ride along with the republish, as does publishing CLI
-   `0.6.0`, which is built on `main` but not on npm.
+   `0.7.0`.
 3. **Component Frame Quality Round 1**, planned and not started. Plan:
    `docs/superpowers/plans/2026-09-07-component-frame-quality.md`; design:
    `docs/superpowers/specs/2026-09-06-component-frame-quality-design.md`. It
