@@ -344,7 +344,7 @@ describe('config platforms and outputs block', () => {
     }));
     expect(readConfig(cwd)).toEqual({
       libraryId: 'lib_x', outDir: '.speclayer', platforms: ['web'],
-      outputs: [{ platform: 'web', format: 'css', path: 'spec-layer/tokens.css', case: 'kebab' }],
+      outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
   });
 
