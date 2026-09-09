@@ -46,8 +46,7 @@ for (const path of files.filter(path => path.endsWith('.html'))) {
   for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) await checkLink(match[1], path);
 }
 // Gallery destinations only appear after interaction; validate them with the HTML
-// links. `closeup` is the href of #full-image and #gallery-link and the srcset of
-// #gallery-closeup, so it is a real click destination and not only an <img> source.
+// links. The displayed screenshot and its full-size destination use original PNGs.
 const app = await readFile(join(dist, 'app.js'), 'utf8');
 for (const match of app.matchAll(/\b(?:src|closeup):\s*'([^']+)'/g)) {
   await checkLink(match[1], join(dist, 'index.html'));

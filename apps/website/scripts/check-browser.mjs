@@ -89,10 +89,10 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
     await page.goto(origin);
     // Exercise failure before this browser has decoded the same image.
     // WebKit may reuse a decoded image without making an interceptable request.
-    await page.route('**/gallery-foundations.png', route => route.abort());
+    await page.route('**/screenshots/foundations.png*', route => route.abort());
     await page.locator('[data-gallery="1"]').click();
     await page.waitForFunction(() => document.querySelector('#gallery-caption').textContent.includes('could not load'));
-    await page.unroute('**/gallery-foundations.png');
+    await page.unroute('**/screenshots/foundations.png*');
     await page.locator('[data-gallery="2"]').click();
     await page.waitForFunction(() => document.querySelector('#gallery-image').naturalWidth > 0);
     assert.ok(!(await page.locator('#gallery-caption').textContent()).includes('could not load'));
@@ -100,8 +100,8 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
       await page.locator(`[data-gallery="${n}"]`).click();
       await page.waitForFunction(() => document.querySelector('#gallery-image').complete && document.querySelector('#gallery-image').naturalWidth > 0);
       assert.equal(await page.locator(`[data-gallery="${n}"]`).getAttribute('aria-pressed'), 'true');
-      assert.equal(await page.locator('#gallery-closeup').getAttribute('srcset'), await page.locator('#full-image').getAttribute('href'));
-      assert.equal(await page.locator('#gallery-closeup').getAttribute('srcset'), await page.locator('#gallery-link').getAttribute('href'));
+      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#full-image').getAttribute('href'));
+      assert.equal(await page.locator('#gallery-image').getAttribute('src'), await page.locator('#gallery-link').getAttribute('href'));
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -109,9 +109,9 @@ for (const engine of (process.env.BROWSER_ENGINES || 'chromium,webkit').split(',
       await page.locator(`[data-gallery="${n}"]`).click();
       await page.waitForFunction(() => {
         const image = document.querySelector('#gallery-image');
-        return image.complete && image.naturalWidth === 480;
+        return image.complete && image.currentSrc === image.src && image.naturalWidth === 1440 && image.naturalHeight === 900;
       });
-      assert.equal(new URL(await page.locator('#gallery-image').evaluate(el => el.currentSrc)).pathname.slice(1), await page.locator('#gallery-closeup').getAttribute('srcset'));
+      assert.match(new URL(await page.locator('#gallery-image').evaluate(el => el.currentSrc)).pathname, /\/screenshots\/(createdoc|foundations|library)\.png$/);
     }
   });
   await check(`${engine} docs navigation, contents, deep link and keyboard`, async () => {

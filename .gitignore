@@ -44,3 +44,7 @@ docs/brand/assets-v1/*.zip
 # an approved implementation target; the shipped visuals are the real renderer
 # captures in docs/brand/assets-v1/captures/.
 docs/brand/proposals/
+
+# Generated website delivery variants; rebuild from approved originals.
+apps/website/public/styles.bundle.css
+apps/website/public/screenshots/responsive/

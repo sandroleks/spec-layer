@@ -27,22 +27,25 @@ window.matchMedia('(min-width: 761px)').addEventListener('change', closeMenu);
 
 const galleryItems = [
   {
-    src: 'gallery-component-docs.png',
-    closeup: 'screenshots/component-dark.png',
-    alt: 'Spec Layer component documentation controls, with Specifications expanded and Create docs and Copy for AI actions. Sample data.',
-    caption: 'Choose anatomy, measurements, states, and tokens for your component documentation. Plugin interface shown with sample data.'
+    src: 'screenshots/createdoc.png?v=20260908-gallery-v3',
+    width: 1440, height: 900,
+    closeup: 'screenshots/createdoc.png?v=20260908-gallery-v3',
+    alt: 'Spec Layer beside generated buttonPrimary documentation in Figma, showing usage guidance, anatomy, and component documentation controls.',
+    caption: 'Create component documentation alongside your design, with usage guidance, anatomy, and specifications.'
   },
   {
-    src: 'gallery-foundations.png',
-    closeup: 'screenshots/foundations-dark.png',
-    alt: 'Spec Layer Foundation documents screen with selected variable collections and text styles. Sample data.',
-    caption: 'Choose variable collections and text styles to document, or copy design tokens for AI. Plugin interface shown with sample data.'
+    src: 'screenshots/foundations.png?v=20260908-gallery-v3',
+    width: 1440, height: 900,
+    closeup: 'screenshots/foundations.png?v=20260908-gallery-v3',
+    alt: 'Spec Layer beside generated foundation color documentation in Figma, showing color swatches, token values, variable collections, and text styles.',
+    caption: 'Document your variable collections and text styles with color swatches, token values, and references on the Figma canvas.'
   },
   {
-    src: 'gallery-library-updates.png',
-    closeup: 'screenshots/library-dark.png',
-    alt: 'Spec Layer Library with expanded token and unbound-value changes and an Update all docs action. Sample data.',
-    caption: 'Review source changes and update the connected documentation. Plugin interface shown with sample data.'
+    src: 'screenshots/library.png?v=20260908-gallery-v3',
+    width: 1440, height: 900,
+    closeup: 'screenshots/library.png?v=20260908-gallery-v3',
+    alt: 'Spec Layer Library beside component variant documentation in Figma, showing a token change, update statuses, and the Update all docs action.',
+    caption: 'Review component and token changes in the Library, then update the connected documentation.'
   }
 ];
 
@@ -51,7 +54,8 @@ document.querySelectorAll('[data-gallery]').forEach(button => {
     const item = galleryItems[Number(button.dataset.gallery)];
     const image = document.querySelector('#gallery-image');
     if (!item || !image) return;
-    document.querySelector('#gallery-closeup').srcset = item.closeup;
+    image.width = item.width;
+    image.height = item.height;
     image.src = item.src;
     image.alt = item.alt;
     document.querySelector('#gallery-caption').textContent = item.caption;
