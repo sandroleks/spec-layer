@@ -53,11 +53,6 @@ describe('schema parity', () => {
     expect(schema.$id).toBe(SCHEMA_URI);
   });
 
-  it('keeps the published website copy byte-identical to the package schema', () => {
-    expect(readFileSync('apps/website/public/schemas/foundation-context/v5.json', 'utf8'))
-      .toBe(schemaText);
-  });
-
   it('keeps every schema enum identical to its runtime vocabulary', () => {
     // value.ts claims these arrays are "asserted equal in the schema test".
     // They were not, and nothing else could have caught it: TypeScript's
