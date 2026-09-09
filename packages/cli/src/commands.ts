@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { DtcgOptions } from '@spec-layer/extractor';
+import { CSS_INDEX_FILE, type DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
   readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
@@ -39,16 +39,17 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection, the dtcg options, and the outputs. */
+/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where briefs land. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[] },
+  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
+  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
   const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
   return selectionKey(a.selection) === selectionKey(b.selection)
-    && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? []);
+    && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? [])
+    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR);
 }
 
 function sortKeys(value: unknown): unknown {
@@ -93,7 +94,7 @@ function outputsForRun(
   return config?.outputs ?? defaultOutputs(platforms);
 }
 
-const NO_PLATFORM_NOTE = `No target platform detected, so no token file was written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
+const NO_PLATFORM_NOTE = `No target platform detected, so no token files were written for your code. Pass --platform ${PLATFORMS.join('|')}, or add outputs to speclayer.json.`;
 
 /** Platforms this run named or configured that have no registered output format (only web/css exists today). */
 function platformsMissingFormat(platforms: Platform[]): Platform[] {
@@ -108,7 +109,7 @@ function platformsMissingFormat(platforms: Platform[]): Platform[] {
  * never asked to be told about.
  */
 function missingFormatNote(platforms: Platform[]): string {
-  return `No token file exists yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
+  return `No token files exist yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
 }
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -324,6 +325,17 @@ export async function runSetup(
   return 0;
 }
 
+/** Whether every file a rendered output put on disk, per its record map plus index.css, is still there; false when the map is missing or unreadable. */
+function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolean {
+  const mapPath = join(cwd, outDir, 'outputs', `${outputId(o)}.map.json`);
+  if (!existsSync(mapPath)) return false;
+  let map: Record<string, { file?: string }>;
+  try { map = JSON.parse(readFileSync(mapPath, 'utf8')) as Record<string, { file?: string }>; } catch { return false; }
+  const files = new Set<string>([CSS_INDEX_FILE]);
+  for (const entry of Object.values(map)) if (typeof entry.file === 'string') files.add(entry.file);
+  return [...files].every((f) => existsSync(resolve(cwd, o.path, f)));
+}
+
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
@@ -342,23 +354,29 @@ export async function runPull(
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
   // Ask for a 304 only when the last pull wrote the same files this one would
-  // AND, when that includes the Foundation, every one of those files is
-  // still on disk; a changed selection, dtcg block, or outputs block needs
-  // the bundle again to re-project, and so does a deliverable or its record
-  // map a developer (or a clean) deleted, since a 304 would leave it missing
-  // rather than restoring it. Outputs are only ever written alongside the
-  // Foundation (writeBundleFiles), so a pull that never writes it - `--only
-  // components`, `include: { foundation: false }`, or a library with none -
-  // has no on-disk files to check, and the existence clause would otherwise
+  // AND every one of those files is still on disk; a changed selection, dtcg
+  // block, outputs block, or componentSpecsDir needs the bundle again to
+  // re-project, and so does a deleted brief, a deliverable directory a
+  // developer (or a clean) removed, a part file named in its record map, or
+  // index.css, since a 304 would leave any of those missing rather than
+  // restoring it. Outputs are only ever written alongside the Foundation
+  // (writeBundleFiles), so a pull that never writes it - `--only components`,
+  // `include: { foundation: false }`, or a library with none - has no
+  // deliverable files to check, and the existence clause would otherwise
   // never see a match and redownload the bundle on every run.
   const manifest = manifestAt(join(cwd, opts.outDir));
   const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
   const willWriteFoundation = selection.foundation && foundationOnDisk;
+  // A manifest from 0.6.0 carries outDir-relative component paths; they will
+  // not exist at the working directory, so the check below forces a re-fetch
+  // that rewrites them. That is the intended migration.
+  const briefsOnDisk = (manifest?.artifacts ?? [])
+    .filter((a) => a.kind === 'component' && a.path !== null)
+    .every((a) => existsSync(resolve(cwd, a.path as string)));
   const etag = manifest && sameOutput(
-    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs },
-    { selection, dtcg: opts.dtcg, outputs },
-  ) && (!willWriteFoundation || outputs.every((o) => existsSync(resolve(cwd, o.path))
-    && existsSync(join(cwd, opts.outDir, 'outputs', `${outputId(o)}.map.json`))))
+    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs, componentSpecsDir: manifest.componentSpecsDir },
+    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir },
+  ) && briefsOnDisk && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({
@@ -374,17 +392,19 @@ export async function runPull(
     return 0;
   }
   let written: string[];
-  let outputPaths: string[] = [];
+  let componentSpecs: { path: string; files: string[] } = { path: opts.componentSpecsDir, files: [] };
+  let outputResults: Array<{ path: string; files: string[] }> = [];
   try {
     const bundle = parseBundle(result.raw);
     const selected = selectComponents(bundle, selection);
     const writeResult = writeBundleFiles({
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
-      dtcg: opts.dtcg, platforms, outputs,
+      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir,
     });
     written = writeResult.written;
-    outputPaths = writeResult.outputs;
+    componentSpecs = writeResult.componentSpecs;
+    outputResults = writeResult.outputs;
     io.out(
       `Pulled ${bundle.fileName ?? opts.libraryId}: ${describePull(bundle, selection, selected)} ` +
       `(published ${result.publishedAt}).`,
@@ -393,12 +413,14 @@ export async function runPull(
     io.err(errorText(err));
     return 1;
   }
+  const count = (n: number) => `${n} file${n === 1 ? '' : 's'}`;
   io.out(`Wrote ${written.length} files under ${opts.outDir}/.`);
-  for (const path of outputPaths) {
-    const o = outputs.find((x) => x.path === path);
-    if (o) io.out(`Wrote ${path} (${o.platform}/${o.format}, ${o.case} names).`);
+  if (componentSpecs.files.length > 0) io.out(`Wrote ${componentSpecs.path}/ (${count(componentSpecs.files.length)}).`);
+  for (const r of outputResults) {
+    const o = outputs.find((x) => x.path === r.path);
+    if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
   }
-  if (outputPaths.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
+  if (outputResults.length === 0 && selection.foundation && source === 'none' && (opts.outputs === undefined)) io.out(NO_PLATFORM_NOTE);
   if (source === 'flag' || source === 'config') {
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));
