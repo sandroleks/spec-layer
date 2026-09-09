@@ -1,12 +1,13 @@
-# The web token output as a directory: one CSS file per collection and mode
+# Visible outputs: a `tokens/` directory of CSS per collection and mode, and `components/` beside it
 
 Date: 2026-09-09. Status: approved design, awaiting a plan.
 
 Supersedes section 5.1 of
 `docs/superpowers/specs/2026-09-08-repository-delivery-design.md` (the
-single-file structure) and amends sections 3, 4.1, and 4.2 of that document.
-Everything else in it stands: values, naming, selectors, the map and report,
-the in-place rule, and the platform and format registry.
+single-file structure) and section 3.1 (component briefs inside the managed
+directory), and amends sections 3, 4.1, and 4.2 of that document. Everything
+else in it stands: values, naming, selectors, the map and report, the
+in-place rule, and the platform and format registry.
 
 ## 1. Problem
 
@@ -23,10 +24,14 @@ plugin 5.0.0) produced 19 files:
 | `spec-layer/tokens.css` | 1 | the only deliverable, 515 lines |
 | repository root | 3 | `speclayer.json`, `speclayer.local.json`, `AGENTS.md` |
 
-The record is not the problem. It is read by path, by Style Dictionary and by
-agents, and it belongs in the hidden directory. The deliverable is: a second
-visible folder named `spec-layer/`, one file, and no way to import one
-collection or one mode without the rest.
+The bundle, the manifest, the DTCG record, and the output maps are not the
+problem. A token pipeline reads them by path, and they belong in the hidden
+directory. Two things are in the wrong place. The CSS is a second visible
+folder named `spec-layer/`, one file, with no way to import one collection or
+one mode without the rest. The component briefs sit inside `.speclayer/`,
+hidden from IDE trees and review, although a developer and a coding agent
+read them the way they read the CSS: as the delivered description of the
+design system, not as a record.
 
 The reference the team measured against is a Supernova CSS export of the same
 Figma file (`/Users/sandrolek/Downloads/result`): a folder, `index.css`, and
@@ -38,8 +43,13 @@ developer expects from a token package.
 
 ## 2. Decision
 
+Two visible directories beside each other, and one hidden record.
+
 The `web` / `css` output writes a **directory**, not a file. The default
 path is `tokens/` at the repository root. `spec-layer/` is no longer created.
+The component briefs move out of the managed directory into
+**`components/`**, also at the repository root by default, written by the same
+rules as `tokens/`.
 
 ```text
 tokens/
@@ -51,21 +61,28 @@ tokens/
   typography-styles.css       :root
   semantic-colors.light.css   :root, the modifier's default context
   semantic-colors.dark.css    [data-theme="dark"]
+components/
+  buttonprimary.yaml          one brief per selected component, byte-identical to Copy for AI
 .speclayer/
   bundle.json                 unchanged
-  manifest.json               unchanged shape; outputs[].path now names a directory
+  manifest.json               paths now relative to the working directory, see section 7
   tokens/                     unchanged DTCG record
-  components/*.yaml           unchanged
   outputs/
     web-css.map.json          DTCG path -> name, provenance, and now the file that declares it
     web-css.report.json       unchanged
 ```
 
-One file per resolver source. A set, which by construction has one mode, is
-named by its collection alone. A modifier writes one file per context. The
+One CSS file per resolver source. A set, which by construction has one mode,
+is named by its collection alone. A modifier writes one file per context. The
 values, selectors, names, `case`, `root`, `modeSelector`, and `modes` options
 are exactly those of the 2026-09-08 design; only where declarations land
 changes.
+
+The component files are unchanged in name and content: the slug rule of
+`componentSlugs` and the YAML from the bundle's `ai` field. Only their
+directory moves. `.speclayer/` keeps what a machine reads by path and a
+person never opens: the bundle, the manifest, the DTCG JSON, and the output
+maps and reports.
 
 Why per mode rather than per collection: a team that wants the operating
 system to choose can set the dark file's selector to `:root` through `modes`
@@ -146,36 +163,59 @@ A `var()` reference across files is valid CSS once `index.css` is imported.
 The fixed-point pruning that guarantees every reference has a declaration is
 unchanged and still runs over the whole export, not per file.
 
-## 5. Writing the directory
+## 5. Writing a visible directory
 
-`outputs[].path` names a directory relative to the working directory. Before
-anything is staged, `pull` refuses, naming the path and the fix, when:
+One rule serves both `tokens/` and `components/`. A **visible directory** is
+a path relative to the working directory, a **marker** is the byte prefix
+every file we write there begins with, and the CLI owns exactly the files
+that carry the marker.
 
-- the path is outside the repository or inside `outDir` (unchanged rules);
-- the path ends in `.css`: "0.6.0 wrote one file there. Set `path` to a
+| Directory | Config | Default | Marker |
+|---|---|---|---|
+| tokens | `outputs[].path` | `tokens` | `/* Generated by spec-layer` (`CSS_HEADER_PREFIX`) |
+| components | `componentsDir` | `components` | `spec_layer:\n  kind: component` |
+
+The component marker is the first two lines the extractor's YAML already
+emits, so the files stay byte-identical to the plugin's Copy for AI and no
+comment is prepended.
+
+Before anything is staged, `pull` refuses, naming the path and the fix, when
+a visible directory:
+
+- is outside the repository, is the working directory itself, is inside
+  `outDir`, or is the same as, or nested in, another visible directory;
+- ends in `.css` (tokens only): "0.6.0 wrote one file there. Set `path` to a
   directory, for example `tokens`, delete the old file, and pull again.";
-- the path exists and is not a directory;
-- the directory holds any entry, other than a dotfile, that is not a regular
-  file beginning with the Spec Layer header: "`tokens/` holds files spec-layer
-  did not write. Choose another path or move them." Dotfiles (`.DS_Store`,
-  `.gitkeep`) are ignored, never read, never removed.
+- exists and is not a directory;
+- holds any entry, other than a dotfile, that is not a regular file beginning
+  with its marker: "`components/` holds files spec-layer did not write.
+  Choose another path in `speclayer.json` or move them." Dotfiles
+  (`.DS_Store`, `.gitkeep`) are ignored, never read, never removed.
 
-Then, after the record has swapped into place:
+A repository that already has a `components/` of its own source is the
+expected case for that last refusal, and the message names the config key.
 
-1. Every part file is written to `<name>.partial` and renamed over its
-   target.
-2. `index.css` is written the same way, **last**, so a reader following an
-   import never finds a missing file.
-3. Every regular non-dot file in the directory that carries the header and
-   was not written by this pull is removed. A renamed collection or a dropped
-   mode would otherwise leave a stale file with old values that `index.css`
-   no longer imports. Files without the header cannot be present, because
-   the check above refused them.
+Then, after the record has swapped into place, for each visible directory:
+
+1. Every file is written to `<name>.partial` and renamed over its target.
+2. For tokens, `index.css` is written the same way, **last**, so a reader
+   following an import never finds a missing file.
+3. Every regular non-dot file in the directory that carries the marker and
+   was not written by this pull is removed. A renamed collection, a dropped
+   mode, a component removed from the library, or one dropped from
+   `include.components` would otherwise leave a stale file. Files without
+   the marker cannot be present, because the check above refused them.
 
 The 2026-09-08 sentence "never deleted, only replaced" becomes: a file the
 current pull writes is replaced in place; a Spec Layer file it no longer
 writes is removed; a file that is not ours is never touched, and its presence
 stops the pull.
+
+Selection keeps its meaning. `include.components` still decides which briefs
+are written; with stale removal, narrowing it also removes the files it no
+longer names. `--only foundation` writes nothing into `components/` and
+removes the marked files there, since the manifest then records every
+component as not written.
 
 ## 6. Configuration and the move from 0.6.0
 
@@ -183,6 +223,7 @@ stops the pull.
 {
   "libraryId": "lib_...",
   "outDir": ".speclayer",
+  "componentsDir": "components",
   "platforms": ["web"],
   "outputs": [
     { "platform": "web", "format": "css", "path": "tokens", "case": "kebab" }
@@ -190,12 +231,20 @@ stops the pull.
 }
 ```
 
+`componentsDir` is a new top-level key beside `outDir`, a string path
+relative to the working directory, default `components`. `setup` and `init`
+write it explicitly, as they write `outDir`, so the path is on record. There
+is no flag for it; it is edited in the file.
+
 `setup` and `init` write `"path": "tokens"`. The registry default changes
 from `spec-layer/tokens.css` to `tokens`. A `speclayer.json` written by 0.6.0
-carries `spec-layer/tokens.css`; `pull` refuses it with the message in
-section 5, and does not edit the config or delete the old file. Both are the
-team's, and the refusal names both steps. `status` is unaffected: it compares
-the bundle hash only.
+carries `spec-layer/tokens.css` and no `componentsDir`; `pull` refuses the
+`.css` path with the message in section 5, and does not edit the config or
+delete the old file. Both are the team's, and the refusal names both steps.
+The missing `componentsDir` takes its default, and the first 0.7.0 pull
+writes `components/` while its swap of `.speclayer/` drops the old
+`.speclayer/components/`, so no stale copy remains there. `status` is
+unaffected: it compares the bundle hash only.
 
 This is CLI **0.7.0**. The default path and the config's meaning changed, and
 the published 0.6.0 is a day old.
@@ -216,12 +265,22 @@ A path declared in more than one file (a modifier's token appears in every
 context) records the first file in source order that declares it, which for
 a modifier with a default is the default context's file. `web-css.report.json` is
 unchanged. `manifest.json` records `outputs` as before; its `path` is now the
-directory.
+directory. It gains `componentsDir`, and both are part of the freshness
+comparison, so changing either re-projects on the next pull.
+
+**Manifest paths are relative to the working directory**, not to `outDir`,
+because artifacts now live in two places: the foundation's `path` is
+`.speclayer/tokens/resolver.json` and a component's is
+`components/buttonprimary.yaml`. One convention for both, and what `list`
+prints is what the developer types. `readManifest` still reads a 0.6.0
+manifest; its outDir-relative paths are shown as written until the next pull
+rewrites them, which the refusal in section 6 forces anyway.
 
 The freshness rule in `pull` (a 304 is acceptable only when the last pull
-wrote what this one would and it is still on disk) now checks `index.css` and
-every distinct `file` named in the map, so a deleted part file comes back on
-the next pull rather than being reported up to date.
+wrote what this one would and it is still on disk) now checks `index.css`,
+every distinct `file` named in the map, and every component `path` in the
+manifest, so a deleted file comes back on the next pull rather than being
+reported up to date.
 
 ## 8. Code shape
 
@@ -234,26 +293,45 @@ when it contains anything; it is empty when nothing was declared. File naming
 header, selector, value, and naming code is untouched. `CssOutput.text` is
 removed, not kept beside `files`: one shape, one reader.
 
-**CLI**, `packages/cli/src/outputs.ts`. `FormatSpec.defaultPath` becomes
-`tokens`. `outputPathProblem` gains the directory rules of section 5.
-`writeOutputFile` becomes `writeOutputDirectory(cwd, o, files)` implementing
-steps 1 to 3. `renderOutput` returns the new shape.
+**CLI**, a new `packages/cli/src/visibleDir.ts`. The one implementation of
+section 5: `visibleDirProblem(cwd, outDir, dir, marker, others)` returns the
+refusal sentence or null, and `writeVisibleDir(cwd, dir, marker, files, last?)`
+performs steps 1 to 3, with `last` naming the file written after the others.
+Both `tokens/` and `components/` go through it; nothing else writes outside
+`outDir`.
 
-**CLI**, `packages/cli/src/files.ts`. `writeBundleFiles` carries
-`deliverables` as `{ output, files }` and calls the directory writer after
-the swap. Its return value lists the directory path once per output, as it
-lists the file today.
+**CLI**, `packages/cli/src/outputs.ts`. `FormatSpec.defaultPath` becomes
+`tokens`. `outputPathProblem` keeps the `.css` refusal and delegates the rest
+to `visibleDirProblem`. `writeOutputFile` is deleted. `renderOutput` returns
+the new shape.
+
+**CLI**, `packages/cli/src/config.ts`. `CliConfig` gains `componentsDir`,
+parsed as a non-empty string, default `components`; `writeConfig` writes it.
+
+**CLI**, `packages/cli/src/files.ts`. `writeBundleFiles` takes
+`componentsDir`, checks every visible directory before staging, stages only
+the record into `.speclayer.partial`, swaps, then writes `components/` and
+each output directory through `writeVisibleDir`. Manifest paths are
+cwd-relative (section 7). The return value lists each visible directory once
+with its file count.
 
 **CLI**, `packages/cli/src/commands.ts`. The freshness check reads the map for
-file names. The success line becomes `Wrote tokens/ (8 files, web/css, kebab
-names).` The no-platform and missing-format notes are unchanged.
+CSS file names and the manifest for component paths. The success lines become
+`Wrote 14 files under .speclayer/.`, `Wrote components/ (1 file).`, and
+`Wrote tokens/ (8 files, web/css, kebab names).` `list` prints the manifest
+paths as stored. `show` reads the bundle and is unchanged. The no-platform
+and missing-format notes are unchanged.
 
 **CLI**, `packages/cli/src/tools.ts` and `skill.ts`. The `writes` column and
 the web platform section say `outputs[].path (default tokens/ for web),
-written in place`. The guide tells the agent to import `tokens/index.css`,
-lists the part files that exist on disk, names the file a token lives in from
-the map, and shows the `prefers-color-scheme` wiring through `modes` when a
-modifier exists. The "re-run this guide after" sentence gains "or after
+written in place`, and `pull` and `setup` list `componentsDir (default
+components/)` among their writes. The guide points the agent at
+`components/` instead of `.speclayer/components/`, tells it to import
+`tokens/index.css`, lists the part files that exist on disk, names the file a
+token lives in from the map, and shows the `prefers-color-scheme` wiring
+through `modes` when a modifier exists. The rule "never edit files under
+`.speclayer/`" extends to the two visible directories: the next pull replaces
+or removes what it wrote there. The "re-run this guide after" sentence gains "or after
 changing `outputs`", since the guide in `Test123` was written 66 seconds
 before the pull that added the output and contradicted the disk.
 
@@ -261,14 +339,17 @@ before the pull that added the output and contradicted the disk.
 
 - `CHANGELOG.md`: a new Unreleased entry for CLI 0.7.0 stating the
   directory, the file rule, the default path, the `file` field, the refusal
-  for a `.css` path, and the two-step move from 0.6.0. The existing 0.6.0
+  for a `.css` path, the two-step move from 0.6.0, `components/` beside
+  `tokens/` with `componentsDir`, and cwd-relative manifest paths. The existing 0.6.0
   entry stays where it is (the file keeps one Unreleased section for the
   whole repository) and gains a note that 0.6.0 was published on 2026-09-09.
 - `packages/cli/README.md`: the layout tree, the outputs section, and the
   `modes` example.
 - `apps/website/content/docs/outputs.html`, `quickstart.html`,
   `configuration.html`, `cli.html`: every `spec-layer/tokens.css` becomes the
-  directory, and the outputs page shows `index.css` and one part file.
+  directory, every `.speclayer/components/` becomes `components/`, the file
+  trees show the two visible directories beside `.speclayer/`, and the outputs
+  page shows `index.css` and one part file.
 - The 2026-09-08 spec gets one line under its title pointing here for
   section 5.1.
 - `packages/cli/package.json` version `0.7.0`; `CLAUDE.md` status block.
@@ -279,8 +360,11 @@ before the pull that added the output and contradicted the disk.
   `index.css`, and every import names a file written in the same pull.
 - One reader of v5: the CSS output still reads the `DtcgExport` only.
 - No hash reads any output file.
-- Nothing without the Spec Layer header is ever written over, removed, or
-  read beyond its first bytes.
+- Nothing without its directory's marker is ever written over, removed, or
+  read beyond its first bytes; a visible directory holding such a file stops
+  the pull before anything is staged.
+- The component brief on disk is byte-identical to the bundle's `ai` field
+  and to the plugin's Copy for AI.
 - File names come from resolver labels and DTCG mode slugs by the stated
   rule; nothing is inferred from a token's type or a mode's meaning.
 - Output is byte-stable across runs and machines for the same export and
@@ -303,17 +387,29 @@ Extractor, `test/v5/outputs/css.test.ts`:
 Extractor, `cssGolden.test.ts`: the fixture directory holds, per case, every
 file of the synthetic Foundation. Regenerate deliberately, review the diff.
 
-CLI, `test/outputs.test.ts` and `files.test.ts`:
+CLI, a new `test/visibleDir.test.ts`, plus `outputs.test.ts` and
+`files.test.ts`:
 
 - `.css` path refused with the migration sentence; existing regular file
   refused; directory with a foreign file refused; directory with only
-  `.DS_Store` accepted;
-- a pull writes the directory, `index.css` last; a second pull with a mode
-  removed deletes the stale header-carrying file and leaves a dotfile;
-- a failed rename leaves no `.partial`.
+  `.DS_Store` accepted; `components` and `tokens` set to the same path, or one
+  nested in the other, refused; a visible directory inside `outDir` refused;
+- a pull writes `tokens/` with `index.css` last, and `components/` with one
+  marked YAML per selected component, byte-identical to the bundle's `ai`;
+- a second pull with a mode removed deletes the stale marked CSS file and
+  leaves a dotfile; a second pull with `include.components` narrowed removes
+  the brief it no longer names; `--only foundation` empties `components/` of
+  marked files;
+- nothing is written in `components/` or `tokens/` when a check fails, and a
+  failed rename leaves no `.partial`;
+- `.speclayer/` no longer contains `components/`; manifest paths are
+  cwd-relative for both kinds.
 
-CLI, `commands.test.ts`: freshness re-fetches when a part file named in the
-map is missing; the success line counts files. `skill.test.ts` and
+CLI, `config.test.ts`: `componentsDir` parsed, defaulted, written by `setup`
+and `init`, rejected when not a string. `commands.test.ts`: freshness
+re-fetches when a CSS part file or a component brief is missing; changing
+`componentsDir` re-projects; the success lines count files per directory;
+`list` prints cwd-relative paths. `skill.test.ts` and
 `tools.test.ts`: the new strings. `npm run check` green. The CLI bundle smoke
 test only proves the bundle evaluates; the end-to-end proof is a real
 `spec-layer pull` into `Test123` after the config is changed to `tokens`,
@@ -336,6 +432,14 @@ Taken 2026-09-09 with the maintainer:
    longer imports would keep old values reachable by a direct import.
 5. **A `.css` path is refused, not migrated.** The config and the old file
    are the team's; the message gives both steps.
+6. **Component briefs are visible, in `components/` beside `tokens/`.** They
+   are read by people and agents in review, like the CSS, and a hidden
+   directory kept them out of IDE trees and diffs. The YAML's own first two
+   lines are the marker, so the file is not altered to be recognisable.
+7. **Manifest paths are relative to the working directory.** Artifacts now
+   live in two places, and one convention beats two.
+8. **One directory writer for both.** `tokens/` and `components/` differ in
+   marker and in whether a file is written last; everything else is shared.
 
 ## 13. Alternatives considered
 
@@ -352,3 +456,15 @@ Taken 2026-09-09 with the maintainer:
 - **Strict one-to-one names with the JSON record** (`foundation.mode-1.css`).
   Honest but noisy; the record keeps that name for tools that want it, and
   the map's `file` field joins the two.
+- **Keep the briefs in `.speclayer/components/` and symlink or copy.** Two
+  copies of the same file, or a symlink that Windows and many bundlers
+  mishandle. Rejected.
+- **Put briefs under `tokens/components/`.** Tokens and components are
+  different things and a CSS consumer's glob over `tokens/` would pick up
+  YAML. Rejected.
+- **Prepend a `# Generated by spec-layer` comment to each brief.** Would make
+  the on-disk file differ from Copy for AI and from the bundle, for a marker
+  the YAML already provides. Rejected.
+- **A `--components-dir` flag.** `outDir` has `--out` because CI passes it;
+  nothing passes the components path, and `setup` writes it to the config.
+  Not added until something needs it.
