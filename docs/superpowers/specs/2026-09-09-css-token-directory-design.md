@@ -279,9 +279,14 @@ rewrites them, which the refusal in section 6 forces anyway.
 
 The freshness rule in `pull` (a 304 is acceptable only when the last pull
 wrote what this one would and it is still on disk) now checks `index.css`,
-every distinct `file` named in the map, and every component `path` in the
+every part file `index.css` imports, and every component `path` in the
 manifest, so a deleted file comes back on the next pull rather than being
-reported up to date.
+reported up to date. `index.css` is the authoritative list of written part
+files. The map is not: a map entry names the file that *first* declares a
+token, which for a two-mode collection is always the default mode's file, so
+a non-default mode file such as `semantic-colors.dark.css` never appears in
+the map. The first real pull into a 0.6.0 tree found exactly that gap. The
+guide's list of part files is read the same way, from the imports.
 
 ## 8. Code shape
 
@@ -328,8 +333,8 @@ the web platform section say `outputs[].path (default tokens/ for web),
 written in place`, and `pull` and `setup` list `componentSpecsDir (default
 component-specs/)` among their writes. The guide points the agent at
 `component-specs/` instead of `.speclayer/components/`, tells it to import
-`tokens/index.css`, lists the part files that exist on disk, names the file a
-token lives in from the map, and shows the `prefers-color-scheme` wiring
+`tokens/index.css`, lists the part files `index.css` imports, names the file
+a token lives in from the map, and shows the `prefers-color-scheme` wiring
 through `modes` when a modifier exists. The rule "never edit files under
 `.speclayer/`" extends to the two visible directories: the next pull replaces
 or removes what it wrote there. The "re-run this guide after" sentence gains "or after
