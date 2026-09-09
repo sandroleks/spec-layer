@@ -35,7 +35,8 @@ export const TOOLS: readonly Tool[] = [
     network: true, needsKey: true,
     writes: [
       'speclayer.json', 'speclayer.local.json', '.gitignore (one line, when inside a git repo)', '<outDir>/',
-      'outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place',
+      'outputs[].path from speclayer.json (default tokens/ for web), a directory written in place',
+      'componentSpecsDir from speclayer.json (default component-specs/), written in place',
     ],
     exits: OK_OR_ERROR,
   },
@@ -51,10 +52,14 @@ export const TOOLS: readonly Tool[] = [
   {
     name: 'pull',
     usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
-    summary: 'Fetches the published library and writes it under the output directory (default .speclayer/).',
-    when: 'After setup, whenever status says the local copy is behind, or after changing the include or dtcg block, or the outputs block.',
+    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir, and the token files under outputs[].path.',
+    when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, or componentSpecsDir blocks.',
     network: true, needsKey: true,
-    writes: ['<outDir>/', 'outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place'],
+    writes: [
+      '<outDir>/',
+      'outputs[].path from speclayer.json (default tokens/ for web), a directory written in place',
+      'componentSpecsDir from speclayer.json (default component-specs/), written in place',
+    ],
     exits: OK_OR_ERROR,
   },
   {

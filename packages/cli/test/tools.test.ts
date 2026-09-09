@@ -44,8 +44,10 @@ describe('the tool catalogue', () => {
   it('names the platform flag and the output paths for setup, init, and pull', () => {
     const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
     for (const name of ['setup', 'init', 'pull']) expect(byName[name].usage).toContain('[--platform web|ios|android|flutter]...');
-    expect(byName.setup.writes).toContain('outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place');
-    expect(byName.pull.writes).toContain('outputs[].path from speclayer.json (default spec-layer/tokens.css for web), written in place');
+    expect(byName.setup.writes).toContain('outputs[].path from speclayer.json (default tokens/ for web), a directory written in place');
+    expect(byName.setup.writes).toContain('componentSpecsDir from speclayer.json (default component-specs/), written in place');
+    expect(byName.pull.writes).toContain('outputs[].path from speclayer.json (default tokens/ for web), a directory written in place');
+    expect(byName.pull.writes).toContain('componentSpecsDir from speclayer.json (default component-specs/), written in place');
     expect(byName.init.writes).toEqual(['speclayer.json']);
   });
 
