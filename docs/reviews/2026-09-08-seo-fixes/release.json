@@ -1,0 +1,46 @@
+{
+  "url": "https://spec-layer.com",
+  "deployment": {
+    "Id": "331f13ec-550a-4d76-b562-02f9c3794d21",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "16db701",
+    "Deployment": "https://331f13ec.speclayer-landing.pages.dev",
+    "Status": "1 minute ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/331f13ec-550a-4d76-b562-02f9c3794d21"
+  },
+  "rollbackDeploymentId": "11c2e3db-d202-4b5c-b189-15fcb8b23d5a",
+  "httpChecksPassed": 59,
+  "browserChecksPassed": 44,
+  "sourceIncludesUncommittedWebsiteChanges": true,
+  "cloudflare": {
+    "wwwRuleId": "e9181576710c46aba75538fa637c19a5",
+    "wwwExpression": "(http.host eq \"www.spec-layer.com\")",
+    "wwwTarget": "concat(\"https://spec-layer.com\", http.request.uri.path)",
+    "preserveQueryString": true,
+    "bulkRuleId": "6add216546e44938b13b955d87f36b42",
+    "bulkListId": "657e798ba281426ea013cde6f80d52ba",
+    "bulkList": "spec_layer_production_domain",
+    "aliasSource": "speclayer-landing.pages.dev/",
+    "aliasTarget": "https://spec-layer.com/",
+    "status": 301,
+    "subpathMatching": true,
+    "preservePathSuffix": true,
+    "includeSubdomains": false
+  },
+  "searchConsole": {
+    "sitemap": "https://spec-layer.com/sitemap.xml",
+    "status": "processed successfully",
+    "discoveredPages": 12,
+    "homepage": "indexed; indexing requested",
+    "quickstart": "unknown to Google at baseline; indexing requested and accepted",
+    "performance": {
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "averagePosition": 1,
+      "queryRows": 0
+    },
+    "pageIndexingReport": "Processing data; totals unavailable; check again in a day or so"
+  }
+}

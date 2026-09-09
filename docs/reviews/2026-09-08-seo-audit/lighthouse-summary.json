@@ -1,0 +1,1112 @@
+[
+  {
+    "name": "home",
+    "url": "https://spec-layer.com/",
+    "version": "13.4.1",
+    "fetchTime": "2026-09-08T16:01:12.734Z",
+    "environment": {
+      "networkUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
+      "hostUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+      "benchmarkIndex": 2819,
+      "credits": {
+        "axe-core": "4.13.0"
+      }
+    },
+    "config": {
+      "output": [
+        "json",
+        "html"
+      ],
+      "maxWaitForFcp": 30000,
+      "maxWaitForLoad": 45000,
+      "pauseAfterFcpMs": 1000,
+      "pauseAfterLoadMs": 1000,
+      "networkQuietThresholdMs": 1000,
+      "cpuQuietThresholdMs": 1000,
+      "formFactor": "mobile",
+      "throttling": {
+        "rttMs": 150,
+        "throughputKbps": 1638.4,
+        "requestLatencyMs": 562.5,
+        "downloadThroughputKbps": 1474.5600000000002,
+        "uploadThroughputKbps": 675,
+        "cpuSlowdownMultiplier": 4
+      },
+      "throttlingMethod": "simulate",
+      "screenEmulation": {
+        "mobile": true,
+        "width": 412,
+        "height": 823,
+        "deviceScaleFactor": 1.75,
+        "disabled": false
+      },
+      "emulatedUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+      "auditMode": false,
+      "gatherMode": false,
+      "clearStorageTypes": [
+        "file_systems",
+        "shader_cache",
+        "service_workers",
+        "cache_storage"
+      ],
+      "disableStorageReset": false,
+      "debugNavigation": false,
+      "channel": "cli",
+      "usePassiveGathering": false,
+      "disableFullPageScreenshot": false,
+      "skipAboutBlank": false,
+      "blankPage": "about:blank",
+      "ignoreStatusCode": false,
+      "locale": "en-US",
+      "blockedUrlPatterns": null,
+      "additionalTraceCategories": null,
+      "extraHeaders": null,
+      "precomputedLanternData": null,
+      "onlyAudits": null,
+      "onlyCategories": [
+        "performance",
+        "seo",
+        "accessibility",
+        "best-practices"
+      ],
+      "skipAudits": null
+    },
+    "categories": {
+      "performance": 96,
+      "accessibility": 100,
+      "best-practices": 81,
+      "seo": 100
+    },
+    "metrics": {
+      "first-contentful-paint": {
+        "numericValue": 1975.6840000000002,
+        "display": "2.0 s"
+      },
+      "largest-contentful-paint": {
+        "numericValue": 2350.684,
+        "display": "2.4 s"
+      },
+      "total-blocking-time": {
+        "numericValue": 17.57899999999995,
+        "display": "20 ms"
+      },
+      "cumulative-layout-shift": {
+        "numericValue": 0.0005278873310581009,
+        "display": "0.001"
+      },
+      "speed-index": {
+        "numericValue": 1975.6840000000002,
+        "display": "2.0 s"
+      }
+    },
+    "seoAudits": [
+      {
+        "id": "is-crawlable",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "source",
+              "valueType": "code",
+              "label": "Blocking Directive Source"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "document-title",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "subItemsHeading": {
+                "key": "relatedNode",
+                "valueType": "node"
+              },
+              "label": "Failing Elements"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "meta-description",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "http-status-code",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "link-text",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "href",
+              "valueType": "url",
+              "label": "Link destination"
+            },
+            {
+              "key": "text",
+              "valueType": "text",
+              "label": "Link Text"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "crawlable-anchors",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "label": "Uncrawlable Link"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "robots-txt",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "index",
+              "valueType": "text",
+              "label": "Line #"
+            },
+            {
+              "key": "line",
+              "valueType": "code",
+              "label": "Content"
+            },
+            {
+              "key": "message",
+              "valueType": "code",
+              "label": "Error"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "image-alt",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "subItemsHeading": {
+                "key": "relatedNode",
+                "valueType": "node"
+              },
+              "label": "Failing Elements"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "hreflang",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "source",
+              "valueType": "code",
+              "subItemsHeading": {
+                "key": "reason",
+                "valueType": "text"
+              },
+              "label": ""
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "canonical",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "structured-data",
+        "score": null,
+        "displayMode": "manual"
+      }
+    ],
+    "opportunities": [
+      {
+        "id": "deprecations",
+        "title": "Uses deprecated APIs",
+        "display": "3 warnings found",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "value",
+              "valueType": "text",
+              "label": "Deprecation / Warning"
+            },
+            {
+              "key": "source",
+              "valueType": "source-location",
+              "label": "Source"
+            }
+          ],
+          "items": [
+            {
+              "value": "The Shared Storage API is deprecated and will be removed in a future release.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 8449
+              },
+              "subItems": {
+                "type": "subitems",
+                "items": [
+                  {
+                    "type": "link",
+                    "url": "https://chromestatus.com/feature/5076349064708096",
+                    "text": "Check the feature status page for more details."
+                  }
+                ]
+              }
+            },
+            {
+              "value": "StorageType.persistent is deprecated. Please use standardized navigator.storage instead.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 8449
+              },
+              "subItems": {
+                "type": "subitems",
+                "items": [
+                  {
+                    "type": "link",
+                    "url": "https://chromestatus.com/feature/5176235376246784",
+                    "text": "Check the feature status page for more details."
+                  },
+                  {
+                    "type": "link",
+                    "url": "https://chromiumdash.appspot.com/schedule",
+                    "text": "This change will go into effect with milestone 106."
+                  }
+                ]
+              }
+            },
+            {
+              "value": "The Protected Audience API is deprecated and will be removed in a future release.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 8449
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "cache-insight",
+        "title": "Use efficient cache lifetimes",
+        "display": "Est savings of 6 KiB",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "url",
+              "valueType": "url",
+              "label": "Request"
+            },
+            {
+              "key": "cacheLifetimeMs",
+              "valueType": "ms",
+              "label": "Cache TTL",
+              "displayUnit": "duration"
+            },
+            {
+              "key": "totalBytes",
+              "valueType": "bytes",
+              "label": "Transfer Size",
+              "displayUnit": "kb",
+              "granularity": 1
+            }
+          ],
+          "items": [
+            {
+              "url": "https://spec-layer.com/cdn-cgi/challenge-platform/h/b/scripts/jsd/41b097bd224e/main.js?",
+              "cacheLifetimeMs": 14400000,
+              "totalBytes": 9579,
+              "wastedBytes": 6513.719999999999
+            }
+          ],
+          "sortedBy": [
+            "wastedBytes"
+          ],
+          "skipSumming": [
+            "cacheLifetimeMs"
+          ],
+          "debugData": {
+            "type": "debugdata",
+            "wastedBytes": 6513.719999999999
+          }
+        }
+      },
+      {
+        "id": "image-delivery-insight",
+        "title": "Improve image delivery",
+        "display": "Est savings of 178 KiB",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "label": ""
+            },
+            {
+              "key": "url",
+              "valueType": "url",
+              "label": "URL",
+              "subItemsHeading": {
+                "key": "reason",
+                "valueType": "text"
+              }
+            },
+            {
+              "key": "totalBytes",
+              "valueType": "bytes",
+              "label": "Resource Size"
+            },
+            {
+              "key": "wastedBytes",
+              "valueType": "bytes",
+              "label": "Est Savings",
+              "subItemsHeading": {
+                "key": "wastedBytes",
+                "valueType": "bytes"
+              }
+            }
+          ],
+          "items": [
+            {
+              "node": {
+                "type": "node",
+                "lhId": "page-3-IMG",
+                "path": "1,HTML,1,BODY,2,MAIN,2,SECTION,0,DIV,2,FIGURE,0,A,0,PICTURE,1,IMG",
+                "selector": "figure.gallery > a#gallery-link > picture > img#gallery-image",
+                "boundingRect": {
+                  "top": 3198,
+                  "bottom": 3431,
+                  "left": 20,
+                  "right": 392,
+                  "width": 372,
+                  "height": 233
+                },
+                "snippet": "<img id=\"gallery-image\" src=\"screenshots/createdoc.png\" width=\"1440\" height=\"900\" loading=\"lazy\" alt=\"Spec Layer beside generated buttonPrimary documentation in Figma, showing …\">",
+                "nodeLabel": "Spec Layer beside generated buttonPrimary documentation in Figma, showing usage…"
+              },
+              "url": "https://spec-layer.com/screenshots/createdoc.png",
+              "totalBytes": 195441,
+              "wastedBytes": 182398,
+              "subItems": {
+                "type": "subitems",
+                "items": [
+                  {
+                    "reason": "This image file is larger than it needs to be (1440x900) for its displayed dimensions (372x233). Use responsive images to reduce the image download size.",
+                    "wastedBytes": 182398
+                  }
+                ]
+              }
+            }
+          ],
+          "debugData": {
+            "type": "debugdata",
+            "wastedBytes": 182398
+          }
+        }
+      },
+      {
+        "id": "network-dependency-tree-insight",
+        "title": "Network dependency tree",
+        "details": {
+          "type": "list",
+          "items": [
+            {
+              "type": "list-section",
+              "value": {
+                "type": "network-tree",
+                "chains": {
+                  "3782E75B4C70A5CBB568FD752A81DFBC": {
+                    "url": "https://spec-layer.com/",
+                    "navStartToEndTime": 184,
+                    "transferSize": 6387,
+                    "isLongest": true,
+                    "children": {
+                      "78202.2": {
+                        "url": "https://spec-layer.com/styles.css",
+                        "navStartToEndTime": 217,
+                        "transferSize": 6899,
+                        "isLongest": true,
+                        "children": {
+                          "78202.11": {
+                            "url": "https://spec-layer.com/brand.css",
+                            "navStartToEndTime": 252,
+                            "transferSize": 988,
+                            "isLongest": true,
+                            "children": {
+                              "78202.16": {
+                                "url": "https://spec-layer.com/fonts/manrope-700.ttf",
+                                "navStartToEndTime": 573,
+                                "transferSize": 42333,
+                                "isLongest": true,
+                                "children": {}
+                              },
+                              "78202.14": {
+                                "url": "https://spec-layer.com/fonts/manrope-500.ttf",
+                                "navStartToEndTime": 386,
+                                "transferSize": 41898,
+                                "children": {}
+                              },
+                              "78202.12": {
+                                "url": "https://spec-layer.com/brand/tokens.css",
+                                "navStartToEndTime": 287,
+                                "transferSize": 1546,
+                                "children": {}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "longestChain": {
+                  "duration": 573
+                }
+              }
+            },
+            {
+              "type": "list-section",
+              "title": "Preconnected origins",
+              "description": "[preconnect](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) hints help the browser establish a connection earlier in the page load, saving time when the first request for that origin is made. The following are the origins that the page preconnected to.",
+              "value": {
+                "type": "text",
+                "value": "no origins were preconnected"
+              }
+            },
+            {
+              "type": "list-section",
+              "title": "Preconnect candidates",
+              "description": "Add [preconnect](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) hints to your most important origins, but try to use no more than 4.",
+              "value": {
+                "type": "text",
+                "value": "No additional origins are good candidates for preconnecting"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "render-blocking-insight",
+        "title": "Render-blocking requests",
+        "display": "Est savings of 1,200 ms",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "url",
+              "valueType": "url",
+              "label": "URL"
+            },
+            {
+              "key": "totalBytes",
+              "valueType": "bytes",
+              "label": "Transfer Size"
+            },
+            {
+              "key": "wastedMs",
+              "valueType": "timespanMs",
+              "label": "Duration"
+            }
+          ],
+          "items": [
+            {
+              "url": "https://spec-layer.com/styles.css",
+              "totalBytes": 6899,
+              "wastedMs": 158
+            },
+            {
+              "url": "https://spec-layer.com/brand.css",
+              "totalBytes": 988,
+              "wastedMs": 158
+            },
+            {
+              "url": "https://spec-layer.com/brand/tokens.css",
+              "totalBytes": 1546,
+              "wastedMs": 158
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "docs",
+    "url": "https://spec-layer.com/docs/quickstart/",
+    "version": "13.4.1",
+    "fetchTime": "2026-09-08T16:02:00.624Z",
+    "environment": {
+      "networkUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
+      "hostUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+      "benchmarkIndex": 2845.5,
+      "credits": {
+        "axe-core": "4.13.0"
+      }
+    },
+    "config": {
+      "output": [
+        "json",
+        "html"
+      ],
+      "maxWaitForFcp": 30000,
+      "maxWaitForLoad": 45000,
+      "pauseAfterFcpMs": 1000,
+      "pauseAfterLoadMs": 1000,
+      "networkQuietThresholdMs": 1000,
+      "cpuQuietThresholdMs": 1000,
+      "formFactor": "mobile",
+      "throttling": {
+        "rttMs": 150,
+        "throughputKbps": 1638.4,
+        "requestLatencyMs": 562.5,
+        "downloadThroughputKbps": 1474.5600000000002,
+        "uploadThroughputKbps": 675,
+        "cpuSlowdownMultiplier": 4
+      },
+      "throttlingMethod": "simulate",
+      "screenEmulation": {
+        "mobile": true,
+        "width": 412,
+        "height": 823,
+        "deviceScaleFactor": 1.75,
+        "disabled": false
+      },
+      "emulatedUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+      "auditMode": false,
+      "gatherMode": false,
+      "clearStorageTypes": [
+        "file_systems",
+        "shader_cache",
+        "service_workers",
+        "cache_storage"
+      ],
+      "disableStorageReset": false,
+      "debugNavigation": false,
+      "channel": "cli",
+      "usePassiveGathering": false,
+      "disableFullPageScreenshot": false,
+      "skipAboutBlank": false,
+      "blankPage": "about:blank",
+      "ignoreStatusCode": false,
+      "locale": "en-US",
+      "blockedUrlPatterns": null,
+      "additionalTraceCategories": null,
+      "extraHeaders": null,
+      "precomputedLanternData": null,
+      "onlyAudits": null,
+      "onlyCategories": [
+        "performance",
+        "seo",
+        "accessibility",
+        "best-practices"
+      ],
+      "skipAudits": null
+    },
+    "categories": {
+      "performance": 94,
+      "accessibility": 100,
+      "best-practices": 81,
+      "seo": 100
+    },
+    "metrics": {
+      "first-contentful-paint": {
+        "numericValue": 1984.2199999999998,
+        "display": "2.0 s"
+      },
+      "largest-contentful-paint": {
+        "numericValue": 2369.22,
+        "display": "2.4 s"
+      },
+      "total-blocking-time": {
+        "numericValue": 176.44500000000016,
+        "display": "180 ms"
+      },
+      "cumulative-layout-shift": {
+        "numericValue": 0,
+        "display": "0"
+      },
+      "speed-index": {
+        "numericValue": 2623.4564982831885,
+        "display": "2.6 s"
+      }
+    },
+    "seoAudits": [
+      {
+        "id": "is-crawlable",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "source",
+              "valueType": "code",
+              "label": "Blocking Directive Source"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "document-title",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "subItemsHeading": {
+                "key": "relatedNode",
+                "valueType": "node"
+              },
+              "label": "Failing Elements"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "meta-description",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "http-status-code",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "link-text",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "href",
+              "valueType": "url",
+              "label": "Link destination"
+            },
+            {
+              "key": "text",
+              "valueType": "text",
+              "label": "Link Text"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "crawlable-anchors",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "label": "Uncrawlable Link"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "robots-txt",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "index",
+              "valueType": "text",
+              "label": "Line #"
+            },
+            {
+              "key": "line",
+              "valueType": "code",
+              "label": "Content"
+            },
+            {
+              "key": "message",
+              "valueType": "code",
+              "label": "Error"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "image-alt",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "node",
+              "valueType": "node",
+              "subItemsHeading": {
+                "key": "relatedNode",
+                "valueType": "node"
+              },
+              "label": "Failing Elements"
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "hreflang",
+        "score": 1,
+        "displayMode": "binary",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "source",
+              "valueType": "code",
+              "subItemsHeading": {
+                "key": "reason",
+                "valueType": "text"
+              },
+              "label": ""
+            }
+          ],
+          "items": []
+        }
+      },
+      {
+        "id": "canonical",
+        "score": 1,
+        "displayMode": "binary"
+      },
+      {
+        "id": "structured-data",
+        "score": null,
+        "displayMode": "manual"
+      }
+    ],
+    "opportunities": [
+      {
+        "id": "total-blocking-time",
+        "title": "Total Blocking Time",
+        "display": "180 ms"
+      },
+      {
+        "id": "deprecations",
+        "title": "Uses deprecated APIs",
+        "display": "3 warnings found",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "value",
+              "valueType": "text",
+              "label": "Deprecation / Warning"
+            },
+            {
+              "key": "source",
+              "valueType": "source-location",
+              "label": "Source"
+            }
+          ],
+          "items": [
+            {
+              "value": "The Shared Storage API is deprecated and will be removed in a future release.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 9867
+              },
+              "subItems": {
+                "type": "subitems",
+                "items": [
+                  {
+                    "type": "link",
+                    "url": "https://chromestatus.com/feature/5076349064708096",
+                    "text": "Check the feature status page for more details."
+                  }
+                ]
+              }
+            },
+            {
+              "value": "StorageType.persistent is deprecated. Please use standardized navigator.storage instead.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 9867
+              },
+              "subItems": {
+                "type": "subitems",
+                "items": [
+                  {
+                    "type": "link",
+                    "url": "https://chromestatus.com/feature/5176235376246784",
+                    "text": "Check the feature status page for more details."
+                  },
+                  {
+                    "type": "link",
+                    "url": "https://chromiumdash.appspot.com/schedule",
+                    "text": "This change will go into effect with milestone 106."
+                  }
+                ]
+              }
+            },
+            {
+              "value": "The Protected Audience API is deprecated and will be removed in a future release.",
+              "source": {
+                "type": "source-location",
+                "url": "https://spec-layer.com/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+                "urlProvider": "network",
+                "line": 0,
+                "column": 9867
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "cache-insight",
+        "title": "Use efficient cache lifetimes",
+        "display": "Est savings of 6 KiB",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "url",
+              "valueType": "url",
+              "label": "Request"
+            },
+            {
+              "key": "cacheLifetimeMs",
+              "valueType": "ms",
+              "label": "Cache TTL",
+              "displayUnit": "duration"
+            },
+            {
+              "key": "totalBytes",
+              "valueType": "bytes",
+              "label": "Transfer Size",
+              "displayUnit": "kb",
+              "granularity": 1
+            }
+          ],
+          "items": [
+            {
+              "url": "https://spec-layer.com/cdn-cgi/challenge-platform/h/b/scripts/jsd/41b097bd224e/main.js?",
+              "cacheLifetimeMs": 14400000,
+              "totalBytes": 9716,
+              "wastedBytes": 6606.879999999999
+            }
+          ],
+          "sortedBy": [
+            "wastedBytes"
+          ],
+          "skipSumming": [
+            "cacheLifetimeMs"
+          ],
+          "debugData": {
+            "type": "debugdata",
+            "wastedBytes": 6606.879999999999
+          }
+        }
+      },
+      {
+        "id": "network-dependency-tree-insight",
+        "title": "Network dependency tree",
+        "details": {
+          "type": "list",
+          "items": [
+            {
+              "type": "list-section",
+              "value": {
+                "type": "network-tree",
+                "chains": {
+                  "C4ECF2900551B84F8686D9D9D51A1864": {
+                    "url": "https://spec-layer.com/docs/quickstart/",
+                    "navStartToEndTime": 151,
+                    "transferSize": 5256,
+                    "isLongest": true,
+                    "children": {
+                      "78841.2": {
+                        "url": "https://spec-layer.com/styles.css",
+                        "navStartToEndTime": 193,
+                        "transferSize": 6899,
+                        "isLongest": true,
+                        "children": {
+                          "78841.12": {
+                            "url": "https://spec-layer.com/brand.css",
+                            "navStartToEndTime": 232,
+                            "transferSize": 988,
+                            "isLongest": true,
+                            "children": {
+                              "78841.15": {
+                                "url": "https://spec-layer.com/fonts/manrope-500.ttf",
+                                "navStartToEndTime": 629,
+                                "transferSize": 41898,
+                                "isLongest": true,
+                                "children": {}
+                              },
+                              "78841.17": {
+                                "url": "https://spec-layer.com/fonts/manrope-700.ttf",
+                                "navStartToEndTime": 629,
+                                "transferSize": 42333,
+                                "children": {}
+                              },
+                              "78841.13": {
+                                "url": "https://spec-layer.com/brand/tokens.css",
+                                "navStartToEndTime": 267,
+                                "transferSize": 1546,
+                                "children": {}
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "78841.3": {
+                        "url": "https://spec-layer.com/docs.css",
+                        "navStartToEndTime": 188,
+                        "transferSize": 2714,
+                        "children": {}
+                      }
+                    }
+                  }
+                },
+                "longestChain": {
+                  "duration": 629
+                }
+              }
+            },
+            {
+              "type": "list-section",
+              "title": "Preconnected origins",
+              "description": "[preconnect](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) hints help the browser establish a connection earlier in the page load, saving time when the first request for that origin is made. The following are the origins that the page preconnected to.",
+              "value": {
+                "type": "text",
+                "value": "no origins were preconnected"
+              }
+            },
+            {
+              "type": "list-section",
+              "title": "Preconnect candidates",
+              "description": "Add [preconnect](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) hints to your most important origins, but try to use no more than 4.",
+              "value": {
+                "type": "text",
+                "value": "No additional origins are good candidates for preconnecting"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "render-blocking-insight",
+        "title": "Render-blocking requests",
+        "display": "Est savings of 1,220 ms",
+        "details": {
+          "type": "table",
+          "headings": [
+            {
+              "key": "url",
+              "valueType": "url",
+              "label": "URL"
+            },
+            {
+              "key": "totalBytes",
+              "valueType": "bytes",
+              "label": "Transfer Size"
+            },
+            {
+              "key": "wastedMs",
+              "valueType": "timespanMs",
+              "label": "Duration"
+            }
+          ],
+          "items": [
+            {
+              "url": "https://spec-layer.com/styles.css",
+              "totalBytes": 6899,
+              "wastedMs": 160
+            },
+            {
+              "url": "https://spec-layer.com/brand.css",
+              "totalBytes": 988,
+              "wastedMs": 160
+            },
+            {
+              "url": "https://spec-layer.com/docs.css",
+              "totalBytes": 2714,
+              "wastedMs": 460
+            },
+            {
+              "url": "https://spec-layer.com/brand/tokens.css",
+              "totalBytes": 1546,
+              "wastedMs": 160
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

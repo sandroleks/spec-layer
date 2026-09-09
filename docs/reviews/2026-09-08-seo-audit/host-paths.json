@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://www.spec-layer.com/docs/cli/?audit=1",
+    "status": 301,
+    "location": "https://spec-layer.com/docs/cli/?audit=1"
+  },
+  {
+    "url": "http://www.spec-layer.com/docs/cli/?audit=1",
+    "status": 404,
+    "location": null
+  },
+  {
+    "url": "http://spec-layer.com/docs/cli/?audit=1",
+    "status": 301,
+    "location": "https://spec-layer.com/docs/cli/?audit=1"
+  },
+  {
+    "url": "https://speclayer-landing.pages.dev/docs/",
+    "status": 200,
+    "location": null
+  }
+]

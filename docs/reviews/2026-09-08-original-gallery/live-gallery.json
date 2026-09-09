@@ -1,0 +1,54 @@
+[
+  {
+    "viewport": 1440,
+    "devicePixelRatio": 2,
+    "original1440x900": true,
+    "fullAspectRatio": true,
+    "files": [
+      {
+        "name": "createdoc",
+        "sha256": "1f639bdb42b3798c08427c2017bdb3c6c3e5543d938001164e9a52f86adc4003",
+        "bytes": 195441,
+        "originalBytesMatch": true
+      },
+      {
+        "name": "foundations",
+        "sha256": "464d2060eb6ce5034e635603e77ccc56ad43dbad41b1b75fe18692e8cf2da3bf",
+        "bytes": 197210,
+        "originalBytesMatch": true
+      },
+      {
+        "name": "library",
+        "sha256": "12c145be3f67e6b841e20768cb760b6c09d8b94cef0781312143ebb9ccd2d7c4",
+        "bytes": 186847,
+        "originalBytesMatch": true
+      }
+    ]
+  },
+  {
+    "viewport": 390,
+    "devicePixelRatio": 3,
+    "original1440x900": true,
+    "fullAspectRatio": true,
+    "files": [
+      {
+        "name": "createdoc",
+        "sha256": "1f639bdb42b3798c08427c2017bdb3c6c3e5543d938001164e9a52f86adc4003",
+        "bytes": 195441,
+        "originalBytesMatch": true
+      },
+      {
+        "name": "foundations",
+        "sha256": "464d2060eb6ce5034e635603e77ccc56ad43dbad41b1b75fe18692e8cf2da3bf",
+        "bytes": 197210,
+        "originalBytesMatch": true
+      },
+      {
+        "name": "library",
+        "sha256": "12c145be3f67e6b841e20768cb760b6c09d8b94cef0781312143ebb9ccd2d7c4",
+        "bytes": 186847,
+        "originalBytesMatch": true
+      }
+    ]
+  }
+]

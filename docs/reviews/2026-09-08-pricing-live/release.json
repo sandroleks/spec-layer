@@ -1,0 +1,25 @@
+{
+  "url": "https://spec-layer.com",
+  "deployment": {
+    "Id": "7a53b538-0d28-45b1-8cb9-a35bed788e32",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "afa7998",
+    "Deployment": "https://7a53b538.speclayer-landing.pages.dev",
+    "Status": "42 seconds ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/7a53b538-0d28-45b1-8cb9-a35bed788e32"
+  },
+  "rollbackDeployment": {
+    "Id": "331f13ec-550a-4d76-b562-02f9c3794d21",
+    "Environment": "Production",
+    "Branch": "main",
+    "Source": "16db701",
+    "Deployment": "https://331f13ec.speclayer-landing.pages.dev",
+    "Status": "28 minutes ago",
+    "Build": "https://dash.cloudflare.com/f3ea0f8b485b5b11e917f415c224b1cb/pages/view/speclayer-landing/331f13ec-550a-4d76-b562-02f9c3794d21"
+  },
+  "scope": "Website only: Free and Pro plan copy, Teams custom card, related docs and policy updates; three cards side by side on wide screens.",
+  "backendAndPluginDeployed": false,
+  "freePublishingAvailability": "Unverified; current checkout still contains Pro-only publishing gates.",
+  "sourceIncludesUncommittedWebsiteChanges": true
+}
