@@ -398,8 +398,8 @@ export async function runPull(
     return 0;
   }
   let written: string[];
-  let componentSpecs: { path: string; files: string[] } = { path: opts.componentSpecsDir, files: [] };
-  let outputResults: Array<{ path: string; files: string[] }> = [];
+  let componentSpecs: { path: string; files: string[] };
+  let outputResults: Array<{ path: string; files: string[] }>;
   try {
     const bundle = parseBundle(result.raw);
     const selected = selectComponents(bundle, selection);

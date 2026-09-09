@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, acceptCssDeclared, cssFileNames, cssOutput, foundationDtcg,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, acceptCssDeclared, cssFileNames, cssOutput, dtcgSlug, foundationDtcg,
   type CssOutput, type CssSource, type DtcgExport,
 } from '../../../src/index';
 import { syntheticArtifact } from '../dtcgFixture';
@@ -453,5 +453,28 @@ describe('cssOutput on the synthetic foundation', () => {
     const a = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
     const b = cssOutput(foundationDtcg(syntheticArtifact()), HEADER);
     expect(a).toEqual(b);
+  });
+});
+
+describe('dtcgSlug', () => {
+  it('lowercases, collapses non-alphanumeric runs to a dash, and trims the ends', () => {
+    expect(dtcgSlug('  Semantic Colors ')).toBe('semantic-colors');
+  });
+
+  it('falls back to "unnamed" when nothing but dashes survives', () => {
+    expect(dtcgSlug('---')).toBe('unnamed');
+  });
+
+  it('trims a single leading and trailing dash', () => {
+    expect(dtcgSlug('-a-')).toBe('a');
+  });
+
+  it('handles a plain multi-word name', () => {
+    expect(dtcgSlug('Effect styles')).toBe('effect-styles');
+  });
+
+  it('completes in linear time on a long run of dashes before a character', () => {
+    const input = '-'.repeat(20000) + 'x';
+    expect(dtcgSlug(input)).toBe('x');
   });
 });

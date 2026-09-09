@@ -108,8 +108,17 @@ export function dtcgPathOf(collectionName: string, tokenName: string): string {
  * every run outside a-z0-9 becomes `-`, ends trimmed, `unnamed` when nothing
  * is left. Exported so the CSS projection names its files by the same rule.
  */
+/** Removes leading and trailing `-` without a backtracking regex; the input is a Figma name. */
+function trimDashes(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s[start] === '-') start += 1;
+  while (end > start && s[end - 1] === '-') end -= 1;
+  return s.slice(start, end);
+}
+
 export const dtcgSlug = (s: string): string =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
+  trimDashes(s.toLowerCase().replace(/[^a-z0-9]+/g, '-')) || 'unnamed';
 const slug = dtcgSlug;
 
 /** The names the export writes itself. A collection file must never land on
