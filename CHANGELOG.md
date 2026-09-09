@@ -479,6 +479,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Publish** no longer answers a repeated content transition from the
+  retry cache. The update reservation was keyed by `previous -> next` content
+  hash, so publishing A, B, A and then B again inside 24 hours replayed the
+  first B as `unchanged` and never wrote it. The key now includes the stored
+  library's `publishedAt`, which every write moves, and a retry that lands
+  after the commit is answered by the stored-hash check instead.
+- **Publish** keeps the file's library id on a `403 not_owner`. The plugin had
+  treated it like a deleted library and cleared the shared id, so a teammate
+  clicking Publish on a free-plan file stranded the owner's developers. Only a
+  `404` clears now; a refusal reads "This library was published by another
+  account, or from a device that no longer holds its key."
+- **Publish** refuses, without writing, when the license service cannot be
+  reached. A Pro caller whose key could not be checked was published as free,
+  metered on the free bucket, capped at one library, and given a library
+  owned by the Figma identity. The `unreachable` verdict is a 401 again, and
+  the plugin says the key could not be checked rather than asking for one.
+- **Publish** 401 copy now reads the proxy's reason: an inactive key says so
+  and points at Settings instead of asking for a key already entered.
+- **Publish** free-limit copy counts the libraries a lapsed Pro license still
+  owns ("3 files, including <name>") instead of naming one as if it were the
+  only one; the proxy's `library_limit` body carries `owned`.
+- **Publish screen** no longer fabricates an AI writing quota from a publish
+  response. When no quota fetch had landed, the response's tier stood in for
+  the whole plan and the header showed "No free uses left" until the fetch
+  arrived. The publish snapshot is kept on its own and the header waits.
+- **`spec-layer pull` CSS** escapes `*/` and line breaks in the collection and
+  mode names it writes into comments, so a Figma name cannot close the comment
+  and inject a rule into `tokens.css`.
 - **Publish for developers** no longer carries a header sized for a second
   line it does not have. Its title sat 34px above the first section where
   every other screen puts it 15px, which had been true since the screen
@@ -619,6 +647,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Security
 
+- **Free-plan libraries need their pull key to be written.** Free library
+  publishing proved ownership with the `X-Figma-User` header alone, and that
+  header is a client-asserted Figma user id anyone can send, so a request
+  naming the owner's id and a known library id could overwrite the bundle or
+  rotate the pull key. An update or rotate of a library owned by a Figma
+  identity now also carries the library's current pull key as `X-Pull-Key`;
+  the plugin sends the key it stored at publish time. License-owned libraries
+  are unchanged, since the bearer is already a secret.
 - License hardening: transient Lemon Squeezy errors (rate limits, 5xx,
   malformed responses) no longer read as invalid keys, and renewals show
   as Pro immediately after Activate instead of a stale cached status.

@@ -332,7 +332,7 @@ const CORS_HEADERS: Record<string, string> = {
   // no cookies) is the correct and safe setting here.
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, If-None-Match',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, X-Pull-Key, If-None-Match',
   // Without this, the plugin iframe cannot read the quota headers at all.
   'Access-Control-Expose-Headers':
     'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At',

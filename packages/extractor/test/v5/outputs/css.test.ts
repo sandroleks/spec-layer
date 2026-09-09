@@ -93,6 +93,21 @@ describe('cssOutput values', () => {
   });
 });
 
+describe('cssOutput comments', () => {
+  it('keeps a collection or mode name from closing the comment it is written in', () => {
+    const evil = 'Brand */ * { display: none } /*';
+    const exp = small();
+    exp.files['evil.default.json'] = { [evil]: { ink: color('#000000') } };
+    exp.resolver.sets[evil] = { sources: [{ $ref: 'evil.default.json' }] };
+    exp.resolver.resolutionOrder.push({ $ref: `#/sets/${evil}` });
+    const text = cssOutput(exp, { ...HEADER, libraryId: 'lib_x */ body { display: none } /*' }).text;
+    // The name's `*/` no longer closes the comment, so the rule stays inside it.
+    expect(text).not.toContain('Brand */');
+    expect(text).toContain('  /* Brand * / * { display: none } /* */');
+    expect(text).toContain('from library lib_x * / body { display: none } /*, foundation');
+  });
+});
+
 describe('cssOutput names, modes, and reports', () => {
   it('records provenance for every emitted name', () => {
     const { map } = cssOutput(small(), HEADER);

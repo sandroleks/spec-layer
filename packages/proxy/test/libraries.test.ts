@@ -84,6 +84,15 @@ function publishReq(body: unknown, headers: Record<string, string> = { Authoriza
 }
 const bearer = (key = UUID_KEY) => ({ Authorization: `Bearer ${key}` });
 const figma = (id = 'u1') => ({ 'X-Figma-User': id });
+/** The pull key a free-plan library's writes must carry beside the Figma header. */
+const pull = (key: string) => ({ 'X-Pull-Key': key });
+
+/** Creates a library on the free plan and returns what the proxy handed back. */
+async function freeLibrary(d: HandlerDeps, bundle: unknown = BUNDLE, id = 'u1') {
+  const created = await handlePublish(publishReq({ bundle }, figma(id)), d);
+  const body = await created.json() as { libraryId: string; pullKey: string; publishedAt: string };
+  return { ...body, headers: { ...figma(id), ...pull(body.pullKey) } };
+}
 
 function pullReq(libraryId: string, key: string, etag?: string) {
   return new Request(`https://proxy.test/v1/libraries/${libraryId}`, {
@@ -218,17 +227,20 @@ describe('handlePublish', () => {
     expect(meta.licenseId).toBe(`free:${hashFigmaId('u1', 'salt')}`);
   });
 
-  it('lets a Pro caller sending both headers update a library created while free', async () => {
+  it('lets a Pro caller sending both headers and the key update a library created while free', async () => {
     const d = deps();
-    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
-    const { libraryId } = await created.json() as { libraryId: string };
+    const { libraryId, headers } = await freeLibrary(d);
     await seedPro(d);
     const changed = {
       ...BUNDLE,
       components: [...BUNDLE.components, { name: 'Card', ai: 'component: Card\n', artifact: { spec_layer: { export: { content_hash: 'ccc' } } } }],
     };
-    const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
+    const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...headers }), d);
     expect(res.status).toBe(200);
+    // The license is a secret, but it was not this library's owner: the free
+    // identity was, and it still needs the key to write.
+    const noKey = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
+    expect(noKey.status).toBe(403);
   });
 
   it('lets a lapsed license update the library it created while Pro', async () => {
@@ -237,6 +249,29 @@ describe('handlePublish', () => {
     const changed = { ...BUNDLE, fileName: 'Renamed' };
     const res = await handlePublish(publishReq({ libraryId, bundle: changed }, { ...bearer(), ...figma() }), d);
     expect(res.status).toBe(200);
+  });
+
+  it('refuses to publish as free when the license could not be checked', async () => {
+    // No cache entry and Lemon Squeezy down: the key may well be active, so
+    // the publish must not be metered, capped, or owned as free.
+    const d = deps({ fetcher: (async () => { throw new Error('offline'); }) as unknown as typeof fetch });
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'license_not_active', reason: 'unreachable' });
+    expect(d.libraryStore.map.size).toBe(0);
+  });
+
+  it('says how many libraries a lapsed license still owns when it hits the free limit', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const licenseId = `lic:${sha256(UUID_KEY)}`;
+    await d.libraryStore.put(`libowner:${licenseId}:lib_${'1'.repeat(24)}`, '1');
+    await d.libraryStore.put(`libowner:${licenseId}:lib_${'2'.repeat(24)}`, '1');
+    await seedFree(d);
+    const res = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Fourth' } }, { ...bearer(), ...figma() }), d);
+    expect(res.status).toBe(403);
+    const body = await res.json() as { error: string; limit: number; owned: number; existing: { libraryId: string } };
+    expect(body).toMatchObject({ error: 'library_limit', limit: 1, owned: 3 });
+    expect([libraryId, `lib_${'1'.repeat(24)}`, `lib_${'2'.repeat(24)}`]).toContain(body.existing.libraryId);
   });
 
   it('rejects a lapsed bearer-only update to its own library (legacy client)', async () => {
@@ -255,7 +290,7 @@ describe('handlePublish', () => {
     const res = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Second' } }, figma()), d);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({
-      error: 'library_limit', limit: 1, existing: { libraryId, fileName: 'Test File' },
+      error: 'library_limit', limit: 1, owned: 1, existing: { libraryId, fileName: 'Test File' },
     });
   });
 
@@ -395,7 +430,7 @@ describe('handlePublish', () => {
 
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'library_limit', limit: LIBRARY_LIMITS.pro });
+    expect(await res.json()).toEqual({ error: 'library_limit', limit: LIBRARY_LIMITS.pro, owned: LIBRARY_LIMITS.pro });
   });
 
   it('migrates a legacy owner array to per-library keys and counts both', async () => {
@@ -442,15 +477,14 @@ describe('handlePublish', () => {
 
   it('replays an unchanged republish without counting or writing', async () => {
     const d = deps();
-    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
-    const { libraryId, publishedAt } = await created.json() as { libraryId: string; publishedAt: string };
+    const { libraryId, publishedAt, headers } = await freeLibrary(d);
     const puts = d.libraryStore.map.size;
     // What a second click of Publish actually sends: the same sources rebuilt,
     // so only the export envelope's timestamps moved. The bytes differ; the
     // content does not.
     const rebuilt = bundleAt('2026-07-01T00:05:00.000Z');
     expect(JSON.stringify(rebuilt)).not.toBe(JSON.stringify(BUNDLE));
-    const res = await handlePublish(publishReq({ libraryId, bundle: rebuilt }, figma()), d);
+    const res = await handlePublish(publishReq({ libraryId, bundle: rebuilt }, headers), d);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ libraryId, publishedAt, unchanged: true });
     expect(res.headers.get('X-Quota-Used')).toBe('1');
@@ -464,32 +498,39 @@ describe('handlePublish', () => {
     const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
     const a = { ...BUNDLE, fileName: 'A' };
     const b = { ...BUNDLE, fileName: 'B' };
-    const created = await handlePublish(publishReq({ bundle: a }, figma()), d);
-    const { libraryId } = await created.json() as { libraryId: string };
+    const { libraryId, headers } = await freeLibrary(d, a);
     t += 60_000;
-    expect((await handlePublish(publishReq({ libraryId, bundle: b }, figma()), d)).status).toBe(200);
+    expect((await handlePublish(publishReq({ libraryId, bundle: b }, headers), d)).status).toBe(200);
     // Back to A, well inside the 24-hour response cache. Keyed by destination
     // alone this would replay A's first reservation and answer `unchanged`
-    // while KV still held B; keyed by the transition it is a new reservation.
+    // while KV still held B; keyed by the stored state it is a new reservation.
     t += 60_000;
-    const res = await handlePublish(publishReq({ libraryId, bundle: a }, figma()), d);
+    const res = await handlePublish(publishReq({ libraryId, bundle: a }, headers), d);
     expect(res.status).toBe(200);
     expect(await res.json()).not.toHaveProperty('unchanged');
     expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(a));
     expect(res.headers.get('X-Quota-Used')).toBe('3');
+    // And forward to B again: the same content transition as the second
+    // publish, which a transition-keyed cache would replay as `unchanged`
+    // while KV still held A.
+    t += 60_000;
+    const again = await handlePublish(publishReq({ libraryId, bundle: b }, headers), d);
+    expect(again.status).toBe(200);
+    expect(await again.json()).not.toHaveProperty('unchanged');
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(b));
+    expect(again.headers.get('X-Quota-Used')).toBe('4');
   });
 
-  it('replays a retry of the same transition', async () => {
+  it('answers a retry of a committed update as unchanged without counting', async () => {
     const d = deps();
-    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
-    const { libraryId } = await created.json() as { libraryId: string };
+    const { libraryId, headers } = await freeLibrary(d);
     const changed = { ...BUNDLE, fileName: 'Renamed' };
-    const first = await handlePublish(publishReq({ libraryId, bundle: changed }, figma()), d);
+    const first = await handlePublish(publishReq({ libraryId, bundle: changed }, headers), d);
     expect(first.status).toBe(200);
     const publishedAt = (await first.json() as { publishedAt: string }).publishedAt;
-    const retry = await handlePublish(publishReq({ libraryId, bundle: changed }, figma()), d);
+    const retry = await handlePublish(publishReq({ libraryId, bundle: changed }, headers), d);
     expect(retry.status).toBe(200);
-    // Same transition, so the committed reservation answers it: one update spent.
+    // The stored hash already matches, so the retry costs nothing: one update spent.
     expect(await retry.json()).toEqual({ libraryId, publishedAt, unchanged: true });
     expect(retry.headers.get('X-Quota-Used')).toBe('2');
   });
@@ -497,15 +538,14 @@ describe('handlePublish', () => {
   it('refuses the eleventh changed publish in a month with 402', async () => {
     let t = Date.parse('2026-07-01T00:00:00Z');
     const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
-    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
-    const { libraryId } = await created.json() as { libraryId: string };
+    const { libraryId, headers } = await freeLibrary(d);
     for (let i = 1; i < 10; i += 1) {
       t += 60_000;
-      const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: `v${i}` } }, figma()), d);
+      const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: `v${i}` } }, headers), d);
       expect(res.status).toBe(200);
     }
     t += 60_000;
-    const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: 'v10' } }, figma()), d);
+    const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: 'v10' } }, headers), d);
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: 'quota_exhausted', resetsAt: '2026-08-01T00:00:00.000Z' });
     expect(res.headers.get('X-Tier')).toBe('free');
@@ -700,14 +740,38 @@ describe('handleRotate', () => {
     expect((await res.json() as { pullKey: string }).pullKey).toMatch(PULL_KEY_RE);
   });
 
-  it('rotates for a free owner and refuses a stranger', async () => {
+  it('rotates for a free owner holding the key and refuses a stranger', async () => {
     const d = deps();
-    const created = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
-    const { libraryId } = await created.json() as { libraryId: string };
-    expect((await handleRotate(rotateReq(libraryId, figma('u1')), d, libraryId)).status).toBe(200);
+    const { libraryId, headers, pullKey } = await freeLibrary(d);
+    const rotated = await handleRotate(rotateReq(libraryId, headers), d, libraryId);
+    expect(rotated.status).toBe(200);
+    const { pullKey: next } = await rotated.json() as { pullKey: string };
+    // The old key no longer proves anything; the new one does.
+    const stale = await handleRotate(rotateReq(libraryId, { ...figma('u1'), ...pull(pullKey) }), d, libraryId);
+    expect(stale.status).toBe(403);
+    expect((await handleRotate(rotateReq(libraryId, { ...figma('u1'), ...pull(next) }), d, libraryId)).status).toBe(200);
     const stranger = await handleRotate(rotateReq(libraryId, figma('u2')), d, libraryId);
     expect(stranger.status).toBe(403);
     expect(await stranger.json()).toEqual({ error: 'not_owner' });
+  });
+
+  it('refuses a free-plan write that carries the owner\'s Figma id but not the key', async () => {
+    // The Figma user id is not a secret: anyone who has seen it can send it.
+    const d = deps();
+    const { libraryId, pullKey } = await freeLibrary(d);
+    const spoofedRotate = await handleRotate(rotateReq(libraryId, figma('u1')), d, libraryId);
+    expect(spoofedRotate.status).toBe(403);
+    expect(await spoofedRotate.json()).toEqual({ error: 'not_owner' });
+    const spoofedUpdate = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: 'Taken' } }, figma('u1')), d);
+    expect(spoofedUpdate.status).toBe(403);
+    expect(await spoofedUpdate.json()).toEqual({ error: 'not_owner' });
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE));
+    // The key alone is not enough either: the Figma identity must own the library.
+    const keyOnly = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, { ...figma('u2'), ...pull(pullKey) }), d);
+    expect(keyOnly.status).toBe(403);
+    // A wrong key with the right identity is refused too.
+    const wrongKey = await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, { ...figma('u1'), ...pull(newPullKey()) }), d);
+    expect(wrongKey.status).toBe(403);
   });
 
   it('404s an unknown library', async () => {

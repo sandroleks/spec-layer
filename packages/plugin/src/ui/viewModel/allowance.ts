@@ -112,12 +112,12 @@ export type PublishAllowance =
   | { kind: 'free'; remaining: number; limit: number; resetsAt: string };
 
 /**
- * The publish screen's updates line. Pro and "not told yet" both hide it: the
+ * The publish screen's updates line, from the publish snapshot of a quota
+ * fetch or of a publish response. Pro and "not told yet" both hide it: the
  * server is the authority, and the publish result carries the answer when the
  * meter could not.
  */
-export function publishAllowance(quota: ProxyQuota | null): PublishAllowance {
-  const publish = quota?.publish;
+export function publishAllowance(publish: ProxyQuota['publish'] | null): PublishAllowance {
   if (!publish || publish.tier === 'pro') return { kind: 'hidden' };
   // A free plan whose limit the server did not state is not a plan with no
   // updates left. Hiding the line says nothing; a `0 of 0` line would say

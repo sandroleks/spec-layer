@@ -130,9 +130,9 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-05)
+## Where things stand (2026-09-09)
 
-`main` is clean and green: 2136 tests passing, 9 todo.
+`main` is clean and green: 132 test files, 2458 tests passing, 9 todo.
 
 Shipped and merged:
 
@@ -156,7 +156,7 @@ Shipped and merged:
   YAML. The AI profile now feeds only the Foundation dependency slice a
   Component Context v5 copy embeds.
 - Production proxy at `api.spec-layer.com`, landing site, freemium flow.
-- **CLI agent access** (CLI `0.5.0`, unpublished). `spec-layer tools` is the
+- **CLI agent access** (CLI `0.5.0`, published 2026-09-06). `spec-layer tools` is the
   command catalogue with network, key, writes, and exit codes per command.
   `spec-layer skill --install` writes a coding-agent guide built from that
   catalogue, the last pull, and a root-only reading of the repository's stack
@@ -186,8 +186,8 @@ Open, in rough priority order:
    republished with schema 5.1.0. The canonical artifact reported 70 errors,
    64 of them `UNIT_METADATA_UNAVAILABLE`, which is what motivated this
    branch's diagnostic severity policy recalibrating that code down to a
-   warning. CLI 0.4.0 is on npm (latest, 2026-09-05); the plugin republish is
-   still pending.
+   warning. CLI 0.5.0 is on npm (latest, 2026-09-06) and 0.6.0 is on `main`
+   unpublished; the plugin republish is still pending.
 3. Real design-system grading for v5 criteria 3, 10, and 11 (synthetic golden
    passes; a reviewed real artifact does not exist in-repo). Criterion 9
    (style lifecycle) is ungradable from the current Plugin API.
