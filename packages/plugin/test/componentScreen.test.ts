@@ -322,6 +322,18 @@ describe('component screen markup', () => {
     expect(markup).toContain('sl-doc-option');
   });
 
+  it('gives the hidden-elements switch the same label type as AI writing', () => {
+    // The two rows share one CSS rule set. When this one carried its own copy,
+    // the copy set the font on the wrapper instead of the inner <strong>, so
+    // the label rendered at the browser's `bolder` and visibly disagreed with
+    // "AI writing" right above it.
+    const markup = componentScrollMarkup(
+      READY, createComponentSelection(true), facts({ hasStates: true, hasHiddenParts: true }),
+    );
+    expect(markup).toContain('<span class="sl-ai-control-copy"><strong>AI writing</strong>');
+    expect(markup).toContain('<span class="sl-doc-option-copy"><strong>Document hidden elements</strong>');
+  });
+
   it('offers "Document hidden elements" only when the component has hidden-by-default parts', () => {
     const selection = createComponentSelection(true);
     const without = componentScrollMarkup(READY, selection, facts({ hasStates: true }));
@@ -331,8 +343,13 @@ describe('component screen markup', () => {
     expect(withHidden).toContain('role="switch" aria-label="Document hidden elements" data-include-hidden');
     expect(withHidden).toContain('Document hidden elements');
     // The caption this shipped with was a two-sentence paragraph in an
-    // uppercase micro-caps style. The label carries it alone.
-    expect(withHidden).not.toContain('Includes layers that a boolean property turns on');
+    // uppercase micro-caps style, which made it unreadable. The explanation
+    // moved to the same tooltip pattern the AI writing switch uses, so the
+    // label reads alone and the detail is still one hover away.
+    expect(withHidden).toContain('data-tooltip-trigger');
+    expect(withHidden).toContain('id="sl-hidden-help-text" role="tooltip"');
+    expect(withHidden).toContain('aria-describedby="sl-hidden-help-text"');
+    expect(withHidden).toContain('layers that a boolean property turns on');
     expect(withHidden).not.toContain('data-include-hidden checked');
 
     selection.includeHidden = true;

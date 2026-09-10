@@ -70,6 +70,19 @@ const AI_HELP =
   'and tokens still come directly from Figma. Creating docs uses one free AI ' +
   'writing use when this is on.';
 
+/**
+ * The explanation the switch's own label cannot carry.
+ *
+ * This text shipped as a caption under the control, set in an uppercase
+ * micro-caps style built for two-word labels, which made two sentences of it
+ * unreadable. The information was never the problem, so it moved to the same
+ * tooltip pattern the AI writing switch already uses rather than being cut.
+ */
+const HIDDEN_HELP =
+  'This component has layers that a boolean property turns on, off by ' +
+  'default. Turn this on and every section documents them, noting the ' +
+  'property that shows each one.';
+
 const ATOM_NOTICE =
   'Atom component. It is normally used to build larger components, but you ' +
   'can still export it individually.';
@@ -212,7 +225,15 @@ function hiddenElementsMarkup(selection: ComponentSelection, facts: ComponentFac
   if (!facts.hasHiddenParts) return '';
   return (
     '<div class="sl-doc-option">' +
-    '<span class="sl-doc-option-copy"><strong>Document hidden elements</strong></span>' +
+    '<span class="sl-doc-option-copy">' +
+    '<strong>Document hidden elements</strong>' +
+    '<span data-tooltip-trigger>' +
+    '<button class="sl-icon-button" id="sl-hidden-help" type="button" ' +
+    'aria-label="About documenting hidden elements" ' +
+    `aria-describedby="sl-hidden-help-text">${icon('infoCircle', 15)}</button>` +
+    `<span class="sl-tooltip" id="sl-hidden-help-text" role="tooltip">${HIDDEN_HELP}</span>` +
+    '</span>' +
+    '</span>' +
     '<label class="sl-switch-control">' +
     '<input class="sl-choice-input sl-switch-input" type="checkbox" role="switch" ' +
     'aria-label="Document hidden elements" data-include-hidden' +

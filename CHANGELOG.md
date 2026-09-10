@@ -38,8 +38,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   above "Sections to include", because the flag feeds Anatomy, States,
   Variants, the per-variant token pane and Measurements alike. It no longer
   disappears, or silently disarms, when Anatomy is unchecked. Its caption is
-  gone: it was two sentences in an uppercase micro-caps style built for
-  two-word labels.
+  gone from the page: it was two sentences set in an uppercase micro-caps
+  style built for two-word labels, so the explanation moved to the same
+  info-icon tooltip the AI writing switch uses. The two switches now share one
+  set of CSS rules, which is what the label's weight disagreeing with "AI
+  writing" was about: the second row's own copy of those rules set the font on
+  the wrapper, so the inner `strong` fell back to the browser's `bolder`.
 
 ### Added
 
