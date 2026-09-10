@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes, revealBooleanParts } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
 // Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
@@ -659,7 +659,7 @@ function removeCanvasSubtree(node: SceneNode): void {
   } catch { /* already gone */ }
 }
 
-export async function buildMeasureSection(block: MeasureBlockData): Promise<FrameNode | null> {
+export async function buildMeasureSection(block: MeasureBlockData, includeHidden = false): Promise<FrameNode | null> {
   let node: BaseNode | null;
   try {
     node = await figma.getNodeByIdAsync(block.componentId);
@@ -688,6 +688,7 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     // padding/gap/size tokens (else a differing density mode renders it
     // narrower and the annotations, computed from the component, overhang it).
     await matchVariableModes(inst, component);
+    if (includeHidden) await revealBooleanParts(inst, component);
 
     const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (M_LEFT + 160);
     const scale = Math.min(innerMax / inst.width, IMG_MAX_H / inst.height, 1);
