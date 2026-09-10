@@ -65,6 +65,7 @@ import {
 import {
   applyGroupBulk,
   applyVariantBulk,
+  defaultIncludeHidden,
   sectionGroups,
   unavailableSections,
   variantBulkState,
@@ -187,6 +188,9 @@ if (view === 'component') {
   const fallbackFacts = screen.kind === 'reading' ? 'unknown' : 'none';
   const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
   selection.variantIds = new Set(facts.defaultVariantIds);
+  // The harness seeds the same per-component default the real screen does, so
+  // a visual check shows the switch in the state a user would actually meet.
+  selection.includeHidden = defaultIncludeHidden(facts);
   const renderComponentFixture = () => renderComponentScreen(refs, screen, selection, facts);
   const repaintComponentFixture = (selector?: string) => {
     const scrollTop = refs.scroll.scrollTop;

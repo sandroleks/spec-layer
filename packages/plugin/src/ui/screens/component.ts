@@ -70,6 +70,19 @@ const AI_HELP =
   'and tokens still come directly from Figma. Creating docs uses one free AI ' +
   'writing use when this is on.';
 
+/**
+ * The explanation the switch's own label cannot carry.
+ *
+ * This text shipped as a caption under the control, set in an uppercase
+ * micro-caps style built for two-word labels, which made two sentences of it
+ * unreadable. The information was never the problem, so it moved to the same
+ * tooltip pattern the AI writing switch already uses rather than being cut.
+ */
+const HIDDEN_HELP =
+  'This component has layers that a boolean property turns on, off by ' +
+  'default. Turn this on and every section documents them, noting the ' +
+  'property that shows each one.';
+
 const ATOM_NOTICE =
   'Atom component. It is normally used to build larger components, but you ' +
   'can still export it individually.';
@@ -196,26 +209,47 @@ function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelectio
   );
 }
 
-/** Anatomy, measurement and token settings, shown under their rows. */
+/**
+ * The document-wide hidden-elements switch.
+ *
+ * It sits above "Sections to include" rather than under the Anatomy row,
+ * because the flag it sets feeds Anatomy, States, Variants, the per-variant
+ * token pane and Measurements alike. Nesting it under one section said it
+ * applied to that section only, and made it look like it should disarm when
+ * that section did.
+ *
+ * Only drawn when the component actually has such layers: on every other
+ * component the switch would be a control with nothing to control.
+ */
+function hiddenElementsMarkup(selection: ComponentSelection, facts: ComponentFacts): string {
+  if (!facts.hasHiddenParts) return '';
+  return (
+    '<div class="sl-doc-option">' +
+    '<span class="sl-doc-option-copy">' +
+    '<strong>Document hidden elements</strong>' +
+    '<span data-tooltip-trigger>' +
+    '<button class="sl-icon-button" id="sl-hidden-help" type="button" ' +
+    'aria-label="About documenting hidden elements" ' +
+    `aria-describedby="sl-hidden-help-text">${icon('infoCircle', 15)}</button>` +
+    `<span class="sl-tooltip" id="sl-hidden-help-text" role="tooltip">${HIDDEN_HELP}</span>` +
+    '</span>' +
+    '</span>' +
+    '<label class="sl-switch-control">' +
+    '<input class="sl-choice-input sl-switch-input" type="checkbox" role="switch" ' +
+    'aria-label="Document hidden elements" data-include-hidden' +
+    `${selection.includeHidden ? ' checked' : ''} />` +
+    '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
+    '</label>' +
+    '</div>'
+  );
+}
+
+/** Measurement and token settings, shown under their rows. */
 function detailsFor(
   sectionId: string,
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): string {
-  if (sectionId === 'anatomy') {
-    if (!facts.hasHiddenParts) return '';
-    return (
-      '<div class="sl-section-details">' +
-      '<label class="sl-choice sl-section-choice">' +
-      `<input class="sl-choice-input" type="checkbox" data-include-hidden${selection.includeHidden ? ' checked' : ''} />` +
-      `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
-      '<span class="sl-choice-copy"><strong>Document hidden elements</strong></span>' +
-      '</label>' +
-      '<span class="sl-section-option-label">Includes layers that a boolean property turns on. ' +
-      'They are off by default in this component.</span>' +
-      '</div>'
-    );
-  }
   if (sectionId === 'measurements') {
     const chips = MEASURE_CHIPS.map(
       (c) => {
@@ -330,6 +364,7 @@ export function componentScrollMarkup(
     `<fieldset class="sl-component-controls"${busy ? ' disabled aria-busy="true"' : ''}>` +
     (facts.isAtom ? atomNoticeMarkup() : '') +
     aiControlMarkup(selection.aiEnabled) +
+    hiddenElementsMarkup(selection, facts) +
     '<p class="sl-section-intro">Sections to include</p>' +
     groups +
     '</fieldset>'

@@ -61,18 +61,22 @@ export function joinPath(parentPath: string, part: string): string {
  * Depth-first walk that hands each node its disambiguated part name and its
  * path identity: the sibling-disambiguated names from the component root down
  * to this node, joined with `/`. Replaces per-call `cleanPartName(n.name)`,
- * which merged same-named siblings into one part. `skipInvisible` prunes
- * hidden subtrees (token extraction wants that so presence-driven conditioning
- * works; gap detection does not).
+ * which merged same-named siblings into one part.
+ *
+ * `skipInvisible` prunes hidden subtrees (token extraction wants that so
+ * presence-driven conditioning works; gap detection does not). Pass a
+ * PREDICATE instead of `true` to prune something narrower: token extraction
+ * passes `hiddenPartRules().prune`, which keeps a layer a boolean component
+ * property can reveal, because a doc can be asked to document exactly those.
  */
 export function walkParts(
   root: SerializedNode,
   rootName: string,
   visit: (n: SerializedNode, part: string, path: string) => void,
-  skipInvisible = false,
+  skipInvisible: boolean | ((n: SerializedNode) => boolean) = false,
   parentPath = '',
 ): void {
-  if (skipInvisible && root.visible === false) return;
+  if (typeof skipInvisible === 'function' ? skipInvisible(root) : skipInvisible && root.visible === false) return;
   const path = joinPath(parentPath, rootName);
   visit(root, rootName, path);
   const kids = root.children ?? [];

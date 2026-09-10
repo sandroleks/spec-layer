@@ -144,13 +144,38 @@ describe('specContentHash and parts hidden by default', () => {
 
   it('includes the revealed depth-0 parts when asked, and nothing deeper', () => {
     const projection = specHashProjection(spec, { includeHidden: true });
-    expect(projection.anatomy.map((p) => p.name)).toEqual(['Label', 'Icon left', 'Icon right']);
+    // Layer order, so the drawn callouts and the hashed list agree.
+    expect(projection.anatomy.map((p) => p.name)).toEqual(['Icon left', 'Label', 'Icon right']);
     expect(specContentHash(spec, { includeHidden: true })).toBe(contentHash(projection));
     expect(specContentHash(spec, { includeHidden: true })).not.toBe(specContentHash(spec));
   });
 
   it('leaves related out of the toggle: it is computed from parts shown by default', () => {
     expect(specHashProjection(spec, { includeHidden: true }).related).toEqual(specHashProjection(spec).related);
+  });
+
+  it('filters token rules by the same flag, so the drawn table and the baseline agree', () => {
+    // The chip-hidden fixture carries no bindings, so this builds the case
+    // directly: a bound hidden icon beside a bound visible label.
+    const bound = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip-hidden.json', 'utf8')) as SerializedNode;
+    const variant = bound.children![0];
+    variant.children![0].bindings = [
+      { property: 'fills', id: 'VariableID:80', name: 'Role/Text/Accent', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+    ];
+    variant.children![1].bindings = [
+      { property: 'fills', id: 'VariableID:81', name: 'Role/Text/Default', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+    ];
+    const withBindings = extract(bound, { figmaFile: 'FILE1' });
+
+    expect(specHashProjection(withBindings).tokens.map((t) => t.token))
+      .toEqual(['Role/Text/Default']);
+    expect(specHashProjection(withBindings, { includeHidden: true }).tokens.map((t) => t.token))
+      .toEqual(['Role/Text/Accent', 'Role/Text/Default']);
+    // No `shownBy` key in the projection: a rule's presence in the array is
+    // what the hash needs, and every committed baseline predates the field.
+    for (const row of specHashProjection(withBindings, { includeHidden: true }).tokens) {
+      expect('shownBy' in row).toBe(false);
+    }
   });
 });
 

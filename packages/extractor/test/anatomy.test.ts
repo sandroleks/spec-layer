@@ -207,7 +207,10 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
   const { parts, related } = extractAnatomy(chipHidden as SerializedNode);
 
   it('keeps a hidden part whose visibility a boolean property controls, and marks it', () => {
-    expect(parts.map((p) => p.name)).toEqual(['Label', 'Icon left', 'Glyph', 'Icon right']);
+    // Layer order, hidden parts interleaved where they really sit, so the
+    // canvas pins ascend left to right. `Icon left` genuinely precedes
+    // `Label` in the fixture's child list.
+    expect(parts.map((p) => p.name)).toEqual(['Icon left', 'Glyph', 'Label', 'Icon right']);
     expect(parts.find((p) => p.name === 'Icon left')).toMatchObject({
       depth: 0, hiddenByDefault: true, shownBy: 'Icon left',
     });
@@ -265,7 +268,7 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
       ],
     };
     expect(extractAnatomy(root).parts.map((p) => [p.name, p.shownBy])).toEqual([
-      ['body', undefined], ['header', 'Show header'], ['close', 'Show close'], ['title', 'Show header'],
+      ['header', 'Show header'], ['close', 'Show close'], ['title', 'Show header'], ['body', undefined],
     ]);
   });
 
@@ -313,7 +316,7 @@ describe('extractAnatomy — hidden bound parts never change the toggle-off outp
     expect(related).toEqual(['Icon']);
   });
 
-  it('numbers depth-0 siblings from the visible ones first, so a visible part keeps its name', () => {
+  it('names depth-0 siblings visible-first but lists them in layer order', () => {
     const root: SerializedNode = {
       id: '1', name: 'Card', type: 'COMPONENT', visible: true,
       propertyDefinitions: { 'Icon left#1': { type: 'BOOLEAN', defaultValue: false } },
@@ -324,9 +327,15 @@ describe('extractAnatomy — hidden bound parts never change the toggle-off outp
       ],
     };
     const { parts } = extractAnatomy(root);
+    // The hidden `icon` sits FIRST in the layer list and is listed first, but
+    // it is still the one that takes "(2)": names come from the visible-first
+    // basis, so the visible `icon` keeps the bare name it had before hidden
+    // parts were documented at all. Order and naming are decided separately.
     expect(parts.map((p) => [p.name, p.shownBy])).toEqual([
-      ['Label', undefined], ['icon', undefined], ['icon (2)', 'Icon left'],
+      ['icon (2)', 'Icon left'], ['Label', undefined], ['icon', undefined],
     ]);
+    // The toggle-off output is what it always was: same parts, same names,
+    // same order.
     expect(anatomyFor(parts, { includeHidden: false }).map((p) => p.name)).toEqual(['Label', 'icon']);
   });
 

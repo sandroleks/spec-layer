@@ -82,6 +82,34 @@ function isDocumentable(node: SerializedNode, booleans: Set<string>): boolean {
   return node.visible || hiddenBoundTo(node, booleans) !== undefined;
 }
 
+/** The two questions any extractor asks about a hidden layer, resolved once
+ *  against a root's BOOLEAN property definitions. */
+export interface HiddenPartRules {
+  /** True when the node can never be surfaced: hidden, and not bound to a root
+   *  BOOLEAN a consumer could turn on. Every walk prunes exactly this. */
+  prune(node: SerializedNode): boolean;
+  /** The cleaned boolean property that shows this node, or undefined when the
+   *  node is visible or unbound. Does not look at ancestors. */
+  shownBy(node: SerializedNode): string | undefined;
+}
+
+/**
+ * One definition of "hidden but documentable", shared by anatomy and token
+ * extraction.
+ *
+ * `extractTokens` used to prune every invisible subtree, so a layer a boolean
+ * property reveals had its bindings dropped before any consumer could ask for
+ * them: the Tokens section showed nothing for a revealed icon, whatever the
+ * doc's option said. Both walks now agree, because both come through here.
+ */
+export function hiddenPartRules(root: SerializedNode): HiddenPartRules {
+  const booleans = booleanPropertyKeys(root);
+  return {
+    prune: (node) => !isDocumentable(node, booleans),
+    shownBy: (node) => hiddenBoundTo(node, booleans),
+  };
+}
+
 /**
  * Anatomy is a BOUNDED depth-first walk (MAX_DEPTH levels) starting from the
  * direct children of the default variant that are visible, or hidden but
@@ -99,9 +127,11 @@ function isDocumentable(node: SerializedNode, booleans: Set<string>): boolean {
  * wrapper" pattern), anatomy descends into that child's children before listing
  * parts, so the wrapper itself is not surfaced as the sole anatomy element.
  * Hidden bound layers take no part in that decision and no part in the depth-0
- * numbering basis until after the visible children have taken their names, so
+ * NAMING basis until after the visible children have taken their names, so
  * the parts a doc draws with the option off are exactly the parts it drew
- * before this feature existed, down to their names, paths and order.
+ * before this feature existed, down to their names, paths and order. Depth-0
+ * parts are then LISTED in layer order, hidden ones interleaved where they
+ * really sit, so the canvas callouts ascend in reading order.
  */
 export function extractAnatomy(root: SerializedNode): AnatomyResult {
   const parts: AnatomyPart[] = [];
@@ -156,17 +186,34 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
     children = siblingSet.filter((c) => c.visible);
   }
 
-  // Visible children first, in their original order, so `siblingPartNames`
-  // hands them exactly the names the pre-feature code gave them; the hidden
-  // ones continue the same counters, so no two depth-0 parts share a name.
+  // Naming and ordering are two separate questions, and conflating them is
+  // what made the canvas callouts read "2, 1, 4".
+  //
+  // NAMES come from the visible-first basis: visible children in their
+  // original order, then the hidden ones, then the hidden ones skipped past a
+  // descended wrapper. `siblingPartNames` therefore hands every visible part
+  // exactly the name the pre-feature code gave it, and the hidden ones
+  // continue the same counters, so no two depth-0 parts share a name and no
+  // hidden sibling can take a visible part's name by preceding it.
+  const namingOrder: SerializedNode[] = [
+    ...children,
+    ...siblingSet.filter((c) => hiddenBoundTo(c, booleans) !== undefined),
+    ...skippedHidden.map((e) => e.node),
+  ];
+  const topNames = siblingPartNames(namingOrder);
+
+  // ORDER is real layer order, so a horizontal component's pins ascend left to
+  // right. Parts skipped past a descended wrapper were found on an outer level
+  // and have no position among the descended siblings, so they stay last,
+  // exactly where they already were. With the option off the hidden parts are
+  // filtered out and this is `children` again, node for node, which is what
+  // keeps an existing doc's anatomy and specContentHash byte-identical.
   const topLevel: TopLevelEntry[] = [
-    ...children.map((node) => ({ node, parentPath })),
     ...siblingSet
-      .filter((c) => hiddenBoundTo(c, booleans) !== undefined)
+      .filter((c) => isDocumentable(c, booleans))
       .map((node) => ({ node, parentPath })),
     ...skippedHidden,
   ];
-  const topNames = siblingPartNames(topLevel.map((e) => e.node));
 
   // Same-named siblings (a leading and a trailing "icon") are numbered rather
   // than deduped: they are two real parts with two real node ids and, often,

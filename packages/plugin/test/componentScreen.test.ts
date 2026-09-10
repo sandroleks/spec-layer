@@ -5,9 +5,9 @@ import {
   applyVariantBulk,
   componentDocSelection,
   DEFAULT_OFF_SECTIONS,
+  defaultIncludeHidden,
   defaultSections,
   includedLabel,
-  includeHiddenAfterSectionChange,
   sectionGroups,
   sectionIdsInGroup,
   unavailableSections,
@@ -214,18 +214,17 @@ describe('componentDocSelection', () => {
   });
 });
 
-describe('includeHiddenAfterSectionChange', () => {
-  it('leaves the option on while Anatomy is included', () => {
-    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy', 'tokens']), true)).toBe(true);
+describe('defaultIncludeHidden', () => {
+  it('is on when the component has parts a boolean property hides', () => {
+    expect(defaultIncludeHidden(facts({ hasHiddenParts: true }))).toBe(true);
   });
 
-  it('disarms the option when Anatomy is dropped, so a hidden control cannot keep changing the doc', () => {
-    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['tokens']), true)).toBe(false);
+  it('is off when the component has none, so the flag claims nothing', () => {
+    expect(defaultIncludeHidden(facts({ hasHiddenParts: false }))).toBe(false);
   });
 
-  it('leaves the option off alone either way', () => {
-    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy']), false)).toBe(false);
-    expect(includeHiddenAfterSectionChange(new Set<SectionId>(), false)).toBe(false);
+  it('is off before extraction finishes, when there are no facts to read', () => {
+    expect(defaultIncludeHidden(NO_FACTS)).toBe(false);
   });
 });
 
@@ -324,23 +323,61 @@ describe('component screen markup', () => {
     expect(markup).not.toContain('data-anatomy=');
     expect(markup).not.toContain('data-measure=');
     expect(markup).not.toContain('Variants to document');
-    expect(markup).not.toContain('data-include-hidden');
   });
 
-  it('offers "Document hidden elements" under Anatomy only when the component has hidden-by-default parts', () => {
+  it('keeps the hidden-elements switch out of the section list, because it feeds every section', () => {
+    const selection = createComponentSelection(true);
+    selection.sections.delete('anatomy');
+    const markup = componentScrollMarkup(
+      READY, selection, facts({ ...TWO_VARIANTS, hasHiddenParts: true }),
+    );
+    // Dropping Anatomy used to take the control away with it, and disarm the
+    // flag. It reaches States, Variants, the token pane and Measurements too.
+    expect(markup).toContain('data-include-hidden');
+    expect(markup).toContain('sl-doc-option');
+  });
+
+  it('gives the hidden-elements switch the same label type as AI writing', () => {
+    // The two rows share one CSS rule set. When this one carried its own copy,
+    // the copy set the font on the wrapper instead of the inner <strong>, so
+    // the label rendered at the browser's `bolder` and visibly disagreed with
+    // "AI writing" right above it.
+    const markup = componentScrollMarkup(
+      READY, createComponentSelection(true), facts({ hasStates: true, hasHiddenParts: true }),
+    );
+    expect(markup).toContain('<span class="sl-ai-control-copy"><strong>AI writing</strong>');
+    expect(markup).toContain('<span class="sl-doc-option-copy"><strong>Document hidden elements</strong>');
+  });
+
+  it('offers "Document hidden elements" only when the component has hidden-by-default parts', () => {
     const selection = createComponentSelection(true);
     const without = componentScrollMarkup(READY, selection, facts({ hasStates: true }));
     expect(without).not.toContain('data-include-hidden');
 
     const withHidden = componentScrollMarkup(READY, selection, facts({ hasStates: true, hasHiddenParts: true }));
-    expect(withHidden).toContain('type="checkbox" data-include-hidden');
+    expect(withHidden).toContain('role="switch" aria-label="Document hidden elements" data-include-hidden');
     expect(withHidden).toContain('Document hidden elements');
-    expect(withHidden).toContain('Includes layers that a boolean property turns on. They are off by default in this component.');
+    // The caption this shipped with was a two-sentence paragraph in an
+    // uppercase micro-caps style, which made it unreadable. The explanation
+    // moved to the same tooltip pattern the AI writing switch uses, so the
+    // label reads alone and the detail is still one hover away.
+    expect(withHidden).toContain('data-tooltip-trigger');
+    expect(withHidden).toContain('id="sl-hidden-help-text" role="tooltip"');
+    expect(withHidden).toContain('aria-describedby="sl-hidden-help-text"');
+    expect(withHidden).toContain('layers that a boolean property turns on');
     expect(withHidden).not.toContain('data-include-hidden checked');
 
     selection.includeHidden = true;
     expect(componentScrollMarkup(READY, selection, facts({ hasStates: true, hasHiddenParts: true })))
       .toContain('data-include-hidden checked');
+  });
+
+  it('renders unchecked from createComponentSelection alone, before facts seed it', () => {
+    // createComponentSelection runs before extraction, so it cannot know
+    // whether this component has hidden parts. defaultIncludeHidden seeds the
+    // real value when facts arrive; this only fixes the pre-facts state, so a
+    // switch is never drawn checked for a component that has nothing to reveal.
+    expect(createComponentSelection(true).includeHidden).toBe(false);
   });
 
   it('renders Anatomy without display subsettings', () => {

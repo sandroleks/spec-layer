@@ -6,6 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Token bindings on a hidden part are no longer dropped.** Token extraction
+  pruned every invisible subtree, so a layer a boolean property reveals had its
+  bindings discarded before any consumer could ask for them: with "Document
+  hidden elements" on, the revealed icons were drawn but the Tokens section
+  showed nothing for them. Extraction now prunes only what no consumer could
+  ever reveal, marks a rule from a revealed subtree with `shownBy`, and filters
+  through `tokensFor`, the token counterpart of `anatomyFor`. Anatomy and
+  token extraction share one definition of "hidden but documentable"
+  (`hiddenPartRules`). With the option off, every rendered table and every
+  drift hash is byte-identical to before. The exported YAML brief and Component
+  Context v5 artifact still omit these rules, because a v5 token rule has no
+  field in which to say it applies only once a boolean property is on;
+  carrying `shown_by` onto token rules needs schema 5.3.0. One export does
+  change: the brief's `unbound` list weighs gaps against the unfiltered rules,
+  so a hidden layer whose fill is bound is no longer reported as having no
+  token binding.
+- **Anatomy callouts read in order.** Depth-0 parts are now listed in real
+  layer order, hidden ones interleaved where they sit, instead of visible-first;
+  a Chip's pins read 1, 2, 3 left to right rather than 2, 1, 4. Naming is
+  decided separately from ordering, on the visible-first basis, so a hidden
+  sibling cannot take a visible part's name and a doc with the option off keeps
+  the anatomy, names and `specContentHash` it already had.
+- **Anatomy callout numbers are hierarchical.** A nested legend row is now
+  "2.1" rather than consuming the next whole number, so the pinned depth-0 set
+  counts 1, 2, 3 with no holes. The number badge is a pill with a floor of its
+  old diameter, so a single digit still draws the same circle.
+- **"Document hidden elements" moved out of the Anatomy row.** It is a switch
+  above "Sections to include", because the flag feeds Anatomy, States,
+  Variants, the per-variant token pane and Measurements alike. It no longer
+  disappears, or silently disarms, when Anatomy is unchecked. Its caption is
+  gone from the page: it was two sentences set in an uppercase micro-caps
+  style built for two-word labels, so the explanation moved to the same
+  info-icon tooltip the AI writing switch uses. The two switches now share one
+  set of CSS rules, which is what the label's weight disagreeing with "AI
+  writing" was about: the second row's own copy of those rules set the font on
+  the wrapper, so the inner `strong` fell back to the browser's `bolder`.
+
 ### Added
 
 - **Hidden elements in component docs.** A layer that a boolean component
@@ -20,9 +59,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   every component artifact that has such parts, and nothing else: hidden
   layers with no property binding stay excluded, canvas drift hashes are
   unchanged, and `EXTRACTOR_VERSION` is unchanged.
-- **"Document hidden elements"**, a per-component option under Anatomy on the
-  component screen, shown only when the component has a layer that a boolean
-  property hides by default. On, the doc lists those parts in Anatomy with
+- **"Document hidden elements"**, a per-component switch on the component
+  screen, shown only when the component has a layer that a boolean property
+  hides by default. On, the doc lists those parts in Anatomy with
   "Shown when <property> is true", sets every boolean property to true on the
   instances placed in Anatomy, States, Variants, and Measurements, and hashes
   the revealed parts so drift detection covers them. Off, or on any doc
@@ -55,6 +94,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **"Document hidden elements" now starts on** for a component that has such
+  layers, and stays off for one that does not. A layer a boolean property
+  reveals is part of the component someone is trying to understand, so leaving
+  it out by default made the common case the one that needed a click.
+  `defaultIncludeHidden` is the one source for that default, seeded once
+  extraction has produced facts, so a fresh screen never draws the switch on
+  for a component with nothing to reveal. Documents generated before this
+  release are untouched: Update keeps each doc's stored choice.
 - CI no longer builds the website; `verify` is `npm run check:ci` alone. The
   job id is unchanged, so the required status check on `main` still applies.
 - `npm run check:nul` scans `packages/` and `scripts/`. The prose trees it also

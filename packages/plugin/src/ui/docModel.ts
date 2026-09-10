@@ -1,7 +1,7 @@
 import type { IntermediateSpec, ProseDrafts, ProseKey, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix, stateAxisProps, anatomyFor,
+  detectStateMatrix, stateAxisProps, anatomyFor, tokensFor,
 } from '@spec-layer/extractor';
 
 export type SectionId =
@@ -93,14 +93,19 @@ export interface VariantTokenBlock {
   sameAsDefault: number;
 }
 
-/** One anatomy part placed on the diagram: its 1-based number, label, whether
+/** One anatomy part placed on the diagram: its callout number, label, whether
  *  it is a nested component, and the Figma node id used to resolve its position
  *  (and screenshot) live in the frame builder. `depth` is the nesting level
  *  (0 = direct part); `component` names the main component when nested;
  *  `tokens` lists the unique token names bound to this part; `type` is the raw
  *  Figma node type (e.g. "FRAME"), shown lowercased in the table view. */
 export interface AnatomyPartBlock {
-  n: number;
+  /** The callout number, hierarchical: "1", "2", "2.1", "2.2", "3". A flat
+   *  1-based index across every depth spent numbers on nested rows, which get
+   *  no pin, so the pins themselves read with holes in them (1, 2, 4). Depth-0
+   *  labels are therefore plain integers counting from 1 with no gaps, which
+   *  is exactly the set the diagram draws. */
+  label: string;
   name: string;
   nested: boolean;
   id: string;
@@ -203,6 +208,28 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
   const defId = defaultVariantId(spec);
   const inst = spec.variantInstances.find((i) => i.nodeId === defId);
   return inst?.values ?? {};
+}
+
+/**
+ * Hierarchical callout numbers for a depth-first anatomy list: "1", "2",
+ * "2.1", "2.2", "3".
+ *
+ * Only depth-0 parts get a pin on the diagram, so a flat 1-based index across
+ * every depth spends numbers on rows the diagram never draws and the pins come
+ * out with holes in them. Numbering per depth keeps the pinned set contiguous
+ * from 1, and gives a nested row a number that names its parent.
+ *
+ * Takes the depths alone, in list order, because that is all the numbering
+ * depends on. A depth that jumps by more than one cannot happen in a
+ * depth-first walk, and if it ever did, the deeper counters simply start at 1.
+ */
+export function calloutLabels(depths: readonly number[]): string[] {
+  const counters: number[] = [];
+  return depths.map((depth) => {
+    counters.length = depth + 1;
+    counters[depth] = (counters[depth] ?? 0) + 1;
+    return counters.map((c) => c ?? 1).join('.');
+  });
 }
 
 const AI_PLACEHOLDER = '_To be written._';
@@ -342,14 +369,21 @@ function buildSection(
           const key = p.name.trim().toLowerCase();
           if (!descByName.has(key)) descByName.set(key, p.description);
         }
+        const labels = calloutLabels(included.map((a) => a.depth));
         const parts = included.map((a, i) => ({
-          n: i + 1,
+          label: labels[i],
           name: a.name,
           nested: a.nested,
           id: a.id,
           depth: a.depth,
           component: a.component,
-          tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.name))],
+          // Same filter as the Tokens section: a part the doc does not draw
+          // must not lend its token names to a legend row either.
+          tokens: [...new Set(
+            tokensFor(spec.tokens, { includeHidden: options?.includeHidden === true })
+              .filter((t) => t.part === a.name)
+              .map((t) => t.name),
+          )],
           type: a.type,
           shownBy: a.shownBy,
           description: descByName.get(a.name.trim().toLowerCase()),
@@ -529,12 +563,18 @@ function buildSection(
       // Per-variant view: one block per selected variant, each showing only the
       // tokens that resolve for that variant. Falls back to a flat conditioned
       // table for plain components or when no variant is selected.
+      //
+      // Filtered once, here, so the pane and the flat table cannot disagree
+      // about which rules the doc shows. A rule marked `shownBy` only applies
+      // once a boolean property is on, and the instances this section draws
+      // have those properties set only when the doc's option is on.
+      const tokens = tokensFor(spec.tokens, { includeHidden: options?.includeHidden === true });
       const instances = spec.variantInstances;
       if (instances.length && selectedVariantIds && selectedVariantIds.size) {
         const defId = defaultVariantId(spec);
 
         const resolveRows = (values: Record<string, string>): Omit<VariantRow, 'diff'>[] =>
-          resolveTokensForVariant(spec.tokens, values).map((t) => ({
+          resolveTokensForVariant(tokens, values).map((t) => ({
             part: t.part, property: t.property, token: t.token, unbound: false,
           }));
 
@@ -594,7 +634,7 @@ function buildSection(
         }
       }
 
-      const rows = spec.tokens.map((t) => [
+      const rows = tokens.map((t) => [
         t.part,
         t.property,
         t.name,
