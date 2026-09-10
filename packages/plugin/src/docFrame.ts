@@ -968,7 +968,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
       left.resize(VAR_LEFT_W, left.height);
       left.layoutSizingVertical = 'FILL'; // match the taller (token) pane
 
-      const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2);
+      const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2, 160, includeHidden);
       left.appendChild(slot);
       slot.layoutSizingHorizontal = 'FILL';
 
