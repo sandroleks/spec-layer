@@ -7,6 +7,7 @@ import {
   DEFAULT_OFF_SECTIONS,
   defaultSections,
   includedLabel,
+  includeHiddenAfterSectionChange,
   sectionGroups,
   sectionIdsInGroup,
   unavailableSections,
@@ -210,6 +211,21 @@ describe('componentDocSelection', () => {
       facts({ hasStates: true }),
     );
     expect(out.variantIds.size).toBe(0);
+  });
+});
+
+describe('includeHiddenAfterSectionChange', () => {
+  it('leaves the option on while Anatomy is included', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy', 'tokens']), true)).toBe(true);
+  });
+
+  it('disarms the option when Anatomy is dropped, so a hidden control cannot keep changing the doc', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['tokens']), true)).toBe(false);
+  });
+
+  it('leaves the option off alone either way', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy']), false)).toBe(false);
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(), false)).toBe(false);
   });
 });
 

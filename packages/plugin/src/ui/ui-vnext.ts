@@ -51,6 +51,7 @@ import {
   applyGroupBulk,
   applyVariantBulk,
   componentDocSelection,
+  includeHiddenAfterSectionChange,
   sectionGroups,
   unavailableSections,
   variantBulkState,
@@ -1907,6 +1908,8 @@ document.addEventListener('change', (event) => {
       groupState.included < groupState.total,
       unavailable,
     );
+    selection.includeHidden = includeHiddenAfterSectionChange(selection.sections, selection.includeHidden);
+    state.includeHidden = selection.includeHidden;
     paintAndFocus(`[data-group-bulk="${groupId}"]`);
     return;
   }
@@ -1915,6 +1918,8 @@ document.addEventListener('change', (event) => {
   if (sectionId) {
     if (input.checked) selection.sections.add(sectionId);
     else selection.sections.delete(sectionId);
+    selection.includeHidden = includeHiddenAfterSectionChange(selection.sections, selection.includeHidden);
+    state.includeHidden = selection.includeHidden;
     paintAndFocus(`[data-section="${sectionId}"]`);
   }
 });
