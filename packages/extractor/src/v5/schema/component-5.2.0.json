@@ -36,7 +36,7 @@
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "component" },
-        "schema_version": { "const": "5.1.0" },
+        "schema_version": { "const": "5.2.0" },
         "schema_uri": { "const": "https://spec-layer.com/schemas/component-context/v5.json" },
         "extractor": {
           "type": "object",
@@ -87,6 +87,10 @@
         "path": { "type": "string" },
         "type": { "type": "string" },
         "component": { "type": "string" },
+        "shown_by": {
+          "type": "string",
+          "description": "The boolean component property that shows this part. The part is hidden when the property is false. Present only on parts hidden by default in the default variant."
+        },
         "children": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } }
       }
     },

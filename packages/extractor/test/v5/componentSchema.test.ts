@@ -6,7 +6,7 @@ import { COMPONENT_SCHEMA_URI } from '../../src/v5/componentContext';
 import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
 
 const componentSchemaText = readFileSync(
-  'packages/extractor/src/v5/schema/component-5.1.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/component-5.2.0.json', 'utf8',
 );
 const componentSchema = JSON.parse(componentSchemaText) as Record<string, unknown>;
 const foundationSchema = JSON.parse(readFileSync(
@@ -29,6 +29,14 @@ describe('Component Context v5 schema', () => {
   it('rejects a resolved binding whose source identity is absent', () => {
     const artifact = structuredClone(buildComponentV5GoldenArtifact());
     artifact.references.used[0].source_id = '';
+    expect(validate(artifact)).toBe(false);
+  });
+
+  it('accepts shown_by on an anatomy node and rejects a non-string value', () => {
+    const artifact = structuredClone(buildComponentV5GoldenArtifact()) as { anatomy: Array<Record<string, unknown>> };
+    artifact.anatomy[0].shown_by = 'Icon left';
+    expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
+    artifact.anatomy[0].shown_by = true;
     expect(validate(artifact)).toBe(false);
   });
 });

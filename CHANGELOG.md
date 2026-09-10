@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Hidden elements in component docs.** A layer that a boolean component
+  property hides by default (a Chip's `Icon left`) is now an anatomy part.
+  The YAML brief and the Component Context v5 artifact always include such
+  parts, each carrying `shown_by`, the property that reveals it. Component
+  Context schema `5.2.0` adds `shown_by` as an optional string on anatomy
+  nodes; the schema URL is unchanged. This moves the semantic content hash of
+  every component artifact that has such parts, and nothing else: hidden
+  layers with no property binding stay excluded, canvas drift hashes are
+  unchanged, and `EXTRACTOR_VERSION` is unchanged.
+
 ### Removed
 
 - **The non-public trees.** `apps/website` (the marketing site), `docs/` (the

@@ -139,6 +139,29 @@ const META = {
 };
 
 describe('Component Context v5', () => {
+  it('carries shown_by on anatomy nodes hidden by default, and stamps schema 5.2.0', () => {
+    const component = spec([]);
+    component.anatomy = [
+      { id: 'p0', name: 'container', path: 'Container/container', type: 'FRAME', nested: false, depth: 0 },
+      {
+        id: 'p1', name: 'icon left', path: 'Container/container/icon left', type: 'FRAME',
+        nested: false, depth: 1, hiddenByDefault: true, shownBy: 'Icon left',
+      },
+    ];
+    const artifact = buildComponentArtifactV5(component, META);
+    expect(artifact.spec_layer.schema_version).toBe('5.2.0');
+    expect(artifact.anatomy).toEqual([{
+      part: 'container', path: 'Container/container', type: 'FRAME',
+      children: [{
+        part: 'icon left', path: 'Container/container/icon left', type: 'FRAME', shown_by: 'Icon left',
+      }],
+    }]);
+    // The semantic hash covers anatomy, so a revealed part moves it: honest,
+    // because the export changed.
+    expect(artifact.spec_layer.export.content_hash)
+      .not.toBe(buildComponentArtifactV5(spec([]), META).spec_layer.export.content_hash);
+  });
+
   it('selects an exact-id variable and its transitive alias closure, never a same-named token', () => {
     const source = foundation();
     const refs = [{

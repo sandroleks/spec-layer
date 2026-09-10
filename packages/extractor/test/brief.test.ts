@@ -367,6 +367,7 @@ interface AnatomyNode {
   part: string;
   type: string;
   component?: string;
+  shown_by?: string;
   children?: AnatomyNode[];
 }
 interface ParsedComponentBrief {
@@ -496,6 +497,28 @@ describe('componentBrief', () => {
       part: 'container', type: 'FRAME',
       children: [
         { part: 'icon', type: 'INSTANCE', component: 'Icon' },
+        { part: 'label', type: 'TEXT' },
+      ],
+    }]);
+  });
+
+  it('marks a part hidden by default with the property that shows it, and only that part', () => {
+    const hidden: IntermediateSpec = {
+      ...SPEC,
+      anatomy: [
+        { id: 'p0', name: 'container', path: 'Container/container', type: 'FRAME', nested: false, depth: 0 },
+        {
+          id: 'p3', name: 'icon left', path: 'Container/container/icon left', type: 'FRAME',
+          nested: false, depth: 1, hiddenByDefault: true, shownBy: 'Icon left',
+        },
+        { id: 'p2', name: 'label', path: 'Container/container/label', type: 'TEXT', nested: false, depth: 1 },
+      ],
+    };
+    const y = load(toYaml(componentBrief(hidden, { generatedAt: AT }))) as ParsedComponentBrief;
+    expect(y.anatomy).toEqual([{
+      part: 'container', type: 'FRAME',
+      children: [
+        { part: 'icon left', type: 'FRAME', shown_by: 'Icon left' },
         { part: 'label', type: 'TEXT' },
       ],
     }]);
