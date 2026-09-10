@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { extractTokens, extractGaps, formatConditions } from '../src/tokens';
+import { extractTokens, extractGaps, formatConditions, tokensFor } from '../src/tokens';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
 import type { SerializedNode, TokenRef, RefIdentity } from '../src/tree';
@@ -762,5 +762,116 @@ describe('composite keys', () => {
       expect(CONTROL.test(src), `${file} holds a raw control character`).toBe(false);
       expect(src.includes(BACKSLASH_ZERO), `${file} holds a NUL escape`).toBe(false);
     }
+  });
+});
+
+describe('extractTokens — bindings on parts hidden by default', () => {
+  /**
+   * A chip whose leading icon is hidden and bound to a BOOLEAN property, whose
+   * trailing decoration is hidden and bound to nothing, and whose glyph is a
+   * visible child of the hidden icon. Written inline rather than added to
+   * `chip-hidden.json`, because that fixture's hash is recorded in
+   * specHash.test.ts and adding bindings to it would move a recorded hash for
+   * reasons unrelated to what it guards.
+   */
+  const hiddenBindings: SerializedNode = {
+    id: '1', name: 'Chip', type: 'COMPONENT', visible: true,
+    propertyDefinitions: { 'Icon left#1': { type: 'BOOLEAN', defaultValue: false } },
+    children: [
+      {
+        id: '2', name: 'Icon left', type: 'FRAME', visible: false, visibleProperty: 'Icon left#1',
+        bindings: [
+          { property: 'itemSpacing', id: 'VariableID:9', name: 'Spacing/100', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+        ],
+        children: [{
+          id: '3', name: 'Glyph', type: 'VECTOR', visible: true,
+          bindings: [
+            { property: 'fills', id: 'VariableID:8', name: 'Role/Text/Accent', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+          ],
+        }],
+      },
+      {
+        id: '4', name: 'Label', type: 'TEXT', visible: true,
+        bindings: [
+          { property: 'fills', id: 'VariableID:7', name: 'Role/Text/Default', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+        ],
+      },
+      {
+        // Hidden and bound to nothing: no consumer can ever reveal it, so its
+        // bindings stay pruned exactly as every hidden layer's used to be.
+        id: '5', name: 'Guide', type: 'RECTANGLE', visible: false,
+        bindings: [
+          { property: 'fills', id: 'VariableID:6', name: 'Role/Stroke/Guide', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' },
+        ],
+      },
+    ],
+  };
+
+  const rules = extractTokens(hiddenBindings);
+
+  it('keeps a bound hidden layer\'s own bindings and marks them', () => {
+    const gap = rules.find((r) => r.path === 'Chip/Icon left' && r.property === 'gap');
+    expect(gap).toMatchObject({ name: 'Spacing/100', shownBy: 'Icon left' });
+  });
+
+  it('marks a visible child of a hidden layer with the ancestor\'s property', () => {
+    const fill = rules.find((r) => r.path === 'Chip/Icon left/Glyph');
+    expect(fill).toMatchObject({ property: 'fill', name: 'Role/Text/Accent', shownBy: 'Icon left' });
+  });
+
+  it('leaves a rule shown by default unmarked, with the key absent', () => {
+    const label = rules.find((r) => r.path === 'Chip/Label')!;
+    expect(label.name).toBe('Role/Text/Default');
+    expect('shownBy' in label).toBe(false);
+  });
+
+  it('still prunes a hidden layer bound to no boolean property', () => {
+    expect(rules.find((r) => r.path === 'Chip/Guide')).toBeUndefined();
+  });
+
+  it('suppresses the false "no token binding" gap the pruning used to leave behind', () => {
+    // extractGaps has always walked hidden subtrees. Before token extraction
+    // reached them, a bound hidden layer had no binding to weigh against its
+    // gap, so the brief could report a bound fill as unbound.
+    const bound = new Set(rules.map((r) => `${r.path} ${r.property}`));
+    const gaps = extractGaps(hiddenBindings);
+    expect(gaps.some((g) => g.path === 'Chip/Icon left/Glyph' && g.issue === 'hardcoded-color')).toBe(false);
+    expect(gaps.filter((g) => !bound.has(`${g.path} ${g.property}`)).map((g) => g.path))
+      .not.toContain('Chip/Icon left/Glyph');
+  });
+
+  it('conditions nothing on presence: the layer exists in every variant, it is just hidden', () => {
+    for (const rule of rules) expect(rule.conditions).toEqual({});
+  });
+});
+
+describe('tokensFor', () => {
+  const rules = extractTokens({
+    id: '1', name: 'Chip', type: 'COMPONENT', visible: true,
+    propertyDefinitions: { 'Icon left#1': { type: 'BOOLEAN', defaultValue: false } },
+    children: [
+      {
+        id: '2', name: 'Icon left', type: 'FRAME', visible: false, visibleProperty: 'Icon left#1',
+        bindings: [{ property: 'fills', id: 'VariableID:1', name: 'Role/Text/Accent', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' }],
+      },
+      {
+        id: '3', name: 'Label', type: 'TEXT', visible: true,
+        bindings: [{ property: 'fills', id: 'VariableID:2', name: 'Role/Text/Default', kind: 'variable', remote: false, collectionId: 'VariableCollectionId:1' }],
+      },
+    ],
+  } as SerializedNode);
+
+  it('drops every marked rule when not including hidden', () => {
+    expect(tokensFor(rules, { includeHidden: false }).map((r) => r.name))
+      .toEqual(['Role/Text/Default']);
+  });
+
+  it('returns the same array when including hidden, so callers can rely on identity', () => {
+    expect(tokensFor(rules, { includeHidden: true })).toBe(rules);
+  });
+
+  it('returns an unmarked list unchanged either way', () => {
+    const plain = extractTokens(chip as SerializedNode);
+    expect(tokensFor(plain, { includeHidden: false })).toEqual(plain);
   });
 });

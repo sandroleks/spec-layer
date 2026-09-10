@@ -524,6 +524,38 @@ describe('componentBrief', () => {
     }]);
   });
 
+  it('leaves a token rule for a hidden part out, but stops calling its binding a gap', () => {
+    const ref = {
+      id: 'VariableID:9', kind: 'variable' as const, remote: false,
+      collectionId: 'VariableCollectionId:1',
+    };
+    const hidden: IntermediateSpec = {
+      ...SPEC,
+      tokens: [
+        { part: 'label', path: 'Container/label', property: 'fill', conditions: {},
+          name: 'Role/Text/Default', ...ref },
+        { part: 'icon left', path: 'Container/icon left', property: 'fill', conditions: {},
+          name: 'Role/Text/Accent', ...ref, shownBy: 'Icon left' },
+      ],
+      gaps: [
+        // The gap extraction reaches hidden subtrees, so it reports this path
+        // even though the rule above proves the fill IS bound.
+        { part: 'icon left', path: 'Container/icon left', property: 'fill',
+          issue: 'missing-token-binding' },
+      ],
+    };
+    const yaml = toYaml(componentBrief(hidden, { generatedAt: AT }));
+    // Emitted rules are filtered: this contract has no field in which to say a
+    // rule only applies once "Icon left" is true, and a rule that omitted the
+    // condition would read as unconditional.
+    expect(yaml).toContain('Role/Text/Default');
+    expect(yaml).not.toContain('Role/Text/Accent');
+    // The gap join still sees the unfiltered rules, so the brief no longer
+    // claims a bound property has no token binding.
+    const parsed = load(yaml) as ParsedComponentBrief;
+    expect(parsed.unbound ?? []).toEqual([]);
+  });
+
   // Rewritten from the v1 test that also asserted on the now-removed
   // top-level `axes` and `states` blocks; that coverage moved to the API
   // split tests below.

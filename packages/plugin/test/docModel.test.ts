@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
+import { buildDocModel, calloutLabels, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
 import type { IntermediateSpec, RefIdentity } from '@spec-layer/extractor';
 
 /** A TokenRule now carries the full identity Figma stated for the reference.
@@ -139,8 +139,8 @@ describe('buildDocModel', () => {
       expect(block.componentId).toBe('c:1');
       expect(block.view).toBe('diagram');
       expect(block.parts).toEqual([
-        { n: 1, name: 'Container', nested: false, id: 'p:1', depth: 0, component: undefined, tokens: ['color/bg'], type: 'FRAME' },
-        { n: 2, name: 'Icon', nested: true, id: 'p:2', depth: 1, component: 'Icon', tokens: [], type: 'INSTANCE' },
+        { label: '1', name: 'Container', nested: false, id: 'p:1', depth: 0, component: undefined, tokens: ['color/bg'], type: 'FRAME' },
+        { label: '1.1', name: 'Icon', nested: true, id: 'p:2', depth: 1, component: 'Icon', tokens: [], type: 'INSTANCE' },
       ]);
     }
   });
@@ -180,15 +180,81 @@ describe('buildDocModel', () => {
     expect(off.includeHidden).toBeUndefined();
     const offBlock = off.sections[0];
     if (offBlock.kind !== 'anatomy') throw new Error('expected anatomy');
-    expect(offBlock.parts.map((p) => [p.n, p.name])).toEqual([[1, 'Label']]);
+    expect(offBlock.parts.map((p) => [p.label, p.name])).toEqual([['1', 'Label']]);
 
     const on = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { includeHidden: true });
     expect(on.includeHidden).toBe(true);
     const onBlock = on.sections[0];
     if (onBlock.kind !== 'anatomy') throw new Error('expected anatomy');
-    expect(onBlock.parts.map((p) => [p.n, p.name, p.shownBy])).toEqual([
-      [1, 'Icon left', 'Icon left'], [2, 'Label', undefined],
+    expect(onBlock.parts.map((p) => [p.label, p.name, p.shownBy])).toEqual([
+      ['1', 'Icon left', 'Icon left'], ['2', 'Label', undefined],
     ]);
+  });
+
+  it('numbers anatomy callouts hierarchically, so the pinned depth-0 set has no holes', () => {
+    const specA = {
+      ...spec,
+      anatomyComponentId: 'c:1',
+      anatomy: [
+        { id: 'p:1', name: 'Icon left', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'p:2', name: 'Glyph', type: 'VECTOR', nested: false, depth: 1 },
+        { id: 'p:3', name: 'Label', type: 'TEXT', nested: false, depth: 0 },
+        { id: 'p:4', name: 'Icon right', type: 'FRAME', nested: false, depth: 0 },
+        { id: 'p:5', name: 'Glyph', type: 'VECTOR', nested: false, depth: 1 },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']));
+    const block = model.sections[0];
+    if (block.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(block.parts.map((p) => [p.label, p.name])).toEqual([
+      ['1', 'Icon left'], ['1.1', 'Glyph'],
+      ['2', 'Label'],
+      ['3', 'Icon right'], ['3.1', 'Glyph'],
+    ]);
+    // Only depth-0 parts get a pin, and those labels count 1, 2, 3 with
+    // nothing skipped. A flat index would have drawn 1, 3 and 4.
+    expect(block.parts.filter((p) => p.depth === 0).map((p) => p.label))
+      .toEqual(['1', '2', '3']);
+  });
+
+  it('shows a hidden part\'s token rules only when includeHidden is on', () => {
+    const ref = {
+      id: 'VariableID:1', kind: 'variable' as const, remote: false,
+      collectionId: 'VariableCollectionId:1',
+    };
+    const specA = {
+      ...spec,
+      anatomyComponentId: 'c:1',
+      anatomy: [
+        { id: 'p:1', name: 'Icon left', type: 'FRAME', nested: false, depth: 0, hiddenByDefault: true, shownBy: 'Icon left' },
+        { id: 'p:2', name: 'Label', type: 'TEXT', nested: false, depth: 0 },
+      ],
+      variantInstances: [],
+      tokens: [
+        { part: 'Label', path: 'Chip/Label', property: 'fill', conditions: {}, name: 'Role/Text/Default', ...ref },
+        { part: 'Icon left', path: 'Chip/Icon left', property: 'fill', conditions: {}, name: 'Role/Text/Accent', ...ref, shownBy: 'Icon left' },
+      ],
+    } as unknown as IntermediateSpec;
+
+    const sections = new Set<SectionId>(['tokens', 'anatomy']);
+    const off = buildDocModel(specA, null, sections);
+    const offTokens = off.sections.find((b) => b.id === 'tokens');
+    if (offTokens?.kind !== 'table') throw new Error('expected table');
+    expect(offTokens.rows.map((r) => r[2])).toEqual(['Role/Text/Default']);
+    const offAnatomy = off.sections.find((b) => b.id === 'anatomy');
+    if (offAnatomy?.kind !== 'anatomy') throw new Error('expected anatomy');
+    // The legend must not lend a hidden part's token names to a row either.
+    expect(offAnatomy.parts.flatMap((p) => p.tokens)).toEqual(['Role/Text/Default']);
+
+    const on = buildDocModel(specA, null, sections, undefined, { includeHidden: true });
+    const onTokens = on.sections.find((b) => b.id === 'tokens');
+    if (onTokens?.kind !== 'table') throw new Error('expected table');
+    expect(onTokens.rows.map((r) => r[2]))
+      .toEqual(['Role/Text/Default', 'Role/Text/Accent']);
+    const onAnatomy = on.sections.find((b) => b.id === 'anatomy');
+    if (onAnatomy?.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(onAnatomy.parts.find((p) => p.name === 'Icon left')!.tokens)
+      .toEqual(['Role/Text/Accent']);
   });
 
   it("renders dos and donts with check/cross markers", () => {
@@ -778,5 +844,21 @@ describe('buildDocModel placeholders for merged prose', () => {
     const block = model.sections[0];
     expect(block.kind).toBe('anatomy');
     if (block.kind === 'anatomy') expect(block.summary).toBe('Two parts.');
+  });
+});
+
+describe('calloutLabels', () => {
+  it('counts per depth and resets a deeper counter on the way back down', () => {
+    expect(calloutLabels([0, 1, 1, 0, 1, 2, 0])).toEqual([
+      '1', '1.1', '1.2', '2', '2.1', '2.1.1', '3',
+    ]);
+  });
+
+  it('numbers a flat list exactly as a 1-based index does', () => {
+    expect(calloutLabels([0, 0, 0])).toEqual(['1', '2', '3']);
+  });
+
+  it('has nothing to say about an empty list', () => {
+    expect(calloutLabels([])).toEqual([]);
   });
 });

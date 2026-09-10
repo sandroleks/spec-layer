@@ -129,16 +129,6 @@ export function applyGroupBulk(
   }
 }
 
-/** The option only makes sense while the Anatomy section is included: once
- *  Anatomy is unchecked its checkbox disappears, and a hidden control must not
- *  keep changing four sections and the drift hash. */
-export function includeHiddenAfterSectionChange(
-  sections: ReadonlySet<SectionId>,
-  includeHidden: boolean,
-): boolean {
-  return sections.has('anatomy') ? includeHidden : false;
-}
-
 /**
  * Copy the screen's picks into the value consumed by build and download.
  *

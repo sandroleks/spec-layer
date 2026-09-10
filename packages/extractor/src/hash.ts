@@ -1,7 +1,7 @@
 import { sha256 } from 'js-sha256';
 import type { IntermediateSpec, VariantInstance } from './extract';
 import type { ComponentProp, VariantAxis } from './props';
-import type { GapIssue } from './tokens';
+import { tokensFor, type GapIssue } from './tokens';
 import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
 import { anatomyFor } from './anatomy';
 
@@ -106,8 +106,15 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     // under the old key. Emitting `name` here instead would drift every document
     // on every canvas for a field rename. The new identity fields (`id`, `kind`,
     // `remote`, `collectionId`) stay out for the same reason `path` does.
-    tokens: spec.tokens.map(({ part, property, conditions, name }) =>
-      ({ part, property, conditions, token: name })),
+    // Filtered by the doc's own flag, exactly as anatomy is: the rendered
+    // token table and the drift baseline have to be computed from the same
+    // list, or a Library row's change list could disagree with its badge.
+    // `shownBy` itself stays out of the projection; a rule's PRESENCE in this
+    // array already carries it, and every committed doc's baseline was
+    // computed without the key.
+    tokens: tokensFor(spec.tokens, { includeHidden: options.includeHidden === true })
+      .map(({ part, property, conditions, name }) =>
+        ({ part, property, conditions, token: name })),
     // Same reasoning as `tokens` above: `path` is a new identity for data
     // already hashed under `part`, so it stays out. `property` and `value` do
     // enter: they are real content (the measured number is its own field, not

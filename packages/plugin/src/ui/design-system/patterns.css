@@ -522,6 +522,52 @@
   transform: translateX(13px);
 }
 
+/* A document-wide option, shown above the section list. Same block as
+   .sl-ai-control so the two read as one row of switches, on the neutral
+   surface rather than the AI tint: this one calls no model. */
+.sl-doc-option {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 31px;
+  align-items: center;
+  gap: var(--sl-space-8);
+  margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
+  padding: 0 var(--sl-space-10);
+  background: var(--sl-color-detail-surface);
+  border: 1px solid var(--sl-color-border-muted);
+  border-radius: var(--sl-radius-md);
+}
+
+.sl-doc-option-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sl-space-6);
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-doc-option .sl-switch-control {
+  min-height: 18px;
+}
+
+.sl-doc-option .sl-switch-track {
+  width: 31px;
+  height: 18px;
+  padding: var(--sl-space-2);
+  border: 0;
+}
+
+.sl-doc-option .sl-switch-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.sl-doc-option .sl-switch-input:checked + .sl-switch-track .sl-switch-thumb {
+  transform: translateX(13px);
+}
+
 .sl-section-intro {
   min-height: 31px;
   display: flex;
