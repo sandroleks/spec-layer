@@ -135,6 +135,7 @@ const FACTS: Record<string, ComponentFacts> = {
   variants: {
     ...NO_FACTS,
     hasStates: true,
+    hasHiddenParts: true,
     variants: [
       {
         nodeId: '1:1',

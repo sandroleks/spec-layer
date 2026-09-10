@@ -1866,6 +1866,13 @@ document.addEventListener('change', (event) => {
     return;
   }
 
+  if (input.hasAttribute('data-include-hidden')) {
+    selection.includeHidden = input.checked;
+    state.includeHidden = input.checked;
+    input.focus({ preventScroll: true });
+    return;
+  }
+
   const variantId = input.dataset.variant;
   if (variantId) {
     if (input.checked) selection.variantIds.add(variantId);
@@ -2189,6 +2196,9 @@ function applySelection(msg: SelectionMessage): void {
       if (seq !== selectionSeq || state.currentNode?.id !== node.id) return;
       facts = componentFacts(state.currentSpec, node.name);
       selection.variantIds = new Set(facts.defaultVariantIds);
+      // Per component: a fresh selection starts with hidden parts off.
+      selection.includeHidden = false;
+      state.includeHidden = false;
       if (facts.hasStates === true) selection.sections.add('states');
       if (facts.hasStates === false) selection.sections.delete('states');
       screen = { kind: 'ready', componentName: node.name };
