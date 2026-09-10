@@ -34,6 +34,12 @@ export interface LibraryEntry {
    *  from its doc link. Absent on every blob written before the field existed,
    *  which the UI treats as stale rather than comparing hashes against it. */
   extractorVersion?: string;
+  /** Component rows only: the doc's `includeHidden` config, so the drift
+   *  check hashes the same anatomy the stored baseline was computed over. A
+   *  doc that reveals hidden parts hashes them; one that does not, does not.
+   *  Absent on foundation rows and on entries an older main thread produced,
+   *  both read as false. */
+  includeHidden?: boolean;
   /** Foundation rows only: the live hash for this scope, for drift comparison.
    *  Component rows resolve drift separately via requestDrift. Absent when the
    *  live extraction failed, in which case the row must not read as drifted. */

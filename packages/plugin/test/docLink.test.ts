@@ -13,7 +13,7 @@ import {
 
 const DATA: DocLinkData = {
   v: 1, sourceNodeId: '10:2', contentHash: 'abc', selfHash: 'def',
-  config: { sections: ['definition', 'anatomy'], variantIds: ['1:1'], aiEnabled: true, anatomyView: 'diagram', measureViews: ['size', 'padding', 'spacing'] },
+  config: { sections: ['definition', 'anatomy'], variantIds: ['1:1'], aiEnabled: true, anatomyView: 'diagram', measureViews: ['size', 'padding', 'spacing'], includeHidden: false },
   generatedAt: 1720000000000, pluginVersion: '3.0.0',
 };
 
@@ -52,7 +52,14 @@ describe('docLink data', () => {
       aiEnabled: false,                     // missing → default
       anatomyView: 'diagram',               // all links normalize to diagram
       measureViews: [],                     // missing → default
+      includeHidden: false,                  // missing → default
     });
+  });
+  it('reads includeHidden as false unless stored as exactly true', () => {
+    const on = JSON.stringify({ ...DATA, config: { ...DATA.config, includeHidden: true } });
+    expect((parseDocLink(on) as ComponentDocLink).config.includeHidden).toBe(true);
+    const junk = JSON.stringify({ ...DATA, config: { ...DATA.config, includeHidden: 'yes' } });
+    expect((parseDocLink(junk) as ComponentDocLink).config.includeHidden).toBe(false);
   });
   it('normalizes legacy anatomy table/both links to diagram', () => {
     const raw = JSON.stringify({

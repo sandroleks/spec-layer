@@ -95,6 +95,36 @@ export async function matchVariableModes(inst: InstanceNode, component: Componen
   }
 }
 
+/**
+ * Set every BOOLEAN component property to true on `inst`, so the layers those
+ * properties hide are drawn. Called only when the doc's includeHidden is on.
+ *
+ * Definitions are read from the component, or from its parent component set
+ * when the component is a variant: Figma throws on a variant's own
+ * componentPropertyDefinitions. Every boolean is set, not only the ones that
+ * hide a documented part: a boolean that defaults to true changes nothing, and
+ * a boolean bound to a layer below the anatomy depth still deserves to show,
+ * since the token walker already documents that layer.
+ *
+ * Never throws. A failure is logged and the instance keeps its defaults, which
+ * is what the doc showed before this existed.
+ */
+export async function revealBooleanParts(inst: InstanceNode, component: ComponentNode): Promise<void> {
+  try {
+    const owner: ComponentNode | ComponentSetNode =
+      component.parent && component.parent.type === 'COMPONENT_SET'
+        ? (component.parent as ComponentSetNode)
+        : component;
+    const values: Record<string, boolean> = {};
+    for (const [key, def] of Object.entries(owner.componentPropertyDefinitions)) {
+      if (def.type === 'BOOLEAN') values[key] = true;
+    }
+    if (Object.keys(values).length > 0) inst.setProperties(values);
+  } catch (err) {
+    console.error('[Spec Layer] could not reveal boolean-controlled layers', err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Text construction
 // ---------------------------------------------------------------------------
@@ -152,8 +182,10 @@ export function hstack(spacing: number): FrameNode {
 }
 
 /** A slot holding a live instance of the variant (or a placeholder). `width` is
- *  the slot's box width; the instance is rescaled to fit inside its padding. */
-export async function buildSlot(nodeId: string, width: number, maxH = 160): Promise<FrameNode> {
+ *  the slot's box width; the instance is rescaled to fit inside its padding.
+ *  `includeHidden` sets every boolean property to true on the instance (see
+ *  revealBooleanParts). */
+export async function buildSlot(nodeId: string, width: number, maxH = 160, includeHidden = false): Promise<FrameNode> {
   const slot = figma.createFrame();
   slot.name = 'Instance slot';
   slot.layoutMode = 'VERTICAL';
@@ -177,6 +209,7 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160): Prom
       // Match the component's variable modes so the preview resolves the same
       // token values (padding/gap/size) it does — otherwise it renders smaller.
       await matchVariableModes(inst, node);
+      if (includeHidden) await revealBooleanParts(inst, node);
       slot.appendChild(inst);
       const maxW = width - 24;
       const scale = Math.min(1, maxW / inst.width, maxH / inst.height);

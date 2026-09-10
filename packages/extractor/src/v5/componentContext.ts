@@ -37,7 +37,7 @@ import { computeFoundationStatistics } from './statistics';
 import { validateLevel1, validateLevel2 } from './validate';
 import { resolvedValueOf } from './value';
 
-export const COMPONENT_SCHEMA_VERSION = '5.1.0';
+export const COMPONENT_SCHEMA_VERSION = '5.2.0';
 export const COMPONENT_SCHEMA_URI = 'https://spec-layer.com/schemas/component-context/v5.json';
 export const COMPONENT_EXTRACTOR_NAME = 'spec-layer-component';
 
@@ -452,6 +452,8 @@ interface AnatomyNodeV5 extends YamlObject {
   part: string;
   path: string;
   type: string;
+  /** Present only on a part hidden by default: the boolean property that shows it. */
+  shown_by?: string;
   children?: YamlValue[];
 }
 
@@ -462,6 +464,7 @@ function componentAnatomy(spec: IntermediateSpec): YamlValue[] {
     const node: AnatomyNodeV5 = {
       part: part.name, path: part.path, type: part.type,
       ...(part.component ? { component: part.component } : {}),
+      ...(part.shownBy ? { shown_by: part.shownBy } : {}),
     };
     while (stack.length > 0 && stack[stack.length - 1].depth >= part.depth) stack.pop();
     if (stack.length === 0) roots.push(node);

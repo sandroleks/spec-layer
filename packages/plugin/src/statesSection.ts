@@ -40,7 +40,11 @@ export function matrixBandLayout(columnCount: number, contentWidth: number): { c
  * back to buildSlot's own placeholder; callers auto-hide the section at the
  * model level when there is nothing to show, so the block is assumed well-formed.
  */
-export async function buildMatrixSection(block: MatrixBlockData, contentWidth: number): Promise<FrameNode> {
+export async function buildMatrixSection(
+  block: MatrixBlockData,
+  contentWidth: number,
+  includeHidden = false,
+): Promise<FrameNode> {
   const wrap = vstack(BAND_GAP);
 
   const { colsPerBand, cellW } = matrixBandLayout(block.columns.length, contentWidth);
@@ -85,7 +89,7 @@ export async function buildMatrixSection(block: MatrixBlockData, contentWidth: n
       r.appendChild(label);
       for (const nodeId of row.cells.slice(start, end)) {
         if (nodeId) {
-          const slot = await buildSlot(nodeId, cellW, 96);
+          const slot = await buildSlot(nodeId, cellW, 96, includeHidden);
           r.appendChild(slot);
         } else {
           const empty = vstack(0);

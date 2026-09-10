@@ -77,6 +77,9 @@ export interface UiState {
   // Which measurement lenses the Measure section renders (each as its own
   // focused mini-diagram). Empty falls back to all three in the model.
   measureViews: MeasureView[];
+  // Draw the parts a boolean property hides by default, and set those
+  // properties on every placed instance. Per component; the screen resets it.
+  includeHidden: boolean;
 }
 
 export function createState(): UiState {
@@ -99,6 +102,7 @@ export function createState(): UiState {
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
     measureViews: ['size', 'padding', 'spacing'],
+    includeHidden: false,
   };
 }
 
@@ -338,8 +342,8 @@ export async function createDocFrame(
       type: 'renderDocFrame',
       model: built.model,
       nodeId: state.currentNode!.id,
-      contentHash: specContentHash(state.currentSpec!),
-      baseline: specHashProjection(state.currentSpec!),
+      contentHash: specContentHash(state.currentSpec!, { includeHidden: state.includeHidden }),
+      baseline: specHashProjection(state.currentSpec!, { includeHidden: state.includeHidden }),
       extractorVersion: EXTRACTOR_VERSION,
       config: built.config,
       ...(state.generatedProse ? { prose: state.generatedProse } : {}),
@@ -377,7 +381,7 @@ async function assembleDocFor(
     state.generatedProse,
     selected,
     variantIds,
-    { measureViews: state.measureViews },
+    { measureViews: state.measureViews, includeHidden: state.includeHidden },
   );
   const config: DocConfig = {
     sections: [...selected],
@@ -385,6 +389,7 @@ async function assembleDocFor(
     aiEnabled: state.aiEnabled,
     anatomyView: 'diagram',
     measureViews: state.measureViews,
+    includeHidden: state.includeHidden,
   };
   return { model, config };
 }
@@ -471,13 +476,14 @@ export async function updateFromSource(
     const variantIds = new Set<string>(src.config.variantIds);
     const model = buildDocModel(spec, src.prose, selected, variantIds, {
       measureViews: src.config.measureViews,
+      includeHidden: src.config.includeHidden,
     });
     send({
       type: 'renderDocFrame',
       model,
       nodeId: src.node.id,
-      contentHash: specContentHash(spec),
-      baseline: specHashProjection(spec),
+      contentHash: specContentHash(spec, { includeHidden: src.config.includeHidden }),
+      baseline: specHashProjection(spec, { includeHidden: src.config.includeHidden }),
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
       ...(src.prose ? { prose: src.prose } : {}),

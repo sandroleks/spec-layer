@@ -116,6 +116,11 @@ interface RawNode {
     defaultValue?: string | boolean;
     variantOptions?: string[];
   }>;
+  componentPropertyReferences?: {
+    visible?: string;
+    characters?: string;
+    mainComponent?: string;
+  } | null;
   children?: RawNode[];
 }
 
@@ -321,6 +326,18 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     layout = { ...(layout ?? {}), cornerRadius: node.cornerRadius };
   }
 
+  // --- visibility bound to a component property ---
+  // Figma exposes the binding as `componentPropertyReferences.visible` on the
+  // layer itself. Null on nodes outside a component; wrapped like
+  // componentPropertyDefinitions above in case a node type rejects the read.
+  let visibleProperty: string | undefined;
+  try {
+    const ref = node.componentPropertyReferences?.visible;
+    if (typeof ref === 'string' && ref.length > 0) visibleProperty = ref;
+  } catch {
+    // Not a property-bearing node — leave it absent.
+  }
+
   // --- Recurse children ---
   const children = node.children
     ? await Promise.all(node.children.map(c => serializeNode(c, resolver)))
@@ -331,6 +348,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     name: node.name,
     type: node.type,
     visible: node.visible ?? true,
+    ...(visibleProperty !== undefined ? { visibleProperty } : {}),
     ...(node.key !== undefined ? { key: node.key } : {}),
     ...(propertyDefinitions ? { propertyDefinitions } : {}),
     ...(bindings.length > 0 ? { bindings } : {}),

@@ -33,6 +33,9 @@ export interface ComponentFacts {
   hasStates: boolean | null;
   variants: VariantRowView[];
   defaultVariantIds: Set<string>;
+  /** True when any anatomy part is hidden by default and shown by a boolean
+   *  property. Decides whether the "Document hidden elements" option appears. */
+  hasHiddenParts: boolean;
 }
 
 /** Before extraction finishes there are no facts, and the screen must not guess. */
@@ -41,6 +44,7 @@ export const NO_FACTS: ComponentFacts = {
   hasStates: null,
   variants: [],
   defaultVariantIds: new Set<string>(),
+  hasHiddenParts: false,
 };
 
 /**
@@ -86,5 +90,6 @@ export function componentFacts(
       chips: chipsFor(instance.values),
     })),
     defaultVariantIds: new Set(defaultId ? [defaultId] : []),
+    hasHiddenParts: spec.anatomy.some((part) => part.hiddenByDefault === true),
   };
 }

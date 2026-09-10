@@ -1,5 +1,5 @@
 import type { SerializedNode } from './tree';
-import { parseVariantName, siblingPartNames, cleanPartName, joinPath } from './naming';
+import { parseVariantName, siblingPartNames, cleanPartName, cleanPropName, joinPath } from './naming';
 
 export interface AnatomyPart {
   id: string; name: string; type: string; nested: boolean;
@@ -15,6 +15,15 @@ export interface AnatomyPart {
   /** TEXT parts only: font size/weight, kept for a future WCAG contrast
    *  threshold lookup (see contrast.ts's requiredRatio). No current reader. */
   text?: { fontSize?: number; fontWeight?: number };
+  /** True when the part is hidden in the default variant and a boolean
+   *  component property shows it. Absent, never false, on parts shown by
+   *  default. Descendants of a hidden part carry it too: they are hidden in
+   *  practice, and one predicate (`anatomyFor`) has to drop the whole subtree. */
+  hiddenByDefault?: true;
+  /** Cleaned name of the boolean property that shows the part (the nearest
+   *  binding on the part or an ancestor). Same cleaning as props.ts, so it
+   *  matches the Configuration table's spelling. Present iff hiddenByDefault. */
+  shownBy?: string;
 }
 export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; componentId: string }
 
@@ -47,21 +56,52 @@ export function defaultVariant(root: SerializedNode): SerializedNode {
   return variants[0];
 }
 
+/** Raw keys of the root's BOOLEAN property definitions. Definitions live on
+ *  the COMPONENT_SET (or standalone COMPONENT); a variant's own read throws in
+ *  Figma, so the serializer never records any there. */
+function booleanPropertyKeys(root: SerializedNode): Set<string> {
+  return new Set(
+    Object.entries(root.propertyDefinitions ?? {})
+      .filter(([, def]) => def.type === 'BOOLEAN')
+      .map(([key]) => key),
+  );
+}
+
+/** The boolean property a hidden node is bound to, or undefined when the node
+ *  is visible, unbound, or bound to a property the root does not define as a
+ *  BOOLEAN. Only such a node can be turned on by a consumer, so only such a
+ *  node is worth documenting as a hidden part. */
+function hiddenBoundTo(node: SerializedNode, booleans: Set<string>): string | undefined {
+  if (node.visible) return undefined;
+  if (node.visibleProperty === undefined || !booleans.has(node.visibleProperty)) return undefined;
+  return cleanPropName(node.visibleProperty);
+}
+
+/** Keep a child when it is visible, or hidden and bound to a root boolean. */
+function isDocumentable(node: SerializedNode, booleans: Set<string>): boolean {
+  return node.visible || hiddenBoundTo(node, booleans) !== undefined;
+}
+
 /**
  * Anatomy is a BOUNDED depth-first walk (MAX_DEPTH levels) starting from the
- * direct, visible children of the default variant: it lists the component's
- * primary named parts plus their meaningful nested structure, matching how
- * design systems document anatomy (a top-level part can itself have labeled
- * sub-parts). This still differs by design from token/gap extraction
- * (tokens.ts), which walks the full tree unbounded because bindings live on
- * nested layers — the two depths are not meant to align. Markdown rendering
- * (render.ts) only surfaces depth-0 parts, to keep the prose list simple; the
- * deeper levels are for the canvas anatomy frame only.
+ * direct children of the default variant that are visible, or hidden but
+ * shown by a boolean component property (marked `hiddenByDefault`): it lists
+ * the component's primary named parts plus their meaningful nested structure,
+ * matching how design systems document anatomy (a top-level part can itself
+ * have labeled sub-parts). This still differs by design from token/gap
+ * extraction (tokens.ts), which walks the full tree unbounded because
+ * bindings live on nested layers — the two depths are not meant to align.
+ * Markdown rendering (render.ts) only surfaces depth-0 parts, to keep the
+ * prose list simple; the deeper levels are for the canvas anatomy frame only.
  *
- * Single-wrapper descent: when the default variant has exactly ONE visible
+ * Single-wrapper descent: when the default variant has exactly ONE VISIBLE
  * child whose type is FRAME or GROUP (the common "everything in one auto-layout
  * wrapper" pattern), anatomy descends into that child's children before listing
  * parts, so the wrapper itself is not surfaced as the sole anatomy element.
+ * Hidden bound layers take no part in that decision and no part in the depth-0
+ * numbering basis until after the visible children have taken their names, so
+ * the parts a doc draws with the option off are exactly the parts it drew
+ * before this feature existed, down to their names, paths and order.
  */
 export function extractAnatomy(root: SerializedNode): AnatomyResult {
   const parts: AnatomyPart[] = [];
@@ -79,23 +119,54 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   // visible child — otherwise we would surface an empty parts list instead of
   // the wrapper, which is a silent failure.
   //
+  // The decision is made on VISIBLE children alone, exactly as it was before
+  // hidden bound layers were documented at all. A hidden bound layer can
+  // therefore never change which wrapper is descended, nor whether a wrapper is
+  // listed instead of descended into, so a doc with the option off keeps the
+  // tree shape and the hash it already had. Hidden bound layers skipped on the
+  // way down are collected and listed at depth 0 after the descended parts.
+  //
   // The skipped wrapper still occupies a level in the shared path namespace
   // (walkParts never skips it), so its name is folded into `parentPath` as we
   // descend, keeping a nested part's path identical to what tokens.ts/gaps.ts
   // would produce for the same node.
+  const booleans = booleanPropertyKeys(root);
+
+  /** A depth-0 part together with the path of the level it was found on:
+   *  descended parts sit under the wrapper, skipped hidden ones do not. */
+  interface TopLevelEntry { node: SerializedNode; parentPath: string }
+
   let siblingSet = def.children ?? [];
   let children = siblingSet.filter((c) => c.visible);
   let parentPath = rootPath;
+  const skippedHidden: TopLevelEntry[] = [];
   while (
     children.length === 1 &&
     (children[0].type === 'FRAME' || children[0].type === 'GROUP') &&
     (children[0].children ?? []).filter((c) => c.visible).length > 0
   ) {
+    for (const node of siblingSet) {
+      if (node !== children[0] && hiddenBoundTo(node, booleans) !== undefined) {
+        skippedHidden.push({ node, parentPath });
+      }
+    }
     const names = siblingPartNames(siblingSet);
     parentPath = joinPath(parentPath, names.get(children[0])!);
     siblingSet = children[0].children ?? [];
     children = siblingSet.filter((c) => c.visible);
   }
+
+  // Visible children first, in their original order, so `siblingPartNames`
+  // hands them exactly the names the pre-feature code gave them; the hidden
+  // ones continue the same counters, so no two depth-0 parts share a name.
+  const topLevel: TopLevelEntry[] = [
+    ...children.map((node) => ({ node, parentPath })),
+    ...siblingSet
+      .filter((c) => hiddenBoundTo(c, booleans) !== undefined)
+      .map((node) => ({ node, parentPath })),
+    ...skippedHidden,
+  ];
+  const topNames = siblingPartNames(topLevel.map((e) => e.node));
 
   // Same-named siblings (a leading and a trailing "icon") are numbered rather
   // than deduped: they are two real parts with two real node ids and, often,
@@ -108,23 +179,64 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   // stop the walk — an instance's internals belong to its own spec — but the
   // instance's main-component name is still recorded (both as a `related`
   // atom and on the part itself) at whatever depth it's found.
-  const addParts = (nodes: SerializedNode[], depth: number, parentPath: string): void => {
+  //
+  // A hidden part bound to a boolean is kept and marked; its descendants
+  // inherit the mark (nearest binding wins) so one filter drops the subtree.
+  // `related` is built from parts shown by default only: it feeds the canvas
+  // hash of every existing doc, and a hidden nested instance still names its
+  // component on the part itself.
+  //
+  // Depth 1 and deeper keep the pre-feature naming basis: names are computed
+  // over ALL children, and a child is skipped only when it is neither visible
+  // nor hidden-and-bound. A visible part therefore keeps the name and position
+  // it always had, and a hidden bound part simply takes the name that basis
+  // already reserved for it.
+  function pushPart(
+    child: SerializedNode, depth: number, childParentPath: string, name: string,
+    inheritedShownBy: string | undefined,
+  ): void {
+    const shownBy = hiddenBoundTo(child, booleans) ?? inheritedShownBy;
+    const nested = child.type === 'INSTANCE';
+    if (nested && child.mainComponent && shownBy === undefined) related.add(child.mainComponent.name);
+    const path = joinPath(childParentPath, name);
+    parts.push({
+      id: child.id, name, type: child.type, nested, depth, path,
+      ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
+      ...(child.text ? { text: child.text } : {}),
+      ...(shownBy !== undefined ? { hiddenByDefault: true as const, shownBy } : {}),
+    });
+    if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
+      addParts(child.children, depth + 1, path, shownBy);
+    }
+  }
+
+  function addParts(
+    nodes: SerializedNode[], depth: number, nodesParentPath: string, inheritedShownBy: string | undefined,
+  ): void {
     const names = siblingPartNames(nodes);
     for (const child of nodes) {
-      if (!child.visible) continue;
-      const nested = child.type === 'INSTANCE';
-      if (nested && child.mainComponent) related.add(child.mainComponent.name);
-      const path = joinPath(parentPath, names.get(child)!);
-      parts.push({
-        id: child.id, name: names.get(child)!, type: child.type, nested, depth, path,
-        ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
-        ...(child.text ? { text: child.text } : {}),
-      });
-      if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
-        addParts(child.children, depth + 1, path);
-      }
+      if (!isDocumentable(child, booleans)) continue;
+      pushPart(child, depth, nodesParentPath, names.get(child)!, inheritedShownBy);
     }
-  };
-  addParts(children, 0, parentPath);
+  }
+
+  for (const entry of topLevel) {
+    pushPart(entry.node, 0, entry.parentPath, topNames.get(entry.node)!, undefined);
+  }
   return { parts, related: [...related], componentId: def.id };
+}
+
+export interface AnatomyOptions {
+  /** Include parts marked `hiddenByDefault`. The canvas model and the canvas
+   *  hash pass a doc's `includeHidden` config; the export always passes true. */
+  includeHidden: boolean;
+}
+
+/**
+ * The one predicate every canvas consumer and the canvas hash filter anatomy
+ * through, so they cannot disagree about which parts a doc draws. Returns the
+ * same array when nothing is filtered, so callers can rely on identity.
+ */
+export function anatomyFor(parts: AnatomyPart[], options: AnatomyOptions): AnatomyPart[] {
+  return options.includeHidden ? parts : parts.filter((p) => !p.hiddenByDefault);
 }

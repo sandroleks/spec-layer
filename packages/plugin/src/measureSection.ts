@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes, revealBooleanParts } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
 // Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
@@ -173,6 +173,7 @@ interface RailItem {
 interface ViewGeom {
   imgLeft: number; imgTop: number; imgRight: number; imgBottom: number;
   imgW: number; imgH: number;
+  rawW: number; rawH: number; // unscaled total width/height of the geometry source
   scale: number;
   padTs: number; padRs: number; padBs: number; padLs: number;
   pads: { top: number; right: number; bottom: number; left: number };
@@ -183,31 +184,48 @@ interface ViewGeom {
   gaps: { start: number; end: number }[];
 }
 
+/** Structural surface `computeGeom` reads. Both `ComponentNode` and
+ *  `InstanceNode` satisfy it: when `includeHidden` is on, `buildMeasureSection`
+ *  passes the revealed instance here instead of the source component, so the
+ *  overlay measures what is actually drawn rather than the frozen source box
+ *  (see the reveal call below for why they can differ). */
+interface GeometrySource {
+  width: number;
+  height: number;
+  paddingTop: number;
+  paddingRight: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  itemSpacing: number;
+  layoutMode: ComponentNode['layoutMode'];
+  children: readonly SceneNode[];
+}
+
 /** Compute the view geometry for an instance already placed at (M_LEFT, M_TOP). */
 function computeGeom(
-  component: ComponentNode,
+  source: GeometrySource,
   scale: number,
   mLeft: number,
   mTop: number,
 ): ViewGeom {
-  const imgW = component.width * scale;
-  const imgH = component.height * scale;
+  const imgW = source.width * scale;
+  const imgH = source.height * scale;
   const imgLeft = mLeft;
   const imgTop = mTop;
   const imgRight = mLeft + imgW;
   const imgBottom = mTop + imgH;
 
   const pads = {
-    top: component.paddingTop ?? 0,
-    right: component.paddingRight ?? 0,
-    bottom: component.paddingBottom ?? 0,
-    left: component.paddingLeft ?? 0,
+    top: source.paddingTop ?? 0,
+    right: source.paddingRight ?? 0,
+    bottom: source.paddingBottom ?? 0,
+    left: source.paddingLeft ?? 0,
   };
-  const hasAutoLayout = component.layoutMode === 'HORIZONTAL' || component.layoutMode === 'VERTICAL';
-  const horizontal = component.layoutMode === 'HORIZONTAL';
-  const gap = hasAutoLayout ? component.itemSpacing : 0;
+  const hasAutoLayout = source.layoutMode === 'HORIZONTAL' || source.layoutMode === 'VERTICAL';
+  const horizontal = source.layoutMode === 'HORIZONTAL';
+  const gap = hasAutoLayout ? source.itemSpacing : 0;
 
-  const kids: Child[] = component.children
+  const kids: Child[] = source.children
     .filter((c) => c.visible)
     .map((c) => ({
       x1: imgLeft + c.x * scale,
@@ -234,7 +252,8 @@ function computeGeom(
   }
 
   return {
-    imgLeft, imgTop, imgRight, imgBottom, imgW, imgH, scale,
+    imgLeft, imgTop, imgRight, imgBottom, imgW, imgH,
+    rawW: source.width, rawH: source.height, scale,
     padTs: pads.top * scale, padRs: pads.right * scale,
     padBs: pads.bottom * scale, padLs: pads.left * scale,
     pads, hasAutoLayout, horizontal, gap, kids, gaps,
@@ -289,11 +308,10 @@ function placeBottomRail(items: RailItem[], railY: number, imgRight: number): { 
  * With no auto-layout root, only total width/height (size) ever draw.
  */
 function buildDiagram(
-  component: ComponentNode,
+  g: ViewGeom,
   inst: InstanceNode,
   tokens: Record<string, string>,
   part: string,
-  scale: number,
   views: Set<MeasureView>,
 ): FrameNode {
   const showSize = views.has('size');
@@ -308,7 +326,6 @@ function buildDiagram(
   box.appendChild(inst);
   inst.x = M_LEFT;
   inst.y = M_TOP;
-  const g = computeGeom(component, scale, M_LEFT, M_TOP);
 
   // -------------------------------------------------------------------
   // Over-artwork bands (padding + gaps), drawn above the instance.
@@ -366,7 +383,7 @@ function buildDiagram(
       // Main axis horizontal: one red width badge per visible child.
       const rail: RailItem[] = [];
       for (const k of g.kids) {
-        const b = badge(String(round(k.w / scale)), SIZE_RED);
+        const b = badge(String(round(k.w / g.scale)), SIZE_RED);
         box.appendChild(b);
         rail.push({ node: b, center: k.x1 + k.w / 2 });
       }
@@ -382,7 +399,7 @@ function buildDiagram(
       }
     } else {
       // Main axis vertical (or no auto-layout): single centered total-width badge.
-      const widthBadge = badge(measureLabel(tokens, part, ['width'], component.width).value, SIZE_RED);
+      const widthBadge = badge(measureLabel(tokens, part, ['width'], g.rawW).value, SIZE_RED);
       box.appendChild(widthBadge);
       widthBadge.x = Math.round((g.imgLeft + g.imgRight) / 2 - widthBadge.width / 2);
       widthBadge.y = Math.round(topLineY - LINE_GAP - widthBadge.height);
@@ -399,7 +416,7 @@ function buildDiagram(
       // Main axis vertical: one red height badge per visible child.
       const rail: RailItem[] = [];
       for (const k of g.kids) {
-        const b = badge(String(round(k.h / scale)), SIZE_RED);
+        const b = badge(String(round(k.h / g.scale)), SIZE_RED);
         box.appendChild(b);
         rail.push({ node: b, center: k.y1 + k.h / 2 });
       }
@@ -413,7 +430,7 @@ function buildDiagram(
       }
     } else {
       // Main axis horizontal (or no auto-layout): single centered total-height badge.
-      const heightBadge = badge(measureLabel(tokens, part, ['height'], component.height).value, SIZE_RED);
+      const heightBadge = badge(measureLabel(tokens, part, ['height'], g.rawH).value, SIZE_RED);
       box.appendChild(heightBadge);
       heightBadge.x = Math.round(leftLineX - LINE_GAP - heightBadge.width);
       heightBadge.y = Math.round((g.imgTop + g.imgBottom) / 2 - heightBadge.height / 2);
@@ -459,7 +476,7 @@ function buildDiagram(
     if (showSize) {
       const contentLeft = g.imgLeft + g.padLs;
       const contentRight = g.imgRight - g.padRs;
-      const contentW = round(component.width - g.pads.left - g.pads.right);
+      const contentW = round(g.rawW - g.pads.left - g.pads.right);
       const b = badge(String(contentW), SIZE_RED);
       box.appendChild(b);
       rail.push({ node: b, center: (contentLeft + contentRight) / 2 });
@@ -489,7 +506,7 @@ function buildDiagram(
       // on the content band (children share the cross size in practice).
       const contentTop = g.imgTop + g.padTs;
       const contentBottom = g.imgBottom - g.padBs;
-      const crossH = round((component.height - g.pads.top - g.pads.bottom));
+      const crossH = round((g.rawH - g.pads.top - g.pads.bottom));
       const b = badge(String(crossH), SIZE_RED);
       box.appendChild(b);
       rail.push({ node: b, center: (contentTop + contentBottom) / 2 });
@@ -659,7 +676,7 @@ function removeCanvasSubtree(node: SceneNode): void {
   } catch { /* already gone */ }
 }
 
-export async function buildMeasureSection(block: MeasureBlockData): Promise<FrameNode | null> {
+export async function buildMeasureSection(block: MeasureBlockData, includeHidden = false): Promise<FrameNode | null> {
   let node: BaseNode | null;
   try {
     node = await figma.getNodeByIdAsync(block.componentId);
@@ -688,14 +705,25 @@ export async function buildMeasureSection(block: MeasureBlockData): Promise<Fram
     // padding/gap/size tokens (else a differing density mode renders it
     // narrower and the annotations, computed from the component, overhang it).
     await matchVariableModes(inst, component);
+    // Revealing a boolean part changes the instance's own width/height and its
+    // children's positions (the source component's box no longer matches what
+    // is drawn), so the overlay below is measured from this instance instead
+    // of the frozen component whenever the reveal ran.
+    if (includeHidden) await revealBooleanParts(inst, component);
 
     const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (M_LEFT + 160);
     const scale = Math.min(innerMax / inst.width, IMG_MAX_H / inst.height, 1);
+    // Read geometry from the reveal-following source BEFORE rescale mutates
+    // width/height/children in place. computeGeom's own arithmetic multiplies
+    // these raw values by scale, so reading them after rescale would apply
+    // that factor twice.
+    const geometrySource: GeometrySource = includeHidden ? inst : component;
+    const g = computeGeom(geometrySource, scale, M_LEFT, M_TOP);
     if (scale !== 1) inst.rescale(scale);
 
     let box: FrameNode;
     try {
-      box = buildDiagram(component, inst, block.tokens, part, scale, views);
+      box = buildDiagram(g, inst, block.tokens, part, views);
     } catch {
       // Diagram build failed: buildDiagram may have created its frame and
       // parented inst into it, so remove the whole subtree (not just inst,

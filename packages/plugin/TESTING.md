@@ -192,6 +192,22 @@ set that has at least two variant axes and a hardcoded paint. Check that:
    value instead of inventing a token.
 6. Unchecking a section removes it; unchecking a whole group removes its group
    heading.
+7. **Hidden elements, off.** On a component with two boolean-controlled layers
+   off by default (a Chip with `Icon left` and `Icon right`), generate with
+   **Document hidden elements** unchecked. The frames match a build from the
+   previous release and the Library badge reads in sync.
+8. **Hidden elements, on.** Generate the same component with the option
+   checked. Both icons appear in Anatomy with "Shown when Icon left is true"
+   in the legend, and in every States, Variants, and Measurements instance.
+   Pins land on the icons.
+9. **Update keeps the option.** Update the doc from row 8 via the Library. The
+   icons stay, and the row reads in sync afterwards.
+10. **Variant inside a set.** Row 8 on a component set, so the boolean
+    definitions are read from the set, not the variant.
+11. **No bound layer.** On a component with no boolean-controlled layer, the
+    option does not appear under Anatomy.
+
+Rows 7 to 11 were added on 2026-09-10 and have not been run.
 
 ## Library
 

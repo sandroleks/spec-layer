@@ -9,6 +9,7 @@ function spec(over: Partial<IntermediateSpec> = {}): IntermediateSpec {
     props: [],
     variants: [],
     variantInstances: [],
+    anatomy: [],
     ...over,
   } as unknown as IntermediateSpec;
 }
@@ -71,6 +72,21 @@ describe('componentFacts', () => {
     expect(facts.variants[0].chips).toEqual([
       { text: 'Default', tone: 'muted', title: 'Default' },
     ]);
+  });
+
+  it('reports whether any anatomy part is hidden by default', () => {
+    const base = spec({
+      anatomy: [{ id: 'a', name: 'Label', path: 'Container/Label', type: 'TEXT', nested: false, depth: 0 }] as never,
+    });
+    expect(componentFacts(base, 'Chip').hasHiddenParts).toBe(false);
+    const hidden = spec({
+      anatomy: [
+        ...(base.anatomy as unknown as Record<string, unknown>[]),
+        { id: 'b', name: 'Icon left', path: 'Container/Icon left', type: 'FRAME', nested: false, depth: 0, hiddenByDefault: true, shownBy: 'Icon left' },
+      ] as never,
+    });
+    expect(componentFacts(hidden, 'Chip').hasHiddenParts).toBe(true);
+    expect(NO_FACTS.hasHiddenParts).toBe(false);
   });
 
   it('preselects the default variant, so a build is never empty by accident', () => {

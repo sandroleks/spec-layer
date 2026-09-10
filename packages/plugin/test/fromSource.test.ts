@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extract, specHashProjection, contentHash } from '@spec-layer/extractor';
+import { extract, specHashProjection, specContentHash, contentHash } from '@spec-layer/extractor';
 import type { ProseDrafts, SerializedNode } from '@spec-layer/extractor';
+import chipHidden from '../../extractor/test/fixtures/chip-hidden.json';
 
 // Prove Update never reaches the AI: the module is mocked and asserted unused.
 vi.mock('../src/ui/ai', () => ({
@@ -73,7 +74,7 @@ const badSource: DocSource = {
   // fail the message send.
   node: null as unknown as SerializedNode,
   fileKey: 'f1',
-  config: { sections: [], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [] },
+  config: { sections: [], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [], includeHidden: false },
   prose: null,
 };
 
@@ -82,7 +83,7 @@ const goodSource: DocSource = {
   node: buttonNode(),
   fileKey: 'f1',
   // aiEnabled is on, and Update still must not call the model.
-  config: { sections: ['definition', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [] },
+  config: { sections: ['definition', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [], includeHidden: false },
   prose,
 };
 
@@ -149,6 +150,24 @@ describe('updateFromSource', () => {
     const expected = specHashProjection(extract(goodSource.node, { figmaFile: goodSource.fileKey }));
     expect(msg.baseline).toEqual(expected);
     expect(contentHash(msg.baseline)).toBe(msg.contentHash);
+  });
+
+  it('passes the stored includeHidden through the model, the config, and the hash', async () => {
+    const source: DocSource = {
+      ...goodSource,
+      node: chipHidden as unknown as SerializedNode,
+      config: { ...goodSource.config, includeHidden: true },
+    };
+    const ui = fakePresenter();
+    await updateFromSource(createState(), source, ui);
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      model: { includeHidden?: true }; config: { includeHidden: boolean }; contentHash: string;
+    };
+    expect(msg.model.includeHidden).toBe(true);
+    expect(msg.config.includeHidden).toBe(true);
+    const spec = extract(source.node, { figmaFile: source.fileKey });
+    expect(msg.contentHash).toBe(specContentHash(spec, { includeHidden: true }));
+    expect(msg.contentHash).not.toBe(specContentHash(spec));
   });
 });
 

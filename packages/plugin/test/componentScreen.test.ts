@@ -7,6 +7,7 @@ import {
   DEFAULT_OFF_SECTIONS,
   defaultSections,
   includedLabel,
+  includeHiddenAfterSectionChange,
   sectionGroups,
   sectionIdsInGroup,
   unavailableSections,
@@ -213,6 +214,21 @@ describe('componentDocSelection', () => {
   });
 });
 
+describe('includeHiddenAfterSectionChange', () => {
+  it('leaves the option on while Anatomy is included', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy', 'tokens']), true)).toBe(true);
+  });
+
+  it('disarms the option when Anatomy is dropped, so a hidden control cannot keep changing the doc', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['tokens']), true)).toBe(false);
+  });
+
+  it('leaves the option off alone either way', () => {
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(['anatomy']), false)).toBe(false);
+    expect(includeHiddenAfterSectionChange(new Set<SectionId>(), false)).toBe(false);
+  });
+});
+
 describe('variantCountLabel', () => {
   it('reads "{selected} of {total} selected"', () => {
     expect(variantCountLabel(1, 2)).toBe('1 of 2 selected');
@@ -304,10 +320,27 @@ describe('component screen markup', () => {
     selection.sections.delete('anatomy');
     selection.sections.delete('measurements');
     selection.sections.delete('tokens');
-    const markup = componentScrollMarkup(READY, selection, TWO_VARIANTS);
+    const markup = componentScrollMarkup(READY, selection, facts({ ...TWO_VARIANTS, hasHiddenParts: true }));
     expect(markup).not.toContain('data-anatomy=');
     expect(markup).not.toContain('data-measure=');
     expect(markup).not.toContain('Variants to document');
+    expect(markup).not.toContain('data-include-hidden');
+  });
+
+  it('offers "Document hidden elements" under Anatomy only when the component has hidden-by-default parts', () => {
+    const selection = createComponentSelection(true);
+    const without = componentScrollMarkup(READY, selection, facts({ hasStates: true }));
+    expect(without).not.toContain('data-include-hidden');
+
+    const withHidden = componentScrollMarkup(READY, selection, facts({ hasStates: true, hasHiddenParts: true }));
+    expect(withHidden).toContain('type="checkbox" data-include-hidden');
+    expect(withHidden).toContain('Document hidden elements');
+    expect(withHidden).toContain('Includes layers that a boolean property turns on. They are off by default in this component.');
+    expect(withHidden).not.toContain('data-include-hidden checked');
+
+    selection.includeHidden = true;
+    expect(componentScrollMarkup(READY, selection, facts({ hasStates: true, hasHiddenParts: true })))
+      .toContain('data-include-hidden checked');
   });
 
   it('renders Anatomy without display subsettings', () => {

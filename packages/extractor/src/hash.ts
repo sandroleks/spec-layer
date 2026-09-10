@@ -3,6 +3,7 @@ import type { IntermediateSpec, VariantInstance } from './extract';
 import type { ComponentProp, VariantAxis } from './props';
 import type { GapIssue } from './tokens';
 import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
+import { anatomyFor } from './anatomy';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
@@ -31,6 +32,15 @@ export function canonicalEqual(a: unknown, b: unknown): boolean {
   return canonical(a) === canonical(b);
 }
 
+export interface SpecHashOptions {
+  /** Hash the parts a boolean property hides by default. Mirrors the doc's
+   *  `includeHidden` config: off or absent hashes exactly what every existing
+   *  doc's baseline was computed over, so no committed doc reports a false
+   *  update. On, the revealed depth-0 parts enter like any other part, because
+   *  the canvas then draws them (rendered implies hashed). */
+  includeHidden?: boolean;
+}
+
 /**
  * The object specContentHash hashes. Exported so the Library can store it as a
  * doc's drift baseline and diff it later: the diff input IS the hash input, so
@@ -38,7 +48,8 @@ export function canonicalEqual(a: unknown, b: unknown): boolean {
  *
  * The legacy `token` key (from the newer `name` field) and the depth-0 anatomy
  * reduction are part of the contract: every committed doc's baseline was hashed
- * over exactly this shape.
+ * over exactly this shape. Parts marked `hiddenByDefault` enter only when
+ * `SpecHashOptions.includeHidden` is on; see that type.
  */
 export interface SpecHashProjection {
   name: string;
@@ -64,7 +75,7 @@ export interface SpecHashProjection {
  * exactly this object and the Library stores exactly this object as a doc's
  * baseline, so the two cannot drift apart.
  */
-export function specHashProjection(spec: IntermediateSpec): SpecHashProjection {
+export function specHashProjection(spec: IntermediateSpec, options: SpecHashOptions = {}): SpecHashProjection {
   // figmaFileName is destructured out alongside rawValues: renaming a Figma
   // file is not component drift, and every committed doc's baseline was
   // computed before the field existed, so including it would flip all of them
@@ -80,7 +91,7 @@ export function specHashProjection(spec: IntermediateSpec): SpecHashProjection {
   } = spec;
   const hashable = {
     ...rest,
-    anatomy: spec.anatomy
+    anatomy: anatomyFor(spec.anatomy, { includeHidden: options.includeHidden === true })
       .filter((p) => p.depth === 0)
       .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
     // `path` is a new identity for data already hashed under `part`, so it must
@@ -135,8 +146,8 @@ export function specHashProjection(spec: IntermediateSpec): SpecHashProjection {
  * doc's content_hash; on-canvas drift detection and the stored baseline both
  * derive from specHashProjection.
  */
-export function specContentHash(spec: IntermediateSpec): string {
-  return contentHash(specHashProjection(spec));
+export function specContentHash(spec: IntermediateSpec, options: SpecHashOptions = {}): string {
+  return contentHash(specHashProjection(spec, options));
 }
 
 /**

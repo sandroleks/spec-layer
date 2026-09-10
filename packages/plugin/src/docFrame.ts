@@ -14,6 +14,7 @@ import type { resolveTheme } from './brandColors';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
   headingFont, matchVariableModes, radius, applyThemeToKit,
+  revealBooleanParts,
   type FontStyle,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
@@ -644,7 +645,10 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
 
   const desc = part.description?.trim();
   const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
-  const chars = desc ? `${part.name}: ${desc}` : `${part.name}${nestedNote}`;
+  // A revealed part says which property shows it, after the description or the
+  // nested note, so the reader knows it is not on by default.
+  const shownNote = part.shownBy ? `  ·  Shown when ${part.shownBy} is true` : '';
+  const chars = desc ? `${part.name}: ${desc}${shownNote}` : `${part.name}${nestedNote}${shownNote}`;
   const text = makeText(chars, 'Regular', 15, palette.body, 150);
   row.appendChild(text);
   text.layoutSizingHorizontal = 'FILL';
@@ -685,6 +689,7 @@ function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
 async function buildAnatomyDiagram(
   componentId: string,
   parts: AnatomyPartBlock[],
+  includeHidden: boolean,
 ): Promise<FrameNode | null> {
   let node: BaseNode | null;
   try {
@@ -694,8 +699,8 @@ async function buildAnatomyDiagram(
   }
   if (!node || node.type !== 'COMPONENT') return null;
   const component = node;
-  const cb = component.absoluteBoundingBox;
-  if (!cb || cb.width <= 0 || cb.height <= 0) return null;
+  const componentBox = component.absoluteBoundingBox;
+  if (!componentBox || componentBox.width <= 0 || componentBox.height <= 0) return null;
 
   // A live instance keeps the preview crisp at any size (vector, not a bitmap).
   let inst: InstanceNode;
@@ -704,8 +709,43 @@ async function buildAnatomyDiagram(
     // Match the component's variable modes so the instance resolves the same
     // token values (else a differing density mode shrinks it, misaligning pins).
     await matchVariableModes(inst, component);
+    if (includeHidden) await revealBooleanParts(inst, component);
   } catch {
     return null;
+  }
+
+  // Pin geometry is measured on the PLACED INSTANCE, not the source component:
+  // a part a boolean property reveals has no reliable box on the source, where
+  // it is hidden inside an auto-layout parent. Measured before the rescale
+  // below so the normalized coordinates hold at any rendered size. Figma
+  // addresses an instance's layers as `I<instanceId>;<sourceLayerId>`. A part
+  // that cannot be resolved gets no pin and stays in the legend, as before.
+  const ib = inst.absoluteBoundingBox;
+  if (!ib || ib.width <= 0 || ib.height <= 0) {
+    try { inst.remove(); } catch { /* already gone */ }
+    return null;
+  }
+  const pins: { n: number; nx: number; ny: number; rx: number; ty: number }[] = [];
+  for (const part of parts) {
+    if (part.depth !== 0) continue;
+    let p: BaseNode | null;
+    try {
+      p = await figma.getNodeByIdAsync(`I${inst.id};${part.id}`);
+    } catch {
+      continue;
+    }
+    if (!p || !('absoluteBoundingBox' in p)) continue;
+    const pb = (p as SceneNode).absoluteBoundingBox;
+    // Only the null guard, exactly as before this feature: a zero-size part
+    // still gets the pin it always got, so the option off draws what it drew.
+    if (!pb) continue;
+    pins.push({
+      n: part.n,
+      nx: clamp01((pb.x + pb.width / 2 - ib.x) / ib.width),
+      ny: clamp01((pb.y + pb.height / 2 - ib.y) / ib.height),
+      rx: clamp01((pb.x + pb.width - ib.x) / ib.width), // part's right edge
+      ty: clamp01((pb.y - ib.y) / ib.height), // part's top edge
+    });
   }
 
   // Fit to the content width / height cap. Cap at 1× so a small component sits at
@@ -725,30 +765,6 @@ async function buildAnatomyDiagram(
   card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
-
-  // Resolve each depth-0 part to its normalized center + edges in the component
-  // box. Deeper parts stay unpinned (numbered in the legend/table only) so
-  // nested sub-parts don't clutter the image.
-  const pins: { n: number; nx: number; ny: number; rx: number; ty: number }[] = [];
-  for (const part of parts) {
-    if (part.depth !== 0) continue;
-    let p: BaseNode | null;
-    try {
-      p = await figma.getNodeByIdAsync(part.id);
-    } catch {
-      continue;
-    }
-    if (!p || !('absoluteBoundingBox' in p)) continue;
-    const pb = (p as SceneNode).absoluteBoundingBox;
-    if (!pb) continue;
-    pins.push({
-      n: part.n,
-      nx: clamp01((pb.x + pb.width / 2 - cb.x) / cb.width),
-      ny: clamp01((pb.y + pb.height / 2 - cb.y) / cb.height),
-      rx: clamp01((pb.x + pb.width - cb.x) / cb.width), // part's right edge
-      ty: clamp01((pb.y - cb.y) / cb.height), // part's top edge
-    });
-  }
 
   // Pin orientation: place callouts on the side the parts are LEAST spread
   // along, so they line up without piling. A horizontal row of parts shares a
@@ -831,7 +847,7 @@ async function buildAnatomyDiagram(
 }
 
 /** Build one section: teal accent rule + heading + body. */
-async function buildSection(section: SectionBlock): Promise<FrameNode> {
+async function buildSection(section: SectionBlock, includeHidden: boolean): Promise<FrameNode> {
   const group = vstack(16);
   group.name = section.heading;
 
@@ -903,7 +919,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
     // 'table' skips the diagram build entirely — no point spending an instance +
     // screenshot render when only the tabular list will be shown.
     if (section.view !== 'table') {
-      const diagram = await buildAnatomyDiagram(section.componentId, section.parts);
+      const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden);
       if (diagram) {
         body.appendChild(diagram);
         diagram.layoutSizingHorizontal = 'FILL';
@@ -954,7 +970,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       left.resize(VAR_LEFT_W, left.height);
       left.layoutSizingVertical = 'FILL'; // match the taller (token) pane
 
-      const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2);
+      const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2, 160, includeHidden);
       left.appendChild(slot);
       slot.layoutSizingHorizontal = 'FILL';
 
@@ -991,7 +1007,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
       }
     }
   } else if (section.kind === 'measure') {
-    const diagram = await buildMeasureSection(section);
+    const diagram = await buildMeasureSection(section, includeHidden);
     if (diagram) {
       body.appendChild(diagram);
       diagram.layoutSizingHorizontal = 'FILL';
@@ -1022,6 +1038,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
           : null,
       },
       CONTENT_WIDTH,
+      includeHidden,
     );
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
@@ -1048,6 +1065,7 @@ async function buildSection(section: SectionBlock): Promise<FrameNode> {
         note,
       },
       CONTENT_WIDTH,
+      includeHidden,
     );
     body.appendChild(grid);
     grid.layoutSizingHorizontal = 'FILL';
@@ -1159,7 +1177,8 @@ async function buildGroupFrame(
   group: DocGroup,
   componentName: string,
   subtitle: string | null,
-  logoBase64?: string | null,
+  logoBase64: string | null,
+  includeHidden: boolean,
 ): Promise<FrameNode> {
   const frame = figma.createFrame();
   frame.name = group.label; // "Usage" | "Specifications" | "Accessibility"
@@ -1199,7 +1218,7 @@ async function buildGroupFrame(
     content.layoutSizingHorizontal = 'FILL';
 
     for (const section of group.sections) {
-      const built = await buildSection(section);
+      const built = await buildSection(section, includeHidden);
       content.appendChild(built);
       built.layoutSizingHorizontal = 'FILL';
     }
@@ -1256,6 +1275,7 @@ export async function buildDocFrames(
   fitFrameWidthToTokens(model);
 
   const componentName = model.componentName;
+  const includeHidden = model.includeHidden === true;
 
   // Definition lead → Usage subtitle. Fall back to keeping the definition as a
   // body section if lifting would leave nothing to render.
@@ -1277,7 +1297,7 @@ export async function buildDocFrames(
   try {
     for (const group of groups) {
       const sub = group.sections.some((s) => s.id === 'definition') ? subtitle : null;
-      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64));
+      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64 ?? null, includeHidden));
     }
 
     // A freshly created Section keeps its default (small) size — it does NOT

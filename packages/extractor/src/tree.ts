@@ -6,6 +6,12 @@ export interface SerializedNode {
   name: string;
   type: string; // COMPONENT_SET | COMPONENT | INSTANCE | FRAME | TEXT | ...
   visible: boolean;
+  /** Raw key (with its `#id` suffix) of the component property Figma binds to
+   *  this node's visibility, from `componentPropertyReferences.visible`.
+   *  Present only when the reference exists. The raw key is kept so the main
+   *  thread can address the property exactly when it configures an instance;
+   *  extractor code cleans it with `cleanPropName` before showing it. */
+  visibleProperty?: string;
   children?: SerializedNode[];
   /** Present on COMPONENT_SET (or standalone COMPONENT). */
   propertyDefinitions?: Record<string, PropertyDefinition>;

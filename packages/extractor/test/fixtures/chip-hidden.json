@@ -1,0 +1,54 @@
+{
+  "id": "30:1",
+  "name": "Chip",
+  "type": "COMPONENT_SET",
+  "visible": true,
+  "key": "synthetic-chip-hidden",
+  "propertyDefinitions": {
+    "Style": { "type": "VARIANT", "defaultValue": "Default", "variantOptions": ["Default", "Outlined"] },
+    "Icon left#30:10": { "type": "BOOLEAN", "defaultValue": false },
+    "Icon right#30:11": { "type": "BOOLEAN", "defaultValue": false },
+    "Label#30:12": { "type": "TEXT", "defaultValue": "Chip" }
+  },
+  "children": [
+    {
+      "id": "30:2",
+      "name": "Style=Default",
+      "type": "COMPONENT",
+      "visible": true,
+      "children": [
+        {
+          "id": "30:3",
+          "name": "Icon left",
+          "type": "FRAME",
+          "visible": false,
+          "visibleProperty": "Icon left#30:10",
+          "children": [
+            { "id": "30:4", "name": "Glyph", "type": "VECTOR", "visible": true }
+          ]
+        },
+        { "id": "30:5", "name": "Label", "type": "TEXT", "visible": true },
+        {
+          "id": "30:6",
+          "name": "Icon right",
+          "type": "INSTANCE",
+          "visible": false,
+          "visibleProperty": "Icon right#30:11",
+          "mainComponent": { "name": "Icon", "key": "synthetic-icon" }
+        },
+        { "id": "30:7", "name": "Guide", "type": "RECTANGLE", "visible": false },
+        { "id": "30:8", "name": "Badge", "type": "FRAME", "visible": false, "visibleProperty": "Show badge#30:99" },
+        { "id": "30:14", "name": "Meta", "type": "TEXT", "visible": false, "visibleProperty": "Label#30:12" }
+      ]
+    },
+    {
+      "id": "30:9",
+      "name": "Style=Outlined",
+      "type": "COMPONENT",
+      "visible": true,
+      "children": [
+        { "id": "30:13", "name": "Label", "type": "TEXT", "visible": true }
+      ]
+    }
+  ]
+}

@@ -51,6 +51,7 @@ import {
   applyGroupBulk,
   applyVariantBulk,
   componentDocSelection,
+  includeHiddenAfterSectionChange,
   sectionGroups,
   unavailableSections,
   variantBulkState,
@@ -170,6 +171,8 @@ const libraryBaseline = new Map<string, string>();
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
 const libraryExtractorVersion = new Map<string, string | undefined>();
+/** Per doc: whether its baseline was hashed with hidden-by-default parts included. */
+const libraryIncludeHidden = new Map<string, boolean>();
 // docId → the live SpecHashProjection computed during this pass's drift check,
 // kept for every component row (not only drifted ones) so a row that drifts
 // on the next refresh needs no second round trip. A few kilobytes per row.
@@ -794,6 +797,7 @@ function startLibraryDriftChecks(): void {
     libraryDrift.set(entry.docId, 'pending');
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
+    libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
     send({
       type: 'requestDrift',
       docId: entry.docId,
@@ -1863,6 +1867,13 @@ document.addEventListener('change', (event) => {
     return;
   }
 
+  if (input.hasAttribute('data-include-hidden')) {
+    selection.includeHidden = input.checked;
+    state.includeHidden = input.checked;
+    input.focus({ preventScroll: true });
+    return;
+  }
+
   const variantId = input.dataset.variant;
   if (variantId) {
     if (input.checked) selection.variantIds.add(variantId);
@@ -1897,6 +1908,8 @@ document.addEventListener('change', (event) => {
       groupState.included < groupState.total,
       unavailable,
     );
+    selection.includeHidden = includeHiddenAfterSectionChange(selection.sections, selection.includeHidden);
+    state.includeHidden = selection.includeHidden;
     paintAndFocus(`[data-group-bulk="${groupId}"]`);
     return;
   }
@@ -1905,6 +1918,8 @@ document.addEventListener('change', (event) => {
   if (sectionId) {
     if (input.checked) selection.sections.add(sectionId);
     else selection.sections.delete(sectionId);
+    selection.includeHidden = includeHiddenAfterSectionChange(selection.sections, selection.includeHidden);
+    state.includeHidden = selection.includeHidden;
     paintAndFocus(`[data-section="${sectionId}"]`);
   }
 });
@@ -2186,6 +2201,9 @@ function applySelection(msg: SelectionMessage): void {
       if (seq !== selectionSeq || state.currentNode?.id !== node.id) return;
       facts = componentFacts(state.currentSpec, node.name);
       selection.variantIds = new Set(facts.defaultVariantIds);
+      // Per component: a fresh selection starts with hidden parts off.
+      selection.includeHidden = false;
+      state.includeHidden = false;
       if (facts.hasStates === true) selection.sections.add('states');
       if (facts.hasStates === false) selection.sections.delete('states');
       screen = { kind: 'ready', componentName: node.name };
@@ -2436,7 +2454,9 @@ window.onmessage = (event: MessageEvent): void => {
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
           // the badge.
-          const projection = specHashProjection(spec);
+          const projection = specHashProjection(spec, {
+            includeHidden: libraryIncludeHidden.get(msg.docId) === true,
+          });
           libraryLiveProjection.set(msg.docId, projection);
           libraryDrift.set(
             msg.docId,

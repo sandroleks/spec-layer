@@ -76,7 +76,7 @@ These all live in this repository:
 | How the system fits together | `ARCHITECTURE.md` |
 | What shipped, in detail | `CHANGELOG.md` |
 | Foundation Context v5 contract | `packages/extractor/src/v5/schema/foundation-5.1.0.json` |
-| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.1.0.json` |
+| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.2.0.json` |
 | Manual Figma test matrix and release gate | `packages/plugin/TESTING.md` |
 | Shared brand and UI design system | `packages/brand/README.md` |
 | Proxy behaviour and accepted risks | `packages/proxy/README.md` |

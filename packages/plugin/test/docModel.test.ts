@@ -166,6 +166,31 @@ describe('buildDocModel', () => {
     expect(model.sections[0].kind).toBe('bullets');
   });
 
+  it('drops parts hidden by default from the anatomy block unless includeHidden is on', () => {
+    const specA = {
+      ...spec,
+      anatomyComponentId: 'c:1',
+      anatomy: [
+        { id: 'p:1', name: 'Icon left', type: 'FRAME', nested: false, depth: 0, hiddenByDefault: true, shownBy: 'Icon left' },
+        { id: 'p:2', name: 'Label', type: 'TEXT', nested: false, depth: 0 },
+      ],
+    } as unknown as IntermediateSpec;
+
+    const off = buildDocModel(specA, null, new Set<SectionId>(['anatomy']));
+    expect(off.includeHidden).toBeUndefined();
+    const offBlock = off.sections[0];
+    if (offBlock.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(offBlock.parts.map((p) => [p.n, p.name])).toEqual([[1, 'Label']]);
+
+    const on = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { includeHidden: true });
+    expect(on.includeHidden).toBe(true);
+    const onBlock = on.sections[0];
+    if (onBlock.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(onBlock.parts.map((p) => [p.n, p.name, p.shownBy])).toEqual([
+      [1, 'Icon left', 'Icon left'], [2, 'Label', undefined],
+    ]);
+  });
+
   it("renders dos and donts with check/cross markers", () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['dosDonts']));
     const block = model.sections[0];

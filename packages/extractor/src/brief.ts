@@ -296,6 +296,8 @@ interface AnatomyBuildNode {
   part: string;
   type: string;
   component?: string;
+  /** Present only on a part hidden by default: the boolean property that shows it. */
+  shown_by?: string;
   children: AnatomyBuildNode[];
 }
 
@@ -304,6 +306,7 @@ function stripEmptyChildren(n: AnatomyBuildNode): YamlValue {
     part: n.part,
     type: n.type,
     component: n.component,
+    shown_by: n.shown_by,
     children: n.children.length > 0 ? n.children.map(stripEmptyChildren) : undefined,
   };
 }
@@ -329,7 +332,9 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
   const roots: AnatomyBuildNode[] = [];
   const stack: { depth: number; node: AnatomyBuildNode }[] = [];
   for (const p of parts) {
-    const node: AnatomyBuildNode = { part: p.name, type: p.type, component: p.component, children: [] };
+    const node: AnatomyBuildNode = {
+      part: p.name, type: p.type, component: p.component, shown_by: p.shownBy, children: [],
+    };
     while (stack.length > 0 && stack[stack.length - 1].depth >= p.depth) stack.pop();
     if (stack.length === 0) roots.push(node);
     else stack[stack.length - 1].node.children.push(node);

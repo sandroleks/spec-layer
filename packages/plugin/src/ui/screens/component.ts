@@ -31,6 +31,9 @@ export interface ComponentSelection {
   /** Which variants the Tokens section documents. Seeded per component. */
   variantIds: Set<string>;
   variantsExpanded: boolean;
+  /** Draw the parts a boolean property hides by default. Per component: reset
+   *  to false when the selection changes. */
+  includeHidden: boolean;
 }
 
 export function createComponentSelection(aiEnabled: boolean): ComponentSelection {
@@ -41,6 +44,7 @@ export function createComponentSelection(aiEnabled: boolean): ComponentSelection
     measureViews: new Set(['size', 'padding', 'spacing'] as const),
     variantIds: new Set<string>(),
     variantsExpanded: false,
+    includeHidden: false,
   };
 }
 
@@ -192,12 +196,26 @@ function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelectio
   );
 }
 
-/** Measurement and token settings, shown under their rows. */
+/** Anatomy, measurement and token settings, shown under their rows. */
 function detailsFor(
   sectionId: string,
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): string {
+  if (sectionId === 'anatomy') {
+    if (!facts.hasHiddenParts) return '';
+    return (
+      '<div class="sl-section-details">' +
+      '<label class="sl-choice sl-section-choice">' +
+      `<input class="sl-choice-input" type="checkbox" data-include-hidden${selection.includeHidden ? ' checked' : ''} />` +
+      `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
+      '<span class="sl-choice-copy"><strong>Document hidden elements</strong></span>' +
+      '</label>' +
+      '<span class="sl-section-option-label">Includes layers that a boolean property turns on. ' +
+      'They are off by default in this component.</span>' +
+      '</div>'
+    );
+  }
   if (sectionId === 'measurements') {
     const chips = MEASURE_CHIPS.map(
       (c) => {

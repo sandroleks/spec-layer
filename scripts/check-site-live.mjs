@@ -33,7 +33,7 @@ const base = baseArg.replace(/\/$/, '');
 // They are the source the site publishes, not a second copy of it.
 const SCHEMAS = [
   ['/schemas/foundation-context/v5.json', 'packages/extractor/src/v5/schema/foundation-5.1.0.json'],
-  ['/schemas/component-context/v5.json', 'packages/extractor/src/v5/schema/component-5.1.0.json'],
+  ['/schemas/component-context/v5.json', 'packages/extractor/src/v5/schema/component-5.2.0.json'],
 ];
 const MISSING_PATH = '/this-path-must-not-exist-' + Date.now();
 
