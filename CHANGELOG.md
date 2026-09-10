@@ -73,6 +73,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   is on, the Measurements diagram measures its size rails, padding bands, and
   spacing from the revealed instance rather than the source component, so the
   overlay matches what is drawn.
+- The DTCG document extension now carries a `census` of what each emitted file
+  holds and a `config_hash` of the projection options that produced it, and
+  `resolver.json` carries that extension instead of only the clipboard document
+  doing so.
+- The DTCG sidecar now records the `transform` behind each token's value in
+  each mode, and the value each alias resolves to.
 
 ### Removed
 

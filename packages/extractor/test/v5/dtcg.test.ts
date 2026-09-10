@@ -861,3 +861,19 @@ describe('the census', () => {
     }
   });
 });
+
+describe('determinism', () => {
+  it('projects the same artifact to identical bytes twice', () => {
+    const options = { units: { 'A/one': 'px' as const } };
+    const first = dtcgExportFiles(foundationDtcg(syntheticArtifact(), options));
+    const second = dtcgExportFiles(foundationDtcg(syntheticArtifact(), options));
+    expect(first).toEqual(second);
+  });
+
+  it('orders census and sidecar keys the same way on every run', () => {
+    const a = foundationDtcg(syntheticArtifact());
+    const b = foundationDtcg(syntheticArtifact());
+    expect(Object.keys(a.extension.census)).toEqual(Object.keys(b.extension.census));
+    expect(Object.keys(a.meta)).toEqual(Object.keys(b.meta));
+  });
+});
