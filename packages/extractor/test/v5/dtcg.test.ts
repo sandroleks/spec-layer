@@ -723,3 +723,91 @@ describe('meta transform', () => {
     }
   });
 });
+
+describe('meta resolved values', () => {
+  const leafAt = (tree: Record<string, unknown>, path: string): Record<string, unknown> | null => {
+    let node: unknown = tree;
+    for (const segment of path.split('.')) {
+      if (typeof node !== 'object' || node === null) return null;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return typeof node === 'object' && node !== null ? node as Record<string, unknown> : null;
+  };
+
+  /** Follows a chain of `{references}` inside one file until it reaches a
+   *  literal. Returns undefined when the chain leaves this file or runs too
+   *  deep, which the caller treats as "not checkable here". */
+  const followToLiteral = (
+    tree: Record<string, unknown>, path: string, depth = 0,
+  ): unknown => {
+    if (depth > 16) return undefined;
+    const leaf = leafAt(tree, path);
+    const value = leaf?.$value;
+    if (value === undefined) return undefined;
+    if (typeof value === 'string' && value.startsWith('{')) {
+      return followToLiteral(tree, value.slice(1, -1), depth + 1);
+    }
+    return value;
+  };
+
+  it('stores a resolved value for every alias mode', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    const withAlias = Object.values(exp.meta)
+      .filter((e) => Object.values(e.transform ?? {}).includes('alias'));
+    expect(withAlias.length).toBeGreaterThan(0);
+    for (const entry of withAlias) {
+      for (const [mode, rule] of Object.entries(entry.transform ?? {})) {
+        if (rule === 'alias') expect(entry.resolved?.[mode]).toBeDefined();
+      }
+    }
+  });
+
+  it('agrees with the value the reference points at', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    // The resolver states which file backs which mode label, so the mapping
+    // comes from the document itself rather than from guessing at file names.
+    const fileForMode = new Map<string, string>();
+    const refOf = (sources: unknown): string | null => {
+      const first = Array.isArray(sources) ? sources[0] : null;
+      return first && typeof first === 'object' && typeof (first as { $ref?: unknown }).$ref === 'string'
+        ? (first as { $ref: string }).$ref : null;
+    };
+    for (const modifier of Object.values(exp.resolver.modifiers)) {
+      for (const [mode, sources] of Object.entries(modifier.contexts)) {
+        const ref = refOf(sources);
+        if (ref !== null) fileForMode.set(mode, ref);
+      }
+    }
+    for (const [label, set] of Object.entries(exp.resolver.sets)) {
+      const ref = refOf(set.sources);
+      if (ref !== null && !fileForMode.has(label)) fileForMode.set(label, ref);
+    }
+
+    let checked = 0;
+    for (const [path, entry] of Object.entries(exp.meta)) {
+      for (const [mode, resolved] of Object.entries(entry.resolved ?? {})) {
+        const file = fileForMode.get(mode);
+        const tree = file === undefined ? undefined : exp.files[file];
+        if (!tree) continue;
+        // This token's own leaf, then the reference chain it points at,
+        // followed all the way to a literal.
+        const leaf = leafAt(tree as Record<string, unknown>, path);
+        const value = leaf?.$value;
+        if (typeof value !== 'string' || !value.startsWith('{')) continue;
+        const target = followToLiteral(tree as Record<string, unknown>, value.slice(1, -1));
+        if (target === undefined) continue;
+        expect(resolved).toEqual(target);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('stores nothing for a literal token', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.meta)) {
+      const rules = Object.values(entry.transform ?? {});
+      if (rules.length > 0 && !rules.includes('alias')) expect(entry.resolved).toBeUndefined();
+    }
+  });
+});

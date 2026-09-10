@@ -22,6 +22,38 @@
       "Dark": "alias",
       "Light [ModeID:p-light-duplicate]": "alias",
       "Light [ModeID:p-light]": "alias"
+    },
+    "resolved": {
+      "Dark": {
+        "colorSpace": "srgb",
+        "components": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "hex": "#000000"
+      },
+      "Light [ModeID:p-light-duplicate]": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1,
+        "hex": "#ffffff"
+      },
+      "Light [ModeID:p-light]": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1,
+        "hex": "#ffffff"
+      }
     }
   },
   "Primitives.color.chain.middle": {
@@ -35,6 +67,38 @@
       "Dark": "alias",
       "Light [ModeID:p-light-duplicate]": "alias",
       "Light [ModeID:p-light]": "alias"
+    },
+    "resolved": {
+      "Dark": {
+        "colorSpace": "srgb",
+        "components": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "hex": "#000000"
+      },
+      "Light [ModeID:p-light-duplicate]": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1,
+        "hex": "#ffffff"
+      },
+      "Light [ModeID:p-light]": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "alpha": 1,
+        "hex": "#ffffff"
+      }
     }
   },
   "Primitives.color.chain.terminal": {
@@ -211,6 +275,18 @@
     "transform": {
       "Dark": "alias",
       "Light": "color"
+    },
+    "resolved": {
+      "Dark": {
+        "colorSpace": "srgb",
+        "components": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "hex": "#000000"
+      }
     },
     "code_syntax": {
       "WEB": "--color-surface-primary"

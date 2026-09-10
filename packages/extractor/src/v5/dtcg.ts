@@ -63,6 +63,11 @@ export interface DtcgMetaEntry {
    *  another, so a single name would misreport the other mode. Absent for a
    *  token this projection omitted. */
   transform?: Record<string, DtcgTransform>;
+  /** The DTCG value an alias resolves to in each mode, by mode label. Taken
+   *  from the same chain walk that produced the reference, never derived a
+   *  second time. Absent for a literal token, whose value is already in the
+   *  file. */
+  resolved?: Record<string, DtcgJson>;
 }
 
 export interface DtcgResolverDocument {
@@ -482,14 +487,20 @@ function asJson(value: unknown): DtcgJson {
   return JSON.parse(JSON.stringify(value)) as DtcgJson;
 }
 
-/** `transform` for one token, sorted by mode label, or nothing when the
- *  projection wrote no leaf for it in any mode. */
-function transformField(p: Projection, token: TokenV5): { transform?: Record<string, DtcgTransform> } {
+/** `transform` and `resolved` for one token, each sorted by mode label, and
+ *  each absent rather than empty when the projection has nothing to report. */
+function transformField(
+  p: Projection, token: TokenV5,
+): { transform?: Record<string, DtcgTransform>; resolved?: Record<string, DtcgJson> } {
   const facts = p.factsById.get(token.id);
   if (!facts) return {};
-  const keys = Object.keys(facts.transform).sort(compareCodeUnits);
-  if (keys.length === 0) return {};
-  return { transform: Object.fromEntries(keys.map((k) => [k, facts.transform[k]])) };
+  const sorted = <T>(source: Record<string, T>): Record<string, T> | undefined => {
+    const keys = Object.keys(source).sort(compareCodeUnits);
+    return keys.length === 0 ? undefined : Object.fromEntries(keys.map((k) => [k, source[k]]));
+  };
+  const transform = sorted(facts.transform);
+  const resolved = sorted(facts.resolved);
+  return { ...(transform ? { transform } : {}), ...(resolved ? { resolved } : {}) };
 }
 
 function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): DtcgMetaEntry {
@@ -991,7 +1002,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
-    recordFact(p, token.id, mode, 'alias');
+    recordFact(p, token.id, mode, 'alias', typed.$value);
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
