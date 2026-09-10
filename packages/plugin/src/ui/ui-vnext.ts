@@ -170,6 +170,8 @@ const libraryBaseline = new Map<string, string>();
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
 const libraryExtractorVersion = new Map<string, string | undefined>();
+/** Per doc: whether its baseline was hashed with hidden-by-default parts included. */
+const libraryIncludeHidden = new Map<string, boolean>();
 // docId → the live SpecHashProjection computed during this pass's drift check,
 // kept for every component row (not only drifted ones) so a row that drifts
 // on the next refresh needs no second round trip. A few kilobytes per row.
@@ -794,6 +796,7 @@ function startLibraryDriftChecks(): void {
     libraryDrift.set(entry.docId, 'pending');
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
+    libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
     send({
       type: 'requestDrift',
       docId: entry.docId,
@@ -2436,7 +2439,9 @@ window.onmessage = (event: MessageEvent): void => {
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
           // the badge.
-          const projection = specHashProjection(spec);
+          const projection = specHashProjection(spec, {
+            includeHidden: libraryIncludeHidden.get(msg.docId) === true,
+          });
           libraryLiveProjection.set(msg.docId, projection);
           libraryDrift.set(
             msg.docId,
