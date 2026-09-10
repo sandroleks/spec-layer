@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, acceptCssDeclared, cssFileNames, cssOutput, dtcgSlug, foundationDtcg,
-  type CssOutput, type CssSource, type DtcgExport,
+  type CssOutput, type CssSource, type DtcgDocumentExtension, type DtcgExport,
 } from '../../../src/index';
 import { syntheticArtifact } from '../dtcgFixture';
 
 const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc', platform: 'web', format: 'css' };
+
+/** Minimal `com.spec-layer` extension for `DtcgExport` fixtures that do not exercise it. */
+const EXTENSION: DtcgDocumentExtension = {
+  schema_version: '5.1.0',
+  content_hash: 'sha256:abc',
+  config_hash: 'sha256:def',
+  source: { provider: 'figma' },
+  completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },
+  code_syntax: {},
+  census: {},
+  report: [],
+};
 
 /** Every part file joined, for assertions that do not care which file a line is in. */
 const joined = (out: CssOutput): string => Object.values(out.files).join('\n');
@@ -43,6 +55,7 @@ function small(overrides: Partial<DtcgExport> = {}): DtcgExport {
       'Base.space.gap': { id: 'v2', collection_id: 'c1', type: 'dimension', scopes: [], code_syntax: { WEB: 'gap' } },
     },
     report: [],
+    extension: EXTENSION,
     ...overrides,
   };
 }
@@ -293,6 +306,7 @@ describe('cssOutput styles', () => {
     },
     meta: {},
     report: [],
+    extension: EXTENSION,
   };
   const styledOut = cssOutput(styled, HEADER);
   const text = joined(styledOut);
@@ -356,6 +370,7 @@ describe('cssOutput names match declared properties', () => {
       },
       meta: {},
       report: [],
+      extension: EXTENSION,
     };
     const out = cssOutput(exp, HEADER);
     const text = joined(out);
@@ -394,6 +409,7 @@ describe('cssOutput names match declared properties', () => {
       },
       meta: {},
       report: [],
+      extension: EXTENSION,
     };
     const { map, report } = cssOutput(exp, HEADER);
     expect(map).not.toHaveProperty('Typography styles.Body.font.size');
@@ -424,6 +440,7 @@ describe('cssOutput names match declared properties', () => {
       },
       meta: {},
       report: [],
+      extension: EXTENSION,
     };
     const out = cssOutput(exp, HEADER);
     const text = joined(out);

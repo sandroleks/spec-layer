@@ -7,7 +7,8 @@
  * feeds a hash, never mutates its input, and anything the format cannot state
  * is omitted and written to the report rather than approximated.
  */
-import { SCHEMA_VERSION, type FoundationArtifactV5 } from './canonical';
+import { sha256 } from 'js-sha256';
+import { SCHEMA_VERSION, type FoundationArtifactV5, canonicalJson } from './canonical';
 import { compareCodeUnits } from './diagnostics';
 import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
@@ -42,6 +43,11 @@ export interface DtcgReportEntry {
   details: Record<string, DtcgJson>;
 }
 
+/** The rule that produced a token's `$value` in one mode. */
+export type DtcgTransform =
+  | 'alias' | 'color' | 'dimension' | 'duration' | 'number'
+  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override';
+
 export interface DtcgMetaEntry {
   id: string;
   collection_id: string;
@@ -52,6 +58,16 @@ export interface DtcgMetaEntry {
   omitted?: true;
   /** Canonical values by mode label, only for omitted tokens. */
   values?: Record<string, DtcgJson>;
+  /** The rule behind `$value` in each mode, by mode label. Keyed by mode
+   *  because Figma lets one token alias in one mode and hold a literal in
+   *  another, so a single name would misreport the other mode. Absent for a
+   *  token this projection omitted. */
+  transform?: Record<string, DtcgTransform>;
+  /** The DTCG value an alias resolves to in each mode, by mode label. Taken
+   *  from the same chain walk that produced the reference, never derived a
+   *  second time. Absent for a literal token, whose value is already in the
+   *  file. */
+  resolved?: Record<string, DtcgJson>;
 }
 
 export interface DtcgResolverDocument {
@@ -67,6 +83,9 @@ export interface DtcgExport {
   resolver: DtcgResolverDocument;
   meta: Record<string, DtcgMetaEntry>;
   report: DtcgReportEntry[];
+  /** The `com.spec-layer` block. Built once here so `resolver.json` on disk
+   *  and the clipboard document can never carry different bytes. */
+  extension: DtcgDocumentExtension;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +285,26 @@ interface Projection {
   /** Serialized identity of every entry already in `report`, so the dedupe
    *  below stays O(1) per call instead of re-serializing the whole report. */
   reportKeys: Set<string>;
+  /** token id -> what the leaf builder did, gathered where the leaf is built
+   *  so the sidecar reports the projection rather than re-deriving it. */
+  factsById: Map<string, LeafFacts>;
+}
+
+export interface LeafFacts {
+  transform: Record<string, DtcgTransform>;
+  resolved: Record<string, DtcgJson>;
+}
+
+function recordFact(
+  p: Projection, tokenId: string, mode: string, transform: DtcgTransform, resolved?: DtcgJson,
+): void {
+  let facts = p.factsById.get(tokenId);
+  if (!facts) {
+    facts = { transform: {}, resolved: {} };
+    p.factsById.set(tokenId, facts);
+  }
+  facts.transform[mode] = transform;
+  if (resolved !== undefined) facts.resolved[mode] = resolved;
 }
 
 function reportOnce(p: Projection, entry: DtcgReportEntry): void {
@@ -342,18 +381,48 @@ const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
  * owns the token, since an override that contradicts a scope is reported once
  * against the token it names, not against everything that aliases it.
  */
+export interface Projected { converted: Converted; transform: DtcgTransform | null }
+
 function projectedLiteral(
   p: Projection, token: TokenV5, resolved: TypedValue,
   onOverrideConflict?: (override: 'px' | 'rem') => void,
-): Converted {
+): Projected {
   const collection = p.collectionById.get(token.collection_id);
   const override = collection ? unitOverrideFor(p, token, collection) : undefined;
   let literal: TypedValue = resolved;
+  let overrode = false;
   if (override !== undefined && literal.type === 'number') {
     if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) onOverrideConflict?.(override);
-    else literal = { type: 'dimension', number: literal.value, unit: override };
+    else {
+      literal = { type: 'dimension', number: literal.value, unit: override };
+      overrode = true;
+    }
   }
-  return dtcgLiteral(literal, token.scopes, p.options.values);
+  const converted = dtcgLiteral(literal, token.scopes, p.options.values);
+  if ('omit' in converted) return { converted, transform: null };
+  return {
+    converted,
+    transform: overrode ? 'number-unit-override' : literalTransform(literal, token.scopes),
+  };
+}
+
+/** The transform name for a literal DTCG could state. `string` and `boolean`
+ *  never reach here: `dtcgLiteral` omits them, and the caller returns early. */
+function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | null {
+  switch (value.type) {
+    case 'color': return 'color';
+    case 'dimension': return 'dimension';
+    case 'duration': return 'duration';
+    case 'number': return scopes.includes('FONT_WEIGHT') ? 'font-weight' : 'number';
+    case 'cubic_bezier': return 'cubic-bezier';
+    case 'font_family': return 'font-family';
+    case 'string':
+    case 'boolean': return null;
+    default: {
+      const exhaustive: never = value;
+      return exhaustive;
+    }
+  }
 }
 
 /**
@@ -367,7 +436,7 @@ function aliasLeafType(
   p: Projection, token: TokenV5, chain: readonly ResolutionStep[], resolved: TypedValue,
 ): Converted {
   const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
-  return projectedLiteral(p, terminal ?? token, resolved);
+  return projectedLiteral(p, terminal ?? token, resolved).converted;
 }
 
 /** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
@@ -418,6 +487,22 @@ function asJson(value: unknown): DtcgJson {
   return JSON.parse(JSON.stringify(value)) as DtcgJson;
 }
 
+/** `transform` and `resolved` for one token, each sorted by mode label, and
+ *  each absent rather than empty when the projection has nothing to report. */
+function transformField(
+  p: Projection, token: TokenV5,
+): { transform?: Record<string, DtcgTransform>; resolved?: Record<string, DtcgJson> } {
+  const facts = p.factsById.get(token.id);
+  if (!facts) return {};
+  const sorted = <T>(source: Record<string, T>): Record<string, T> | undefined => {
+    const keys = Object.keys(source).sort(compareCodeUnits);
+    return keys.length === 0 ? undefined : Object.fromEntries(keys.map((k) => [k, source[k]]));
+  };
+  const transform = sorted(facts.transform);
+  const resolved = sorted(facts.resolved);
+  return { ...(transform ? { transform } : {}), ...(resolved ? { resolved } : {}) };
+}
+
 function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): DtcgMetaEntry {
   const labels = p.modeLabelsById.get(collection.id) ?? modeLabels(collection);
   const omitted = p.omittedIds.has(token.id);
@@ -431,6 +516,7 @@ function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): Dtc
     collection_id: token.collection_id,
     type: token.type,
     scopes: [...token.scopes],
+    ...(omitted ? {} : transformField(p, token)),
     ...(token.code_syntax ? { code_syntax: token.code_syntax } : {}),
     ...(token.publication ? { publication: token.publication } : {}),
     ...(omitted
@@ -744,6 +830,78 @@ function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5)
   }
 }
 
+interface CensusAccumulator {
+  tokens: number;
+  types: Map<string, number>;
+  present: number;
+  missing: number;
+  aliases: number;
+  literals: number;
+  scopes: Map<string, number>;
+  codeSyntaxPresent: number;
+  codeSyntaxMissing: number;
+  published: number;
+  hiddenFromPublishing: number;
+  unstated: number;
+  omitted: number;
+  collided: number;
+}
+
+const newAccumulator = (): CensusAccumulator => ({
+  tokens: 0, types: new Map(), present: 0, missing: 0, aliases: 0, literals: 0,
+  scopes: new Map(), codeSyntaxPresent: 0, codeSyntaxMissing: 0,
+  published: 0, hiddenFromPublishing: 0, unstated: 0, omitted: 0, collided: 0,
+});
+
+const bump = (counts: Map<string, number>, key: string): void => {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+};
+
+/** A counted map as a plain object in code-unit key order. */
+const histogram = (counts: Map<string, number>): Record<string, number> =>
+  Object.fromEntries([...counts.keys()].sort(compareCodeUnits).map((k) => [k, counts.get(k) as number]));
+
+/** One accumulator as the entry it describes. A count that would be zero for a
+ *  reason the projection cannot state is omitted, never written as zero. */
+function censusEntry(a: CensusAccumulator): DtcgCensusEntry {
+  return {
+    tokens: a.tokens,
+    types: histogram(a.types),
+    descriptions: { present: a.present, missing: a.missing },
+    aliases: a.aliases,
+    literals: a.literals,
+    scopes: histogram(a.scopes),
+    code_syntax: { present: a.codeSyntaxPresent, missing: a.codeSyntaxMissing },
+    publication: {
+      published: a.published, hidden_from_publishing: a.hiddenFromPublishing, unstated: a.unstated,
+    },
+    ...(a.omitted > 0 ? { omitted: a.omitted } : {}),
+    ...(a.collided > 0 ? { collided: a.collided } : {}),
+  };
+}
+
+/** A style file's census: only the fields a style leaf can answer. */
+function styleCensus(tree: DtcgTree): DtcgCensusEntry {
+  const a = newAccumulator();
+  const walk = (node: DtcgJson): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) {
+      a.tokens += 1;
+      bump(a.types, typeof record.$type === 'string' ? record.$type : 'unknown');
+      if (typeof record.$description === 'string' && record.$description.length > 0) a.present += 1;
+      else a.missing += 1;
+      return;
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (key.startsWith('$')) continue;
+      walk(value);
+    }
+  };
+  walk(tree);
+  return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
+}
+
 export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
   const p: Projection = {
     artifact,
@@ -759,6 +917,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     collidedIds: new Set(),
     report: [],
     reportKeys: new Set(),
+    factsById: new Map(),
   };
   indexPaths(p);
   omitInexpressibleTypes(p);
@@ -767,23 +926,48 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
 
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];
+  const census: Record<string, DtcgCensusEntry> = {};
   const taken = new Set<string>(RESERVED_FILE_NAMES);
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
       const tree: DtcgTree = {};
+      const a = newAccumulator();
       for (const token of artifact.tokens) {
-        if (token.collection_id !== collection.id || p.omittedIds.has(token.id)) continue;
+        if (token.collection_id !== collection.id) continue;
+        if (p.omittedIds.has(token.id)) {
+          a.omitted += 1;
+          if (p.collidedIds.has(token.id)) a.collided += 1;
+          continue;
+        }
         const leaf = tokenLeaf(p, token, collection, mode.id);
-        if (leaf) setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+        if (!leaf) continue;
+        setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+        a.tokens += 1;
+        bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
+        // Classify from the recorded fact, not by sniffing `$value` for a
+        // leading "{": a font-family literal is free to start with that
+        // character, and the fact is the authoritative answer already
+        // computed by tokenLeaf.
+        const modeLabel = modeLabelOf(p, collection, mode.id);
+        if (p.factsById.get(token.id)?.transform[modeLabel] === 'alias') a.aliases += 1;
+        else a.literals += 1;
+        if (token.description.length > 0) a.present += 1; else a.missing += 1;
+        for (const scope of token.scopes) bump(a.scopes, scope);
+        if (token.code_syntax) a.codeSyntaxPresent += 1; else a.codeSyntaxMissing += 1;
+        if (token.publication?.published) a.published += 1;
+        if (token.publication?.hidden_from_publishing) a.hiddenFromPublishing += 1;
+        if (!token.publication) a.unstated += 1;
       }
       annotateGroups(p, tree, collection);
       const file = fileNameFor(collection, mode, taken);
       plans.push({ collection, modeId: mode.id, file });
       files[file] = sortTree(tree) as DtcgTree;
+      census[file] = censusEntry(a);
     }
   }
   const styles = styleFiles(p);
   Object.assign(files, styles);
+  for (const [file, tree] of Object.entries(styles)) census[file] = styleCensus(tree);
   const resolver = buildResolver(p, plans, Object.keys(styles).sort(compareCodeUnits));
   p.report.sort((a, b) => compareCodeUnits(a.path, b.path)
     || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? ''));
@@ -799,7 +983,26 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   }
   const sortedMeta = Object.fromEntries(Object.entries(meta).sort(([a], [b]) => compareCodeUnits(a, b)));
 
-  return { files, resolver, meta: sortedMeta, report: p.report };
+  const codeSyntax: Record<string, Record<string, string>> = {};
+  for (const [path, entry] of Object.entries(sortedMeta)) {
+    if (entry.code_syntax) codeSyntax[path] = entry.code_syntax;
+  }
+  const sourceFileName = artifact.spec_layer.source.file_name;
+  const extension: DtcgDocumentExtension = {
+    schema_version: SCHEMA_VERSION,
+    content_hash: artifact.spec_layer.export.content_hash,
+    config_hash: `sha256:${sha256(canonicalJson(p.options))}`,
+    source: {
+      provider: 'figma',
+      ...(typeof sourceFileName === 'string' && sourceFileName.length > 0
+        ? { file_name: sourceFileName } : {}),
+    },
+    completeness: artifact.completeness,
+    code_syntax: codeSyntax,
+    census: Object.fromEntries(Object.keys(census).sort(compareCodeUnits).map((k) => [k, census[k]])),
+    report: p.report,
+  };
+  return { files, resolver, meta: sortedMeta, report: p.report, extension };
 }
 
 /** DTCG has no string or boolean type. Such tokens are omitted whole. */
@@ -897,16 +1100,18 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
+    recordFact(p, token.id, mode, 'alias', typed.$value);
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const converted = projectedLiteral(p, token, value.value, (override) => {
+  const projected = projectedLiteral(p, token, value.value, (override) => {
     reportOnce(p, {
       code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
       message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
       details: { id: token.id, override, scopes: [...token.scopes] },
     });
   });
+  const converted = projected.converted;
   if ('omit' in converted) {
     reportOnce(p, {
       code: converted.omit, severity: 'warning', path, mode,
@@ -917,6 +1122,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     });
     return null;
   }
+  if (projected.transform !== null) recordFact(p, token.id, mode, projected.transform);
   return { $type: converted.$type, $value: converted.$value, ...description };
 }
 
@@ -924,12 +1130,56 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
 // Resolver document and export
 // ---------------------------------------------------------------------------
 
+/**
+ * What one emitted file actually holds. The census reports what the projection
+ * produced; `report` keeps its own job of naming what it could not produce.
+ *
+ * A style file carries only the three fields every file has. The token-only
+ * fields are ABSENT there rather than zero, because a style leaf has no Figma
+ * scopes, no code syntax and no publication state, and a zero would state
+ * something this projection does not know.
+ *
+ * `publication.published` and `publication.hidden_from_publishing` count only
+ * tokens that carry a `publication` field; `publication.unstated` counts the
+ * tokens in this file that carry none. `published` and `hidden_from_publishing`
+ * are not mutually exclusive (a token can be both), so the three numbers are
+ * not a partition of `tokens`: `published + hidden_from_publishing + unstated`
+ * does not equal `tokens`.
+ *
+ * `omitted` and `collided` are collection-level counts, replicated into every
+ * mode file of that collection (one omitted or colliding token is omitted, or
+ * collides, in every mode alike). `collided` is a subset of `omitted`. Summing
+ * either field across a collection's files therefore double-counts; read it
+ * from any one of that collection's files instead.
+ */
+export interface DtcgCensusEntry {
+  tokens: number;
+  types: Record<string, number>;
+  descriptions: { present: number; missing: number };
+  aliases?: number;
+  literals?: number;
+  scopes?: Record<string, number>;
+  code_syntax?: { present: number; missing: number };
+  publication?: { published: number; hidden_from_publishing: number; unstated: number };
+  omitted?: number;
+  collided?: number;
+}
+
 export interface DtcgDocumentExtension {
   schema_version: string;
   content_hash: string;
+  /** A digest of the projection options that produced this document: the
+   *  value style and the unit overrides. Descriptive only. It answers whether
+   *  an output changed because the design changed or because the repository
+   *  changed its config, and it must never feed a canvas hash or an artifact
+   *  identity. */
+  config_hash: string;
   source: { provider: 'figma'; file_name?: string };
   completeness: FoundationArtifactV5['completeness'];
   code_syntax: Record<string, Record<string, string>>;
+  /** Per emitted file, keyed by file name, so a reader can judge an export
+   *  without walking it. */
+  census: Record<string, DtcgCensusEntry>;
   report: DtcgReportEntry[];
 }
 export interface DtcgDocument extends DtcgResolverDocument {
@@ -949,26 +1199,9 @@ export function foundationDtcgDocument(artifact: FoundationArtifactV5, options: 
     contexts: Object.fromEntries(Object.entries(v.contexts).map(([c, s]) => [c, inline(s)])),
     ...(v.default !== undefined ? { default: v.default } : {}),
   }]));
-  const codeSyntax: Record<string, Record<string, string>> = {};
-  for (const [path, entry] of Object.entries(out.meta)) {
-    if (entry.code_syntax) codeSyntax[path] = entry.code_syntax;
-  }
-  const fileName = artifact.spec_layer.source.file_name;
   return {
     ...out.resolver, sets, modifiers,
-    $extensions: {
-      'com.spec-layer': {
-        schema_version: SCHEMA_VERSION,
-        content_hash: artifact.spec_layer.export.content_hash,
-        source: {
-          provider: 'figma',
-          ...(typeof fileName === 'string' && fileName.length > 0 ? { file_name: fileName } : {}),
-        },
-        completeness: artifact.completeness,
-        code_syntax: codeSyntax,
-        report: out.report,
-      },
-    },
+    $extensions: { 'com.spec-layer': out.extension },
   };
 }
 
@@ -977,7 +1210,9 @@ export function dtcgExportFiles(out: DtcgExport): Record<string, string> {
   const text = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
   const files: Record<string, string> = {};
   for (const name of Object.keys(out.files).sort(compareCodeUnits)) files[name] = text(out.files[name]);
-  files['resolver.json'] = text(out.resolver);
+  files['resolver.json'] = text({
+    ...out.resolver, $extensions: { 'com.spec-layer': out.extension },
+  });
   files['spec-layer.meta.json'] = text(out.meta);
   files['report.json'] = text(out.report);
   return files;

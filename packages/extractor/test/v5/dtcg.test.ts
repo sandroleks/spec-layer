@@ -162,6 +162,9 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(out.meta['Primitives.color.exact.red']).toEqual({
       id: 'VariableID:color-exact', collection_id: 'CollectionID:primitives', type: 'color',
       scopes: ['FRAME_FILL'], code_syntax: { WEB: '--color-exact-red' },
+      transform: {
+        Dark: 'color', 'Light [ModeID:p-light-duplicate]': 'color', 'Light [ModeID:p-light]': 'color',
+      },
     });
     const boolToken = syntheticArtifact().tokens.find((t) => t.type === 'boolean');
     if (!boolToken) throw new Error('fixture lost its boolean token');
@@ -636,5 +639,277 @@ describe('foundationDtcg resolver and document', () => {
     ]);
     for (const text of Object.values(texts)) expect(text.endsWith('\n')).toBe(true);
     expect(dtcgExportFiles(foundationDtcg(syntheticArtifact()))).toEqual(texts);
+  });
+});
+
+describe('the document extension', () => {
+  it('is written into resolver.json', () => {
+    const files = dtcgExportFiles(foundationDtcg(syntheticArtifact()));
+    const resolver = JSON.parse(files['resolver.json']);
+    const ext = resolver.$extensions['com.spec-layer'];
+    expect(ext.content_hash).toBe(syntheticArtifact().spec_layer.export.content_hash);
+    expect(ext.source.provider).toBe('figma');
+  });
+
+  it('is byte-identical in resolver.json and the clipboard document', () => {
+    const artifact = syntheticArtifact();
+    const onDisk = JSON.parse(dtcgExportFiles(foundationDtcg(artifact))['resolver.json']);
+    const clipboard = foundationDtcgDocument(artifact);
+    expect(onDisk.$extensions['com.spec-layer'])
+      .toEqual(clipboard.$extensions['com.spec-layer']);
+  });
+});
+
+describe('config_hash', () => {
+  const hashOf = (options: Parameters<typeof foundationDtcg>[1]) =>
+    foundationDtcg(syntheticArtifact(), options).extension.config_hash;
+
+  it('is a sha256 digest', () => {
+    expect(hashOf({})).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('ignores the key order of the unit overrides', () => {
+    const a = hashOf({ units: { 'A/one': 'px', 'B/two': 'rem' } });
+    const b = hashOf({ units: { 'B/two': 'rem', 'A/one': 'px' } });
+    expect(a).toBe(b);
+  });
+
+  it('treats an omitted value style as the standard style', () => {
+    expect(hashOf({})).toBe(hashOf({ values: 'standard' }));
+  });
+
+  it('changes when the value style changes', () => {
+    expect(hashOf({ values: 'legacy' })).not.toBe(hashOf({ values: 'standard' }));
+  });
+
+  it('changes when a unit override changes', () => {
+    expect(hashOf({ units: { 'A/one': 'px' } })).not.toBe(hashOf({ units: { 'A/one': 'rem' } }));
+  });
+});
+
+describe('meta transform', () => {
+  const metaOf = (options?: Parameters<typeof foundationDtcg>[1]) =>
+    foundationDtcg(syntheticArtifact(), options).meta;
+
+  it('names alias for a token written as a reference', () => {
+    const meta = metaOf();
+    const aliasEntry = Object.entries(meta)
+      .find(([, e]) => e.transform && Object.values(e.transform).includes('alias'));
+    expect(aliasEntry).toBeDefined();
+  });
+
+  it('names the literal rule for a colour token', () => {
+    const meta = metaOf();
+    const transforms = Object.values(meta)
+      .flatMap((e) => Object.values(e.transform ?? {}));
+    expect(transforms).toContain('color');
+  });
+
+  it('keys transform by mode label', () => {
+    const meta = metaOf();
+    for (const entry of Object.values(meta)) {
+      if (!entry.transform) continue;
+      for (const key of Object.keys(entry.transform)) {
+        expect(typeof key).toBe('string');
+        expect(key.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('leaves an omitted token without a transform', () => {
+    const meta = metaOf();
+    for (const entry of Object.values(meta)) {
+      if (entry.omitted) expect(entry.transform).toBeUndefined();
+    }
+  });
+});
+
+describe('meta resolved values', () => {
+  const leafAt = (tree: Record<string, unknown>, path: string): Record<string, unknown> | null => {
+    let node: unknown = tree;
+    for (const segment of path.split('.')) {
+      if (typeof node !== 'object' || node === null) return null;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return typeof node === 'object' && node !== null ? node as Record<string, unknown> : null;
+  };
+
+  /** Follows a chain of `{references}` inside one file until it reaches a
+   *  literal. Returns undefined when the chain leaves this file or runs too
+   *  deep, which the caller treats as "not checkable here". */
+  const followToLiteral = (
+    tree: Record<string, unknown>, path: string, depth = 0,
+  ): unknown => {
+    if (depth > 16) return undefined;
+    const leaf = leafAt(tree, path);
+    const value = leaf?.$value;
+    if (value === undefined) return undefined;
+    if (typeof value === 'string' && value.startsWith('{')) {
+      return followToLiteral(tree, value.slice(1, -1), depth + 1);
+    }
+    return value;
+  };
+
+  it('stores a resolved value for every alias mode', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    const withAlias = Object.values(exp.meta)
+      .filter((e) => Object.values(e.transform ?? {}).includes('alias'));
+    expect(withAlias.length).toBeGreaterThan(0);
+    for (const entry of withAlias) {
+      for (const [mode, rule] of Object.entries(entry.transform ?? {})) {
+        if (rule === 'alias') expect(entry.resolved?.[mode]).toBeDefined();
+      }
+    }
+  });
+
+  it('agrees with the value the reference points at', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    // The resolver states which file backs which mode label, so the mapping
+    // comes from the document itself rather than from guessing at file names.
+    // A mode label is only unique WITHIN its own collection ("Dark" can name a
+    // mode in both Primitives and Semantic), so the map is keyed per
+    // collection rather than globally — `exp.resolver.modifiers` is already
+    // keyed by collection, and this keeps that owning key instead of
+    // collapsing every collection's contexts into one flat map.
+    const refOf = (sources: unknown): string | null => {
+      const first = Array.isArray(sources) ? sources[0] : null;
+      return first && typeof first === 'object' && typeof (first as { $ref?: unknown }).$ref === 'string'
+        ? (first as { $ref: string }).$ref : null;
+    };
+    const fileForModeByCollection = new Map<string, Map<string, string>>();
+    for (const [collectionLabel, modifier] of Object.entries(exp.resolver.modifiers)) {
+      const byMode = new Map<string, string>();
+      for (const [mode, sources] of Object.entries(modifier.contexts)) {
+        const ref = refOf(sources);
+        if (ref !== null) byMode.set(mode, ref);
+      }
+      fileForModeByCollection.set(collectionLabel, byMode);
+    }
+    // A single-mode collection has no modifier (just one `sets` entry), so
+    // every mode of that collection resolves to its one file regardless of
+    // the mode's own label.
+    const singleFileByCollection = new Map<string, string>();
+    for (const [collectionLabel, set] of Object.entries(exp.resolver.sets)) {
+      if (fileForModeByCollection.has(collectionLabel)) continue;
+      const ref = refOf(set.sources);
+      if (ref !== null) singleFileByCollection.set(collectionLabel, ref);
+    }
+    // A meta path is collection-headed (e.g. "Semantic.color.surface.primary"),
+    // so its first dot-separated segment names the owning collection.
+    const fileFor = (path: string, mode: string): string | undefined =>
+      fileForModeByCollection.get(path.split('.')[0])?.get(mode)
+        ?? singleFileByCollection.get(path.split('.')[0]);
+
+    let checked = 0;
+    for (const [path, entry] of Object.entries(exp.meta)) {
+      for (const [mode, resolved] of Object.entries(entry.resolved ?? {})) {
+        const file = fileFor(path, mode);
+        const tree = file === undefined ? undefined : exp.files[file];
+        if (!tree) continue;
+        // This token's own leaf, then the reference chain it points at,
+        // followed all the way to a literal.
+        const leaf = leafAt(tree as Record<string, unknown>, path);
+        const value = leaf?.$value;
+        if (typeof value !== 'string' || !value.startsWith('{')) continue;
+        const target = followToLiteral(tree as Record<string, unknown>, value.slice(1, -1));
+        if (target === undefined) continue;
+        expect(resolved).toEqual(target);
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(6);
+  });
+
+  it('agrees on the cross-collection alias too', () => {
+    // Semantic.color.surface.primary's Dark value aliases
+    // {Primitives.color.chain.bridge}, which is written to a different file
+    // than the Semantic Dark file this token lives in. `followToLiteral`
+    // above only walks references inside one file, so this case is never
+    // counted by the walk — it is exactly where Figma's chain resolution and
+    // DTCG's consumer-context resolution can diverge, and the projection
+    // reports it via `mode_selection_not_expressible` rather than guessing.
+    // Reimplementing cross-file resolution here to verify it would be a
+    // second interpretation of resolution semantics, which `resolved` exists
+    // to avoid, so this asserts against the value already recorded in the
+    // golden fixture (packages/extractor/test/fixtures/v5/synthetic-foundation-dtcg/spec-layer.meta.json)
+    // for this exact case instead.
+    const exp = foundationDtcg(syntheticArtifact());
+    expect(exp.meta['Semantic.color.surface.primary'].resolved?.Dark).toEqual({
+      colorSpace: 'srgb', components: [0, 0, 0], alpha: 1, hex: '#000000',
+    });
+  });
+
+  it('stores nothing for a literal token', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.meta)) {
+      const rules = Object.values(entry.transform ?? {});
+      if (rules.length > 0 && !rules.includes('alias')) expect(entry.resolved).toBeUndefined();
+    }
+  });
+});
+
+describe('the census', () => {
+  const countLeaves = (node: unknown): number => {
+    if (typeof node !== 'object' || node === null) return 0;
+    const record = node as Record<string, unknown>;
+    if ('$value' in record) return 1;
+    return Object.entries(record)
+      .filter(([k]) => !k.startsWith('$'))
+      .reduce((sum, [, v]) => sum + countLeaves(v), 0);
+  };
+
+  it('has an entry for every emitted file', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    expect(Object.keys(exp.extension.census).sort())
+      .toEqual(Object.keys(exp.files).sort());
+  });
+
+  it('counts exactly the tokens each file holds', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const [file, tree] of Object.entries(exp.files)) {
+      expect(exp.extension.census[file].tokens).toBe(countLeaves(tree));
+    }
+  });
+
+  it('splits every file total into aliases and literals or leaves both out', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      if (entry.aliases === undefined) {
+        expect(entry.literals).toBeUndefined();
+        continue;
+      }
+      expect(entry.aliases + (entry.literals ?? 0)).toBe(entry.tokens);
+    }
+  });
+
+  it('makes the type histogram sum to the file total', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      const sum = Object.values(entry.types).reduce((a, b) => a + b, 0);
+      expect(sum).toBe(entry.tokens);
+    }
+  });
+
+  it('accounts for every description', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      expect(entry.descriptions.present + entry.descriptions.missing).toBe(entry.tokens);
+    }
+  });
+});
+
+describe('determinism', () => {
+  it('projects the same artifact to identical bytes twice', () => {
+    const options = { units: { 'A/one': 'px' as const } };
+    const first = dtcgExportFiles(foundationDtcg(syntheticArtifact(), options));
+    const second = dtcgExportFiles(foundationDtcg(syntheticArtifact(), options));
+    expect(first).toEqual(second);
+  });
+
+  it('orders census and sidecar keys the same way on every run', () => {
+    const a = foundationDtcg(syntheticArtifact());
+    const b = foundationDtcg(syntheticArtifact());
+    expect(Object.keys(a.extension.census)).toEqual(Object.keys(b.extension.census));
+    expect(Object.keys(a.meta)).toEqual(Object.keys(b.meta));
   });
 });
