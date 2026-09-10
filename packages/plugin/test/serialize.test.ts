@@ -133,6 +133,19 @@ describe('serializeNode', () => {
     const out = await serializeNode(mixed as never, r);
     expect(out.bindings ?? []).not.toContainEqual(expect.objectContaining({ property: 'effects' }));
   });
+
+  it('records the component property bound to a node\'s visibility, raw key intact', async () => {
+    const bound = { ...mockRect, componentPropertyReferences: { visible: 'Icon left#12:3' } };
+    const out = await serializeNode(bound as never, resolver);
+    expect(out.visibleProperty).toBe('Icon left#12:3');
+  });
+
+  it('omits visibleProperty when the node has no visibility reference', async () => {
+    const out = await serializeNode(mockRect as never, resolver);
+    expect('visibleProperty' in out).toBe(false);
+    const nullRefs = { ...mockRect, componentPropertyReferences: null };
+    expect('visibleProperty' in await serializeNode(nullRefs as never, resolver)).toBe(false);
+  });
 });
 
 describe('unbound paint detection', () => {
