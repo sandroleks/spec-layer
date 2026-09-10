@@ -14,6 +14,7 @@ import {
   hstack,
   buildSlot,
   matchVariableModes,
+  revealBooleanParts,
 } from '../src/frameKit';
 
 describe('radius', () => {
@@ -325,5 +326,58 @@ describe('applyThemeToKit', () => {
     expect(loaded).toContain('Inter Regular');
     expect(loaded).toContain('Inter Medium');
     expect(loaded).toContain('Inter Bold');
+  });
+});
+
+describe('revealBooleanParts', () => {
+  it('sets every BOOLEAN property to true in one call and leaves other kinds alone', async () => {
+    const setProperties = vi.fn();
+    await revealBooleanParts(
+      { setProperties } as unknown as InstanceNode,
+      {
+        parent: { type: 'PAGE' },
+        componentPropertyDefinitions: {
+          'Icon left#1:2': { type: 'BOOLEAN', defaultValue: false },
+          'Icon right#1:3': { type: 'BOOLEAN', defaultValue: true },
+          'Label#1:4': { type: 'TEXT', defaultValue: 'Chip' },
+          'Style': { type: 'VARIANT', defaultValue: 'Default', variantOptions: ['Default'] },
+        },
+      } as unknown as ComponentNode,
+    );
+    expect(setProperties).toHaveBeenCalledTimes(1);
+    expect(setProperties).toHaveBeenCalledWith({ 'Icon left#1:2': true, 'Icon right#1:3': true });
+  });
+
+  it('reads definitions from the parent set when the component is a variant', async () => {
+    const setProperties = vi.fn();
+    const parent = {
+      type: 'COMPONENT_SET',
+      componentPropertyDefinitions: { 'Show icon#1:5': { type: 'BOOLEAN', defaultValue: false } },
+    };
+    await revealBooleanParts(
+      { setProperties } as unknown as InstanceNode,
+      {
+        parent,
+        get componentPropertyDefinitions(): never { throw new Error('variant children throw'); },
+      } as unknown as ComponentNode,
+    );
+    expect(setProperties).toHaveBeenCalledWith({ 'Show icon#1:5': true });
+  });
+
+  it('does nothing when there is no boolean property', async () => {
+    const setProperties = vi.fn();
+    await revealBooleanParts(
+      { setProperties } as unknown as InstanceNode,
+      { parent: { type: 'PAGE' }, componentPropertyDefinitions: { 'Label#1:4': { type: 'TEXT' } } } as unknown as ComponentNode,
+    );
+    expect(setProperties).not.toHaveBeenCalled();
+  });
+
+  it('never throws: a failing setProperties leaves the instance at its defaults', async () => {
+    const setProperties = vi.fn(() => { throw new Error('locked'); });
+    await expect(revealBooleanParts(
+      { setProperties } as unknown as InstanceNode,
+      { parent: { type: 'PAGE' }, componentPropertyDefinitions: { 'A#1': { type: 'BOOLEAN' } } } as unknown as ComponentNode,
+    )).resolves.toBeUndefined();
   });
 });
