@@ -131,7 +131,8 @@
           },
           "publication": {
             "published": 1,
-            "hidden_from_publishing": 0
+            "hidden_from_publishing": 0,
+            "unstated": 12
           },
           "omitted": 1
         },
@@ -165,7 +166,8 @@
           },
           "publication": {
             "published": 1,
-            "hidden_from_publishing": 0
+            "hidden_from_publishing": 0,
+            "unstated": 11
           },
           "omitted": 1
         },
@@ -199,7 +201,8 @@
           },
           "publication": {
             "published": 1,
-            "hidden_from_publishing": 0
+            "hidden_from_publishing": 0,
+            "unstated": 10
           },
           "omitted": 1
         },
@@ -223,7 +226,8 @@
           },
           "publication": {
             "published": 0,
-            "hidden_from_publishing": 0
+            "hidden_from_publishing": 0,
+            "unstated": 1
           },
           "omitted": 1
         },
@@ -247,7 +251,8 @@
           },
           "publication": {
             "published": 0,
-            "hidden_from_publishing": 0
+            "hidden_from_publishing": 0,
+            "unstated": 1
           },
           "omitted": 1
         },

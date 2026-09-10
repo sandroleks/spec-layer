@@ -842,6 +842,7 @@ interface CensusAccumulator {
   codeSyntaxMissing: number;
   published: number;
   hiddenFromPublishing: number;
+  unstated: number;
   omitted: number;
   collided: number;
 }
@@ -849,7 +850,7 @@ interface CensusAccumulator {
 const newAccumulator = (): CensusAccumulator => ({
   tokens: 0, types: new Map(), present: 0, missing: 0, aliases: 0, literals: 0,
   scopes: new Map(), codeSyntaxPresent: 0, codeSyntaxMissing: 0,
-  published: 0, hiddenFromPublishing: 0, omitted: 0, collided: 0,
+  published: 0, hiddenFromPublishing: 0, unstated: 0, omitted: 0, collided: 0,
 });
 
 const bump = (counts: Map<string, number>, key: string): void => {
@@ -871,7 +872,9 @@ function censusEntry(a: CensusAccumulator): DtcgCensusEntry {
     literals: a.literals,
     scopes: histogram(a.scopes),
     code_syntax: { present: a.codeSyntaxPresent, missing: a.codeSyntaxMissing },
-    publication: { published: a.published, hidden_from_publishing: a.hiddenFromPublishing },
+    publication: {
+      published: a.published, hidden_from_publishing: a.hiddenFromPublishing, unstated: a.unstated,
+    },
     ...(a.omitted > 0 ? { omitted: a.omitted } : {}),
     ...(a.collided > 0 ? { collided: a.collided } : {}),
   };
@@ -941,13 +944,19 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
         setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
         a.tokens += 1;
         bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
-        if (typeof leaf.$value === 'string' && leaf.$value.startsWith('{')) a.aliases += 1;
+        // Classify from the recorded fact, not by sniffing `$value` for a
+        // leading "{": a font-family literal is free to start with that
+        // character, and the fact is the authoritative answer already
+        // computed by tokenLeaf.
+        const modeLabel = modeLabelOf(p, collection, mode.id);
+        if (p.factsById.get(token.id)?.transform[modeLabel] === 'alias') a.aliases += 1;
         else a.literals += 1;
         if (token.description.length > 0) a.present += 1; else a.missing += 1;
         for (const scope of token.scopes) bump(a.scopes, scope);
         if (token.code_syntax) a.codeSyntaxPresent += 1; else a.codeSyntaxMissing += 1;
         if (token.publication?.published) a.published += 1;
         if (token.publication?.hidden_from_publishing) a.hiddenFromPublishing += 1;
+        if (!token.publication) a.unstated += 1;
       }
       annotateGroups(p, tree, collection);
       const file = fileNameFor(collection, mode, taken);
@@ -1129,6 +1138,19 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
  * fields are ABSENT there rather than zero, because a style leaf has no Figma
  * scopes, no code syntax and no publication state, and a zero would state
  * something this projection does not know.
+ *
+ * `publication.published` and `publication.hidden_from_publishing` count only
+ * tokens that carry a `publication` field; `publication.unstated` counts the
+ * tokens in this file that carry none. `published` and `hidden_from_publishing`
+ * are not mutually exclusive (a token can be both), so the three numbers are
+ * not a partition of `tokens`: `published + hidden_from_publishing + unstated`
+ * does not equal `tokens`.
+ *
+ * `omitted` and `collided` are collection-level counts, replicated into every
+ * mode file of that collection (one omitted or colliding token is omitted, or
+ * collides, in every mode alike). `collided` is a subset of `omitted`. Summing
+ * either field across a collection's files therefore double-counts; read it
+ * from any one of that collection's files instead.
  */
 export interface DtcgCensusEntry {
   tokens: number;
@@ -1138,7 +1160,7 @@ export interface DtcgCensusEntry {
   literals?: number;
   scopes?: Record<string, number>;
   code_syntax?: { present: number; missing: number };
-  publication?: { published: number; hidden_from_publishing: number };
+  publication?: { published: number; hidden_from_publishing: number; unstated: number };
   omitted?: number;
   collided?: number;
 }

@@ -766,27 +766,44 @@ describe('meta resolved values', () => {
     const exp = foundationDtcg(syntheticArtifact());
     // The resolver states which file backs which mode label, so the mapping
     // comes from the document itself rather than from guessing at file names.
-    const fileForMode = new Map<string, string>();
+    // A mode label is only unique WITHIN its own collection ("Dark" can name a
+    // mode in both Primitives and Semantic), so the map is keyed per
+    // collection rather than globally — `exp.resolver.modifiers` is already
+    // keyed by collection, and this keeps that owning key instead of
+    // collapsing every collection's contexts into one flat map.
     const refOf = (sources: unknown): string | null => {
       const first = Array.isArray(sources) ? sources[0] : null;
       return first && typeof first === 'object' && typeof (first as { $ref?: unknown }).$ref === 'string'
         ? (first as { $ref: string }).$ref : null;
     };
-    for (const modifier of Object.values(exp.resolver.modifiers)) {
+    const fileForModeByCollection = new Map<string, Map<string, string>>();
+    for (const [collectionLabel, modifier] of Object.entries(exp.resolver.modifiers)) {
+      const byMode = new Map<string, string>();
       for (const [mode, sources] of Object.entries(modifier.contexts)) {
         const ref = refOf(sources);
-        if (ref !== null) fileForMode.set(mode, ref);
+        if (ref !== null) byMode.set(mode, ref);
       }
+      fileForModeByCollection.set(collectionLabel, byMode);
     }
-    for (const [label, set] of Object.entries(exp.resolver.sets)) {
+    // A single-mode collection has no modifier (just one `sets` entry), so
+    // every mode of that collection resolves to its one file regardless of
+    // the mode's own label.
+    const singleFileByCollection = new Map<string, string>();
+    for (const [collectionLabel, set] of Object.entries(exp.resolver.sets)) {
+      if (fileForModeByCollection.has(collectionLabel)) continue;
       const ref = refOf(set.sources);
-      if (ref !== null && !fileForMode.has(label)) fileForMode.set(label, ref);
+      if (ref !== null) singleFileByCollection.set(collectionLabel, ref);
     }
+    // A meta path is collection-headed (e.g. "Semantic.color.surface.primary"),
+    // so its first dot-separated segment names the owning collection.
+    const fileFor = (path: string, mode: string): string | undefined =>
+      fileForModeByCollection.get(path.split('.')[0])?.get(mode)
+        ?? singleFileByCollection.get(path.split('.')[0]);
 
     let checked = 0;
     for (const [path, entry] of Object.entries(exp.meta)) {
       for (const [mode, resolved] of Object.entries(entry.resolved ?? {})) {
-        const file = fileForMode.get(mode);
+        const file = fileFor(path, mode);
         const tree = file === undefined ? undefined : exp.files[file];
         if (!tree) continue;
         // This token's own leaf, then the reference chain it points at,
@@ -800,7 +817,26 @@ describe('meta resolved values', () => {
         checked += 1;
       }
     }
-    expect(checked).toBeGreaterThan(0);
+    expect(checked).toBe(6);
+  });
+
+  it('agrees on the cross-collection alias too', () => {
+    // Semantic.color.surface.primary's Dark value aliases
+    // {Primitives.color.chain.bridge}, which is written to a different file
+    // than the Semantic Dark file this token lives in. `followToLiteral`
+    // above only walks references inside one file, so this case is never
+    // counted by the walk — it is exactly where Figma's chain resolution and
+    // DTCG's consumer-context resolution can diverge, and the projection
+    // reports it via `mode_selection_not_expressible` rather than guessing.
+    // Reimplementing cross-file resolution here to verify it would be a
+    // second interpretation of resolution semantics, which `resolved` exists
+    // to avoid, so this asserts against the value already recorded in the
+    // golden fixture (packages/extractor/test/fixtures/v5/synthetic-foundation-dtcg/spec-layer.meta.json)
+    // for this exact case instead.
+    const exp = foundationDtcg(syntheticArtifact());
+    expect(exp.meta['Semantic.color.surface.primary'].resolved?.Dark).toEqual({
+      colorSpace: 'srgb', components: [0, 0, 0], alpha: 1, hex: '#000000',
+    });
   });
 
   it('stores nothing for a literal token', () => {
