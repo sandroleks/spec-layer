@@ -66,7 +66,9 @@ it('is unchanged by the Figma file name', () => {
  *  the tree as it stood at BRIEF_VERSION 3. Its whole job is to fail loudly if
  *  the `token` to `name` rename, the ref-keyed minimization, or the composite-key
  *  change moves the drift baseline. Same rule as BUTTON_HASH above: only a task
- *  that says it re-cuts the baseline may change it, and no task in this plan does. */
+ *  that says it re-cuts the baseline may change it, and no task in this plan does.
+ *  Re-derived from cf299fb, the merge base of the hidden-elements branch, and
+ *  unchanged, so it also serves as the pre-feature value for that branch. */
 const CHIP_HASH = 'f2f7e6432f44b8405f31a9094a7494bdf89f68483a52dedd222a0d48e006d12b';
 
 it('is unchanged across the whole of Phase A, on both fixtures', () => {
@@ -142,12 +144,36 @@ describe('specContentHash and parts hidden by default', () => {
 
   it('includes the revealed depth-0 parts when asked, and nothing deeper', () => {
     const projection = specHashProjection(spec, { includeHidden: true });
-    expect(projection.anatomy.map((p) => p.name)).toEqual(['Icon left', 'Label', 'Icon right']);
+    expect(projection.anatomy.map((p) => p.name)).toEqual(['Label', 'Icon left', 'Icon right']);
     expect(specContentHash(spec, { includeHidden: true })).toBe(contentHash(projection));
     expect(specContentHash(spec, { includeHidden: true })).not.toBe(specContentHash(spec));
   });
 
   it('leaves related out of the toggle: it is computed from parts shown by default', () => {
     expect(specHashProjection(spec, { includeHidden: true }).related).toEqual(specHashProjection(spec).related);
+  });
+});
+
+/** Pre-feature canvas hash of chip-hidden.json, computed at cf299fb (the merge
+ *  base of the hidden-elements branch) with this fixture copied into a
+ *  throwaway worktree, so the pre-feature extractor simply ignored
+ *  `visibleProperty`. Together with CHIP_HASH above, which was computed the
+ *  same way and matched, it proves the toggle-off path is byte-identical to
+ *  what shipped: one fixture that carries hidden bound layers and one that
+ *  carries none. A change here means every committed component doc reports an
+ *  update it did not earn. */
+const CHIP_HIDDEN_OFF_HASH = '5929fb9a46b5c4258933b2068efc89d3c4eb5c0b072eae334ba2b75ebca441ff';
+
+describe('the toggle-off canvas hash matches the pre-feature extractor', () => {
+  it('is unchanged on a fixture with no hidden bound layers', () => {
+    const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip.json', 'utf8'));
+    expect(specContentHash(extract(node, { figmaFile: 'FILE1' }))).toBe(CHIP_HASH);
+  });
+
+  it('is unchanged on a fixture full of hidden bound layers, by default and when asked', () => {
+    const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip-hidden.json', 'utf8'));
+    const spec = extract(node, { figmaFile: 'FILE1' });
+    expect(specContentHash(spec)).toBe(CHIP_HIDDEN_OFF_HASH);
+    expect(specContentHash(spec, { includeHidden: false })).toBe(CHIP_HIDDEN_OFF_HASH);
   });
 });

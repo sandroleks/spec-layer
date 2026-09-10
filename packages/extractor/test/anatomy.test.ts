@@ -207,7 +207,7 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
   const { parts, related } = extractAnatomy(chipHidden as SerializedNode);
 
   it('keeps a hidden part whose visibility a boolean property controls, and marks it', () => {
-    expect(parts.map((p) => p.name)).toEqual(['Icon left', 'Glyph', 'Label', 'Icon right']);
+    expect(parts.map((p) => p.name)).toEqual(['Label', 'Icon left', 'Glyph', 'Icon right']);
     expect(parts.find((p) => p.name === 'Icon left')).toMatchObject({
       depth: 0, hiddenByDefault: true, shownBy: 'Icon left',
     });
@@ -265,11 +265,11 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
       ],
     };
     expect(extractAnatomy(root).parts.map((p) => [p.name, p.shownBy])).toEqual([
-      ['header', 'Show header'], ['close', 'Show close'], ['title', 'Show header'], ['body', undefined],
+      ['body', undefined], ['header', 'Show header'], ['close', 'Show close'], ['title', 'Show header'],
     ]);
   });
 
-  it('descends through a sole hidden bound wrapper and marks what it finds', () => {
+  it('lists a sole hidden bound wrapper at depth 0 and marks its children', () => {
     const root: SerializedNode = {
       id: '1', name: 'Panel', type: 'COMPONENT', visible: true,
       propertyDefinitions: { 'Show content#1': { type: 'BOOLEAN', defaultValue: false } },
@@ -282,8 +282,68 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
       }],
     };
     expect(extractAnatomy(root).parts.map((p) => [p.name, p.depth, p.shownBy])).toEqual([
-      ['title', 0, 'Show content'], ['body', 0, 'Show content'],
+      ['Content', 0, 'Show content'], ['title', 1, 'Show content'], ['body', 1, 'Show content'],
     ]);
+  });
+});
+
+describe('extractAnatomy — hidden bound parts never change the toggle-off output', () => {
+  it('keeps the wrapper descent decided on visible children alone', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      propertyDefinitions: { 'Show badge#1': { type: 'BOOLEAN', defaultValue: false } },
+      children: [
+        {
+          id: '2', name: 'Container', type: 'FRAME', visible: true,
+          children: [
+            { id: '3', name: 'Label', type: 'TEXT', visible: true },
+            { id: '4', name: 'Icon', type: 'INSTANCE', visible: true, mainComponent: { name: 'Icon', key: 'k' } },
+          ],
+        },
+        { id: '5', name: 'Badge', type: 'FRAME', visible: false, visibleProperty: 'Show badge#1' },
+      ],
+    };
+    const { parts, related } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.depth, p.path, p.shownBy])).toEqual([
+      ['Label', 0, 'Card/Container/Label', undefined],
+      ['Icon', 0, 'Card/Container/Icon', undefined],
+      ['Badge', 0, 'Card/Badge', 'Show badge'],
+    ]);
+    expect(anatomyFor(parts, { includeHidden: false }).map((p) => p.name)).toEqual(['Label', 'Icon']);
+    expect(related).toEqual(['Icon']);
+  });
+
+  it('numbers depth-0 siblings from the visible ones first, so a visible part keeps its name', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      propertyDefinitions: { 'Icon left#1': { type: 'BOOLEAN', defaultValue: false } },
+      children: [
+        { id: 'a', name: 'icon', type: 'FRAME', visible: false, visibleProperty: 'Icon left#1' },
+        { id: 'b', name: 'Label', type: 'TEXT', visible: true },
+        { id: 'c', name: 'icon', type: 'FRAME', visible: true },
+      ],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.shownBy])).toEqual([
+      ['Label', undefined], ['icon', undefined], ['icon (2)', 'Icon left'],
+    ]);
+    expect(anatomyFor(parts, { includeHidden: false }).map((p) => p.name)).toEqual(['Label', 'icon']);
+  });
+
+  it('still lists a wrapper whose only child is hidden and bound', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      propertyDefinitions: { 'Show badge#1': { type: 'BOOLEAN', defaultValue: false } },
+      children: [{
+        id: '2', name: 'Wrapper', type: 'FRAME', visible: true,
+        children: [{ id: '3', name: 'Badge', type: 'FRAME', visible: false, visibleProperty: 'Show badge#1' }],
+      }],
+    };
+    const { parts } = extractAnatomy(root);
+    expect(parts.map((p) => [p.name, p.depth, p.shownBy])).toEqual([
+      ['Wrapper', 0, undefined], ['Badge', 1, 'Show badge'],
+    ]);
+    expect(anatomyFor(parts, { includeHidden: false }).map((p) => p.name)).toEqual(['Wrapper']);
   });
 });
 
