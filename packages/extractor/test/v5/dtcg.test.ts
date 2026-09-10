@@ -638,3 +638,21 @@ describe('foundationDtcg resolver and document', () => {
     expect(dtcgExportFiles(foundationDtcg(syntheticArtifact()))).toEqual(texts);
   });
 });
+
+describe('the document extension', () => {
+  it('is written into resolver.json', () => {
+    const files = dtcgExportFiles(foundationDtcg(syntheticArtifact()));
+    const resolver = JSON.parse(files['resolver.json']);
+    const ext = resolver.$extensions['com.spec-layer'];
+    expect(ext.content_hash).toBe(syntheticArtifact().spec_layer.export.content_hash);
+    expect(ext.source.provider).toBe('figma');
+  });
+
+  it('is byte-identical in resolver.json and the clipboard document', () => {
+    const artifact = syntheticArtifact();
+    const onDisk = JSON.parse(dtcgExportFiles(foundationDtcg(artifact))['resolver.json']);
+    const clipboard = foundationDtcgDocument(artifact);
+    expect(onDisk.$extensions['com.spec-layer'])
+      .toEqual(clipboard.$extensions['com.spec-layer']);
+  });
+});

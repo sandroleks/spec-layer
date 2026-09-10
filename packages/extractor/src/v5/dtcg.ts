@@ -67,6 +67,9 @@ export interface DtcgExport {
   resolver: DtcgResolverDocument;
   meta: Record<string, DtcgMetaEntry>;
   report: DtcgReportEntry[];
+  /** The `com.spec-layer` block. Built once here so `resolver.json` on disk
+   *  and the clipboard document can never carry different bytes. */
+  extension: DtcgDocumentExtension;
 }
 
 // ---------------------------------------------------------------------------
@@ -799,7 +802,24 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   }
   const sortedMeta = Object.fromEntries(Object.entries(meta).sort(([a], [b]) => compareCodeUnits(a, b)));
 
-  return { files, resolver, meta: sortedMeta, report: p.report };
+  const codeSyntax: Record<string, Record<string, string>> = {};
+  for (const [path, entry] of Object.entries(sortedMeta)) {
+    if (entry.code_syntax) codeSyntax[path] = entry.code_syntax;
+  }
+  const sourceFileName = artifact.spec_layer.source.file_name;
+  const extension: DtcgDocumentExtension = {
+    schema_version: SCHEMA_VERSION,
+    content_hash: artifact.spec_layer.export.content_hash,
+    source: {
+      provider: 'figma',
+      ...(typeof sourceFileName === 'string' && sourceFileName.length > 0
+        ? { file_name: sourceFileName } : {}),
+    },
+    completeness: artifact.completeness,
+    code_syntax: codeSyntax,
+    report: p.report,
+  };
+  return { files, resolver, meta: sortedMeta, report: p.report, extension };
 }
 
 /** DTCG has no string or boolean type. Such tokens are omitted whole. */
@@ -949,26 +969,9 @@ export function foundationDtcgDocument(artifact: FoundationArtifactV5, options: 
     contexts: Object.fromEntries(Object.entries(v.contexts).map(([c, s]) => [c, inline(s)])),
     ...(v.default !== undefined ? { default: v.default } : {}),
   }]));
-  const codeSyntax: Record<string, Record<string, string>> = {};
-  for (const [path, entry] of Object.entries(out.meta)) {
-    if (entry.code_syntax) codeSyntax[path] = entry.code_syntax;
-  }
-  const fileName = artifact.spec_layer.source.file_name;
   return {
     ...out.resolver, sets, modifiers,
-    $extensions: {
-      'com.spec-layer': {
-        schema_version: SCHEMA_VERSION,
-        content_hash: artifact.spec_layer.export.content_hash,
-        source: {
-          provider: 'figma',
-          ...(typeof fileName === 'string' && fileName.length > 0 ? { file_name: fileName } : {}),
-        },
-        completeness: artifact.completeness,
-        code_syntax: codeSyntax,
-        report: out.report,
-      },
-    },
+    $extensions: { 'com.spec-layer': out.extension },
   };
 }
 
@@ -977,7 +980,9 @@ export function dtcgExportFiles(out: DtcgExport): Record<string, string> {
   const text = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
   const files: Record<string, string> = {};
   for (const name of Object.keys(out.files).sort(compareCodeUnits)) files[name] = text(out.files[name]);
-  files['resolver.json'] = text(out.resolver);
+  files['resolver.json'] = text({
+    ...out.resolver, $extensions: { 'com.spec-layer': out.extension },
+  });
   files['spec-layer.meta.json'] = text(out.meta);
   files['report.json'] = text(out.report);
   return files;

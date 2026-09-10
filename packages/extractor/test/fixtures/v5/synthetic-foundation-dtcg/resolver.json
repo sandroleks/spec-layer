@@ -67,5 +67,173 @@
     {
       "$ref": "#/sets/Typography styles"
     }
-  ]
+  ],
+  "$extensions": {
+    "com.spec-layer": {
+      "schema_version": "5.1.0",
+      "content_hash": "sha256:6672f17bd07643b2f27bb9b7e955fdcaf68948137a0d10a2711c45d5eb0153a8",
+      "source": {
+        "provider": "figma",
+        "file_name": "Synthetic Direct Foundation"
+      },
+      "completeness": {
+        "collections": "partial",
+        "styles": "partial",
+        "unavailable_sources": [
+          "Deprecated Core",
+          "VariableID:external-unreadable",
+          "permission:styles-metadata"
+        ]
+      },
+      "code_syntax": {
+        "Primitives.color.exact.red": {
+          "WEB": "--color-exact-red"
+        },
+        "Primitives.effect.shadow.blur": {
+          "WEB": "--effect-shadow-blur"
+        },
+        "Primitives.spacing.gap": {
+          "WEB": "--spacing-gap"
+        },
+        "Semantic.color.surface.primary": {
+          "WEB": "--color-surface-primary"
+        }
+      },
+      "report": [
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Primitives.Background.Chip.Сhip (Hover)",
+          "message": "DTCG has no boolean type; the token was omitted.",
+          "details": {
+            "id": "VariableID:confusable",
+            "type": "boolean"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Primitives.color.shared",
+          "mode": "Light [ModeID:p-light-duplicate]",
+          "message": "The token has no value for this mode.",
+          "details": {
+            "id": "VariableID:local-collision",
+            "reason": "no_value_for_mode"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Primitives.cycle.a",
+          "mode": "Light [ModeID:p-light]",
+          "message": "The alias could not be resolved (cycle); no value was written.",
+          "details": {
+            "id": "VariableID:cycle-a",
+            "reason": "cycle",
+            "target_path": "cycle/b",
+            "target_id": "VariableID:cycle-b"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Primitives.cycle.b",
+          "mode": "Light [ModeID:p-light]",
+          "message": "The alias could not be resolved (cycle); no value was written.",
+          "details": {
+            "id": "VariableID:cycle-b",
+            "reason": "cycle",
+            "target_path": "cycle/a",
+            "target_id": "VariableID:cycle-a"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Semantic.color.legacy.readable",
+          "mode": "Dark",
+          "message": "The alias could not be resolved (source_library_unavailable); no value was written.",
+          "details": {
+            "id": "VariableID:external-owner-readable",
+            "reason": "source_library_unavailable",
+            "target_path": "color/shared",
+            "target_id": "VariableID:external-readable",
+            "source_library_name": "Deprecated Core"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Semantic.color.legacy.readable",
+          "mode": "Light",
+          "message": "The alias could not be resolved (source_library_unavailable); no value was written.",
+          "details": {
+            "id": "VariableID:external-owner-readable",
+            "reason": "source_library_unavailable",
+            "target_path": "color/shared",
+            "target_id": "VariableID:external-readable",
+            "source_library_name": "Deprecated Core"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Semantic.color.legacy.unreadable",
+          "mode": "Dark",
+          "message": "The alias could not be resolved (source_library_unavailable); no value was written.",
+          "details": {
+            "id": "VariableID:external-owner-unreadable",
+            "reason": "source_library_unavailable",
+            "target_path": "",
+            "target_id": "VariableID:external-unreadable"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Semantic.color.legacy.unreadable",
+          "mode": "Light",
+          "message": "The alias could not be resolved (source_library_unavailable); no value was written.",
+          "details": {
+            "id": "VariableID:external-owner-unreadable",
+            "reason": "source_library_unavailable",
+            "target_path": "",
+            "target_id": "VariableID:external-unreadable"
+          }
+        },
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Semantic.string.declared-missing",
+          "message": "DTCG has no string type; the token was omitted.",
+          "details": {
+            "id": "VariableID:declared-missing",
+            "type": "string"
+          }
+        },
+        {
+          "code": "unit_not_expressible",
+          "severity": "info",
+          "path": "Typography styles.Body.Regular",
+          "message": "DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.",
+          "details": {
+            "property": "lineHeight",
+            "unit": "px",
+            "number": 24
+          }
+        },
+        {
+          "code": "unit_not_expressible",
+          "severity": "info",
+          "path": "Typography styles.Body.Regular",
+          "message": "The letterSpacing unit is not a DTCG dimension unit; the value is kept under $extensions.",
+          "details": {
+            "property": "letterSpacing",
+            "unit": "%",
+            "number": 0
+          }
+        }
+      ]
+    }
+  }
 }
