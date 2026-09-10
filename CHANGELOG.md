@@ -17,6 +17,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   every component artifact that has such parts, and nothing else: hidden
   layers with no property binding stay excluded, canvas drift hashes are
   unchanged, and `EXTRACTOR_VERSION` is unchanged.
+- **"Document hidden elements"**, a per-component option under Anatomy on the
+  component screen, shown only when the component has a layer that a boolean
+  property hides by default. On, the doc lists those parts in Anatomy with
+  "Shown when <property> is true", sets every boolean property to true on the
+  instances placed in Anatomy, States, Variants, and Measurements, and hashes
+  the revealed parts so drift detection covers them. Off, or on any doc
+  generated before this release, nothing changes: rendered output and the
+  drift hash are identical. Update keeps the stored choice. Anatomy pins are
+  now measured on the placed instance rather than the source component, which
+  is what makes a revealed part pinnable. The per-variant token pane preview
+  in the Variants section also reveals when the toggle is on. The
+  Measurements diagram measures its size rails, padding bands, and spacing
+  from the revealed instance rather than the source component, so the overlay
+  matches what is drawn.
 
 ### Removed
 
