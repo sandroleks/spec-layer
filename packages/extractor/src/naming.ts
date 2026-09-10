@@ -12,8 +12,34 @@ export function parseVariantName(name: string): Record<string, string> | null {
   return out;
 }
 
-/** Layer names carry Figma prop-binding artifacts like "icon-primary#" — strip them. */
-export const cleanPartName = (name: string) => name.replace(/#+\s*$/, '').trim();
+/** One character's worth of `\s`. Tested a character at a time, never against
+ *  a run, so no amount of input makes the test itself do more work. */
+const WHITESPACE = /\s/;
+
+/**
+ * Layer names carry Figma prop-binding artifacts like "icon-primary#" — strip
+ * them, along with any whitespace trailing the hashes, then trim.
+ *
+ * A reverse scan, not `replace(/#+\s*$/, '')`. That regex is quadratic on a
+ * name that is a long run of `#` not followed by the anchor: the engine retries
+ * `#+` from every start position, and 40k hashes measured 6.7 seconds. Layer
+ * names are not adversarial in the usual sense, but nothing bounds them either,
+ * and this runs once per node on every extraction.
+ *
+ * The scan reproduces the regex exactly, which matters because part names are
+ * identity here: they feed anatomy, token paths and `specContentHash`. Read it
+ * as the pattern read, right to left: `$`, then `\s*`, then `#+`, and the
+ * replacement happens only when that `+` saw at least one hash.
+ */
+export function cleanPartName(name: string): string {
+  let end = name.length;
+  while (end > 0 && WHITESPACE.test(name[end - 1])) end--;
+  const afterHashes = end;
+  while (end > 0 && name[end - 1] === '#') end--;
+  // No hash means the regex found nothing to replace, so the whole name (still
+  // trimmed, as the original's trailing `.trim()` did) is the answer.
+  return afterHashes === end ? name.trim() : name.slice(0, end).trim();
+}
 
 /**
  * Component PROPERTY names carry a "#nodeId:n" suffix ("Label#123:4"); take the

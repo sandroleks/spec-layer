@@ -50,11 +50,47 @@ const STATE_ORDER = [
 
 const STATE_VOCAB = new Set(STATE_ORDER);
 
-/** The state concept a prop/value names, with any trailing parenthetical
- *  qualifier stripped: `active (Filled)` → `active`. Lets qualified variant
- *  axes still match the state vocabulary. */
-function stateBaseName(v: string): string {
-  return v.trim().toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+/** One character's worth of `\s`. Tested one character at a time, so no run of
+ *  whitespace can make the test itself backtrack. */
+const WHITESPACE = /\s/;
+
+/**
+ * The state concept a prop/value names, with any trailing parenthetical
+ * qualifier stripped: `active (Filled)` → `active`. Lets qualified variant
+ * axes still match the state vocabulary.
+ *
+ * A reverse scan, not `replace(/\s*\([^)]*\)\s*$/, '')`. That regex is
+ * quadratic on a long run of whitespace, or of `(`, that never reaches the
+ * anchor, because the engine retries the whole tail from every start position.
+ * It was CodeQL's one high-severity finding here, and the result feeds
+ * `orderStates`, so it reaches `spec.states` and `specContentHash`: the scan
+ * has to return the same string the regex did for every input, which
+ * `redos.test.ts` pins against the regex itself.
+ *
+ * Read right to left, as the pattern reads: `$`, then `\s*`, then `\)`, then
+ * `[^)]*` back to a `\(`, then `\s*` again. The subtlety is that `[^)]*`
+ * happily contains `(`, and the engine takes the LEFTMOST start that matches,
+ * so of the several `(` that may sit in that run the earliest one wins. On
+ * `a ((x)` the regex strips from the first `(`, giving `a`, not `a (`.
+ */
+export function stateBaseName(v: string): string {
+  const lowered = v.trim().toLowerCase();
+  let end = lowered.length;
+  while (end > 0 && WHITESPACE.test(lowered[end - 1])) end--;
+  if (end === 0 || lowered[end - 1] !== ')') return lowered.trim();
+
+  // Walk back over the `[^)]*` run, remembering the earliest `(` in it.
+  let open = -1;
+  for (let i = end - 2; i >= 0; i--) {
+    const ch = lowered[i];
+    if (ch === ')') break;
+    if (ch === '(') open = i;
+  }
+  if (open === -1) return lowered.trim();
+
+  let cut = open;
+  while (cut > 0 && WHITESPACE.test(lowered[cut - 1])) cut--;
+  return lowered.slice(0, cut).trim();
 }
 
 /** Rank a state-like name by conventional lifecycle order; unrecognized names
