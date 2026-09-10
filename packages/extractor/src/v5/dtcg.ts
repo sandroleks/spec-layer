@@ -830,6 +830,75 @@ function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5)
   }
 }
 
+interface CensusAccumulator {
+  tokens: number;
+  types: Map<string, number>;
+  present: number;
+  missing: number;
+  aliases: number;
+  literals: number;
+  scopes: Map<string, number>;
+  codeSyntaxPresent: number;
+  codeSyntaxMissing: number;
+  published: number;
+  hiddenFromPublishing: number;
+  omitted: number;
+  collided: number;
+}
+
+const newAccumulator = (): CensusAccumulator => ({
+  tokens: 0, types: new Map(), present: 0, missing: 0, aliases: 0, literals: 0,
+  scopes: new Map(), codeSyntaxPresent: 0, codeSyntaxMissing: 0,
+  published: 0, hiddenFromPublishing: 0, omitted: 0, collided: 0,
+});
+
+const bump = (counts: Map<string, number>, key: string): void => {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+};
+
+/** A counted map as a plain object in code-unit key order. */
+const histogram = (counts: Map<string, number>): Record<string, number> =>
+  Object.fromEntries([...counts.keys()].sort(compareCodeUnits).map((k) => [k, counts.get(k) as number]));
+
+/** One accumulator as the entry it describes. A count that would be zero for a
+ *  reason the projection cannot state is omitted, never written as zero. */
+function censusEntry(a: CensusAccumulator): DtcgCensusEntry {
+  return {
+    tokens: a.tokens,
+    types: histogram(a.types),
+    descriptions: { present: a.present, missing: a.missing },
+    aliases: a.aliases,
+    literals: a.literals,
+    scopes: histogram(a.scopes),
+    code_syntax: { present: a.codeSyntaxPresent, missing: a.codeSyntaxMissing },
+    publication: { published: a.published, hidden_from_publishing: a.hiddenFromPublishing },
+    ...(a.omitted > 0 ? { omitted: a.omitted } : {}),
+    ...(a.collided > 0 ? { collided: a.collided } : {}),
+  };
+}
+
+/** A style file's census: only the fields a style leaf can answer. */
+function styleCensus(tree: DtcgTree): DtcgCensusEntry {
+  const a = newAccumulator();
+  const walk = (node: DtcgJson): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) {
+      a.tokens += 1;
+      bump(a.types, typeof record.$type === 'string' ? record.$type : 'unknown');
+      if (typeof record.$description === 'string' && record.$description.length > 0) a.present += 1;
+      else a.missing += 1;
+      return;
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (key.startsWith('$')) continue;
+      walk(value);
+    }
+  };
+  walk(tree);
+  return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
+}
+
 export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
   const p: Projection = {
     artifact,
@@ -854,23 +923,42 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
 
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];
+  const census: Record<string, DtcgCensusEntry> = {};
   const taken = new Set<string>(RESERVED_FILE_NAMES);
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
       const tree: DtcgTree = {};
+      const a = newAccumulator();
       for (const token of artifact.tokens) {
-        if (token.collection_id !== collection.id || p.omittedIds.has(token.id)) continue;
+        if (token.collection_id !== collection.id) continue;
+        if (p.omittedIds.has(token.id)) {
+          a.omitted += 1;
+          if (p.collidedIds.has(token.id)) a.collided += 1;
+          continue;
+        }
         const leaf = tokenLeaf(p, token, collection, mode.id);
-        if (leaf) setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+        if (!leaf) continue;
+        setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+        a.tokens += 1;
+        bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
+        if (typeof leaf.$value === 'string' && leaf.$value.startsWith('{')) a.aliases += 1;
+        else a.literals += 1;
+        if (token.description.length > 0) a.present += 1; else a.missing += 1;
+        for (const scope of token.scopes) bump(a.scopes, scope);
+        if (token.code_syntax) a.codeSyntaxPresent += 1; else a.codeSyntaxMissing += 1;
+        if (token.publication?.published) a.published += 1;
+        if (token.publication?.hidden_from_publishing) a.hiddenFromPublishing += 1;
       }
       annotateGroups(p, tree, collection);
       const file = fileNameFor(collection, mode, taken);
       plans.push({ collection, modeId: mode.id, file });
       files[file] = sortTree(tree) as DtcgTree;
+      census[file] = censusEntry(a);
     }
   }
   const styles = styleFiles(p);
   Object.assign(files, styles);
+  for (const [file, tree] of Object.entries(styles)) census[file] = styleCensus(tree);
   const resolver = buildResolver(p, plans, Object.keys(styles).sort(compareCodeUnits));
   p.report.sort((a, b) => compareCodeUnits(a.path, b.path)
     || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? ''));
@@ -902,6 +990,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     },
     completeness: artifact.completeness,
     code_syntax: codeSyntax,
+    census: Object.fromEntries(Object.keys(census).sort(compareCodeUnits).map((k) => [k, census[k]])),
     report: p.report,
   };
   return { files, resolver, meta: sortedMeta, report: p.report, extension };
@@ -1032,6 +1121,28 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
 // Resolver document and export
 // ---------------------------------------------------------------------------
 
+/**
+ * What one emitted file actually holds. The census reports what the projection
+ * produced; `report` keeps its own job of naming what it could not produce.
+ *
+ * A style file carries only the three fields every file has. The token-only
+ * fields are ABSENT there rather than zero, because a style leaf has no Figma
+ * scopes, no code syntax and no publication state, and a zero would state
+ * something this projection does not know.
+ */
+export interface DtcgCensusEntry {
+  tokens: number;
+  types: Record<string, number>;
+  descriptions: { present: number; missing: number };
+  aliases?: number;
+  literals?: number;
+  scopes?: Record<string, number>;
+  code_syntax?: { present: number; missing: number };
+  publication?: { published: number; hidden_from_publishing: number };
+  omitted?: number;
+  collided?: number;
+}
+
 export interface DtcgDocumentExtension {
   schema_version: string;
   content_hash: string;
@@ -1044,6 +1155,9 @@ export interface DtcgDocumentExtension {
   source: { provider: 'figma'; file_name?: string };
   completeness: FoundationArtifactV5['completeness'];
   code_syntax: Record<string, Record<string, string>>;
+  /** Per emitted file, keyed by file name, so a reader can judge an export
+   *  without walking it. */
+  census: Record<string, DtcgCensusEntry>;
   report: DtcgReportEntry[];
 }
 export interface DtcgDocument extends DtcgResolverDocument {

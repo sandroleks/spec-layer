@@ -15,6 +15,7 @@ const EXTENSION: DtcgDocumentExtension = {
   source: { provider: 'figma' },
   completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },
   code_syntax: {},
+  census: {},
   report: [],
 };
 

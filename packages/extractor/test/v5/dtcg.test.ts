@@ -811,3 +811,53 @@ describe('meta resolved values', () => {
     }
   });
 });
+
+describe('the census', () => {
+  const countLeaves = (node: unknown): number => {
+    if (typeof node !== 'object' || node === null) return 0;
+    const record = node as Record<string, unknown>;
+    if ('$value' in record) return 1;
+    return Object.entries(record)
+      .filter(([k]) => !k.startsWith('$'))
+      .reduce((sum, [, v]) => sum + countLeaves(v), 0);
+  };
+
+  it('has an entry for every emitted file', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    expect(Object.keys(exp.extension.census).sort())
+      .toEqual(Object.keys(exp.files).sort());
+  });
+
+  it('counts exactly the tokens each file holds', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const [file, tree] of Object.entries(exp.files)) {
+      expect(exp.extension.census[file].tokens).toBe(countLeaves(tree));
+    }
+  });
+
+  it('splits every file total into aliases and literals or leaves both out', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      if (entry.aliases === undefined) {
+        expect(entry.literals).toBeUndefined();
+        continue;
+      }
+      expect(entry.aliases + (entry.literals ?? 0)).toBe(entry.tokens);
+    }
+  });
+
+  it('makes the type histogram sum to the file total', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      const sum = Object.values(entry.types).reduce((a, b) => a + b, 0);
+      expect(sum).toBe(entry.tokens);
+    }
+  });
+
+  it('accounts for every description', () => {
+    const exp = foundationDtcg(syntheticArtifact());
+    for (const entry of Object.values(exp.extension.census)) {
+      expect(entry.descriptions.present + entry.descriptions.missing).toBe(entry.tokens);
+    }
+  });
+});

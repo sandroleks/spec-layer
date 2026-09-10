@@ -100,6 +100,178 @@
           "WEB": "--color-surface-primary"
         }
       },
+      "census": {
+        "primitives.dark.json": {
+          "tokens": 13,
+          "types": {
+            "color": 8,
+            "dimension": 2,
+            "fontFamily": 1,
+            "fontWeight": 1,
+            "number": 1
+          },
+          "descriptions": {
+            "present": 4,
+            "missing": 9
+          },
+          "aliases": 2,
+          "literals": 11,
+          "scopes": {
+            "ALL_SCOPES": 1,
+            "EFFECT_FLOAT": 1,
+            "FONT_FAMILY": 1,
+            "FONT_WEIGHT": 1,
+            "FRAME_FILL": 5,
+            "GAP": 1,
+            "SHAPE_FILL": 1
+          },
+          "code_syntax": {
+            "present": 3,
+            "missing": 10
+          },
+          "publication": {
+            "published": 1,
+            "hidden_from_publishing": 0
+          },
+          "omitted": 1
+        },
+        "primitives.light-2.json": {
+          "tokens": 12,
+          "types": {
+            "color": 7,
+            "dimension": 2,
+            "fontFamily": 1,
+            "fontWeight": 1,
+            "number": 1
+          },
+          "descriptions": {
+            "present": 3,
+            "missing": 9
+          },
+          "aliases": 2,
+          "literals": 10,
+          "scopes": {
+            "ALL_SCOPES": 1,
+            "EFFECT_FLOAT": 1,
+            "FONT_FAMILY": 1,
+            "FONT_WEIGHT": 1,
+            "FRAME_FILL": 5,
+            "GAP": 1,
+            "SHAPE_FILL": 1
+          },
+          "code_syntax": {
+            "present": 3,
+            "missing": 9
+          },
+          "publication": {
+            "published": 1,
+            "hidden_from_publishing": 0
+          },
+          "omitted": 1
+        },
+        "primitives.light.json": {
+          "tokens": 11,
+          "types": {
+            "color": 6,
+            "dimension": 2,
+            "fontFamily": 1,
+            "fontWeight": 1,
+            "number": 1
+          },
+          "descriptions": {
+            "present": 4,
+            "missing": 7
+          },
+          "aliases": 2,
+          "literals": 9,
+          "scopes": {
+            "ALL_SCOPES": 1,
+            "EFFECT_FLOAT": 1,
+            "FONT_FAMILY": 1,
+            "FONT_WEIGHT": 1,
+            "FRAME_FILL": 5,
+            "GAP": 1,
+            "SHAPE_FILL": 1
+          },
+          "code_syntax": {
+            "present": 3,
+            "missing": 8
+          },
+          "publication": {
+            "published": 1,
+            "hidden_from_publishing": 0
+          },
+          "omitted": 1
+        },
+        "semantic.dark.json": {
+          "tokens": 1,
+          "types": {
+            "color": 1
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 0
+          },
+          "aliases": 1,
+          "literals": 0,
+          "scopes": {
+            "FRAME_FILL": 1
+          },
+          "code_syntax": {
+            "present": 1,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0
+          },
+          "omitted": 1
+        },
+        "semantic.light.json": {
+          "tokens": 1,
+          "types": {
+            "color": 1
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 0
+          },
+          "aliases": 0,
+          "literals": 1,
+          "scopes": {
+            "FRAME_FILL": 1
+          },
+          "code_syntax": {
+            "present": 1,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0
+          },
+          "omitted": 1
+        },
+        "styles.effects.json": {
+          "tokens": 1,
+          "types": {
+            "shadow": 1
+          },
+          "descriptions": {
+            "present": 0,
+            "missing": 1
+          }
+        },
+        "styles.typography.json": {
+          "tokens": 1,
+          "types": {
+            "typography": 1
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 0
+          }
+        }
+      },
       "report": [
         {
           "code": "type_not_expressible",
