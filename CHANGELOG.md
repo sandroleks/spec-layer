@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-09-10
+
 ### Fixed
 
 - **Token bindings on a hidden part are no longer dropped.** Token extraction
@@ -44,6 +46,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   set of CSS rules, which is what the label's weight disagreeing with "AI
   writing" was about: the second row's own copy of those rules set the font on
   the wrapper, so the inner `strong` fell back to the browser's `bolder`.
+- **Four quadratic regexes are now linear scans.** `cleanPartName`,
+  `stateBaseName`, and the prose prompt's dash and code-fence rules each ran
+  in time quadratic in their input, so a long run of hashes, parentheses, or
+  spaces could stall the plugin's UI thread: 40,000 trailing hashes in a layer
+  name measured 6754 ms. The two prose rules read model output arriving
+  through the proxy, the one input here that nobody in this repository
+  controls, where an unclosed code fence was enough to hang the UI. Output is
+  unchanged for every input, and `packages/extractor/test/redos.test.ts` keeps
+  the old regexes as executable oracles to prove it, which is load-bearing
+  because `cleanPartName` and `stateBaseName` feed canvas drift hashes. Closes
+  CodeQL alerts 1 to 4 (`js/polynomial-redos`).
 
 ### Added
 
@@ -885,6 +898,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Workspace packages are private implementation modules and are not published to npm.
 - GitHub synchronization, drift detection, and an MCP server remain roadmap items.
 
+[5.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.0.0
 [1.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v1.0.0
 [0.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v0.1.0
