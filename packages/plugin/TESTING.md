@@ -205,9 +205,26 @@ set that has at least two variant axes and a hardcoded paint. Check that:
 10. **Variant inside a set.** Row 8 on a component set, so the boolean
     definitions are read from the set, not the variant.
 11. **No bound layer.** On a component with no boolean-controlled layer, the
-    option does not appear under Anatomy.
+    option's switch does not appear above the section list.
+12. **Callout order.** In row 8's Anatomy, the pins ascend left to right
+    (1, 2, 3 on a horizontal component), each pin sits over the part its
+    legend row names, and no leader line crosses another. Unit tests fix the
+    part ORDER but not where a pin lands, which is measured live.
+13. **Hierarchical numbers.** In the same legend, a nested row reads "2.1"
+    rather than a whole number, and the pill badge is not clipping the text.
+    Depth-0 rows count 1, 2, 3 with nothing skipped.
+14. **Tokens for a revealed part.** In row 8's **Tokens used**, each revealed
+    icon has its own part group with real token names. Turn the option off,
+    regenerate, and confirm those groups are gone. The extraction fix is unit
+    tested; what this proves is that the icons in your file carry bindings at
+    all, and that the group headers read sensibly.
+15. **The switch survives a section change.** With the option on, uncheck
+    Anatomy and check it again. The switch stays visible and stays on, and the
+    other sections still show the revealed icons.
 
-Rows 7 to 11 were added on 2026-09-10 and have not been run.
+Rows 7 to 11 were added on 2026-09-10 and have not been run. Rows 12 to 15
+were added the same day, after the review that found the callouts reading
+2, 1, 4 and the Tokens section empty for a revealed icon.
 
 ## Library
 

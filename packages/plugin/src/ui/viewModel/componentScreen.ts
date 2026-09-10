@@ -25,6 +25,24 @@ export function defaultSections(): Set<SectionId> {
 }
 
 /**
+ * Whether a fresh selection documents the parts a boolean property hides.
+ *
+ * On whenever the component has any. A layer a boolean property reveals is
+ * part of the component someone is trying to understand, so leaving it out by
+ * default made the common case the one that needed a click, and made the
+ * option easy to miss entirely. Off when there are none, so the flag never
+ * says a doc drew something it did not.
+ *
+ * The one source for that default, the way `DEFAULT_OFF_SECTIONS` is for
+ * sections. It is seeded when facts arrive, not at selection creation: before
+ * extraction finishes there is nothing to reveal and the screen must not
+ * guess.
+ */
+export function defaultIncludeHidden(facts: ComponentFacts): boolean {
+  return facts.hasHiddenParts;
+}
+
+/**
  * Group the sections for display.
  *
  * `aiEnabled` only controls whether the AI badges show. It never changes which
@@ -127,16 +145,6 @@ export function applyGroupBulk(
     if (on && !unavailable.has(id)) sections.add(id);
     if (!on) sections.delete(id);
   }
-}
-
-/** The option only makes sense while the Anatomy section is included: once
- *  Anatomy is unchecked its checkbox disappears, and a hidden control must not
- *  keep changing four sections and the drift hash. */
-export function includeHiddenAfterSectionChange(
-  sections: ReadonlySet<SectionId>,
-  includeHidden: boolean,
-): boolean {
-  return sections.has('anatomy') ? includeHidden : false;
 }
 
 /**

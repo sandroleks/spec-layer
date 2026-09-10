@@ -592,7 +592,7 @@ function clamp01(n: number): number {
 }
 
 /** A teal circle with a centered white number — shared by pins and legend. */
-function numberBadge(n: number, size: number): FrameNode {
+function numberBadge(n: string, size: number): FrameNode {
   const badge = figma.createFrame();
   badge.layoutMode = 'HORIZONTAL';
   badge.primaryAxisSizingMode = 'FIXED';
@@ -600,16 +600,23 @@ function numberBadge(n: number, size: number): FrameNode {
   badge.primaryAxisAlignItems = 'CENTER';
   badge.counterAxisAlignItems = 'CENTER';
   badge.resize(size, size);
+  // A pill, not a circle: a hierarchical callout ("2.1") is wider than one
+  // digit and would otherwise be clipped by the fixed square. Hugging with a
+  // floor of `size` means a single digit still draws the exact circle it
+  // always did, and only a longer label grows sideways.
+  badge.paddingLeft = badge.paddingRight = 4;
+  badge.primaryAxisSizingMode = 'AUTO';
+  badge.minWidth = size;
   badge.cornerRadius = size / 2;
   badge.fills = solidFill(palette.accent);
-  const label = makeText(String(n), 'Bold', size <= 18 ? 10 : 11, palette.onHeader);
+  const label = makeText(n, 'Bold', size <= 18 ? 10 : 11, palette.onHeader);
   badge.appendChild(label);
   return badge;
 }
 
 /** On-image pin: a number badge with a white ring + soft shadow so it reads on
  *  top of the screenshot. */
-function anatomyPin(n: number): FrameNode {
+function anatomyPin(n: string): FrameNode {
   const pin = numberBadge(n, PIN_SIZE);
   pin.strokes = solidFill(palette.bg);
   pin.strokeWeight = 2;
@@ -641,7 +648,7 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   row.counterAxisAlignItems = 'MIN';
   row.paddingTop = row.paddingBottom = 12;
   row.paddingLeft = part.depth * 18;
-  row.appendChild(numberBadge(part.n, LEGEND_BADGE));
+  row.appendChild(numberBadge(part.label, LEGEND_BADGE));
 
   const desc = part.description?.trim();
   const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
@@ -725,7 +732,7 @@ async function buildAnatomyDiagram(
     try { inst.remove(); } catch { /* already gone */ }
     return null;
   }
-  const pins: { n: number; nx: number; ny: number; rx: number; ty: number }[] = [];
+  const pins: { n: string; nx: number; ny: number; rx: number; ty: number }[] = [];
   for (const part of parts) {
     if (part.depth !== 0) continue;
     let p: BaseNode | null;
@@ -740,7 +747,7 @@ async function buildAnatomyDiagram(
     // still gets the pin it always got, so the option off draws what it drew.
     if (!pb) continue;
     pins.push({
-      n: part.n,
+      n: part.label,
       nx: clamp01((pb.x + pb.width / 2 - ib.x) / ib.width),
       ny: clamp01((pb.y + pb.height / 2 - ib.y) / ib.height),
       rx: clamp01((pb.x + pb.width - ib.x) / ib.width), // part's right edge
@@ -932,7 +939,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     }
     if (section.view === 'table' || section.view === 'both') {
       const rows = section.parts.map((p) => [
-        String(p.n),
+        p.label,
         `${'    '.repeat(p.depth)}${p.name}`,
         p.type.toLowerCase(),
         p.component ?? '—',

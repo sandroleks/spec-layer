@@ -470,7 +470,14 @@
   border: 0;
 }
 
-.sl-ai-control {
+/* The document-wide switches above the section list: AI writing, and the
+   hidden-elements option. Geometry, type and switch metrics live in ONE rule
+   for both, because giving the second row its own copy of them is exactly how
+   its label ended up a different weight from the first: the copy set the font
+   on the wrapper, so the inner <strong> fell back to the browser's `bolder`
+   instead of the semibold the AI row asks for. Only the surface differs. */
+.sl-ai-control,
+.sl-doc-option {
   min-height: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 31px;
@@ -478,47 +485,63 @@
   gap: var(--sl-space-8);
   margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
   padding: 0 var(--sl-space-10);
-  background: var(--sl-color-ai-surface);
-  border: 1px solid var(--sl-color-ai-border);
   border-radius: var(--sl-radius-md);
 }
 
-.sl-ai-control-copy {
+.sl-ai-control {
+  background: var(--sl-color-ai-surface);
+  border: 1px solid var(--sl-color-ai-border);
+}
+
+/* The neutral surface, not the AI tint: this option calls no model. */
+.sl-doc-option {
+  background: var(--sl-color-detail-surface);
+  border: 1px solid var(--sl-color-border-muted);
+}
+
+.sl-ai-control-copy,
+.sl-doc-option-copy {
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--sl-space-6);
 }
 
-.sl-ai-control-copy > strong {
+.sl-ai-control-copy > strong,
+.sl-doc-option-copy > strong {
   color: var(--sl-color-text);
   font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-semibold);
 }
 
-.sl-ai-control-copy .sl-icon-button {
+.sl-ai-control-copy .sl-icon-button,
+.sl-doc-option-copy .sl-icon-button {
   width: 20px;
   height: 20px;
   border-radius: var(--sl-radius-sm);
 }
 
-.sl-ai-control .sl-switch-control {
+.sl-ai-control .sl-switch-control,
+.sl-doc-option .sl-switch-control {
   min-height: 18px;
 }
 
-.sl-ai-control .sl-switch-track {
+.sl-ai-control .sl-switch-track,
+.sl-doc-option .sl-switch-track {
   width: 31px;
   height: 18px;
   padding: var(--sl-space-2);
   border: 0;
 }
 
-.sl-ai-control .sl-switch-thumb {
+.sl-ai-control .sl-switch-thumb,
+.sl-doc-option .sl-switch-thumb {
   width: 14px;
   height: 14px;
 }
 
-.sl-ai-control .sl-switch-input:checked + .sl-switch-track .sl-switch-thumb {
+.sl-ai-control .sl-switch-input:checked + .sl-switch-track .sl-switch-thumb,
+.sl-doc-option .sl-switch-input:checked + .sl-switch-track .sl-switch-thumb {
   transform: translateX(13px);
 }
 

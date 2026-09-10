@@ -16,6 +16,7 @@ import { componentBrief } from '../brief';
 import type { IntermediateSpec } from '../extract';
 import type { EffectLayer } from '../effects';
 import type { ProseDrafts } from '../prose/prompt';
+import { tokensFor } from '../tokens';
 import type { RefIdentity, RefKind } from '../tree';
 import { validate as validateComponentFacts } from '../validate';
 import { EXTRACTOR_VERSION } from '../version';
@@ -616,9 +617,19 @@ export function validateComponentArtifactV5(
 
 /** Build the canonical component artifact. */
 export function buildComponentArtifactV5(
-  spec: IntermediateSpec,
+  rawSpec: IntermediateSpec,
   meta: ComponentExportV5Meta,
 ): ComponentArtifactV5 {
+  // Same filter, and the same reason, as `componentBrief` applies to its own
+  // copy: a v5 token rule has no field in which to say it only applies once a
+  // boolean component property is on, so a rule for a hidden-by-default part
+  // cannot be emitted honestly yet. Applied once here so every helper below
+  // sees one list, and so every existing artifact and its semanticContentHash
+  // stay byte-identical.
+  const spec: IntermediateSpec = {
+    ...rawSpec,
+    tokens: tokensFor(rawSpec.tokens, { includeHidden: false }),
+  };
   const projected = asObject(componentBrief(spec, {
     generatedAt: meta.generatedAt,
     prose: meta.prose,

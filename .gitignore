@@ -26,3 +26,7 @@ speclayer.json
 # The prose tree, the internal vault, the marketing site, and the capture
 # library now live in a separate private repository, so the ignore rules that
 # covered their generated archives and delivery variants went with them.
+
+# Local design notes. The prose tree proper lives in the private repository;
+# this is a scratch space for a spec written alongside a branch.
+docs/

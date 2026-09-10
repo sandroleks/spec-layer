@@ -162,6 +162,28 @@ describe('Component Context v5', () => {
       .not.toBe(buildComponentArtifactV5(spec([]), META).spec_layer.export.content_hash);
   });
 
+  it('leaves a token rule for a hidden part out, so no rule claims to be unconditional', () => {
+    const ref = {
+      id: 'VariableID:1', kind: 'variable' as const, remote: false,
+      collectionId: 'VariableCollectionId:1',
+    };
+    const visible: TokenRule = {
+      part: 'label', path: 'Container/label', property: 'fill', conditions: {},
+      name: 'Role/Text/Default', ...ref,
+    };
+    const hidden: TokenRule = {
+      part: 'icon left', path: 'Container/icon left', property: 'fill', conditions: {},
+      name: 'Role/Text/Accent', ...ref, id: 'VariableID:2', shownBy: 'Icon left',
+    };
+    const artifact = buildComponentArtifactV5(spec([visible, hidden]), META);
+    const paths = artifact.references.bindings.map((b) => b.path);
+    expect(paths).toEqual(['Container/label']);
+    // Byte-identical to the artifact for the same component without the hidden
+    // rule at all, so no existing component's semanticContentHash moves.
+    expect(artifact.spec_layer.export.content_hash)
+      .toBe(buildComponentArtifactV5(spec([visible]), META).spec_layer.export.content_hash);
+  });
+
   it('selects an exact-id variable and its transitive alias closure, never a same-named token', () => {
     const source = foundation();
     const refs = [{

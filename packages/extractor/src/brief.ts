@@ -17,7 +17,7 @@ import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
-import type { TokenRule } from './tokens';
+import { tokensFor, type TokenRule } from './tokens';
 import type { RefIdentity, RefKind } from './tree';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
@@ -749,7 +749,21 @@ function effectsOf(
  * token bindings. `spec` is the extractor's internal IntermediateSpec; this
  * is a PROJECTION of it, not a dump — see the file header.
  */
-export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
+export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
+  // Rules for a part hidden by default are dropped from this contract, not
+  // because they are uninteresting but because there is nowhere here to say a
+  // rule is conditional on one. A v5 token rule's `conditions` cover variant
+  // axes only, so emitting one would present a rule that needs
+  // "Icon left = true" as one that always holds. Anatomy parts DO export with
+  // `shown_by`, so the part itself is still visible to a reader; carrying the
+  // same field onto token rules is a schema 5.3.0 change.
+  //
+  // Keeping this filter here rather than at each read also keeps every
+  // existing component's artifact, and its semanticContentHash, byte-identical.
+  const spec: IntermediateSpec = {
+    ...rawSpec,
+    tokens: tokensFor(rawSpec.tokens, { includeHidden: false }),
+  };
   // Same reasoning as inside apiOf: only spread the key in when there is an
   // api block, rather than assigning `api: undefined`, so a component with
   // no props has no `api` key at all on the raw object, not merely one with
@@ -762,7 +776,14 @@ export function componentBrief(spec: IntermediateSpec, opts: ComponentBriefOptio
   // reported ButtonLabel as having a hardcoded colour while `tokens` showed
   // the token bound on the same node. A binding is the stronger evidence, so
   // it wins.
-  const bound = new Set(spec.tokens.map((t) => `${t.path} ${t.property}`));
+  //
+  // Computed over the UNFILTERED rules on purpose. Gap detection reaches
+  // hidden subtrees, and now so does token extraction, so a hidden layer whose
+  // fill is bound would otherwise be reported here as having no token binding:
+  // a false diagnostic this join exists precisely to prevent. Suppressing a
+  // gap adds nothing to the file and states nothing new, so it does not need
+  // the schema field the rules themselves are waiting on.
+  const bound = new Set(rawSpec.tokens.map((t) => `${t.path} ${t.property}`));
   const unbound = spec.gaps
     .filter((g) => !bound.has(`${g.path} ${g.property}`))
     .map((g) => ({

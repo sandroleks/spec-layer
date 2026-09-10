@@ -1,5 +1,5 @@
 import type { SerializedNode, TokenRef, RefIdentity } from './tree';
-import { defaultVariant } from './anatomy';
+import { defaultVariant, hiddenPartRules } from './anatomy';
 import { parseVariantName, cleanPartName, walkParts } from './naming';
 
 /**
@@ -17,6 +17,13 @@ export interface TokenRule extends RefIdentity {
   property: string;
   /** axis -> matching values, axes in variant-name order, values in axis order. */
   conditions: Record<string, string[]>;
+  /** Cleaned name of the boolean property that shows this part, present only
+   *  when the part is hidden by default. Same contract and same spelling as
+   *  `AnatomyPart.shownBy`: absent, never undefined, on a part shown by
+   *  default. A rule carrying it applies only once that property is on, so
+   *  every consumer routes through `tokensFor` rather than reading
+   *  `spec.tokens` directly. */
+  shownBy?: string;
 }
 
 /** Stable ids, not prose. A free-form sentence cannot drive UI, a test, or a
@@ -349,6 +356,16 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   const pathOrder: string[] = [];
   const propOrder = new Map<string, string[]>();
   const partByPath = new Map<string, string>();
+  /** path -> the boolean property that reveals the layer at that path.
+   *  First observation wins: a layer's visibility binding lives on the
+   *  component set, so every variant reports the same property, and variant
+   *  order is fixed by the axis model either way. */
+  const shownByPath = new Map<string, string>();
+  // One definition of "hidden but documentable", shared with anatomy.ts. The
+  // walk below no longer prunes every invisible subtree, only the ones no
+  // consumer could ever reveal, so a layer a boolean property turns on keeps
+  // its bindings and the Tokens section can show them.
+  const hidden = hiddenPartRules(root);
   /** Every reference seen anywhere in this component, by refKey, so a rule can
    *  be turned back into a full identity at emit time. Two refs sharing a
    *  (kind, id) are the same Figma resource, so overwriting is a no-op. */
@@ -359,7 +376,23 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     // Outer key path-and-property, inner key refKey, so two refs sharing a name
     // stay two refs all the way through.
     const variantRefs = new Map<string, Map<string, RefIdentity>>();
+    // Which property reveals each node in THIS variant, inherited down the
+    // tree: a visible glyph inside a hidden icon container is hidden in
+    // practice, and its tokens are just as conditional as the container's.
+    // Resolved node by node rather than by path prefix, because a path is a
+    // joined string with escaped separators and re-splitting it to find an
+    // ancestor is a parser nobody needs.
+    const shownByNode = new Map<SerializedNode, string>();
+    const markHidden = (n: SerializedNode, inherited: string | undefined): void => {
+      const own = hidden.shownBy(n) ?? inherited;
+      if (own !== undefined) shownByNode.set(n, own);
+      for (const child of n.children ?? []) markHidden(child, own);
+    };
+    for (const child of variant.children ?? []) markHidden(child, undefined);
+
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
+      const shownBy = shownByNode.get(n);
+      if (shownBy !== undefined && !shownByPath.has(path)) shownByPath.set(path, shownBy);
       for (const ref of normalizeBindings(n.bindings ?? [])) {
         const key = gridKey(path, ref.property);
         partByPath.set(path, part);
@@ -375,7 +408,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
         inner.set(rk, identity);
         refsByKey.set(rk, identity);
       }
-    }, true);
+    }, hidden.prune);
     for (const [key, inner] of variantRefs) {
       let cells = cellsByPathProp.get(key);
       if (!cells) {
@@ -564,7 +597,15 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       if (!vs) continue;
       conditions[axis] = axisValues.get(axis)!.filter((v) => vs.has(v));
     }
-    return { part: partByPath.get(path)!, path, property, conditions, ...refsByKey.get(r.key)! };
+    const shownBy = shownByPath.get(path);
+    return {
+      part: partByPath.get(path)!, path, property, conditions,
+      ...refsByKey.get(r.key)!,
+      // Absent, never undefined, on a rule that applies unconditionally: the
+      // same contract AnatomyPart.shownBy keeps, so `'shownBy' in rule` is a
+      // reliable test and the key never appears in output it does not apply to.
+      ...(shownBy !== undefined ? { shownBy } : {}),
+    };
   };
 
   /**
@@ -624,6 +665,24 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     }
   }
   return out;
+}
+
+export interface TokensOptions {
+  /** Include rules marked `shownBy`: the ones that only apply once a boolean
+   *  component property is on. The canvas model and the canvas hash pass a
+   *  doc's `includeHidden` config; the exported contract passes false, because
+   *  a v5 token rule has no field in which to say a rule is conditional. */
+  includeHidden: boolean;
+}
+
+/**
+ * The one predicate every canvas consumer and the canvas hash filter token
+ * rules through, so they cannot disagree about which rules a doc draws. The
+ * `anatomyFor` of tokens, down to returning the same array when nothing is
+ * filtered so callers can rely on identity.
+ */
+export function tokensFor(tokens: TokenRule[], options: TokensOptions): TokenRule[] {
+  return options.includeHidden ? tokens : tokens.filter((t) => t.shownBy === undefined);
 }
 
 // ---------------------------------------------------------------------------
