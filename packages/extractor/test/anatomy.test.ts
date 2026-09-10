@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractAnatomy, defaultVariant } from '../src/anatomy';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
+import chipHidden from './fixtures/chip-hidden.json';
 import type { SerializedNode } from '../src/tree';
 
 describe('extractAnatomy', () => {
@@ -199,5 +200,89 @@ describe('defaultVariant', () => {
       children: [variant('v0', 'Style=Filled', 'FilledPart')],
     };
     expect(defaultVariant(set).name).toBe('Style=Filled');
+  });
+});
+
+describe('extractAnatomy — hidden parts a boolean property controls', () => {
+  const { parts, related } = extractAnatomy(chipHidden as SerializedNode);
+
+  it('keeps a hidden part whose visibility a boolean property controls, and marks it', () => {
+    expect(parts.map((p) => p.name)).toEqual(['Icon left', 'Glyph', 'Label', 'Icon right']);
+    expect(parts.find((p) => p.name === 'Icon left')).toMatchObject({
+      depth: 0, hiddenByDefault: true, shownBy: 'Icon left',
+    });
+    expect(parts.find((p) => p.name === 'Icon right')).toMatchObject({
+      depth: 0, nested: true, component: 'Icon', hiddenByDefault: true, shownBy: 'Icon right',
+    });
+  });
+
+  it('leaves a part shown by default unmarked, with neither key present', () => {
+    const label = parts.find((p) => p.name === 'Label')!;
+    expect('hiddenByDefault' in label).toBe(false);
+    expect('shownBy' in label).toBe(false);
+  });
+
+  it('drops a hidden layer with no property binding', () => {
+    expect(parts.find((p) => p.name === 'Guide')).toBeUndefined();
+  });
+
+  it('drops a hidden layer whose reference names a property the root does not define', () => {
+    expect(parts.find((p) => p.name === 'Badge')).toBeUndefined();
+  });
+
+  it('drops a hidden layer bound to a property that is not a BOOLEAN', () => {
+    expect(parts.find((p) => p.name === 'Meta')).toBeUndefined();
+  });
+
+  it('marks a visible child of a hidden part with the ancestor\'s property', () => {
+    expect(parts.find((p) => p.name === 'Glyph')).toMatchObject({
+      depth: 1, path: 'Container/Icon left/Glyph', hiddenByDefault: true, shownBy: 'Icon left',
+    });
+  });
+
+  it('computes related from parts shown by default only', () => {
+    // Icon right is a nested instance, but hidden by default, so it does not
+    // enter `related` (which feeds the canvas hash for every existing doc).
+    expect(related).toEqual([]);
+  });
+
+  it('lets a hidden bound part inside a hidden bound part keep its own property', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Card', type: 'COMPONENT', visible: true,
+      propertyDefinitions: {
+        'Show header#1': { type: 'BOOLEAN', defaultValue: false },
+        'Show close#2': { type: 'BOOLEAN', defaultValue: false },
+      },
+      children: [
+        {
+          id: '2', name: 'header', type: 'FRAME', visible: false, visibleProperty: 'Show header#1',
+          children: [
+            { id: '3', name: 'close', type: 'FRAME', visible: false, visibleProperty: 'Show close#2' },
+            { id: '4', name: 'title', type: 'TEXT', visible: true },
+          ],
+        },
+        { id: '5', name: 'body', type: 'TEXT', visible: true },
+      ],
+    };
+    expect(extractAnatomy(root).parts.map((p) => [p.name, p.shownBy])).toEqual([
+      ['header', 'Show header'], ['close', 'Show close'], ['title', 'Show header'], ['body', undefined],
+    ]);
+  });
+
+  it('descends through a sole hidden bound wrapper and marks what it finds', () => {
+    const root: SerializedNode = {
+      id: '1', name: 'Panel', type: 'COMPONENT', visible: true,
+      propertyDefinitions: { 'Show content#1': { type: 'BOOLEAN', defaultValue: false } },
+      children: [{
+        id: '2', name: 'Content', type: 'FRAME', visible: false, visibleProperty: 'Show content#1',
+        children: [
+          { id: '3', name: 'title', type: 'TEXT', visible: true },
+          { id: '4', name: 'body', type: 'TEXT', visible: true },
+        ],
+      }],
+    };
+    expect(extractAnatomy(root).parts.map((p) => [p.name, p.depth, p.shownBy])).toEqual([
+      ['title', 0, 'Show content'], ['body', 0, 'Show content'],
+    ]);
   });
 });
