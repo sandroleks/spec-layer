@@ -43,6 +43,11 @@ export interface DtcgReportEntry {
   details: Record<string, DtcgJson>;
 }
 
+/** The rule that produced a token's `$value` in one mode. */
+export type DtcgTransform =
+  | 'alias' | 'color' | 'dimension' | 'duration' | 'number'
+  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override';
+
 export interface DtcgMetaEntry {
   id: string;
   collection_id: string;
@@ -53,6 +58,11 @@ export interface DtcgMetaEntry {
   omitted?: true;
   /** Canonical values by mode label, only for omitted tokens. */
   values?: Record<string, DtcgJson>;
+  /** The rule behind `$value` in each mode, by mode label. Keyed by mode
+   *  because Figma lets one token alias in one mode and hold a literal in
+   *  another, so a single name would misreport the other mode. Absent for a
+   *  token this projection omitted. */
+  transform?: Record<string, DtcgTransform>;
 }
 
 export interface DtcgResolverDocument {
@@ -270,6 +280,26 @@ interface Projection {
   /** Serialized identity of every entry already in `report`, so the dedupe
    *  below stays O(1) per call instead of re-serializing the whole report. */
   reportKeys: Set<string>;
+  /** token id -> what the leaf builder did, gathered where the leaf is built
+   *  so the sidecar reports the projection rather than re-deriving it. */
+  factsById: Map<string, LeafFacts>;
+}
+
+export interface LeafFacts {
+  transform: Record<string, DtcgTransform>;
+  resolved: Record<string, DtcgJson>;
+}
+
+function recordFact(
+  p: Projection, tokenId: string, mode: string, transform: DtcgTransform, resolved?: DtcgJson,
+): void {
+  let facts = p.factsById.get(tokenId);
+  if (!facts) {
+    facts = { transform: {}, resolved: {} };
+    p.factsById.set(tokenId, facts);
+  }
+  facts.transform[mode] = transform;
+  if (resolved !== undefined) facts.resolved[mode] = resolved;
 }
 
 function reportOnce(p: Projection, entry: DtcgReportEntry): void {
@@ -346,18 +376,48 @@ const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
  * owns the token, since an override that contradicts a scope is reported once
  * against the token it names, not against everything that aliases it.
  */
+export interface Projected { converted: Converted; transform: DtcgTransform | null }
+
 function projectedLiteral(
   p: Projection, token: TokenV5, resolved: TypedValue,
   onOverrideConflict?: (override: 'px' | 'rem') => void,
-): Converted {
+): Projected {
   const collection = p.collectionById.get(token.collection_id);
   const override = collection ? unitOverrideFor(p, token, collection) : undefined;
   let literal: TypedValue = resolved;
+  let overrode = false;
   if (override !== undefined && literal.type === 'number') {
     if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) onOverrideConflict?.(override);
-    else literal = { type: 'dimension', number: literal.value, unit: override };
+    else {
+      literal = { type: 'dimension', number: literal.value, unit: override };
+      overrode = true;
+    }
   }
-  return dtcgLiteral(literal, token.scopes, p.options.values);
+  const converted = dtcgLiteral(literal, token.scopes, p.options.values);
+  if ('omit' in converted) return { converted, transform: null };
+  return {
+    converted,
+    transform: overrode ? 'number-unit-override' : literalTransform(literal, token.scopes),
+  };
+}
+
+/** The transform name for a literal DTCG could state. `string` and `boolean`
+ *  never reach here: `dtcgLiteral` omits them, and the caller returns early. */
+function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | null {
+  switch (value.type) {
+    case 'color': return 'color';
+    case 'dimension': return 'dimension';
+    case 'duration': return 'duration';
+    case 'number': return scopes.includes('FONT_WEIGHT') ? 'font-weight' : 'number';
+    case 'cubic_bezier': return 'cubic-bezier';
+    case 'font_family': return 'font-family';
+    case 'string':
+    case 'boolean': return null;
+    default: {
+      const exhaustive: never = value;
+      return exhaustive;
+    }
+  }
 }
 
 /**
@@ -371,7 +431,7 @@ function aliasLeafType(
   p: Projection, token: TokenV5, chain: readonly ResolutionStep[], resolved: TypedValue,
 ): Converted {
   const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
-  return projectedLiteral(p, terminal ?? token, resolved);
+  return projectedLiteral(p, terminal ?? token, resolved).converted;
 }
 
 /** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
@@ -422,6 +482,16 @@ function asJson(value: unknown): DtcgJson {
   return JSON.parse(JSON.stringify(value)) as DtcgJson;
 }
 
+/** `transform` for one token, sorted by mode label, or nothing when the
+ *  projection wrote no leaf for it in any mode. */
+function transformField(p: Projection, token: TokenV5): { transform?: Record<string, DtcgTransform> } {
+  const facts = p.factsById.get(token.id);
+  if (!facts) return {};
+  const keys = Object.keys(facts.transform).sort(compareCodeUnits);
+  if (keys.length === 0) return {};
+  return { transform: Object.fromEntries(keys.map((k) => [k, facts.transform[k]])) };
+}
+
 function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): DtcgMetaEntry {
   const labels = p.modeLabelsById.get(collection.id) ?? modeLabels(collection);
   const omitted = p.omittedIds.has(token.id);
@@ -435,6 +505,7 @@ function metaEntry(p: Projection, token: TokenV5, collection: CollectionV5): Dtc
     collection_id: token.collection_id,
     type: token.type,
     scopes: [...token.scopes],
+    ...(omitted ? {} : transformField(p, token)),
     ...(token.code_syntax ? { code_syntax: token.code_syntax } : {}),
     ...(token.publication ? { publication: token.publication } : {}),
     ...(omitted
@@ -763,6 +834,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
     collidedIds: new Set(),
     report: [],
     reportKeys: new Set(),
+    factsById: new Map(),
   };
   indexPaths(p);
   omitInexpressibleTypes(p);
@@ -919,16 +991,18 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
+    recordFact(p, token.id, mode, 'alias');
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const converted = projectedLiteral(p, token, value.value, (override) => {
+  const projected = projectedLiteral(p, token, value.value, (override) => {
     reportOnce(p, {
       code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
       message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
       details: { id: token.id, override, scopes: [...token.scopes] },
     });
   });
+  const converted = projected.converted;
   if ('omit' in converted) {
     reportOnce(p, {
       code: converted.omit, severity: 'warning', path, mode,
@@ -939,6 +1013,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     });
     return null;
   }
+  if (projected.transform !== null) recordFact(p, token.id, mode, projected.transform);
   return { $type: converted.$type, $value: converted.$value, ...description };
 }
 

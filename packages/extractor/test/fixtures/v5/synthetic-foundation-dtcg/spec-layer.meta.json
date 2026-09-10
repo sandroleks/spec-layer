@@ -17,7 +17,12 @@
     "type": "color",
     "scopes": [
       "FRAME_FILL"
-    ]
+    ],
+    "transform": {
+      "Dark": "alias",
+      "Light [ModeID:p-light-duplicate]": "alias",
+      "Light [ModeID:p-light]": "alias"
+    }
   },
   "Primitives.color.chain.middle": {
     "id": "VariableID:chain-middle",
@@ -25,7 +30,12 @@
     "type": "color",
     "scopes": [
       "FRAME_FILL"
-    ]
+    ],
+    "transform": {
+      "Dark": "alias",
+      "Light [ModeID:p-light-duplicate]": "alias",
+      "Light [ModeID:p-light]": "alias"
+    }
   },
   "Primitives.color.chain.terminal": {
     "id": "VariableID:chain-terminal",
@@ -33,7 +43,12 @@
     "type": "color",
     "scopes": [
       "FRAME_FILL"
-    ]
+    ],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light-duplicate]": "color",
+      "Light [ModeID:p-light]": "color"
+    }
   },
   "Primitives.color.exact.red": {
     "id": "VariableID:color-exact",
@@ -42,6 +57,11 @@
     "scopes": [
       "FRAME_FILL"
     ],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light-duplicate]": "color",
+      "Light [ModeID:p-light]": "color"
+    },
     "code_syntax": {
       "WEB": "--color-exact-red"
     }
@@ -53,25 +73,42 @@
     "scopes": [
       "FRAME_FILL",
       "SHAPE_FILL"
-    ]
+    ],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light-duplicate]": "color",
+      "Light [ModeID:p-light]": "color"
+    }
   },
   "Primitives.color.shared": {
     "id": "VariableID:local-collision",
     "collection_id": "CollectionID:primitives",
     "type": "color",
-    "scopes": []
+    "scopes": [],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light]": "color"
+    }
   },
   "Primitives.cycle.a": {
     "id": "VariableID:cycle-a",
     "collection_id": "CollectionID:primitives",
     "type": "color",
-    "scopes": []
+    "scopes": [],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light-duplicate]": "color"
+    }
   },
   "Primitives.cycle.b": {
     "id": "VariableID:cycle-b",
     "collection_id": "CollectionID:primitives",
     "type": "color",
-    "scopes": []
+    "scopes": [],
+    "transform": {
+      "Dark": "color",
+      "Light [ModeID:p-light-duplicate]": "color"
+    }
   },
   "Primitives.effect.shadow.blur": {
     "id": "VariableID:shadow-blur",
@@ -80,6 +117,11 @@
     "scopes": [
       "EFFECT_FLOAT"
     ],
+    "transform": {
+      "Dark": "dimension",
+      "Light [ModeID:p-light-duplicate]": "dimension",
+      "Light [ModeID:p-light]": "dimension"
+    },
     "code_syntax": {
       "WEB": "--effect-shadow-blur"
     },
@@ -94,7 +136,12 @@
     "type": "number",
     "scopes": [
       "ALL_SCOPES"
-    ]
+    ],
+    "transform": {
+      "Dark": "number",
+      "Light [ModeID:p-light-duplicate]": "number",
+      "Light [ModeID:p-light]": "number"
+    }
   },
   "Primitives.spacing.gap": {
     "id": "VariableID:gap",
@@ -103,6 +150,11 @@
     "scopes": [
       "GAP"
     ],
+    "transform": {
+      "Dark": "dimension",
+      "Light [ModeID:p-light-duplicate]": "dimension",
+      "Light [ModeID:p-light]": "dimension"
+    },
     "code_syntax": {
       "WEB": "--spacing-gap"
     }
@@ -113,7 +165,12 @@
     "type": "font_family",
     "scopes": [
       "FONT_FAMILY"
-    ]
+    ],
+    "transform": {
+      "Dark": "font-family",
+      "Light [ModeID:p-light-duplicate]": "font-family",
+      "Light [ModeID:p-light]": "font-family"
+    }
   },
   "Primitives.typography.weight.strong": {
     "id": "VariableID:font-weight",
@@ -121,7 +178,12 @@
     "type": "number",
     "scopes": [
       "FONT_WEIGHT"
-    ]
+    ],
+    "transform": {
+      "Dark": "font-weight",
+      "Light [ModeID:p-light-duplicate]": "font-weight",
+      "Light [ModeID:p-light]": "font-weight"
+    }
   },
   "Semantic.color.legacy.readable": {
     "id": "VariableID:external-owner-readable",
@@ -146,6 +208,10 @@
     "scopes": [
       "FRAME_FILL"
     ],
+    "transform": {
+      "Dark": "alias",
+      "Light": "color"
+    },
     "code_syntax": {
       "WEB": "--color-surface-primary"
     }

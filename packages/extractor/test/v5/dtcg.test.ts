@@ -162,6 +162,9 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(out.meta['Primitives.color.exact.red']).toEqual({
       id: 'VariableID:color-exact', collection_id: 'CollectionID:primitives', type: 'color',
       scopes: ['FRAME_FILL'], code_syntax: { WEB: '--color-exact-red' },
+      transform: {
+        Dark: 'color', 'Light [ModeID:p-light-duplicate]': 'color', 'Light [ModeID:p-light]': 'color',
+      },
     });
     const boolToken = syntheticArtifact().tokens.find((t) => t.type === 'boolean');
     if (!boolToken) throw new Error('fixture lost its boolean token');
@@ -681,5 +684,42 @@ describe('config_hash', () => {
 
   it('changes when a unit override changes', () => {
     expect(hashOf({ units: { 'A/one': 'px' } })).not.toBe(hashOf({ units: { 'A/one': 'rem' } }));
+  });
+});
+
+describe('meta transform', () => {
+  const metaOf = (options?: Parameters<typeof foundationDtcg>[1]) =>
+    foundationDtcg(syntheticArtifact(), options).meta;
+
+  it('names alias for a token written as a reference', () => {
+    const meta = metaOf();
+    const aliasEntry = Object.entries(meta)
+      .find(([, e]) => e.transform && Object.values(e.transform).includes('alias'));
+    expect(aliasEntry).toBeDefined();
+  });
+
+  it('names the literal rule for a colour token', () => {
+    const meta = metaOf();
+    const transforms = Object.values(meta)
+      .flatMap((e) => Object.values(e.transform ?? {}));
+    expect(transforms).toContain('color');
+  });
+
+  it('keys transform by mode label', () => {
+    const meta = metaOf();
+    for (const entry of Object.values(meta)) {
+      if (!entry.transform) continue;
+      for (const key of Object.keys(entry.transform)) {
+        expect(typeof key).toBe('string');
+        expect(key.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('leaves an omitted token without a transform', () => {
+    const meta = metaOf();
+    for (const entry of Object.values(meta)) {
+      if (entry.omitted) expect(entry.transform).toBeUndefined();
+    }
   });
 });
