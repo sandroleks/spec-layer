@@ -73,7 +73,7 @@ const badSource: DocSource = {
   // fail the message send.
   node: null as unknown as SerializedNode,
   fileKey: 'f1',
-  config: { sections: [], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [] },
+  config: { sections: [], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [], includeHidden: false },
   prose: null,
 };
 
@@ -82,7 +82,7 @@ const goodSource: DocSource = {
   node: buttonNode(),
   fileKey: 'f1',
   // aiEnabled is on, and Update still must not call the model.
-  config: { sections: ['definition', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [] },
+  config: { sections: ['definition', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [], includeHidden: false },
   prose,
 };
 

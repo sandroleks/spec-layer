@@ -385,6 +385,8 @@ async function assembleDocFor(
     aiEnabled: state.aiEnabled,
     anatomyView: 'diagram',
     measureViews: state.measureViews,
+    // Placeholder until Task 10 wires includeHidden state through the UI.
+    includeHidden: false,
   };
   return { model, config };
 }

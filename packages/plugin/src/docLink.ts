@@ -213,6 +213,15 @@ export interface DocConfig {
   aiEnabled: boolean;
   anatomyView: 'diagram' | 'table' | 'both';
   measureViews: MeasureView[];
+  /**
+   * Draw the parts a boolean component property hides by default, and set
+   * those properties to true on every placed instance. Defaults to FALSE on
+   * any link written before this existed, which keeps an existing doc's
+   * rendered output and its drift hash identical after an upgrade. Unlike
+   * measureViews, this one DOES move specContentHash when on, because the
+   * revealed parts are then rendered (see SpecHashOptions in the extractor).
+   */
+  includeHidden: boolean;
 }
 
 /** Everything needed to faithfully regenerate a component doc on Update. */
@@ -411,6 +420,7 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
     measureViews: Array.isArray(c.measureViews)
       ? c.measureViews.filter((x): x is MeasureView => x === 'size' || x === 'padding' || x === 'spacing')
       : [],
+    includeHidden: c.includeHidden === true,
   };
   // Normalize the legacy `specVersion` forward so every consumer reads one
   // field. A pre-rename doc carries '0.1'/'0.2', which never equals an
