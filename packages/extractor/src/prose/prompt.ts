@@ -327,9 +327,56 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: Set<ProseKe
  * the rule even when the model slips.
  */
 function normalizeProseText(value: string): string {
-  return value
-    .replace(/[ \t]*—[ \t]*/g, ', ')
-    .replace(/[ \t]+–[ \t]+/g, ', ');
+  return replaceAround(
+    replaceAround(value, '—', ', ', false),
+    '–', ', ', true,
+  );
+}
+
+/** One character's worth of `[ \t]`. Horizontal only, so a line break between
+ *  bullets survives, which is the whole reason the classes are not `\s`. */
+const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
+
+/**
+ * Replace every `separator`, together with the horizontal whitespace hugging
+ * it, with `replacement`. `requireSpace` demands at least one space or tab on
+ * BOTH sides, which is the only thing that distinguished the en-dash rule
+ * (`[ \t]+–[ \t]+`) from the em-dash one (`[ \t]*—[ \t]*`).
+ *
+ * One left-to-right pass, because both of those regexes are quadratic on a run
+ * of horizontal whitespace that never reaches a dash: 40k spaces measured 2.5
+ * seconds for the en-dash rule. This runs on model output, which is the one
+ * input here nobody in this repository controls.
+ *
+ * `from` is the boundary of what a previous replacement already consumed, and
+ * the left scan will not cross it. That is what `lastIndex` did for the `g`
+ * regexes, and it is what makes two adjacent dashes collapse the same way.
+ */
+function replaceAround(
+  value: string, separator: string, replacement: string, requireSpace: boolean,
+): string {
+  let out = '';
+  let from = 0;
+  let cursor = 0;
+  for (;;) {
+    const at = value.indexOf(separator, cursor);
+    if (at === -1) break;
+    let left = at;
+    while (left > from && isHorizontalSpace(value[left - 1])) left--;
+    const afterSeparator = at + separator.length;
+    let right = afterSeparator;
+    while (right < value.length && isHorizontalSpace(value[right])) right++;
+    if (requireSpace && (left === at || right === afterSeparator)) {
+      // The `+` on one side saw nothing, so the pattern does not match here.
+      // Leave this separator and its neighbours exactly as they are.
+      cursor = afterSeparator;
+      continue;
+    }
+    out += value.slice(from, left) + replacement;
+    from = right;
+    cursor = right;
+  }
+  return out + value.slice(from);
 }
 
 /**
@@ -395,6 +442,38 @@ const REQUIREDABLE_KEYS: ProseKey[] = [
 ];
 
 /**
+ * The contents of the first ```json … ``` fence, or null when the text carries
+ * no closed fence.
+ *
+ * Replaces `text.match(/```(?:json)?\s*([\s\S]*?)```/)`, whose greedy `\s*`
+ * ahead of a lazy `[\s\S]*?` is quadratic on an opened fence followed by a
+ * long whitespace run that never closes: the engine gives back one whitespace
+ * character at a time and rescans the rest for a closing fence each time.
+ * This is model output, so an unclosed fence is a thing that actually happens.
+ *
+ * Deliberately the same answer the regex gave, position for position. Leftmost
+ * opener, because the pattern was unanchored; `json` consumed when present,
+ * because `(?:json)?` is greedy; the whitespace run consumed whole, because
+ * `\s*` is greedy and is tried at its longest first; and the content ending at
+ * the NEXT fence, because `[\s\S]*?` is lazy. A later opener can never win
+ * where the first one loses: the first one only loses when no fence follows it
+ * at all, and `json` and whitespace contain no backticks to hide one behind.
+ */
+function fencedBlock(text: string): string | null {
+  const open = text.indexOf('```');
+  if (open === -1) return null;
+  let start = open + 3;
+  if (text.startsWith('json', start)) start += 4;
+  while (start < text.length && FENCE_WHITESPACE.test(text[start])) start++;
+  const close = text.indexOf('```', start);
+  return close === -1 ? null : text.slice(start, close);
+}
+
+/** One character's worth of `\s`, for the same reason `cleanPartName` keeps
+ *  its own: a per-character test cannot be made to backtrack. */
+const FENCE_WHITESPACE = /\s/;
+
+/**
  * Strip optional ```json … ``` fences, trim, parse, and validate the shape.
  *
  * `requested` makes parsing selection-aware: only requested keys are required,
@@ -404,8 +483,8 @@ const REQUIREDABLE_KEYS: ProseKey[] = [
  */
 export function parseProseResponse(text: string, requested?: Set<ProseKey>): ProseDrafts {
   // Strip code fences — also handles preamble prose before the fence block
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const cleaned = fenced ? fenced[1].trim() : text.trim();
+  const fenced = fencedBlock(text);
+  const cleaned = fenced !== null ? fenced.trim() : text.trim();
 
   let parsed: unknown;
   try {

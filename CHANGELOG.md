@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Security
+
+- **Four quadratic regexes replaced with linear scans**, closing CodeQL's four
+  open `js/polynomial-redos` alerts (one high). `cleanPartName`'s `#+\s*$`
+  took 6.7 seconds on 40k hashes; `stateBaseName`'s `\s*\([^)]*\)\s*$`, the
+  prose dash rules' `[ \t]*—[ \t]*` and `[ \t]+–[ \t]+`, and the prose
+  fence's `` ```(?:json)?\s*([\s\S]*?)``` `` all quadrupled on every
+  doubling of their input. Two of them run on model output through the proxy,
+  which is the one input here nobody in this repository controls, so an
+  unclosed fence or a long whitespace run could hang the plugin's UI thread.
+  Behaviour is unchanged: `packages/extractor/test/redos.test.ts` keeps the old
+  regexes as executable oracles and pins each rewrite against them over
+  hand-picked shapes and ~12,000 fuzzed strings, which matters because
+  `cleanPartName` and `stateBaseName` both reach `specContentHash`. No hash
+  moves and `EXTRACTOR_VERSION` is unchanged.
+
 ### Added
 
 - **Hidden elements in component docs.** A layer that a boolean component
