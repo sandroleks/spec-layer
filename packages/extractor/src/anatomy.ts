@@ -180,3 +180,18 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   addParts(children, 0, parentPath, inherited);
   return { parts, related: [...related], componentId: def.id };
 }
+
+export interface AnatomyOptions {
+  /** Include parts marked `hiddenByDefault`. The canvas model and the canvas
+   *  hash pass a doc's `includeHidden` config; the export always passes true. */
+  includeHidden: boolean;
+}
+
+/**
+ * The one predicate every canvas consumer and the canvas hash filter anatomy
+ * through, so they cannot disagree about which parts a doc draws. Returns the
+ * same array when nothing is filtered, so callers can rely on identity.
+ */
+export function anatomyFor(parts: AnatomyPart[], options: AnatomyOptions): AnatomyPart[] {
+  return options.includeHidden ? parts : parts.filter((p) => !p.hiddenByDefault);
+}

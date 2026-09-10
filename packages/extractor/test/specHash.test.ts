@@ -128,3 +128,26 @@ describe('canonicalEqual', () => {
     expect(canonicalEqual(null, undefined)).toBe(false);
   });
 });
+
+describe('specContentHash and parts hidden by default', () => {
+  const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip-hidden.json', 'utf8'));
+  const spec = extract(node, { figmaFile: 'FILE1' });
+
+  it('excludes property-bound hidden parts unless asked, so a doc with the toggle off hashes as before', () => {
+    expect(specHashProjection(spec).anatomy.map((p) => p.name)).toEqual(['Label']);
+    expect(specHashProjection(spec, {})).toEqual(specHashProjection(spec));
+    expect(specHashProjection(spec, { includeHidden: false })).toEqual(specHashProjection(spec));
+    expect(specContentHash(spec)).toBe(contentHash(specHashProjection(spec)));
+  });
+
+  it('includes the revealed depth-0 parts when asked, and nothing deeper', () => {
+    const projection = specHashProjection(spec, { includeHidden: true });
+    expect(projection.anatomy.map((p) => p.name)).toEqual(['Icon left', 'Label', 'Icon right']);
+    expect(specContentHash(spec, { includeHidden: true })).toBe(contentHash(projection));
+    expect(specContentHash(spec, { includeHidden: true })).not.toBe(specContentHash(spec));
+  });
+
+  it('leaves related out of the toggle: it is computed from parts shown by default', () => {
+    expect(specHashProjection(spec, { includeHidden: true }).related).toEqual(specHashProjection(spec).related);
+  });
+});

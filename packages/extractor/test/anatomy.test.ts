@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractAnatomy, defaultVariant } from '../src/anatomy';
+import { extractAnatomy, defaultVariant, anatomyFor } from '../src/anatomy';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
 import chipHidden from './fixtures/chip-hidden.json';
@@ -284,5 +284,17 @@ describe('extractAnatomy — hidden parts a boolean property controls', () => {
     expect(extractAnatomy(root).parts.map((p) => [p.name, p.depth, p.shownBy])).toEqual([
       ['title', 0, 'Show content'], ['body', 0, 'Show content'],
     ]);
+  });
+});
+
+describe('anatomyFor', () => {
+  const parts = extractAnatomy(chipHidden as SerializedNode).parts;
+
+  it('drops every part marked hidden by default, including inherited children, when not including hidden', () => {
+    expect(anatomyFor(parts, { includeHidden: false }).map((p) => p.name)).toEqual(['Label']);
+  });
+
+  it('returns the full list unchanged when including hidden', () => {
+    expect(anatomyFor(parts, { includeHidden: true })).toBe(parts);
   });
 });
