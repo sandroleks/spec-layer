@@ -736,7 +736,9 @@ async function buildAnatomyDiagram(
     }
     if (!p || !('absoluteBoundingBox' in p)) continue;
     const pb = (p as SceneNode).absoluteBoundingBox;
-    if (!pb || pb.width <= 0 || pb.height <= 0) continue;
+    // Only the null guard, exactly as before this feature: a zero-size part
+    // still gets the pin it always got, so the option off draws what it drew.
+    if (!pb) continue;
     pins.push({
       n: part.n,
       nx: clamp01((pb.x + pb.width / 2 - ib.x) / ib.width),
