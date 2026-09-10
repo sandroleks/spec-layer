@@ -644,7 +644,10 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
 
   const desc = part.description?.trim();
   const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
-  const chars = desc ? `${part.name}: ${desc}` : `${part.name}${nestedNote}`;
+  // A revealed part says which property shows it, after the description or the
+  // nested note, so the reader knows it is not on by default.
+  const shownNote = part.shownBy ? `  ·  Shown when ${part.shownBy} is true` : '';
+  const chars = desc ? `${part.name}: ${desc}${shownNote}` : `${part.name}${nestedNote}${shownNote}`;
   const text = makeText(chars, 'Regular', 15, palette.body, 150);
   row.appendChild(text);
   text.layoutSizingHorizontal = 'FILL';

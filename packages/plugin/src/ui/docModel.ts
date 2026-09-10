@@ -1,7 +1,7 @@
 import type { IntermediateSpec, ProseDrafts, ProseKey, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix, stateAxisProps,
+  detectStateMatrix, stateAxisProps, anatomyFor,
 } from '@spec-layer/extractor';
 
 export type SectionId =
@@ -109,6 +109,9 @@ export interface AnatomyPartBlock {
   tokens: string[];
   type: string;
   description?: string; // AI-supplied role text, matched by part name (optional)
+  /** Present only on a part hidden by default: the boolean property that shows
+   *  it. The legend reads "Shown when <shownBy> is true". */
+  shownBy?: string;
 }
 
 /** Which measurement lens a measure mini-diagram renders. Each selected view
@@ -121,6 +124,8 @@ export type MeasureView = 'size' | 'padding' | 'spacing';
 export interface DocModelOptions {
   anatomyView?: 'diagram' | 'table' | 'both';
   measureViews?: MeasureView[];
+  /** Draw the parts a boolean property hides by default (DocConfig.includeHidden). */
+  includeHidden?: boolean;
 }
 
 export type SectionBlock =
@@ -146,7 +151,13 @@ export type SectionBlock =
       note: string | null;                     // held-axis note, or null
     };
 
-export interface DocFrameModel { componentName: string; sections: SectionBlock[] }
+export interface DocFrameModel {
+  componentName: string;
+  sections: SectionBlock[];
+  /** Present and true only when the doc reveals hidden-by-default parts; the
+   *  frame builder then sets every boolean property on each placed instance. */
+  includeHidden?: true;
+}
 
 export interface DocGroup { id: GroupId; label: string; sections: SectionBlock[] }
 
@@ -322,7 +333,8 @@ function buildSection(
       // the component's node id so geometry can be resolved live on canvas.
       // Falls back to a plain "None." bullet when there are no parts or no
       // component to screenshot.
-      if (spec.anatomy.length && spec.anatomyComponentId) {
+      const included = anatomyFor(spec.anatomy, { includeHidden: options?.includeHidden === true });
+      if (included.length && spec.anatomyComponentId) {
         // AI role text is matched back to each extracted part by name
         // (case-insensitive, trimmed); first match for a name wins.
         const descByName = new Map<string, string>();
@@ -330,7 +342,7 @@ function buildSection(
           const key = p.name.trim().toLowerCase();
           if (!descByName.has(key)) descByName.set(key, p.description);
         }
-        const parts = spec.anatomy.map((a, i) => ({
+        const parts = included.map((a, i) => ({
           n: i + 1,
           name: a.name,
           nested: a.nested,
@@ -339,6 +351,7 @@ function buildSection(
           component: a.component,
           tokens: [...new Set(spec.tokens.filter((t) => t.part === a.name).map((t) => t.name))],
           type: a.type,
+          shownBy: a.shownBy,
           description: descByName.get(a.name.trim().toLowerCase()),
         }));
         return {
@@ -616,5 +629,9 @@ export function buildDocModel(
     const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
     if (block) out.push(block);
   }
-  return { componentName: spec.name, sections: out };
+  return {
+    componentName: spec.name,
+    sections: out,
+    ...(options?.includeHidden ? { includeHidden: true as const } : {}),
+  };
 }
