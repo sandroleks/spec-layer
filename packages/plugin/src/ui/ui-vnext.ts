@@ -51,6 +51,7 @@ import {
   applyGroupBulk,
   applyVariantBulk,
   componentDocSelection,
+  defaultIncludeHidden,
   sectionGroups,
   unavailableSections,
   variantBulkState,
@@ -2196,9 +2197,12 @@ function applySelection(msg: SelectionMessage): void {
       if (seq !== selectionSeq || state.currentNode?.id !== node.id) return;
       facts = componentFacts(state.currentSpec, node.name);
       selection.variantIds = new Set(facts.defaultVariantIds);
-      // Per component: a fresh selection starts with hidden parts off.
-      selection.includeHidden = false;
-      state.includeHidden = false;
+      // Per component, and only once facts exist: on when this component has
+      // parts a boolean property hides, off when it has none. Seeded here
+      // rather than in createComponentSelection because that runs before
+      // extraction, when there is nothing to reveal.
+      selection.includeHidden = defaultIncludeHidden(facts);
+      state.includeHidden = selection.includeHidden;
       if (facts.hasStates === true) selection.sections.add('states');
       if (facts.hasStates === false) selection.sections.delete('states');
       screen = { kind: 'ready', componentName: node.name };

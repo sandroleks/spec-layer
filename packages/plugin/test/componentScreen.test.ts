@@ -5,6 +5,7 @@ import {
   applyVariantBulk,
   componentDocSelection,
   DEFAULT_OFF_SECTIONS,
+  defaultIncludeHidden,
   defaultSections,
   includedLabel,
   sectionGroups,
@@ -213,6 +214,20 @@ describe('componentDocSelection', () => {
   });
 });
 
+describe('defaultIncludeHidden', () => {
+  it('is on when the component has parts a boolean property hides', () => {
+    expect(defaultIncludeHidden(facts({ hasHiddenParts: true }))).toBe(true);
+  });
+
+  it('is off when the component has none, so the flag claims nothing', () => {
+    expect(defaultIncludeHidden(facts({ hasHiddenParts: false }))).toBe(false);
+  });
+
+  it('is off before extraction finishes, when there are no facts to read', () => {
+    expect(defaultIncludeHidden(NO_FACTS)).toBe(false);
+  });
+});
+
 describe('variantCountLabel', () => {
   it('reads "{selected} of {total} selected"', () => {
     expect(variantCountLabel(1, 2)).toBe('1 of 2 selected');
@@ -355,6 +370,14 @@ describe('component screen markup', () => {
     selection.includeHidden = true;
     expect(componentScrollMarkup(READY, selection, facts({ hasStates: true, hasHiddenParts: true })))
       .toContain('data-include-hidden checked');
+  });
+
+  it('renders unchecked from createComponentSelection alone, before facts seed it', () => {
+    // createComponentSelection runs before extraction, so it cannot know
+    // whether this component has hidden parts. defaultIncludeHidden seeds the
+    // real value when facts arrive; this only fixes the pre-facts state, so a
+    // switch is never drawn checked for a component that has nothing to reveal.
+    expect(createComponentSelection(true).includeHidden).toBe(false);
   });
 
   it('renders Anatomy without display subsettings', () => {

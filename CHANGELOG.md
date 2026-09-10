@@ -94,6 +94,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **"Document hidden elements" now starts on** for a component that has such
+  layers, and stays off for one that does not. A layer a boolean property
+  reveals is part of the component someone is trying to understand, so leaving
+  it out by default made the common case the one that needed a click.
+  `defaultIncludeHidden` is the one source for that default, seeded once
+  extraction has produced facts, so a fresh screen never draws the switch on
+  for a component with nothing to reveal. Documents generated before this
+  release are untouched: Update keeps each doc's stored choice.
 - CI no longer builds the website; `verify` is `npm run check:ci` alone. The
   job id is unchanged, so the required status check on `main` still applies.
 - `npm run check:nul` scans `packages/` and `scripts/`. The prose trees it also
