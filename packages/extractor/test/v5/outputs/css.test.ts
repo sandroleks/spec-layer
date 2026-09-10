@@ -11,6 +11,7 @@ const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc', platform: 'we
 const EXTENSION: DtcgDocumentExtension = {
   schema_version: '5.1.0',
   content_hash: 'sha256:abc',
+  config_hash: 'sha256:def',
   source: { provider: 'figma' },
   completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },
   code_syntax: {},

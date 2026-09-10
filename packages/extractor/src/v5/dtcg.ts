@@ -7,7 +7,8 @@
  * feeds a hash, never mutates its input, and anything the format cannot state
  * is omitted and written to the report rather than approximated.
  */
-import { SCHEMA_VERSION, type FoundationArtifactV5 } from './canonical';
+import { sha256 } from 'js-sha256';
+import { SCHEMA_VERSION, type FoundationArtifactV5, canonicalJson } from './canonical';
 import { compareCodeUnits } from './diagnostics';
 import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
@@ -810,6 +811,7 @@ export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOpti
   const extension: DtcgDocumentExtension = {
     schema_version: SCHEMA_VERSION,
     content_hash: artifact.spec_layer.export.content_hash,
+    config_hash: `sha256:${sha256(canonicalJson(p.options))}`,
     source: {
       provider: 'figma',
       ...(typeof sourceFileName === 'string' && sourceFileName.length > 0
@@ -947,6 +949,12 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
 export interface DtcgDocumentExtension {
   schema_version: string;
   content_hash: string;
+  /** A digest of the projection options that produced this document: the
+   *  value style and the unit overrides. Descriptive only. It answers whether
+   *  an output changed because the design changed or because the repository
+   *  changed its config, and it must never feed a canvas hash or an artifact
+   *  identity. */
+  config_hash: string;
   source: { provider: 'figma'; file_name?: string };
   completeness: FoundationArtifactV5['completeness'];
   code_syntax: Record<string, Record<string, string>>;

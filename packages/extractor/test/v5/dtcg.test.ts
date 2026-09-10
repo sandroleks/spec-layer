@@ -656,3 +656,30 @@ describe('the document extension', () => {
       .toEqual(clipboard.$extensions['com.spec-layer']);
   });
 });
+
+describe('config_hash', () => {
+  const hashOf = (options: Parameters<typeof foundationDtcg>[1]) =>
+    foundationDtcg(syntheticArtifact(), options).extension.config_hash;
+
+  it('is a sha256 digest', () => {
+    expect(hashOf({})).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('ignores the key order of the unit overrides', () => {
+    const a = hashOf({ units: { 'A/one': 'px', 'B/two': 'rem' } });
+    const b = hashOf({ units: { 'B/two': 'rem', 'A/one': 'px' } });
+    expect(a).toBe(b);
+  });
+
+  it('treats an omitted value style as the standard style', () => {
+    expect(hashOf({})).toBe(hashOf({ values: 'standard' }));
+  });
+
+  it('changes when the value style changes', () => {
+    expect(hashOf({ values: 'legacy' })).not.toBe(hashOf({ values: 'standard' }));
+  });
+
+  it('changes when a unit override changes', () => {
+    expect(hashOf({ units: { 'A/one': 'px' } })).not.toBe(hashOf({ units: { 'A/one': 'rem' } }));
+  });
+});

@@ -72,6 +72,7 @@
     "com.spec-layer": {
       "schema_version": "5.1.0",
       "content_hash": "sha256:6672f17bd07643b2f27bb9b7e955fdcaf68948137a0d10a2711c45d5eb0153a8",
+      "config_hash": "sha256:c68f92d8722277d28acec2f2fdb0a1a1556a2fc51e759f0ea17029daf8e98adf",
       "source": {
         "provider": "figma",
         "file_name": "Synthetic Direct Foundation"
