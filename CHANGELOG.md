@@ -13,7 +13,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   The YAML brief and the Component Context v5 artifact always include such
   parts, each carrying `shown_by`, the property that reveals it. Component
   Context schema `5.2.0` adds `shown_by` as an optional string on anatomy
-  nodes; the schema URL is unchanged. This moves the semantic content hash of
+  nodes; the schema URL is unchanged. The envelope now requires
+  `schema_version` `5.2.0`, so once the site redeploys, an artifact still
+  stamped `5.1.0` no longer validates against the published schema. This
+  moves the semantic content hash of
   every component artifact that has such parts, and nothing else: hidden
   layers with no property binding stay excluded, canvas drift hashes are
   unchanged, and `EXTRACTOR_VERSION` is unchanged.
@@ -27,10 +30,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   drift hash are identical. Update keeps the stored choice. Anatomy pins are
   now measured on the placed instance rather than the source component, which
   is what makes a revealed part pinnable. The per-variant token pane preview
-  in the Variants section also reveals when the toggle is on. The
-  Measurements diagram measures its size rails, padding bands, and spacing
-  from the revealed instance rather than the source component, so the overlay
-  matches what is drawn.
+  in the Variants section also reveals when the toggle is on. When the option
+  is on, the Measurements diagram measures its size rails, padding bands, and
+  spacing from the revealed instance rather than the source component, so the
+  overlay matches what is drawn.
 
 ### Removed
 
