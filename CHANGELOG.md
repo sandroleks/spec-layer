@@ -50,6 +50,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   just as legitimately unitless, because DTCG's `$type` alone cannot tell the
   two apart.
 
+- **The generated CSS file itself now says when it holds unusable properties.**
+  `unitless_number` above only reaches `web-css.report.json`, a file nothing
+  opens: the developer and the coding agent both open the CSS file, not the
+  report. A file that declares at least one such property now gets two extra
+  header lines naming the count and pointing at the report or
+  `speclayer.json`; a file with none keeps its original two-line header
+  unchanged. The count is per file, not per token: one token present in three
+  modes is written to three separate files and is counted once in each,
+  matching what a reader of that one file can actually count.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

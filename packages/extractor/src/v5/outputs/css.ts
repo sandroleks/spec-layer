@@ -419,9 +419,23 @@ function shadowDecl(ctx: Ctx, leaf: Leaf, name: string): string | null {
 // rule; a line break would split it.
 const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').replace(/[\r\n]+/g, ' ');
 
-function headerText(header: OutputHeader, nameCase: NameCase): string {
-  return `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.\n`
-    + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
+/**
+ * `unitlessCount` is the number of distinct token paths declared in this
+ * particular file that `cssValue` reported as `unitless_number`; a file that
+ * declares none keeps the original two-line header byte-for-byte.
+ */
+function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0): string {
+  const lines = [
+    `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.`,
+    '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.',
+  ];
+  if (unitlessCount > 0) {
+    lines.push(
+      `   ${unitlessCount} properties in this file have no unit, because the Figma variable states none.`,
+      '   CSS cannot use them as a length. See the output report, or declare units in speclayer.json.',
+    );
+  }
+  return `${lines.join('\n')} */`;
 }
 
 interface Block { selector: string; comment: string; decls: string[] }
@@ -433,6 +447,8 @@ interface EmitResult {
   declared: Set<string>;
   /** The DTCG source file that first declared each path, in source order. */
   firstFile: Map<string, string>;
+  /** DTCG source file -> distinct token paths declared in it that `cssValue` reported `unitless_number` for. */
+  unitlessByFile: Map<string, Set<string>>;
 }
 
 /**
@@ -449,6 +465,7 @@ function emitPass(
   const declared = new Set<string>();
   const firstFile = new Map<string, string>();
   const blocks = new Map<string, Block>();
+  const unitlessByFile = new Map<string, Set<string>>();
   for (const s of sources) {
     const perCollection = modes?.[s.collection];
     const selector = s.isDefault ? root : (perCollection ?? template)
@@ -469,8 +486,14 @@ function emitPass(
           const d = shadowDecl(ctx, leaf, name);
           if (d !== null) { decls.push(d); declared.add(leaf.path); declaredHere.push(leaf.path); }
         } else {
+          const before = entries.length;
           const v = cssValue(ctx, leaf.type, leaf.value);
           if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); declaredHere.push(leaf.path); }
+          if (entries.length > before && entries[entries.length - 1].code === 'unitless_number') {
+            const set = unitlessByFile.get(s.file) ?? new Set<string>();
+            set.add(leaf.path);
+            unitlessByFile.set(s.file, set);
+          }
         }
       }
     }
@@ -481,7 +504,7 @@ function emitPass(
     if (existing) existing.decls.push(...decls);
     else blocks.set(s.file, { selector, comment, decls });
   }
-  return { blocks, entries, declared, firstFile };
+  return { blocks, entries, declared, firstFile, unitlessByFile };
 }
 
 export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
@@ -567,14 +590,16 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     }
   }
 
-  const head = headerText(header, nameCase);
   const files: Record<string, string> = {};
   const imports: string[] = [];
   for (const [source, block] of pass.blocks) {
     const name = fileNames.get(source) as string;
+    const head = headerText(header, nameCase, pass.unitlessByFile.get(source)?.size ?? 0);
     files[name] = `${head}\n\n${block.selector} {\n  ${block.comment}\n${block.decls.map((d) => `  ${d}`).join('\n')}\n}\n`;
     imports.push(block.comment, `@import "./${name}";`);
   }
-  if (imports.length > 0) files[CSS_INDEX_FILE] = `${head}\n\n${imports.join('\n')}\n`;
+  // index.css only imports; it never declares a property itself, so it never
+  // carries the unitless note.
+  if (imports.length > 0) files[CSS_INDEX_FILE] = `${headerText(header, nameCase)}\n\n${imports.join('\n')}\n`;
   return { files, map, report: sortReport(entries) };
 }

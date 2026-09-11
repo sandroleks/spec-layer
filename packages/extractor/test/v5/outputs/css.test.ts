@@ -581,6 +581,91 @@ describe('cssOutput reports unitless numbers', () => {
     expect(unitless.length).toBeGreaterThan(0);
     expect(unitless.every((r) => r.path === 'Foundation.radius.300')).toBe(true);
   });
+
+  it('notes the unitless properties in the header of the file that declares them', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { spacing: { 400: { $type: 'number', $value: 16 } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {
+        'Foundation.spacing.400': { id: 'v1', collection_id: 'c1', type: 'number', scopes: [], code_syntax: { WEB: 'spacing-400' } },
+      },
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+    // This fixture declares exactly one unitless property (Foundation.spacing.400);
+    // the count in the header must match, not just be present.
+    expect(out.files['foundation.css']).toBe(
+      `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
+      + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.\n'
+      + '   1 properties in this file have no unit, because the Figma variable states none.\n'
+      + '   CSS cannot use them as a length. See the output report, or declare units in speclayer.json. */\n\n'
+      + ':root {\n  /* Foundation */\n  --spacing-400: 16;\n}\n',
+    );
+    // index.css never declares a property itself, so it never carries the note.
+    expect(out.files[CSS_INDEX_FILE]).not.toContain('have no unit');
+  });
+
+  it('counts every distinct unitless token path in the file, not just whether one exists', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: {
+            spacing: { 400: { $type: 'number', $value: 16 }, 800: { $type: 'number', $value: 32 } },
+          },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+    expect(out.files['foundation.css']).toContain(
+      '   2 properties in this file have no unit, because the Figma variable states none.\n'
+      + '   CSS cannot use them as a length. See the output report, or declare units in speclayer.json.',
+    );
+  });
+
+  it('leaves the header alone when every value in the file carries a unit', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { typography: { 'font-size': { 'fs-300': { $type: 'dimension', $value: { value: 14, unit: 'px' } } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+    expect(out.files['foundation.css']).toBe(
+      `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
+      + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */\n\n'
+      + ':root {\n  /* Foundation */\n  --foundation-typography-font-size-fs-300: 14px;\n}\n',
+    );
+    expect(out.files['foundation.css']).not.toContain('have no unit');
+  });
 });
 
 describe('dtcgSlug', () => {
