@@ -11,6 +11,7 @@ import { visibleDirProblem, writeVisibleDir } from './visibleDir';
 import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
+import { cliVersion } from './version';
 
 export function slugify(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -42,6 +43,19 @@ export interface Manifest {
   bundleHash: string;
   pluginVersion: string | null;
   extractorVersion: string;
+  /**
+   * The CLI that projected this pull. Absent in every manifest written before
+   * 0.8.0, and part of the freshness comparison for a reason the bundle hash
+   * cannot cover: the projection lives here, not in the bundle, so a CLI
+   * upgrade changes what a pull writes from bytes that did not move. A
+   * repository on a new CLI whose manifest carries a different version (or
+   * none) must re-project rather than be told it is already up to date.
+   *
+   * `extractorVersion` above answers the other half and needs no comparison of
+   * its own: it is the publisher's, it travels inside the bundle, and a bump
+   * moves the bundle hash, which the `ETag` already catches.
+   */
+  cliVersion?: string;
   /** Absent in manifests written by CLI 0.1.0, which always wrote everything. */
   selection?: Selection;
   /**
@@ -226,6 +240,7 @@ export function writeBundleFiles(opts: {
     const manifest: Manifest = {
       libraryId: opts.libraryId, publishedAt: opts.publishedAt, bundleHash: opts.bundleHash,
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
+      cliVersion: cliVersion(),
       selection, componentSpecsDir, artifacts,
       ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
       ...(opts.platforms && opts.platforms.length > 0 ? { platforms: opts.platforms } : {}),

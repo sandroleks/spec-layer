@@ -38,7 +38,7 @@ export interface PullSummary {
     sets: string[];
     modifiers: Array<{ name: string; contexts: string[]; default: string | null }>;
     tokenFiles: string[];
-    /** Tokens exported as `$type: "number"` whose Figma scopes state nothing at all -- not a length, and not `OPACITY`/`FONT_WEIGHT` either (those already state a unit, namely "none", and are excluded). */
+    /** Distinct tokens exported as `$type: "number"` whose Figma scopes state nothing at all -- not a length, and not `OPACITY`/`FONT_WEIGHT` either (those already state a unit, namely "none", and are excluded). Deduplicated by DTCG path across every mode file, so a token in a two-mode collection counts once, which is what "N tokens" has to mean to a reader about to go narrow N variables in Figma. */
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
     /** Whether `<outDir>/fonts.json` could be read: 'ok' (parsed as an array, possibly empty), 'missing' (no such file -- expected when the Foundation was excluded from this pull, or a real gap when it predates this file), or 'unreadable' (present but not a JSON array). */
@@ -86,19 +86,29 @@ const RESERVED = new Set(['resolver.json', 'spec-layer.meta.json', 'report.json'
  * (`OPACITY`, `FONT_WEIGHT`): those are excluded here, because a `$type:
  * "number"` leaf alone cannot tell "nobody scoped this" from "Figma states
  * this has no unit", and only the first is what this count is for.
+ *
+ * Paths, not a count, because the caller walks one file per (collection,
+ * mode) and every mode file of a collection carries every token of that
+ * collection: a summed count reports a token in a two-mode collection twice,
+ * and the sentence it feeds says "tokens" and tells the reader to go narrow
+ * that many variables in Figma. A DTCG path is the same string in every mode
+ * file of its collection, and is what `spec-layer.meta.json` keys a variable
+ * by, so collecting into one set across files counts each variable once.
  */
-function countNumberTokens(tree: unknown, path: string[], legitimatelyUnitless: Set<string>): number {
-  if (typeof tree !== 'object' || tree === null || Array.isArray(tree)) return 0;
+function collectNumberTokenPaths(
+  tree: unknown, path: string[], legitimatelyUnitless: Set<string>, out: Set<string>,
+): void {
+  if (typeof tree !== 'object' || tree === null || Array.isArray(tree)) return;
   const record = tree as Record<string, unknown>;
   if (record.$type === 'number' && '$value' in record) {
-    return legitimatelyUnitless.has(path.join('.')) ? 0 : 1;
+    const dotted = path.join('.');
+    if (!legitimatelyUnitless.has(dotted)) out.add(dotted);
+    return;
   }
-  let n = 0;
   for (const [key, value] of Object.entries(record)) {
     if (key.startsWith('$')) continue;
-    n += countNumberTokens(value, [...path, key], legitimatelyUnitless);
+    collectNumberTokenPaths(value, [...path, key], legitimatelyUnitless, out);
   }
-  return n;
 }
 
 function readJson(path: string): unknown | null {
@@ -155,11 +165,12 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     let tokenFiles: string[] = [];
     try { tokenFiles = readdirSync(tokensDir).filter((f) => f.endsWith('.json') && !RESERVED.has(f)).sort(); } catch { tokenFiles = []; }
     const legitimatelyUnitless = unitlessScopedPaths(tokensDir);
-    let unitlessNumbers = 0;
+    const unitlessPaths = new Set<string>();
     for (const file of tokenFiles) {
       if (file.startsWith('styles.')) continue;
-      unitlessNumbers += countNumberTokens(readJson(join(tokensDir, file)), [], legitimatelyUnitless);
+      collectNumberTokenPaths(readJson(join(tokensDir, file)), [], legitimatelyUnitless, unitlessPaths);
     }
+    const unitlessNumbers = unitlessPaths.size;
     const reportCounts: Record<string, number> = {};
     if (Array.isArray(report)) {
       for (const entry of report as DtcgReportEntry[]) {
@@ -288,7 +299,7 @@ function stackSection(input: SkillInput): string[] {
       + `${n === 1 ? 'it is' : 'they are'} a unitless number the way an opacity or a font weight would. `
       + `Those are already excluded from this count, because Figma states that for them. So ${n === 1 ? 'it is' : 'they are'} written as `
       + `${code('$type: "number"')}: a bare number, not usable as a CSS length. ${code('height: 36')} is invalid CSS and the `
-      + 'browser drops the declaration. Narrow the variable\'s scope in Figma to a length '
+      + `browser drops the declaration. ${n === 1 ? 'Narrow the variable\'s' : 'Narrow each variable\'s'} scope in Figma to a length `
       + `(${code('CORNER_RADIUS')}, ${code('GAP')}, ${code('WIDTH_HEIGHT')}, ${code('FONT_SIZE')}, or ${code('STROKE_FLOAT')}), `
       + `or to ${code('OPACITY')}/${code('FONT_WEIGHT')} if it genuinely carries none, and pull again. `
       + `Only add ${code('"dtcg": { "units": { "<Collection>/<name glob>": "px" } }')} in ${code('speclayer.json')} once you already `
@@ -296,7 +307,9 @@ function stackSection(input: SkillInput): string[] {
       + 'so a glob that is too broad can turn a genuine opacity or font weight into a fake length. '
       + `Nothing is inferred from a name; ${code(`${tokensDir}spec-layer.meta.json`)} names each token's own Figma scopes`
       + (cssReport
-        ? `, and ${code(`${input.outDir}/outputs/${cssReport.platform}-${cssReport.format}.report.json`)} lists every one under ${code('unitless_number')}.`
+        ? `, and ${code(`${input.outDir}/outputs/${cssReport.platform}-${cssReport.format}.report.json`)} names every one under `
+          + `${code('unitless_number')}. Do not read that file's entry count as this number: it carries one entry per mode a `
+          + 'token appears in, and it also names the tokens Figma does scope as a unitless number, which this count leaves out.'
         : '.'),
       '',
     );
@@ -349,10 +362,20 @@ function stackSection(input: SkillInput): string[] {
             '',
           );
         } else {
+          // What to do here has to be an instruction that can actually
+          // succeed. `pull` re-projects rather than reporting no change when
+          // the CLI has moved since the last pull, or when a file it writes
+          // alongside the Foundation is gone -- fonts.json is one of those --
+          // so telling a reader with no fonts.json to pull again is sound. A
+          // file that is present but unparseable is not the missing case and
+          // does not trip that check, so that branch says to remove it first.
           lines.push(
-            `${code('fonts.json')} ${fontsStatus === 'missing' ? 'is missing' : 'is not valid JSON'}, so the font requirement `
-            + `for this library is unknown here. Run ${code('npx spec-layer pull')} again; if it stays `
-            + `${fontsStatus === 'missing' ? 'missing' : 'unreadable'}, this pull predates font detection or the write failed.`,
+            fontsStatus === 'missing'
+              ? `${code('fonts.json')} is missing, so the font requirement for this library is unknown here. `
+                + `Run ${code('npx spec-layer pull')} again: every pull that includes the Foundation writes this file, `
+                + 'and a pull that finds it gone re-projects instead of reporting no change.'
+              : `${code('fonts.json')} is not valid JSON, so the font requirement for this library is unknown here. `
+                + `Delete ${code(`${input.outDir}/fonts.json`)} and run ${code('npx spec-layer pull')} again, which rewrites it.`,
             '',
           );
         }

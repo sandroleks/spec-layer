@@ -165,7 +165,11 @@ describe('buildSkillGuide', () => {
   it('names the actual web/css report file that lists unitless_number, when one was written', () => {
     const guide = buildSkillGuide(input({ pull: PULL_WITH_CSS }));
     expect(guide).toContain('`.speclayer/tokens/spec-layer.meta.json` names each token\'s own Figma scopes, and '
-      + '`.speclayer/outputs/web-css.report.json` lists every one under `unitless_number`.');
+      + '`.speclayer/outputs/web-css.report.json` names every one under `unitless_number`.');
+    // ...and says not to read that file's length as the headline count. It
+    // holds one entry per token per mode, plus the scoped-unitless tokens the
+    // count excludes, so the two numbers genuinely differ on a real pull.
+    expect(guide).toContain('Do not read that file\'s entry count as this number');
   });
 
   it('states the unit caveat once for a single unitless token, in singular English', () => {
@@ -593,6 +597,25 @@ describe('summarizePull', () => {
     // OPACITY scope already states it is a unitless number, so it must not
     // be told its variable "states none".
     expect(summary?.foundation?.unitlessNumbers).toBe(1);
+  });
+
+  it('counts a token in a two-mode collection once, not once per mode file', () => {
+    // The DTCG projection writes one file per (collection, mode), and every
+    // mode file of a collection carries every token of that collection. The
+    // sentence this count feeds says "N tokens" and tells the reader to go
+    // narrow N variables in Figma, so a token present in two modes must count
+    // once. Both files below hold the same two tokens, as a real pull's do.
+    const tokens = {
+      Primitives: {
+        spacing: { 400: { $type: 'number', $value: 16 } },
+        radius: { 300: { $type: 'number', $value: 8 } },
+      },
+    };
+    writeFileSync(join(tokensDir, 'primitives.light.json'), JSON.stringify(tokens));
+    writeFileSync(join(tokensDir, 'primitives.dark.json'), JSON.stringify(tokens));
+    const summary = summarizePull(cwd, outDir, manifest());
+    expect(summary?.foundation?.tokenFiles).toEqual(['primitives.dark.json', 'primitives.light.json']);
+    expect(summary?.foundation?.unitlessNumbers).toBe(2);
   });
 
   it('excludes a FONT_WEIGHT-scoped number the same way, even though it is never $type "number" in the file', () => {

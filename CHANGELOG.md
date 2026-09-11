@@ -28,6 +28,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   describes the repair truthfully too: a repaired token's `transform` names
   its literal's own rule rather than `alias`, and it carries no `resolved`
   snapshot, since both were only ever meaningful for a surviving reference.
+  One thing this entry cannot promise about that exact token pair: under
+  `spec-layer pull`, where the usage-derived units below also run, nothing is
+  reported for it. `Mapped Radius.rd-sm`'s CORNER_RADIUS scope is precisely
+  the evidence that gives `Foundation.radius.300` a `px` unit of its own, so
+  the target projects as a `dimension` too, the two types agree, and the
+  reference survives carrying a real length. That is the better outcome of the
+  two and is deliberate, but it means a repository on the current CLI will
+  find no `alias_type_mismatch` in `tokens/report.json` for it. The repair
+  still fires wherever the derivation does not: a target whose usage evidence
+  its own guardrails refuted, or a projection run without the bundle (the
+  clipboard's `foundationDtcgDocument`, which holds no components).
+
+- **An existing repository now receives a CLI upgrade, instead of being told
+  it is already up to date.** `spec-layer pull` asks the server for a 304 by
+  sending the last pull's bundle hash, and everything the CLI projects -- the
+  DTCG token files, `tokens/report.json`, each `outputs/<id>.report.json`,
+  `fonts.json`, the generated CSS and its headers -- is computed here, not
+  inside the bundle. A release that changes any of it changes what a pull
+  writes from bytes that never moved, so a repository that pulled on 0.7.x and
+  upgraded to collect the fixes above got `Already up to date`, kept last
+  release's files, and had its severity summary read off the previous
+  release's reports. The freshness comparison now includes the CLI's own
+  version, recorded in `manifest.json` as `cliVersion`: a manifest written by
+  a different CLI, or by one old enough to carry no version at all, re-projects
+  rather than being served a 304. The publisher's `extractorVersion` needs no
+  clause of its own, because it travels inside the bundle and a bump moves the
+  bundle hash. The existence half of the same check grew to match what
+  `printReportSummary` and `--strict` actually read on a cached pull: it
+  covered `outputs/<id>.map.json` and the files `index.css` imports, and now
+  covers both report files and `fonts.json` too, so a developer who deletes
+  one gets it back instead of a 304 that leaves the next run's summary reading
+  a file that is not there. The docblock claiming the old behaviour is
+  corrected, and the generated skill's "`fonts.json` is missing, run
+  `npx spec-layer pull` again" is now an instruction that can succeed.
 
 - **A component's copied YAML now says what a diagnostic found, not just how
   many.** Both the canonical Foundation Context v5 artifact and a component's
@@ -69,17 +103,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   nothing in the output saying so. The generator still writes the value --
   guessing a unit from the token's name is exactly what an earlier version
   did wrong and stayed wrong for -- but now reports `unitless_number` at
-  `warning` severity for every plain `number`-typed token, naming the value
-  and pointing at `"dtcg": { "units": ... }` in `speclayer.json` or narrowing
-  the variable's scopes in Figma as the fix. `fontWeight` is exempt because
+  `warning` severity for every plain `number`-typed token, naming the value.
+  `fontWeight` is exempt because
   its `$type` already says a bare number there is correct. A typography
   style's own `lineHeight` member is exempt too, but for a different reason:
   DTCG types it `number` like any unpinned length, so the generator can only
   tell it is a multiplier because this one call site reads it by name, not
   from its `$type`. A `number`-typed variable used as a standalone opacity
   token gets no such name to read and is still reported, even though it is
-  just as legitimately unitless, because DTCG's `$type` alone cannot tell the
-  two apart.
+  just as legitimately unitless: a bare number is not a length whatever the
+  scopes say, and a reader that feeds one to `height` loses the declaration
+  either way. What it is told, though, is not the same thing. The entry carries
+  one of two messages, decided by the token's own scopes from the sidecar,
+  because the file header counts only one of the two cases and points the
+  reader straight at this entry: a token whose variable states no unit at all
+  is told to narrow its scopes in Figma, in the header's own words, and an
+  `OPACITY`- or `FONT_WEIGHT`-scoped token is told its scopes already state
+  that it has none and to keep it out of a length. Neither message now offers
+  `"dtcg": { "units": ... }`, which the header deliberately withholds and
+  which is the wrong answer for the second case; the generated skill still
+  documents that override, with the caveat that too broad a glob turns a
+  genuine opacity into a fake length.
 
 - **The generated CSS file itself now says when it holds unusable properties.**
   `unitless_number` above only reaches `<platform>-<format>.report.json`, a
@@ -140,13 +184,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rule as `number-unit-usage`, distinct from a configured
   `number-unit-override` and from a token that held a dimension of its own,
   and the projection's `config_hash` does not move, since this is read off the
-  published library rather than configured. The generated CSS discloses it
+  published library rather than configured. That does cost `config_hash` its
+  old completeness, and its docblock now says so: it separated "the design
+  changed" from "the repository changed its config", and there is now a third
+  cause it does not cover, because the evidence lives in the components and
+  the document hashes none of them. The same Foundation `content_hash` and the
+  same `config_hash` can project a different value once a component starts
+  binding a token to `height`. The projection is still deterministic, and
+  given the same bundle it repeats exactly; `report.json`'s
+  `unit_derived_from_usage` entries are where a reader comparing two pulls
+  sees which tokens moved and why. The generated CSS discloses it
   too, rather than leaving it to a file nothing opens: a file holding derived
   values gets a header line naming how many, and pointing at
   `tokens/report.json` for what pinned each one. The same file's header
   already said which of its properties have no unit, and saying that while
   saying nothing about the ones whose unit was inferred would disclose the
-  smaller half of the truth.
+  smaller half of the truth. Both that header line and the report entry it
+  points at say the token's *own* variable states no unit, rather than that no
+  scope states it: for the alias-scope half of the population a scope is
+  exactly what stated it, just not the token's own, and the entry goes on to
+  name that very scope. The two now agree, and both are true of the binding
+  half as well.
 
 - **A pulled library now ships `fonts.json`, naming the exact weights and
   families its typography styles need.** The generated tokens carry
@@ -271,7 +329,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   token whose scope already states `OPACITY` or `FONT_WEIGHT`: those are a
   unitless number by Figma's own statement, not by silence, and were being
   counted alongside the tokens nobody scoped at all, which is the false "your
-  variable states none" the first draft told an opacity's owner.
+  variable states none" the first draft told an opacity's owner. It also
+  counts distinct tokens now, which is what the sentence has always claimed.
+  The DTCG projection writes one file per collection and mode, and every mode
+  file of a collection carries every one of its tokens, so summing a per-file
+  count reported a token in a two-mode collection twice and opened the guide
+  with a bolded "**6 tokens have no unit**" for three variables. Deduplicating
+  by DTCG path across the mode files is the fix, rather than renaming what is
+  counted, because the advice that follows the number is per variable: it
+  tells the reader to go narrow that many scopes in Figma. The sentence also
+  says not to read the per-output report's entry count as the same number,
+  since that file carries one entry per mode and names the scoped-unitless
+  tokens this count leaves out.
   `spec-layer.meta.json`, the one pulled file that carries a token's own
   scopes, is what `summarizePull` now cross-references to tell the two apart.
   The caveat no longer points at a bare `report.json` either: `tokens/report.json`

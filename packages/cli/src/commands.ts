@@ -330,18 +330,39 @@ export async function runSetup(
 }
 
 /**
- * Whether every part file the last pull wrote is still on disk. The record
- * map only proves the output was rendered at all; the list of files it wrote
- * comes from index.css's own imports, since a map entry names only the file
- * that first declares a token, which for a two-mode collection is always the
+ * Whether every file this output wrote is still on disk. The record map only
+ * proves the output was rendered at all; the list of part files it wrote comes
+ * from index.css's own imports, since a map entry names only the file that
+ * first declares a token, which for a two-mode collection is always the
  * default mode's file, so a non-default mode file never appears in the map.
- * False when the map is missing or index.css is missing or unreadable.
+ * False when the map is missing, the report is missing, or index.css is
+ * missing or unreadable.
+ *
+ * The report is checked because `printReportSummary` reads it on a 304 and
+ * `--strict` decides an exit code from it: granting a 304 without it would
+ * leave that pass reading a file this pull never restored.
  */
 function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolean {
-  const mapPath = join(cwd, outDir, 'outputs', `${outputId(o)}.map.json`);
-  if (!existsSync(mapPath)) return false;
+  const id = outputId(o);
+  for (const rel of [`${id}.map.json`, `${id}.report.json`]) {
+    if (!existsSync(join(cwd, outDir, 'outputs', rel))) return false;
+  }
   const imports = readIndexImports(cwd, o);
   return imports !== null && imports.every((f) => existsSync(resolve(cwd, o.path, f)));
+}
+
+/**
+ * Whether the files a Foundation pull writes outside `outputs/` are still on
+ * disk. `tokens/report.json` is the other half of what `printReportSummary`
+ * and `--strict` read, and `fonts.json` is what both that pass and the
+ * generated skill read the library's font requirement from; a 304 that leaves
+ * either missing leaves a sentence with nothing behind it. `tokens/resolver.json`
+ * is what a written Foundation is addressed by everywhere else, so it stands
+ * for the token files themselves.
+ */
+function foundationFilesOnDisk(cwd: string, outDir: string): boolean {
+  return ['fonts.json', join('tokens', 'report.json'), join('tokens', 'resolver.json')]
+    .every((rel) => existsSync(join(cwd, outDir, rel)));
 }
 
 /** A JSON file that may not exist yet, parsed as an array, or `[]` when it is missing, unreadable, or not an array. Never throws. */
@@ -377,9 +398,10 @@ function plural(n: number, word: string): string {
 /**
  * The severity summary and missing-font notes for whatever is on disk after
  * this pull -- whether this run just wrote it (a 200) or it was already
- * there and confirmed current (a 304, which is only granted when every
- * deliverable file, `outputs/<id>.report.json` included, was already present
- * -- see `outputFilesOnDisk`). A cached pull whose report already names an
+ * there and confirmed current (a 304, which a Foundation pull is only granted
+ * when both report files and `fonts.json` were already present -- see
+ * `foundationFilesOnDisk` and `outputFilesOnDisk`, which exist partly so this
+ * claim is true). A cached pull whose report already names an
  * error is exactly the state `--strict` exists to catch, so this reads from
  * disk by the *configured* outputs and outDir, never from what
  * writeBundleFiles happened to return, and the caller runs it on both
@@ -444,19 +466,32 @@ export async function runPull(
   if (fromFlags === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
-  // Ask for a 304 only when the last pull wrote the same files this one would
-  // AND every one of those files is still on disk; a changed selection, dtcg
-  // block, outputs block, or componentSpecsDir needs the bundle again to
-  // re-project, and so does a deleted brief, a deliverable directory a
-  // developer (or a clean) removed, or a part file index.css imports (which
-  // is not always every file the record map names, since a map entry names
-  // only the file that first declares a token), since a 304 would leave any
-  // of those missing rather than restoring it. Outputs are only ever written
-  // alongside the Foundation
+  // Ask for a 304 only when the last pull wrote the same files this one would,
+  // with the same CLI, AND every one of those files is still on disk; a
+  // changed selection, dtcg block, outputs block, or componentSpecsDir needs
+  // the bundle again to re-project, and so does a deleted brief, a deliverable
+  // directory a developer (or a clean) removed, or a part file index.css
+  // imports (which is not always every file the record map names, since a map
+  // entry names only the file that first declares a token), since a 304 would
+  // leave any of those missing rather than restoring it. Outputs are only ever
+  // written alongside the Foundation
   // (writeBundleFiles), so a pull that never writes it - `--only components`,
   // `include: { foundation: false }`, or a library with none - has no
   // deliverable files to check, and the existence clause would otherwise
   // never see a match and redownload the bundle on every run.
+  //
+  // The version clause is what makes an upgrade land. Everything the CLI
+  // projects - the DTCG tokens, both report files, fonts.json, the CSS and its
+  // header - is computed here, not in the bundle, so a release that changes
+  // any of it changes what a pull writes from bytes that have not moved. With
+  // only the file-existence clauses, a repository that pulled on 0.7.x and
+  // upgraded to get exactly such a fix was told `Already up to date` and kept
+  // last release's files, including a report summary read off stale reports. A
+  // manifest with no cliVersion at all (written before 0.8.0) is in that same
+  // position and must re-project too, which is what `!==` against a string
+  // already gives. The publisher's `extractorVersion` needs no clause of its
+  // own: it travels inside the bundle, so a bump moves the bundle hash and the
+  // `ETag` catches it.
   const manifest = manifestAt(join(cwd, opts.outDir));
   const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
   const willWriteFoundation = selection.foundation && foundationOnDisk;
@@ -466,10 +501,11 @@ export async function runPull(
   const briefsOnDisk = (manifest?.artifacts ?? [])
     .filter((a) => a.kind === 'component' && a.path !== null)
     .every((a) => existsSync(resolve(cwd, a.path as string)));
-  const etag = manifest && sameOutput(
+  const etag = manifest && manifest.cliVersion === cliVersion() && sameOutput(
     { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs, componentSpecsDir: manifest.componentSpecsDir },
     { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir },
-  ) && briefsOnDisk && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
+  ) && briefsOnDisk && (!willWriteFoundation || foundationFilesOnDisk(cwd, opts.outDir))
+    && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
     : undefined;
   const result = await fetchBundle({
@@ -482,11 +518,11 @@ export async function runPull(
   }
   if (result.kind === 'not_modified') {
     io.out(`Already up to date (published ${manifest?.publishedAt ?? 'unknown'}).`);
-    // A 304 is granted only once every deliverable file, this pull's report
-    // included, is confirmed present on disk (outputFilesOnDisk above), so
-    // the exact state where a stale error report sits unread is the state a
-    // 304 reaches most often. --strict must see it here too, not only after
-    // writeBundleFiles actually ran.
+    // A 304 for a Foundation pull is granted only once both report files are
+    // confirmed present on disk (foundationFilesOnDisk and outputFilesOnDisk
+    // above), so the exact state where a stale error report sits unread is the
+    // state a 304 reaches most often. --strict must see it here too, not only
+    // after writeBundleFiles actually ran.
     const cachedErrors = printReportSummary(cwd, opts.outDir, outputs, io);
     if (flags.strict && cachedErrors > 0) return 1;
     return 0;
