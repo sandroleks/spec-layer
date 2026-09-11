@@ -473,4 +473,33 @@ describe('Component Context v5', () => {
       code: 'INCONSISTENT_REFERENCE', severity: 'error',
     }));
   });
+
+  it('projects a component-level UNRESOLVED_REFERENCE into an actionable row, not just a count', () => {
+    // Matches the real-pull symptom: five component YAMLs each carrying a
+    // bare issue_counts: { error: { UNRESOLVED_REFERENCE: N } } with no path,
+    // property, or message anywhere in the file. 'unavailable' (rather than
+    // 'no_foundation') gives `error` severity, the severity actually observed.
+    const source = foundation();
+    source.completeness.unavailable_sources.push('VariableID:missing');
+    const artifact = buildComponentArtifactV5(spec([rule(
+      'VariableID:missing', 'space/component', 'variable', 'gap', 'CollectionID:space',
+    )]), { ...META, foundation: source });
+
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNRESOLVED_REFERENCE', severity: 'error', entity_id: 'VariableID:missing',
+    }));
+
+    const context = componentAiContext(artifact);
+    // the summary count is unchanged...
+    expect(context.issue_counts?.error?.UNRESOLVED_REFERENCE).toBe(1);
+    // ...but it is no longer the only thing the copied YAML says about it
+    const rows = context.validation as Array<{
+      id: string; severity: string; path?: string; message: string;
+    }> | undefined;
+    const entry = rows?.find((row) => row.id === 'unresolved-reference');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('error');
+    expect(entry?.path).toBe('space/component');
+    expect(entry?.message).toBe('The Foundation read named this source id as unavailable.');
+  });
 });

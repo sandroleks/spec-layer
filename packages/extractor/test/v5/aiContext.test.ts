@@ -118,6 +118,9 @@ describe('foundationAiContext', () => {
     expect(entry?.property).toBe('font_weight');
     expect(entry?.message).toContain('400');
     expect(entry?.message).toContain('500');
+    // no label exists for a style id this artifact never declares -- falls
+    // back to the raw id rather than fabricating one
+    expect(entry?.path).toBe('S:abc,');
     // the summary count survives alongside the detail
     expect(context.issue_counts?.warning?.STYLE_BINDING_DRIFT).toBe(1);
   });
@@ -135,6 +138,57 @@ describe('foundationAiContext', () => {
 
     expect(context.validation).toBeUndefined();
     expect(context.issue_counts?.error?.ALIAS_CYCLE).toBe(1);
+  });
+
+  it('labels a row with the entity it is about, so two entities never render identical rows', () => {
+    const full = structuredClone(fixture());
+    const [drift] = full.diagnostics.filter((d) => d.code === 'STYLE_BINDING_DRIFT');
+    // A second effect style, drifting the exact same way on the exact same
+    // property with the exact same values: the entity is the only thing that
+    // could tell the two rows apart.
+    full.styles.effects = [
+      ...full.styles.effects,
+      {
+        ...structuredClone(full.styles.effects.find((s) => s.id === 'StyleID:shadow-card')!),
+        id: 'StyleID:another-shadow', name: 'Shadow/Modal', path: ['Shadow', 'Modal'],
+      },
+    ];
+    full.diagnostics = [...full.diagnostics, { ...drift, entity_id: 'StyleID:another-shadow' }];
+
+    const context = foundationAiContext(full);
+    const rows = context.validation?.filter((row) => row.id === 'style-binding-drift') ?? [];
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.path).sort()).toEqual([
+      'Effects/Shadow/Card', 'Effects/Shadow/Modal',
+    ]);
+    expect(JSON.stringify(rows[0])).not.toBe(JSON.stringify(rows[1]));
+  });
+
+  it('distinguishes a colour that drifts only in alpha, never rendering the same hex twice', () => {
+    const full = structuredClone(fixture());
+    full.diagnostics = [{
+      code: 'STYLE_BINDING_DRIFT',
+      severity: 'warning',
+      entity_id: 'StyleID:shadow-card',
+      message: 'The effect property snapshot differs from its unambiguous bound token value.',
+      details: {
+        property: 'effects[0].color',
+        style_value: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
+        token_value: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.5 },
+      },
+    }];
+
+    const context = foundationAiContext(full);
+    const entry = context.validation?.find((row) => row.id === 'style-binding-drift');
+    expect(entry).toBeDefined();
+    expect(entry?.message).toContain('alpha 0.2');
+    expect(entry?.message).toContain('alpha 0.5');
+    // never renders the two sides as the identical hex, which would silently
+    // hide a real drift
+    expect(entry?.message).not.toBe(
+      'effects[0].color is #000000 in the style but #000000 in the token it is bound to; '
+      + 'the two disagree.',
+    );
   });
 
   it('keeps source ids only when a human-readable name is ambiguous', () => {

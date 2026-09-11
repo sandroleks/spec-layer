@@ -30,26 +30,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   snapshot, since both were only ever meaningful for a surviving reference.
 
 - **A component's copied YAML now says what a diagnostic found, not just how
-  many.** The canonical Foundation Context v5 artifact already carries a full
-  `diagnostics` array -- codes, severities, entity ids, structured `details`,
-  and a human message -- but the AI-profile projection collapsed all of it to
-  `issue_counts: { warning: { STYLE_BINDING_DRIFT: 1 } }`. On a real pull, five
-  components carried `issue_counts: { error: { UNRESOLVED_REFERENCE: N } }`
-  with no path, no property, and no message anywhere in the file: ten
+  many.** Both the canonical Foundation Context v5 artifact and a component's
+  own reference diagnostics already carry this, fully formed -- codes,
+  severities, entity ids, structured `details`, and a human message -- but
+  every projection collapsed it to a count: `issue_counts: { warning: {
+  STYLE_BINDING_DRIFT: 1 } }`. On a real pull, five component YAMLs each
+  carried a bare `issue_counts: { error: { UNRESOLVED_REFERENCE: N } }` with
+  no path, no property, and no message anywhere in the file: ten
   error-severity findings reported as bare integers. `foundationAiContext` now
-  also renders `STYLE_BINDING_DRIFT`, `UNIT_METADATA_UNAVAILABLE`, and
+  renders `STYLE_BINDING_DRIFT`, `UNIT_METADATA_UNAVAILABLE`, and
   `UNRESOLVED_REFERENCE` -- the codes it can turn into a specific, actionable
   sentence -- into `validation` rows (kebab-case `id`, matching the existing
-  `unbound-value` vocabulary), naming both sides of a style/token drift or the
-  scopes that leave a number's unit unstated. A code outside that map stays
-  summarized in `issue_counts` only, deliberately: a generic fallback message
-  would be worse than a bare count. Because `foundationAiContext` is what
+  `unbound-value` vocabulary), each naming the entity it is about, both sides
+  of a style/token drift (a colour's alpha included, never just its hex, so
+  two snapshots that drift only in alpha are never rendered as the same
+  colour twice), or the scopes that leave a number's unit unstated. A
+  component's own `UNRESOLVED_REFERENCE`/`INCONSISTENT_REFERENCE` diagnostics
+  get the same treatment straight into the component's top-level `validation`,
+  naming the specific reference (its human name where the diagnostic carries
+  one) rather than only the component as a whole. A code outside that map
+  stays summarized in `issue_counts` only, deliberately: a generic fallback
+  message would be worse than a bare count. Because `foundationAiContext` also
   builds the Foundation dependency slice nested inside a component's own copy
-  (`references.foundation`), `componentAiContext` now carries the same
-  `validation` rows through into that slice, so the diagnostic reaches the one
-  file a developer actually has open. `issue_counts` is unchanged and stays
-  alongside the rows as a summary. Confined to the AI profile: the canonical
-  artifact, every content hash, and `EXTRACTOR_VERSION` (`'2'`) are untouched.
+  (`references.foundation`), `componentAiContext` carries those rows through
+  into that slice too, so a Foundation-level finding reaches the one file a
+  developer actually has open. `issue_counts` is unchanged at both levels and
+  stays alongside the rows as a summary. Confined to the AI profile plus the
+  component artifact's own (already schema-declared, unhashed) `validation`
+  field: no canonical schema change, no content hash moved, `EXTRACTOR_VERSION`
+  (`'2'`) untouched.
 
 ### Added
 

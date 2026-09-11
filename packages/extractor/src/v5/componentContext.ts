@@ -116,6 +116,20 @@ export type ComponentContextDiagnosticCode =
   | 'UNRESOLVED_REFERENCE'
   | 'INCONSISTENT_REFERENCE';
 
+/** Row shape shared by the component's own facts-derived findings
+ *  (`componentValidation`, from `validateComponentFacts`) and its
+ *  diagnostics-derived findings (`componentDiagnosticRows`, from
+ *  `artifact.diagnostics`) -- the same `{ id, severity, path?, property?,
+ *  message }` vocabulary as `unbound-value`. */
+export interface ComponentValidationRow {
+  id: string;
+  severity: 'error' | 'warning';
+  path?: string;
+  property?: string;
+  message: string;
+  when?: Record<string, string[]>;
+}
+
 export interface ComponentContextDiagnostic {
   code: ComponentContextDiagnosticCode;
   severity: 'error' | 'warning';
@@ -520,7 +534,7 @@ function componentInlineEffects(spec: IntermediateSpec): YamlValue | undefined {
 function componentValidation(
   spec: IntermediateSpec,
   foundation: FoundationArtifactV5 | undefined,
-): YamlValue | undefined {
+): ComponentValidationRow[] | undefined {
   const resolved = new Map<string, number>();
   if (foundation) {
     const collections = new Map(foundation.collections.map((item) => [item.id, item]));
@@ -544,7 +558,7 @@ function componentValidation(
     message: finding.message,
     ...(finding.when !== undefined ? { when: finding.when } : {}),
   }));
-  return findings.length > 0 ? findings as unknown as YamlValue : undefined;
+  return findings.length > 0 ? findings : undefined;
 }
 
 function statusMessage(reference: ComponentReferenceV5): string {
@@ -613,6 +627,46 @@ export function validateComponentArtifactV5(
       || compareCodeUnits(a.code, b.code)
       || compareCodeUnits(a.entity_id, b.entity_id)
       || compareCodeUnits(a.message, b.message));
+}
+
+function kebab(code: string): string {
+  return code.toLowerCase().replace(/_/g, '-');
+}
+
+/** Projects the component's own reference diagnostics into the same
+ *  `{ id, severity, path?, property?, message }` vocabulary `unbound-value`
+ *  already uses, so a bare `issue_counts: { error: { UNRESOLVED_REFERENCE: N
+ *  } } }` is never the only thing a consumer of the copied YAML sees. Every
+ *  field comes from the diagnostic itself -- nothing here is derived or
+ *  guessed. `path` prefers the most specific real identifier already on the
+ *  finding: the human-readable name the reference carries
+ *  (`UNRESOLVED_REFERENCE`'s `details.name`), else the broken binding's own
+ *  source id (`INCONSISTENT_REFERENCE`'s `details.source_id`), else the
+ *  diagnostic's `entity_id` -- which for one `INCONSISTENT_REFERENCE` shape
+ *  is the component's own node id, not the broken reference, so it is tried
+ *  last rather than first. */
+function componentDiagnosticRows(
+  diagnostics: readonly ComponentContextDiagnostic[],
+): ComponentValidationRow[] {
+  return diagnostics.map((d): ComponentValidationRow => {
+    const name = d.details?.name;
+    const sourceId = d.details?.source_id;
+    const property = d.details?.property;
+    const path = typeof name === 'string'
+      ? name
+      : typeof sourceId === 'string' ? sourceId : d.entity_id;
+    return {
+      id: kebab(d.code),
+      severity: d.severity,
+      path,
+      ...(typeof property === 'string' ? { property } : {}),
+      message: d.message,
+    };
+  }).sort((a, b) =>
+    compareCodeUnits(a.id, b.id)
+    || compareCodeUnits(a.path ?? '', b.path ?? '')
+    || compareCodeUnits(a.property ?? '', b.property ?? '')
+    || compareCodeUnits(a.message, b.message));
 }
 
 /** Build the canonical component artifact. */
@@ -699,10 +753,24 @@ export function buildComponentArtifactV5(
       : {}),
     ...(dependency ? { foundation_diagnostics: dependency.diagnostics } : {}),
     diagnostics: [],
-    ...(validation !== undefined ? { validation } : {}),
+    ...(validation !== undefined ? { validation: validation as unknown as YamlValue } : {}),
     ...(projected.guidelines !== undefined ? { guidelines: projected.guidelines } : {}),
   };
-  return { ...provisional, diagnostics: validateComponentArtifactV5(provisional) };
+  // `diagnostics` can only be computed from the finished provisional artifact
+  // (it checks bindings against references, and references against the
+  // dependency slice), so the diagnostics-derived validation rows are merged
+  // in here, AFTER componentValidation's facts-derived rows above rather than
+  // resorted together with them: those rows' order is reviewed and golden-
+  // tested, and a shared comparator would silently reshuffle it.
+  const diagnostics = validateComponentArtifactV5(provisional);
+  const mergedValidation = [...(validation ?? []), ...componentDiagnosticRows(diagnostics)];
+  return {
+    ...provisional,
+    diagnostics,
+    ...(mergedValidation.length > 0
+      ? { validation: mergedValidation as unknown as YamlValue }
+      : {}),
+  };
 }
 
 function componentIssueCounts(

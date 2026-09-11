@@ -51,6 +51,14 @@ export interface FoundationAiContext {
 export interface FoundationValidationRow {
   id: string;
   severity: Severity;
+  /** Human-readable locator for the entity this row is about -- the same
+   *  label `compactToken`/`compactTypography`/`compactEffect` use elsewhere in
+   *  this projection, falling back to the raw stable id when the entity has
+   *  no readable label (for example a dangling collection id an
+   *  UNRESOLVED_REFERENCE names). Without this, two different entities
+   *  drifting the same way on the same property render byte-identical rows
+   *  and a reader cannot tell which one either row is about. */
+  path?: string;
   property?: string;
   message: string;
 }
@@ -404,8 +412,12 @@ function kebab(code: string): string {
 /** Renders a typed value envelope compactly for a validation message. Reads
  *  only the shapes a diagnostic's `details` actually carries -- a scalar
  *  envelope (`{ type, value }`), a dimension/duration (`{ type, number, unit }`),
- *  or a color (`{ type, hex, ... }`) -- and never invents a value: an
- *  unrecognised shape falls back to its own JSON text rather than a guess. */
+ *  or a color (`{ type, hex, alpha, channels? }`) -- and never invents a
+ *  value: an unrecognised shape falls back to its own JSON text rather than a
+ *  guess. A colour's `alpha` is always stated, never dropped: `ColorValue`
+ *  itself carries it "even when opaque, so 'opaque' and 'alpha not stated'
+ *  are never the same output" (`value.ts`), and two style/token snapshots
+ *  that drift only in alpha must not render as the identical hex twice. */
 function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'unknown';
   if (typeof value === 'object') {
@@ -415,7 +427,13 @@ function valueText(value: unknown): string {
       const unit = typeof record.unit === 'string' ? record.unit : '';
       return `${String(record.number)}${unit}`;
     }
-    if (typeof record.hex === 'string') return record.hex;
+    if (typeof record.hex === 'string') {
+      const alpha = typeof record.alpha === 'number' ? ` alpha ${record.alpha}` : '';
+      const channels = Array.isArray(record.channels)
+        ? ` channels ${JSON.stringify(record.channels)}`
+        : '';
+      return `${record.hex}${alpha}${channels}`;
+    }
   }
   return String(value);
 }
@@ -435,20 +453,30 @@ const DIAGNOSTIC_MESSAGE: Record<string, (d: Diagnostic) => string> = {
   UNRESOLVED_REFERENCE: (d) => d.message,
 };
 
-function diagnosticRows(diagnostics: readonly Diagnostic[]): FoundationValidationRow[] {
+function diagnosticRows(
+  diagnostics: readonly Diagnostic[],
+  index: ProjectionIndex,
+): FoundationValidationRow[] {
   const rows = diagnostics.flatMap((d): FoundationValidationRow[] => {
     const render = DIAGNOSTIC_MESSAGE[d.code];
     if (!render) return [];
     const property = d.details?.property;
+    // Never fabricated: the same readable label the rest of this projection
+    // uses for this exact id, falling back to the raw stable id (still real,
+    // just less pretty) when the entity carries no label -- for example a
+    // dangling collection id an UNRESOLVED_REFERENCE names.
+    const path = index.entityLabelById.get(d.entity_id) ?? d.entity_id;
     return [{
       id: kebab(d.code),
       severity: d.severity,
+      path,
       ...(typeof property === 'string' ? { property } : {}),
       message: render(d),
     }];
   });
   return rows.sort((a, b) =>
     compareCodeUnits(a.id, b.id)
+    || compareCodeUnits(a.path ?? '', b.path ?? '')
     || compareCodeUnits(a.property ?? '', b.property ?? '')
     || compareCodeUnits(a.message, b.message));
 }
@@ -509,7 +537,7 @@ export function foundationAiContext(
   });
 
   const counts = issueCounts(artifact);
-  const validation = diagnosticRows(artifact.diagnostics);
+  const validation = diagnosticRows(artifact.diagnostics, index);
   return {
     spec_layer: {
       kind: 'foundation',
