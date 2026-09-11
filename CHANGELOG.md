@@ -58,7 +58,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `speclayer.json`; a file with none keeps its original two-line header
   unchanged. The count is per file, not per token: one token present in three
   modes is written to three separate files and is counted once in each,
-  matching what a reader of that one file can actually count. The sentence is
+  matching what a reader of that one file can actually count. It counts only
+  tokens whose Figma variable states no unit at all: a variable scoped
+  `OPACITY` or `FONT_WEIGHT` states that it is a unitless number, so its owner
+  is never told their variable "states none" and never sent to narrow scopes
+  they have already narrowed. The sentence is
   correct English at every count, not just the plural case: one property
   reads "1 property in this file has no unit, because its Figma variable
   states none," and the report is named exactly and in full
@@ -73,9 +77,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **A token no scope gives a unit now takes one from how the library uses
   it.** A Figma variable with no unit-pinning scope carried a bare number all
-  the way to the CSS, and on a real pull that was 66 of 421 properties: a
-  button rendered at 23.59px instead of 36px because `height: 36` is not a
-  length. Two kinds of evidence the export already carried now answer that
+  the way to the CSS, and on a real pull that was 66 of 421 generated
+  properties: a button rendered at 23.59px instead of 36px because
+  `height: 36` is not a length. Two kinds of evidence the export already carried now answer that
   where the file itself is silent. A token scoped `CORNER_RADIUS`, `GAP`,
   `WIDTH_HEIGHT`, `FONT_SIZE`, or `STROKE_FLOAT` that aliases an unscoped
   primitive states that the primitive is a length, and a component binding
@@ -87,10 +91,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   alike and mean different things. Three rules keep it auditable. Every
   derived unit is reported, at `unit_derived_from_usage` and `info` severity,
   naming the token that was scoped or the component that bound it and the
-  scope or property that did it, so no inference is silent. Evidence that
-  disagrees with itself, a token bound to `gap` in one place and to a
-  non-length property in another, produces no answer at all rather than a
-  winner, and the token is still reported as unitless. An explicit
+  scope or property that did it, so no inference is silent, and that includes
+  a token the projection reaches only as somebody else's alias target and
+  never builds a leaf for. Evidence that disagrees with itself produces no
+  answer at all rather than a winner: a token bound to `gap` in one place and
+  to a non-length property in another gets nothing, and neither does one an
+  `OPACITY`- or `FONT_WEIGHT`-scoped token aliases, because those scopes state
+  "unitless number" exactly as `CORNER_RADIUS` states "px" and a reader that
+  collected only the length-stating half would happily write `opacity: 1px`.
+  Refutation travels as far as the evidence it refutes: both walk the alias
+  chain, so a contradiction one hop away still lands, and neither walks past a
+  token whose own scopes answer the question. An explicit
   `"dtcg": { "units": ... }` entry in `speclayer.json` outranks anything read
   off usage, because that is the repository's own statement. The pass runs
   during `spec-layer pull`, which is the first place the Foundation and the
@@ -98,7 +109,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rule as `number-unit-usage`, distinct from a configured
   `number-unit-override` and from a token that held a dimension of its own,
   and the projection's `config_hash` does not move, since this is read off the
-  published library rather than configured.
+  published library rather than configured. The generated CSS discloses it
+  too, rather than leaving it to a file nothing opens: a file holding derived
+  values gets a header line naming how many, and pointing at
+  `tokens/report.json` for what pinned each one. The same file's header
+  already said which of its properties have no unit, and saying that while
+  saying nothing about the ones whose unit was inferred would disclose the
+  smaller half of the truth.
 
 ## [5.1.0] - 2026-09-10
 

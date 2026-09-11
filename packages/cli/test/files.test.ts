@@ -464,6 +464,15 @@ describe('writeBundleFiles', () => {
     expect(all).toContain('--primitives-number-unknown-scope: 1.5px;');
     expect(all).not.toContain('--primitives-number-unknown-scope: 1.5;');
 
+    // The file says so itself, rather than only the report: it was the only
+    // unitless property in these files, so that note is gone and the derived
+    // note stands in its place.
+    expect(all).toContain(
+      '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.',
+    );
+    expect(all).toContain("   See tokens/report.json under your pull's output directory for what pinned it.");
+    expect(all).not.toContain('has no unit');
+
     // Guardrail: every derived unit is auditable. The projection's own report
     // names the component and the property that pinned it.
     const report = JSON.parse(readFileSync(join(outDir, 'tokens/report.json'), 'utf8')) as Array<{

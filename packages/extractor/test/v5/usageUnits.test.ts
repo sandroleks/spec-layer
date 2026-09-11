@@ -106,6 +106,64 @@ describe('usageUnits: alias-scope evidence', () => {
   });
 });
 
+describe('usageUnits: contradicting evidence', () => {
+  it('derives nothing when a unitless-number scope and a length scope point at one primitive', () => {
+    // number/1 used as both full opacity and a hairline stroke. OPACITY states
+    // "unitless number" exactly as CORNER_RADIUS states "px" (units.ts), so the
+    // two aliases disagree and the primitive has no single answer. Taking the
+    // px side would write `opacity: 1px`, which no report would name.
+    const f = collection('CollectionID:f', 'F');
+    const primitive = numberToken('VariableID:c', f.id, 'number/1', 1);
+    const opacity = aliasToken('VariableID:a', f.id, 'opacity/full', primitive, ['OPACITY']);
+    const stroke = aliasToken('VariableID:b', f.id, 'stroke/hairline', primitive, ['STROKE_FLOAT']);
+
+    const map = usageUnits(bundleWith(foundationWith([f], [primitive, opacity, stroke])));
+
+    expect(map.get('VariableID:c')).toBeUndefined();
+  });
+
+  it('lets a contradiction one alias hop away refute a length binding', () => {
+    // One component binds a fade token to opacity, another binds a size token
+    // to height, and both alias the same primitive. Evidence travels down the
+    // alias chain, so refutation has to travel with it.
+    const f = collection('CollectionID:f', 'F');
+    const primitive = numberToken('VariableID:p', f.id, 'number/1', 1);
+    const fade = aliasToken('VariableID:s', f.id, 'semantic/fade', primitive);
+    const size = aliasToken('VariableID:t', f.id, 'semantic/size', primitive);
+
+    const map = usageUnits(bundleWith(
+      foundationWith([f], [primitive, fade, size]),
+      [
+        { name: 'Fade', artifact: componentWith([{ property: 'opacity', source_id: fade.id }]) },
+        { name: 'Box', artifact: componentWith([{ property: 'height', source_id: size.id }]) },
+      ],
+    ));
+
+    expect(map.get('VariableID:p')).toBeUndefined();
+    expect(map.get('VariableID:s')).toBeUndefined();
+    // The size token's own binding is not in doubt; only what it aliases is.
+    expect(map.get('VariableID:t')?.via).toBe('binding');
+  });
+
+  it('does not carry evidence past a token whose own scopes answer', () => {
+    // A CORNER_RADIUS token aliasing a GAP token aliasing a primitive: the GAP
+    // token states its own unit and pins its own chain, so nothing needs to
+    // reach through it, and nothing does. The names are chosen so the radius
+    // token sorts FIRST: without the barrier it would win the tie and cite a
+    // scope two hops away as the reason.
+    const f = collection('CollectionID:f', 'F');
+    const primitive = numberToken('VariableID:leaf', f.id, 'number/2', 2);
+    const gap = aliasToken('VariableID:mid', f.id, 'zz/gap-sm', primitive, ['GAP']);
+    const radius = aliasToken('VariableID:top', f.id, 'aa/radius-sm', gap, ['CORNER_RADIUS']);
+
+    const map = usageUnits(bundleWith(foundationWith([f], [primitive, gap, radius])));
+
+    expect(map.get('VariableID:leaf')).toEqual({
+      unit: 'px', via: 'alias-scope', source: 'F.zz.gap-sm', reason: 'GAP',
+    });
+  });
+});
+
 describe('usageUnits: binding evidence', () => {
   it('derives px through an alias hop when a component binds the alias to a length', () => {
     const foundation = collection('CollectionID:foundation', 'Foundation');

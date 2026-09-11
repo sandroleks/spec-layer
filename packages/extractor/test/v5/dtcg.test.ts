@@ -794,6 +794,62 @@ describe('units derived from stated usage', () => {
     expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
   });
 
+  it('reports a derived unit even when the token it pinned has no leaf of its own', () => {
+    // A -> B -> C, where C lost its DTCG path to a collision and so is never
+    // built as a leaf. A's own leaf is still typed from C (its direct target B
+    // survives), so C's derived unit reaches the output through a call site
+    // that projects the chain TERMINAL rather than the token being built. If
+    // only the owning call site reported, this unit would be applied with
+    // nothing naming it anywhere.
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
+    if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
+    artifact.tokens.push({ ...structuredClone(terminal), id: 'VariableID:unknown-number-twin' });
+
+    const aliasTo = (targetId: string, collectionId: string, targetPath: string[]) => ({
+      kind: 'alias' as const,
+      reference: {
+        target_id: targetId, target_collection_id: collectionId, target_path: targetPath, external: false,
+      },
+      resolved: {
+        status: 'resolved' as const,
+        value: { type: 'number' as const, value: 1.5 },
+        chain: [{ token_id: 'VariableID:unknown-number', mode_id: 'ModeID:p-light' }],
+      },
+    });
+    const inner = {
+      id: 'VariableID:inner', collection_id: 'CollectionID:semantic',
+      name: 'derived/inner', path: ['derived', 'inner'], type: 'number' as const,
+      description: '', scopes: [],
+      values: {
+        'ModeID:s-light': aliasTo('VariableID:unknown-number', 'CollectionID:primitives', ['number', 'unknown-scope']),
+        'ModeID:s-dark': aliasTo('VariableID:unknown-number', 'CollectionID:primitives', ['number', 'unknown-scope']),
+      },
+    };
+    const outer = {
+      ...inner, id: 'VariableID:outer', name: 'derived/outer', path: ['derived', 'outer'],
+      values: {
+        'ModeID:s-light': aliasTo('VariableID:inner', 'CollectionID:semantic', ['derived', 'inner']),
+        'ModeID:s-dark': aliasTo('VariableID:inner', 'CollectionID:semantic', ['derived', 'inner']),
+      },
+    };
+    artifact.tokens.push(inner, outer);
+
+    const out = foundationDtcg(artifact, {}, derived('VariableID:unknown-number'));
+
+    // The collided token really has no leaf: both twins were omitted.
+    expect(out.report.some((r) => r.code === 'path_collision')).toBe(true);
+    expect(leaf(out.files['primitives.light.json'], PATH)).toBeUndefined();
+    // ... and the derived unit really did reach the output through the alias.
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')?.$type).toBe('dimension');
+
+    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(entries).toHaveLength(1);
+    // Keyed by path plus id, the same way the sidecar names a collided token.
+    expect(entries[0].path).toBe(`${PATH} [VariableID:unknown-number]`);
+    expect(entries[0].details).toMatchObject({ id: 'VariableID:unknown-number', via: 'binding' });
+  });
+
   it('leaves a number alone when nothing states a unit for it', () => {
     const out = foundationDtcg(syntheticArtifact());
     expect(leaf(out.files['primitives.light.json'], PATH)).toMatchObject({ $type: 'number', $value: 1.5 });

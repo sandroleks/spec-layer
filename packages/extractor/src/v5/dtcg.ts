@@ -14,7 +14,7 @@ import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
 } from './entities';
 import { canonicalNumber } from './precision';
-import { scopesStateUnit } from './units';
+import { scopesStateNumber, scopesStateUnit } from './units';
 // Type-only, so the runtime edge stays one way: usageUnits.ts reads this
 // module's `dtcgPathOf`, and nothing here reads it back.
 import type { UnitEvidence, UsageUnitMap } from './usageUnits';
@@ -385,8 +385,6 @@ function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5
   return undefined;
 }
 
-const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
-
 /**
  * The typed leaf one token's own value projects to: a declared unit override
  * and the scopes that pin a number are the TOKEN's, not the reader's. Shared by
@@ -405,6 +403,54 @@ interface ProjectedOwner {
   derivedUnit(evidence: UnitEvidence): void;
 }
 
+/**
+ * The path a report entry about one token carries: its DTCG path, or the path
+ * plus its id when two tokens collided on that path and the path alone does not
+ * say which. The same rule the sidecar keys collided tokens by.
+ */
+function reportPathOf(p: Projection, token: TokenV5): string {
+  const path = p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name;
+  return p.collidedIds.has(token.id) ? `${path} [${token.id}]` : path;
+}
+
+/**
+ * Reports what projecting `token`'s own literal decided, against `token`.
+ *
+ * Every call site that projects a literal passes one of these, including the
+ * two that project a chain TERMINAL rather than the token whose leaf is being
+ * built. Those two reach tokens the mode loop never builds a leaf for -- an
+ * omitted or collided terminal is skipped there -- and without this the unit
+ * they derive for it would reach the output with no entry naming it, which is
+ * the one thing a derived unit may never do. `reportOnce` keys on the entry's
+ * own contents, so the ordinary case, where the terminal's own leaf reports
+ * the same fact, still yields exactly one entry.
+ */
+function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
+  const path = reportPathOf(p, token);
+  return {
+    overrideConflict: (override) => {
+      reportOnce(p, {
+        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
+        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+        details: { id: token.id, override, scopes: [...token.scopes] },
+      });
+    },
+    // Reported without a mode, like the override conflict above: the evidence
+    // is a fact about the token, not about one of its values, so a token in
+    // three modes earns one entry rather than three.
+    derivedUnit: (evidence) => {
+      reportOnce(p, {
+        code: 'unit_derived_from_usage', severity: 'info', path,
+        message: `No scope states this token's unit, so ${evidence.unit} was taken from its use: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
+        details: {
+          id: token.id, unit: evidence.unit, via: evidence.via,
+          source: evidence.source, reason: evidence.reason,
+        },
+      });
+    },
+  };
+}
+
 function projectedLiteral(
   p: Projection, token: TokenV5, resolved: TypedValue, owner?: ProjectedOwner,
 ): Projected {
@@ -414,7 +460,7 @@ function projectedLiteral(
   let overrode = false;
   let derived: UnitEvidence | undefined;
   if (override !== undefined && literal.type === 'number') {
-    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) owner?.overrideConflict(override);
+    if (scopesStateNumber(token.scopes)) owner?.overrideConflict(override);
     else {
       literal = { type: 'dimension', number: literal.value, unit: override };
       overrode = true;
@@ -468,7 +514,8 @@ function aliasLeafType(
   p: Projection, token: TokenV5, chain: readonly ResolutionStep[], resolved: TypedValue,
 ): Converted {
   const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
-  return projectedLiteral(p, terminal ?? token, resolved).converted;
+  const subject = terminal ?? token;
+  return projectedLiteral(p, subject, resolved, ownerFor(p, subject)).converted;
 }
 
 /**
@@ -490,7 +537,7 @@ function terminalOwnType(p: Projection, chain: readonly ResolutionStep[]): Conve
   const terminal = hop ? p.tokenById.get(hop.token_id) : undefined;
   const value = terminal && hop ? terminal.values[hop.mode_id] : undefined;
   if (!terminal || !value || value.kind !== 'literal') return undefined;
-  return projectedLiteral(p, terminal, value.value).converted;
+  return projectedLiteral(p, terminal, value.value, ownerFor(p, terminal)).converted;
 }
 
 /** DTCG requires a referencing token's `$type` to equal the referenced
@@ -1201,28 +1248,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const projected = projectedLiteral(p, token, value.value, {
-    overrideConflict: (override) => {
-      reportOnce(p, {
-        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
-        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
-        details: { id: token.id, override, scopes: [...token.scopes] },
-      });
-    },
-    // Reported without a mode, like the override conflict above: the evidence
-    // is a fact about the token, not about one of its values, so a token in
-    // three modes earns one entry rather than three.
-    derivedUnit: (evidence) => {
-      reportOnce(p, {
-        code: 'unit_derived_from_usage', severity: 'info', path,
-        message: `No scope states this token's unit, so ${evidence.unit} was taken from its use: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
-        details: {
-          id: token.id, unit: evidence.unit, via: evidence.via,
-          source: evidence.source, reason: evidence.reason,
-        },
-      });
-    },
-  });
+  const projected = projectedLiteral(p, token, value.value, ownerFor(p, token));
   const converted = projected.converted;
   if ('omit' in converted) {
     reportOnce(p, {

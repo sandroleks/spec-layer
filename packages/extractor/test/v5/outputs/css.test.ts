@@ -643,6 +643,122 @@ describe('cssOutput reports unitless numbers', () => {
     );
   });
 
+  it('leaves a token whose scopes state a unitless number out of the header count', () => {
+    // An OPACITY-scoped variable states that it has no unit, so "its Figma
+    // variable states none" is false of it and "narrow the variable's scopes"
+    // is a no-op the count would never respond to. The DTCG leaf cannot tell
+    // the two apart; the sidecar can.
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: {
+            opacity: { full: { $type: 'number', $value: 1 } },
+            spacing: { 400: { $type: 'number', $value: 16 } },
+          },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {
+        'Foundation.opacity.full': { id: 'v1', collection_id: 'c1', type: 'number', scopes: ['OPACITY'] },
+        'Foundation.spacing.400': { id: 'v2', collection_id: 'c1', type: 'number', scopes: [] },
+      },
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+
+    expect(out.files['foundation.css']).toContain(
+      '   1 property in this file has no unit, because its Figma variable states none.',
+    );
+    // Both values are still written, and the per-token report still names both:
+    // the opacity token IS a bare number, it just is not missing anything.
+    expect(joined(out)).toContain('--foundation-opacity-full: 1;');
+    expect(out.report.filter((r) => r.code === 'unitless_number').map((r) => r.path).sort())
+      .toEqual(['Foundation.opacity.full', 'Foundation.spacing.400']);
+  });
+
+  it('says how many properties took their unit from stated usage, and where to read why', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { spacing: { 900: { $type: 'dimension', $value: { value: 36, unit: 'px' } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [{
+        code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.spacing.900',
+        message: 'No scope states this token\'s unit, so px was taken from its use: Button binds it to height.',
+        details: { id: 'v1', unit: 'px', via: 'binding', source: 'Button', reason: 'height' },
+      }],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+
+    expect(out.files['foundation.css']).toBe(
+      `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
+      + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.\n'
+      + '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.\n'
+      + '   See tokens/report.json under your pull\'s output directory for what pinned it. */\n\n'
+      + ':root {\n  /* Foundation */\n  --foundation-spacing-900: 36px;\n}\n',
+    );
+    // index.css declares nothing, so it carries no note of either kind.
+    expect(out.files[CSS_INDEX_FILE]).not.toContain('taken from how the library uses');
+  });
+
+  it('counts derived properties per file and pluralizes both notes together', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: {
+            spacing: {
+              900: { $type: 'dimension', $value: { value: 36, unit: 'px' } },
+              800: { $type: 'dimension', $value: { value: 32, unit: 'px' } },
+            },
+            ratio: { tight: { $type: 'number', $value: 1.2 } },
+          },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [
+        {
+          code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.spacing.900',
+          message: 'x', details: {},
+        },
+        {
+          code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.spacing.800',
+          message: 'x', details: {},
+        },
+      ],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+
+    expect(out.files['foundation.css']).toContain(
+      '   1 property in this file has no unit, because its Figma variable states none.',
+    );
+    expect(out.files['foundation.css']).toContain(
+      '   2 properties in this file have a unit no Figma scope states, taken from how the library uses those tokens.\n'
+      + '   See tokens/report.json under your pull\'s output directory for what pinned each one.',
+    );
+  });
+
   it('leaves the header alone when every value in the file carries a unit', () => {
     const exp: DtcgExport = {
       files: {

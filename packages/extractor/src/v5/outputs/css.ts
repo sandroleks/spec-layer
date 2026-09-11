@@ -12,6 +12,7 @@
 import { dtcgSlug, type DtcgExport, type DtcgJson, type DtcgTree } from '../dtcg';
 import { compareCodeUnits } from '../diagnostics';
 import { canonicalNumber } from '../precision';
+import { scopesStateNumber } from '../units';
 import {
   resolveNames, sortReport,
   type NameCase, type OutputMapEntry, type OutputReportEntry,
@@ -431,14 +432,22 @@ const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').repla
  * speclayer.json), which this layer does not know, so the note says where the
  * file lives relative to that rather than guessing a path that could be wrong.
  *
- * The remedy named is the one that is right for EVERY token that reaches this
- * note. A `number` here means nothing that reached the projection stated a
- * unit for the token, so the reader cannot be told to declare a length for it:
- * an opacity or a z-index token is legitimately unitless and a declared `px`
- * would corrupt it. Narrowing the variable's scopes in Figma is what states a
- * unit, and it states the right one either way.
+ * The remedy named is the one that is right for EVERY token that can reach
+ * this note. A counted token is one whose Figma variable states no unit at
+ * all: a variable scoped OPACITY or FONT_WEIGHT states "unitless number" and
+ * is excluded upstream, so the reader is never told to narrow scopes they
+ * have already narrowed, and is never told to declare a length for a token
+ * that must not have one.
+ *
+ * `derivedCount` is the other half of the same disclosure: the properties in
+ * this file whose unit no scope stated and whose unit was taken from the
+ * library's stated usage instead. A file that says which of its values have
+ * no unit and says nothing about which were inferred discloses the smaller
+ * half of the truth.
  */
-function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0): string {
+function headerText(
+  header: OutputHeader, nameCase: NameCase, unitlessCount = 0, derivedCount = 0,
+): string {
   const lines = [
     `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.`,
     '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.',
@@ -457,6 +466,14 @@ function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0)
       );
     }
   }
+  if (derivedCount > 0) {
+    lines.push(
+      derivedCount === 1
+        ? '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.'
+        : `   ${derivedCount} properties in this file have a unit no Figma scope states, taken from how the library uses those tokens.`,
+      `   See tokens/report.json under your pull's output directory for what pinned ${derivedCount === 1 ? 'it' : 'each one'}.`,
+    );
+  }
   return `${lines.join('\n')} */`;
 }
 
@@ -469,8 +486,23 @@ interface EmitResult {
   declared: Set<string>;
   /** The DTCG source file that first declared each path, in source order. */
   firstFile: Map<string, string>;
-  /** DTCG source file -> distinct token paths declared in it that `cssValue` reported `unitless_number` for. */
+  /** DTCG source file -> distinct token paths declared in it that `cssValue`
+   *  reported `unitless_number` for, minus those whose own Figma scopes state
+   *  a unitless number and so are not missing anything. */
   unitlessByFile: Map<string, Set<string>>;
+  /** DTCG source file -> distinct token paths declared in it whose unit the
+   *  projection derived from the library's stated usage. */
+  derivedByFile: Map<string, Set<string>>;
+}
+
+/** What the projection already knows about a path, which `cssValue` cannot see:
+ *  a DTCG leaf carries no scopes, and a `number` leaf alone cannot say whether
+ *  its token is missing a unit or stating that it has none. */
+interface PathFacts {
+  /** Paths whose Figma scopes state a unitless number (OPACITY, FONT_WEIGHT). */
+  statesNumber: Set<string>;
+  /** Paths the projection reported `unit_derived_from_usage` for. */
+  derived: Set<string>;
 }
 
 /**
@@ -481,13 +513,19 @@ interface EmitResult {
  */
 function emitPass(
   sources: Source[], leavesByFile: Map<string, Leaf[]>, names: Map<string, string>, alive: Set<string>,
-  root: string, template: string, modes: Record<string, string> | undefined,
+  root: string, template: string, modes: Record<string, string> | undefined, facts: PathFacts,
 ): EmitResult {
   const entries: OutputReportEntry[] = [];
   const declared = new Set<string>();
   const firstFile = new Map<string, string>();
   const blocks = new Map<string, Block>();
   const unitlessByFile = new Map<string, Set<string>>();
+  const derivedByFile = new Map<string, Set<string>>();
+  const note = (by: Map<string, Set<string>>, file: string, path: string): void => {
+    const set = by.get(file) ?? new Set<string>();
+    set.add(path);
+    by.set(file, set);
+  };
   for (const s of sources) {
     const perCollection = modes?.[s.collection];
     const selector = s.isDefault ? root : (perCollection ?? template)
@@ -511,11 +549,11 @@ function emitPass(
           const before = entries.length;
           const v = cssValue(ctx, leaf.type, leaf.value);
           if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); declaredHere.push(leaf.path); }
-          if (entries.length > before && entries[entries.length - 1].code === 'unitless_number') {
-            const set = unitlessByFile.get(s.file) ?? new Set<string>();
-            set.add(leaf.path);
-            unitlessByFile.set(s.file, set);
+          if (entries.length > before && entries[entries.length - 1].code === 'unitless_number'
+            && !facts.statesNumber.has(leaf.path)) {
+            note(unitlessByFile, s.file, leaf.path);
           }
+          if (v !== null && facts.derived.has(leaf.path)) note(derivedByFile, s.file, leaf.path);
         }
       }
     }
@@ -526,7 +564,7 @@ function emitPass(
     if (existing) existing.decls.push(...decls);
     else blocks.set(s.file, { selector, comment, decls });
   }
-  return { blocks, entries, declared, firstFile, unitlessByFile };
+  return { blocks, entries, declared, firstFile, unitlessByFile, derivedByFile };
 }
 
 export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
@@ -567,7 +605,20 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     codeSyntaxKey: 'WEB', acceptDeclared: acceptCssDeclared, affix: (body) => `--${body}`, nameCase,
   });
   const names = resolved.names; // permanent: a path missing here collided, and is done
-  const emit = (alive: Set<string>) => emitPass(sources, leavesByFile, names, alive, root, template, options.modes);
+
+  // Two things the DTCG leaves cannot state about themselves, read from the
+  // record that can: which tokens state that they are unitless numbers, and
+  // which had a unit derived for them.
+  const facts: PathFacts = {
+    statesNumber: new Set(Object.entries(exp.meta)
+      .filter(([, entry]) => scopesStateNumber(entry.scopes))
+      .map(([path]) => path)),
+    derived: new Set(exp.report
+      .filter((entry) => entry.code === 'unit_derived_from_usage')
+      .map((entry) => entry.path)),
+  };
+  const emit = (alive: Set<string>) =>
+    emitPass(sources, leavesByFile, names, alive, root, template, options.modes, facts);
 
   // Fixed point on which names a reference may resolve through. A name
   // stops being a valid reference target the moment nothing actually
@@ -616,7 +667,11 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
   const imports: string[] = [];
   for (const [source, block] of pass.blocks) {
     const name = fileNames.get(source) as string;
-    const head = headerText(header, nameCase, pass.unitlessByFile.get(source)?.size ?? 0);
+    const head = headerText(
+      header, nameCase,
+      pass.unitlessByFile.get(source)?.size ?? 0,
+      pass.derivedByFile.get(source)?.size ?? 0,
+    );
     files[name] = `${head}\n\n${block.selector} {\n  ${block.comment}\n${block.decls.map((d) => `  ${d}`).join('\n')}\n}\n`;
     imports.push(block.comment, `@import "./${name}";`);
   }
