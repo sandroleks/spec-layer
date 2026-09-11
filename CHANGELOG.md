@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A dimension token that aliases a number token no longer projects an
+  invalid CSS value.** DTCG requires a referencing token's `$type` to equal
+  its alias target's, but the DTCG projection decided each token's type from
+  whichever token's own scope was asking: a CORNER_RADIUS-scoped token
+  aliasing an unscoped primitive (`Mapped Radius.rd-sm` -> `Foundation.radius.300`
+  on a real pull) wrote `{"$type": "dimension", "$value": "{Foundation.radius.300}"}`
+  next to a target the projection itself wrote as `$type: "number"`. The CSS
+  generator trusted the declared type and emitted `--rd-sm: var(--radius-300)`
+  against `--radius-300: 8`, so `border-radius: var(--rd-sm)` resolved to the
+  unitless `8` and was silently dropped by the browser -- a real component
+  built from the pull rendered with no radius, no padding, and no height. The
+  projection now re-derives the alias target's own type independently (from
+  its own literal, not the alias owner's already-scoped snapshot) and, when
+  the two disagree, reports `alias_type_mismatch` at `error` severity and
+  writes the token's own resolved literal instead of the unsound reference.
+  The literal was never invented: it is the same resolved value
+  `spec-layer.meta.json` already carried for the token.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

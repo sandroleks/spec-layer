@@ -304,6 +304,72 @@ describe('foundationDtcg aliases and omissions', () => {
       .toEqual({ $type: 'fontWeight', $value: '{Primitives.typography.weight.strong}' });
   });
 
+  /**
+   * Mirrors Mapped Radius.rd-sm -> Foundation.radius.300 from a real pull:
+   * rd-sm is scoped CORNER_RADIUS, so Figma's own resolution types its
+   * "resolved" snapshot as a dimension (a real spec-layer.meta.json holds
+   * exactly `resolved: { value: 8, unit: "px" }` for it) -- but the direct
+   * alias target carries no such scope, so ITS own literal is a bare number.
+   * DTCG requires the two to agree.
+   */
+  function radiusMismatchArtifact(): ReturnType<typeof syntheticArtifact> {
+    const artifact = syntheticArtifact();
+    const foundation = artifact.collections.find((c) => c.id === 'CollectionID:primitives');
+    const radius = artifact.collections.find((c) => c.id === 'CollectionID:semantic');
+    if (!foundation || !radius) throw new Error('fixture lost Primitives/Semantic');
+    foundation.name = 'Foundation';
+    radius.name = 'Radius';
+
+    const target = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
+    if (!target) throw new Error('fixture lost Primitives.number.unknown-scope');
+    target.name = 'radius/300';
+    target.values['ModeID:p-light'] = { kind: 'literal', value: { type: 'number', value: 8 } };
+
+    const owner = artifact.tokens.find((t) => t.id === 'VariableID:gap');
+    if (!owner) throw new Error('fixture lost Primitives.spacing.gap');
+    owner.name = 'rd-sm';
+    owner.scopes = ['CORNER_RADIUS'];
+    owner.collection_id = radius.id;
+    owner.values = {
+      'ModeID:s-light': {
+        kind: 'alias',
+        reference: {
+          target_id: target.id, target_collection_id: foundation.id,
+          target_path: ['radius', '300'], external: false,
+        },
+        resolved: {
+          status: 'resolved',
+          value: { type: 'dimension', number: 8, unit: 'px' },
+          chain: [{ token_id: target.id, mode_id: 'ModeID:p-light' }],
+        },
+      },
+    };
+    return artifact;
+  }
+
+  it('reports a dimension token whose alias target is a number', () => {
+    const out = foundationDtcg(radiusMismatchArtifact());
+
+    const entry = out.report.find((r) => r.code === 'alias_type_mismatch');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('error');
+    expect(entry?.path).toBe('Radius.rd-sm');
+    expect(entry?.details).toMatchObject({
+      target: 'Foundation.radius.300',
+      own_type: 'dimension',
+      target_type: 'number',
+    });
+  });
+
+  it('writes the resolved dimension when the alias target cannot carry the unit', () => {
+    const out = foundationDtcg(radiusMismatchArtifact());
+    const rdSm = leaf(out.files['radius.light.json'], 'Radius.rd-sm');
+
+    expect(rdSm?.$type).toBe('dimension');
+    expect(rdSm?.$value).toEqual({ value: 8, unit: 'px' });
+    expect(String(rdSm?.$value)).not.toContain('{');
+  });
+
   it('reports a code syntax identifier that two tokens share', () => {
     const artifact = syntheticArtifact();
     const [a, b] = artifact.tokens.filter((t) => t.type === 'color').slice(0, 2);

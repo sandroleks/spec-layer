@@ -31,7 +31,8 @@ export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
   | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
-  | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped';
+  | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped'
+  | 'alias_type_mismatch';
 
 export interface DtcgReportEntry {
   code: DtcgReportCode;
@@ -437,6 +438,42 @@ function aliasLeafType(
 ): Converted {
   const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
   return projectedLiteral(p, terminal ?? token, resolved).converted;
+}
+
+/**
+ * The chain terminal's own `$type`, re-derived from ITS OWN literal value
+ * rather than from `resolved`: a FLOAT's dimension/number split is decided by
+ * whichever token's scope is asking (units.ts), so the alias owner's resolved
+ * snapshot is already typed through the OWNER's scope, not the terminal's. A
+ * CORNER_RADIUS-scoped token aliasing an unscoped primitive carries a
+ * `resolved` value that is already `dimension` for that reason -- comparing
+ * it against `aliasLeafType`'s output (which reuses that same snapshot) can
+ * never surface the terminal's true, unscoped `number`. Only re-projecting
+ * the terminal's OWN literal, independently, recovers it. `undefined` when
+ * the terminal cannot be re-derived this way (missing terminal, or a value at
+ * that mode that is not itself a literal): no reported mismatch is safer than
+ * one built on a guess.
+ */
+function terminalOwnType(p: Projection, chain: readonly ResolutionStep[]): Converted | undefined {
+  const hop = chain.length > 0 ? chain[chain.length - 1] : undefined;
+  const terminal = hop ? p.tokenById.get(hop.token_id) : undefined;
+  const value = terminal && hop ? terminal.values[hop.mode_id] : undefined;
+  if (!terminal || !value || value.kind !== 'literal') return undefined;
+  return projectedLiteral(p, terminal, value.value).converted;
+}
+
+/** DTCG requires a referencing token's `$type` to equal the referenced
+ *  token's. A CORNER_RADIUS-scoped token aliasing an unscoped primitive
+ *  breaks that, and a consumer that trusts the `dimension` type writes an
+ *  invalid CSS length. Report it where the two types are both in hand. */
+function reportAliasTypeMismatch(
+  p: Projection, path: string, targetPath: string, ownType: string, targetType: string,
+): void {
+  reportOnce(p, {
+    code: 'alias_type_mismatch', severity: 'error', path,
+    message: `This token is "${ownType}" but its alias target ${targetPath} is "${targetType}"; a consumer reading the declared type gets a value the target cannot carry.`,
+    details: { target: targetPath, own_type: ownType, target_type: targetType },
+  });
 }
 
 /** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
@@ -1101,6 +1138,19 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       return null;
     }
     recordFact(p, token.id, mode, 'alias', typed.$value);
+    // A referencing token's `$type` must equal its target's, or a consumer
+    // that trusts the declared type writes a value the target cannot carry
+    // (a `dimension` reference to a bare `number` loses the unit entirely).
+    // `terminalOwnType` re-derives the target's type independently, from its
+    // own literal, because `typed` above is typed through the ALIAS OWNER's
+    // scope and so cannot see that divergence on its own.
+    const terminalType = terminalOwnType(p, value.resolved.chain);
+    if (terminalType && !('omit' in terminalType) && terminalType.$type !== typed.$type) {
+      reportAliasTypeMismatch(p, path, targetPath, typed.$type, terminalType.$type);
+      // The reference would lose the unit; typed.$value is already the
+      // resolved literal (the same snapshot the sidecar just recorded above).
+      return { $type: typed.$type, $value: typed.$value, ...description };
+    }
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
