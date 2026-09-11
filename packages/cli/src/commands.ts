@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
@@ -12,7 +12,9 @@ import {
 } from './selection';
 import { CREDENTIALS_NAME, writeCredentials } from './credentials';
 import { ensureIgnored } from './gitignore';
-import { detectRepo, isAgentHost, isPlatform, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform } from './detect';
+import {
+  detectRepo, isAgentHost, isPlatform, missingFontSourcesInRepo, AGENT_HOSTS, PLATFORMS, type AgentHost, type Platform,
+} from './detect';
 import { buildSkillGuide, installSkill, installTarget, summarizePull, type SkillInput } from './skill';
 import {
   FORMATS, defaultOutputs, outputId, readIndexImports, withDefaults, type OutputConfig,
@@ -24,6 +26,8 @@ export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
   only?: string; component?: string[]; canonical?: boolean;
   json?: boolean; install?: boolean; agent?: string[]; platform?: string[];
+  /** pull only: exit 1 when the output report holds an error-severity entry. Default exit codes are otherwise unchanged. */
+  strict?: boolean;
 };
 /** out/err add a newline per line; write emits exactly the given text, for piped output. */
 export type Io = { out(line: string): void; err(line: string): void; write(text: string): void };
@@ -340,6 +344,42 @@ function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolea
   return imports !== null && imports.every((f) => existsSync(resolve(cwd, o.path, f)));
 }
 
+/** A JSON file that may not exist yet, parsed as an array, or `[]` when it is missing, unreadable, or not an array. Never throws. */
+function readJsonArray(path: string): unknown[] {
+  if (!existsSync(path)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The severity of every entry this pull wrote to `outputs/<platform>-<format>.report.json`
+ * for this output, read back from disk rather than threaded through
+ * writeBundleFiles's return value. `[]` when the file was never written (the
+ * Foundation was not selected, or this output produced nothing to report).
+ */
+function readOutputReportSeverities(cwd: string, outDir: string, o: OutputConfig): Array<'error' | 'warning' | 'info'> {
+  const path = join(cwd, outDir, 'outputs', `${outputId(o)}.report.json`);
+  return readJsonArray(path)
+    .map((entry) => (entry as { severity?: unknown }).severity)
+    .filter((s): s is 'error' | 'warning' | 'info' => s === 'error' || s === 'warning' || s === 'info');
+}
+
+/** The family names fonts.json named for this pull, or none when the Foundation was not written or the file cannot be read. */
+function readFontFamilies(cwd: string, outDir: string): string[] {
+  return readJsonArray(join(cwd, outDir, 'fonts.json'))
+    .map((entry) => (entry as { family?: unknown }).family)
+    .filter((f): f is string => typeof f === 'string');
+}
+
+/** "1 error" / "2 errors": every count this command prints is pluralised, never assumed singular or plural. */
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
@@ -445,6 +485,37 @@ export async function runPull(
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));
   }
+  // A report entry never fails the pull on its own -- changing the default
+  // exit code would break every CI that already runs `pull` -- so this is the
+  // one place a silent name_collision or unitless_number gets said out loud.
+  // Read back from outputs/<id>.report.json rather than threading the report
+  // through writeBundleFiles's return value: the file is the one thing both
+  // this process and a developer's editor agree is the record.
+  const reportPaths: string[] = [];
+  let reportErrors = 0;
+  let reportWarnings = 0;
+  for (const r of outputResults) {
+    const o = outputs.find((x) => x.path === r.path);
+    if (!o) continue;
+    const severities = readOutputReportSeverities(cwd, opts.outDir, o);
+    if (severities.length === 0) continue;
+    reportErrors += severities.filter((s) => s === 'error').length;
+    reportWarnings += severities.filter((s) => s === 'warning').length;
+    reportPaths.push(`${opts.outDir}/outputs/${outputId(o)}.report.json`);
+  }
+  if (reportErrors > 0 || reportWarnings > 0) {
+    io.err(`${plural(reportErrors, 'error')}, ${plural(reportWarnings, 'warning')} in the token output. See ${reportPaths.join(', ')}.`);
+  }
+  // fonts.json is written whenever the Foundation is selected, and can
+  // legitimately be an empty array; only a family it actually names is worth
+  // checking against the repository.
+  const fontFamilies = readFontFamilies(cwd, opts.outDir);
+  if (fontFamilies.length > 0) {
+    for (const family of missingFontSourcesInRepo(fontFamilies, cwd)) {
+      io.err(`This library needs ${family}, and nothing in this repository loads it. See fonts.json.`);
+    }
+  }
+  if (flags.strict && reportErrors > 0) return 1;
   return 0;
 }
 

@@ -42,6 +42,56 @@ function realFoundationArtifact() {
   return artifact;
 }
 
+/**
+ * The same synthetic foundation, with one extra Primitives variable whose
+ * derived CSS name collides with the existing `number/unknown-scope`:
+ * splitWords treats `-` and `_` alike, so "unknown-scope" and "unknown_scope"
+ * both derive the identifier `unknown-scope`. This reaches a genuine
+ * name_collision error through the full pull pipeline (naming.ts, exercised
+ * from writeBundleFiles) without touching the shared fixture file on disk --
+ * the mutation happens on a parsed clone, in memory, once per test run.
+ */
+function foundationArtifactWithCollision() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED_FOUNDATION, 'utf8')) as SerializedFoundation;
+  const primitives = serialized.collections.find((c) => c.name === 'Primitives');
+  const original = primitives?.variables.find((v) => v.name === 'number/unknown-scope');
+  if (!primitives || !original) throw new Error('fixture shape changed: expected Primitives/number/unknown-scope');
+  primitives.variables.push({ ...original, id: 'VariableID:unknown-number-collision', name: 'number/unknown_scope' });
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-collision', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
+/**
+ * A hand-built, single-collection, single-mode foundation with exactly one
+ * unscoped number variable and no typography styles: one collection means no
+ * mode_selector_shared warning, one mode means no per-mode duplication, and no
+ * text styles means no value_converted info entry. The only report entry a
+ * pull of this foundation can produce is exactly one `unitless_number`
+ * warning, which is what pins the singular "1 warning" (not "1 warnings").
+ */
+function minimalUnitlessFoundationArtifact() {
+  const serialized: SerializedFoundation = {
+    fileKey: 'cli-test-minimal', fileName: 'Minimal', extractedAt: '2026-09-01T00:00:00.000Z',
+    externals: [], textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'VariableCollectionId:solo', name: 'Solo',
+      defaultModeId: 'ModeID:solo-default',
+      modes: [{ modeId: 'ModeID:solo-default', name: 'Default' }],
+      variables: [{
+        id: 'VariableID:solo-number', name: 'number/solo', resolvedType: 'FLOAT',
+        description: '', codeSyntax: {}, scopes: ['ALL_SCOPES'],
+        valuesByMode: { 'ModeID:solo-default': 2 },
+      }],
+    }],
+  };
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-minimal', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
 /** writeBundleFiles refuses a component brief that does not begin with the Spec Layer marker. */
 const brief = (body: string): string => `spec_layer:\n  kind: component\n${body}`;
 
@@ -52,6 +102,11 @@ const GOOD_BUNDLE = {
   components: [
     { name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
   ],
+};
+
+const COLLISION_BUNDLE = { ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithCollision() } };
+const SINGLE_WARNING_BUNDLE = {
+  ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: minimalUnitlessFoundationArtifact() },
 };
 
 function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z') {
@@ -622,6 +677,72 @@ describe('runPull with outputs', () => {
     expect(await runPull(cwd, { key: KEY, platform: ['Web'] }, {}, io, fetcher)).toBe(1);
     expect(io.errLines[0]).toBe('--platform takes web, ios, android, flutter, not "Web".');
     expect((fetcher as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('runPull report summary and --strict', () => {
+  let cwd: string;
+  const LIB = 'lib_bbbbbbbbbbbbbbbbbbbbbbbb';
+  const KEY = `sl_${'b'.repeat(48)}`;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-report-'));
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    // Satisfies the synthetic foundation's one typography family (Inter), so
+    // these tests read only the severity summary, not a missing-font note.
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: { '@fontsource/inter': '^5.0.0' } }));
+  });
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('summarises report severity on stderr after a pull with errors', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    const err = io.errLines.join('\n');
+    expect(err).toContain('2 errors, 2 warnings in the token output.');
+    expect(err).toContain('web-css.report.json');
+  });
+
+  it('exits 1 under --strict when an error-severity entry exists', async () => {
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, makeIo(), stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(1);
+  });
+
+  it('still exits 0 without --strict, even with an error-severity entry', async () => {
+    const code = await runPull(cwd, { key: KEY }, {}, makeIo(), stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+  });
+
+  it('summarises a report with only warnings, pluralising both counts', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
+    expect(code).toBe(0);
+    expect(io.errLines.join('\n')).toContain('0 errors, 5 warnings in the token output.');
+  });
+
+  it('pluralises a single warning as "1 warning", not "1 warnings"', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(SINGLE_WARNING_BUNDLE)));
+    expect(code).toBe(0);
+    expect(io.errLines.join('\n')).toContain('0 errors, 1 warning in the token output.');
+  });
+
+  it('prints no severity line for a components-only pull, which writes no output report', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY, only: 'components' }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    expect(io.errLines).toEqual([]);
+  });
+
+  it('names a font family nothing in the repository loads', async () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({}));
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
+    expect(code).toBe(0);
+    expect(io.errLines).toContain('This library needs Inter, and nothing in this repository loads it. See fonts.json.');
   });
 });
 

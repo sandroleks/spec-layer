@@ -10,8 +10,9 @@ Commands:
                                                  store the key, then pull
   init    --id lib_... [--out DIR] [selection] [--platform P]...
                                                  write speclayer.json
-  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]...
-                                                 fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/
+  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]... [--strict]
+                                                 fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/;
+                                                 --strict exits 1 when the output report holds an error-severity entry (default exit stays 0)
   status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
   list                                           list every artifact in the last pull
   show    foundation | component NAME [--canonical]
@@ -52,6 +53,7 @@ async function main(): Promise<number> {
         canonical: { type: 'boolean' },
         json: { type: 'boolean' },
         install: { type: 'boolean' },
+        strict: { type: 'boolean' },
         agent: { type: 'string', multiple: true },
         platform: { type: 'string', multiple: true },
       },
