@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, foundationDtcg, validateLevel1,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, foundationDtcg, usageUnits, validateLevel1,
   type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
@@ -187,7 +187,14 @@ export function writeBundleFiles(opts: {
         if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
           throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
         }
-        const exp = foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {});
+        // The evidence for a unit no scope states is split across the bundle:
+        // the scopes live in the Foundation and the bindings in the component
+        // artifacts, and the projection sees only the first. The pull is the
+        // first place both are in hand, so it is where the pass runs. Every
+        // unit it derives is written to the projection's own report.
+        const exp = foundationDtcg(
+          artifact as FoundationArtifactV5, opts.dtcg ?? {}, usageUnits(opts.bundle),
+        );
         for (const [name, text] of Object.entries(dtcgExportFiles(exp))) put(`tokens/${name}`, text);
         path = `${outDirRel}/tokens/resolver.json`;
         const header = { libraryId: opts.libraryId, contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash };

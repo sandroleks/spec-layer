@@ -608,8 +608,8 @@ describe('cssOutput reports unitless numbers', () => {
       `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
       + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.\n'
       + '   1 property in this file has no unit, because its Figma variable states none.\n'
-      + '   CSS cannot use it as a length. See web-css.report.json under your pull\'s output '
-      + 'directory, or declare a unit in speclayer.json. */\n\n'
+      + '   CSS reads it as a number, not a length. See outputs/web-css.report.json under your pull\'s output '
+      + 'directory, or narrow the variable\'s scopes in Figma. */\n\n'
       + ':root {\n  /* Foundation */\n  --spacing-400: 16;\n}\n',
     );
     // index.css never declares a property itself, so it never carries the note.
@@ -638,8 +638,8 @@ describe('cssOutput reports unitless numbers', () => {
     const out = cssOutput(exp, HEADER);
     expect(out.files['foundation.css']).toContain(
       '   2 properties in this file have no unit, because their Figma variables state none.\n'
-      + '   CSS cannot use them as a length. See web-css.report.json under your pull\'s output '
-      + 'directory, or declare units in speclayer.json.',
+      + '   CSS reads them as numbers, not lengths. See outputs/web-css.report.json under your pull\'s output '
+      + 'directory, or narrow the variables\' scopes in Figma.',
     );
   });
 

@@ -61,10 +61,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   matching what a reader of that one file can actually count. The sentence is
   correct English at every count, not just the plural case: one property
   reads "1 property in this file has no unit, because its Figma variable
-  states none," and the report is named exactly (`web-css.report.json` for
-  the web/CSS output) rather than pointed at with "the output report," which
+  states none," and the report is named exactly and in full
+  (`outputs/web-css.report.json` for the web/CSS output, the `outputs/` folder
+  being fixed rather than configurable) instead of "the output report," which
   a reader could not tell apart from the differently-shaped report the pull
-  also writes under `tokens/`.
+  also writes under `tokens/`. The remedy it names is narrowing the
+  variable's scopes in Figma, which is the right answer whether the token is a
+  length or a genuinely unitless opacity; it deliberately does not tell the
+  reader to declare a unit in `speclayer.json`, which would be right for the
+  first and would corrupt the second.
+
+- **A token no scope gives a unit now takes one from how the library uses
+  it.** A Figma variable with no unit-pinning scope carried a bare number all
+  the way to the CSS, and on a real pull that was 66 of 421 properties: a
+  button rendered at 23.59px instead of 36px because `height: 36` is not a
+  length. Two kinds of evidence the export already carried now answer that
+  where the file itself is silent. A token scoped `CORNER_RADIUS`, `GAP`,
+  `WIDTH_HEIGHT`, `FONT_SIZE`, or `STROKE_FLOAT` that aliases an unscoped
+  primitive states that the primitive is a length, and a component binding
+  that says `property: gap` or `height` for a token states the same, both
+  carried along the alias chain the token sits on. This is not the
+  name-reading `units.ts` forbids and will keep forbidding: a scope is the
+  designer's own declaration and a binding property is the extractor's
+  vocabulary, while `spacing/400` and `font-weight/fw-600` are names that look
+  alike and mean different things. Three rules keep it auditable. Every
+  derived unit is reported, at `unit_derived_from_usage` and `info` severity,
+  naming the token that was scoped or the component that bound it and the
+  scope or property that did it, so no inference is silent. Evidence that
+  disagrees with itself, a token bound to `gap` in one place and to a
+  non-length property in another, produces no answer at all rather than a
+  winner, and the token is still reported as unitless. An explicit
+  `"dtcg": { "units": ... }` entry in `speclayer.json` outranks anything read
+  off usage, because that is the repository's own statement. The pass runs
+  during `spec-layer pull`, which is the first place the Foundation and the
+  components are both in hand; the `spec-layer.meta.json` sidecar names the
+  rule as `number-unit-usage`, distinct from a configured
+  `number-unit-override` and from a token that held a dimension of its own,
+  and the projection's `config_hash` does not move, since this is read off the
+  published library rather than configured.
 
 ## [5.1.0] - 2026-09-10
 

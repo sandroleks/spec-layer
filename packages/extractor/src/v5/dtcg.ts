@@ -14,6 +14,10 @@ import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
 } from './entities';
 import { canonicalNumber } from './precision';
+import { scopesStateUnit } from './units';
+// Type-only, so the runtime edge stays one way: usageUnits.ts reads this
+// module's `dtcgPathOf`, and nothing here reads it back.
+import type { UnitEvidence, UsageUnitMap } from './usageUnits';
 import type { ColorValue, DimensionValue, ResolutionStep, TypedValue } from './value';
 
 export type DtcgValueStyle = 'standard' | 'legacy';
@@ -32,7 +36,7 @@ export type DtcgReportCode =
   | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
   | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped'
-  | 'alias_type_mismatch';
+  | 'alias_type_mismatch' | 'unit_derived_from_usage';
 
 export interface DtcgReportEntry {
   code: DtcgReportCode;
@@ -47,7 +51,12 @@ export interface DtcgReportEntry {
 /** The rule that produced a token's `$value` in one mode. */
 export type DtcgTransform =
   | 'alias' | 'color' | 'dimension' | 'duration' | 'number'
-  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override';
+  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override'
+  /** A unit no scope stated, taken from how the library uses the token and
+   *  reported with its evidence. Distinct from `dimension`, which would claim
+   *  the token held a dimension of its own, and from `number-unit-override`,
+   *  which is the repository's explicit configuration. */
+  | 'number-unit-usage';
 
 export interface DtcgMetaEntry {
   id: string;
@@ -262,6 +271,10 @@ export function sortTree(value: DtcgJson): DtcgJson {
 interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  /** Units derived from stated usage, keyed by token id. Deliberately NOT part
+   *  of `options`: `config_hash` digests the repository's configuration, and
+   *  this is read off the published library, not configured. */
+  derivedUnits: UsageUnitMap;
   tokenById: Map<string, TokenV5>;
   /** Every token id in the artifact, regardless of whether the projection
    *  carried it through. Distinguishes a binding to a token this export never
@@ -378,33 +391,51 @@ const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
  * The typed leaf one token's own value projects to: a declared unit override
  * and the scopes that pin a number are the TOKEN's, not the reader's. Shared by
  * the literal branch and the alias branch of `tokenLeaf` so the two can never
- * disagree about a `$type`. `onOverrideConflict` fires only when the caller
- * owns the token, since an override that contradicts a scope is reported once
- * against the token it names, not against everything that aliases it.
+ * disagree about a `$type`. `owner` is passed only by the call site that owns
+ * the token, since a fact about one token is reported once against the token it
+ * names, not against everything that aliases it.
  */
 export interface Projected { converted: Converted; transform: DtcgTransform | null }
 
+/** What the owning call site is told about the token it asked to project. */
+interface ProjectedOwner {
+  /** A `dtcg.units` entry names a token whose scopes state a unitless number. */
+  overrideConflict(override: 'px' | 'rem'): void;
+  /** No scope stated a unit, so one was taken from the library's stated usage. */
+  derivedUnit(evidence: UnitEvidence): void;
+}
+
 function projectedLiteral(
-  p: Projection, token: TokenV5, resolved: TypedValue,
-  onOverrideConflict?: (override: 'px' | 'rem') => void,
+  p: Projection, token: TokenV5, resolved: TypedValue, owner?: ProjectedOwner,
 ): Projected {
   const collection = p.collectionById.get(token.collection_id);
   const override = collection ? unitOverrideFor(p, token, collection) : undefined;
   let literal: TypedValue = resolved;
   let overrode = false;
+  let derived: UnitEvidence | undefined;
   if (override !== undefined && literal.type === 'number') {
-    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) onOverrideConflict?.(override);
+    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) owner?.overrideConflict(override);
     else {
       literal = { type: 'dimension', number: literal.value, unit: override };
       overrode = true;
     }
+  } else if (literal.type === 'number' && !scopesStateUnit(token.scopes)) {
+    // Only where the file itself states nothing, and only under the config's
+    // silence: an explicit override is the human's own statement and outranks
+    // anything read off usage.
+    const evidence = p.derivedUnits.get(token.id);
+    if (evidence !== undefined) {
+      literal = { type: 'dimension', number: literal.value, unit: evidence.unit };
+      derived = evidence;
+      owner?.derivedUnit(evidence);
+    }
   }
   const converted = dtcgLiteral(literal, token.scopes, p.options.values);
   if ('omit' in converted) return { converted, transform: null };
-  return {
-    converted,
-    transform: overrode ? 'number-unit-override' : literalTransform(literal, token.scopes),
-  };
+  let transform: DtcgTransform | null = literalTransform(literal, token.scopes);
+  if (overrode) transform = 'number-unit-override';
+  else if (derived !== undefined) transform = 'number-unit-usage';
+  return { converted, transform };
 }
 
 /** The transform name for a literal DTCG could state. `string` and `boolean`
@@ -939,10 +970,19 @@ function styleCensus(tree: DtcgTree): DtcgCensusEntry {
   return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
 }
 
-export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
+/**
+ * `derivedUnits` is optional because only a caller holding the whole library
+ * can produce it: the evidence lives in the component artifacts, and this
+ * projection sees the Foundation alone. Omitting it projects exactly as
+ * before.
+ */
+export function foundationDtcg(
+  artifact: FoundationArtifactV5, options: DtcgOptions = {}, derivedUnits?: UsageUnitMap,
+): DtcgExport {
   const p: Projection = {
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    derivedUnits: derivedUnits ?? new Map(),
     tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
     tokenIds: new Set(artifact.tokens.map((t) => t.id)),
     collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
@@ -1161,12 +1201,27 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const projected = projectedLiteral(p, token, value.value, (override) => {
-    reportOnce(p, {
-      code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
-      message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
-      details: { id: token.id, override, scopes: [...token.scopes] },
-    });
+  const projected = projectedLiteral(p, token, value.value, {
+    overrideConflict: (override) => {
+      reportOnce(p, {
+        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
+        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+        details: { id: token.id, override, scopes: [...token.scopes] },
+      });
+    },
+    // Reported without a mode, like the override conflict above: the evidence
+    // is a fact about the token, not about one of its values, so a token in
+    // three modes earns one entry rather than three.
+    derivedUnit: (evidence) => {
+      reportOnce(p, {
+        code: 'unit_derived_from_usage', severity: 'info', path,
+        message: `No scope states this token's unit, so ${evidence.unit} was taken from its use: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
+        details: {
+          id: token.id, unit: evidence.unit, via: evidence.via,
+          source: evidence.source, reason: evidence.reason,
+        },
+      });
+    },
   });
   const converted = projected.converted;
   if ('omit' in converted) {

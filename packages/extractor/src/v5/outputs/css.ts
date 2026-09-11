@@ -425,11 +425,18 @@ const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').repla
  * declares none keeps the original two-line header byte-for-byte.
  *
  * The report file name follows the CLI's own `outputId` convention
- * (`packages/cli/src/outputs.ts`): `<platform>-<format>.report.json`. This
- * layer does not know the pull's configured output directory (`--out`, or
- * `outDir` in speclayer.json), so the note names the file and says where
- * it lives relative to that directory rather than guessing a path that
- * could be wrong.
+ * (`packages/cli/src/outputs.ts`): `outputs/<platform>-<format>.report.json`.
+ * The `outputs/` folder is fixed and not configurable, so the note states it;
+ * the directory it sits under is the pull's own (`--out`, or `outDir` in
+ * speclayer.json), which this layer does not know, so the note says where the
+ * file lives relative to that rather than guessing a path that could be wrong.
+ *
+ * The remedy named is the one that is right for EVERY token that reaches this
+ * note. A `number` here means nothing that reached the projection stated a
+ * unit for the token, so the reader cannot be told to declare a length for it:
+ * an opacity or a z-index token is legitimately unitless and a declared `px`
+ * would corrupt it. Narrowing the variable's scopes in Figma is what states a
+ * unit, and it states the right one either way.
  */
 function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0): string {
   const lines = [
@@ -441,12 +448,12 @@ function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0)
     if (unitlessCount === 1) {
       lines.push(
         '   1 property in this file has no unit, because its Figma variable states none.',
-        `   CSS cannot use it as a length. See ${reportFile} under your pull's output directory, or declare a unit in speclayer.json.`,
+        `   CSS reads it as a number, not a length. See outputs/${reportFile} under your pull's output directory, or narrow the variable's scopes in Figma.`,
       );
     } else {
       lines.push(
         `   ${unitlessCount} properties in this file have no unit, because their Figma variables state none.`,
-        `   CSS cannot use them as a length. See ${reportFile} under your pull's output directory, or declare units in speclayer.json.`,
+        `   CSS reads them as numbers, not lengths. See outputs/${reportFile} under your pull's output directory, or narrow the variables' scopes in Figma.`,
       );
     }
   }

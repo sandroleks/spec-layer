@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
+  type UnitEvidence, type UsageUnitMap,
 } from '../../src/index';
 import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
 
@@ -728,6 +729,75 @@ describe('config_hash', () => {
 
   it('changes when a unit override changes', () => {
     expect(hashOf({ units: { 'A/one': 'px' } })).not.toBe(hashOf({ units: { 'A/one': 'rem' } }));
+  });
+});
+
+describe('units derived from stated usage', () => {
+  const PATH = 'Primitives.number.unknown-scope';
+  const evidence = (over: Partial<UnitEvidence> = {}): UnitEvidence => ({
+    unit: 'px', via: 'binding', source: 'Button', reason: 'height', ...over,
+  });
+  const derived = (id: string, over?: Partial<UnitEvidence>): UsageUnitMap =>
+    new Map([[id, evidence(over)]]);
+
+  it('writes a real dimension and reports the evidence that pinned it', () => {
+    const out = foundationDtcg(syntheticArtifact(), {}, derived('VariableID:unknown-number'));
+
+    expect(leaf(out.files['primitives.light.json'], PATH))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'px' } });
+
+    // Guardrail: a derived unit a reader cannot audit is a guess. The entry
+    // must name what pinned it, not just that something did.
+    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(entries).toHaveLength(1); // one fact about the token, not one per mode
+    expect(entries[0].severity).toBe('info');
+    expect(entries[0].path).toBe(PATH);
+    expect(entries[0].details).toMatchObject({
+      id: 'VariableID:unknown-number', unit: 'px', via: 'binding', source: 'Button', reason: 'height',
+    });
+    expect(entries[0].message).toContain('Button binds it to height');
+
+    // The sidecar names the rule that produced the value, rather than claiming
+    // the token held a dimension of its own.
+    const transforms = Object.values(out.meta[PATH].transform ?? {});
+    expect(transforms.every((t) => t === 'number-unit-usage')).toBe(true);
+    expect(transforms.length).toBeGreaterThan(0);
+  });
+
+  it('words a scope-pinned alias as scoped rather than bound', () => {
+    const out = foundationDtcg(
+      syntheticArtifact(), {},
+      derived('VariableID:unknown-number', { via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' }),
+    );
+    const entry = out.report.find((r) => r.code === 'unit_derived_from_usage');
+    expect(entry?.message).toContain('Radius.rd-sm is scoped CORNER_RADIUS');
+  });
+
+  it('lets an explicit units override beat the derived evidence', () => {
+    // Guardrail: the config is the human's own statement about their tokens.
+    const out = foundationDtcg(
+      syntheticArtifact(), { units: { 'Primitives/number/*': 'rem' } },
+      derived('VariableID:unknown-number'),
+    );
+    expect(leaf(out.files['primitives.light.json'], PATH))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'rem' } });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+    expect(Object.values(out.meta[PATH].transform ?? {})).toContain('number-unit-override');
+  });
+
+  it('ignores evidence about a token whose own scopes already state a unit', () => {
+    // A FONT_WEIGHT scope states "unitless number"; nothing read off usage may
+    // overrule the file's own statement.
+    const out = foundationDtcg(syntheticArtifact(), {}, derived('VariableID:font-weight'));
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.typography.weight.strong')?.$type)
+      .toBe('fontWeight');
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+  });
+
+  it('leaves a number alone when nothing states a unit for it', () => {
+    const out = foundationDtcg(syntheticArtifact());
+    expect(leaf(out.files['primitives.light.json'], PATH)).toMatchObject({ $type: 'number', $value: 1.5 });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
   });
 });
 

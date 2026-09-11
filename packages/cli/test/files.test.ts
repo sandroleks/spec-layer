@@ -435,6 +435,53 @@ describe('writeBundleFiles', () => {
     expect(result.outputs[0].files).toContain(map['Primitives.color.exact.red'].file);
   });
 
+  it('writes a real length for a token a component binds to a length property', () => {
+    // Primitives.number.unknown-scope carries no unit-pinning scope, so on its
+    // own it lands in the CSS as the bare `1.5` a browser drops. The bundle
+    // states what it is used for; the pull is where both halves are in hand.
+    const bound = {
+      name: 'Button',
+      ai: brief('button: yes\n'),
+      artifact: {
+        spec_layer: { export: { content_hash: 'c'.repeat(64) } },
+        references: {
+          used: [],
+          bindings: [{
+            path: 'Container', property: 'height',
+            source_id: 'VariableID:unknown-number', kind: 'variable',
+          }],
+        },
+      },
+    } as unknown as BundleV1['components'][number];
+    const bundle = makeBundle({ foundation: realFoundation(), components: [bound] });
+    const result = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
+      publishedAt: 'p', bundleHash: 'h', outputs: [WEB],
+    });
+
+    const all = result.outputs[0].files
+      .map((f) => readFileSync(join(tmpDir, 'tokens', f), 'utf8')).join('\n');
+    expect(all).toContain('--primitives-number-unknown-scope: 1.5px;');
+    expect(all).not.toContain('--primitives-number-unknown-scope: 1.5;');
+
+    // Guardrail: every derived unit is auditable. The projection's own report
+    // names the component and the property that pinned it.
+    const report = JSON.parse(readFileSync(join(outDir, 'tokens/report.json'), 'utf8')) as Array<{
+      code: string; severity: string; path: string; details: Record<string, string>;
+    }>;
+    const derived = report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(derived).toHaveLength(1);
+    expect(derived[0]).toMatchObject({
+      severity: 'info',
+      path: 'Primitives.number.unknown-scope',
+      details: { via: 'binding', source: 'Button', reason: 'height' },
+    });
+
+    // And the CSS output no longer counts it among the unusable ones.
+    const cssReport = JSON.parse(readFileSync(join(outDir, 'outputs/web-css.report.json'), 'utf8')) as Array<{ code: string; path: string }>;
+    expect(cssReport.some((r) => r.code === 'unitless_number' && r.path === 'Primitives.number.unknown-scope')).toBe(false);
+  });
+
   it('refuses a foreign file in the tokens directory before writing anything', () => {
     const bundle = makeBundle({ foundation: realFoundation() });
     mkdirSync(join(tmpDir, 'tokens'), { recursive: true });

@@ -18,5 +18,6 @@ export * from './statistics';
 export * from './fromFoundation';
 export * from './aiContext';
 export * from './dtcg';
+export * from './usageUnits';
 export * from './outputs/index';
 export * from './componentContext';
