@@ -51,14 +51,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   two apart.
 
 - **The generated CSS file itself now says when it holds unusable properties.**
-  `unitless_number` above only reaches `web-css.report.json`, a file nothing
-  opens: the developer and the coding agent both open the CSS file, not the
-  report. A file that declares at least one such property now gets two extra
-  header lines naming the count and pointing at the report or
+  `unitless_number` above only reaches `<platform>-<format>.report.json`, a
+  file nothing opens: the developer and the coding agent both open the CSS
+  file, not the report. A file that declares at least one such property now
+  gets two extra header lines naming the count, the report file to read, and
   `speclayer.json`; a file with none keeps its original two-line header
   unchanged. The count is per file, not per token: one token present in three
   modes is written to three separate files and is counted once in each,
-  matching what a reader of that one file can actually count.
+  matching what a reader of that one file can actually count. The sentence is
+  correct English at every count, not just the plural case: one property
+  reads "1 property in this file has no unit, because its Figma variable
+  states none," and the report is named exactly (`web-css.report.json` for
+  the web/CSS output) rather than pointed at with "the output report," which
+  a reader could not tell apart from the differently-shaped report the pull
+  also writes under `tokens/`.
 
 ## [5.1.0] - 2026-09-10
 

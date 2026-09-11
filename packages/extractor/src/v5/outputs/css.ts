@@ -423,6 +423,13 @@ const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').repla
  * `unitlessCount` is the number of distinct token paths declared in this
  * particular file that `cssValue` reported as `unitless_number`; a file that
  * declares none keeps the original two-line header byte-for-byte.
+ *
+ * The report file name follows the CLI's own `outputId` convention
+ * (`packages/cli/src/outputs.ts`): `<platform>-<format>.report.json`. This
+ * layer does not know the pull's configured output directory (`--out`, or
+ * `outDir` in speclayer.json), so the note names the file and says where
+ * it lives relative to that directory rather than guessing a path that
+ * could be wrong.
  */
 function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0): string {
   const lines = [
@@ -430,10 +437,18 @@ function headerText(header: OutputHeader, nameCase: NameCase, unitlessCount = 0)
     '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.',
   ];
   if (unitlessCount > 0) {
-    lines.push(
-      `   ${unitlessCount} properties in this file have no unit, because the Figma variable states none.`,
-      '   CSS cannot use them as a length. See the output report, or declare units in speclayer.json.',
-    );
+    const reportFile = `${header.platform}-${header.format}.report.json`;
+    if (unitlessCount === 1) {
+      lines.push(
+        '   1 property in this file has no unit, because its Figma variable states none.',
+        `   CSS cannot use it as a length. See ${reportFile} under your pull's output directory, or declare a unit in speclayer.json.`,
+      );
+    } else {
+      lines.push(
+        `   ${unitlessCount} properties in this file have no unit, because their Figma variables state none.`,
+        `   CSS cannot use them as a length. See ${reportFile} under your pull's output directory, or declare units in speclayer.json.`,
+      );
+    }
   }
   return `${lines.join('\n')} */`;
 }
