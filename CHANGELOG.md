@@ -29,6 +29,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   its literal's own rule rather than `alias`, and it carries no `resolved`
   snapshot, since both were only ever meaningful for a surviving reference.
 
+- **A component's copied YAML now says what a diagnostic found, not just how
+  many.** The canonical Foundation Context v5 artifact already carries a full
+  `diagnostics` array -- codes, severities, entity ids, structured `details`,
+  and a human message -- but the AI-profile projection collapsed all of it to
+  `issue_counts: { warning: { STYLE_BINDING_DRIFT: 1 } }`. On a real pull, five
+  components carried `issue_counts: { error: { UNRESOLVED_REFERENCE: N } }`
+  with no path, no property, and no message anywhere in the file: ten
+  error-severity findings reported as bare integers. `foundationAiContext` now
+  also renders `STYLE_BINDING_DRIFT`, `UNIT_METADATA_UNAVAILABLE`, and
+  `UNRESOLVED_REFERENCE` -- the codes it can turn into a specific, actionable
+  sentence -- into `validation` rows (kebab-case `id`, matching the existing
+  `unbound-value` vocabulary), naming both sides of a style/token drift or the
+  scopes that leave a number's unit unstated. A code outside that map stays
+  summarized in `issue_counts` only, deliberately: a generic fallback message
+  would be worse than a bare count. Because `foundationAiContext` is what
+  builds the Foundation dependency slice nested inside a component's own copy
+  (`references.foundation`), `componentAiContext` now carries the same
+  `validation` rows through into that slice, so the diagnostic reaches the one
+  file a developer actually has open. `issue_counts` is unchanged and stays
+  alongside the rows as a summary. Confined to the AI profile: the canonical
+  artifact, every content hash, and `EXTRACTOR_VERSION` (`'2'`) are untouched.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable

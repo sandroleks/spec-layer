@@ -90,6 +90,51 @@ describe('foundationAiContext', () => {
     expect(serialized).not.toContain('Alias resolution cycles back to itself');
     expect(serialized).not.toContain('diagnostics');
     expect(serialized).not.toContain('statistics');
+    // Only the two codes this projection knows how to render as prose turn
+    // into rows; the other four codes above stay summarized in issue_counts
+    // only, per the "no generic fallback" rule.
+    expect(context.validation).toHaveLength(2);
+  });
+
+  it('projects a canonical diagnostic into validation, not just into a count', () => {
+    const full = structuredClone(fixture());
+    full.diagnostics = [{
+      code: 'STYLE_BINDING_DRIFT',
+      severity: 'warning',
+      entity_id: 'S:abc,',
+      message: 'The typography property snapshot differs from its unambiguous bound token value.',
+      details: {
+        property: 'font_weight',
+        style_value: { type: 'number', value: 400 },
+        token_value: { type: 'number', value: 500 },
+      },
+    }];
+
+    const context = foundationAiContext(full);
+
+    const entry = context.validation?.find((row) => row.id === 'style-binding-drift');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('warning');
+    expect(entry?.property).toBe('font_weight');
+    expect(entry?.message).toContain('400');
+    expect(entry?.message).toContain('500');
+    // the summary count survives alongside the detail
+    expect(context.issue_counts?.warning?.STYLE_BINDING_DRIFT).toBe(1);
+  });
+
+  it('leaves a code it does not recognise out of validation, summarized only', () => {
+    const full = structuredClone(fixture());
+    full.diagnostics = [{
+      code: 'ALIAS_CYCLE',
+      severity: 'error',
+      entity_id: 'VariableID:whatever',
+      message: 'Alias resolution cycles back to itself.',
+    }];
+
+    const context = foundationAiContext(full);
+
+    expect(context.validation).toBeUndefined();
+    expect(context.issue_counts?.error?.ALIAS_CYCLE).toBe(1);
   });
 
   it('keeps source ids only when a human-readable name is ambiguous', () => {

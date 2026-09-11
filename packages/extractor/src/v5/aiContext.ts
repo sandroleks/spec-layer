@@ -14,6 +14,7 @@
  */
 import type { FoundationArtifactV5 } from './canonical';
 import { compareCodeUnits } from './diagnostics';
+import type { Diagnostic, Severity } from './diagnostics';
 import type {
   CollectionV5, EffectStyleV5, LifecycleState, PublicationState,
   StyleProperty, TokenV5, TypographyStyleV5,
@@ -39,8 +40,19 @@ export interface FoundationAiContext {
     typography: AiValue[];
     effects: AiValue[];
   };
+  /** Canonical diagnostics a consumer can act on, rendered as prose. A code
+   *  this projection does not know how to render stays out of this list and
+   *  summarized in `issue_counts` only -- see `DIAGNOSTIC_MESSAGE`. */
+  validation?: FoundationValidationRow[];
   issue_counts?: Record<string, Record<string, number>>;
   guidelines?: Record<string, Record<string, string>>;
+}
+
+export interface FoundationValidationRow {
+  id: string;
+  severity: Severity;
+  property?: string;
+  message: string;
 }
 
 export interface FoundationAiCollection {
@@ -385,6 +397,62 @@ function compactEffect(
   };
 }
 
+function kebab(code: string): string {
+  return code.toLowerCase().replace(/_/g, '-');
+}
+
+/** Renders a typed value envelope compactly for a validation message. Reads
+ *  only the shapes a diagnostic's `details` actually carries -- a scalar
+ *  envelope (`{ type, value }`), a dimension/duration (`{ type, number, unit }`),
+ *  or a color (`{ type, hex, ... }`) -- and never invents a value: an
+ *  unrecognised shape falls back to its own JSON text rather than a guess. */
+function valueText(value: unknown): string {
+  if (value === null || value === undefined) return 'unknown';
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if ('value' in record) return String(record.value);
+    if ('number' in record) {
+      const unit = typeof record.unit === 'string' ? record.unit : '';
+      return `${String(record.number)}${unit}`;
+    }
+    if (typeof record.hex === 'string') return record.hex;
+  }
+  return String(value);
+}
+
+/** Canonical diagnostics a consumer must be able to act on. A count alone
+ *  tells a reader something is wrong and nothing about what. Codes absent
+ *  from this map stay summarised in `issue_counts` only -- deliberately no
+ *  generic fallback, which would emit a row with a useless message for every
+ *  code instead of leaving the count to speak for itself. */
+const DIAGNOSTIC_MESSAGE: Record<string, (d: Diagnostic) => string> = {
+  STYLE_BINDING_DRIFT: (d) =>
+    `${String(d.details?.property)} is ${valueText(d.details?.style_value)} in the style but `
+    + `${valueText(d.details?.token_value)} in the token it is bound to; the two disagree.`,
+  UNIT_METADATA_UNAVAILABLE: (d) =>
+    `The numeric value is kept, but scopes ${JSON.stringify(d.details?.scopes ?? [])} state no `
+    + 'unit, so a consumer cannot use it as a length.',
+  UNRESOLVED_REFERENCE: (d) => d.message,
+};
+
+function diagnosticRows(diagnostics: readonly Diagnostic[]): FoundationValidationRow[] {
+  const rows = diagnostics.flatMap((d): FoundationValidationRow[] => {
+    const render = DIAGNOSTIC_MESSAGE[d.code];
+    if (!render) return [];
+    const property = d.details?.property;
+    return [{
+      id: kebab(d.code),
+      severity: d.severity,
+      ...(typeof property === 'string' ? { property } : {}),
+      message: render(d),
+    }];
+  });
+  return rows.sort((a, b) =>
+    compareCodeUnits(a.id, b.id)
+    || compareCodeUnits(a.property ?? '', b.property ?? '')
+    || compareCodeUnits(a.message, b.message));
+}
+
 function issueCounts(artifact: FoundationArtifactV5): Record<string, Record<string, number>> | undefined {
   const bySeverity = new Map<string, Map<string, number>>();
   for (const finding of artifact.diagnostics) {
@@ -441,6 +509,7 @@ export function foundationAiContext(
   });
 
   const counts = issueCounts(artifact);
+  const validation = diagnosticRows(artifact.diagnostics);
   return {
     spec_layer: {
       kind: 'foundation',
@@ -464,6 +533,7 @@ export function foundationAiContext(
         style, index, includeSourceIds,
       )),
     },
+    ...(validation.length > 0 ? { validation } : {}),
     ...(counts ? { issue_counts: counts } : {}),
     ...(artifact.guidelines
       ? { guidelines: artifact.guidelines.group_descriptions }

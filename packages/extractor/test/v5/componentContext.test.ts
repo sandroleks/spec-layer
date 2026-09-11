@@ -233,6 +233,41 @@ describe('Component Context v5', () => {
       .toBe(false);
   });
 
+  it('projects a Foundation-level diagnostic into the component YAML, not just its count', () => {
+    // A component's Foundation dependency slice inherits only the findings
+    // scoped to what it actually uses (componentFoundationDependencies), so
+    // this proves the row survives that filter and reaches the AI profile's
+    // nested `references.foundation.validation`, not only `issue_counts`.
+    const source: FoundationArtifactV5 = {
+      ...foundation(),
+      diagnostics: [{
+        code: 'STYLE_BINDING_DRIFT', severity: 'warning', entity_id: 'StyleID:text',
+        message: 'The typography property snapshot differs from its unambiguous bound token value.',
+        details: {
+          property: 'font_weight',
+          style_value: { type: 'number', value: 400 },
+          token_value: { type: 'number', value: 500 },
+        },
+      }],
+    };
+    const artifact = buildComponentArtifactV5(spec([
+      rule('StyleID:text', 'Body/Regular', 'text-style', 'typography'),
+    ]), { ...META, foundation: source });
+
+    const context = componentAiContext(artifact);
+    const foundationSection = context.references.foundation as {
+      validation?: Array<{ id: string; severity: string; property?: string; message: string }>;
+      issue_counts?: Record<string, Record<string, number>>;
+    };
+    const entry = foundationSection.validation?.find((row) => row.id === 'style-binding-drift');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('warning');
+    expect(entry?.message).toContain('400');
+    expect(entry?.message).toContain('500');
+    // the summary count still survives alongside the detail
+    expect(foundationSection.issue_counts?.warning?.STYLE_BINDING_DRIFT).toBe(1);
+  });
+
   it('includes variable bindings nested inside inline effect fields', () => {
     const component = spec([]);
     component.nodeEffects = [{

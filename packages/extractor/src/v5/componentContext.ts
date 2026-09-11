@@ -787,6 +787,9 @@ export function componentAiContext(
       completeness: compact.completeness as unknown as YamlValue,
       collections: compact.collections as unknown as YamlValue,
       styles: compact.styles as unknown as YamlValue,
+      ...(compact.validation
+        ? { validation: compact.validation as unknown as YamlValue }
+        : {}),
       ...(compact.issue_counts
         ? { issue_counts: compact.issue_counts as unknown as YamlValue }
         : {}),
