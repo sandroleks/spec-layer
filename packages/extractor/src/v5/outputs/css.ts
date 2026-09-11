@@ -158,6 +158,10 @@ export function cssFileNames(sources: CssSource[]): Map<string, string> {
  */
 interface Ctx {
   names: Map<string, string>; alive: Set<string>; report: OutputReportEntry[]; path: string; mode?: string;
+  /** Whether this path's own Figma scopes state it is a unitless number
+   *  (`OPACITY`, `FONT_WEIGHT`). A DTCG leaf cannot say this about itself, and
+   *  the remedy for a bare number depends entirely on the answer. */
+  statesNumber: boolean;
 }
 
 const REF = /^\{(.+)\}$/;
@@ -223,10 +227,24 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
         // no unit because the file states none, and this generator does not
         // invent one; the value is still emitted regardless of whether it is
         // reported.
+        //
+        // Two messages, because two different things are true, and the file
+        // header points the reader straight at this entry. A token whose own
+        // scopes state nothing is missing a unit, and narrowing its scopes in
+        // Figma is the fix: the same remedy, in the same words, the header
+        // carries, so a reader sent here by the header does not meet a third
+        // story. An `OPACITY`- or `FONT_WEIGHT`-scoped token is missing
+        // nothing; Figma states it has no unit, the header count already
+        // excludes it, and telling its owner to narrow scopes they have
+        // already narrowed would be false. It is still reported, because a
+        // bare number is still not a length and a reader that feeds one to
+        // `height` loses the declaration either way.
         if (property !== 'lineHeight') {
           report(ctx, {
             code: 'unitless_number', severity: 'warning',
-            message: 'This token has no unit, so CSS cannot use it as a length. Declare one under "dtcg": { "units": ... } in speclayer.json and pull again, or narrow the variable\'s scopes in Figma.',
+            message: ctx.statesNumber
+              ? 'This token has no unit, because its Figma scopes state it is a unitless number. CSS reads it as a number, not a length, which is what those scopes ask for. Do not use it where a length is expected.'
+              : 'This token has no unit, because its Figma variable states none. CSS reads it as a number, not a length. Narrow the variable\'s scopes in Figma and pull again.',
             details: { value, ...member },
           });
         }
@@ -440,10 +458,17 @@ const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').repla
  * that must not have one.
  *
  * `derivedCount` is the other half of the same disclosure: the properties in
- * this file whose unit no scope stated and whose unit was taken from the
- * library's stated usage instead. A file that says which of its values have
- * no unit and says nothing about which were inferred discloses the smaller
- * half of the truth.
+ * this file whose own Figma variable states no unit and whose unit was taken
+ * from the library's stated usage instead. A file that says which of its
+ * values have no unit and says nothing about which were inferred discloses the
+ * smaller half of the truth.
+ *
+ * The line says "its own Figma variable does not state", not "no Figma scope
+ * states", because a scope is exactly what states it for half of this
+ * population: `via: 'alias-scope'` evidence is a scope a designer set on a
+ * token that aliases this one, and the report entry the line points at names
+ * that scope. What is true of every derivation, both `alias-scope` and
+ * `binding`, is that the token's OWN variable states nothing.
  */
 function headerText(
   header: OutputHeader, nameCase: NameCase, unitlessCount = 0, derivedCount = 0,
@@ -469,8 +494,8 @@ function headerText(
   if (derivedCount > 0) {
     lines.push(
       derivedCount === 1
-        ? '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.'
-        : `   ${derivedCount} properties in this file have a unit no Figma scope states, taken from how the library uses those tokens.`,
+        ? '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.'
+        : `   ${derivedCount} properties in this file have a unit their own Figma variables do not state, taken from how the library uses those tokens.`,
       `   See tokens/report.json under your pull's output directory for what pinned ${derivedCount === 1 ? 'it' : 'each one'}.`,
     );
   }
@@ -534,7 +559,11 @@ function emitPass(
     const decls: string[] = [];
     const declaredHere: string[] = [];
     for (const leaf of leavesByFile.get(s.file) ?? []) {
-      const ctx: Ctx = { names, alive, report: entries, path: leaf.path, ...(s.mode !== null ? { mode: s.mode } : {}) };
+      const ctx: Ctx = {
+        names, alive, report: entries, path: leaf.path,
+        statesNumber: facts.statesNumber.has(leaf.path),
+        ...(s.mode !== null ? { mode: s.mode } : {}),
+      };
       if (leaf.type === 'typography') {
         const t = typographyDecls(ctx, leaf, names);
         decls.push(...t.decls);
@@ -550,7 +579,7 @@ function emitPass(
           const v = cssValue(ctx, leaf.type, leaf.value);
           if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); declaredHere.push(leaf.path); }
           if (entries.length > before && entries[entries.length - 1].code === 'unitless_number'
-            && !facts.statesNumber.has(leaf.path)) {
+            && !ctx.statesNumber) {
             note(unitlessByFile, s.file, leaf.path);
           }
           if (v !== null && facts.derived.has(leaf.path)) note(derivedByFile, s.file, leaf.path);

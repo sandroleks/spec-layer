@@ -500,7 +500,7 @@ describe('writeBundleFiles', () => {
     // unitless property in these files, so that note is gone and the derived
     // note stands in its place.
     expect(all).toContain(
-      '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.',
+      '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.',
     );
     expect(all).toContain("   See tokens/report.json under your pull's output directory for what pinned it.");
     expect(all).not.toContain('has no unit');

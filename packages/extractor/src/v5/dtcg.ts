@@ -441,7 +441,12 @@ function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
     derivedUnit: (evidence) => {
       reportOnce(p, {
         code: 'unit_derived_from_usage', severity: 'info', path,
-        message: `No scope states this token's unit, so ${evidence.unit} was taken from its use: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
+        // "its own variable", not "no scope": for `via: 'alias-scope'` a scope
+        // is exactly what stated the unit, and this same sentence goes on to
+        // name it. What is true of both kinds of evidence is that the token's
+        // OWN variable states nothing. The CSS header that points a reader at
+        // this entry says it the same way, for the same reason.
+        message: `This token's own variable states no unit, so ${evidence.unit} was taken from how the library uses it: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
         details: {
           id: token.id, unit: evidence.unit, via: evidence.via,
           source: evidence.source, reason: evidence.reason,
@@ -1307,10 +1312,20 @@ export interface DtcgDocumentExtension {
   schema_version: string;
   content_hash: string;
   /** A digest of the projection options that produced this document: the
-   *  value style and the unit overrides. Descriptive only. It answers whether
-   *  an output changed because the design changed or because the repository
-   *  changed its config, and it must never feed a canvas hash or an artifact
-   *  identity. */
+   *  value style and the unit overrides. Descriptive only. It separates an
+   *  output that changed because the design changed from one that changed
+   *  because the repository changed its config, and it must never feed a
+   *  canvas hash or an artifact identity.
+   *
+   *  Those two are no longer the only causes, and this document carries no
+   *  hash for the third. A unit derived from usage is read off the library's
+   *  component bindings and alias scopes when the pull runs (`usageUnits`), so
+   *  the same Foundation `content_hash` and the same `config_hash` can project
+   *  a different value once a component starts binding a token to `height`.
+   *  Nothing here hashes a component. A reader comparing two pulls reads the
+   *  `unit_derived_from_usage` entries in `report.json` to see which tokens
+   *  that reached, rather than concluding the projection is nondeterministic;
+   *  it is not, and given the same bundle it repeats exactly. */
   config_hash: string;
   source: { provider: 'figma'; file_name?: string };
   completeness: FoundationArtifactV5['completeness'];

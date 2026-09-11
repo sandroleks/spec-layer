@@ -502,7 +502,16 @@ describe('cssOutput reports unitless numbers', () => {
     expect(entry).toBeDefined();
     expect(entry?.severity).toBe('warning');
     expect(entry?.path).toBe('Foundation.spacing.400');
-    expect(entry?.message).toContain('dtcg');
+    // The message is the header's own sentence, continued: the header sends
+    // the reader here, so the two must not name different causes or different
+    // remedies. It no longer offers `dtcg.units`, which the header
+    // deliberately withholds and which is wrong for a token that must stay
+    // unitless.
+    expect(entry?.message).toBe(
+      'This token has no unit, because its Figma variable states none. '
+      + 'CSS reads it as a number, not a length. Narrow the variable\'s scopes in Figma and pull again.',
+    );
+    expect(entry?.message).not.toContain('dtcg');
   });
 
   it('does not report a font weight as unitless', () => {
@@ -680,6 +689,21 @@ describe('cssOutput reports unitless numbers', () => {
     expect(joined(out)).toContain('--foundation-opacity-full: 1;');
     expect(out.report.filter((r) => r.code === 'unitless_number').map((r) => r.path).sort())
       .toEqual(['Foundation.opacity.full', 'Foundation.spacing.400']);
+
+    // ...and they do not carry the same message. The header counts one of
+    // these two and points the reader at this report; an opacity's owner must
+    // not find "narrow the variable's scopes" waiting for them there, which is
+    // a no-op on scopes they have already narrowed.
+    const byPath = (path: string) => out.report
+      .find((r) => r.code === 'unitless_number' && r.path === path)?.message ?? '';
+    expect(byPath('Foundation.spacing.400')).toContain('its Figma variable states none');
+    expect(byPath('Foundation.spacing.400')).toContain('Narrow the variable\'s scopes in Figma');
+    expect(byPath('Foundation.opacity.full')).toBe(
+      'This token has no unit, because its Figma scopes state it is a unitless number. '
+      + 'CSS reads it as a number, not a length, which is what those scopes ask for. '
+      + 'Do not use it where a length is expected.',
+    );
+    expect(byPath('Foundation.opacity.full')).not.toContain('Narrow');
   });
 
   it('says how many properties took their unit from stated usage, and where to read why', () => {
@@ -698,7 +722,7 @@ describe('cssOutput reports unitless numbers', () => {
       meta: {},
       report: [{
         code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.spacing.900',
-        message: 'No scope states this token\'s unit, so px was taken from its use: Button binds it to height.',
+        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Button binds it to height.',
         details: { id: 'v1', unit: 'px', via: 'binding', source: 'Button', reason: 'height' },
       }],
       extension: EXTENSION,
@@ -708,12 +732,46 @@ describe('cssOutput reports unitless numbers', () => {
     expect(out.files['foundation.css']).toBe(
       `${CSS_HEADER_PREFIX} from library lib_test, foundation sha256:abc, web/css/kebab.\n`
       + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.\n'
-      + '   1 property in this file has a unit no Figma scope states, taken from how the library uses the token.\n'
+      + '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.\n'
       + '   See tokens/report.json under your pull\'s output directory for what pinned it. */\n\n'
       + ':root {\n  /* Foundation */\n  --foundation-spacing-900: 36px;\n}\n',
     );
     // index.css declares nothing, so it carries no note of either kind.
     expect(out.files[CSS_INDEX_FILE]).not.toContain('taken from how the library uses');
+  });
+
+  it('does not claim no scope stated the unit when an alias-scope pinned it', () => {
+    // The other half of the derived population. `via: 'alias-scope'` means a
+    // Figma scope IS what stated the unit, just not the token's own, and the
+    // report entry this header points at says so out loud. A header line
+    // reading "a unit no Figma scope states" would contradict the entry it
+    // sends the reader to.
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { radius: { 300: { $type: 'dimension', $value: { value: 8, unit: 'px' } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [{
+        code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.radius.300',
+        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Radius.rd-sm is scoped CORNER_RADIUS.',
+        details: { id: 'v1', unit: 'px', via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' },
+      }],
+      extension: EXTENSION,
+    };
+    const header = cssOutput(exp, HEADER).files['foundation.css'];
+
+    expect(header).toContain(
+      '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.',
+    );
+    expect(header).not.toContain('no Figma scope states');
   });
 
   it('counts derived properties per file and pluralizes both notes together', () => {
@@ -754,7 +812,7 @@ describe('cssOutput reports unitless numbers', () => {
       '   1 property in this file has no unit, because its Figma variable states none.',
     );
     expect(out.files['foundation.css']).toContain(
-      '   2 properties in this file have a unit no Figma scope states, taken from how the library uses those tokens.\n'
+      '   2 properties in this file have a unit their own Figma variables do not state, taken from how the library uses those tokens.\n'
       + '   See tokens/report.json under your pull\'s output directory for what pinned each one.',
     );
   });

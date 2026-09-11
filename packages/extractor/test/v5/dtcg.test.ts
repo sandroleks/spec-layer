@@ -339,6 +339,49 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(entry.resolved).toBeUndefined();
   });
 
+  it('stands down from the repair when usage evidence gives the alias target the same type', () => {
+    // The production composition, which no test reached before: `pull` runs
+    // usageUnits over the whole bundle and hands the result to foundationDtcg,
+    // and on this very token pair Rule A reads rd-sm's own CORNER_RADIUS scope
+    // as evidence for what it aliases. Foundation.radius.300 then projects as
+    // a dimension of its own, terminalOwnType agrees with the alias owner's
+    // type, and there is nothing left to report: the reference survives and
+    // carries a real length. That is the better outcome, and it means a user
+    // on this path will not find alias_type_mismatch in tokens/report.json.
+    const derived: UsageUnitMap = new Map<string, UnitEvidence>([
+      ['VariableID:unknown-number', {
+        unit: 'px', via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS',
+      }],
+    ]);
+    const out = foundationDtcg(radiusMismatchArtifact(), {}, derived);
+
+    expect(out.report.find((r) => r.code === 'alias_type_mismatch')).toBeUndefined();
+    expect(leaf(out.files['radius.light.json'], 'Radius.rd-sm'))
+      .toEqual({ $type: 'dimension', $value: '{Foundation.radius.300}' });
+    expect(leaf(out.files['foundation.light.json'], 'Foundation.radius.300'))
+      .toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
+    // The derivation is disclosed, not silent.
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')?.path)
+      .toBe('Foundation.radius.300');
+  });
+
+  it('still repairs when no usage evidence survives for the alias target', () => {
+    // The other direction of the same composition. usageUnits returns no entry
+    // for a token whose evidence its own guardrails vetoed (a component binds
+    // something on the chain to a non-length property, or an OPACITY-scoped
+    // token aliases it), and an empty map is exactly what foundationDtcg then
+    // sees. The repair is the only thing standing between that and a
+    // `dimension` reference to a bare number.
+    const out = foundationDtcg(radiusMismatchArtifact(), {}, new Map());
+
+    expect(out.report.find((r) => r.code === 'alias_type_mismatch')?.severity).toBe('error');
+    expect(leaf(out.files['radius.light.json'], 'Radius.rd-sm'))
+      .toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
+    expect(leaf(out.files['foundation.light.json'], 'Foundation.radius.300'))
+      .toEqual({ $type: 'number', $value: 8 });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+  });
+
   it('leaves a well-typed alias recorded as alias with its resolved value', () => {
     // The repair path must not swallow the ordinary case: an alias whose
     // type agrees with its target still records `transform: 'alias'` and a

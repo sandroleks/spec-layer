@@ -184,6 +184,46 @@ describe('usageUnits: binding evidence', () => {
     expect(map.get('VariableID:spacing-900')?.unit).toBe('px'); // through the alias hop
   });
 
+  it('reads border and fill as colours, not lengths', () => {
+    // LENGTH_PROPERTIES is closed on purpose and nothing else pinned that
+    // shut: adding `border` to it turned no test red, and a widened length
+    // list is the one way this module can invent `1px` for a colour. Both
+    // properties appear in real bindings and are colours in this schema, so
+    // each must derive nothing on its own, and must refute a length claim the
+    // way any other non-length property does.
+    const f = collection('CollectionID:f', 'F');
+    const borderToken = numberToken('VariableID:border', f.id, 'colour/border', 1);
+    const fillToken = numberToken('VariableID:fill', f.id, 'colour/fill', 1);
+    const shared = numberToken('VariableID:shared', f.id, 'number/1', 1);
+    const aliased = aliasToken('VariableID:aliased', f.id, 'semantic/edge', shared);
+    const sized = aliasToken('VariableID:sized', f.id, 'semantic/size', shared);
+
+    const map = usageUnits(bundleWith(
+      foundationWith([f], [borderToken, fillToken, shared, aliased, sized]),
+      [
+        {
+          name: 'Card',
+          artifact: componentWith([
+            { path: 'A', property: 'border', source_id: borderToken.id },
+            { path: 'B', property: 'fill', source_id: fillToken.id },
+            // `border` on a token that a length binding elsewhere would
+            // otherwise pin, through the primitive they share.
+            { path: 'C', property: 'border', source_id: aliased.id },
+            { path: 'D', property: 'height', source_id: sized.id },
+          ]),
+        },
+      ],
+    ));
+
+    expect(map.get('VariableID:border')).toBeUndefined();
+    expect(map.get('VariableID:fill')).toBeUndefined();
+    // The `border` binding refutes the `height` binding's claim on the shared
+    // primitive, which only happens if `border` is classified as non-length.
+    expect(map.get('VariableID:shared')).toBeUndefined();
+    // The height-bound token's own binding is still not in doubt.
+    expect(map.get('VariableID:sized')?.reason).toBe('height');
+  });
+
   it('returns no answer when evidence conflicts', () => {
     const c = collection('CollectionID:f', 'F');
     const token = numberToken('VariableID:x', c.id, 'x', 1);
