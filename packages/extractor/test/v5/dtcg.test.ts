@@ -370,6 +370,27 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(String(rdSm?.$value)).not.toContain('{');
   });
 
+  it('records a repaired leaf in the sidecar as its own literal rule, not as an alias', () => {
+    // `transform` promises "the rule that produced this mode's $value", and
+    // `resolved` is documented absent for a literal token because its value
+    // is already in the file -- both would be false for rd-sm once the
+    // reference is replaced by a literal, so neither may survive the repair.
+    const out = foundationDtcg(radiusMismatchArtifact());
+    const entry = out.meta['Radius.rd-sm'];
+    expect(entry.transform).toEqual({ Light: 'dimension' });
+    expect(entry.resolved).toBeUndefined();
+  });
+
+  it('leaves a well-typed alias recorded as alias with its resolved value', () => {
+    // The repair path must not swallow the ordinary case: an alias whose
+    // type agrees with its target still records `transform: 'alias'` and a
+    // `resolved` snapshot.
+    const out = foundationDtcg(syntheticArtifact());
+    const entry = out.meta['Semantic.color.surface.primary'];
+    expect(entry.transform?.Dark).toBe('alias');
+    expect(entry.resolved?.Dark).toBeDefined();
+  });
+
   it('reports a code syntax identifier that two tokens share', () => {
     const artifact = syntheticArtifact();
     const [a, b] = artifact.tokens.filter((t) => t.type === 'color').slice(0, 2);

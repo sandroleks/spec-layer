@@ -24,7 +24,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the two disagree, reports `alias_type_mismatch` at `error` severity and
   writes the token's own resolved literal instead of the unsound reference.
   The literal was never invented: it is the same resolved value
-  `spec-layer.meta.json` already carried for the token.
+  `spec-layer.meta.json` already carried for the token. That sidecar now
+  describes the repair truthfully too: a repaired token's `transform` names
+  its literal's own rule rather than `alias`, and it carries no `resolved`
+  snapshot, since both were only ever meaningful for a surviving reference.
 
 ## [5.1.0] - 2026-09-10
 

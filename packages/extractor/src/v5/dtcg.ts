@@ -1137,7 +1137,6 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
-    recordFact(p, token.id, mode, 'alias', typed.$value);
     // A referencing token's `$type` must equal its target's, or a consumer
     // that trusts the declared type writes a value the target cannot carry
     // (a `dimension` reference to a bare `number` loses the unit entirely).
@@ -1147,10 +1146,18 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     const terminalType = terminalOwnType(p, value.resolved.chain);
     if (terminalType && !('omit' in terminalType) && terminalType.$type !== typed.$type) {
       reportAliasTypeMismatch(p, path, targetPath, typed.$type, terminalType.$type);
-      // The reference would lose the unit; typed.$value is already the
-      // resolved literal (the same snapshot the sidecar just recorded above).
+      // The reference would lose the unit, so no reference survives -- and
+      // with it, `transform: 'alias'` would be false to its own contract
+      // ("the rule that produced this mode's $value"), and a recorded
+      // `resolved` would be false to its own contract too ("absent for a
+      // literal token, whose value is already in the file"). Record the
+      // literal's own rule instead, the same way the literal branch below
+      // does; typed.$value is already the resolved literal.
+      const transform = literalTransform(value.resolved.value, token.scopes);
+      if (transform !== null) recordFact(p, token.id, mode, transform);
       return { $type: typed.$type, $value: typed.$value, ...description };
     }
+    recordFact(p, token.id, mode, 'alias', typed.$value);
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
