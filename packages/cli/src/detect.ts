@@ -264,15 +264,39 @@ function cssNamesFamily(cssText: string, family: string): boolean {
 }
 
 /** A Google Fonts `css2?family=` parameter naming this exact family.
- *  Bounding the match at the next `:` (a weight axis), `&` (the next
- *  family), a closing quote, or the end of the string is what keeps
- *  "Open+Sans" from matching inside a link that only loads
- *  "Open+Sans+Condensed". */
+ *
+ *  The host is compared after parsing rather than searched for as a
+ *  substring: a link to any other host can carry `fonts.googleapis.com` in
+ *  its own path or query, and a bare `includes` reads that as a match. A
+ *  false "present" is the expensive direction here, because it tells a
+ *  developer a font is loaded when nothing loads it. Parsing also retires
+ *  the hand-rolled terminator list the substring form needed, since
+ *  `searchParams` already ends a value at `&` and decodes `+` to a space,
+ *  which is what keeps "Open+Sans" from matching a link that loads only
+ *  "Open+Sans+Condensed".
+ *
+ *  An HTML attribute value is quoted, so splitting on both quote characters
+ *  yields each candidate URL as its own fragment. Still no regex: this runs
+ *  over whatever HTML a repository happens to contain. */
 function googleFontsLinkNamesFamily(htmlText: string, family: string): boolean {
-  if (!htmlText.includes('fonts.googleapis.com')) return false;
-  const needle = `family=${family.split(' ').join('+')}`;
-  if (htmlText.endsWith(needle)) return true;
-  return ['"', "'", ':', '&'].some((terminator) => htmlText.includes(needle + terminator));
+  for (const quoted of htmlText.split('"')) {
+    for (const fragment of quoted.split("'")) {
+      const trimmed = fragment.trim();
+      const candidate = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed;
+      if (!candidate.startsWith('http')) continue;
+      let url: URL;
+      try {
+        url = new URL(candidate);
+      } catch {
+        continue;
+      }
+      if (url.hostname !== 'fonts.googleapis.com') continue;
+      for (const value of url.searchParams.getAll('family')) {
+        if (value === family || value.startsWith(`${family}:`)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**

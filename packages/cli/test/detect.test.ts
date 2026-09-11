@@ -164,6 +164,38 @@ describe('missingFontSources', () => {
     })).toEqual(['Open Sans']);
   });
 
+  // CodeQL js/incomplete-url-substring-sanitization, high, on PR #61. The
+  // host was searched for as a substring, so any other host carrying
+  // "fonts.googleapis.com" in its own path or query read as a match. A false
+  // "present" is the costly direction: it tells a developer a font is loaded
+  // when nothing loads it.
+  it('does not accept another host that merely mentions the Google Fonts host', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty,
+      htmlText: '<link href="https://cdn.example.com/fonts.googleapis.com/css2?family=Open+Sans">',
+    })).toEqual(['Open Sans']);
+  });
+
+  it('does not accept the Google Fonts host in a query parameter of another host', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty,
+      htmlText: '<a href="https://evil.example/?next=fonts.googleapis.com/css2?family=Open+Sans">x</a>',
+    })).toEqual(['Open Sans']);
+  });
+
+  it('accepts a protocol-relative Google Fonts link', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, htmlText: '<link href="//fonts.googleapis.com/css2?family=Open+Sans:wght@400">',
+    })).toEqual([]);
+  });
+
+  it('accepts a family that is the second one in a Google Fonts link', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty,
+      htmlText: '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&family=Open+Sans:wght@600">',
+    })).toEqual([]);
+  });
+
   it('matches a package dependency name regardless of case', () => {
     expect(missingFontSources(['Open Sans'], {
       ...empty, packageJson: { dependencies: { '@FontSource/Open-Sans': '^5.0.0' } },
