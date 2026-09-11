@@ -487,7 +487,8 @@ export async function runPull(
   // only the file-existence clauses, a repository that pulled on 0.7.x and
   // upgraded to get exactly such a fix was told `Already up to date` and kept
   // last release's files, including a report summary read off stale reports. A
-  // manifest with no cliVersion at all (written before 0.8.0) is in that same
+  // manifest with no cliVersion at all (every release up to and including
+  // 0.8.2, since 0.9.0 is the first to write the field) is in that same
   // position and must re-project too, which is what `!==` against a string
   // already gives. The publisher's `extractorVersion` needs no clause of its
   // own: it travels inside the bundle, so a bump moves the bundle hash and the

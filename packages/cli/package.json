@@ -1,6 +1,6 @@
 {
   "name": "spec-layer",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Pull design-system context published by the Spec Layer Figma plugin",
   "license": "MIT",
   "type": "module",

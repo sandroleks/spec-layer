@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Everything below ships in CLI 0.9.0. The version bump is load-bearing rather
+than ceremonial: `pull` now compares `manifest.cliVersion` when deciding
+whether a cached pull is current, and no earlier release writes that field, so
+a repository on 0.8.2 or older re-projects on its first pull with 0.9.0 and
+picks all of this up. A release that changes what a pull writes has to bump the
+CLI, or a repository with a current pull is told it is already up to date and
+keeps the old files.
+
 ### Fixed
 
 - **A dimension token that aliases a number token no longer projects an

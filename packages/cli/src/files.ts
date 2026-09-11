@@ -44,8 +44,9 @@ export interface Manifest {
   pluginVersion: string | null;
   extractorVersion: string;
   /**
-   * The CLI that projected this pull. Absent in every manifest written before
-   * 0.8.0, and part of the freshness comparison for a reason the bundle hash
+   * The CLI that projected this pull. Absent in every manifest written by a
+   * release up to and including 0.8.2, since 0.9.0 is the first to write the
+   * field, and part of the freshness comparison for a reason the bundle hash
    * cannot cover: the projection lives here, not in the bundle, so a CLI
    * upgrade changes what a pull writes from bytes that did not move. A
    * repository on a new CLI whose manifest carries a different version (or
