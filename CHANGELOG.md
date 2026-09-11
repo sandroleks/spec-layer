@@ -252,27 +252,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   it. See fonts.json.`
 
 - **The generated skill states the font requirement and the unit caveat where
-  an agent actually reads them, not where it stops scrolling.** On a real
-  project, an agent read the skill and built a component whose `height`,
-  `padding`, `gap`, and `border-radius` were all invalid CSS and silently
-  dropped, and every label rendered in Times because nothing loaded the
-  design system's font; four rounds of visual review signed the work off. The
-  skill did mention the unit override, but in paragraph four of a `### Web`
-  subsection of an 11KB file, phrased as an optional convenience -- placement,
-  not presence, was the defect. `spec-layer skill` now leads the `### Web`
-  section, before the token import instructions, with the family and weight
-  every typography style needs (from `fonts.json`) and, when
-  `missingFontSourcesInRepo` finds nothing loading a family, says so by name;
-  a library whose styles name no font reads that sensibly too. The unit
-  caveat moves ahead of every per-platform section instead of after all of
-  them, so it is reachable whether a reader stops at the first platform or
-  reads every one, and is rewritten for what this branch's usage-derived
-  units (`usageUnits.ts`) actually leave unresolved: it no longer tells every
-  reader of every count to add a `dtcg.units` override, since an opacity or a
-  font weight is correctly a bare number and forcing a unit onto it would
-  corrupt exactly the value the override exists to leave alone. Narrowing the
-  variable's scope in Figma is named as the fix that is safe either way,
-  matching the same choice already made for the generated CSS header.
+  an agent actually reads them, not where it stops scrolling, and both are now
+  backed by what the pull actually contains.** On a real project, an agent
+  read the skill and built a component whose `height`, `padding`, `gap`, and
+  `border-radius` were all invalid CSS and silently dropped, and every label
+  rendered in Times because nothing loaded the design system's font; four
+  rounds of visual review signed the work off. The skill did mention the unit
+  override, but in paragraph four of a `### Web` subsection of an 11KB file,
+  phrased as an optional convenience -- placement, not presence, was the
+  defect. `spec-layer skill` now leads the `### Web` section, before the token
+  import instructions, with the family and weight every typography style
+  needs (from `fonts.json`) and, when `missingFontSourcesInRepo` finds nothing
+  loading a family, says so by name. The unit caveat moves ahead of every
+  per-platform section instead of after all of them, so it is reachable
+  whether a reader stops at the first platform or reads every one. Both went
+  through a second pass after review found the count and the file references
+  did not match this branch's own code. The unitless count now excludes a
+  token whose scope already states `OPACITY` or `FONT_WEIGHT`: those are a
+  unitless number by Figma's own statement, not by silence, and were being
+  counted alongside the tokens nobody scoped at all, which is the false "your
+  variable states none" the first draft told an opacity's owner.
+  `spec-layer.meta.json`, the one pulled file that carries a token's own
+  scopes, is what `summarizePull` now cross-references to tell the two apart.
+  The caveat no longer points at a bare `report.json` either: `tokens/report.json`
+  carries no code that names a token left with no unit at all (that is
+  `unitless_number`, in the per-output `outputs/web-css.report.json`, which is
+  what the CSS header itself already names), so the guide now names both real
+  files, and only the one that actually exists. The font section stops
+  claiming a library needs no font when `fonts.json` is merely missing or
+  unreadable: `fontsStatus` (`'ok' | 'missing' | 'unreadable'`) keeps a
+  genuine empty array apart from a pull taken before this file existed, and
+  even the "ok" empty case is worded to admit that `fontRequirements` silently
+  drops a style whose font family never resolved, so an empty array is not
+  proof of no typography. The "keep your fallback outside the pulled files"
+  warning now names the actual generated CSS directory (`cssOut.path`, the
+  file that literally holds `font-family: "..."`) instead of the DTCG JSON
+  directory nobody would edit for a CSS fallback, falling back to the whole
+  pull directory when no CSS output was written. `summarizePull`'s new
+  disk-reading path is exercised from a real temporary directory in
+  `packages/cli/test/skill.test.ts`, not only through fixtures that inject the
+  result: reading `fonts.json` from the wrong path, a validator that rejects a
+  good entry, or `missingFontSourcesInRepo` reading the wrong repository root
+  would previously fail silently into an empty result that renders as a
+  confident false statement rather than a visible error.
 
 ## [5.1.0] - 2026-09-10
 
