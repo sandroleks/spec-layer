@@ -92,6 +92,29 @@ function minimalUnitlessFoundationArtifact() {
   return artifact;
 }
 
+/**
+ * The same synthetic foundation, with a second Primitives variable sharing
+ * the EXACT SAME name as `number/unknown-scope` (not merely one that
+ * normalises to the same CSS identifier, as `foundationArtifactWithCollision`
+ * above does): `indexPaths` in dtcg.ts resolves both to the identical DTCG
+ * path and omits both, reporting `path_collision` at `error` severity. This
+ * is a distinct code from `name_collision`, written to `tokens/report.json`
+ * (the whole-projection report every Foundation pull writes unconditionally)
+ * rather than to any per-output report -- exactly the file Important 2 of
+ * the fix-round review said was going uncounted.
+ */
+function foundationArtifactWithPathCollision() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED_FOUNDATION, 'utf8')) as SerializedFoundation;
+  const primitives = serialized.collections.find((c) => c.name === 'Primitives');
+  const original = primitives?.variables.find((v) => v.name === 'number/unknown-scope');
+  if (!primitives || !original) throw new Error('fixture shape changed: expected Primitives/number/unknown-scope');
+  primitives.variables.push({ ...original, id: 'VariableID:unknown-number-path-collision' });
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-path-collision', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
 /** writeBundleFiles refuses a component brief that does not begin with the Spec Layer marker. */
 const brief = (body: string): string => `spec_layer:\n  kind: component\n${body}`;
 
@@ -107,6 +130,9 @@ const GOOD_BUNDLE = {
 const COLLISION_BUNDLE = { ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithCollision() } };
 const SINGLE_WARNING_BUNDLE = {
   ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: minimalUnitlessFoundationArtifact() },
+};
+const PATH_COLLISION_BUNDLE = {
+  ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithPathCollision() },
 };
 
 function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z') {
@@ -701,7 +727,13 @@ describe('runPull report summary and --strict', () => {
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
     expect(code).toBe(0);
     const err = io.errLines.join('\n');
-    expect(err).toContain('2 errors, 2 warnings in the token output.');
+    // 2 name_collision errors (per-output report) plus 11 warnings: 2
+    // mode_selector_shared (per-output) and 9 warnings the synthetic
+    // foundation's tokens/report.json always carries (unresolved cycles,
+    // externals, a boolean and a string DTCG cannot express), unrelated to
+    // the collision and present on every pull of this fixture.
+    expect(err).toContain('2 errors, 11 warnings in the token output.');
+    expect(err).toContain('tokens/report.json');
     expect(err).toContain('web-css.report.json');
   });
 
@@ -719,7 +751,9 @@ describe('runPull report summary and --strict', () => {
     const io = makeIo();
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
     expect(code).toBe(0);
-    expect(io.errLines.join('\n')).toContain('0 errors, 5 warnings in the token output.');
+    // 5 from outputs/web-css.report.json (2 mode_selector_shared + 3
+    // unitless_number, one per mode) plus 9 from tokens/report.json.
+    expect(io.errLines.join('\n')).toContain('0 errors, 14 warnings in the token output.');
   });
 
   it('pluralises a single warning as "1 warning", not "1 warnings"', async () => {
@@ -727,6 +761,51 @@ describe('runPull report summary and --strict', () => {
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(SINGLE_WARNING_BUNDLE)));
     expect(code).toBe(0);
     expect(io.errLines.join('\n')).toContain('0 errors, 1 warning in the token output.');
+  });
+
+  it('surfaces a tokens/report.json error (path_collision) that no per-output report carries', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(PATH_COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    const err = io.errLines.join('\n');
+    expect(err).toContain('tokens/report.json');
+    // 2 path_collision errors (one per token id sharing the DTCG path, from
+    // tokens/report.json) plus 11 warnings: 9 from tokens/report.json's own
+    // baseline and 2 mode_selector_shared from the per-output report. The
+    // colliding token's own unitless_number entries are gone, not merely
+    // uncounted: a DTCG-path collision omits the token from the resolved
+    // document before cssOutput ever sees it.
+    expect(err).toContain('2 errors, 11 warnings in the token output.');
+  });
+
+  it('exits 1 under --strict for a path_collision error, which lives only in tokens/report.json', async () => {
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, makeIo(), stub200(JSON.stringify(PATH_COLLISION_BUNDLE)));
+    expect(code).toBe(1);
+  });
+
+  it('CRITICAL FIX: exits 1 under --strict on a cached (304) pull whose on-disk report still holds an error', async () => {
+    const body = JSON.stringify(COLLISION_BUNDLE);
+    await runPull(cwd, { key: KEY }, {}, makeIo(), stubEtagAware(body));
+
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, io, stubEtagAware(body));
+
+    // Confirms this pull actually took the cached path, not a fresh write --
+    // otherwise this test would not distinguish the fix from Important 2/3.
+    expect(io.outLines.join('\n')).toContain('Already up to date');
+    expect(code).toBe(1);
+  });
+
+  it('still prints the severity summary on a cached (304) pull without --strict, and exits 0', async () => {
+    const body = JSON.stringify(COLLISION_BUNDLE);
+    await runPull(cwd, { key: KEY }, {}, makeIo(), stubEtagAware(body));
+
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stubEtagAware(body));
+
+    expect(io.outLines.join('\n')).toContain('Already up to date');
+    expect(code).toBe(0);
+    expect(io.errLines.join('\n')).toContain('2 errors, 11 warnings in the token output.');
   });
 
   it('prints no severity line for a components-only pull, which writes no output report', async () => {

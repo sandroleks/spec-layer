@@ -355,14 +355,8 @@ function readJsonArray(path: string): unknown[] {
   }
 }
 
-/**
- * The severity of every entry this pull wrote to `outputs/<platform>-<format>.report.json`
- * for this output, read back from disk rather than threaded through
- * writeBundleFiles's return value. `[]` when the file was never written (the
- * Foundation was not selected, or this output produced nothing to report).
- */
-function readOutputReportSeverities(cwd: string, outDir: string, o: OutputConfig): Array<'error' | 'warning' | 'info'> {
-  const path = join(cwd, outDir, 'outputs', `${outputId(o)}.report.json`);
+/** The severity of every entry in a report file, read from disk. `[]` when the file is missing, unreadable, or holds no entries. */
+function readReportSeverities(path: string): Array<'error' | 'warning' | 'info'> {
   return readJsonArray(path)
     .map((entry) => (entry as { severity?: unknown }).severity)
     .filter((s): s is 'error' | 'warning' | 'info' => s === 'error' || s === 'warning' || s === 'info');
@@ -378,6 +372,59 @@ function readFontFamilies(cwd: string, outDir: string): string[] {
 /** "1 error" / "2 errors": every count this command prints is pluralised, never assumed singular or plural. */
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The severity summary and missing-font notes for whatever is on disk after
+ * this pull -- whether this run just wrote it (a 200) or it was already
+ * there and confirmed current (a 304, which is only granted when every
+ * deliverable file, `outputs/<id>.report.json` included, was already present
+ * -- see `outputFilesOnDisk`). A cached pull whose report already names an
+ * error is exactly the state `--strict` exists to catch, so this reads from
+ * disk by the *configured* outputs and outDir, never from what
+ * writeBundleFiles happened to return, and the caller runs it on both
+ * outcomes, not only when writeBundleFiles actually ran.
+ *
+ * Two report files can hold severities, and both are read: `tokens/report.json`
+ * (the whole DTCG projection report, written unconditionally whenever the
+ * Foundation is pulled -- carries `path_collision` and `alias_type_mismatch`
+ * at `error`, and about eight `warning` codes) and one
+ * `outputs/<platform>-<format>.report.json` per configured output (currently
+ * `name_collision` at `error`, `unitless_number` and others at `warning`).
+ * Naming both kinds as "the token output" is accurate: both live under the
+ * output directory this pull writes, and the message names every file that
+ * actually contributed, never a file with nothing to say.
+ *
+ * Returns the total error-severity count, so the caller can decide
+ * `--strict`'s exit code without re-reading anything.
+ */
+function printReportSummary(cwd: string, outDir: string, outputs: OutputConfig[], io: Io): number {
+  const reportPaths: string[] = [];
+  let errors = 0;
+  let warnings = 0;
+  const add = (severities: Array<'error' | 'warning' | 'info'>, path: string) => {
+    if (severities.length === 0) return;
+    errors += severities.filter((s) => s === 'error').length;
+    warnings += severities.filter((s) => s === 'warning').length;
+    reportPaths.push(path);
+  };
+  add(readReportSeverities(join(cwd, outDir, 'tokens', 'report.json')), `${outDir}/tokens/report.json`);
+  for (const o of outputs) {
+    add(readReportSeverities(join(cwd, outDir, 'outputs', `${outputId(o)}.report.json`)), `${outDir}/outputs/${outputId(o)}.report.json`);
+  }
+  if (errors > 0 || warnings > 0) {
+    io.err(`${plural(errors, 'error')}, ${plural(warnings, 'warning')} in the token output. See ${reportPaths.join(', ')}.`);
+  }
+  // fonts.json is written whenever the Foundation is selected, and can
+  // legitimately be an empty array; only a family it actually names is worth
+  // checking against the repository.
+  const fontFamilies = readFontFamilies(cwd, outDir);
+  if (fontFamilies.length > 0) {
+    for (const family of missingFontSourcesInRepo(fontFamilies, cwd)) {
+      io.err(`This library needs ${family}, and nothing in this repository loads it. See fonts.json.`);
+    }
+  }
+  return errors;
 }
 
 export async function runPull(
@@ -435,6 +482,13 @@ export async function runPull(
   }
   if (result.kind === 'not_modified') {
     io.out(`Already up to date (published ${manifest?.publishedAt ?? 'unknown'}).`);
+    // A 304 is granted only once every deliverable file, this pull's report
+    // included, is confirmed present on disk (outputFilesOnDisk above), so
+    // the exact state where a stale error report sits unread is the state a
+    // 304 reaches most often. --strict must see it here too, not only after
+    // writeBundleFiles actually ran.
+    const cachedErrors = printReportSummary(cwd, opts.outDir, outputs, io);
+    if (flags.strict && cachedErrors > 0) return 1;
     return 0;
   }
   let written: string[];
@@ -487,35 +541,14 @@ export async function runPull(
   }
   // A report entry never fails the pull on its own -- changing the default
   // exit code would break every CI that already runs `pull` -- so this is the
-  // one place a silent name_collision or unitless_number gets said out loud.
-  // Read back from outputs/<id>.report.json rather than threading the report
-  // through writeBundleFiles's return value: the file is the one thing both
-  // this process and a developer's editor agree is the record.
-  const reportPaths: string[] = [];
-  let reportErrors = 0;
-  let reportWarnings = 0;
-  for (const r of outputResults) {
-    const o = outputs.find((x) => x.path === r.path);
-    if (!o) continue;
-    const severities = readOutputReportSeverities(cwd, opts.outDir, o);
-    if (severities.length === 0) continue;
-    reportErrors += severities.filter((s) => s === 'error').length;
-    reportWarnings += severities.filter((s) => s === 'warning').length;
-    reportPaths.push(`${opts.outDir}/outputs/${outputId(o)}.report.json`);
-  }
-  if (reportErrors > 0 || reportWarnings > 0) {
-    io.err(`${plural(reportErrors, 'error')}, ${plural(reportWarnings, 'warning')} in the token output. See ${reportPaths.join(', ')}.`);
-  }
-  // fonts.json is written whenever the Foundation is selected, and can
-  // legitimately be an empty array; only a family it actually names is worth
-  // checking against the repository.
-  const fontFamilies = readFontFamilies(cwd, opts.outDir);
-  if (fontFamilies.length > 0) {
-    for (const family of missingFontSourcesInRepo(fontFamilies, cwd)) {
-      io.err(`This library needs ${family}, and nothing in this repository loads it. See fonts.json.`);
-    }
-  }
-  if (flags.strict && reportErrors > 0) return 1;
+  // one place a silent name_collision, unitless_number, path_collision, or
+  // alias_type_mismatch gets said out loud. Read from the *configured*
+  // outputs and outDir, matching the not_modified branch above, rather than
+  // outputResults: a report file's presence is what a developer's editor
+  // agrees is the record, not whether this particular run happened to
+  // rewrite it.
+  const errors = printReportSummary(cwd, opts.outDir, outputs, io);
+  if (flags.strict && errors > 0) return 1;
   return 0;
 }
 

@@ -215,31 +215,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   broken.** A pull that writes `name_collision` or `unitless_number` findings
   previously exited 0 and printed nothing about either -- on a real pull that
   was 14 `name_collision` errors, each one silently dropping both colliding
-  tokens including the library's most-used body typography style, and 66
-  properties CSS cannot use as a length, all invisible behind a clean exit
-  code. `pull` now reads back every `outputs/<platform>-<format>.report.json`
-  it just wrote and, when any entry holds `error` or `warning` severity,
-  prints one line to stderr naming both counts and the report path, for
-  example `2 errors, 5 warnings in the token output. See
+  tokens including a heavily-used typography style, and 66 properties CSS
+  cannot use as a length, all invisible behind a clean exit code. `pull` now
+  reads back two report files after every run: `tokens/report.json`, written
+  unconditionally whenever the Foundation is pulled and carrying `error`-severity
+  `path_collision` and `alias_type_mismatch` alongside about eight `warning`
+  codes, and one `outputs/<platform>-<format>.report.json` per configured
+  output, carrying `name_collision` at `error` and `unitless_number` and
+  others at `warning`. When either file holds an `error` or a `warning`, it
+  prints one line to stderr naming both counts and every report path that
+  actually contributed, for example `2 errors, 11 warnings in the token
+  output. See .speclayer/tokens/report.json,
   .speclayer/outputs/web-css.report.json.` Every count is pluralised
-  correctly at every value it can take, zero included (`0 errors, 5
-  warnings`), not just the plural case a naive template gets wrong. The count
-  is report entries, not distinct tokens: one token present in three modes
-  contributes three `unitless_number` entries, one per mode, so the sentence
-  names warnings, never tokens, and never claims a token count it does not
-  have. A token whose usage evidence disagrees with itself resolves to no
-  derived unit and is named only by `unitless_number`; there is no separate
-  conflict code, so the summary says what the file says and does not claim to
-  expose a disagreement it has no data for. The exit code stays 0 by default
-  -- flipping it would break every CI pipeline already running `pull` -- and
-  a new `--strict` flag exits 1 when the report holds an error-severity
-  entry, for a repository that wants its build to fail on one instead; both
-  the flag and its exit code are now in `spec-layer tools --json`. The same
-  pass reads `fonts.json`, written whenever the Foundation is selected, and
-  checks each family it names against the repository with
-  `missingFontSourcesInRepo` (`packages/cli/src/detect.ts`): a family nothing
-  loads gets its own stderr line, `This library needs <family>, and nothing
-  in this repository loads it. See fonts.json.`
+  correctly at every value it can take, zero and one included (`0 errors, 5
+  warnings`, `1 warning`), not just the plural case a naive template gets
+  wrong. The count is report entries, not distinct tokens: one token present
+  in three modes contributes three `unitless_number` entries, one per mode,
+  so the sentence names warnings, never tokens, and never claims a token
+  count it does not have. A token whose usage evidence disagrees with itself
+  resolves to no derived unit and is named only by `unitless_number`; there
+  is no separate conflict code, so the summary says what the file says and
+  does not claim to expose a disagreement it has no data for. This also runs
+  on a pull that finds nothing new: a 304 is granted only once every
+  deliverable file, both reports included, is already confirmed present on
+  disk, which is exactly the state a stale error sits in unread, so the
+  summary and `--strict` read the same two files there too, not only after a
+  fresh write. The exit code stays 0 by default -- flipping it would break
+  every CI pipeline already running `pull` -- and a new `--strict` flag exits
+  1 when either report holds an error-severity entry, for a repository that
+  wants its build to fail on one instead; both the flag and its exit code are
+  now in `spec-layer tools --json`. The same pass reads `fonts.json`, written
+  whenever the Foundation is selected, and checks each family it names
+  against the repository with `missingFontSourcesInRepo`
+  (`packages/cli/src/detect.ts`): a family nothing loads gets its own stderr
+  line, `This library needs <family>, and nothing in this repository loads
+  it. See fonts.json.`
 
 ## [5.1.0] - 2026-09-10
 
