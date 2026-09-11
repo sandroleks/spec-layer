@@ -32,6 +32,33 @@ const UNIT_BY_SCOPE: Record<string, Unit | 'number'> = {
   OPACITY: 'number',
 };
 
+/**
+ * Whether the token's own scopes state its unit AT ALL — a scope that pins a
+ * length, or one of the two that pin a unitless number.
+ *
+ * `numericValue(n, scopes) === null` cannot answer this: it is also null when
+ * two scopes state two DIFFERENT units, which is a file that states plenty and
+ * simply does not agree with itself. A caller deciding whether it may look
+ * elsewhere for a unit must not treat those two as the same, so the question
+ * is asked here rather than re-derived from `numericValue`'s null.
+ */
+export function scopesStateUnit(scopes: string[] | undefined): boolean {
+  return (scopes ?? []).some((s) => UNIT_BY_SCOPE[s] !== undefined);
+}
+
+/**
+ * Whether the token's own scopes state that it is a UNITLESS NUMBER.
+ *
+ * `FONT_WEIGHT` and `OPACITY` are statements about a token's unit exactly as
+ * `CORNER_RADIUS` is, and the statement they make is "there is no unit here."
+ * A reader that collects only the length-stating half sees a scoped opacity as
+ * silence and is free to pin a length on it, which is how `opacity: 1px` gets
+ * written. Asked here so the one list has one owner.
+ */
+export function scopesStateNumber(scopes: string[] | undefined): boolean {
+  return (scopes ?? []).some((s) => UNIT_BY_SCOPE[s] === 'number');
+}
+
 export function numericValue(
   n: number,
   scopes: string[] | undefined,

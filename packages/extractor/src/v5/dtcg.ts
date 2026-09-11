@@ -14,6 +14,10 @@ import type {
   CollectionV5, EffectStyleV5, EffectV5, StyleProperty, TokenV5, TypographyStyleV5,
 } from './entities';
 import { canonicalNumber } from './precision';
+import { scopesStateNumber, scopesStateUnit } from './units';
+// Type-only, so the runtime edge stays one way: usageUnits.ts reads this
+// module's `dtcgPathOf`, and nothing here reads it back.
+import type { UnitEvidence, UsageUnitMap } from './usageUnits';
 import type { ColorValue, DimensionValue, ResolutionStep, TypedValue } from './value';
 
 export type DtcgValueStyle = 'standard' | 'legacy';
@@ -31,7 +35,8 @@ export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
   | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
-  | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped';
+  | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped'
+  | 'alias_type_mismatch' | 'unit_derived_from_usage';
 
 export interface DtcgReportEntry {
   code: DtcgReportCode;
@@ -46,7 +51,12 @@ export interface DtcgReportEntry {
 /** The rule that produced a token's `$value` in one mode. */
 export type DtcgTransform =
   | 'alias' | 'color' | 'dimension' | 'duration' | 'number'
-  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override';
+  | 'font-weight' | 'cubic-bezier' | 'font-family' | 'number-unit-override'
+  /** A unit no scope stated, taken from how the library uses the token and
+   *  reported with its evidence. Distinct from `dimension`, which would claim
+   *  the token held a dimension of its own, and from `number-unit-override`,
+   *  which is the repository's explicit configuration. */
+  | 'number-unit-usage';
 
 export interface DtcgMetaEntry {
   id: string;
@@ -261,6 +271,10 @@ export function sortTree(value: DtcgJson): DtcgJson {
 interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  /** Units derived from stated usage, keyed by token id. Deliberately NOT part
+   *  of `options`: `config_hash` digests the repository's configuration, and
+   *  this is read off the published library, not configured. */
+  derivedUnits: UsageUnitMap;
   tokenById: Map<string, TokenV5>;
   /** Every token id in the artifact, regardless of whether the projection
    *  carried it through. Distinguishes a binding to a token this export never
@@ -371,39 +385,108 @@ function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5
   return undefined;
 }
 
-const STATED_NUMBER_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
-
 /**
  * The typed leaf one token's own value projects to: a declared unit override
  * and the scopes that pin a number are the TOKEN's, not the reader's. Shared by
  * the literal branch and the alias branch of `tokenLeaf` so the two can never
- * disagree about a `$type`. `onOverrideConflict` fires only when the caller
- * owns the token, since an override that contradicts a scope is reported once
- * against the token it names, not against everything that aliases it.
+ * disagree about a `$type`. `owner` is passed only by the call site that owns
+ * the token, since a fact about one token is reported once against the token it
+ * names, not against everything that aliases it.
  */
 export interface Projected { converted: Converted; transform: DtcgTransform | null }
 
+/** What the owning call site is told about the token it asked to project. */
+interface ProjectedOwner {
+  /** A `dtcg.units` entry names a token whose scopes state a unitless number. */
+  overrideConflict(override: 'px' | 'rem'): void;
+  /** No scope stated a unit, so one was taken from the library's stated usage. */
+  derivedUnit(evidence: UnitEvidence): void;
+}
+
+/**
+ * The path a report entry about one token carries: its DTCG path, or the path
+ * plus its id when two tokens collided on that path and the path alone does not
+ * say which. The same rule the sidecar keys collided tokens by.
+ */
+function reportPathOf(p: Projection, token: TokenV5): string {
+  const path = p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name;
+  return p.collidedIds.has(token.id) ? `${path} [${token.id}]` : path;
+}
+
+/**
+ * Reports what projecting `token`'s own literal decided, against `token`.
+ *
+ * Every call site that projects a literal passes one of these, including the
+ * two that project a chain TERMINAL rather than the token whose leaf is being
+ * built. Those two reach tokens the mode loop never builds a leaf for -- an
+ * omitted or collided terminal is skipped there -- and without this the unit
+ * they derive for it would reach the output with no entry naming it, which is
+ * the one thing a derived unit may never do. `reportOnce` keys on the entry's
+ * own contents, so the ordinary case, where the terminal's own leaf reports
+ * the same fact, still yields exactly one entry.
+ */
+function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
+  const path = reportPathOf(p, token);
+  return {
+    overrideConflict: (override) => {
+      reportOnce(p, {
+        code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
+        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+        details: { id: token.id, override, scopes: [...token.scopes] },
+      });
+    },
+    // Reported without a mode, like the override conflict above: the evidence
+    // is a fact about the token, not about one of its values, so a token in
+    // three modes earns one entry rather than three.
+    derivedUnit: (evidence) => {
+      reportOnce(p, {
+        code: 'unit_derived_from_usage', severity: 'info', path,
+        // "its own variable", not "no scope": for `via: 'alias-scope'` a scope
+        // is exactly what stated the unit, and this same sentence goes on to
+        // name it. What is true of both kinds of evidence is that the token's
+        // OWN variable states nothing. The CSS header that points a reader at
+        // this entry says it the same way, for the same reason.
+        message: `This token's own variable states no unit, so ${evidence.unit} was taken from how the library uses it: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
+        details: {
+          id: token.id, unit: evidence.unit, via: evidence.via,
+          source: evidence.source, reason: evidence.reason,
+        },
+      });
+    },
+  };
+}
+
 function projectedLiteral(
-  p: Projection, token: TokenV5, resolved: TypedValue,
-  onOverrideConflict?: (override: 'px' | 'rem') => void,
+  p: Projection, token: TokenV5, resolved: TypedValue, owner?: ProjectedOwner,
 ): Projected {
   const collection = p.collectionById.get(token.collection_id);
   const override = collection ? unitOverrideFor(p, token, collection) : undefined;
   let literal: TypedValue = resolved;
   let overrode = false;
+  let derived: UnitEvidence | undefined;
   if (override !== undefined && literal.type === 'number') {
-    if (token.scopes.some((s) => STATED_NUMBER_SCOPES.includes(s))) onOverrideConflict?.(override);
+    if (scopesStateNumber(token.scopes)) owner?.overrideConflict(override);
     else {
       literal = { type: 'dimension', number: literal.value, unit: override };
       overrode = true;
     }
+  } else if (literal.type === 'number' && !scopesStateUnit(token.scopes)) {
+    // Only where the file itself states nothing, and only under the config's
+    // silence: an explicit override is the human's own statement and outranks
+    // anything read off usage.
+    const evidence = p.derivedUnits.get(token.id);
+    if (evidence !== undefined) {
+      literal = { type: 'dimension', number: literal.value, unit: evidence.unit };
+      derived = evidence;
+      owner?.derivedUnit(evidence);
+    }
   }
   const converted = dtcgLiteral(literal, token.scopes, p.options.values);
   if ('omit' in converted) return { converted, transform: null };
-  return {
-    converted,
-    transform: overrode ? 'number-unit-override' : literalTransform(literal, token.scopes),
-  };
+  let transform: DtcgTransform | null = literalTransform(literal, token.scopes);
+  if (overrode) transform = 'number-unit-override';
+  else if (derived !== undefined) transform = 'number-unit-usage';
+  return { converted, transform };
 }
 
 /** The transform name for a literal DTCG could state. `string` and `boolean`
@@ -436,7 +519,44 @@ function aliasLeafType(
   p: Projection, token: TokenV5, chain: readonly ResolutionStep[], resolved: TypedValue,
 ): Converted {
   const terminal = chain.length > 0 ? p.tokenById.get(chain[chain.length - 1].token_id) : undefined;
-  return projectedLiteral(p, terminal ?? token, resolved).converted;
+  const subject = terminal ?? token;
+  return projectedLiteral(p, subject, resolved, ownerFor(p, subject)).converted;
+}
+
+/**
+ * The chain terminal's own `$type`, re-derived from ITS OWN literal value
+ * rather than from `resolved`: a FLOAT's dimension/number split is decided by
+ * whichever token's scope is asking (units.ts), so the alias owner's resolved
+ * snapshot is already typed through the OWNER's scope, not the terminal's. A
+ * CORNER_RADIUS-scoped token aliasing an unscoped primitive carries a
+ * `resolved` value that is already `dimension` for that reason -- comparing
+ * it against `aliasLeafType`'s output (which reuses that same snapshot) can
+ * never surface the terminal's true, unscoped `number`. Only re-projecting
+ * the terminal's OWN literal, independently, recovers it. `undefined` when
+ * the terminal cannot be re-derived this way (missing terminal, or a value at
+ * that mode that is not itself a literal): no reported mismatch is safer than
+ * one built on a guess.
+ */
+function terminalOwnType(p: Projection, chain: readonly ResolutionStep[]): Converted | undefined {
+  const hop = chain.length > 0 ? chain[chain.length - 1] : undefined;
+  const terminal = hop ? p.tokenById.get(hop.token_id) : undefined;
+  const value = terminal && hop ? terminal.values[hop.mode_id] : undefined;
+  if (!terminal || !value || value.kind !== 'literal') return undefined;
+  return projectedLiteral(p, terminal, value.value, ownerFor(p, terminal)).converted;
+}
+
+/** DTCG requires a referencing token's `$type` to equal the referenced
+ *  token's. A CORNER_RADIUS-scoped token aliasing an unscoped primitive
+ *  breaks that, and a consumer that trusts the `dimension` type writes an
+ *  invalid CSS length. Report it where the two types are both in hand. */
+function reportAliasTypeMismatch(
+  p: Projection, path: string, targetPath: string, ownType: string, targetType: string,
+): void {
+  reportOnce(p, {
+    code: 'alias_type_mismatch', severity: 'error', path,
+    message: `This token is "${ownType}" but its alias target ${targetPath} is "${targetType}"; a consumer reading the declared type gets a value the target cannot carry.`,
+    details: { target: targetPath, own_type: ownType, target_type: targetType },
+  });
 }
 
 /** Mode labels unique within a collection: the name alone, or name plus id when a name repeats. */
@@ -902,10 +1022,19 @@ function styleCensus(tree: DtcgTree): DtcgCensusEntry {
   return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
 }
 
-export function foundationDtcg(artifact: FoundationArtifactV5, options: DtcgOptions = {}): DtcgExport {
+/**
+ * `derivedUnits` is optional because only a caller holding the whole library
+ * can produce it: the evidence lives in the component artifacts, and this
+ * projection sees the Foundation alone. Omitting it projects exactly as
+ * before.
+ */
+export function foundationDtcg(
+  artifact: FoundationArtifactV5, options: DtcgOptions = {}, derivedUnits?: UsageUnitMap,
+): DtcgExport {
   const p: Projection = {
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    derivedUnits: derivedUnits ?? new Map(),
     tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
     tokenIds: new Set(artifact.tokens.map((t) => t.id)),
     collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
@@ -1100,17 +1229,31 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       });
       return null;
     }
+    // A referencing token's `$type` must equal its target's, or a consumer
+    // that trusts the declared type writes a value the target cannot carry
+    // (a `dimension` reference to a bare `number` loses the unit entirely).
+    // `terminalOwnType` re-derives the target's type independently, from its
+    // own literal, because `typed` above is typed through the ALIAS OWNER's
+    // scope and so cannot see that divergence on its own.
+    const terminalType = terminalOwnType(p, value.resolved.chain);
+    if (terminalType && !('omit' in terminalType) && terminalType.$type !== typed.$type) {
+      reportAliasTypeMismatch(p, path, targetPath, typed.$type, terminalType.$type);
+      // The reference would lose the unit, so no reference survives -- and
+      // with it, `transform: 'alias'` would be false to its own contract
+      // ("the rule that produced this mode's $value"), and a recorded
+      // `resolved` would be false to its own contract too ("absent for a
+      // literal token, whose value is already in the file"). Record the
+      // literal's own rule instead, the same way the literal branch below
+      // does; typed.$value is already the resolved literal.
+      const transform = literalTransform(value.resolved.value, token.scopes);
+      if (transform !== null) recordFact(p, token.id, mode, transform);
+      return { $type: typed.$type, $value: typed.$value, ...description };
+    }
     recordFact(p, token.id, mode, 'alias', typed.$value);
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
   }
 
-  const projected = projectedLiteral(p, token, value.value, (override) => {
-    reportOnce(p, {
-      code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
-      message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
-      details: { id: token.id, override, scopes: [...token.scopes] },
-    });
-  });
+  const projected = projectedLiteral(p, token, value.value, ownerFor(p, token));
   const converted = projected.converted;
   if ('omit' in converted) {
     reportOnce(p, {
@@ -1169,10 +1312,20 @@ export interface DtcgDocumentExtension {
   schema_version: string;
   content_hash: string;
   /** A digest of the projection options that produced this document: the
-   *  value style and the unit overrides. Descriptive only. It answers whether
-   *  an output changed because the design changed or because the repository
-   *  changed its config, and it must never feed a canvas hash or an artifact
-   *  identity. */
+   *  value style and the unit overrides. Descriptive only. It separates an
+   *  output that changed because the design changed from one that changed
+   *  because the repository changed its config, and it must never feed a
+   *  canvas hash or an artifact identity.
+   *
+   *  Those two are no longer the only causes, and this document carries no
+   *  hash for the third. A unit derived from usage is read off the library's
+   *  component bindings and alias scopes when the pull runs (`usageUnits`), so
+   *  the same Foundation `content_hash` and the same `config_hash` can project
+   *  a different value once a component starts binding a token to `height`.
+   *  Nothing here hashes a component. A reader comparing two pulls reads the
+   *  `unit_derived_from_usage` entries in `report.json` to see which tokens
+   *  that reached, rather than concluding the projection is nondeterministic;
+   *  it is not, and given the same bundle it repeats exactly. */
   config_hash: string;
   source: { provider: 'figma'; file_name?: string };
   completeness: FoundationArtifactV5['completeness'];

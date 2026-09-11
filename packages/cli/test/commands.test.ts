@@ -42,6 +42,79 @@ function realFoundationArtifact() {
   return artifact;
 }
 
+/**
+ * The same synthetic foundation, with one extra Primitives variable whose
+ * derived CSS name collides with the existing `number/unknown-scope`:
+ * splitWords treats `-` and `_` alike, so "unknown-scope" and "unknown_scope"
+ * both derive the identifier `unknown-scope`. This reaches a genuine
+ * name_collision error through the full pull pipeline (naming.ts, exercised
+ * from writeBundleFiles) without touching the shared fixture file on disk --
+ * the mutation happens on a parsed clone, in memory, once per test run.
+ */
+function foundationArtifactWithCollision() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED_FOUNDATION, 'utf8')) as SerializedFoundation;
+  const primitives = serialized.collections.find((c) => c.name === 'Primitives');
+  const original = primitives?.variables.find((v) => v.name === 'number/unknown-scope');
+  if (!primitives || !original) throw new Error('fixture shape changed: expected Primitives/number/unknown-scope');
+  primitives.variables.push({ ...original, id: 'VariableID:unknown-number-collision', name: 'number/unknown_scope' });
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-collision', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
+/**
+ * A hand-built, single-collection, single-mode foundation with exactly one
+ * unscoped number variable and no typography styles: one collection means no
+ * mode_selector_shared warning, one mode means no per-mode duplication, and no
+ * text styles means no value_converted info entry. The only report entry a
+ * pull of this foundation can produce is exactly one `unitless_number`
+ * warning, which is what pins the singular "1 warning" (not "1 warnings").
+ */
+function minimalUnitlessFoundationArtifact() {
+  const serialized: SerializedFoundation = {
+    fileKey: 'cli-test-minimal', fileName: 'Minimal', extractedAt: '2026-09-01T00:00:00.000Z',
+    externals: [], textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'VariableCollectionId:solo', name: 'Solo',
+      defaultModeId: 'ModeID:solo-default',
+      modes: [{ modeId: 'ModeID:solo-default', name: 'Default' }],
+      variables: [{
+        id: 'VariableID:solo-number', name: 'number/solo', resolvedType: 'FLOAT',
+        description: '', codeSyntax: {}, scopes: ['ALL_SCOPES'],
+        valuesByMode: { 'ModeID:solo-default': 2 },
+      }],
+    }],
+  };
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-minimal', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
+/**
+ * The same synthetic foundation, with a second Primitives variable sharing
+ * the EXACT SAME name as `number/unknown-scope` (not merely one that
+ * normalises to the same CSS identifier, as `foundationArtifactWithCollision`
+ * above does): `indexPaths` in dtcg.ts resolves both to the identical DTCG
+ * path and omits both, reporting `path_collision` at `error` severity. This
+ * is a distinct code from `name_collision`, written to `tokens/report.json`
+ * (the whole-projection report every Foundation pull writes unconditionally)
+ * rather than to any per-output report -- exactly the file Important 2 of
+ * the fix-round review said was going uncounted.
+ */
+function foundationArtifactWithPathCollision() {
+  const serialized = JSON.parse(readFileSync(SERIALIZED_FOUNDATION, 'utf8')) as SerializedFoundation;
+  const primitives = serialized.collections.find((c) => c.name === 'Primitives');
+  const original = primitives?.variables.find((v) => v.name === 'number/unknown-scope');
+  if (!primitives || !original) throw new Error('fixture shape changed: expected Primitives/number/unknown-scope');
+  primitives.variables.push({ ...original, id: 'VariableID:unknown-number-path-collision' });
+  const { artifact } = buildFoundationArtifactV5(buildFoundation(serialized), {
+    exportId: 'cli-test-path-collision', generatedAt: '2026-09-01T00:00:00.000Z', build: null,
+  });
+  return artifact;
+}
+
 /** writeBundleFiles refuses a component brief that does not begin with the Spec Layer marker. */
 const brief = (body: string): string => `spec_layer:\n  kind: component\n${body}`;
 
@@ -52,6 +125,14 @@ const GOOD_BUNDLE = {
   components: [
     { name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } },
   ],
+};
+
+const COLLISION_BUNDLE = { ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithCollision() } };
+const SINGLE_WARNING_BUNDLE = {
+  ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: minimalUnitlessFoundationArtifact() },
+};
+const PATH_COLLISION_BUNDLE = {
+  ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithPathCollision() },
 };
 
 function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z') {
@@ -504,6 +585,58 @@ describe('runPull with outputs', () => {
     expect(readFileSync(join(cwd, 'tokens/index.css'), 'utf8')).toContain('Generated by spec-layer');
   });
 
+  it('re-projects rather than granting a 304 when the manifest was written by another CLI version', async () => {
+    // The upgrade path, and the one with real user impact. Everything this
+    // branch changed -- fonts.json, the derived units, the CSS headers, both
+    // report files -- is projected by the CLI from a bundle whose bytes did
+    // not move, so an existing repository would otherwise be told "Already up
+    // to date" forever and never receive the fix. A manifest carrying a
+    // different cliVersion, or none at all (every manifest written before
+    // 0.8.0), must re-project.
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+
+    const manifestPath = join(cwd, '.speclayer/manifest.json');
+    const written = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    expect(typeof written.cliVersion).toBe('string');
+
+    for (const stale of [{ ...written, cliVersion: '0.7.0' }, (() => {
+      const { cliVersion: _drop, ...rest } = written;
+      return rest;
+    })()]) {
+      writeFileSync(manifestPath, `${JSON.stringify(stale, null, 2)}\n`);
+      const io = makeIo();
+      const fetcher = stub200();
+      expect(await runPull(cwd, { key: KEY }, {}, io, fetcher)).toBe(0);
+      const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+      expect(headers['If-None-Match']).toBeUndefined();
+      expect(io.outLines.join('\n')).not.toContain('Already up to date');
+      // ...and the pull it forced actually rewrote the deliverables.
+      expect(existsSync(join(cwd, '.speclayer/fonts.json'))).toBe(true);
+      expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8')).cliVersion).toBe(written.cliVersion);
+    }
+  });
+
+  it('restores a deleted fonts.json or report file instead of trusting a stale manifest for a 304', async () => {
+    // printReportSummary reads both report files on a 304 and --strict decides
+    // an exit code from them; the skill reads fonts.json. A 304 that leaves any
+    // of the three missing leaves those sentences with nothing behind them.
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    for (const rel of ['.speclayer/fonts.json', '.speclayer/tokens/report.json', '.speclayer/outputs/web-css.report.json']) {
+      expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
+      expect(existsSync(join(cwd, rel)), rel).toBe(true);
+      rmSync(join(cwd, rel));
+
+      const io = makeIo();
+      const fetcher = stub200();
+      expect(await runPull(cwd, { key: KEY }, {}, io, fetcher)).toBe(0);
+      const headers = (fetcher as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1].headers as Record<string, string>;
+      expect(headers['If-None-Match'], rel).toBeUndefined();
+      expect(existsSync(join(cwd, rel)), rel).toBe(true);
+    }
+  });
+
   it('restores a deleted non-default mode file that only index.css names', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
     expect(await runPull(cwd, { key: KEY }, {}, makeIo(), stub200())).toBe(0);
@@ -622,6 +755,125 @@ describe('runPull with outputs', () => {
     expect(await runPull(cwd, { key: KEY, platform: ['Web'] }, {}, io, fetcher)).toBe(1);
     expect(io.errLines[0]).toBe('--platform takes web, ios, android, flutter, not "Web".');
     expect((fetcher as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('runPull report summary and --strict', () => {
+  let cwd: string;
+  const LIB = 'lib_bbbbbbbbbbbbbbbbbbbbbbbb';
+  const KEY = `sl_${'b'.repeat(48)}`;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-report-'));
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer', platforms: ['web'] }));
+    // Satisfies the synthetic foundation's one typography family (Inter), so
+    // these tests read only the severity summary, not a missing-font note.
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: { '@fontsource/inter': '^5.0.0' } }));
+  });
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('summarises report severity on stderr after a pull with errors', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    const err = io.errLines.join('\n');
+    // 2 name_collision errors (per-output report) plus 11 warnings: 2
+    // mode_selector_shared (per-output) and 9 warnings the synthetic
+    // foundation's tokens/report.json always carries (unresolved cycles,
+    // externals, a boolean and a string DTCG cannot express), unrelated to
+    // the collision and present on every pull of this fixture.
+    expect(err).toContain('2 errors, 11 warnings in the token output.');
+    expect(err).toContain('tokens/report.json');
+    expect(err).toContain('web-css.report.json');
+  });
+
+  it('exits 1 under --strict when an error-severity entry exists', async () => {
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, makeIo(), stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(1);
+  });
+
+  it('still exits 0 without --strict, even with an error-severity entry', async () => {
+    const code = await runPull(cwd, { key: KEY }, {}, makeIo(), stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+  });
+
+  it('summarises a report with only warnings, pluralising both counts', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
+    expect(code).toBe(0);
+    // 5 from outputs/web-css.report.json (2 mode_selector_shared + 3
+    // unitless_number, one per mode) plus 9 from tokens/report.json.
+    expect(io.errLines.join('\n')).toContain('0 errors, 14 warnings in the token output.');
+  });
+
+  it('pluralises a single warning as "1 warning", not "1 warnings"', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(SINGLE_WARNING_BUNDLE)));
+    expect(code).toBe(0);
+    expect(io.errLines.join('\n')).toContain('0 errors, 1 warning in the token output.');
+  });
+
+  it('surfaces a tokens/report.json error (path_collision) that no per-output report carries', async () => {
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(PATH_COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    const err = io.errLines.join('\n');
+    expect(err).toContain('tokens/report.json');
+    // 2 path_collision errors (one per token id sharing the DTCG path, from
+    // tokens/report.json) plus 11 warnings: 9 from tokens/report.json's own
+    // baseline and 2 mode_selector_shared from the per-output report. The
+    // colliding token's own unitless_number entries are gone, not merely
+    // uncounted: a DTCG-path collision omits the token from the resolved
+    // document before cssOutput ever sees it.
+    expect(err).toContain('2 errors, 11 warnings in the token output.');
+  });
+
+  it('exits 1 under --strict for a path_collision error, which lives only in tokens/report.json', async () => {
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, makeIo(), stub200(JSON.stringify(PATH_COLLISION_BUNDLE)));
+    expect(code).toBe(1);
+  });
+
+  it('CRITICAL FIX: exits 1 under --strict on a cached (304) pull whose on-disk report still holds an error', async () => {
+    const body = JSON.stringify(COLLISION_BUNDLE);
+    await runPull(cwd, { key: KEY }, {}, makeIo(), stubEtagAware(body));
+
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY, strict: true }, {}, io, stubEtagAware(body));
+
+    // Confirms this pull actually took the cached path, not a fresh write --
+    // otherwise this test would not distinguish the fix from Important 2/3.
+    expect(io.outLines.join('\n')).toContain('Already up to date');
+    expect(code).toBe(1);
+  });
+
+  it('still prints the severity summary on a cached (304) pull without --strict, and exits 0', async () => {
+    const body = JSON.stringify(COLLISION_BUNDLE);
+    await runPull(cwd, { key: KEY }, {}, makeIo(), stubEtagAware(body));
+
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stubEtagAware(body));
+
+    expect(io.outLines.join('\n')).toContain('Already up to date');
+    expect(code).toBe(0);
+    expect(io.errLines.join('\n')).toContain('2 errors, 11 warnings in the token output.');
+  });
+
+  it('prints no severity line for a components-only pull, which writes no output report', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY, only: 'components' }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
+    expect(code).toBe(0);
+    expect(io.errLines).toEqual([]);
+  });
+
+  it('names a font family nothing in the repository loads', async () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({}));
+    const io = makeIo();
+    const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
+    expect(code).toBe(0);
+    expect(io.errLines).toContain('This library needs Inter, and nothing in this repository loads it. See fonts.json.');
   });
 });
 

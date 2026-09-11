@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, foundationDtcg, validateLevel1,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
+  validateLevel1,
   type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
@@ -10,6 +11,7 @@ import { visibleDirProblem, writeVisibleDir } from './visibleDir';
 import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
+import { cliVersion } from './version';
 
 export function slugify(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -41,6 +43,19 @@ export interface Manifest {
   bundleHash: string;
   pluginVersion: string | null;
   extractorVersion: string;
+  /**
+   * The CLI that projected this pull. Absent in every manifest written before
+   * 0.8.0, and part of the freshness comparison for a reason the bundle hash
+   * cannot cover: the projection lives here, not in the bundle, so a CLI
+   * upgrade changes what a pull writes from bytes that did not move. A
+   * repository on a new CLI whose manifest carries a different version (or
+   * none) must re-project rather than be told it is already up to date.
+   *
+   * `extractorVersion` above answers the other half and needs no comparison of
+   * its own: it is the publisher's, it travels inside the bundle, and a bump
+   * moves the bundle hash, which the `ETag` already catches.
+   */
+  cliVersion?: string;
   /** Absent in manifests written by CLI 0.1.0, which always wrote everything. */
   selection?: Selection;
   /**
@@ -187,7 +202,18 @@ export function writeBundleFiles(opts: {
         if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
           throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
         }
-        const exp = foundationDtcg(artifact as FoundationArtifactV5, opts.dtcg ?? {});
+        // The families and weights the library's typography styles actually
+        // reference, so a repository can load exactly those instead of a bare
+        // family name that leaves every weight to synthesise.
+        put('fonts.json', json(fontRequirements(artifact as FoundationArtifactV5)));
+        // The evidence for a unit no scope states is split across the bundle:
+        // the scopes live in the Foundation and the bindings in the component
+        // artifacts, and the projection sees only the first. The pull is the
+        // first place both are in hand, so it is where the pass runs. Every
+        // unit it derives is written to the projection's own report.
+        const exp = foundationDtcg(
+          artifact as FoundationArtifactV5, opts.dtcg ?? {}, usageUnits(opts.bundle),
+        );
         for (const [name, text] of Object.entries(dtcgExportFiles(exp))) put(`tokens/${name}`, text);
         path = `${outDirRel}/tokens/resolver.json`;
         const header = { libraryId: opts.libraryId, contentHash: opts.bundle.foundation.artifact.spec_layer.export.content_hash };
@@ -214,6 +240,7 @@ export function writeBundleFiles(opts: {
     const manifest: Manifest = {
       libraryId: opts.libraryId, publishedAt: opts.publishedAt, bundleHash: opts.bundleHash,
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
+      cliVersion: cliVersion(),
       selection, componentSpecsDir, artifacts,
       ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
       ...(opts.platforms && opts.platforms.length > 0 ? { platforms: opts.platforms } : {}),

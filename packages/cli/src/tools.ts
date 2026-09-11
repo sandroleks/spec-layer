@@ -25,6 +25,10 @@ export interface Tool {
 
 const OK_OR_ERROR = { '0': 'success', '1': 'usage error, bad key or id, or a network or server failure' };
 const LOCAL_ONLY = { '0': 'success', '1': 'no local pull, or a usage error' };
+const PULL_EXITS = {
+  '0': 'success, even when tokens/report.json or an outputs/*.report.json holds an error-severity entry (pass --strict to fail on that instead)',
+  '1': 'usage error, bad key or id, a network or server failure, or --strict with an error-severity entry in tokens/report.json or an outputs/*.report.json, including on a cached (304) pull',
+};
 
 export const TOOLS: readonly Tool[] = [
   {
@@ -51,16 +55,16 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'pull',
-    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
-    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir, and the token files under outputs[].path.',
-    when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, or componentSpecsDir blocks.',
+    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]... [--strict]',
+    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir, and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning.',
+    when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, or componentSpecsDir blocks. Add --strict in CI to fail the build on an error-severity report entry.',
     network: true, needsKey: true,
     writes: [
       '<outDir>/',
       'outputs[].path from speclayer.json (default tokens/ for web), a directory written in place',
       'componentSpecsDir from speclayer.json (default component-specs/), written in place',
     ],
-    exits: OK_OR_ERROR,
+    exits: PULL_EXITS,
   },
   {
     name: 'status',

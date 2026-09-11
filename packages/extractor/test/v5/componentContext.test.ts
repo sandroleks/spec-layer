@@ -233,6 +233,41 @@ describe('Component Context v5', () => {
       .toBe(false);
   });
 
+  it('projects a Foundation-level diagnostic into the component YAML, not just its count', () => {
+    // A component's Foundation dependency slice inherits only the findings
+    // scoped to what it actually uses (componentFoundationDependencies), so
+    // this proves the row survives that filter and reaches the AI profile's
+    // nested `references.foundation.validation`, not only `issue_counts`.
+    const source: FoundationArtifactV5 = {
+      ...foundation(),
+      diagnostics: [{
+        code: 'STYLE_BINDING_DRIFT', severity: 'warning', entity_id: 'StyleID:text',
+        message: 'The typography property snapshot differs from its unambiguous bound token value.',
+        details: {
+          property: 'font_weight',
+          style_value: { type: 'number', value: 400 },
+          token_value: { type: 'number', value: 500 },
+        },
+      }],
+    };
+    const artifact = buildComponentArtifactV5(spec([
+      rule('StyleID:text', 'Body/Regular', 'text-style', 'typography'),
+    ]), { ...META, foundation: source });
+
+    const context = componentAiContext(artifact);
+    const foundationSection = context.references.foundation as {
+      validation?: Array<{ id: string; severity: string; property?: string; message: string }>;
+      issue_counts?: Record<string, Record<string, number>>;
+    };
+    const entry = foundationSection.validation?.find((row) => row.id === 'style-binding-drift');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('warning');
+    expect(entry?.message).toContain('400');
+    expect(entry?.message).toContain('500');
+    // the summary count still survives alongside the detail
+    expect(foundationSection.issue_counts?.warning?.STYLE_BINDING_DRIFT).toBe(1);
+  });
+
   it('includes variable bindings nested inside inline effect fields', () => {
     const component = spec([]);
     component.nodeEffects = [{
@@ -437,5 +472,34 @@ describe('Component Context v5', () => {
     expect(validateComponentArtifactV5(artifact)).toContainEqual(expect.objectContaining({
       code: 'INCONSISTENT_REFERENCE', severity: 'error',
     }));
+  });
+
+  it('projects a component-level UNRESOLVED_REFERENCE into an actionable row, not just a count', () => {
+    // Matches the real-pull symptom: five component YAMLs each carrying a
+    // bare issue_counts: { error: { UNRESOLVED_REFERENCE: N } } with no path,
+    // property, or message anywhere in the file. 'unavailable' (rather than
+    // 'no_foundation') gives `error` severity, the severity actually observed.
+    const source = foundation();
+    source.completeness.unavailable_sources.push('VariableID:missing');
+    const artifact = buildComponentArtifactV5(spec([rule(
+      'VariableID:missing', 'space/component', 'variable', 'gap', 'CollectionID:space',
+    )]), { ...META, foundation: source });
+
+    expect(artifact.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNRESOLVED_REFERENCE', severity: 'error', entity_id: 'VariableID:missing',
+    }));
+
+    const context = componentAiContext(artifact);
+    // the summary count is unchanged...
+    expect(context.issue_counts?.error?.UNRESOLVED_REFERENCE).toBe(1);
+    // ...but it is no longer the only thing the copied YAML says about it
+    const rows = context.validation as Array<{
+      id: string; severity: string; path?: string; message: string;
+    }> | undefined;
+    const entry = rows?.find((row) => row.id === 'unresolved-reference');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('error');
+    expect(entry?.path).toBe('space/component');
+    expect(entry?.message).toBe('The Foundation read named this source id as unavailable.');
   });
 });

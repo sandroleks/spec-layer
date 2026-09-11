@@ -152,6 +152,7 @@ describe('writeBundleFiles', () => {
     expect(written).toContain('tokens/resolver.json');
     expect(written).toContain('tokens/spec-layer.meta.json');
     expect(written).toContain('tokens/report.json');
+    expect(written).toContain('fonts.json');
     expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
@@ -169,6 +170,37 @@ describe('writeBundleFiles', () => {
       },
       { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), path: 'component-specs/button.yaml' },
     ]);
+  });
+
+  it('writes fonts.json at the top of outDir, naming the families and weights the styles need', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const raw = JSON.stringify(bundle);
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw, bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    const fonts = JSON.parse(readFileSync(join(outDir, 'fonts.json'), 'utf8'));
+    // The synthetic fixture's one typography style is Body/Regular in Inter at
+    // weight 400 (bound via alias, resolved the same way a literal would be).
+    expect(fonts).toEqual([{
+      family: 'Inter',
+      weights: [400],
+      used_by: ['Body/Regular'],
+    }]);
+  });
+
+  it('does not write fonts.json when the foundation is deselected', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const raw = JSON.stringify(bundle);
+    const { written } = writeBundleFiles({
+      outDir, cwd: tmpDir, raw, bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+      selection: { foundation: false, components: null },
+    });
+
+    expect(written).not.toContain('fonts.json');
+    expect(existsSync(join(outDir, 'fonts.json'))).toBe(false);
   });
 
   it('dedupes colliding slugs in bundle order', () => {
@@ -433,6 +465,62 @@ describe('writeBundleFiles', () => {
     const map = JSON.parse(readFileSync(join(outDir, 'outputs/web-css.map.json'), 'utf8'));
     expect(map['Primitives.color.exact.red']).toMatchObject({ name: '--color-exact-red', source: 'code_syntax' });
     expect(result.outputs[0].files).toContain(map['Primitives.color.exact.red'].file);
+  });
+
+  it('writes a real length for a token a component binds to a length property', () => {
+    // Primitives.number.unknown-scope carries no unit-pinning scope, so on its
+    // own it lands in the CSS as the bare `1.5` a browser drops. The bundle
+    // states what it is used for; the pull is where both halves are in hand.
+    const bound = {
+      name: 'Button',
+      ai: brief('button: yes\n'),
+      artifact: {
+        spec_layer: { export: { content_hash: 'c'.repeat(64) } },
+        references: {
+          used: [],
+          bindings: [{
+            path: 'Container', property: 'height',
+            source_id: 'VariableID:unknown-number', kind: 'variable',
+          }],
+        },
+      },
+    } as unknown as BundleV1['components'][number];
+    const bundle = makeBundle({ foundation: realFoundation(), components: [bound] });
+    const result = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib_x',
+      publishedAt: 'p', bundleHash: 'h', outputs: [WEB],
+    });
+
+    const all = result.outputs[0].files
+      .map((f) => readFileSync(join(tmpDir, 'tokens', f), 'utf8')).join('\n');
+    expect(all).toContain('--primitives-number-unknown-scope: 1.5px;');
+    expect(all).not.toContain('--primitives-number-unknown-scope: 1.5;');
+
+    // The file says so itself, rather than only the report: it was the only
+    // unitless property in these files, so that note is gone and the derived
+    // note stands in its place.
+    expect(all).toContain(
+      '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.',
+    );
+    expect(all).toContain("   See tokens/report.json under your pull's output directory for what pinned it.");
+    expect(all).not.toContain('has no unit');
+
+    // Guardrail: every derived unit is auditable. The projection's own report
+    // names the component and the property that pinned it.
+    const report = JSON.parse(readFileSync(join(outDir, 'tokens/report.json'), 'utf8')) as Array<{
+      code: string; severity: string; path: string; details: Record<string, string>;
+    }>;
+    const derived = report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(derived).toHaveLength(1);
+    expect(derived[0]).toMatchObject({
+      severity: 'info',
+      path: 'Primitives.number.unknown-scope',
+      details: { via: 'binding', source: 'Button', reason: 'height' },
+    });
+
+    // And the CSS output no longer counts it among the unusable ones.
+    const cssReport = JSON.parse(readFileSync(join(outDir, 'outputs/web-css.report.json'), 'utf8')) as Array<{ code: string; path: string }>;
+    expect(cssReport.some((r) => r.code === 'unitless_number' && r.path === 'Primitives.number.unknown-scope')).toBe(false);
   });
 
   it('refuses a foreign file in the tokens directory before writing anything', () => {

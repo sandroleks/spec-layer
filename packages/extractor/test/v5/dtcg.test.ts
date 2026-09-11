@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
+  type UnitEvidence, type UsageUnitMap,
 } from '../../src/index';
-import { leaf, syntheticArtifact } from './dtcgFixture';
+import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
 
 describe('dtcgSegments', () => {
   it('splits on slash and keeps casing', () => {
@@ -302,6 +303,93 @@ describe('foundationDtcg aliases and omissions', () => {
     expect(gap.scopes).not.toContain('FONT_WEIGHT');
     expect(leaf(foundationDtcg(scoped).files['primitives.light.json'], 'Primitives.spacing.gap'))
       .toEqual({ $type: 'fontWeight', $value: '{Primitives.typography.weight.strong}' });
+  });
+
+  it('reports a dimension token whose alias target is a number', () => {
+    const out = foundationDtcg(radiusMismatchArtifact());
+
+    const entry = out.report.find((r) => r.code === 'alias_type_mismatch');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('error');
+    expect(entry?.path).toBe('Radius.rd-sm');
+    expect(entry?.details).toMatchObject({
+      target: 'Foundation.radius.300',
+      own_type: 'dimension',
+      target_type: 'number',
+    });
+  });
+
+  it('writes the resolved dimension when the alias target cannot carry the unit', () => {
+    const out = foundationDtcg(radiusMismatchArtifact());
+    const rdSm = leaf(out.files['radius.light.json'], 'Radius.rd-sm');
+
+    expect(rdSm?.$type).toBe('dimension');
+    expect(rdSm?.$value).toEqual({ value: 8, unit: 'px' });
+    expect(String(rdSm?.$value)).not.toContain('{');
+  });
+
+  it('records a repaired leaf in the sidecar as its own literal rule, not as an alias', () => {
+    // `transform` promises "the rule that produced this mode's $value", and
+    // `resolved` is documented absent for a literal token because its value
+    // is already in the file -- both would be false for rd-sm once the
+    // reference is replaced by a literal, so neither may survive the repair.
+    const out = foundationDtcg(radiusMismatchArtifact());
+    const entry = out.meta['Radius.rd-sm'];
+    expect(entry.transform).toEqual({ Light: 'dimension' });
+    expect(entry.resolved).toBeUndefined();
+  });
+
+  it('stands down from the repair when usage evidence gives the alias target the same type', () => {
+    // The production composition, which no test reached before: `pull` runs
+    // usageUnits over the whole bundle and hands the result to foundationDtcg,
+    // and on this very token pair Rule A reads rd-sm's own CORNER_RADIUS scope
+    // as evidence for what it aliases. Foundation.radius.300 then projects as
+    // a dimension of its own, terminalOwnType agrees with the alias owner's
+    // type, and there is nothing left to report: the reference survives and
+    // carries a real length. That is the better outcome, and it means a user
+    // on this path will not find alias_type_mismatch in tokens/report.json.
+    const derived: UsageUnitMap = new Map<string, UnitEvidence>([
+      ['VariableID:unknown-number', {
+        unit: 'px', via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS',
+      }],
+    ]);
+    const out = foundationDtcg(radiusMismatchArtifact(), {}, derived);
+
+    expect(out.report.find((r) => r.code === 'alias_type_mismatch')).toBeUndefined();
+    expect(leaf(out.files['radius.light.json'], 'Radius.rd-sm'))
+      .toEqual({ $type: 'dimension', $value: '{Foundation.radius.300}' });
+    expect(leaf(out.files['foundation.light.json'], 'Foundation.radius.300'))
+      .toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
+    // The derivation is disclosed, not silent.
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')?.path)
+      .toBe('Foundation.radius.300');
+  });
+
+  it('still repairs when no usage evidence survives for the alias target', () => {
+    // The other direction of the same composition. usageUnits returns no entry
+    // for a token whose evidence its own guardrails vetoed (a component binds
+    // something on the chain to a non-length property, or an OPACITY-scoped
+    // token aliases it), and an empty map is exactly what foundationDtcg then
+    // sees. The repair is the only thing standing between that and a
+    // `dimension` reference to a bare number.
+    const out = foundationDtcg(radiusMismatchArtifact(), {}, new Map());
+
+    expect(out.report.find((r) => r.code === 'alias_type_mismatch')?.severity).toBe('error');
+    expect(leaf(out.files['radius.light.json'], 'Radius.rd-sm'))
+      .toEqual({ $type: 'dimension', $value: { value: 8, unit: 'px' } });
+    expect(leaf(out.files['foundation.light.json'], 'Foundation.radius.300'))
+      .toEqual({ $type: 'number', $value: 8 });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+  });
+
+  it('leaves a well-typed alias recorded as alias with its resolved value', () => {
+    // The repair path must not swallow the ordinary case: an alias whose
+    // type agrees with its target still records `transform: 'alias'` and a
+    // `resolved` snapshot.
+    const out = foundationDtcg(syntheticArtifact());
+    const entry = out.meta['Semantic.color.surface.primary'];
+    expect(entry.transform?.Dark).toBe('alias');
+    expect(entry.resolved?.Dark).toBeDefined();
   });
 
   it('reports a code syntax identifier that two tokens share', () => {
@@ -684,6 +772,131 @@ describe('config_hash', () => {
 
   it('changes when a unit override changes', () => {
     expect(hashOf({ units: { 'A/one': 'px' } })).not.toBe(hashOf({ units: { 'A/one': 'rem' } }));
+  });
+});
+
+describe('units derived from stated usage', () => {
+  const PATH = 'Primitives.number.unknown-scope';
+  const evidence = (over: Partial<UnitEvidence> = {}): UnitEvidence => ({
+    unit: 'px', via: 'binding', source: 'Button', reason: 'height', ...over,
+  });
+  const derived = (id: string, over?: Partial<UnitEvidence>): UsageUnitMap =>
+    new Map([[id, evidence(over)]]);
+
+  it('writes a real dimension and reports the evidence that pinned it', () => {
+    const out = foundationDtcg(syntheticArtifact(), {}, derived('VariableID:unknown-number'));
+
+    expect(leaf(out.files['primitives.light.json'], PATH))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'px' } });
+
+    // Guardrail: a derived unit a reader cannot audit is a guess. The entry
+    // must name what pinned it, not just that something did.
+    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(entries).toHaveLength(1); // one fact about the token, not one per mode
+    expect(entries[0].severity).toBe('info');
+    expect(entries[0].path).toBe(PATH);
+    expect(entries[0].details).toMatchObject({
+      id: 'VariableID:unknown-number', unit: 'px', via: 'binding', source: 'Button', reason: 'height',
+    });
+    expect(entries[0].message).toContain('Button binds it to height');
+
+    // The sidecar names the rule that produced the value, rather than claiming
+    // the token held a dimension of its own.
+    const transforms = Object.values(out.meta[PATH].transform ?? {});
+    expect(transforms.every((t) => t === 'number-unit-usage')).toBe(true);
+    expect(transforms.length).toBeGreaterThan(0);
+  });
+
+  it('words a scope-pinned alias as scoped rather than bound', () => {
+    const out = foundationDtcg(
+      syntheticArtifact(), {},
+      derived('VariableID:unknown-number', { via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' }),
+    );
+    const entry = out.report.find((r) => r.code === 'unit_derived_from_usage');
+    expect(entry?.message).toContain('Radius.rd-sm is scoped CORNER_RADIUS');
+  });
+
+  it('lets an explicit units override beat the derived evidence', () => {
+    // Guardrail: the config is the human's own statement about their tokens.
+    const out = foundationDtcg(
+      syntheticArtifact(), { units: { 'Primitives/number/*': 'rem' } },
+      derived('VariableID:unknown-number'),
+    );
+    expect(leaf(out.files['primitives.light.json'], PATH))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'rem' } });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+    expect(Object.values(out.meta[PATH].transform ?? {})).toContain('number-unit-override');
+  });
+
+  it('ignores evidence about a token whose own scopes already state a unit', () => {
+    // A FONT_WEIGHT scope states "unitless number"; nothing read off usage may
+    // overrule the file's own statement.
+    const out = foundationDtcg(syntheticArtifact(), {}, derived('VariableID:font-weight'));
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.typography.weight.strong')?.$type)
+      .toBe('fontWeight');
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
+  });
+
+  it('reports a derived unit even when the token it pinned has no leaf of its own', () => {
+    // A -> B -> C, where C lost its DTCG path to a collision and so is never
+    // built as a leaf. A's own leaf is still typed from C (its direct target B
+    // survives), so C's derived unit reaches the output through a call site
+    // that projects the chain TERMINAL rather than the token being built. If
+    // only the owning call site reported, this unit would be applied with
+    // nothing naming it anywhere.
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
+    if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
+    artifact.tokens.push({ ...structuredClone(terminal), id: 'VariableID:unknown-number-twin' });
+
+    const aliasTo = (targetId: string, collectionId: string, targetPath: string[]) => ({
+      kind: 'alias' as const,
+      reference: {
+        target_id: targetId, target_collection_id: collectionId, target_path: targetPath, external: false,
+      },
+      resolved: {
+        status: 'resolved' as const,
+        value: { type: 'number' as const, value: 1.5 },
+        chain: [{ token_id: 'VariableID:unknown-number', mode_id: 'ModeID:p-light' }],
+      },
+    });
+    const inner = {
+      id: 'VariableID:inner', collection_id: 'CollectionID:semantic',
+      name: 'derived/inner', path: ['derived', 'inner'], type: 'number' as const,
+      description: '', scopes: [],
+      values: {
+        'ModeID:s-light': aliasTo('VariableID:unknown-number', 'CollectionID:primitives', ['number', 'unknown-scope']),
+        'ModeID:s-dark': aliasTo('VariableID:unknown-number', 'CollectionID:primitives', ['number', 'unknown-scope']),
+      },
+    };
+    const outer = {
+      ...inner, id: 'VariableID:outer', name: 'derived/outer', path: ['derived', 'outer'],
+      values: {
+        'ModeID:s-light': aliasTo('VariableID:inner', 'CollectionID:semantic', ['derived', 'inner']),
+        'ModeID:s-dark': aliasTo('VariableID:inner', 'CollectionID:semantic', ['derived', 'inner']),
+      },
+    };
+    artifact.tokens.push(inner, outer);
+
+    const out = foundationDtcg(artifact, {}, derived('VariableID:unknown-number'));
+
+    // The collided token really has no leaf: both twins were omitted.
+    expect(out.report.some((r) => r.code === 'path_collision')).toBe(true);
+    expect(leaf(out.files['primitives.light.json'], PATH)).toBeUndefined();
+    // ... and the derived unit really did reach the output through the alias.
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')?.$type).toBe('dimension');
+
+    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
+    expect(entries).toHaveLength(1);
+    // Keyed by path plus id, the same way the sidecar names a collided token.
+    expect(entries[0].path).toBe(`${PATH} [VariableID:unknown-number]`);
+    expect(entries[0].details).toMatchObject({ id: 'VariableID:unknown-number', via: 'binding' });
+  });
+
+  it('leaves a number alone when nothing states a unit for it', () => {
+    const out = foundationDtcg(syntheticArtifact());
+    expect(leaf(out.files['primitives.light.json'], PATH)).toMatchObject({ $type: 'number', $value: 1.5 });
+    expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
   });
 });
 

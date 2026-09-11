@@ -6,6 +6,365 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A dimension token that aliases a number token no longer projects an
+  invalid CSS value.** DTCG requires a referencing token's `$type` to equal
+  its alias target's, but the DTCG projection decided each token's type from
+  whichever token's own scope was asking: a CORNER_RADIUS-scoped token
+  aliasing an unscoped primitive (`Mapped Radius.rd-sm` -> `Foundation.radius.300`
+  on a real pull) wrote `{"$type": "dimension", "$value": "{Foundation.radius.300}"}`
+  next to a target the projection itself wrote as `$type: "number"`. The CSS
+  generator trusted the declared type and emitted `--rd-sm: var(--radius-300)`
+  against `--radius-300: 8`, so `border-radius: var(--rd-sm)` resolved to the
+  unitless `8` and was silently dropped by the browser -- a real component
+  built from the pull rendered with no radius, no padding, and no height. The
+  projection now re-derives the alias target's own type independently (from
+  its own literal, not the alias owner's already-scoped snapshot) and, when
+  the two disagree, reports `alias_type_mismatch` at `error` severity and
+  writes the token's own resolved literal instead of the unsound reference.
+  The literal was never invented: it is the same resolved value
+  `spec-layer.meta.json` already carried for the token. That sidecar now
+  describes the repair truthfully too: a repaired token's `transform` names
+  its literal's own rule rather than `alias`, and it carries no `resolved`
+  snapshot, since both were only ever meaningful for a surviving reference.
+  One thing this entry cannot promise about that exact token pair: under
+  `spec-layer pull`, where the usage-derived units below also run, nothing is
+  reported for it. `Mapped Radius.rd-sm`'s CORNER_RADIUS scope is precisely
+  the evidence that gives `Foundation.radius.300` a `px` unit of its own, so
+  the target projects as a `dimension` too, the two types agree, and the
+  reference survives carrying a real length. That is the better outcome of the
+  two and is deliberate, but it means a repository on the current CLI will
+  find no `alias_type_mismatch` in `tokens/report.json` for it. The repair
+  still fires wherever the derivation does not: a target whose usage evidence
+  its own guardrails refuted, or a projection run without the bundle (the
+  clipboard's `foundationDtcgDocument`, which holds no components).
+
+- **An existing repository now receives a CLI upgrade, instead of being told
+  it is already up to date.** `spec-layer pull` asks the server for a 304 by
+  sending the last pull's bundle hash, and everything the CLI projects -- the
+  DTCG token files, `tokens/report.json`, each `outputs/<id>.report.json`,
+  `fonts.json`, the generated CSS and its headers -- is computed here, not
+  inside the bundle. A release that changes any of it changes what a pull
+  writes from bytes that never moved, so a repository that pulled on 0.7.x and
+  upgraded to collect the fixes above got `Already up to date`, kept last
+  release's files, and had its severity summary read off the previous
+  release's reports. The freshness comparison now includes the CLI's own
+  version, recorded in `manifest.json` as `cliVersion`: a manifest written by
+  a different CLI, or by one old enough to carry no version at all, re-projects
+  rather than being served a 304. The publisher's `extractorVersion` needs no
+  clause of its own, because it travels inside the bundle and a bump moves the
+  bundle hash. The existence half of the same check grew to match what
+  `printReportSummary` and `--strict` actually read on a cached pull: it
+  covered `outputs/<id>.map.json` and the files `index.css` imports, and now
+  covers both report files and `fonts.json` too, so a developer who deletes
+  one gets it back instead of a 304 that leaves the next run's summary reading
+  a file that is not there. The docblock claiming the old behaviour is
+  corrected, and the generated skill's "`fonts.json` is missing, run
+  `npx spec-layer pull` again" is now an instruction that can succeed.
+
+- **A component's copied YAML now says what a diagnostic found, not just how
+  many.** Both the canonical Foundation Context v5 artifact and a component's
+  own reference diagnostics already carry this, fully formed -- codes,
+  severities, entity ids, structured `details`, and a human message -- but
+  every projection collapsed it to a count: `issue_counts: { warning: {
+  STYLE_BINDING_DRIFT: 1 } }`. On a real pull, five component YAMLs each
+  carried a bare `issue_counts: { error: { UNRESOLVED_REFERENCE: N } }` with
+  no path, no property, and no message anywhere in the file: ten
+  error-severity findings reported as bare integers. `foundationAiContext` now
+  renders `STYLE_BINDING_DRIFT`, `UNIT_METADATA_UNAVAILABLE`, and
+  `UNRESOLVED_REFERENCE` -- the codes it can turn into a specific, actionable
+  sentence -- into `validation` rows (kebab-case `id`, matching the existing
+  `unbound-value` vocabulary), each naming the entity it is about, both sides
+  of a style/token drift (a colour's alpha included, never just its hex, so
+  two snapshots that drift only in alpha are never rendered as the same
+  colour twice), or the scopes that leave a number's unit unstated. A
+  component's own `UNRESOLVED_REFERENCE`/`INCONSISTENT_REFERENCE` diagnostics
+  get the same treatment straight into the component's top-level `validation`,
+  naming the specific reference (its human name where the diagnostic carries
+  one) rather than only the component as a whole. A code outside that map
+  stays summarized in `issue_counts` only, deliberately: a generic fallback
+  message would be worse than a bare count. Because `foundationAiContext` also
+  builds the Foundation dependency slice nested inside a component's own copy
+  (`references.foundation`), `componentAiContext` carries those rows through
+  into that slice too, so a Foundation-level finding reaches the one file a
+  developer actually has open. `issue_counts` is unchanged at both levels and
+  stays alongside the rows as a summary. Confined to the AI profile plus the
+  component artifact's own (already schema-declared, unhashed) `validation`
+  field: no canonical schema change, no content hash moved, `EXTRACTOR_VERSION`
+  (`'2'`) untouched.
+
+### Added
+
+- **The CSS output reports every unitless number it emits.** A Figma variable
+  with no unit-pinning scope carries a bare number, and CSS reads a bare
+  number as a number, not a length: `height: var(--button-lg-height)` becomes
+  `height: 36`, which is invalid and silently dropped by the browser, with
+  nothing in the output saying so. The generator still writes the value --
+  guessing a unit from the token's name is exactly what an earlier version
+  did wrong and stayed wrong for -- but now reports `unitless_number` at
+  `warning` severity for every plain `number`-typed token, naming the value.
+  `fontWeight` is exempt because
+  its `$type` already says a bare number there is correct. A typography
+  style's own `lineHeight` member is exempt too, but for a different reason:
+  DTCG types it `number` like any unpinned length, so the generator can only
+  tell it is a multiplier because this one call site reads it by name, not
+  from its `$type`. A `number`-typed variable used as a standalone opacity
+  token gets no such name to read and is still reported, even though it is
+  just as legitimately unitless: a bare number is not a length whatever the
+  scopes say, and a reader that feeds one to `height` loses the declaration
+  either way. What it is told, though, is not the same thing. The entry carries
+  one of two messages, decided by the token's own scopes from the sidecar,
+  because the file header counts only one of the two cases and points the
+  reader straight at this entry: a token whose variable states no unit at all
+  is told to narrow its scopes in Figma, in the header's own words, and an
+  `OPACITY`- or `FONT_WEIGHT`-scoped token is told its scopes already state
+  that it has none and to keep it out of a length. Neither message now offers
+  `"dtcg": { "units": ... }`, which the header deliberately withholds and
+  which is the wrong answer for the second case; the generated skill still
+  documents that override, with the caveat that too broad a glob turns a
+  genuine opacity into a fake length.
+
+- **The generated CSS file itself now says when it holds unusable properties.**
+  `unitless_number` above only reaches `<platform>-<format>.report.json`, a
+  file nothing opens: the developer and the coding agent both open the CSS
+  file, not the report. A file that declares at least one such property now
+  gets two extra header lines naming the count, the report file to read, and
+  `speclayer.json`; a file with none keeps its original two-line header
+  unchanged. The count is per file, not per token: one token present in three
+  modes is written to three separate files and is counted once in each,
+  matching what a reader of that one file can actually count. It counts only
+  tokens whose Figma variable states no unit at all: a variable scoped
+  `OPACITY` or `FONT_WEIGHT` states that it is a unitless number, so its owner
+  is never told their variable "states none" and never sent to narrow scopes
+  they have already narrowed. The sentence is
+  correct English at every count, not just the plural case: one property
+  reads "1 property in this file has no unit, because its Figma variable
+  states none," and the report is named exactly and in full
+  (`outputs/web-css.report.json` for the web/CSS output, the `outputs/` folder
+  being fixed rather than configurable) instead of "the output report," which
+  a reader could not tell apart from the differently-shaped report the pull
+  also writes under `tokens/`. The remedy it names is narrowing the
+  variable's scopes in Figma, which is the right answer whether the token is a
+  length or a genuinely unitless opacity; it deliberately does not tell the
+  reader to declare a unit in `speclayer.json`, which would be right for the
+  first and would corrupt the second.
+
+- **A token no scope gives a unit now takes one from how the library uses
+  it.** A Figma variable with no unit-pinning scope carried a bare number all
+  the way to the CSS, and on a real pull that was 66 of 421 generated
+  properties: a button rendered at 23.59px instead of 36px because
+  `height: 36` is not a length. Two kinds of evidence the export already carried now answer that
+  where the file itself is silent. A token scoped `CORNER_RADIUS`, `GAP`,
+  `WIDTH_HEIGHT`, `FONT_SIZE`, or `STROKE_FLOAT` that aliases an unscoped
+  primitive states that the primitive is a length, and a component binding
+  that says `property: gap` or `height` for a token states the same, both
+  carried along the alias chain the token sits on. This is not the
+  name-reading `units.ts` forbids and will keep forbidding: a scope is the
+  designer's own declaration and a binding property is the extractor's
+  vocabulary, while `spacing/400` and `font-weight/fw-600` are names that look
+  alike and mean different things. Three rules keep it auditable. Every
+  derived unit is reported, at `unit_derived_from_usage` and `info` severity,
+  naming the token that was scoped or the component that bound it and the
+  scope or property that did it, so no inference is silent, and that includes
+  a token the projection reaches only as somebody else's alias target and
+  never builds a leaf for. Evidence that disagrees with itself produces no
+  answer at all rather than a winner: a token bound to `gap` in one place and
+  to a non-length property in another gets nothing, and neither does one an
+  `OPACITY`- or `FONT_WEIGHT`-scoped token aliases, because those scopes state
+  "unitless number" exactly as `CORNER_RADIUS` states "px" and a reader that
+  collected only the length-stating half would happily write `opacity: 1px`.
+  Refutation travels as far as the evidence it refutes: both walk the alias
+  chain, so a contradiction one hop away still lands, and neither walks past a
+  token whose own scopes answer the question. An explicit
+  `"dtcg": { "units": ... }` entry in `speclayer.json` outranks anything read
+  off usage, because that is the repository's own statement. The pass runs
+  during `spec-layer pull`, which is the first place the Foundation and the
+  components are both in hand; the `spec-layer.meta.json` sidecar names the
+  rule as `number-unit-usage`, distinct from a configured
+  `number-unit-override` and from a token that held a dimension of its own,
+  and the projection's `config_hash` does not move, since this is read off the
+  published library rather than configured. That does cost `config_hash` its
+  old completeness, and its docblock now says so: it separated "the design
+  changed" from "the repository changed its config", and there is now a third
+  cause it does not cover, because the evidence lives in the components and
+  the document hashes none of them. The same Foundation `content_hash` and the
+  same `config_hash` can project a different value once a component starts
+  binding a token to `height`. The projection is still deterministic, and
+  given the same bundle it repeats exactly; `report.json`'s
+  `unit_derived_from_usage` entries are where a reader comparing two pulls
+  sees which tokens moved and why. The generated CSS discloses it
+  too, rather than leaving it to a file nothing opens: a file holding derived
+  values gets a header line naming how many, and pointing at
+  `tokens/report.json` for what pinned each one. The same file's header
+  already said which of its properties have no unit, and saying that while
+  saying nothing about the ones whose unit was inferred would disclose the
+  smaller half of the truth. Both that header line and the report entry it
+  points at say the token's *own* variable states no unit, rather than that no
+  scope states it: for the alias-scope half of the population a scope is
+  exactly what stated it, just not the token's own, and the entry goes on to
+  name that very scope. The two now agree, and both are true of the binding
+  half as well.
+
+- **A pulled library now ships `fonts.json`, naming the exact weights and
+  families its typography styles need.** The generated tokens carry
+  `--typography-font-family-primary: "Open Sans"` and nothing else -- no
+  weight, no source, no fallback stack. Measured on a real project built from
+  a real pull: nothing in the repository loaded the family the tokens named,
+  every component using it rendered in the browser default, and
+  `document.fonts.check('24px "Open Sans"')` returned `true` anyway, a known
+  false positive and not a usable guard. That design system's styles needed
+  three weights -- 400 (6 styles), 500 (4), and 600 (9) -- and a repository
+  that loads only 400 gets synthetic bold at the other two, which matches
+  nothing in the file. `fontRequirements(artifact)`, exported from the
+  extractor's v5 surface (`packages/extractor/src/v5/fonts.ts`), reads every
+  typography style's already-resolved `font_family` and `font_weight` and
+  groups them by family: numeric weights deduplicated and sorted ascending,
+  `used_by` naming the styles that reference the family, both `used_by` and
+  the family list itself sorted with `compareCodeUnits` for deterministic
+  output. A family no style references does not appear, and a style whose
+  Figma font-style label carries no established CSS weight (already a
+  diagnosed case in the direct v5 exporter) contributes no weight rather than
+  a guessed one. The CLI writes the array to `<outDir>/fonts.json` on every
+  pull that includes the Foundation. One thing the artifact does not carry:
+  `TypographyStyleV5` has no italic signal at all. Figma's font-style label is
+  reduced to a numeric weight before it reaches the v5 artifact, and a
+  style's `text_case`/`text_decoration` encode neither slant, so
+  `FontRequirement` has no `styles` field -- inventing `'normal'` for every
+  style would be exactly the fabrication this artifact exists to avoid. A
+  later task decides whether the repository loads what is requested here, and
+  another renders it into the agent-facing skill.
+
+- **`spec-layer` can now tell whether a repository actually loads a font
+  family the tokens name, not just whether the tokens name one.** On the same
+  real pull as `fonts.json` above, `--typography-font-family-primary: "Open
+  Sans"` measured byte-identical in the browser to a bogus family name and to
+  `serif` -- nothing in that repository loaded the family, every button
+  rendered in Times, and `document.fonts.check('24px "Open Sans"')` returned
+  `true` anyway, a known false positive and not a usable guard. Four rounds of
+  human visual review signed the work off because colour and size were both
+  fine. `missingFontSources(families, repo)`, added to `packages/cli/src/detect.ts`
+  alongside the existing platform/framework scanner, checks three routes a
+  web project actually uses to load a font -- a package in package.json
+  (`@fontsource/<slug>`, `@fontsource-variable/<slug>`, or a bare `<slug>`),
+  an `@font-face` rule, or a Google Fonts link -- and reports a family missing
+  when none of the three names it. Every match is deliberately narrower than
+  a plain substring search: a family that is itself a substring of a
+  different, real family (`"Sans"` inside `"Open Sans"`, `"Inter"` inside
+  `"Inter Tight"`, `"Open Sans"` inside the separately-published `"Open Sans
+  Condensed"`) does not count as found, and the CSS and Google Fonts routes
+  do not fold case, so a differently-cased family in the repository is left
+  unproven rather than guessed at. Both narrowings only ever cost the safe
+  direction: a false "missing" costs a developer one glance at a report; a
+  false "present" would ship the Times-button failure again.
+  `missingFontSourcesInRepo(families, cwd)` runs the check against an actual
+  repository root: `readFontRepoSignals` reads package.json's raw
+  `dependencies`/`devDependencies`, every root-level `*.css` file, and the
+  two conventional HTML entry points (`index.html` for Vite,
+  `public/index.html` for create-react-app) -- two fixed, named paths, not a
+  walk of the tree, matching `detect.ts`'s existing "never look below the
+  root" design. A missing or unreadable file contributes an empty string,
+  never an error, so a pull cannot fail because a repository has no
+  `index.html`. A family's font-loading CSS or HTML living somewhere else
+  (`src/`, a bundler-specific entry point) reads as absent here, which only
+  ever costs the same safe direction as everything else in this check.
+
+- **`spec-layer pull` now says out loud when the tokens it just wrote are
+  broken.** A pull that writes `name_collision` or `unitless_number` findings
+  previously exited 0 and printed nothing about either -- on a real pull that
+  was 14 `name_collision` errors, each one silently dropping both colliding
+  tokens including a heavily-used typography style, and 66 properties CSS
+  cannot use as a length, all invisible behind a clean exit code. `pull` now
+  reads back two report files after every run: `tokens/report.json`, written
+  unconditionally whenever the Foundation is pulled and carrying `error`-severity
+  `path_collision` and `alias_type_mismatch` alongside about eight `warning`
+  codes, and one `outputs/<platform>-<format>.report.json` per configured
+  output, carrying `name_collision` at `error` and `unitless_number` and
+  others at `warning`. When either file holds an `error` or a `warning`, it
+  prints one line to stderr naming both counts and every report path that
+  actually contributed, for example `2 errors, 11 warnings in the token
+  output. See .speclayer/tokens/report.json,
+  .speclayer/outputs/web-css.report.json.` Every count is pluralised
+  correctly at every value it can take, zero and one included (`0 errors, 5
+  warnings`, `1 warning`), not just the plural case a naive template gets
+  wrong. The count is report entries, not distinct tokens: one token present
+  in three modes contributes three `unitless_number` entries, one per mode,
+  so the sentence names warnings, never tokens, and never claims a token
+  count it does not have. A token whose usage evidence disagrees with itself
+  resolves to no derived unit and is named only by `unitless_number`; there
+  is no separate conflict code, so the summary says what the file says and
+  does not claim to expose a disagreement it has no data for. This also runs
+  on a pull that finds nothing new: a 304 is granted only once every
+  deliverable file, both reports included, is already confirmed present on
+  disk, which is exactly the state a stale error sits in unread, so the
+  summary and `--strict` read the same two files there too, not only after a
+  fresh write. The exit code stays 0 by default -- flipping it would break
+  every CI pipeline already running `pull` -- and a new `--strict` flag exits
+  1 when either report holds an error-severity entry, for a repository that
+  wants its build to fail on one instead; both the flag and its exit code are
+  now in `spec-layer tools --json`. The same pass reads `fonts.json`, written
+  whenever the Foundation is selected, and checks each family it names
+  against the repository with `missingFontSourcesInRepo`
+  (`packages/cli/src/detect.ts`): a family nothing loads gets its own stderr
+  line, `This library needs <family>, and nothing in this repository loads
+  it. See fonts.json.`
+
+- **The generated skill states the font requirement and the unit caveat where
+  an agent actually reads them, not where it stops scrolling, and both are now
+  backed by what the pull actually contains.** On a real project, an agent
+  read the skill and built a component whose `height`, `padding`, `gap`, and
+  `border-radius` were all invalid CSS and silently dropped, and every label
+  rendered in Times because nothing loaded the design system's font; four
+  rounds of visual review signed the work off. The skill did mention the unit
+  override, but in paragraph four of a `### Web` subsection of an 11KB file,
+  phrased as an optional convenience -- placement, not presence, was the
+  defect. `spec-layer skill` now leads the `### Web` section, before the token
+  import instructions, with the family and weight every typography style
+  needs (from `fonts.json`) and, when `missingFontSourcesInRepo` finds nothing
+  loading a family, says so by name. The unit caveat moves ahead of every
+  per-platform section instead of after all of them, so it is reachable
+  whether a reader stops at the first platform or reads every one. Both went
+  through a second pass after review found the count and the file references
+  did not match this branch's own code. The unitless count now excludes a
+  token whose scope already states `OPACITY` or `FONT_WEIGHT`: those are a
+  unitless number by Figma's own statement, not by silence, and were being
+  counted alongside the tokens nobody scoped at all, which is the false "your
+  variable states none" the first draft told an opacity's owner. It also
+  counts distinct tokens now, which is what the sentence has always claimed.
+  The DTCG projection writes one file per collection and mode, and every mode
+  file of a collection carries every one of its tokens, so summing a per-file
+  count reported a token in a two-mode collection twice and opened the guide
+  with a bolded "**6 tokens have no unit**" for three variables. Deduplicating
+  by DTCG path across the mode files is the fix, rather than renaming what is
+  counted, because the advice that follows the number is per variable: it
+  tells the reader to go narrow that many scopes in Figma. The sentence also
+  says not to read the per-output report's entry count as the same number,
+  since that file carries one entry per mode and names the scoped-unitless
+  tokens this count leaves out.
+  `spec-layer.meta.json`, the one pulled file that carries a token's own
+  scopes, is what `summarizePull` now cross-references to tell the two apart.
+  The caveat no longer points at a bare `report.json` either: `tokens/report.json`
+  carries no code that names a token left with no unit at all (that is
+  `unitless_number`, in the per-output `outputs/web-css.report.json`, which is
+  what the CSS header itself already names), so the guide now names both real
+  files, and only the one that actually exists. The font section stops
+  claiming a library needs no font when `fonts.json` is merely missing or
+  unreadable: `fontsStatus` (`'ok' | 'missing' | 'unreadable'`) keeps a
+  genuine empty array apart from a pull taken before this file existed, and
+  even the "ok" empty case is worded to admit that `fontRequirements` silently
+  drops a style whose font family never resolved, so an empty array is not
+  proof of no typography. The "keep your fallback outside the pulled files"
+  warning now names the actual generated CSS directory (`cssOut.path`, the
+  file that literally holds `font-family: "..."`) instead of the DTCG JSON
+  directory nobody would edit for a CSS fallback, falling back to the whole
+  pull directory when no CSS output was written. `summarizePull`'s new
+  disk-reading path is exercised from a real temporary directory in
+  `packages/cli/test/skill.test.ts`, not only through fixtures that inject the
+  result: reading `fonts.json` from the wrong path, a validator that rejects a
+  good entry, or `missingFontSourcesInRepo` reading the wrong repository root
+  would previously fail silently into an empty result that renders as a
+  confident false statement rather than a visible error.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

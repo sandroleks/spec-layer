@@ -16,7 +16,7 @@ export interface OutputMapEntry { name: string; source: 'code_syntax' | 'derived
 
 export type OutputReportCode =
   | 'code_syntax_not_usable' | 'name_collision' | 'reference_target_omitted'
-  | 'mode_selector_shared' | 'value_converted' | 'not_expressible';
+  | 'mode_selector_shared' | 'value_converted' | 'not_expressible' | 'unitless_number';
 
 export interface OutputReportEntry {
   code: OutputReportCode;

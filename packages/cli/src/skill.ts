@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CSS_INDEX_FILE, type DtcgReportEntry, type DtcgResolverDocument } from '@spec-layer/extractor';
+import {
+  CSS_INDEX_FILE, scopesStateNumber, type DtcgReportEntry, type DtcgResolverDocument, type FontRequirement,
+} from '@spec-layer/extractor';
 import type { CliConfig } from './config';
 import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
 import { CREDENTIALS_NAME } from './credentials';
 import {
-  CODE_SYNTAX_KEY, type AgentHost, type Platform, type RepoProfile,
+  CODE_SYNTAX_KEY, missingFontSourcesInRepo, type AgentHost, type Platform, type RepoProfile,
 } from './detect';
 import type { Manifest } from './files';
 import { readIndexImports } from './outputs';
@@ -36,9 +38,15 @@ export interface PullSummary {
     sets: string[];
     modifiers: Array<{ name: string; contexts: string[]; default: string | null }>;
     tokenFiles: string[];
-    /** Tokens exported as plain numbers because their Figma scopes state no unit. */
+    /** Distinct tokens exported as `$type: "number"` whose Figma scopes state nothing at all -- not a length, and not `OPACITY`/`FONT_WEIGHT` either (those already state a unit, namely "none", and are excluded). Deduplicated by DTCG path across every mode file, so a token in a two-mode collection counts once, which is what "N tokens" has to mean to a reader about to go narrow N variables in Figma. */
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
+    /** Whether `<outDir>/fonts.json` could be read: 'ok' (parsed as an array, possibly empty), 'missing' (no such file -- expected when the Foundation was excluded from this pull, or a real gap when it predates this file), or 'unreadable' (present but not a JSON array). */
+    fontsStatus: 'ok' | 'missing' | 'unreadable';
+    /** The families and weights this library's typography styles need, from `fonts.json`. Only meaningful when `fontsStatus` is 'ok'; `[]` otherwise. An 'ok' empty array does not prove the library names no font either: `fontRequirements` silently skips a style whose font family never resolved. */
+    fonts: FontRequirement[];
+    /** The families in `fonts` that nothing in this repository loads, per `missingFontSourcesInRepo`. Computed only when `fontsStatus` is 'ok' and `fonts` is non-empty. */
+    missingFontFamilies: string[];
   } | null;
   outputs: Array<{
     platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
@@ -68,21 +76,77 @@ export interface SkillInput {
 
 const RESERVED = new Set(['resolver.json', 'spec-layer.meta.json', 'report.json']);
 
-function countNumberTokens(tree: unknown): number {
-  if (typeof tree !== 'object' || tree === null || Array.isArray(tree)) return 0;
+/**
+ * `path` accumulates the DTCG path segments seen so far (the projected token
+ * file's own nesting mirrors it exactly: `{"Primitives": {"number": {"unknown-scope":
+ * {"$type": "number", ...}}}}` reaches this leaf with `path` equal to
+ * `['Primitives', 'number', 'unknown-scope']`, the same string
+ * `spec-layer.meta.json` keys itself with). `legitimatelyUnitless` names every
+ * path whose own Figma scopes already state it is a unitless number
+ * (`OPACITY`, `FONT_WEIGHT`): those are excluded here, because a `$type:
+ * "number"` leaf alone cannot tell "nobody scoped this" from "Figma states
+ * this has no unit", and only the first is what this count is for.
+ *
+ * Paths, not a count, because the caller walks one file per (collection,
+ * mode) and every mode file of a collection carries every token of that
+ * collection: a summed count reports a token in a two-mode collection twice,
+ * and the sentence it feeds says "tokens" and tells the reader to go narrow
+ * that many variables in Figma. A DTCG path is the same string in every mode
+ * file of its collection, and is what `spec-layer.meta.json` keys a variable
+ * by, so collecting into one set across files counts each variable once.
+ */
+function collectNumberTokenPaths(
+  tree: unknown, path: string[], legitimatelyUnitless: Set<string>, out: Set<string>,
+): void {
+  if (typeof tree !== 'object' || tree === null || Array.isArray(tree)) return;
   const record = tree as Record<string, unknown>;
-  if (record.$type === 'number' && '$value' in record) return 1;
-  let n = 0;
+  if (record.$type === 'number' && '$value' in record) {
+    const dotted = path.join('.');
+    if (!legitimatelyUnitless.has(dotted)) out.add(dotted);
+    return;
+  }
   for (const [key, value] of Object.entries(record)) {
     if (key.startsWith('$')) continue;
-    n += countNumberTokens(value);
+    collectNumberTokenPaths(value, [...path, key], legitimatelyUnitless, out);
   }
-  return n;
 }
 
 function readJson(path: string): unknown | null {
   if (!existsSync(path)) return null;
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+}
+
+/**
+ * The DTCG paths `spec-layer.meta.json` (the only pulled file carrying a
+ * token's own Figma scopes) says are a unitless number by scope, not by
+ * silence: `OPACITY` and `FONT_WEIGHT` state "no unit" exactly as
+ * `CORNER_RADIUS` states "px" (`scopesStateNumber`, `@spec-layer/extractor`).
+ * `[]` when the file is missing or unreadable -- the caller then simply
+ * excludes nothing, which is the safe direction (a token that is actually
+ * scoped unitless still gets counted rather than one that is not getting
+ * wrongly excluded).
+ */
+function unitlessScopedPaths(tokensDir: string): Set<string> {
+  const meta = readJson(join(tokensDir, 'spec-layer.meta.json'));
+  const out = new Set<string>();
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return out;
+  for (const [path, entry] of Object.entries(meta as Record<string, unknown>)) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { type, scopes } = entry as { type?: unknown; scopes?: unknown };
+    if (type === 'number' && Array.isArray(scopes) && scopesStateNumber(scopes as string[])) out.add(path);
+  }
+  return out;
+}
+
+/** A minimal shape check on one `fonts.json` entry: untrusted disk content,
+ *  not the extractor's own output, so a malformed entry is dropped rather
+ *  than crashing the guide. */
+function isFontRequirement(v: unknown): v is FontRequirement {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return typeof r.family === 'string'
+    && Array.isArray(r.weights) && r.weights.every((w) => typeof w === 'number')
+    && Array.isArray(r.used_by) && r.used_by.every((u) => typeof u === 'string');
 }
 
 /** What the last pull left under outDir, or null when there is none. Never throws. */
@@ -100,17 +164,37 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     const report = readJson(join(tokensDir, 'report.json'));
     let tokenFiles: string[] = [];
     try { tokenFiles = readdirSync(tokensDir).filter((f) => f.endsWith('.json') && !RESERVED.has(f)).sort(); } catch { tokenFiles = []; }
-    let unitlessNumbers = 0;
+    const legitimatelyUnitless = unitlessScopedPaths(tokensDir);
+    const unitlessPaths = new Set<string>();
     for (const file of tokenFiles) {
       if (file.startsWith('styles.')) continue;
-      unitlessNumbers += countNumberTokens(readJson(join(tokensDir, file)));
+      collectNumberTokenPaths(readJson(join(tokensDir, file)), [], legitimatelyUnitless, unitlessPaths);
     }
+    const unitlessNumbers = unitlessPaths.size;
     const reportCounts: Record<string, number> = {};
     if (Array.isArray(report)) {
       for (const entry of report as DtcgReportEntry[]) {
         if (typeof entry?.code === 'string') reportCounts[entry.code] = (reportCounts[entry.code] ?? 0) + 1;
       }
     }
+    // fonts.json sits at the pull root next to bundle.json, not under tokens/,
+    // and is written whenever the Foundation is selected. Its three readable
+    // states are kept apart rather than collapsed to "empty": a genuine empty
+    // array (a library with no typography styles, or none whose font family
+    // resolved) is not an error, but a MISSING file is -- every pull taken
+    // before this file existed would otherwise render a confident "this
+    // library needs no font" that is not backed by anything.
+    const fontsPath = join(absOut, 'fonts.json');
+    let fontsStatus: 'ok' | 'missing' | 'unreadable' = 'missing';
+    let fonts: FontRequirement[] = [];
+    if (existsSync(fontsPath)) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(readFileSync(fontsPath, 'utf8')); } catch { parsed = undefined; }
+      if (Array.isArray(parsed)) { fontsStatus = 'ok'; fonts = parsed.filter(isFontRequirement); } else { fontsStatus = 'unreadable'; }
+    }
+    const missingFontFamilies = fontsStatus === 'ok' && fonts.length > 0
+      ? missingFontSourcesInRepo(fonts.map((f) => f.family), cwd)
+      : [];
     foundation = {
       written: foundationEntry.path !== null && resolver !== null,
       sets: resolver ? Object.keys(resolver.sets ?? {}) : [],
@@ -119,7 +203,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
           name, contexts: Object.keys(m.contexts ?? {}), default: m.default ?? null,
         }))
         : [],
-      tokenFiles, unitlessNumbers, reportCounts,
+      tokenFiles, unitlessNumbers, reportCounts, fontsStatus, fonts, missingFontFamilies,
     };
   }
   return {
@@ -193,15 +277,109 @@ function stackSection(input: SkillInput): string[] {
     lines.push(`Target platform${platforms.length > 1 ? 's' : ''} (${label}): ${platforms.join(', ')}.`, '');
   }
 
+  // Ahead of every platform section, not after them: a token with no unit
+  // breaks every platform's build the same way, and burying this after a long
+  // per-platform walkthrough is exactly how it went unread on a real pull --
+  // an agent built a component whose height, padding, gap, and border-radius
+  // were all invalid CSS and silently dropped, and four rounds of visual
+  // review signed it off.
+  const tokensDir = `${input.outDir}/tokens/`;
+  if (pull?.foundation && pull.foundation.unitlessNumbers > 0) {
+    const n = pull.foundation.unitlessNumbers;
+    // The only report file that actually enumerates these is the per-output
+    // one (`unitless_number`, css.ts) -- `tokens/report.json`'s own codes
+    // (`unit_derived_from_usage`, `unit_override_conflicts_with_scope`,
+    // `unit_not_expressible`) name a different condition each, none of them
+    // "this token was left with no unit at all". Only web/css is a real
+    // output format today, so this is the only one that can exist.
+    const cssReport = pull.outputs.find((o) => o.platform === 'web' && o.format === 'css' && o.written) ?? null;
+    lines.push(
+      `**${n} token${n === 1 ? ' has' : 's have'} no unit.** `
+      + `${n === 1 ? 'Its own Figma variable states' : 'Their own Figma variables state'} none at all, not even that `
+      + `${n === 1 ? 'it is' : 'they are'} a unitless number the way an opacity or a font weight would. `
+      + `Those are already excluded from this count, because Figma states that for them. So ${n === 1 ? 'it is' : 'they are'} written as `
+      + `${code('$type: "number"')}: a bare number, not usable as a CSS length. ${code('height: 36')} is invalid CSS and the `
+      + `browser drops the declaration. ${n === 1 ? 'Narrow the variable\'s' : 'Narrow each variable\'s'} scope in Figma to a length `
+      + `(${code('CORNER_RADIUS')}, ${code('GAP')}, ${code('WIDTH_HEIGHT')}, ${code('FONT_SIZE')}, or ${code('STROKE_FLOAT')}), `
+      + `or to ${code('OPACITY')}/${code('FONT_WEIGHT')} if it genuinely carries none, and pull again. `
+      + `Only add ${code('"dtcg": { "units": { "<Collection>/<name glob>": "px" } }')} in ${code('speclayer.json')} once you already `
+      + 'know the token is a length: the override applies to anything the glob matches that Figma has not already scoped as unitless, '
+      + 'so a glob that is too broad can turn a genuine opacity or font weight into a fake length. '
+      + `Nothing is inferred from a name; ${code(`${tokensDir}spec-layer.meta.json`)} names each token's own Figma scopes`
+      + (cssReport
+        ? `, and ${code(`${input.outDir}/outputs/${cssReport.platform}-${cssReport.format}.report.json`)} names every one under `
+          + `${code('unitless_number')}. Do not read that file's entry count as this number: it carries one entry per mode a `
+          + 'token appears in, and it also names the tokens Figma does scope as a unitless number, which this count leaves out.'
+        : '.'),
+      '',
+    );
+  }
+
   for (const platform of platforms) {
     const key = CODE_SYNTAX_KEY[platform];
-    const tokensDir = `${input.outDir}/tokens/`;
     if (platform === 'web') {
       lines.push('### Web', '');
       // cssOut only ever names a file the on-disk map proves was rendered;
       // manifest.outputs (and so pull.outputs) can carry a configured entry
       // that the last pull never wrote, and the guide must not imply that one exists.
+      // Computed before the font block below so that block can name the
+      // actual generated CSS an agent would edit, not the DTCG JSON directory.
       const cssOut = pull?.outputs.find((o) => o.platform === 'web' && o.format === 'css' && o.written) ?? null;
+      // Before anything about importing token files: a missing or
+      // under-loaded font fails silently and every label renders in the
+      // browser default, which is the other half of the same real incident
+      // the unit caveat above is named for.
+      if (pull?.foundation?.written) {
+        const { fontsStatus, fonts, missingFontFamilies } = pull.foundation;
+        if (fontsStatus === 'ok' && fonts.length > 0) {
+          const fontList = fonts.map((f) => `${f.family} at ${f.weights.join(', ')}`).join('; ');
+          lines.push(
+            `**Fonts.** This library's type is ${fontList}. Load every weight listed; a missing weight renders as a `
+            + 'synthesised bold that matches nothing in the design.',
+          );
+          for (const family of missingFontFamilies) {
+            lines.push(
+              `${family}: nothing in this repository loads it. Add a font source before building UI, `
+              + 'or every component that uses it renders in the browser default.',
+            );
+          }
+          // cssOut.path is the generated CSS an agent would actually open and
+          // edit (it holds the literal `font-family: "..."` declaration);
+          // tokensDir is the DTCG JSON source, which is not CSS and is not
+          // where anyone would add a fallback. When no CSS was written, the
+          // warning falls back to the whole pull directory, which is still
+          // true and still replaced wholesale by the next pull.
+          const fallbackTarget = cssOut ? `${cssOut.path}/` : `${input.outDir}/`;
+          lines.push(
+            `The token holds a family name and no fallback stack. Never write ${code('font-family')} from a token without `
+            + `appending a generic fallback, and never keep that fallback inside ${code(fallbackTarget)}: the next pull replaces it.`,
+            '',
+          );
+        } else if (fontsStatus === 'ok') {
+          lines.push(
+            `${code('fonts.json')} names no font family. Either this library's typography styles reference none, or a `
+            + `reference failed to resolve one; ${code('npx spec-layer show foundation')} prints the styles themselves.`,
+            '',
+          );
+        } else {
+          // What to do here has to be an instruction that can actually
+          // succeed. `pull` re-projects rather than reporting no change when
+          // the CLI has moved since the last pull, or when a file it writes
+          // alongside the Foundation is gone -- fonts.json is one of those --
+          // so telling a reader with no fonts.json to pull again is sound. A
+          // file that is present but unparseable is not the missing case and
+          // does not trip that check, so that branch says to remove it first.
+          lines.push(
+            fontsStatus === 'missing'
+              ? `${code('fonts.json')} is missing, so the font requirement for this library is unknown here. `
+                + `Run ${code('npx spec-layer pull')} again: every pull that includes the Foundation writes this file, `
+                + 'and a pull that finds it gone re-projects instead of reporting no change.'
+              : `${code('fonts.json')} is not valid JSON, so the font requirement for this library is unknown here. `
+                + `Delete ${code(`${input.outDir}/fonts.json`)} and run ${code('npx spec-layer pull')} again, which rewrites it.`,
+            '',
+          );
+        }
+      }
       if (cssOut) {
         const mapPath = `${input.outDir}/outputs/web-css.map.json`;
         lines.push(
@@ -306,17 +484,6 @@ function stackSection(input: SkillInput): string[] {
         '',
       );
     }
-  }
-
-  if (pull?.foundation && pull.foundation.unitlessNumbers > 0) {
-    const n = pull.foundation.unitlessNumbers;
-    lines.push(
-      `${n} token${n === 1 ? ' is' : 's are'} exported as ${code('$type: "number"')} because the Figma scopes state no unit. `
-      + `If your code needs them as px or rem, declare it in ${code('speclayer.json')}: `
-      + `${code('"dtcg": { "units": { "<Collection>/<name glob>": "px" } }')}, then run ${code('spec-layer pull')}. `
-      + `Nothing is inferred from a name; an override that contradicts a stated scope is ignored and listed in ${code('report.json')}.`,
-      '',
-    );
   }
   return lines;
 }

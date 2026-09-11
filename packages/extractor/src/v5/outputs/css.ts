@@ -12,6 +12,7 @@
 import { dtcgSlug, type DtcgExport, type DtcgJson, type DtcgTree } from '../dtcg';
 import { compareCodeUnits } from '../diagnostics';
 import { canonicalNumber } from '../precision';
+import { scopesStateNumber } from '../units';
 import {
   resolveNames, sortReport,
   type NameCase, type OutputMapEntry, type OutputReportEntry,
@@ -157,6 +158,10 @@ export function cssFileNames(sources: CssSource[]): Map<string, string> {
  */
 interface Ctx {
   names: Map<string, string>; alive: Set<string>; report: OutputReportEntry[]; path: string; mode?: string;
+  /** Whether this path's own Figma scopes state it is a unitless number
+   *  (`OPACITY`, `FONT_WEIGHT`). A DTCG leaf cannot say this about itself, and
+   *  the remedy for a bare number depends entirely on the answer. */
+  statesNumber: boolean;
 }
 
 const REF = /^\{(.+)\}$/;
@@ -205,9 +210,46 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
       if (d && typeof d.value === 'number' && typeof d.unit === 'string') return `${d.value}${d.unit}`;
       break;
     }
-    case 'number':
     case 'fontWeight':
       if (typeof value === 'number') return String(value);
+      break;
+    case 'number':
+      if (typeof value === 'number') {
+        // CSS reads a bare number as a number, not a length: `height: 36` is
+        // invalid and dropped. A typography style's own `lineHeight` member
+        // is the one call site where this branch already knows better: Figma
+        // carries a style's line-height unit per style, not per variable (a
+        // PIXELS line-height arrives as a `dimension` and never reaches this
+        // branch), so a bare number here is a real, valid CSS multiplier, not
+        // a token whose unit went missing. Every other `number` -- including
+        // a top-level LINE_HEIGHT-scoped variable, which carries no
+        // `property` and so cannot make this call site's exception -- states
+        // no unit because the file states none, and this generator does not
+        // invent one; the value is still emitted regardless of whether it is
+        // reported.
+        //
+        // Two messages, because two different things are true, and the file
+        // header points the reader straight at this entry. A token whose own
+        // scopes state nothing is missing a unit, and narrowing its scopes in
+        // Figma is the fix: the same remedy, in the same words, the header
+        // carries, so a reader sent here by the header does not meet a third
+        // story. An `OPACITY`- or `FONT_WEIGHT`-scoped token is missing
+        // nothing; Figma states it has no unit, the header count already
+        // excludes it, and telling its owner to narrow scopes they have
+        // already narrowed would be false. It is still reported, because a
+        // bare number is still not a length and a reader that feeds one to
+        // `height` loses the declaration either way.
+        if (property !== 'lineHeight') {
+          report(ctx, {
+            code: 'unitless_number', severity: 'warning',
+            message: ctx.statesNumber
+              ? 'This token has no unit, because its Figma scopes state it is a unitless number. CSS reads it as a number, not a length, which is what those scopes ask for. Do not use it where a length is expected.'
+              : 'This token has no unit, because its Figma variable states none. CSS reads it as a number, not a length. Narrow the variable\'s scopes in Figma and pull again.',
+            details: { value, ...member },
+          });
+        }
+        return String(value);
+      }
       break;
     case 'cubicBezier':
       if (Array.isArray(value) && value.length === 4 && value.every((n) => typeof n === 'number')) {
@@ -396,9 +438,68 @@ function shadowDecl(ctx: Ctx, leaf: Leaf, name: string): string | null {
 // rule; a line break would split it.
 const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').replace(/[\r\n]+/g, ' ');
 
-function headerText(header: OutputHeader, nameCase: NameCase): string {
-  return `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.\n`
-    + '   Do not edit. Change the design in Figma, republish, and run spec-layer pull. */';
+/**
+ * `unitlessCount` is the number of distinct token paths declared in this
+ * particular file that `cssValue` reported as `unitless_number`; a file that
+ * declares none keeps the original two-line header byte-for-byte.
+ *
+ * The report file name follows the CLI's own `outputId` convention
+ * (`packages/cli/src/outputs.ts`): `outputs/<platform>-<format>.report.json`.
+ * The `outputs/` folder is fixed and not configurable, so the note states it;
+ * the directory it sits under is the pull's own (`--out`, or `outDir` in
+ * speclayer.json), which this layer does not know, so the note says where the
+ * file lives relative to that rather than guessing a path that could be wrong.
+ *
+ * The remedy named is the one that is right for EVERY token that can reach
+ * this note. A counted token is one whose Figma variable states no unit at
+ * all: a variable scoped OPACITY or FONT_WEIGHT states "unitless number" and
+ * is excluded upstream, so the reader is never told to narrow scopes they
+ * have already narrowed, and is never told to declare a length for a token
+ * that must not have one.
+ *
+ * `derivedCount` is the other half of the same disclosure: the properties in
+ * this file whose own Figma variable states no unit and whose unit was taken
+ * from the library's stated usage instead. A file that says which of its
+ * values have no unit and says nothing about which were inferred discloses the
+ * smaller half of the truth.
+ *
+ * The line says "its own Figma variable does not state", not "no Figma scope
+ * states", because a scope is exactly what states it for half of this
+ * population: `via: 'alias-scope'` evidence is a scope a designer set on a
+ * token that aliases this one, and the report entry the line points at names
+ * that scope. What is true of every derivation, both `alias-scope` and
+ * `binding`, is that the token's OWN variable states nothing.
+ */
+function headerText(
+  header: OutputHeader, nameCase: NameCase, unitlessCount = 0, derivedCount = 0,
+): string {
+  const lines = [
+    `${CSS_HEADER_PREFIX} from library ${commentSafe(header.libraryId)}, foundation ${header.contentHash}, ${header.platform}/${header.format}/${nameCase}.`,
+    '   Do not edit. Change the design in Figma, republish, and run spec-layer pull.',
+  ];
+  if (unitlessCount > 0) {
+    const reportFile = `${header.platform}-${header.format}.report.json`;
+    if (unitlessCount === 1) {
+      lines.push(
+        '   1 property in this file has no unit, because its Figma variable states none.',
+        `   CSS reads it as a number, not a length. See outputs/${reportFile} under your pull's output directory, or narrow the variable's scopes in Figma.`,
+      );
+    } else {
+      lines.push(
+        `   ${unitlessCount} properties in this file have no unit, because their Figma variables state none.`,
+        `   CSS reads them as numbers, not lengths. See outputs/${reportFile} under your pull's output directory, or narrow the variables' scopes in Figma.`,
+      );
+    }
+  }
+  if (derivedCount > 0) {
+    lines.push(
+      derivedCount === 1
+        ? '   1 property in this file has a unit its own Figma variable does not state, taken from how the library uses the token.'
+        : `   ${derivedCount} properties in this file have a unit their own Figma variables do not state, taken from how the library uses those tokens.`,
+      `   See tokens/report.json under your pull's output directory for what pinned ${derivedCount === 1 ? 'it' : 'each one'}.`,
+    );
+  }
+  return `${lines.join('\n')} */`;
 }
 
 interface Block { selector: string; comment: string; decls: string[] }
@@ -410,6 +511,23 @@ interface EmitResult {
   declared: Set<string>;
   /** The DTCG source file that first declared each path, in source order. */
   firstFile: Map<string, string>;
+  /** DTCG source file -> distinct token paths declared in it that `cssValue`
+   *  reported `unitless_number` for, minus those whose own Figma scopes state
+   *  a unitless number and so are not missing anything. */
+  unitlessByFile: Map<string, Set<string>>;
+  /** DTCG source file -> distinct token paths declared in it whose unit the
+   *  projection derived from the library's stated usage. */
+  derivedByFile: Map<string, Set<string>>;
+}
+
+/** What the projection already knows about a path, which `cssValue` cannot see:
+ *  a DTCG leaf carries no scopes, and a `number` leaf alone cannot say whether
+ *  its token is missing a unit or stating that it has none. */
+interface PathFacts {
+  /** Paths whose Figma scopes state a unitless number (OPACITY, FONT_WEIGHT). */
+  statesNumber: Set<string>;
+  /** Paths the projection reported `unit_derived_from_usage` for. */
+  derived: Set<string>;
 }
 
 /**
@@ -420,12 +538,19 @@ interface EmitResult {
  */
 function emitPass(
   sources: Source[], leavesByFile: Map<string, Leaf[]>, names: Map<string, string>, alive: Set<string>,
-  root: string, template: string, modes: Record<string, string> | undefined,
+  root: string, template: string, modes: Record<string, string> | undefined, facts: PathFacts,
 ): EmitResult {
   const entries: OutputReportEntry[] = [];
   const declared = new Set<string>();
   const firstFile = new Map<string, string>();
   const blocks = new Map<string, Block>();
+  const unitlessByFile = new Map<string, Set<string>>();
+  const derivedByFile = new Map<string, Set<string>>();
+  const note = (by: Map<string, Set<string>>, file: string, path: string): void => {
+    const set = by.get(file) ?? new Set<string>();
+    set.add(path);
+    by.set(file, set);
+  };
   for (const s of sources) {
     const perCollection = modes?.[s.collection];
     const selector = s.isDefault ? root : (perCollection ?? template)
@@ -434,7 +559,11 @@ function emitPass(
     const decls: string[] = [];
     const declaredHere: string[] = [];
     for (const leaf of leavesByFile.get(s.file) ?? []) {
-      const ctx: Ctx = { names, alive, report: entries, path: leaf.path, ...(s.mode !== null ? { mode: s.mode } : {}) };
+      const ctx: Ctx = {
+        names, alive, report: entries, path: leaf.path,
+        statesNumber: facts.statesNumber.has(leaf.path),
+        ...(s.mode !== null ? { mode: s.mode } : {}),
+      };
       if (leaf.type === 'typography') {
         const t = typographyDecls(ctx, leaf, names);
         decls.push(...t.decls);
@@ -446,8 +575,14 @@ function emitPass(
           const d = shadowDecl(ctx, leaf, name);
           if (d !== null) { decls.push(d); declared.add(leaf.path); declaredHere.push(leaf.path); }
         } else {
+          const before = entries.length;
           const v = cssValue(ctx, leaf.type, leaf.value);
           if (v !== null) { decls.push(`${name}: ${v};`); declared.add(leaf.path); declaredHere.push(leaf.path); }
+          if (entries.length > before && entries[entries.length - 1].code === 'unitless_number'
+            && !ctx.statesNumber) {
+            note(unitlessByFile, s.file, leaf.path);
+          }
+          if (v !== null && facts.derived.has(leaf.path)) note(derivedByFile, s.file, leaf.path);
         }
       }
     }
@@ -458,7 +593,7 @@ function emitPass(
     if (existing) existing.decls.push(...decls);
     else blocks.set(s.file, { selector, comment, decls });
   }
-  return { blocks, entries, declared, firstFile };
+  return { blocks, entries, declared, firstFile, unitlessByFile, derivedByFile };
 }
 
 export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOutputOptions = {}): CssOutput {
@@ -499,7 +634,20 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     codeSyntaxKey: 'WEB', acceptDeclared: acceptCssDeclared, affix: (body) => `--${body}`, nameCase,
   });
   const names = resolved.names; // permanent: a path missing here collided, and is done
-  const emit = (alive: Set<string>) => emitPass(sources, leavesByFile, names, alive, root, template, options.modes);
+
+  // Two things the DTCG leaves cannot state about themselves, read from the
+  // record that can: which tokens state that they are unitless numbers, and
+  // which had a unit derived for them.
+  const facts: PathFacts = {
+    statesNumber: new Set(Object.entries(exp.meta)
+      .filter(([, entry]) => scopesStateNumber(entry.scopes))
+      .map(([path]) => path)),
+    derived: new Set(exp.report
+      .filter((entry) => entry.code === 'unit_derived_from_usage')
+      .map((entry) => entry.path)),
+  };
+  const emit = (alive: Set<string>) =>
+    emitPass(sources, leavesByFile, names, alive, root, template, options.modes, facts);
 
   // Fixed point on which names a reference may resolve through. A name
   // stops being a valid reference target the moment nothing actually
@@ -544,14 +692,20 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     }
   }
 
-  const head = headerText(header, nameCase);
   const files: Record<string, string> = {};
   const imports: string[] = [];
   for (const [source, block] of pass.blocks) {
     const name = fileNames.get(source) as string;
+    const head = headerText(
+      header, nameCase,
+      pass.unitlessByFile.get(source)?.size ?? 0,
+      pass.derivedByFile.get(source)?.size ?? 0,
+    );
     files[name] = `${head}\n\n${block.selector} {\n  ${block.comment}\n${block.decls.map((d) => `  ${d}`).join('\n')}\n}\n`;
     imports.push(block.comment, `@import "./${name}";`);
   }
-  if (imports.length > 0) files[CSS_INDEX_FILE] = `${head}\n\n${imports.join('\n')}\n`;
+  // index.css only imports; it never declares a property itself, so it never
+  // carries the unitless note.
+  if (imports.length > 0) files[CSS_INDEX_FILE] = `${headerText(header, nameCase)}\n\n${imports.join('\n')}\n`;
   return { files, map, report: sortReport(entries) };
 }
