@@ -62,7 +62,10 @@ Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 `ai/components/`, `path` in place of `aiPath` in the manifest, and the
 `outputs` block need 0.6.0 or later. `component-specs/` beside `tokens/`,
 `componentSpecsDir`, cwd-relative manifest paths, and the `tokens/` directory
-need 0.7.0 or later.
+need 0.7.0 or later. The `census` and `config_hash` blocks inside
+`resolver.json`, and the `transform` and `resolved` fields in
+`spec-layer.meta.json`, need 0.8.2 or later; an earlier version pulls the same
+files without those fields.
 
 ## Commands
 
