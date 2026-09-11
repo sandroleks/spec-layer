@@ -34,6 +34,8 @@ const PULL: NonNullable<SkillInput['pull']> = {
     tokenFiles: ['primitives.default.json', 'theme.dark.json', 'theme.light.json'],
     unitlessNumbers: 3,
     reportCounts: { unit_not_expressible: 2 },
+    fonts: [],
+    missingFontFamilies: [],
   },
   outputs: [],
 };
@@ -45,6 +47,34 @@ const PULL_WITH_CSS: NonNullable<SkillInput['pull']> = {
     modeSelector: '[data-theme="{mode}"]', modes: {}, written: true, indexMissing: false,
     files: ['primitives.css', 'theme.light.css', 'theme.dark.css', 'index.css'],
   }],
+};
+
+// The Foundation's typography styles name a font family, and something in the
+// repository loads it.
+const PULL_WITH_FONTS: NonNullable<SkillInput['pull']> = {
+  ...PULL_WITH_CSS,
+  foundation: {
+    ...PULL.foundation!,
+    fonts: [{ family: 'Open Sans', weights: [400, 500, 600], used_by: ['Body', 'Label'] }],
+    missingFontFamilies: [],
+  },
+};
+
+// Same font requirement, but nothing in the repository loads it.
+const PULL_WITH_MISSING_FONT: NonNullable<SkillInput['pull']> = {
+  ...PULL_WITH_CSS,
+  foundation: {
+    ...PULL.foundation!,
+    fonts: [{ family: 'Open Sans', weights: [400], used_by: ['Body'] }],
+    missingFontFamilies: ['Open Sans'],
+  },
+};
+
+// A pulled Foundation whose typography styles name no font family at all:
+// fonts.json is a legitimate empty array, not a missing or broken file.
+const PULL_WITH_NO_FONTS: NonNullable<SkillInput['pull']> = {
+  ...PULL_WITH_CSS,
+  foundation: { ...PULL.foundation!, fonts: [], missingFontFamilies: [] },
 };
 
 // The map file never existed: the Foundation was excluded from the pull.
@@ -88,10 +118,47 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain('Library `lib_x`, published 2026-09-01T00:00:00.000Z by plugin 5.0.0');
   });
 
-  it('explains unitless numbers and points at the dtcg units block, without naming a unit as fact', () => {
+  it('warns that unitless tokens are not usable as lengths, and does not blanket-prescribe a unit override', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
-    expect(guide).toContain('3 tokens are exported as `$type: "number"` because the Figma scopes state no unit.');
+    expect(guide).toContain('3 tokens have no unit');
+    expect(guide).toContain('not usable as a CSS length');
+    expect(guide).toContain('height: 36');
+    // The remedy is conditioned on the token being a length: a bare
+    // "declare a unit" instruction would be wrong for a genuinely unitless
+    // opacity or font weight, so the guide must say so rather than telling
+    // every reader of every count to add a dtcg.units override.
+    expect(guide).toContain('correctly unitless');
+    expect(guide).toContain('opacity or a font weight');
     expect(guide).toContain('Nothing is inferred from a name');
+  });
+
+  it('states the unit caveat once for a single unitless token, in singular English', () => {
+    const pull = { ...PULL, foundation: { ...PULL.foundation!, unitlessNumbers: 1 } };
+    const guide = buildSkillGuide(input({ pull }));
+    expect(guide).toContain('1 token has no unit');
+    expect(guide).not.toContain('1 tokens');
+  });
+
+  it('says nothing about units when the pull has none', () => {
+    const pull = { ...PULL, foundation: { ...PULL.foundation!, unitlessNumbers: 0 } };
+    const guide = buildSkillGuide(input({ pull }));
+    expect(guide).not.toContain('token has no unit');
+    expect(guide).not.toContain('tokens have no unit');
+  });
+
+  it('puts the unit caveat ahead of every per-platform section, not after them', () => {
+    const guide = buildSkillGuide(input({ pull: PULL, platforms: ['web', 'ios'], platformSource: 'detected' }));
+    const unitIndex = guide.indexOf('3 tokens have no unit');
+    const webIndex = guide.indexOf('### Web');
+    const iosIndex = guide.indexOf('### iOS');
+    // indexOf returns -1 for a missing substring, which is "less than" any
+    // real index; asserting each index is actually found keeps this test
+    // from passing vacuously if the sentence's wording ever drifts.
+    expect(unitIndex).toBeGreaterThanOrEqual(0);
+    expect(webIndex).toBeGreaterThan(0);
+    expect(iosIndex).toBeGreaterThan(0);
+    expect(unitIndex).toBeLessThan(webIndex);
+    expect(unitIndex).toBeLessThan(iosIndex);
   });
 
   it('writes the generic paragraph and the --platform flag when nothing was detected', () => {
@@ -215,6 +282,40 @@ describe('buildSkillGuide outputs', () => {
     const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: null }));
     expect(guide).toContain("Token identifiers for code live in `.speclayer/tokens/spec-layer.meta.json` under each token's `code_syntax.WEB`");
     expect(guide).not.toContain('web-css.map.json');
+  });
+
+  it('states the fonts the library needs, before the token import instructions', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_FONTS }));
+    expect(guide).toContain('Open Sans at 400, 500, 600');
+    expect(guide).toContain('a missing weight renders as a synthesised bold that matches nothing in the design');
+    const fontIndex = guide.indexOf('Open Sans at 400');
+    const importIndex = guide.indexOf('Import `tokens/index.css`');
+    // Both indexes must actually be found (indexOf's -1 would otherwise make
+    // this assertion pass vacuously), and the font line must come first.
+    expect(fontIndex).toBeGreaterThanOrEqual(0);
+    expect(importIndex).toBeGreaterThan(0);
+    expect(fontIndex).toBeLessThan(importIndex);
+    expect(guide).toContain('Never write `font-family` from a token without appending a generic fallback');
+  });
+
+  it('says when nothing in the repository loads the family', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_MISSING_FONT }));
+    expect(guide).toContain('Open Sans: nothing in this repository loads it');
+    expect(guide).toContain('Add a font source before building UI');
+  });
+
+  it('reads sensibly when fonts.json is an empty array', () => {
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull: PULL_WITH_NO_FONTS }));
+    expect(guide).toContain('This library\'s typography names no font family, so there is nothing to load for type.');
+    expect(guide).not.toContain('**Fonts.**');
+    expect(guide).not.toContain('nothing in this repository loads it');
+  });
+
+  it('says nothing about fonts when the Foundation was not written', () => {
+    const pull = { ...PULL, foundation: { ...PULL.foundation!, written: false } };
+    const guide = buildSkillGuide(input({ profile: web, platforms: ['web'], platformSource: 'detected', pull }));
+    expect(guide).not.toContain('**Fonts.**');
+    expect(guide).not.toContain('nothing to load for type');
   });
 
   it('labels a platform that came from the config', () => {

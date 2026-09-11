@@ -251,6 +251,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   line, `This library needs <family>, and nothing in this repository loads
   it. See fonts.json.`
 
+- **The generated skill states the font requirement and the unit caveat where
+  an agent actually reads them, not where it stops scrolling.** On a real
+  project, an agent read the skill and built a component whose `height`,
+  `padding`, `gap`, and `border-radius` were all invalid CSS and silently
+  dropped, and every label rendered in Times because nothing loaded the
+  design system's font; four rounds of visual review signed the work off. The
+  skill did mention the unit override, but in paragraph four of a `### Web`
+  subsection of an 11KB file, phrased as an optional convenience -- placement,
+  not presence, was the defect. `spec-layer skill` now leads the `### Web`
+  section, before the token import instructions, with the family and weight
+  every typography style needs (from `fonts.json`) and, when
+  `missingFontSourcesInRepo` finds nothing loading a family, says so by name;
+  a library whose styles name no font reads that sensibly too. The unit
+  caveat moves ahead of every per-platform section instead of after all of
+  them, so it is reachable whether a reader stops at the first platform or
+  reads every one, and is rewritten for what this branch's usage-derived
+  units (`usageUnits.ts`) actually leave unresolved: it no longer tells every
+  reader of every count to add a `dtcg.units` override, since an opacity or a
+  font weight is correctly a bare number and forcing a unit onto it would
+  corrupt exactly the value the override exists to leave alone. Narrowing the
+  variable's scope in Figma is named as the fix that is safe either way,
+  matching the same choice already made for the generated CSS header.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CSS_INDEX_FILE, type DtcgReportEntry, type DtcgResolverDocument } from '@spec-layer/extractor';
+import {
+  CSS_INDEX_FILE, type DtcgReportEntry, type DtcgResolverDocument, type FontRequirement,
+} from '@spec-layer/extractor';
 import type { CliConfig } from './config';
 import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
 import { CREDENTIALS_NAME } from './credentials';
 import {
-  CODE_SYNTAX_KEY, type AgentHost, type Platform, type RepoProfile,
+  CODE_SYNTAX_KEY, missingFontSourcesInRepo, type AgentHost, type Platform, type RepoProfile,
 } from './detect';
 import type { Manifest } from './files';
 import { readIndexImports } from './outputs';
@@ -39,6 +41,10 @@ export interface PullSummary {
     /** Tokens exported as plain numbers because their Figma scopes state no unit. */
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
+    /** The families and weights this library's typography styles need, from `fonts.json`. Empty when the library defines no typography, or fonts.json cannot be read. */
+    fonts: FontRequirement[];
+    /** The families in `fonts` that nothing in this repository loads, per `missingFontSourcesInRepo`. Always `[]` when `fonts` is empty. */
+    missingFontFamilies: string[];
   } | null;
   outputs: Array<{
     platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
@@ -85,6 +91,17 @@ function readJson(path: string): unknown | null {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 }
 
+/** A minimal shape check on one `fonts.json` entry: untrusted disk content,
+ *  not the extractor's own output, so a malformed entry is dropped rather
+ *  than crashing the guide. */
+function isFontRequirement(v: unknown): v is FontRequirement {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return typeof r.family === 'string'
+    && Array.isArray(r.weights) && r.weights.every((w) => typeof w === 'number')
+    && Array.isArray(r.used_by) && r.used_by.every((u) => typeof u === 'string');
+}
+
 /** What the last pull left under outDir, or null when there is none. Never throws. */
 export function summarizePull(cwd: string, outDir: string, manifest: Manifest | null): PullSummary | null {
   if (!manifest) return null;
@@ -111,6 +128,15 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
         if (typeof entry?.code === 'string') reportCounts[entry.code] = (reportCounts[entry.code] ?? 0) + 1;
       }
     }
+    // fonts.json sits at the pull root next to bundle.json, not under tokens/,
+    // and is written whenever the Foundation is selected -- it can legitimately
+    // be an empty array (a library with no typography styles), which is not an
+    // error and names no missing family.
+    const fontsRaw = readJson(join(absOut, 'fonts.json'));
+    const fonts: FontRequirement[] = Array.isArray(fontsRaw) ? fontsRaw.filter(isFontRequirement) : [];
+    const missingFontFamilies = fonts.length > 0
+      ? missingFontSourcesInRepo(fonts.map((f) => f.family), cwd)
+      : [];
     foundation = {
       written: foundationEntry.path !== null && resolver !== null,
       sets: resolver ? Object.keys(resolver.sets ?? {}) : [],
@@ -119,7 +145,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
           name, contexts: Object.keys(m.contexts ?? {}), default: m.default ?? null,
         }))
         : [],
-      tokenFiles, unitlessNumbers, reportCounts,
+      tokenFiles, unitlessNumbers, reportCounts, fonts, missingFontFamilies,
     };
   }
   return {
@@ -193,11 +219,63 @@ function stackSection(input: SkillInput): string[] {
     lines.push(`Target platform${platforms.length > 1 ? 's' : ''} (${label}): ${platforms.join(', ')}.`, '');
   }
 
+  // Ahead of every platform section, not after them: a token with no unit
+  // breaks every platform's build the same way, and burying this after a long
+  // per-platform walkthrough is exactly how it went unread on a real pull --
+  // an agent built a component whose height, padding, gap, and border-radius
+  // were all invalid CSS and silently dropped, and four rounds of visual
+  // review signed it off.
+  if (pull?.foundation && pull.foundation.unitlessNumbers > 0) {
+    const n = pull.foundation.unitlessNumbers;
+    lines.push(
+      `**${n} token${n === 1 ? ' has' : 's have'} no unit.** `
+      + `${n === 1 ? 'Its own Figma variable states' : 'Their own Figma variables state'} none, and nothing about how this library `
+      + `actually uses ${n === 1 ? 'it' : 'them'} pinned one either, so ${n === 1 ? 'it is' : 'they are'} written as ${code('$type: "number"')}: `
+      + `a bare number, not usable as a CSS length. ${code('height: 36')} is invalid CSS and the browser drops the declaration. `
+      + 'Some of these are correctly unitless: an opacity or a font weight has no unit and should stay a number, and nothing here '
+      + `can tell that apart from a length Figma never scoped. Narrow the variable's scope in Figma (${code('CORNER_RADIUS')}, `
+      + `${code('GAP')}, ${code('WIDTH_HEIGHT')}, ${code('FONT_SIZE')}, or ${code('STROKE_FLOAT')}) and pull again; that fixes a length `
+      + 'without guessing which tokens need one, and never touches a value that is correctly unitless. '
+      + `Only add ${code('"dtcg": { "units": { "<Collection>/<name glob>": "px" } }')} in ${code('speclayer.json')} once you already `
+      + 'know the token is a length: the override applies to anything the glob matches that Figma has not already scoped as unitless, '
+      + 'so a glob that is too broad can turn a genuine opacity or font weight into a fake length. '
+      + `Nothing is inferred from a name; see ${code('report.json')} for what each one actually is.`,
+      '',
+    );
+  }
+
   for (const platform of platforms) {
     const key = CODE_SYNTAX_KEY[platform];
     const tokensDir = `${input.outDir}/tokens/`;
     if (platform === 'web') {
       lines.push('### Web', '');
+      // Before anything about importing token files: a missing or
+      // under-loaded font fails silently and every label renders in the
+      // browser default, which is the other half of the same real incident
+      // the unit caveat above is named for.
+      if (pull?.foundation?.written) {
+        const { fonts, missingFontFamilies } = pull.foundation;
+        if (fonts.length > 0) {
+          const fontList = fonts.map((f) => `${f.family} at ${f.weights.join(', ')}`).join('; ');
+          lines.push(
+            `**Fonts.** This library's type is ${fontList}. Load every weight listed; a missing weight renders as a `
+            + 'synthesised bold that matches nothing in the design.',
+          );
+          for (const family of missingFontFamilies) {
+            lines.push(
+              `${family}: nothing in this repository loads it. Add a font source before building UI, `
+              + 'or every component that uses it renders in the browser default.',
+            );
+          }
+          lines.push(
+            `The token holds a family name and no fallback stack. Never write ${code('font-family')} from a token without `
+            + `appending a generic fallback, and keep that fallback in your own CSS: ${code(tokensDir)} is replaced by the next pull.`,
+            '',
+          );
+        } else {
+          lines.push('This library\'s typography names no font family, so there is nothing to load for type.', '');
+        }
+      }
       // cssOut only ever names a file the on-disk map proves was rendered;
       // manifest.outputs (and so pull.outputs) can carry a configured entry
       // that the last pull never wrote, and the guide must not imply that one exists.
@@ -306,17 +384,6 @@ function stackSection(input: SkillInput): string[] {
         '',
       );
     }
-  }
-
-  if (pull?.foundation && pull.foundation.unitlessNumbers > 0) {
-    const n = pull.foundation.unitlessNumbers;
-    lines.push(
-      `${n} token${n === 1 ? ' is' : 's are'} exported as ${code('$type: "number"')} because the Figma scopes state no unit. `
-      + `If your code needs them as px or rem, declare it in ${code('speclayer.json')}: `
-      + `${code('"dtcg": { "units": { "<Collection>/<name glob>": "px" } }')}, then run ${code('spec-layer pull')}. `
-      + `Nothing is inferred from a name; an override that contradicts a stated scope is ignored and listed in ${code('report.json')}.`,
-      '',
-    );
   }
   return lines;
 }
