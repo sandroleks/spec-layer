@@ -29,6 +29,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   its literal's own rule rather than `alias`, and it carries no `resolved`
   snapshot, since both were only ever meaningful for a surviving reference.
 
+### Added
+
+- **The CSS output reports every unitless number it emits.** A Figma variable
+  with no unit-pinning scope carries a bare number, and CSS reads a bare
+  number as a number, not a length: `height: var(--button-lg-height)` becomes
+  `height: 36`, which is invalid and silently dropped by the browser, with
+  nothing in the output saying so. The generator still writes the value --
+  guessing a unit from the token's name is exactly what an earlier version
+  did wrong and stayed wrong for -- but now reports `unitless_number` at
+  `warning` severity for every plain `number`-typed token, naming the value
+  and pointing at `"dtcg": { "units": ... }` in `speclayer.json` or narrowing
+  the variable's scopes in Figma as the fix. `fontWeight` is unaffected: a
+  font weight and an opacity are legitimately unitless, and so is a
+  `line-height` ratio, which is valid CSS on its own.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

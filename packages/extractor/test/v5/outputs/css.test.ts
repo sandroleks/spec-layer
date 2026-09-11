@@ -473,6 +473,93 @@ describe('cssOutput on the synthetic foundation', () => {
   });
 });
 
+describe('cssOutput reports unitless numbers', () => {
+  it('reports a number-typed token as unusable for a CSS length', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { spacing: { 400: { $type: 'number', $value: 16 } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {
+        'Foundation.spacing.400': { id: 'v1', collection_id: 'c1', type: 'number', scopes: [], code_syntax: { WEB: 'spacing-400' } },
+      },
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+    const text = joined(out);
+
+    expect(text).toContain('--spacing-400: 16;'); // still emitted, never suppressed
+
+    const entry = out.report.find((r) => r.code === 'unitless_number');
+    expect(entry).toBeDefined();
+    expect(entry?.severity).toBe('warning');
+    expect(entry?.path).toBe('Foundation.spacing.400');
+    expect(entry?.message).toContain('dtcg');
+  });
+
+  it('does not report a font weight as unitless', () => {
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': {
+          Foundation: { typography: { 'font-weight': { 'fw-600': { $type: 'fontWeight', $value: 600 } } } },
+        },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: { Foundation: { sources: [{ $ref: 'foundation.default.json' }] } },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }],
+      },
+      meta: {},
+      report: [],
+      extension: EXTENSION,
+    };
+    const { report } = cssOutput(exp, HEADER);
+    expect(report.find((r) => r.code === 'unitless_number')).toBeUndefined();
+  });
+
+  it('emits a real length for a scoped alias whose target is unitless, and does not report it', () => {
+    // The Mapped Radius.rd-sm -> Foundation.radius.300 shape from a real pull.
+    // Task 1 repairs the leaf to a literal, so CSS must emit 8px, not var(--radius-300).
+    const exp: DtcgExport = {
+      files: {
+        'foundation.default.json': { Foundation: { radius: { 300: { $type: 'number', $value: 8 } } } },
+        'radius.default.json': { Radius: { 'rd-sm': { $type: 'dimension', $value: { value: 8, unit: 'px' } } } },
+      },
+      resolver: {
+        version: '2025.10',
+        sets: {
+          Foundation: { sources: [{ $ref: 'foundation.default.json' }] },
+          Radius: { sources: [{ $ref: 'radius.default.json' }] },
+        },
+        modifiers: {},
+        resolutionOrder: [{ $ref: '#/sets/Foundation' }, { $ref: '#/sets/Radius' }],
+      },
+      meta: {
+        'Foundation.radius.300': { id: 'v2', collection_id: 'c2', type: 'number', scopes: [], code_syntax: { WEB: 'radius-300' } },
+        'Radius.rd-sm': { id: 'v3', collection_id: 'c3', type: 'dimension', scopes: [], code_syntax: { WEB: 'rd-sm' } },
+      },
+      report: [],
+      extension: EXTENSION,
+    };
+    const out = cssOutput(exp, HEADER);
+    const text = joined(out);
+
+    expect(text).toContain('--rd-sm: 8px;');
+    expect(text).not.toContain('--rd-sm: var(--radius-300)');
+    expect(out.report.filter((r) => r.code === 'unitless_number').map((r) => r.path))
+      .toEqual(['Foundation.radius.300']);
+  });
+});
+
 describe('dtcgSlug', () => {
   it('lowercases, collapses non-alphanumeric runs to a dash, and trims the ends', () => {
     expect(dtcgSlug('  Semantic Colors ')).toBe('semantic-colors');

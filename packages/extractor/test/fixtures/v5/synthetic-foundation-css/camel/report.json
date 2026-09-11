@@ -13,6 +13,36 @@
     }
   },
   {
+    "code": "unitless_number",
+    "severity": "warning",
+    "message": "This token has no unit, so CSS cannot use it as a length. Declare one under \"dtcg\": { \"units\": ... } in speclayer.json and pull again, or narrow the variable's scopes in Figma.",
+    "details": {
+      "value": 2.5
+    },
+    "path": "Primitives.number.unknown-scope",
+    "mode": "Dark"
+  },
+  {
+    "code": "unitless_number",
+    "severity": "warning",
+    "message": "This token has no unit, so CSS cannot use it as a length. Declare one under \"dtcg\": { \"units\": ... } in speclayer.json and pull again, or narrow the variable's scopes in Figma.",
+    "details": {
+      "value": 1.5
+    },
+    "path": "Primitives.number.unknown-scope",
+    "mode": "Light [ModeID:p-light-duplicate]"
+  },
+  {
+    "code": "unitless_number",
+    "severity": "warning",
+    "message": "This token has no unit, so CSS cannot use it as a length. Declare one under \"dtcg\": { \"units\": ... } in speclayer.json and pull again, or narrow the variable's scopes in Figma.",
+    "details": {
+      "value": 1.5
+    },
+    "path": "Primitives.number.unknown-scope",
+    "mode": "Light [ModeID:p-light]"
+  },
+  {
     "code": "mode_selector_shared",
     "severity": "warning",
     "path": "Semantic",

@@ -205,9 +205,22 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
       if (d && typeof d.value === 'number' && typeof d.unit === 'string') return `${d.value}${d.unit}`;
       break;
     }
-    case 'number':
     case 'fontWeight':
       if (typeof value === 'number') return String(value);
+      break;
+    case 'number':
+      if (typeof value === 'number') {
+        // CSS reads a bare number as a number, not a length: `height: 36` is
+        // invalid and dropped, `line-height: 16` is valid and means 16x. The
+        // value is still emitted, because the file states no unit and this
+        // generator does not invent one.
+        report(ctx, {
+          code: 'unitless_number', severity: 'warning',
+          message: 'This token has no unit, so CSS cannot use it as a length. Declare one under "dtcg": { "units": ... } in speclayer.json and pull again, or narrow the variable\'s scopes in Figma.',
+          details: { value, ...member },
+        });
+        return String(value);
+      }
       break;
     case 'cubicBezier':
       if (Array.isArray(value) && value.length === 4 && value.every((n) => typeof n === 'number')) {
