@@ -198,13 +198,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   do not fold case, so a differently-cased family in the repository is left
   unproven rather than guessed at. Both narrowings only ever cost the safe
   direction: a false "missing" costs a developer one glance at a report; a
-  false "present" would ship the Times-button failure again. This lands the
-  pure check only -- gathering `RepoSignals` (package.json, CSS, and HTML
-  text) from an actual repository root is not wired up here, because doing
-  that by walking the whole tree would be exactly the parallel crawler
-  `detect.ts`'s own design deliberately avoids, and no test in this change
-  needed it; a later task decides where the CLI reads those files from and
-  where it prints the result.
+  false "present" would ship the Times-button failure again.
+  `missingFontSourcesInRepo(families, cwd)` runs the check against an actual
+  repository root: `readFontRepoSignals` reads package.json's raw
+  `dependencies`/`devDependencies`, every root-level `*.css` file, and the
+  two conventional HTML entry points (`index.html` for Vite,
+  `public/index.html` for create-react-app) -- two fixed, named paths, not a
+  walk of the tree, matching `detect.ts`'s existing "never look below the
+  root" design. A missing or unreadable file contributes an empty string,
+  never an error, so a pull cannot fail because a repository has no
+  `index.html`. A family's font-loading CSS or HTML living somewhere else
+  (`src/`, a bundler-specific entry point) reads as absent here, which only
+  ever costs the same safe direction as everything else in this check.
 
 ## [5.1.0] - 2026-09-10
 

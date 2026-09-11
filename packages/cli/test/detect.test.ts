@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   detectRepo, majorOf, CODE_SYNTAX_KEY, isAgentHost, isPlatform, missingFontSources,
-  type RepoSignals,
+  missingFontSourcesInRepo, readFontRepoSignals, type RepoSignals,
 } from '../src/detect';
 
 describe('detectRepo', () => {
@@ -184,5 +184,70 @@ describe('missingFontSources', () => {
     expect(missingFontSources(['Open Sans'], {
       ...empty, htmlText: '<link href="https://fonts.googleapis.com/css2?family=open+sans:wght@400">',
     })).toEqual(['Open Sans']);
+  });
+});
+
+describe('readFontRepoSignals / missingFontSourcesInRepo (real repository root)', () => {
+  let cwd: string;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-fontrepo-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  // The two directions that matter: found via a real root CSS file, and
+  // reported missing when nothing in the repository loads it at all.
+  it('finds a family from a @font-face rule in a root CSS file', () => {
+    writeFileSync(join(cwd, 'styles.css'), '@font-face { font-family: "Open Sans"; src: url(a.woff2); }');
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual([]);
+  });
+
+  it('reports a family missing from a real, empty repository', () => {
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual(['Open Sans']);
+  });
+
+  it('finds a family from a package.json dependency in a real repository', () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({
+      dependencies: { '@fontsource/open-sans': '^5.0.0' },
+    }));
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual([]);
+  });
+
+  it('finds a family from index.html at the repository root (Vite convention)', () => {
+    writeFileSync(join(cwd, 'index.html'),
+      '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600">');
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual([]);
+  });
+
+  it('finds a family from public/index.html (create-react-app convention)', () => {
+    mkdirSync(join(cwd, 'public'));
+    writeFileSync(join(cwd, 'public', 'index.html'),
+      '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600">');
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual([]);
+  });
+
+  it('concatenates every root-level CSS file, not just the first', () => {
+    writeFileSync(join(cwd, 'a.css'), 'body { color: red; }');
+    writeFileSync(join(cwd, 'b.css'), '@font-face { font-family: "Open Sans"; src: url(a.woff2); }');
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual([]);
+  });
+
+  it('does not look below the root for CSS or HTML', () => {
+    mkdirSync(join(cwd, 'src'));
+    writeFileSync(join(cwd, 'src', 'index.css'), '@font-face { font-family: "Open Sans"; src: url(a.woff2); }');
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual(['Open Sans']);
+  });
+
+  it('never throws on an unreadable or absent package.json', () => {
+    writeFileSync(join(cwd, 'package.json'), '{not json');
+    expect(() => readFontRepoSignals(cwd)).not.toThrow();
+    expect(missingFontSourcesInRepo(['Open Sans'], cwd)).toEqual(['Open Sans']);
+  });
+
+  it('reads dependencies and devDependencies apart, not merged into detect.ts\'s own shape', () => {
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({
+      dependencies: { react: '^18.0.0' },
+      devDependencies: { '@fontsource/open-sans': '^5.0.0' },
+    }));
+    const signals = readFontRepoSignals(cwd);
+    expect(signals.packageJson.dependencies).toEqual({ react: '^18.0.0' });
+    expect(signals.packageJson.devDependencies).toEqual({ '@fontsource/open-sans': '^5.0.0' });
   });
 });

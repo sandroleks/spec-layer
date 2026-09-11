@@ -45,13 +45,20 @@ export const AGENT_HOSTS: readonly AgentHost[] = ['claude', 'cursor', 'copilot',
 
 const uniq = <T,>(xs: T[]): T[] => [...new Set(xs)];
 
-function readPackageJson(cwd: string): { deps: Record<string, string> } | null {
-  const path = join(cwd, 'package.json');
+/** A JSON file's top-level object, or `null` if it does not exist, is not
+ *  valid JSON, or does not parse to an object. Shared by every reader below
+ *  that only cares about package.json's own fields. */
+function readJsonObject(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null;
   let parsed: unknown;
   try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
   if (typeof parsed !== 'object' || parsed === null) return null;
-  const record = parsed as Record<string, unknown>;
+  return parsed as Record<string, unknown>;
+}
+
+function readPackageJson(cwd: string): { deps: Record<string, string> } | null {
+  const record = readJsonObject(join(cwd, 'package.json'));
+  if (!record) return null;
   const deps: Record<string, string> = {};
   for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
     const block = record[field];
@@ -203,9 +210,8 @@ export function isAgentHost(value: string): value is AgentHost {
  * byte-identical in the browser to a bogus family name and to `serif`, and
  * four rounds of human visual review signed it off because color and size
  * were both fine. `missingFontSources` is the check that would have caught
- * it; gathering `RepoSignals` from an actual repository root (which files to
- * read the CSS and HTML from) is left to its caller, deliberately -- see the
- * task-7 report for why.
+ * it; `missingFontSourcesInRepo` (below) is the entry point that runs it
+ * against an actual repository root.
  *
  * The asymmetry that governs every match below: a false "missing" costs a
  * developer one glance at a report; a false "present" ships the Times-button
@@ -223,9 +229,12 @@ export interface RepoSignals {
    *  `deps` above, so a caller can keep dependencies and devDependencies
    *  apart if it ever needs to. */
   packageJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-  /** Concatenated text of whatever CSS the caller decided to read. */
+  /** Concatenated text of whatever CSS was read. `readFontRepoSignals` below
+   *  fills this from the repository root; a caller that already has the
+   *  text some other way (a test, a different source) can still build this
+   *  object by hand. */
   cssText: string;
-  /** Concatenated text of whatever HTML the caller decided to read. */
+  /** Concatenated text of whatever HTML was read. Same note as `cssText`. */
   htmlText: string;
 }
 
@@ -281,4 +290,77 @@ export function missingFontSources(families: string[], repo: RepoSignals): strin
     if (googleFontsLinkNamesFamily(repo.htmlText, family)) return false;
     return true;
   });
+}
+
+/** One dependency field of package.json's top-level object, or `{}` if the
+ *  file, the field, or the field's values are not there to read. Never
+ *  throws: an absent or malformed package.json answers "no dependencies",
+ *  not an error. */
+function dependencyField(record: Record<string, unknown> | null, field: string): Record<string, string> {
+  const block = record?.[field];
+  if (typeof block !== 'object' || block === null) return {};
+  const out: Record<string, string> = {};
+  for (const [name, range] of Object.entries(block as Record<string, unknown>)) {
+    if (typeof range === 'string') out[name] = range;
+  }
+  return out;
+}
+
+/** Every `*.css` file that is an immediate child of `cwd`, concatenated.
+ *  Root only, matching this file's "never look below the root" rule for
+ *  everything else it detects: `readdirSync` lists names, it is not a
+ *  recursive walk. A repository whose font-loading CSS lives under `src/`
+ *  or `public/` reads as having none here -- the safe direction, since that
+ *  only ever reports a present family as missing, never the reverse. */
+function readRootCssText(cwd: string): string {
+  let names: string[] = [];
+  try { names = readdirSync(cwd); } catch { names = []; }
+  const chunks: string[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.css')) continue;
+    try { chunks.push(readFileSync(join(cwd, name), 'utf8')); } catch { /* an unreadable file loads nothing */ }
+  }
+  return chunks.join('\n');
+}
+
+/** The two conventional HTML entry points a font `<link>` actually lives in:
+ *  `index.html` at the root (Vite) and `public/index.html` (create-react-app).
+ *  Two fixed, named paths, not a walk of the tree: a repository whose entry
+ *  HTML lives somewhere else reads as having none, the same safe direction
+ *  as `readRootCssText` above. */
+function readEntryHtmlText(cwd: string): string {
+  const chunks: string[] = [];
+  for (const path of [join(cwd, 'index.html'), join(cwd, 'public', 'index.html')]) {
+    try { if (existsSync(path)) chunks.push(readFileSync(path, 'utf8')); } catch { /* an unreadable file loads nothing */ }
+  }
+  return chunks.join('\n');
+}
+
+/**
+ * `RepoSignals` read from an actual repository root: package.json's raw
+ * `dependencies`/`devDependencies`, every root-level `*.css` file, and the
+ * two conventional HTML entry points. A missing or unreadable file
+ * contributes an empty string, never an error -- a pull must not fail
+ * because a repository happens to have no `index.html`.
+ */
+export function readFontRepoSignals(cwd: string): RepoSignals {
+  const record = readJsonObject(join(cwd, 'package.json'));
+  return {
+    packageJson: {
+      dependencies: dependencyField(record, 'dependencies'),
+      devDependencies: dependencyField(record, 'devDependencies'),
+    },
+    cssText: readRootCssText(cwd),
+    htmlText: readEntryHtmlText(cwd),
+  };
+}
+
+/**
+ * The entry point a caller with a repository root actually needs: the
+ * families from `fonts.json` that nothing at `cwd` loads. Reads
+ * `RepoSignals` off disk with `readFontRepoSignals` and hands them to
+ * `missingFontSources`, so a caller never assembles `RepoSignals` by hand.
+ */
+export function missingFontSourcesInRepo(families: string[], cwd: string): string[] {
+  return missingFontSources(families, readFontRepoSignals(cwd));
 }
