@@ -148,6 +148,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   saying nothing about the ones whose unit was inferred would disclose the
   smaller half of the truth.
 
+- **A pulled library now ships `fonts.json`, naming the exact weights and
+  families its typography styles need.** The generated tokens carry
+  `--typography-font-family-primary: "Open Sans"` and nothing else -- no
+  weight, no source, no fallback stack. Measured on a real project built from
+  a real pull: nothing in the repository loaded the family the tokens named,
+  every component using it rendered in the browser default, and
+  `document.fonts.check('24px "Open Sans"')` returned `true` anyway, a known
+  false positive and not a usable guard. That design system's styles needed
+  three weights -- 400 (6 styles), 500 (4), and 600 (9) -- and a repository
+  that loads only 400 gets synthetic bold at the other two, which matches
+  nothing in the file. `fontRequirements(artifact)`, exported from the
+  extractor's v5 surface (`packages/extractor/src/v5/fonts.ts`), reads every
+  typography style's already-resolved `font_family` and `font_weight` and
+  groups them by family: numeric weights deduplicated and sorted ascending,
+  `used_by` naming the styles that reference the family, both `used_by` and
+  the family list itself sorted with `compareCodeUnits` for deterministic
+  output. A family no style references does not appear, and a style whose
+  Figma font-style label carries no established CSS weight (already a
+  diagnosed case in the direct v5 exporter) contributes no weight rather than
+  a guessed one. The CLI writes the array to `<outDir>/fonts.json` on every
+  pull that includes the Foundation. One thing the artifact does not carry:
+  `TypographyStyleV5` has no italic signal at all. Figma's font-style label is
+  reduced to a numeric weight before it reaches the v5 artifact, and a
+  style's `text_case`/`text_decoration` encode neither slant, so
+  `FontRequirement` has no `styles` field -- inventing `'normal'` for every
+  style would be exactly the fabrication this artifact exists to avoid. A
+  later task decides whether the repository loads what is requested here, and
+  another renders it into the agent-facing skill.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

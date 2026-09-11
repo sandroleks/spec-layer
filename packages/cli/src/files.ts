@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, foundationDtcg, usageUnits, validateLevel1,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
+  validateLevel1,
   type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
@@ -187,6 +188,10 @@ export function writeBundleFiles(opts: {
         if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
           throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
         }
+        // The families and weights the library's typography styles actually
+        // reference, so a repository can load exactly those instead of a bare
+        // family name that leaves every weight to synthesise.
+        put('fonts.json', json(fontRequirements(artifact as FoundationArtifactV5)));
         // The evidence for a unit no scope states is split across the bundle:
         // the scopes live in the Foundation and the bindings in the component
         // artifacts, and the projection sees only the first. The pull is the

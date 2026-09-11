@@ -152,6 +152,7 @@ describe('writeBundleFiles', () => {
     expect(written).toContain('tokens/resolver.json');
     expect(written).toContain('tokens/spec-layer.meta.json');
     expect(written).toContain('tokens/report.json');
+    expect(written).toContain('fonts.json');
     expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as Manifest;
@@ -169,6 +170,37 @@ describe('writeBundleFiles', () => {
       },
       { kind: 'component', name: 'Button', contentHash: 'c'.repeat(64), path: 'component-specs/button.yaml' },
     ]);
+  });
+
+  it('writes fonts.json at the top of outDir, naming the families and weights the styles need', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const raw = JSON.stringify(bundle);
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw, bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    const fonts = JSON.parse(readFileSync(join(outDir, 'fonts.json'), 'utf8'));
+    // The synthetic fixture's one typography style is Body/Regular in Inter at
+    // weight 400 (bound via alias, resolved the same way a literal would be).
+    expect(fonts).toEqual([{
+      family: 'Inter',
+      weights: [400],
+      used_by: ['Body/Regular'],
+    }]);
+  });
+
+  it('does not write fonts.json when the foundation is deselected', () => {
+    const bundle = makeBundle({ foundation: realFoundation() });
+    const raw = JSON.stringify(bundle);
+    const { written } = writeBundleFiles({
+      outDir, cwd: tmpDir, raw, bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+      selection: { foundation: false, components: null },
+    });
+
+    expect(written).not.toContain('fonts.json');
+    expect(existsSync(join(outDir, 'fonts.json'))).toBe(false);
   });
 
   it('dedupes colliding slugs in bundle order', () => {

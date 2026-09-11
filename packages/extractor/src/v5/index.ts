@@ -16,6 +16,7 @@ export * from './validate';
 export * from './normalize';
 export * from './statistics';
 export * from './fromFoundation';
+export * from './fonts';
 export * from './aiContext';
 export * from './dtcg';
 export * from './usageUnits';
