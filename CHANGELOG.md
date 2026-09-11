@@ -40,9 +40,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   did wrong and stayed wrong for -- but now reports `unitless_number` at
   `warning` severity for every plain `number`-typed token, naming the value
   and pointing at `"dtcg": { "units": ... }` in `speclayer.json` or narrowing
-  the variable's scopes in Figma as the fix. `fontWeight` is unaffected: a
-  font weight and an opacity are legitimately unitless, and so is a
-  `line-height` ratio, which is valid CSS on its own.
+  the variable's scopes in Figma as the fix. `fontWeight` is exempt because
+  its `$type` already says a bare number there is correct. A typography
+  style's own `lineHeight` member is exempt too, but for a different reason:
+  DTCG types it `number` like any unpinned length, so the generator can only
+  tell it is a multiplier because this one call site reads it by name, not
+  from its `$type`. A `number`-typed variable used as a standalone opacity
+  token gets no such name to read and is still reported, even though it is
+  just as legitimately unitless, because DTCG's `$type` alone cannot tell the
+  two apart.
 
 ## [5.1.0] - 2026-09-10
 

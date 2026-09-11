@@ -3,7 +3,7 @@ import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, acceptCssDeclared, cssFileNames, cssOutput, dtcgSlug, foundationDtcg,
   type CssOutput, type CssSource, type DtcgDocumentExtension, type DtcgExport,
 } from '../../../src/index';
-import { syntheticArtifact } from '../dtcgFixture';
+import { radiusMismatchArtifact, syntheticArtifact } from '../dtcgFixture';
 
 const HEADER = { libraryId: 'lib_test', contentHash: 'sha256:abc', platform: 'web', format: 'css' };
 
@@ -526,37 +526,60 @@ describe('cssOutput reports unitless numbers', () => {
     expect(report.find((r) => r.code === 'unitless_number')).toBeUndefined();
   });
 
-  it('emits a real length for a scoped alias whose target is unitless, and does not report it', () => {
-    // The Mapped Radius.rd-sm -> Foundation.radius.300 shape from a real pull.
-    // Task 1 repairs the leaf to a literal, so CSS must emit 8px, not var(--radius-300).
+  it('emits a typography lineHeight ratio and does not report it as unitless', () => {
+    // Figma carries a style's line-height unit per style, not per variable:
+    // a PIXELS line-height would arrive as a `dimension` and never reach the
+    // `number` branch at all. A bare ratio here (no unit stated, because
+    // none applies) is valid CSS on its own, unlike a length with no unit.
     const exp: DtcgExport = {
       files: {
-        'foundation.default.json': { Foundation: { radius: { 300: { $type: 'number', $value: 8 } } } },
-        'radius.default.json': { Radius: { 'rd-sm': { $type: 'dimension', $value: { value: 8, unit: 'px' } } } },
+        'styles.typography.json': {
+          'Typography styles': {
+            Caps: { $type: 'typography', $value: { fontSize: { value: 12, unit: 'px' }, lineHeight: 1.2 } },
+          },
+        },
       },
       resolver: {
         version: '2025.10',
-        sets: {
-          Foundation: { sources: [{ $ref: 'foundation.default.json' }] },
-          Radius: { sources: [{ $ref: 'radius.default.json' }] },
-        },
+        sets: { 'Typography styles': { sources: [{ $ref: 'styles.typography.json' }] } },
         modifiers: {},
-        resolutionOrder: [{ $ref: '#/sets/Foundation' }, { $ref: '#/sets/Radius' }],
+        resolutionOrder: [{ $ref: '#/sets/Typography styles' }],
       },
-      meta: {
-        'Foundation.radius.300': { id: 'v2', collection_id: 'c2', type: 'number', scopes: [], code_syntax: { WEB: 'radius-300' } },
-        'Radius.rd-sm': { id: 'v3', collection_id: 'c3', type: 'dimension', scopes: [], code_syntax: { WEB: 'rd-sm' } },
-      },
+      meta: {},
       report: [],
       extension: EXTENSION,
     };
     const out = cssOutput(exp, HEADER);
     const text = joined(out);
 
-    expect(text).toContain('--rd-sm: 8px;');
-    expect(text).not.toContain('--rd-sm: var(--radius-300)');
-    expect(out.report.filter((r) => r.code === 'unitless_number').map((r) => r.path))
-      .toEqual(['Foundation.radius.300']);
+    expect(text).toContain('  --typography-styles-caps-line-height: 1.2;');
+    expect(out.report.find((r) => r.code === 'unitless_number')).toBeUndefined();
+  });
+
+  it('emits a real length for a scoped alias whose target is unitless, and does not report it', () => {
+    // End to end, on the fixture dtcg.test.ts already reviews Task 1's repair
+    // against: Radius.rd-sm is CORNER_RADIUS-scoped and aliases
+    // Foundation.radius.300, which carries no scope of its own and so is
+    // itself a bare number. Task 1 repairs rd-sm's DTCG leaf to a resolved
+    // literal instead of leaving `$value: '{Foundation.radius.300}'`. Without
+    // that repair, cssValue's reference branch would resolve the surviving
+    // alias to `var(--foundation-radius-300)` -- a valid-looking custom
+    // property that itself holds a bare, CSS-invalid number -- instead of
+    // writing `8px` directly, so a regression here fails the first assertion.
+    const out = cssOutput(foundationDtcg(radiusMismatchArtifact()), HEADER);
+    const text = joined(out);
+
+    // Radius.rd-sm keeps the code_syntax ("--spacing-gap") the underlying
+    // fixture token already declared; what matters is the value, not the name.
+    expect(text).toContain('--spacing-gap: 8px;');
+    expect(text).not.toMatch(/--spacing-gap:\s*var\(/);
+
+    // Foundation.radius.300 itself is genuinely unitless (Figma states no
+    // scope for it) in every mode it appears in, and is reported as such;
+    // Radius.rd-sm, now a real dimension, never is.
+    const unitless = out.report.filter((r) => r.code === 'unitless_number');
+    expect(unitless.length).toBeGreaterThan(0);
+    expect(unitless.every((r) => r.path === 'Foundation.radius.300')).toBe(true);
   });
 });
 

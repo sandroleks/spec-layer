@@ -211,14 +211,24 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
     case 'number':
       if (typeof value === 'number') {
         // CSS reads a bare number as a number, not a length: `height: 36` is
-        // invalid and dropped, `line-height: 16` is valid and means 16x. The
-        // value is still emitted, because the file states no unit and this
-        // generator does not invent one.
-        report(ctx, {
-          code: 'unitless_number', severity: 'warning',
-          message: 'This token has no unit, so CSS cannot use it as a length. Declare one under "dtcg": { "units": ... } in speclayer.json and pull again, or narrow the variable\'s scopes in Figma.',
-          details: { value, ...member },
-        });
+        // invalid and dropped. A typography style's own `lineHeight` member
+        // is the one call site where this branch already knows better: Figma
+        // carries a style's line-height unit per style, not per variable (a
+        // PIXELS line-height arrives as a `dimension` and never reaches this
+        // branch), so a bare number here is a real, valid CSS multiplier, not
+        // a token whose unit went missing. Every other `number` -- including
+        // a top-level LINE_HEIGHT-scoped variable, which carries no
+        // `property` and so cannot make this call site's exception -- states
+        // no unit because the file states none, and this generator does not
+        // invent one; the value is still emitted regardless of whether it is
+        // reported.
+        if (property !== 'lineHeight') {
+          report(ctx, {
+            code: 'unitless_number', severity: 'warning',
+            message: 'This token has no unit, so CSS cannot use it as a length. Declare one under "dtcg": { "units": ... } in speclayer.json and pull again, or narrow the variable\'s scopes in Figma.',
+            details: { value, ...member },
+          });
+        }
         return String(value);
       }
       break;
