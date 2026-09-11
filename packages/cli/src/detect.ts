@@ -193,3 +193,92 @@ export function isPlatform(value: string): value is Platform {
 export function isAgentHost(value: string): value is AgentHost {
   return (AGENT_HOSTS as readonly string[]).includes(value);
 }
+
+/**
+ * Whether the repository around a pull actually loads a font family the
+ * tokens name -- and, unlike everything above, this does read file contents,
+ * not just names and dependency ranges. A family with nothing loading it
+ * renders as the browser default: on a real pull, every button rendered in
+ * Times, `--typography-font-family-primary: "Open Sans"` measured
+ * byte-identical in the browser to a bogus family name and to `serif`, and
+ * four rounds of human visual review signed it off because color and size
+ * were both fine. `missingFontSources` is the check that would have caught
+ * it; gathering `RepoSignals` from an actual repository root (which files to
+ * read the CSS and HTML from) is left to its caller, deliberately -- see the
+ * task-7 report for why.
+ *
+ * The asymmetry that governs every match below: a false "missing" costs a
+ * developer one glance at a report; a false "present" ships the Times-button
+ * failure again. So each check is deliberately narrower than a bare
+ * substring search -- a family that is itself a substring of a different,
+ * real family (`"Sans"` inside `"Open Sans"`, `"Inter"` inside `"Inter
+ * Tight"`, `"Open Sans"` inside `"Open Sans Condensed"`) must not read as
+ * found. Case is intentionally NOT folded for the CSS and Google Fonts
+ * routes: a differently-cased family in the repository is left unproven
+ * rather than guessed at, which only ever costs the safe direction (one more
+ * "missing" a developer can dismiss at a glance).
+ */
+export interface RepoSignals {
+  /** package.json's own dependency maps, read raw -- not detect.ts's merged
+   *  `deps` above, so a caller can keep dependencies and devDependencies
+   *  apart if it ever needs to. */
+  packageJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  /** Concatenated text of whatever CSS the caller decided to read. */
+  cssText: string;
+  /** Concatenated text of whatever HTML the caller decided to read. */
+  htmlText: string;
+}
+
+/** No regex: a fixed, cheap string transform over a short, known family
+ *  name, not a scan over arbitrary repository content. */
+function fontPackageSlug(family: string): string {
+  return family.toLowerCase().split(' ').join('-');
+}
+
+/** A fontsource-style package naming exactly this family:
+ *  `@fontsource/<slug>`, `@fontsource-variable/<slug>`, or a bare `<slug>`.
+ *  Deliberately not a plain `.includes(slug)`: that would also match
+ *  `@fontsource/open-sans-condensed` for the family "Open Sans" -- a real,
+ *  differently-named font on the same registry. */
+function dependencyNamesFamily(dependencyName: string, slug: string): boolean {
+  const lower = dependencyName.toLowerCase();
+  return lower === slug || lower.endsWith(`/${slug}`);
+}
+
+/** An `@font-face` rule naming this exact family. CSS requires quotes around
+ *  a multi-word `font-family` value, so requiring the quoted form is what
+ *  keeps "Inter" from matching inside a rule that only names "Inter
+ *  Tight". */
+function cssNamesFamily(cssText: string, family: string): boolean {
+  if (!cssText.includes('@font-face')) return false;
+  return cssText.includes(`"${family}"`) || cssText.includes(`'${family}'`);
+}
+
+/** A Google Fonts `css2?family=` parameter naming this exact family.
+ *  Bounding the match at the next `:` (a weight axis), `&` (the next
+ *  family), a closing quote, or the end of the string is what keeps
+ *  "Open+Sans" from matching inside a link that only loads
+ *  "Open+Sans+Condensed". */
+function googleFontsLinkNamesFamily(htmlText: string, family: string): boolean {
+  if (!htmlText.includes('fonts.googleapis.com')) return false;
+  const needle = `family=${family.split(' ').join('+')}`;
+  if (htmlText.endsWith(needle)) return true;
+  return ['"', "'", ':', '&'].some((terminator) => htmlText.includes(needle + terminator));
+}
+
+/**
+ * The families with no loader found in `repo`. Three routes, checked in
+ * order, no fourth: a font package in package.json, an `@font-face` rule, or
+ * a Google Fonts link. When a family matches none of the three, it is
+ * reported missing -- never assumed present.
+ */
+export function missingFontSources(families: string[], repo: RepoSignals): string[] {
+  const dependencyNames = Object.keys({ ...repo.packageJson.dependencies, ...repo.packageJson.devDependencies });
+  return families.filter((family) => {
+    const slug = fontPackageSlug(family);
+    if (dependencyNames.some((name) => dependencyNamesFamily(name, slug))) return false;
+    if (cssNamesFamily(repo.cssText, family)) return false;
+    if (googleFontsLinkNamesFamily(repo.htmlText, family)) return false;
+    return true;
+  });
+}

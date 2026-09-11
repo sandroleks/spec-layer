@@ -177,6 +177,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   later task decides whether the repository loads what is requested here, and
   another renders it into the agent-facing skill.
 
+- **`spec-layer` can now tell whether a repository actually loads a font
+  family the tokens name, not just whether the tokens name one.** On the same
+  real pull as `fonts.json` above, `--typography-font-family-primary: "Open
+  Sans"` measured byte-identical in the browser to a bogus family name and to
+  `serif` -- nothing in that repository loaded the family, every button
+  rendered in Times, and `document.fonts.check('24px "Open Sans"')` returned
+  `true` anyway, a known false positive and not a usable guard. Four rounds of
+  human visual review signed the work off because colour and size were both
+  fine. `missingFontSources(families, repo)`, added to `packages/cli/src/detect.ts`
+  alongside the existing platform/framework scanner, checks three routes a
+  web project actually uses to load a font -- a package in package.json
+  (`@fontsource/<slug>`, `@fontsource-variable/<slug>`, or a bare `<slug>`),
+  an `@font-face` rule, or a Google Fonts link -- and reports a family missing
+  when none of the three names it. Every match is deliberately narrower than
+  a plain substring search: a family that is itself a substring of a
+  different, real family (`"Sans"` inside `"Open Sans"`, `"Inter"` inside
+  `"Inter Tight"`, `"Open Sans"` inside the separately-published `"Open Sans
+  Condensed"`) does not count as found, and the CSS and Google Fonts routes
+  do not fold case, so a differently-cased family in the repository is left
+  unproven rather than guessed at. Both narrowings only ever cost the safe
+  direction: a false "missing" costs a developer one glance at a report; a
+  false "present" would ship the Times-button failure again. This lands the
+  pure check only -- gathering `RepoSignals` (package.json, CSS, and HTML
+  text) from an actual repository root is not wired up here, because doing
+  that by walking the whole tree would be exactly the parallel crawler
+  `detect.ts`'s own design deliberately avoids, and no test in this change
+  needed it; a later task decides where the CLI reads those files from and
+  where it prints the result.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

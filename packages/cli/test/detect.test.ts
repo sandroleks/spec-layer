@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectRepo, majorOf, CODE_SYNTAX_KEY, isAgentHost, isPlatform } from '../src/detect';
+import {
+  detectRepo, majorOf, CODE_SYNTAX_KEY, isAgentHost, isPlatform, missingFontSources,
+  type RepoSignals,
+} from '../src/detect';
 
 describe('detectRepo', () => {
   let cwd: string;
@@ -90,5 +93,96 @@ describe('helpers', () => {
     expect(isPlatform('Web')).toBe(false);
     expect(isAgentHost('agents-md')).toBe(true);
     expect(isAgentHost('codex')).toBe(false);
+  });
+});
+
+describe('missingFontSources', () => {
+  const empty: RepoSignals = { packageJson: {}, cssText: '', htmlText: '' };
+
+  it('reports a family nothing in the repository loads', () => {
+    expect(missingFontSources(['Open Sans'], empty)).toEqual(['Open Sans']);
+  });
+
+  it('accepts a @fontsource package', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, packageJson: { dependencies: { '@fontsource/open-sans': '^5.0.0' } },
+    })).toEqual([]);
+  });
+
+  it('accepts a font package in devDependencies too', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, packageJson: { devDependencies: { '@fontsource/open-sans': '^5.0.0' } },
+    })).toEqual([]);
+  });
+
+  it('accepts a bare, unscoped package named exactly the family slug', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, packageJson: { dependencies: { 'open-sans': '^1.0.0' } },
+    })).toEqual([]);
+  });
+
+  it('accepts an @font-face rule naming the family', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, cssText: '@font-face { font-family: "Open Sans"; src: url(a.woff2); }',
+    })).toEqual([]);
+  });
+
+  it('accepts a Google Fonts link', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, htmlText: '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600">',
+    })).toEqual([]);
+  });
+
+  it('checks every family independently, in one pass', () => {
+    expect(missingFontSources(['Open Sans', 'Inter'], {
+      ...empty, packageJson: { dependencies: { '@fontsource/open-sans': '^5.0.0' } },
+    })).toEqual(['Inter']);
+  });
+
+  // A font package for a longer, different family name must not cover a
+  // shorter one that happens to be its prefix -- Fontsource really does
+  // publish "Open Sans Condensed" as a separate package from "Open Sans".
+  it('does not let a package for a longer family name cover a shorter one', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, packageJson: { dependencies: { '@fontsource/open-sans-condensed': '^5.0.0' } },
+    })).toEqual(['Open Sans']);
+  });
+
+  // Same risk in CSS: an @font-face rule for "Inter Tight" must not be read
+  // as covering the family "Inter".
+  it('does not let an @font-face rule for a longer family name cover a shorter one', () => {
+    expect(missingFontSources(['Inter'], {
+      ...empty, cssText: '@font-face { font-family: "Inter Tight"; src: url(a.woff2); }',
+    })).toEqual(['Inter']);
+  });
+
+  // Same risk in a Google Fonts link: "Open+Sans+Condensed" must not be read
+  // as covering "Open Sans".
+  it('does not let a Google Fonts link for a longer family name cover a shorter one', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, htmlText: '<link href="https://fonts.googleapis.com/css2?family=Open+Sans+Condensed:wght@400">',
+    })).toEqual(['Open Sans']);
+  });
+
+  it('matches a package dependency name regardless of case', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, packageJson: { dependencies: { '@FontSource/Open-Sans': '^5.0.0' } },
+    })).toEqual([]);
+  });
+
+  // Deliberate design choice, not a bug: the CSS and Google Fonts routes do
+  // not fold case, so a differently-cased family in the repository is left
+  // unproven. That only ever costs the safe direction -- one more "missing"
+  // a developer can dismiss at a glance -- never a false "present".
+  it('does not fold case for an @font-face rule', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, cssText: '@font-face { font-family: "OPEN SANS"; src: url(a.woff2); }',
+    })).toEqual(['Open Sans']);
+  });
+
+  it('does not fold case for a Google Fonts link', () => {
+    expect(missingFontSources(['Open Sans'], {
+      ...empty, htmlText: '<link href="https://fonts.googleapis.com/css2?family=open+sans:wght@400">',
+    })).toEqual(['Open Sans']);
   });
 });
