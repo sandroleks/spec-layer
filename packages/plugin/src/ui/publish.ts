@@ -15,6 +15,8 @@ import {
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
+import { buildSkillFiles, skillZipFilename } from './skillZip';
+import { downloadBytes, zipFiles } from './download';
 import type { MainToUi, PublishComponentSource, UiToMain } from '../messages';
 
 export interface PublishSources {
@@ -272,10 +274,16 @@ export interface PublishState {
   libraryId: string | null;
   pullKey: string | null;
   lastPublishedAt: string | null;
+  /** Which action the in-flight collect belongs to. Both actions share one
+   *  round trip to the main thread, and only this says which reply handler
+   *  should run. */
+  intent: 'publish' | 'download';
 }
 
 function createPublishState(): PublishState {
-  return { status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null };
+  return {
+    status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'publish',
+  };
 }
 
 let state: PublishState = createPublishState();
@@ -324,7 +332,19 @@ export function publishState(): Readonly<PublishState> {
  */
 export function onPublishClick(_auth: ProxyAuth): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
-  state = { ...state, status: 'collecting', message: null };
+  state = { ...state, status: 'collecting', message: null, intent: 'publish' };
+  host.repaint();
+  host.send({ type: 'requestPublishSources' });
+}
+
+/**
+ * Start a download: the same collect a publish starts, marked so the reply
+ * writes a zip instead of contacting the proxy. Takes no auth because a
+ * snapshot needs no identity, no license, and no pull key.
+ */
+export function onDownloadSkillClick(): void {
+  if (state.status === 'collecting' || state.status === 'uploading') return;
+  state = { ...state, status: 'collecting', message: null, intent: 'download' };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
 }
@@ -347,6 +367,23 @@ export async function onPublishSources(
   if (msg.skipped.length > 0) {
     state = { ...state, status: 'error', message: skippedMessage(msg.skipped) };
     host.repaint();
+    return;
+  }
+
+  if (state.intent === 'download') {
+    const generatedAt = new Date().toISOString();
+    const bundle = buildPublishBundle(msg, generatedAt);
+    downloadBytes(
+      zipFiles(buildSkillFiles(bundle, generatedAt)),
+      skillZipFilename(bundle.fileName),
+      'application/zip',
+    );
+    // No completion message comes back from a download, so the presenter
+    // returns to idle itself. Nothing about the library identity changes:
+    // a snapshot is not a publish.
+    state = { ...state, status: 'idle', message: null };
+    host.repaint();
+    host.notify('Downloaded. Unzip it into .claude/skills/ in your repository.');
     return;
   }
 

@@ -7,6 +7,16 @@ import {
   type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
+import { downloadBytes } from '../src/ui/download';
+
+// The Node test environment has no Blob/document/URL, so downloadBytes'
+// real DOM contact would throw here. Keep the real zipFiles (it is pure and
+// exercised for real below) and stub only the DOM-touching half; the actual
+// browser behaviour is covered by the manual Figma matrix, not unit tests.
+vi.mock('../src/ui/download', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/ui/download')>();
+  return { ...actual, downloadBytes: vi.fn() };
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures — lifted from copyBrief.test.ts and copyFoundation.test.ts so this
@@ -973,6 +983,39 @@ describe('publish controller', () => {
     expect(sent).toEqual([
       { type: 'setPublishedAt', libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z' },
     ]);
+  });
+
+  describe('download intent', () => {
+    beforeEach(() => {
+      vi.mocked(downloadBytes).mockClear();
+    });
+
+    it('collects without contacting the proxy', () => {
+      publish.onDownloadSkillClick();
+      expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+      expect(publish.publishState().status).toBe('collecting');
+    });
+
+    it('never uploads, and leaves the library identity untouched', async () => {
+      const fetcher = vi.fn();
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(publish.publishState().libraryId).toBeNull();
+      expect(publish.publishState().status).toBe('idle');
+      expect(downloadBytes).toHaveBeenCalledTimes(1);
+      expect(notified).toEqual(['Downloaded. Unzip it into .claude/skills/ in your repository.']);
+    });
+
+    it('refuses to download when a component could not be read', async () => {
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(
+        { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH,
+      );
+      expect(publish.publishState().status).toBe('error');
+      expect(publish.publishState().message).toContain('Button');
+      expect(downloadBytes).not.toHaveBeenCalled();
+    });
   });
 });
 

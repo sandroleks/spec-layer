@@ -20,6 +20,7 @@ function state(overrides: Partial<PublishState> = {}): PublishState {
     libraryId: null,
     pullKey: null,
     lastPublishedAt: null,
+    intent: 'publish',
     ...overrides,
   };
 }
