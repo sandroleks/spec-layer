@@ -122,6 +122,7 @@ import {
 import { copyText, renderManualCopyModal } from './clipboard';
 import {
   agentSetupMessage,
+  onDownloadSkillClick,
   onPublishClick,
   onPublishInfo,
   onPublishSources,
@@ -1528,6 +1529,11 @@ document.addEventListener('click', (event) => {
     onPublishClick(
       publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
     );
+    return;
+  }
+
+  if (target.closest('[data-publish-download]')) {
+    onDownloadSkillClick();
     return;
   }
 

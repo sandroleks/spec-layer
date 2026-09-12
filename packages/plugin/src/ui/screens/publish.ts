@@ -109,6 +109,26 @@ function copyBlock(kind: 'command' | 'agent', label: string, text: string): stri
 }
 
 /**
+ * The no-account route. Sits below the setup blocks in every state, including
+ * before the first publish, because a snapshot depends on nothing the publish
+ * service holds. Disabled while a collect is in flight, since both actions
+ * share one round trip.
+ */
+function downloadBlock(busy: boolean): string {
+  return (
+    '<section class="sl-publish-block">' +
+    '<div class="sl-publish-block-head"><h2>Download a snapshot</h2></div>' +
+    '<p class="sl-publish-note">A zip of every component brief and the design tokens, ' +
+    'with a SKILL.md a coding agent reads. Unzip it into <code>.claude/skills/</code> ' +
+    'in your repository. No account needed. It does not update, so download it again ' +
+    'after the design system changes.</p>' +
+    '<button class="sl-button" data-tone="secondary" type="button" ' +
+    `data-publish-download${busy ? ' disabled' : ''}>Download skill (.zip)</button>` +
+    '</section>'
+  );
+}
+
+/**
  * The meta line, the setup blocks once there is a key, the rotate action, and
  * an error line when the last action failed. Successes are toasts (see the
  * controller's `notify`), so nothing here restates them. Everything varies in
@@ -165,6 +185,7 @@ export function publishScrollMarkup(
     '<div class="sl-publish-body">' +
     metaMarkup(state, allowance, locale) +
     body +
+    downloadBlock(busy) +
     errorLine +
     '</div>'
   );

@@ -36,6 +36,9 @@ const FREE: PublishAllowance = {
   kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z',
 };
 
+/** Allowance for tests that do not care about the meter, only the body. */
+const allowance: PublishAllowance = { kind: 'hidden' };
+
 /** The screen a Pro plan sees (allowance hidden). Free has its own block below. */
 const proScroll = (s: PublishState) => publishScrollMarkup(s, { kind: 'hidden' });
 
@@ -144,7 +147,11 @@ describe('publish screen body', () => {
     expect(markup).toContain('sl-publish-intro');
     expect(markup).toContain('developers and coding agents');
     expect(markup).toContain('The setup commands appear here after the first publish.');
-    expect(markup).not.toContain('sl-publish-block');
+    // The download block is its own sl-publish-block and renders before the
+    // first publish too (a snapshot needs no library), so this only checks
+    // that no *setup* block (developer command, agent prompt) appears yet.
+    expect(markup).not.toContain('<h2>Developer setup</h2>');
+    expect(markup).not.toContain('<h2>AI agent setup</h2>');
     expect(markup).not.toContain('data-publish-rotate');
     expect(markup).not.toContain('data-publish-copy-command');
   });
@@ -366,6 +373,45 @@ describe('publish screen footer', () => {
     ].join('');
     expect(all).not.toContain('—');
     expect(all).not.toContain('Pro plan required');
+  });
+});
+
+describe('download block', () => {
+  it('offers the download before the first publish', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: null, pullKey: null,
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).toContain('data-publish-download');
+    expect(html).toContain('No account needed');
+  });
+
+  it('offers it after a publish too', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: 'lib_1', pullKey: 'key_1',
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).toContain('data-publish-download');
+  });
+
+  it('disables it while work is in flight', () => {
+    const html = publishScrollMarkup(
+      { status: 'collecting', message: null, libraryId: null, pullKey: null,
+        lastPublishedAt: null, intent: 'download' },
+      allowance,
+    );
+    expect(html).toMatch(/data-publish-download[^>]*disabled/);
+  });
+
+  it('uses no em dash', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: null, pullKey: null,
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).not.toContain('—');
   });
 });
 
