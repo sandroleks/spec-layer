@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { cleanPartName } from '../src/naming';
 import { parseProseResponse } from '../src/prose/prompt';
 import { stateBaseName } from '../src/statesMatrix';
+import { slugify } from '../src/componentSlugs';
 
 // --- The regexes as they were, before the rewrites -------------------------
 
@@ -264,4 +265,49 @@ describe('stateBaseName is exactly the regex it replaced', () => {
  *  so the pattern does not match and the answer is the lowercased trim. */
 function oldStateBaseNameFast(v: string): string {
   return v.trim().toLowerCase();
+}
+
+describe('slugify is exactly the regex it replaced', () => {
+  // A slug decides the filename every pull and every downloaded snapshot
+  // writes, so a single disagreement renames a file in a user's repository on
+  // their next pull. The old expression is the oracle rather than a comment.
+  const CASES = [
+    '', '-', '--', '---', 'a', '-a', 'a-', '-a-', '--a--', 'a--b',
+    'Button', 'Button Primary', '  Button  ', 'Card / Header', '///',
+    'a/b', 'A/B/C', '2', '-2-', 'icon#2', '  ', '\t', '\n', '_', '__',
+    'Émoji Ünicode', '日本語', 'a_b', 'a.b', 'a  b', 'a---b', 'a-_-b',
+    '-'.repeat(20), 'a' + '-'.repeat(20), '-'.repeat(20) + 'a',
+    '-'.repeat(20) + 'a' + '-'.repeat(20), '!@#$%^&*()',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(slugify(input), JSON.stringify(input)).toBe(oldSlugify(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = ['-', ' ', '_', '/', 'a', 'B', '2', '.', '#'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 24);
+      expect(slugify(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldSlugify(input));
+    }
+  });
+
+  it('is linear on a long run of separators', () => {
+    // The original's worst case: `-+$` retried from every position in the run.
+    // The collapse ahead of it means callers cannot reach this today, which is
+    // exactly why the guarantee should not rest on the collapse.
+    const input = '/'.repeat(200000) + 'x';
+    const started = performance.now();
+    expect(slugify(input)).toBe('x');
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+/** `slugify` as it was, before the trim became a scan. */
+function oldSlugify(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || 'component';
 }

@@ -538,6 +538,7 @@ if (view === 'library') {
       libraryId: null,
       pullKey: null,
       lastPublishedAt: null,
+      intent: 'publish',
     },
     collecting: {
       status: 'collecting',
@@ -545,6 +546,7 @@ if (view === 'library') {
       libraryId: null,
       pullKey: null,
       lastPublishedAt: null,
+      intent: 'publish',
     },
     uploading: {
       status: 'uploading',
@@ -552,6 +554,7 @@ if (view === 'library') {
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
+      intent: 'publish',
     },
     // Success is a toast, so a published screen carries no message of its own.
     published: {
@@ -560,6 +563,7 @@ if (view === 'library') {
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-09-01T09:12:00.000Z',
+      intent: 'publish',
     },
     // A second device: the id is in the file, the key is not on this machine.
     idOnly: {
@@ -568,6 +572,7 @@ if (view === 'library') {
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: null,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
+      intent: 'publish',
     },
     // Published by a build that stored no date: the status block says so.
     unrecorded: {
@@ -576,6 +581,7 @@ if (view === 'library') {
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: null,
+      intent: 'publish',
     },
     error: {
       status: 'error',
@@ -583,6 +589,7 @@ if (view === 'library') {
       libraryId: null,
       pullKey: null,
       lastPublishedAt: null,
+      intent: 'publish',
     },
   };
   let libraryPane: 'list' | 'publish' =

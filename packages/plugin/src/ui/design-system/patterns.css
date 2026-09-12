@@ -1289,6 +1289,15 @@
   font-variant-ligatures: none;
 }
 
+/*
+ * The download block's note sits directly above its own button (the id-only
+ * note above has no button after it, so this only ever fires there). Same
+ * gap the empty state uses between its own paragraph and button.
+ */
+.sl-publish-note + .sl-button {
+  margin-top: var(--sl-space-8);
+}
+
 /* The two setup blocks are peers, spaced like the groups they replaced. */
 .sl-publish-block + .sl-publish-block {
   margin-top: var(--sl-space-16);
@@ -1399,6 +1408,18 @@
  */
 .sl-publish-rotate {
   display: flex;
+  margin-top: var(--sl-space-16);
+}
+
+/*
+ * The no-account route (see downloadBlock in screens/publish.ts). It follows
+ * whatever body renders in a given state (the intro paragraph, or the rotate
+ * row), never another .sl-publish-block, so the "+ .sl-publish-block" rule
+ * above never fires for it. It needs the same air above it that the other
+ * groups get from each other, so it carries its own unconditional margin-top
+ * instead, the same value as .sl-publish-rotate.
+ */
+.sl-publish-download {
   margin-top: var(--sl-space-16);
 }
 

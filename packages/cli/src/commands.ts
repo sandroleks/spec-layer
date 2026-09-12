@@ -755,6 +755,12 @@ export function runSkill(cwd: string, flags: Flags, io: Io): number {
     }
     const verb = outcome.result === 'created' ? 'Wrote' : outcome.result === 'updated' ? 'Updated' : 'Unchanged:';
     io.out(`${verb} ${outcome.path} (${host}, ${chosen}).`);
+    if (outcome.staleSnapshot.length > 0) {
+      io.out(
+        `A downloaded snapshot is still in ${outcome.staleSnapshot.join(' and ')}. `
+        + 'The guide above supersedes it, and those folders can be deleted.',
+      );
+    }
   }
   if (!input.pull) io.out(`No local pull yet, so the guide lists no components. Run spec-layer pull, then spec-layer skill --install again.`);
   if (input.platformSource === 'none') io.out(`No target platform detected. Pass --platform ${PLATFORMS.join('|')} to write platform-specific token advice.`);

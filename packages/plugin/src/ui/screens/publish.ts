@@ -41,9 +41,22 @@ const BEFORE_FIRST_PUBLISH =
   'developers and coding agents. The setup commands appear here after the ' +
   'first publish.';
 
-/** Statuses where a publish is in flight, so the primary is working. */
+/** Statuses where a publish OR a download is in flight, so the primary is
+ *  working. Intent-blind by design: both share the one collect round trip. */
 function isBusy(state: PublishState): boolean {
   return state.status === 'collecting' || state.status === 'uploading';
+}
+
+/**
+ * The footer's primary is always the Publish action (the download has its own
+ * button in the scroll body), but the two intents share one collect, so this
+ * button also goes busy and disables while a download runs. Saying
+ * "Publishing…" then would claim an action the user never took: `intent`
+ * (already in `state` for `skippedMessage`, see ui/publish.ts) says which
+ * round trip is actually in flight, so the busy label can say so honestly.
+ */
+function busyLabel(state: PublishState): string {
+  return state.intent === 'download' ? 'Downloading…' : 'Publishing…';
 }
 
 /**
@@ -109,6 +122,25 @@ function copyBlock(kind: 'command' | 'agent', label: string, text: string): stri
 }
 
 /**
+ * The no-account route. Sits below the setup blocks in every state, including
+ * before the first publish, because a snapshot depends on nothing the publish
+ * service holds. Disabled while a collect is in flight, since both actions
+ * share one round trip.
+ */
+function downloadBlock(busy: boolean): string {
+  return (
+    '<section class="sl-publish-block sl-publish-download">' +
+    '<div class="sl-publish-block-head"><h2>Download a snapshot</h2></div>' +
+    '<p class="sl-publish-note">A zip of everything this file documents: component briefs, ' +
+    'design tokens, and a SKILL.md a coding agent reads. No account needed. It does not ' +
+    'update, so download it again after the design system changes.</p>' +
+    '<button class="sl-button" data-tone="secondary" type="button" ' +
+    `data-publish-download${busy ? ' disabled' : ''}>Download snapshot (.zip)</button>` +
+    '</section>'
+  );
+}
+
+/**
  * The meta line, the setup blocks once there is a key, the rotate action, and
  * an error line when the last action failed. Successes are toasts (see the
  * controller's `notify`), so nothing here restates them. Everything varies in
@@ -165,6 +197,7 @@ export function publishScrollMarkup(
     '<div class="sl-publish-body">' +
     metaMarkup(state, allowance, locale) +
     body +
+    downloadBlock(busy) +
     errorLine +
     '</div>'
   );
@@ -205,7 +238,7 @@ export function publishFooterMarkup(state: PublishState): string {
     `<span>Read documentation</span>${icon('externalLink', 15)}</a>` +
     '<button class="sl-button sl-publish-submit" data-tone="primary" ' +
     `type="button" data-publish${busy ? ' disabled' : ''}>` +
-    `${icon('upload', 15)}<span>${busy ? 'Publishing…' : 'Publish library'}</span></button>` +
+    `${icon('upload', 15)}<span>${busy ? busyLabel(state) : 'Publish library'}</span></button>` +
     '</div>'
   );
 }

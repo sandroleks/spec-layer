@@ -15,6 +15,8 @@ import {
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
+import { buildSkillFiles, skillZipFilename } from './skillZip';
+import { downloadBytes, zipFiles } from './download';
 import type { MainToUi, PublishComponentSource, UiToMain } from '../messages';
 
 export interface PublishSources {
@@ -272,10 +274,16 @@ export interface PublishState {
   libraryId: string | null;
   pullKey: string | null;
   lastPublishedAt: string | null;
+  /** Which action the in-flight collect belongs to. Both actions share one
+   *  round trip to the main thread, and only this says which reply handler
+   *  should run. */
+  intent: 'publish' | 'download';
 }
 
 function createPublishState(): PublishState {
-  return { status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null };
+  return {
+    status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'publish',
+  };
 }
 
 let state: PublishState = createPublishState();
@@ -324,16 +332,46 @@ export function publishState(): Readonly<PublishState> {
  */
 export function onPublishClick(_auth: ProxyAuth): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
-  state = { ...state, status: 'collecting', message: null };
+  state = { ...state, status: 'collecting', message: null, intent: 'publish' };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
 }
 
-function skippedMessage(skipped: Array<{ name: string; reason: string }>): string {
+/**
+ * Start a download: the same collect a publish starts, marked so the reply
+ * writes a zip instead of contacting the proxy. Takes no auth because a
+ * snapshot needs no identity, no license, and no pull key.
+ */
+export function onDownloadSkillClick(): void {
+  if (state.status === 'collecting' || state.status === 'uploading') return;
+  state = { ...state, status: 'collecting', message: null, intent: 'download' };
+  host.repaint();
+  host.send({ type: 'requestPublishSources' });
+}
+
+/**
+ * The publish and download intents share this one guard (see
+ * `onPublishSources`, first check), but they must not share its wording: a
+ * download that stops here never touched the proxy, and telling that user
+ * something was "published" would be a fabricated claim about their own
+ * action. Only the verb, its object, and the retry step vary; the count and
+ * the component names are identical either way.
+ */
+function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: 'publish' | 'download'): string {
   const names = skipped.map((s) => s.name).join(', ');
   const count = skipped.length;
-  return `Nothing was published. ${count} component${count === 1 ? '' : 's'} could not be read: ${names}. Fix or remove those docs, then publish again.`;
+  const found = `${count} component${count === 1 ? '' : 's'} could not be read: ${names}.`;
+  return intent === 'download'
+    ? `Nothing was downloaded. ${found} Fix or remove those docs, then download again.`
+    : `Nothing was published. ${found} Fix or remove those docs, then publish again.`;
 }
+
+/** Shown when the download branch itself throws (a `Blob`/`URL`/`document`
+ *  failure, or a bad zip), so the controller lands in `error` instead of
+ *  staying in `collecting` with both entry points guard-blocked and no
+ *  message on screen. Names what failed without inventing why. */
+const DOWNLOAD_FAILED_MESSAGE =
+  'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
 
 const GONE_MESSAGE =
   'That library no longer exists on the publish service. Nothing was published. '
@@ -345,8 +383,35 @@ export async function onPublishSources(
   fetcher?: typeof fetch,
 ): Promise<void> {
   if (msg.skipped.length > 0) {
-    state = { ...state, status: 'error', message: skippedMessage(msg.skipped) };
+    state = { ...state, status: 'error', message: skippedMessage(msg.skipped, state.intent) };
     host.repaint();
+    return;
+  }
+
+  if (state.intent === 'download') {
+    try {
+      const generatedAt = new Date().toISOString();
+      const bundle = buildPublishBundle(msg, generatedAt);
+      downloadBytes(
+        zipFiles(buildSkillFiles(bundle, generatedAt)),
+        skillZipFilename(bundle.fileName),
+        'application/zip',
+      );
+    } catch {
+      // No completion message comes back from a download either way, so a
+      // throw here (a DOM failure, a bad zip) must recover the controller
+      // itself rather than leaving `collecting` with both entry points
+      // guard-blocked and nothing on screen.
+      state = { ...state, status: 'error', message: DOWNLOAD_FAILED_MESSAGE };
+      host.repaint();
+      return;
+    }
+    // No completion message comes back from a download, so the presenter
+    // returns to idle itself. Nothing about the library identity changes:
+    // a snapshot is not a publish.
+    state = { ...state, status: 'idle', message: null };
+    host.repaint();
+    host.notify('Downloaded.');
     return;
   }
 
@@ -419,11 +484,28 @@ export async function onPublishSources(
   host.repaint();
 }
 
+/**
+ * `requestPublishSources`' outer catch (main.ts) reaches this on either
+ * intent, exactly like the `skipped` guard above, so it needs the same
+ * intent-aware treatment `skippedMessage` got: a download that never read a
+ * usable source never touched the proxy, and telling that user something was
+ * "published" would be a fabricated claim about their own action.
+ */
+function sourcesErrorMessage(message: string, intent: 'publish' | 'download'): string {
+  const outcome = intent === 'download' ? 'downloaded' : 'published';
+  // `message` is a caught error's own text (main.ts forwards `err.message`
+  // verbatim), which has no guaranteed terminal punctuation, so the retry
+  // sentence after it would otherwise run on with no boundary between them.
+  const detail = /[.!?]$/.test(message) ? message : `${message}.`;
+  return `Could not read the library. Nothing was ${outcome}. ${detail} `
+    + 'Try again, or reopen the plugin if it keeps happening.';
+}
+
 export function onPublishSourcesError(message: string): void {
   state = {
     ...state,
     status: 'error',
-    message: `Could not read the library. Nothing was published. ${message}`,
+    message: sourcesErrorMessage(message, state.intent),
   };
   host.repaint();
 }
