@@ -996,25 +996,94 @@ describe('publish controller', () => {
       expect(publish.publishState().status).toBe('collecting');
     });
 
-    it('never uploads, and leaves the library identity untouched', async () => {
+    it('never uploads, and leaves the library identity and publish record untouched', async () => {
       const fetcher = vi.fn();
       publish.onDownloadSkillClick();
       await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
       expect(fetcher).not.toHaveBeenCalled();
       expect(publish.publishState().libraryId).toBeNull();
       expect(publish.publishState().status).toBe('idle');
+      // The exact arguments, not just the call count: a swapped filename/MIME
+      // order would still pass a bare toHaveBeenCalledTimes(1).
       expect(downloadBytes).toHaveBeenCalledTimes(1);
+      expect(downloadBytes).toHaveBeenCalledWith(
+        expect.any(Uint8Array), 'spec-layer-design-system-skill.zip', 'application/zip',
+      );
       expect(notified).toEqual(['Downloaded. Unzip it into .claude/skills/ in your repository.']);
+      // "A snapshot is not a publish" means these two durable writes to the
+      // file never fire on the download path, not just that the state object
+      // looks right in memory.
+      expect(sent.some((m) => m.type === 'setPublishInfo')).toBe(false);
+      expect(sent.some((m) => m.type === 'setPublishedAt')).toBe(false);
     });
 
-    it('refuses to download when a component could not be read', async () => {
+    it('tells a download user honestly when components could not be read, never claiming a publish', async () => {
       publish.onDownloadSkillClick();
       await publish.onPublishSources(
         { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH,
       );
-      expect(publish.publishState().status).toBe('error');
-      expect(publish.publishState().message).toContain('Button');
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'Nothing was downloaded. 1 component could not be read: Button. Fix or remove those docs, then download again.',
+      );
+      expect(state.message).not.toContain('published');
       expect(downloadBytes).not.toHaveBeenCalled();
+    });
+
+    it('still tells a publish user the publish wording for the same skipped guard', async () => {
+      // The guard is shared and unchanged; only the wording is intent-aware.
+      // This pins the publish side so the download fix cannot regress it.
+      publish.onPublishClick(AUTH);
+      const fetcher = vi.fn();
+      await publish.onPublishSources(
+        { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH, fetcher,
+      );
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'Nothing was published. 1 component could not be read: Button. Fix or remove those docs, then publish again.',
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it('recovers to an honest error when the download itself throws, instead of wedging in collecting', async () => {
+      vi.mocked(downloadBytes).mockImplementationOnce(() => {
+        throw new Error('Blob is not defined');
+      });
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.',
+      );
+      expect(state.message).not.toContain('—');
+      // Not wedged: a fresh click is accepted rather than guard-blocked on
+      // a status that never left 'collecting'.
+      publish.onDownloadSkillClick();
+      expect(publish.publishState().status).toBe('collecting');
+    });
+
+    it('runs the publish path, not the download branch, for a publish click that follows a completed download', async () => {
+      // This is the regression the shared `intent` flag exists to prevent: if
+      // onPublishClick ever stopped setting intent back to 'publish', a
+      // publish click right after a download would silently re-run the
+      // download branch and never call the fetcher.
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
+      expect(publish.publishState().status).toBe('idle');
+
+      publish.onPublishClick(AUTH);
+      const fetcher = vi.fn(async () => jsonResponse(201, {
+        libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
+      }));
+      await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const state = publish.publishState();
+      expect(state.status).toBe('done');
+      expect(state.libraryId).toBe('lib_new');
+      expect(state.pullKey).toBe('sl_pull');
     });
   });
 });

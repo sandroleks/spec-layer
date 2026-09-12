@@ -349,11 +349,29 @@ export function onDownloadSkillClick(): void {
   host.send({ type: 'requestPublishSources' });
 }
 
-function skippedMessage(skipped: Array<{ name: string; reason: string }>): string {
+/**
+ * The publish and download intents share this one guard (see
+ * `onPublishSources`, first check), but they must not share its wording: a
+ * download that stops here never touched the proxy, and telling that user
+ * something was "published" would be a fabricated claim about their own
+ * action. Only the verb, its object, and the retry step vary; the count and
+ * the component names are identical either way.
+ */
+function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: 'publish' | 'download'): string {
   const names = skipped.map((s) => s.name).join(', ');
   const count = skipped.length;
-  return `Nothing was published. ${count} component${count === 1 ? '' : 's'} could not be read: ${names}. Fix or remove those docs, then publish again.`;
+  const found = `${count} component${count === 1 ? '' : 's'} could not be read: ${names}.`;
+  return intent === 'download'
+    ? `Nothing was downloaded. ${found} Fix or remove those docs, then download again.`
+    : `Nothing was published. ${found} Fix or remove those docs, then publish again.`;
 }
+
+/** Shown when the download branch itself throws (a `Blob`/`URL`/`document`
+ *  failure, or a bad zip), so the controller lands in `error` instead of
+ *  staying in `collecting` with both entry points guard-blocked and no
+ *  message on screen. Names what failed without inventing why. */
+const DOWNLOAD_FAILED_MESSAGE =
+  'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
 
 const GONE_MESSAGE =
   'That library no longer exists on the publish service. Nothing was published. '
@@ -365,19 +383,29 @@ export async function onPublishSources(
   fetcher?: typeof fetch,
 ): Promise<void> {
   if (msg.skipped.length > 0) {
-    state = { ...state, status: 'error', message: skippedMessage(msg.skipped) };
+    state = { ...state, status: 'error', message: skippedMessage(msg.skipped, state.intent) };
     host.repaint();
     return;
   }
 
   if (state.intent === 'download') {
-    const generatedAt = new Date().toISOString();
-    const bundle = buildPublishBundle(msg, generatedAt);
-    downloadBytes(
-      zipFiles(buildSkillFiles(bundle, generatedAt)),
-      skillZipFilename(bundle.fileName),
-      'application/zip',
-    );
+    try {
+      const generatedAt = new Date().toISOString();
+      const bundle = buildPublishBundle(msg, generatedAt);
+      downloadBytes(
+        zipFiles(buildSkillFiles(bundle, generatedAt)),
+        skillZipFilename(bundle.fileName),
+        'application/zip',
+      );
+    } catch {
+      // No completion message comes back from a download either way, so a
+      // throw here (a DOM failure, a bad zip) must recover the controller
+      // itself rather than leaving `collecting` with both entry points
+      // guard-blocked and nothing on screen.
+      state = { ...state, status: 'error', message: DOWNLOAD_FAILED_MESSAGE };
+      host.repaint();
+      return;
+    }
     // No completion message comes back from a download, so the presenter
     // returns to idle itself. Nothing about the library identity changes:
     // a snapshot is not a publish.
