@@ -1043,7 +1043,7 @@ describe('publish controller', () => {
       expect(downloadBytes).toHaveBeenCalledWith(
         expect.any(Uint8Array), 'spec-layer-design-system-skill.zip', 'application/zip',
       );
-      expect(notified).toEqual(['Downloaded. Unzip it into .claude/skills/ in your repository.']);
+      expect(notified).toEqual(['Downloaded.']);
       // "A snapshot is not a publish" means these two durable writes to the
       // file never fire on the download path, not just that the state object
       // looks right in memory.

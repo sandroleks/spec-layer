@@ -131,10 +131,9 @@ function downloadBlock(busy: boolean): string {
   return (
     '<section class="sl-publish-block sl-publish-download">' +
     '<div class="sl-publish-block-head"><h2>Download a snapshot</h2></div>' +
-    '<p class="sl-publish-note">A zip with a SKILL.md a coding agent reads, plus whatever ' +
-    'component briefs and design tokens this file has to document. Unzip it into ' +
-    '<code>.claude/skills/</code> in your repository. No account needed. It does not update, ' +
-    'so download it again after the design system changes.</p>' +
+    '<p class="sl-publish-note">A zip of everything this file documents: component briefs, ' +
+    'design tokens, and a SKILL.md a coding agent reads. No account needed. It does not ' +
+    'update, so download it again after the design system changes.</p>' +
     '<button class="sl-button" data-tone="secondary" type="button" ' +
     `data-publish-download${busy ? ' disabled' : ''}>Download snapshot (.zip)</button>` +
     '</section>'

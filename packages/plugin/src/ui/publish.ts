@@ -411,7 +411,7 @@ export async function onPublishSources(
     // a snapshot is not a publish.
     state = { ...state, status: 'idle', message: null };
     host.repaint();
-    host.notify('Downloaded. Unzip it into .claude/skills/ in your repository.');
+    host.notify('Downloaded.');
     return;
   }
 
