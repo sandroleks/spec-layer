@@ -468,7 +468,7 @@ describe('installSkill', () => {
   afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
 
   it('creates, then reports unchanged, then updates', () => {
-    expect(installSkill(cwd, 'claude', 'a\n')).toEqual({ path: '.claude/skills/spec-layer/SKILL.md', result: 'created' });
+    expect(installSkill(cwd, 'claude', 'a\n')).toEqual({ path: '.claude/skills/spec-layer/SKILL.md', result: 'created', staleSnapshot: [] });
     expect(existsSync(join(cwd, '.claude/skills/spec-layer/SKILL.md'))).toBe(true);
     expect(installSkill(cwd, 'claude', 'a\n').result).toBe('unchanged');
     expect(installSkill(cwd, 'claude', 'b\n').result).toBe('updated');
@@ -484,6 +484,33 @@ describe('installSkill', () => {
     expect(text).toContain('guide 2');
     expect(text).not.toContain('guide\n');
     expect(text.split(BLOCK_BEGIN)).toHaveLength(2);
+  });
+});
+
+describe('stale snapshot detection', () => {
+  let cwd: string;
+  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-skill-')); });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  it('reports snapshot folders sitting beside a replaced SKILL.md', () => {
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/components'), { recursive: true });
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/tokens'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/SKILL.md'), 'old\n');
+
+    const outcome = installSkill(cwd, 'claude', 'guide\n');
+
+    expect(outcome.staleSnapshot).toEqual([
+      '.claude/skills/spec-layer/components',
+      '.claude/skills/spec-layer/tokens',
+    ]);
+  });
+
+  it('reports nothing when there is no snapshot', () => {
+    expect(installSkill(cwd, 'claude', 'guide\n').staleSnapshot).toEqual([]);
+  });
+
+  it('reports nothing for a host that does not share the directory', () => {
+    expect(installSkill(cwd, 'cursor', 'guide\n').staleSnapshot).toEqual([]);
   });
 });
 

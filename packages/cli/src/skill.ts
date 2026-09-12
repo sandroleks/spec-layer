@@ -676,15 +676,37 @@ export function upsertBlock(existing: string | null, guide: string): string {
   return `${existing}${sep}${block}`;
 }
 
-export type InstallOutcome = { path: string; result: 'created' | 'updated' | 'unchanged' };
+export type InstallOutcome = {
+  path: string;
+  result: 'created' | 'updated' | 'unchanged';
+  /** Directories from a downloaded snapshot left beside the file this install
+   *  replaced. The plugin's download and this command both write
+   *  `.claude/skills/spec-layer/`, so a guide that points at the pulled files
+   *  can end up sitting next to a snapshot's data folders that it never
+   *  mentions. Reported so the command can say so; never deleted here, since
+   *  the CLI does not own files it did not write. */
+  staleSnapshot: string[];
+};
+
+/** The folders a downloaded snapshot writes beside its SKILL.md. */
+const SNAPSHOT_DIRS = ['components', 'tokens'];
+
+function staleSnapshotDirs(cwd: string, target: InstallTarget): string[] {
+  if (target.host !== 'claude') return [];
+  const dir = dirname(target.path);
+  return SNAPSHOT_DIRS
+    .map((name) => `${dir}/${name}`)
+    .filter((rel) => existsSync(join(cwd, rel)));
+}
 
 export function installSkill(cwd: string, host: AgentHost, guide: string): InstallOutcome {
   const target = installTarget(host);
   const abs = join(cwd, target.path);
   const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  const staleSnapshot = staleSnapshotDirs(cwd, target);
   const next = target.mode === 'file' ? renderForHost(host, guide) : upsertBlock(existing, renderForHost(host, guide));
-  if (existing === next) return { path: target.path, result: 'unchanged' };
+  if (existing === next) return { path: target.path, result: 'unchanged', staleSnapshot };
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, next);
-  return { path: target.path, result: existing === null ? 'created' : 'updated' };
+  return { path: target.path, result: existing === null ? 'created' : 'updated', staleSnapshot };
 }

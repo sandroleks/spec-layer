@@ -373,6 +373,20 @@ keeps the old files.
   would previously fail silently into an empty result that renders as a
   confident false statement rather than a visible error.
 
+- **`spec-layer skill --install` reports a downloaded snapshot left beside
+  the guide it just wrote.** The Figma plugin's skill download and this
+  command both write `.claude/skills/spec-layer/`; the download also writes
+  `components/` and `tokens/` beside its own `SKILL.md`. When `--install`
+  replaces that file for the `claude` host, those two folders can be left
+  sitting next to a guide that points at `.speclayer/` instead and never
+  mentions them, so an agent reading the guide has no way to know they are
+  there. The command now checks for them after every install and, when
+  either exists, prints a line naming which ones and saying the guide above
+  supersedes them. It only ever reports: nothing is deleted, because the CLI
+  does not own files it did not write. The check runs only for the `claude`
+  host; the other five hosts write elsewhere and never share the directory,
+  so they always report nothing.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed
