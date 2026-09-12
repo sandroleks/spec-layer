@@ -393,7 +393,7 @@ none of the reasoning above.
 - **The Publish screen can download the library as a self-contained agent
   skill, with no account, no publish, and no pull key.** Every existing route
   to this content asks for one of the three: Copy for AI needs a component
-  open, and a full pull needs a published library, a `spec-layer.json`, and a
+  open, and a full pull needs a published library, a `speclayer.json`, and a
   stored key. The **Download a snapshot** block sits below the setup blocks in
   every state the Publish screen can be in, published or not, and its
   **Download snapshot (.zip)** button is disabled only while a collect is in
