@@ -7,6 +7,16 @@ import {
   type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
+import { downloadBytes } from '../src/ui/download';
+
+// The Node test environment has no Blob/document/URL, so downloadBytes'
+// real DOM contact would throw here. Keep the real zipFiles (it is pure and
+// exercised for real below) and stub only the DOM-touching half; the actual
+// browser behaviour is covered by the manual Figma matrix, not unit tests.
+vi.mock('../src/ui/download', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/ui/download')>();
+  return { ...actual, downloadBytes: vi.fn() };
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures — lifted from copyBrief.test.ts and copyFoundation.test.ts so this
@@ -794,11 +804,45 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'Could not read the library. Nothing was published. the selection has no components',
+      'Could not read the library. Nothing was published. the selection has no components. '
+      + 'Try again, or reopen the plugin if it keeps happening.',
     );
     // A failed source read leaves any already-known library identity intact.
     expect(state.libraryId).toBe('lib_1');
     expect(state.pullKey).toBe('sl_1');
+  });
+
+  /**
+   * `requestPublishSources`'s outer catch (main.ts) is reachable from a
+   * download exactly as from a publish, so this error must never tell a
+   * download user something was "published" -- the same fabrication the
+   * skipped-guard fix (c72fb81) already stopped for the sibling guard above.
+   */
+  it('tells a download user honestly when the source read itself fails, never claiming a publish', () => {
+    publish.onDownloadSkillClick();
+    publish.onPublishSourcesError('the file has no docs');
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Could not read the library. Nothing was downloaded. the file has no docs. '
+      + 'Try again, or reopen the plugin if it keeps happening.',
+    );
+    expect(state.message).not.toContain('published');
+  });
+
+  /**
+   * `message` is a caught error's own text (main.ts forwards `err.message`
+   * verbatim), which is not guaranteed to end in punctuation. Without
+   * normalizing it first, the retry sentence runs on with no boundary, e.g.
+   * "...reading 'name') Try again...". A message that already ends in
+   * punctuation must not get a second, doubled terminator.
+   */
+  it('does not double a terminator when the caught message already ends in one', () => {
+    publish.onPublishSourcesError("Cannot read properties of null (reading 'name').");
+    expect(publish.publishState().message).toBe(
+      "Could not read the library. Nothing was published. Cannot read properties of null (reading 'name'). "
+      + 'Try again, or reopen the plugin if it keeps happening.',
+    );
   });
 
   it('onPublishInfo seeds libraryId/pullKey only while idle', () => {
@@ -973,6 +1017,108 @@ describe('publish controller', () => {
     expect(sent).toEqual([
       { type: 'setPublishedAt', libraryId: LIB, publishedAt: '2026-09-02T00:00:00.000Z' },
     ]);
+  });
+
+  describe('download intent', () => {
+    beforeEach(() => {
+      vi.mocked(downloadBytes).mockClear();
+    });
+
+    it('collects without contacting the proxy', () => {
+      publish.onDownloadSkillClick();
+      expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+      expect(publish.publishState().status).toBe('collecting');
+    });
+
+    it('never uploads, and leaves the library identity and publish record untouched', async () => {
+      const fetcher = vi.fn();
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(publish.publishState().libraryId).toBeNull();
+      expect(publish.publishState().status).toBe('idle');
+      // The exact arguments, not just the call count: a swapped filename/MIME
+      // order would still pass a bare toHaveBeenCalledTimes(1).
+      expect(downloadBytes).toHaveBeenCalledTimes(1);
+      expect(downloadBytes).toHaveBeenCalledWith(
+        expect.any(Uint8Array), 'spec-layer-design-system-skill.zip', 'application/zip',
+      );
+      expect(notified).toEqual(['Downloaded.']);
+      // "A snapshot is not a publish" means these two durable writes to the
+      // file never fire on the download path, not just that the state object
+      // looks right in memory.
+      expect(sent.some((m) => m.type === 'setPublishInfo')).toBe(false);
+      expect(sent.some((m) => m.type === 'setPublishedAt')).toBe(false);
+    });
+
+    it('tells a download user honestly when components could not be read, never claiming a publish', async () => {
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(
+        { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH,
+      );
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'Nothing was downloaded. 1 component could not be read: Button. Fix or remove those docs, then download again.',
+      );
+      expect(state.message).not.toContain('published');
+      expect(downloadBytes).not.toHaveBeenCalled();
+    });
+
+    it('still tells a publish user the publish wording for the same skipped guard', async () => {
+      // The guard is shared and unchanged; only the wording is intent-aware.
+      // This pins the publish side so the download fix cannot regress it.
+      publish.onPublishClick(AUTH);
+      const fetcher = vi.fn();
+      await publish.onPublishSources(
+        { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH, fetcher,
+      );
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'Nothing was published. 1 component could not be read: Button. Fix or remove those docs, then publish again.',
+      );
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it('recovers to an honest error when the download itself throws, instead of wedging in collecting', async () => {
+      vi.mocked(downloadBytes).mockImplementationOnce(() => {
+        throw new Error('Blob is not defined');
+      });
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
+      const state = publish.publishState();
+      expect(state.status).toBe('error');
+      expect(state.message).toBe(
+        'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.',
+      );
+      expect(state.message).not.toContain('—');
+      // Not wedged: a fresh click is accepted rather than guard-blocked on
+      // a status that never left 'collecting'.
+      publish.onDownloadSkillClick();
+      expect(publish.publishState().status).toBe('collecting');
+    });
+
+    it('runs the publish path, not the download branch, for a publish click that follows a completed download', async () => {
+      // This is the regression the shared `intent` flag exists to prevent: if
+      // onPublishClick ever stopped setting intent back to 'publish', a
+      // publish click right after a download would silently re-run the
+      // download branch and never call the fetcher.
+      publish.onDownloadSkillClick();
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
+      expect(publish.publishState().status).toBe('idle');
+
+      publish.onPublishClick(AUTH);
+      const fetcher = vi.fn(async () => jsonResponse(201, {
+        libraryId: 'lib_new', pullKey: 'sl_pull', publishedAt: '2026-09-01T00:00:01.000Z',
+      }));
+      await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const state = publish.publishState();
+      expect(state.status).toBe('done');
+      expect(state.libraryId).toBe('lib_new');
+      expect(state.pullKey).toBe('sl_pull');
+    });
   });
 });
 

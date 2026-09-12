@@ -590,9 +590,12 @@ export function buildSkillGuide(input: SkillInput): string {
   lines.push(
     'The Spec Layer Figma plugin publishes a design system\'s components, variables, and styles as data. The '
     + `${code('spec-layer')} CLI (version ${input.version}) pulls that data into this repository under ${code(outDir + '/')}. `
-    + 'Everything in those files is extracted deterministically from Figma and validated against a published schema; '
-    + 'no model wrote any of it. Treat it as the source of truth for what the design system contains, and treat anything it '
-    + 'does not state as unknown rather than as something to infer.',
+    + 'Everything in those files is extracted deterministically from Figma and validated against a published schema, '
+    + `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
+    + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `
+    + 'and can be model-written even though it looks like an ordinary field. Treat the rest as the source of truth '
+    + 'for what the design system contains, and treat anything it does not state as unknown rather than as something '
+    + 'to infer.',
     '',
   );
   const componentSpecsDir = input.pull?.componentSpecsDir ?? input.config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
@@ -676,15 +679,37 @@ export function upsertBlock(existing: string | null, guide: string): string {
   return `${existing}${sep}${block}`;
 }
 
-export type InstallOutcome = { path: string; result: 'created' | 'updated' | 'unchanged' };
+export type InstallOutcome = {
+  path: string;
+  result: 'created' | 'updated' | 'unchanged';
+  /** Directories from a downloaded snapshot left beside the file this install
+   *  replaced. The plugin's download and this command both write
+   *  `.claude/skills/spec-layer/`, so a guide that points at the pulled files
+   *  can end up sitting next to a snapshot's data folders that it never
+   *  mentions. Reported so the command can say so; never deleted here, since
+   *  the CLI does not own files it did not write. */
+  staleSnapshot: string[];
+};
+
+/** The folders a downloaded snapshot writes beside its SKILL.md. */
+const SNAPSHOT_DIRS = ['components', 'tokens'];
+
+function staleSnapshotDirs(cwd: string, target: InstallTarget): string[] {
+  if (target.host !== 'claude') return [];
+  const dir = dirname(target.path);
+  return SNAPSHOT_DIRS
+    .map((name) => `${dir}/${name}`)
+    .filter((rel) => existsSync(join(cwd, rel)));
+}
 
 export function installSkill(cwd: string, host: AgentHost, guide: string): InstallOutcome {
   const target = installTarget(host);
   const abs = join(cwd, target.path);
   const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  const staleSnapshot = staleSnapshotDirs(cwd, target);
   const next = target.mode === 'file' ? renderForHost(host, guide) : upsertBlock(existing, renderForHost(host, guide));
-  if (existing === next) return { path: target.path, result: 'unchanged' };
+  if (existing === next) return { path: target.path, result: 'unchanged', staleSnapshot };
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, next);
-  return { path: target.path, result: existing === null ? 'created' : 'updated' };
+  return { path: target.path, result: existing === null ? 'created' : 'updated', staleSnapshot };
 }

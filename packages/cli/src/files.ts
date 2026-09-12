@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
-  validateLevel1,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, componentSlugs, dtcgExportFiles, fontRequirements, foundationDtcg,
+  slugify, usageUnits, validateLevel1,
   type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
@@ -13,10 +13,10 @@ import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
 
-export function slugify(name: string): string {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug || 'component';
-}
+// Re-exported so existing callers (selection.ts, commands.ts) keep importing
+// it from here; the rule itself now lives in @spec-layer/extractor so the
+// plugin's downloadable snapshot can share it.
+export { slugify };
 
 /**
  * The first two lines of every component brief the extractor emits. The
@@ -105,33 +105,6 @@ export function readLocalBundle(outDir: string): BundleV1 | null {
 }
 
 /**
- * Slugs for every component in bundle order, deduped the same way regardless of
- * which components a selection writes, so a filtered pull names a file exactly
- * as an unfiltered one would.
- */
-function componentSlugs(bundle: BundleV1): string[] {
-  const usedSlugs = new Set<string>();
-  const nextSuffix = new Map<string, number>();
-  return bundle.components.map((component) => {
-    const base = slugify(component.name);
-    let slug = base;
-    if (usedSlugs.has(slug)) {
-      let n = (nextSuffix.get(base) ?? 1) + 1;
-      slug = `${base}-${n}`;
-      while (usedSlugs.has(slug)) {
-        n += 1;
-        slug = `${base}-${n}`;
-      }
-      nextSuffix.set(base, n);
-    } else {
-      nextSuffix.set(base, 1);
-    }
-    usedSlugs.add(slug);
-    return slug;
-  });
-}
-
-/**
  * The swap below deletes outDir wholesale, so refuse anything that is not a
  * directory of our own: the working directory or one of its parents, or an
  * existing non-empty directory that holds no manifest from a previous pull.
@@ -154,7 +127,7 @@ export function writeBundleFiles(opts: {
   assertReplaceable(opts.outDir, opts.cwd);
   const selection = opts.selection ?? DEFAULT_SELECTION;
   const selected = selectComponents(opts.bundle, selection);
-  const slugs = componentSlugs(opts.bundle);
+  const slugs = componentSlugs(opts.bundle.components.map((c) => c.name));
   const outputs = opts.outputs ?? [];
   const componentSpecsDir = opts.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   // Manifest paths are relative to the working directory and always use `/`.

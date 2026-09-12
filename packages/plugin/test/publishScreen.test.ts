@@ -20,6 +20,7 @@ function state(overrides: Partial<PublishState> = {}): PublishState {
     libraryId: null,
     pullKey: null,
     lastPublishedAt: null,
+    intent: 'publish',
     ...overrides,
   };
 }
@@ -34,6 +35,9 @@ const PUBLISHED = state({
 const FREE: PublishAllowance = {
   kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z',
 };
+
+/** Allowance for tests that do not care about the meter, only the body. */
+const allowance: PublishAllowance = { kind: 'hidden' };
 
 /** The screen a Pro plan sees (allowance hidden). Free has its own block below. */
 const proScroll = (s: PublishState) => publishScrollMarkup(s, { kind: 'hidden' });
@@ -143,7 +147,11 @@ describe('publish screen body', () => {
     expect(markup).toContain('sl-publish-intro');
     expect(markup).toContain('developers and coding agents');
     expect(markup).toContain('The setup commands appear here after the first publish.');
-    expect(markup).not.toContain('sl-publish-block');
+    // The download block is its own sl-publish-block and renders before the
+    // first publish too (a snapshot needs no library), so this only checks
+    // that no *setup* block (developer command, agent prompt) appears yet.
+    expect(markup).not.toContain('<h2>Developer setup</h2>');
+    expect(markup).not.toContain('<h2>AI agent setup</h2>');
     expect(markup).not.toContain('data-publish-rotate');
     expect(markup).not.toContain('data-publish-copy-command');
   });
@@ -306,15 +314,37 @@ describe('publish screen footer', () => {
    * Busy is the present participle plus an ellipsis: the same button working,
    * not a new action. See docs/plugin-voice-and-copy.md, "Footer actions".
    */
-  it('reports work in the label and disables the button while it runs', () => {
+  it('reports work in the label and disables the button while it runs, for a publish', () => {
     for (const status of ['collecting', 'uploading'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = publishFooterMarkup(state({ status, intent: 'publish' }));
       expect(markup).toContain('data-publish disabled');
       expect(markup).toContain('Publishing…');
       expect(markup).not.toContain('Publish library');
     }
     for (const status of ['idle', 'done', 'error'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = publishFooterMarkup(state({ status, intent: 'publish' }));
+      expect(markup).not.toContain('disabled');
+      expect(markup).toContain('Publish library');
+    }
+  });
+
+  /**
+   * The footer's primary is always the Publish button, but it shares its one
+   * collect round trip with the download action, so it also goes busy while a
+   * download runs. It must not claim "Publishing…" then: nothing was
+   * published, only collected for a zip. See ui/publish.ts's `skippedMessage`
+   * for the same intent-aware treatment of this shared collect.
+   */
+  it('reports a download honestly instead of claiming a publish, while the same button is busy', () => {
+    for (const status of ['collecting', 'uploading'] as const) {
+      const markup = publishFooterMarkup(state({ status, intent: 'download' }));
+      expect(markup).toContain('data-publish disabled');
+      expect(markup).toContain('Downloading…');
+      expect(markup).not.toContain('Publishing…');
+      expect(markup).not.toContain('Publish library');
+    }
+    for (const status of ['idle', 'done', 'error'] as const) {
+      const markup = publishFooterMarkup(state({ status, intent: 'download' }));
       expect(markup).not.toContain('disabled');
       expect(markup).toContain('Publish library');
     }
@@ -365,6 +395,64 @@ describe('publish screen footer', () => {
     ].join('');
     expect(all).not.toContain('—');
     expect(all).not.toContain('Pro plan required');
+  });
+});
+
+describe('download block', () => {
+  it('offers the download before the first publish, enabled', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: null, pullKey: null,
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).toContain('data-publish-download');
+    expect(html).toContain('No account needed');
+    // A hardcoded `disabled` would still satisfy the toContain above, so the
+    // negative is the assertion that actually catches a permanently
+    // unclickable button. ui-vnext.ts's click delegation has no test of its
+    // own, so this is currently the only thing that could catch that.
+    expect(html).not.toMatch(/data-publish-download[^>]*disabled/);
+  });
+
+  it('offers it after a publish too, enabled', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: 'lib_1', pullKey: 'key_1',
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).toContain('data-publish-download');
+    expect(html).not.toMatch(/data-publish-download[^>]*disabled/);
+  });
+
+  /**
+   * "Every state" is the claim (downloadBlock's own doc comment), so this
+   * checks every status in ALL_STATES rather than a hand-picked few: the
+   * button is always present, and disabled exactly during collecting or
+   * uploading, never otherwise.
+   */
+  it('shows the download in every state, disabled only while work is in flight', () => {
+    for (const status of ALL_STATES) {
+      const html = publishScrollMarkup(
+        { status, message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'download' },
+        allowance,
+      );
+      expect(html).toContain('data-publish-download');
+      const busy = status === 'collecting' || status === 'uploading';
+      if (busy) {
+        expect(html).toMatch(/data-publish-download[^>]*disabled/);
+      } else {
+        expect(html).not.toMatch(/data-publish-download[^>]*disabled/);
+      }
+    }
+  });
+
+  it('uses no em dash', () => {
+    const html = publishScrollMarkup(
+      { status: 'idle', message: null, libraryId: null, pullKey: null,
+        lastPublishedAt: null, intent: 'publish' },
+      allowance,
+    );
+    expect(html).not.toContain('—');
   });
 });
 
@@ -426,6 +514,18 @@ describe('publish screen styling', () => {
     expect(setupCommand(LIBRARY_ID, PULL_KEY)).toContain('--id');
     expect(rule('.sl-publish-code > code'))
       .toMatch(/font-variant-ligatures:\s*none/);
+  });
+
+  /**
+   * The download block never lands adjacent to another .sl-publish-block (it
+   * follows the intro paragraph or the rotate row, never a sibling block), so
+   * the shared "+ .sl-publish-block" rule never fires for it and it needs its
+   * own top margin, the same size as the space between the other groups. Its
+   * own note and button would otherwise sit flush against each other too.
+   */
+  it('spaces the download block from its neighbours and its own note from its button', () => {
+    expect(rule('.sl-publish-download')).toMatch(/margin-top:\s*var\(--sl-space-16\)/);
+    expect(rule('.sl-publish-note + .sl-button')).toMatch(/margin-top:\s*var\(--sl-space-8\)/);
   });
 
   /** Rules for markup the screen no longer renders leave with it. */
