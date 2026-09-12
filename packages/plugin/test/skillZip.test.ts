@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { dtcgExportFiles, foundationDtcg, usageUnits, type LibraryBundleV1, type SerializedFoundation } from '@spec-layer/extractor';
+import {
+  dtcgExportFiles, foundationDtcg, usageUnits,
+  type LibraryBundleV1, type SerializedFoundation,
+} from '@spec-layer/extractor';
 import { renderSnapshotSkill, buildSkillFiles, skillZipFilename, type SnapshotInventory } from '../src/ui/skillZip';
 import { buildPublishBundle, type PublishBundleV1, type PublishSources } from '../src/ui/publish';
 import type { PublishComponentSource } from '../src/messages';
@@ -101,6 +104,27 @@ describe('renderSnapshotSkill', () => {
     expect(md).not.toContain('tokens/resolver.json');
     expect(md).not.toContain('  ');
     expect(md).not.toContain('—');
+  });
+
+  it('names fonts.json by path when a foundation was read and font requirements exist', () => {
+    const md = renderSnapshotSkill(FULL);
+    expect(md).toContain('## Fonts');
+    expect(md).toContain('fonts.json');
+    expect(md).toContain('Inter: 400, 700');
+  });
+
+  it('still runs the Fonts section and names fonts.json, honestly empty, when no style resolved a family', () => {
+    const md = renderSnapshotSkill({ ...FULL, fonts: [] });
+    expect(md).toContain('## Fonts');
+    expect(md).toContain('fonts.json');
+    expect(md).toContain('present and empty');
+    expect(md).not.toContain('need these families');
+  });
+
+  it('omits the Fonts section entirely when the foundation was not read, even though fonts is []', () => {
+    const md = renderSnapshotSkill({ ...FULL, tokens: null, fonts: [] });
+    expect(md).not.toContain('## Fonts');
+    expect(md).not.toContain('fonts.json');
   });
 });
 
@@ -240,13 +264,57 @@ describe('buildSkillFiles with a foundation', () => {
     };
   }
 
-  it('writes tokens/ files and omits fonts.json when there are no typography styles', () => {
+  /**
+   * A node with a length-property binding to an UNSCOPED number token, plus a
+   * matching Foundation variable that states no scope. This is the shape
+   * `usageUnits` actually derives a unit from (Rule B in usageUnits.ts): a
+   * component binds the token to `itemSpacing` (v5 property `gap`), and the
+   * token's own scopes are empty, so nothing but that binding says it is a
+   * length. Mirrors the fixture pattern in copyBrief.test.ts's
+   * "embeds only the exact bound Foundation dependency" test.
+   */
+  function componentNodeWithGapBinding(id: string, name: string, key: string) {
+    return {
+      id, name, type: 'COMPONENT', visible: true, key,
+      bindings: [],
+      children: [{
+        id: `${id}-child`, name: 'Container', type: 'FRAME', visible: true, children: [],
+        bindings: [{
+          property: 'itemSpacing', id: 'V:gap-unscoped', name: 'space/gap-unscoped',
+          kind: 'variable', remote: false, collectionId: 'C1',
+        }],
+      }],
+    } as never;
+  }
+
+  /** Same Spacing collection as FOUNDATION_NO_FONTS, but the gap variable
+   *  carries no scope at all, so its unit is not stated by the file itself --
+   *  only by how a component uses it. */
+  const FOUNDATION_UNSCOPED_GAP: SerializedFoundation = {
+    ...FOUNDATION_NO_FONTS,
+    collections: [{
+      id: 'C1', name: 'Spacing', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Default' }],
+      variables: [{
+        id: 'V:gap-unscoped', name: 'space/gap-unscoped', resolvedType: 'FLOAT', description: '',
+        codeSyntax: {}, scopes: [], valuesByMode: { m1: 8 },
+      }],
+    }],
+  };
+
+  it('writes tokens/ files and an empty (but present) fonts.json when there are no typography styles', () => {
     const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_NO_FONTS), GENERATED_AT);
     const files = buildSkillFiles(bundle, GENERATED_AT);
     const paths = Object.keys(files);
     expect(paths.some((p) => p.startsWith('spec-layer/tokens/'))).toBe(true);
-    expect(paths).not.toContain('spec-layer/fonts.json');
+    // fonts.json is written whenever a foundation was read, empty or not --
+    // matching the CLI's own pull -- so it is present here, and empty.
+    expect(paths).toContain('spec-layer/fonts.json');
+    expect(JSON.parse(files['spec-layer/fonts.json'])).toEqual([]);
 
+    // The "names every file it carries" guard, run for real against a set
+    // that includes fonts.json: SKILL.md must name every path, fonts.json
+    // included, or this loop fails on that one path.
     const md = files['spec-layer/SKILL.md'];
     for (const path of paths) {
       if (path === 'spec-layer/SKILL.md') continue;
@@ -254,31 +322,69 @@ describe('buildSkillFiles with a foundation', () => {
     }
   });
 
-  it('writes fonts.json, whose content is echoed in the SKILL.md Fonts section, only when a style resolves a family', () => {
+  it('writes fonts.json with real content, still named and guarded, when a style resolves a family', () => {
     const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_WITH_FONTS), GENERATED_AT);
     const files = buildSkillFiles(bundle, GENERATED_AT);
+    const paths = Object.keys(files);
     expect(files['spec-layer/fonts.json']).toBeDefined();
     const fonts = JSON.parse(files['spec-layer/fonts.json']) as Array<{ family: string; weights: number[] }>;
     expect(fonts.some((f) => f.family === 'Inter')).toBe(true);
-    // renderSnapshotSkill's Fonts section inlines the family/weight data
-    // directly rather than citing the fonts.json path (unlike Components and
-    // Token files, which do list paths), so the honest check here is that the
-    // same family the file carries also appears in the guide's prose.
-    expect(files['spec-layer/SKILL.md']).toContain('Inter');
+
+    // The full "names every file it carries" guard again, non-vacuously this
+    // time: fonts.json is in `paths` and must appear in SKILL.md by path, not
+    // merely by its content (family name) appearing somewhere incidentally.
+    const md = files['spec-layer/SKILL.md'];
+    expect(paths).toContain('spec-layer/fonts.json');
+    for (const path of paths) {
+      if (path === 'spec-layer/SKILL.md') continue;
+      expect(md).toContain(path.replace('spec-layer/', ''));
+    }
   });
 
-  it('produces tokens/ files byte-identical to calling the CLI pull pipeline directly', () => {
-    const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_NO_FONTS), GENERATED_AT);
+  it('produces tokens/ files byte-identical to calling the CLI pull pipeline directly, including derived units', () => {
+    const sources: PublishSources = {
+      foundation: FOUNDATION_UNSCOPED_GAP,
+      groupDescriptions: {},
+      components: [{ docId: 'doc1', name: 'Button', node: componentNodeWithGapBinding('N1', 'Button', 'K1'), prose: null }],
+      fileKey: 'F1',
+      fileName: 'Acme DS',
+    };
+    const bundle = buildPublishBundle(sources, GENERATED_AT);
     const files = buildSkillFiles(bundle, GENERATED_AT);
     const artifact = bundle.foundation!.artifact;
+
+    // Prove usageUnits actually found something for this fixture, so the
+    // byte-identity check below is not comparing two empty passes.
+    const derivedUnits = usageUnits(bundle as unknown as LibraryBundleV1);
+    expect(derivedUnits.size).toBeGreaterThan(0);
+
     // Mirrors packages/cli/src/files.ts's own call, verbatim: foundationDtcg
     // with the usageUnits third argument, then dtcgExportFiles on the result.
-    const expected = dtcgExportFiles(
-      foundationDtcg(artifact, {}, usageUnits(bundle as unknown as LibraryBundleV1)),
-    );
+    const expected = dtcgExportFiles(foundationDtcg(artifact, {}, derivedUnits));
     expect(Object.keys(expected).length).toBeGreaterThan(0);
     for (const [name, text] of Object.entries(expected)) {
       expect(files[`spec-layer/tokens/${name}`]).toBe(text);
     }
+
+    // The observable consequence of usageUnits actually being wired in: the
+    // report names the derived unit for this token. Passing an empty map (or
+    // omitting the argument) would leave this token's unit unstated, so a
+    // regression that drops usageUnits from buildSkillFiles fails right here.
+    const report = JSON.parse(files['spec-layer/tokens/report.json']) as
+      Array<{ code: string; details?: { id?: string; unit?: string } }>;
+    const derived = report.filter((d) => d.code === 'unit_derived_from_usage');
+    expect(derived).toContainEqual(expect.objectContaining({
+      code: 'unit_derived_from_usage',
+      details: expect.objectContaining({ id: 'V:gap-unscoped', unit: 'px' }),
+    }));
+  });
+
+  it('sanity check: an artifact with NO usage evidence (bindings: []) derives nothing', () => {
+    // Confirms the fixture above is doing real work: the ordinary no-binding
+    // shape used elsewhere in this file produces an empty usageUnits map, so
+    // a bundle that DOES produce evidence is not an artifact of some other
+    // default.
+    const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_UNSCOPED_GAP), GENERATED_AT);
+    expect(usageUnits(bundle as unknown as LibraryBundleV1).size).toBe(0);
   });
 });

@@ -98,10 +98,22 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
     for (const f of inv.tokens.files) lines.push(`- \`${f}\``);
     lines.push('');
   }
-  if (inv.fonts.length > 0) {
+  if (inv.tokens) {
+    // `fonts.json` is written whenever a foundation was read, empty or not
+    // (the CLI's pull does the same), so this section always runs alongside
+    // it and always names the file by path -- the one payload file that
+    // otherwise had no path printed anywhere in the guide.
     lines.push('## Fonts', '');
-    lines.push('This library\'s typography styles need these families and weights:', '');
-    for (const f of inv.fonts) lines.push(`- ${f.family}: ${f.weights.join(', ')}`);
+    if (inv.fonts.length > 0) {
+      lines.push(
+        'This library\'s typography styles need these families and weights, listed in `fonts.json`:', '',
+      );
+      for (const f of inv.fonts) lines.push(`- ${f.family}: ${f.weights.join(', ')}`);
+    } else {
+      lines.push(
+        'No typography style in this library resolved to a font family, so `fonts.json` is present and empty.',
+      );
+    }
     lines.push('');
   }
 
@@ -156,11 +168,11 @@ export function buildSkillFiles(
     }
     tokens = { files: written };
     fonts = fontRequirements(artifact);
-    // SKILL.md names fonts.json only through its Fonts section, which it
-    // omits when there are no fonts. Writing the file unconditionally would
-    // carry a file the guide cannot honestly describe, so it is written only
-    // when there is something to say about it.
-    if (fonts.length > 0) files[`${ROOT}/fonts.json`] = `${JSON.stringify(fonts, null, 2)}\n`;
+    // Written whenever a foundation was read, empty list included -- the same
+    // as the CLI's pull (packages/cli/src/files.ts writes fonts.json whenever
+    // the Foundation is written). renderSnapshotSkill's Fonts section always
+    // runs alongside it and always names the path, honestly, either way.
+    files[`${ROOT}/fonts.json`] = `${JSON.stringify(fonts, null, 2)}\n`;
   }
 
   files[`${ROOT}/SKILL.md`] = renderSnapshotSkill({
