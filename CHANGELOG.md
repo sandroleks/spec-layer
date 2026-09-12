@@ -6,13 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Everything below ships in CLI 0.9.0. The version bump is load-bearing rather
-than ceremonial: `pull` now compares `manifest.cliVersion` when deciding
-whether a cached pull is current, and no earlier release writes that field, so
-a repository on 0.8.2 or older re-projects on its first pull with 0.9.0 and
-picks all of this up. A release that changes what a pull writes has to bump the
-CLI, or a repository with a current pull is told it is already up to date and
-keeps the old files.
+This section now spans two surfaces. The CLI portion ships as 0.9.0, and the
+version bump is load-bearing rather than ceremonial: `pull` now compares
+`manifest.cliVersion` when deciding whether a cached pull is current, and no
+earlier release writes that field, so a repository on 0.8.2 or older
+re-projects on its first pull with 0.9.0 and picks all of this up. A release
+that changes what a pull writes has to bump the CLI, or a repository with a
+current pull is told it is already up to date and keeps the old files. The
+plugin portion adds a download feature to the Publish screen and ships in the
+plugin's own release, on its own schedule; it needs no CLI version and moves
+none of the reasoning above.
 
 ### Fixed
 
@@ -386,6 +389,40 @@ keeps the old files.
   does not own files it did not write. The check runs only for the `claude`
   host; the other five hosts write elsewhere and never share the directory,
   so they always report nothing.
+
+- **The Publish screen can download the library as a self-contained agent
+  skill, with no account, no publish, and no pull key.** Every existing route
+  to this content asks for one of the three: Copy for AI needs a component
+  open, and a full pull needs a published library, a `spec-layer.json`, and a
+  stored key. The **Download a snapshot** block sits below the setup blocks in
+  every state the Publish screen can be in, published or not, and its
+  **Download snapshot (.zip)** button is disabled only while a collect is in
+  flight. Pressing it runs the same source collect a publish runs and, instead
+  of contacting the proxy, zips the result locally: `SKILL.md`, every
+  component's YAML brief under `components/`, and, when the file has a
+  Foundation, the DTCG token files under `tokens/` plus `fonts.json`. The zip
+  is rooted at `spec-layer/`, so unzipping it into `.claude/skills/` in a
+  repository lands the guide at `.claude/skills/spec-layer/SKILL.md`.
+
+  Every byte comes from the same extraction code an account-holding pull
+  already runs, not a second interpretation of v5. The component briefs are
+  the same YAML a component's own `ai` field already carries; the token files
+  go through `foundationDtcg` and the same `usageUnits` pass `spec-layer pull`
+  runs, byte-identical to what that pull writes; and the filename slugs come
+  from `componentSlugs`, moved out of the CLI so a downloaded brief and a
+  pulled one name the same component the same file. `fonts.json` is written
+  whenever a Foundation was read, an empty array included, matching the CLI's
+  own pull, and `SKILL.md` names it either way rather than describing tokens
+  or fonts that are not there. A file with no Foundation read carries no
+  `tokens/` folder at all, and the guide says so instead of staying silent
+  about it.
+
+  `SKILL.md` states plainly that it is a snapshot: it does not update,
+  downloading again is the only way to refresh it, and a repository that
+  already runs the `spec-layer` CLI should let that CLI-written guide replace
+  this one and delete the `components/` and `tokens/` folders that came with
+  it. The CLI-side half of that pairing is the `skill --install` entry above:
+  it is what actually notices the collision and reports it.
 
 ## [5.1.0] - 2026-09-10
 

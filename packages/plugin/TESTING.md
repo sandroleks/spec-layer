@@ -23,9 +23,10 @@ covers something unit tests cannot reach, roughly highest risk first:
    copies a DTCG resolver document.
 3. **Doc frame content**, where most rendering regressions show up.
 4. **Library**, including component and Foundation rows and scoped copies.
-5. **AI-writing allowance** and **License**, which need a real proxy round
+5. **Download skill**, which is a blob save the unit suite cannot reach.
+6. **AI-writing allowance** and **License**, which need a real proxy round
    trip and cannot be faked locally.
-6. **Settings**, global search, keyboard, and visual checks.
+7. **Settings**, global search, keyboard, and visual checks.
 
 Two things worth knowing before you start:
 
@@ -429,6 +430,29 @@ action. The rows below start there.
       and the meter appears; Rotate key works.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
+
+## Download skill
+
+The download is a blob save from the plugin iframe. Nothing in the unit suite
+can reach it, and it is the one step that decides whether the feature works at
+all.
+
+1. Open **Publish** from the Library footer. The **Download a snapshot** block
+   is present whether or not this file has ever been published.
+2. Press **Download snapshot (.zip)**. Confirm a file saves, named after the
+   Figma file, and that the button is disabled while the collect runs.
+3. Repeat in the browser version of Figma as well as the desktop app. A
+   sandboxed iframe can refuse a download in one and allow it in the other.
+4. Unzip into `.claude/skills/` in a scratch repository. Confirm
+   `spec-layer/SKILL.md` sits beside `components/` and `tokens/`, and that
+   every file `SKILL.md` names exists.
+5. Open the repository with a coding agent. Confirm it finds the skill and
+   reads the right component file when asked to change that component.
+6. On a file with no Foundation read, confirm the zip carries no `tokens/`
+   folder and that `SKILL.md` says the foundation was not read, rather than
+   describing tokens that are not there.
+7. Run `npx spec-layer skill --install` in that same repository. Confirm it
+   prints the line naming the now stale `components` and `tokens` folders.
 
 ## Settings, search, keyboard, and visuals
 
