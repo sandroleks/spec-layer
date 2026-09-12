@@ -49,6 +49,39 @@ describe('renderSnapshotSkill', () => {
     expect(renderSnapshotSkill(FULL)).toContain('cannot see');
   });
 
+  /**
+   * A component brief can carry a `guidelines` block of model-written prose
+   * (see brief.ts), marked `origin: generated`. A foundation export's group
+   * descriptions land in the DTCG projection as a bare `$description` on a
+   * token group (dtcg.ts's `annotateGroups`), with NO marker at all -- so
+   * "no model wrote any of it" is false, and so is any rewording that claims
+   * the `guidelines` block is the ONLY place model prose can appear: that
+   * would leave the unmarked `$description` case undocumented, which is the
+   * one an agent has no way to detect on its own. The guide must name both.
+   */
+  it('names the real provenance split instead of claiming no model wrote anything', () => {
+    const md = renderSnapshotSkill(FULL);
+    expect(md).toContain('extracted deterministically and validated against a published schema');
+    expect(md).toContain('`guidelines`');
+    expect(md).toContain('`origin: generated`');
+    expect(md).toContain('`$description`');
+    expect(md).not.toContain('no model wrote any of it');
+    // Must not swap one fabrication for another: an exhaustive claim that a
+    // `guidelines` block is the ONLY place model prose can appear would be
+    // just as false as the sentence it replaced, since it ignores the
+    // unmarked token-group `$description` case asserted above.
+    expect(md).not.toContain('only model-written content is anything under a `guidelines` block');
+  });
+
+  it('states the model-written exception even when no AI prose was actually written', () => {
+    // The claim is about what the folder CAN contain, not what this
+    // particular snapshot happens to carry, so it must still hold for the
+    // no-prose, no-group-description case (FULL carries neither).
+    const md = renderSnapshotSkill(FULL);
+    expect(md).toContain('can carry model-written prose');
+    expect(md).not.toContain('no model wrote any of it');
+  });
+
   it('uses no em dash anywhere', () => {
     expect(renderSnapshotSkill(FULL)).not.toContain('—');
   });
@@ -301,6 +334,47 @@ describe('buildSkillFiles with a foundation', () => {
       }],
     }],
   };
+
+  /**
+   * The gap this test closes: neither prior test built a bundle that actually
+   * carries AI-written prose, so nothing checked SKILL.md's provenance
+   * sentence against a folder that really contains any. This one sets
+   * `groupDescriptions`, exactly like a designer's AI group description would
+   * flow through `generatedGuidelines` -> the artifact's `guidelines` field ->
+   * `annotateGroups` in dtcg.ts, and checks BOTH ends: that the resulting
+   * tokens/*.json file really carries a bare, unmarked `$description` on a
+   * token GROUP (not a leaf -- `!('$value' in node)` is exactly what
+   * `annotateGroups` checks), and that SKILL.md's sentence names that case
+   * rather than only the component `guidelines` block.
+   */
+  it('carries an unmarked, model-written $description on a token group, and SKILL.md says so', () => {
+    const sources: PublishSources = {
+      ...sourcesWithFoundation(FOUNDATION_NO_FONTS),
+      groupDescriptions: { Color: { color: 'AI sentence about the brand group.' } },
+    };
+    const bundle = buildPublishBundle(sources, GENERATED_AT);
+    const files = buildSkillFiles(bundle, GENERATED_AT);
+
+    const tokenFile = Object.entries(files).find(
+      ([path, text]) => path.startsWith('spec-layer/tokens/') && text.includes('"$description"'),
+    );
+    expect(tokenFile).toBeDefined();
+    const [, text] = tokenFile!;
+    const parsed = JSON.parse(text) as { Color: { color: Record<string, unknown> } };
+    expect(parsed.Color.color.$description).toBe('AI sentence about the brand group.');
+    // The defect C1 was raised over: nothing marks this as generated. It is
+    // byte-indistinguishable from a designer-written group description.
+    expect(parsed.Color.color).not.toHaveProperty('origin');
+    expect(text).not.toContain('origin');
+
+    // SKILL.md must name this exact case, not only the component brief's
+    // marked `guidelines` block.
+    const md = files['spec-layer/SKILL.md'];
+    expect(md).toContain('`$description`');
+    expect(md).toContain('carries no marker');
+    expect(md).not.toContain('no model wrote any of it');
+    expect(md).not.toContain('only model-written content is anything under a `guidelines` block');
+  });
 
   it('writes tokens/ files and an empty (but present) fonts.json when there are no typography styles', () => {
     const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_NO_FONTS), GENERATED_AT);

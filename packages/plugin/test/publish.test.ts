@@ -804,11 +804,45 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'Could not read the library. Nothing was published. the selection has no components',
+      'Could not read the library. Nothing was published. the selection has no components. '
+      + 'Try again, or reopen the plugin if it keeps happening.',
     );
     // A failed source read leaves any already-known library identity intact.
     expect(state.libraryId).toBe('lib_1');
     expect(state.pullKey).toBe('sl_1');
+  });
+
+  /**
+   * `requestPublishSources`'s outer catch (main.ts) is reachable from a
+   * download exactly as from a publish, so this error must never tell a
+   * download user something was "published" -- the same fabrication the
+   * skipped-guard fix (c72fb81) already stopped for the sibling guard above.
+   */
+  it('tells a download user honestly when the source read itself fails, never claiming a publish', () => {
+    publish.onDownloadSkillClick();
+    publish.onPublishSourcesError('the file has no docs');
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Could not read the library. Nothing was downloaded. the file has no docs. '
+      + 'Try again, or reopen the plugin if it keeps happening.',
+    );
+    expect(state.message).not.toContain('published');
+  });
+
+  /**
+   * `message` is a caught error's own text (main.ts forwards `err.message`
+   * verbatim), which is not guaranteed to end in punctuation. Without
+   * normalizing it first, the retry sentence runs on with no boundary, e.g.
+   * "...reading 'name') Try again...". A message that already ends in
+   * punctuation must not get a second, doubled terminator.
+   */
+  it('does not double a terminator when the caught message already ends in one', () => {
+    publish.onPublishSourcesError("Cannot read properties of null (reading 'name').");
+    expect(publish.publishState().message).toBe(
+      "Could not read the library. Nothing was published. Cannot read properties of null (reading 'name'). "
+      + 'Try again, or reopen the plugin if it keeps happening.',
+    );
   });
 
   it('onPublishInfo seeds libraryId/pullKey only while idle', () => {

@@ -125,6 +125,39 @@ describe('buildSkillGuide', () => {
     expect(guide).not.toContain('### Token collections');
   });
 
+  /**
+   * A pulled component's OR a pulled foundation's `guidelines` block is
+   * marked `origin: generated`, but a pull's group descriptions also land in
+   * the DTCG token files (via files.ts -> foundationDtcg -> dtcg.ts's
+   * `annotateGroups`) as a bare `$description` on a token group, with no
+   * marker at all. A rewording that names only a COMPONENT's `guidelines`
+   * block, or that pins the unmarked case to `tokens/` specifically, is still
+   * false: `bundle.json` (files.ts ~line 167, the raw published bundle) also
+   * carries a foundation's own `guidelines` block and, via `foundation.ai`
+   * (the inlined `foundationDtcgDocument`), the same unmarked group
+   * `$description`, outside `tokens/` entirely. So the guide must name both
+   * content shapes without tying the unmarked one to a single directory.
+   * Kept consistent with the same claim in the plugin's downloadable skill
+   * (packages/plugin/src/ui/skillZip.ts), which has no `bundle.json` and so
+   * keeps its own path-scoped wording unchanged.
+   */
+  it('names the real provenance split instead of claiming no model wrote anything', () => {
+    const guide = buildSkillGuide(input());
+    expect(guide).toContain('extracted deterministically from Figma and validated against a published schema');
+    expect(guide).toContain('`guidelines`');
+    expect(guide).toContain('`origin: generated`');
+    expect(guide).toContain('`$description`');
+    expect(guide).not.toContain('no model wrote any of it');
+    expect(guide).not.toContain('only model-written content is anything under a `guidelines` block');
+    // The exhaustive-scope regressions this guards against: naming only a
+    // component's guidelines block (bundle.json also carries the
+    // foundation's own), and pinning the $description case to tokens/ alone
+    // (bundle.json carries an unmarked one too, outside tokens/).
+    expect(guide).toContain("a component's or the foundation's `guidelines`");
+    expect(guide).not.toContain('`$description` in `.speclayer/tokens/`');
+    expect(guide).not.toMatch(/\$description`\s+in\s+`[^`]*tokens\//);
+  });
+
   it('lists the components, collections, modes, and token files from the pull', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
     expect(guide).toContain('- Button: `component-specs/button.yaml`');

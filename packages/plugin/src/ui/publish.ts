@@ -484,11 +484,28 @@ export async function onPublishSources(
   host.repaint();
 }
 
+/**
+ * `requestPublishSources`' outer catch (main.ts) reaches this on either
+ * intent, exactly like the `skipped` guard above, so it needs the same
+ * intent-aware treatment `skippedMessage` got: a download that never read a
+ * usable source never touched the proxy, and telling that user something was
+ * "published" would be a fabricated claim about their own action.
+ */
+function sourcesErrorMessage(message: string, intent: 'publish' | 'download'): string {
+  const outcome = intent === 'download' ? 'downloaded' : 'published';
+  // `message` is a caught error's own text (main.ts forwards `err.message`
+  // verbatim), which has no guaranteed terminal punctuation, so the retry
+  // sentence after it would otherwise run on with no boundary between them.
+  const detail = /[.!?]$/.test(message) ? message : `${message}.`;
+  return `Could not read the library. Nothing was ${outcome}. ${detail} `
+    + 'Try again, or reopen the plugin if it keeps happening.';
+}
+
 export function onPublishSourcesError(message: string): void {
   state = {
     ...state,
     status: 'error',
-    message: `Could not read the library. Nothing was published. ${message}`,
+    message: sourcesErrorMessage(message, state.intent),
   };
   host.repaint();
 }

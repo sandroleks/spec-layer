@@ -590,9 +590,12 @@ export function buildSkillGuide(input: SkillInput): string {
   lines.push(
     'The Spec Layer Figma plugin publishes a design system\'s components, variables, and styles as data. The '
     + `${code('spec-layer')} CLI (version ${input.version}) pulls that data into this repository under ${code(outDir + '/')}. `
-    + 'Everything in those files is extracted deterministically from Figma and validated against a published schema; '
-    + 'no model wrote any of it. Treat it as the source of truth for what the design system contains, and treat anything it '
-    + 'does not state as unknown rather than as something to infer.',
+    + 'Everything in those files is extracted deterministically from Figma and validated against a published schema, '
+    + `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
+    + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `
+    + 'and can be model-written even though it looks like an ordinary field. Treat the rest as the source of truth '
+    + 'for what the design system contains, and treat anything it does not state as unknown rather than as something '
+    + 'to infer.',
     '',
   );
   const componentSpecsDir = input.pull?.componentSpecsDir ?? input.config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;

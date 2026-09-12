@@ -408,14 +408,17 @@ none of the reasoning above.
   already runs, not a second interpretation of v5. The component briefs are
   the same YAML a component's own `ai` field already carries; the token files
   go through `foundationDtcg` and the same `usageUnits` pass `spec-layer pull`
-  runs, byte-identical to what that pull writes; and the filename slugs come
-  from `componentSlugs`, moved out of the CLI so a downloaded brief and a
-  pulled one name the same component the same file. `fonts.json` is written
-  whenever a Foundation was read, an empty array included, matching the CLI's
-  own pull, and `SKILL.md` names it either way rather than describing tokens
-  or fonts that are not there. A file with no Foundation read carries no
-  `tokens/` folder at all, and the guide says so instead of staying silent
-  about it.
+  runs, byte-identical to what that pull writes for a repository on default
+  `dtcg` options. A `speclayer.json` with a `dtcg.values` or `dtcg.units`
+  override re-projects a pull's token files differently, and a downloaded
+  snapshot has no `speclayer.json` to read, so the two diverge whenever such
+  an override is configured. The filename slugs come from `componentSlugs`,
+  moved out of the CLI so a downloaded brief and a pulled one name the same
+  component the same file. `fonts.json` is written whenever a Foundation was
+  read, an empty array included, matching the CLI's own pull, and `SKILL.md`
+  names it either way rather than describing tokens or fonts that are not
+  there. A file with no Foundation read carries no `tokens/` folder at all,
+  and the guide says so instead of staying silent about it.
 
   `SKILL.md` states plainly that it is a snapshot: it does not update,
   downloading again is the only way to refresh it, and a repository that

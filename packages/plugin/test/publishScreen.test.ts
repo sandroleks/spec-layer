@@ -314,15 +314,37 @@ describe('publish screen footer', () => {
    * Busy is the present participle plus an ellipsis: the same button working,
    * not a new action. See docs/plugin-voice-and-copy.md, "Footer actions".
    */
-  it('reports work in the label and disables the button while it runs', () => {
+  it('reports work in the label and disables the button while it runs, for a publish', () => {
     for (const status of ['collecting', 'uploading'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = publishFooterMarkup(state({ status, intent: 'publish' }));
       expect(markup).toContain('data-publish disabled');
       expect(markup).toContain('Publishing…');
       expect(markup).not.toContain('Publish library');
     }
     for (const status of ['idle', 'done', 'error'] as const) {
-      const markup = publishFooterMarkup(state({ status }));
+      const markup = publishFooterMarkup(state({ status, intent: 'publish' }));
+      expect(markup).not.toContain('disabled');
+      expect(markup).toContain('Publish library');
+    }
+  });
+
+  /**
+   * The footer's primary is always the Publish button, but it shares its one
+   * collect round trip with the download action, so it also goes busy while a
+   * download runs. It must not claim "Publishing…" then: nothing was
+   * published, only collected for a zip. See ui/publish.ts's `skippedMessage`
+   * for the same intent-aware treatment of this shared collect.
+   */
+  it('reports a download honestly instead of claiming a publish, while the same button is busy', () => {
+    for (const status of ['collecting', 'uploading'] as const) {
+      const markup = publishFooterMarkup(state({ status, intent: 'download' }));
+      expect(markup).toContain('data-publish disabled');
+      expect(markup).toContain('Downloading…');
+      expect(markup).not.toContain('Publishing…');
+      expect(markup).not.toContain('Publish library');
+    }
+    for (const status of ['idle', 'done', 'error'] as const) {
+      const markup = publishFooterMarkup(state({ status, intent: 'download' }));
       expect(markup).not.toContain('disabled');
       expect(markup).toContain('Publish library');
     }

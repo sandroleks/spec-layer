@@ -46,9 +46,12 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
   const version = inv.pluginVersion ? ` by plugin version ${inv.pluginVersion}` : '';
   lines.push(
     `This folder holds a design system extracted from ${source} on ${day(inv.generatedAt)}${version}. `
-    + 'Everything in it is extracted deterministically and validated against a published schema; no model '
-    + 'wrote any of it. Treat it as the source of truth for what the design system contains, and treat '
-    + 'anything it does not state as unknown rather than as something to infer.',
+    + 'Everything in it is extracted deterministically and validated against a published schema, with two '
+    + "exceptions that can carry model-written prose: a component's `guidelines` block, marked `origin: "
+    + 'generated`, and a token group\'s `$description` in `tokens/`, which carries no marker and can be '
+    + 'model-written even though it looks like an ordinary field. Treat the rest as the source of truth for '
+    + 'what the design system contains, and treat anything it does not state as unknown rather than as '
+    + 'something to infer.',
     '',
   );
 
