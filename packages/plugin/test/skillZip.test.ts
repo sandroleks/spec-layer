@@ -58,4 +58,45 @@ describe('renderSnapshotSkill', () => {
     expect(md).not.toContain('components/');
     expect(md).toContain('No component documentation');
   });
+
+  it('names no file when fileName is null', () => {
+    const md = renderSnapshotSkill({ ...FULL, fileName: null });
+    expect(md).toContain(
+      'This folder holds a design system extracted from a Figma file on 2026-09-11 by plugin version 5.1.0. ',
+    );
+    expect(md).not.toContain('Acme DS');
+    expect(md).not.toContain('—');
+  });
+
+  it('omits the plugin version clause when pluginVersion is null, with no doubled space', () => {
+    const md = renderSnapshotSkill({ ...FULL, pluginVersion: null });
+    expect(md).toContain(
+      'This folder holds a design system extracted from the Figma file "Acme DS" on 2026-09-11. ',
+    );
+    expect(md).not.toContain('plugin version');
+    expect(md).not.toContain('  ');
+    expect(md).not.toContain('—');
+  });
+
+  it('renders a coherent document for the most degenerate snapshot', () => {
+    const md = renderSnapshotSkill({
+      ...FULL,
+      fileName: null,
+      pluginVersion: null,
+      components: [],
+      tokens: null,
+      fonts: [],
+    });
+    expect(md).toContain(
+      'This folder holds a design system extracted from a Figma file on 2026-09-11. ',
+    );
+    expect(md).not.toContain('Acme DS');
+    expect(md).not.toContain('plugin version');
+    expect(md).toContain('No component documentation was included in this download.');
+    expect(md).toContain('foundation was not read');
+    expect(md).not.toContain('components/');
+    expect(md).not.toContain('tokens/resolver.json');
+    expect(md).not.toContain('  ');
+    expect(md).not.toContain('—');
+  });
 });
