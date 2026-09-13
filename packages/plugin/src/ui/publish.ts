@@ -10,14 +10,16 @@ import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
+  compareBump, isSemver, specContentHash,
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
+  type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { buildSkillFiles, skillZipFilename } from './skillZip';
 import { downloadBytes, zipFiles } from './download';
-import type { MainToUi, PublishComponentSource, UiToMain } from '../messages';
+import type { MainToUi, PublishComponentSource, PublishStampComponent, UiToMain } from '../messages';
 
 export interface PublishSources {
   foundation: SerializedFoundation | null;
@@ -37,7 +39,29 @@ export interface PublishBundleV1 {
   components: Array<{ name: string; ai: string; artifact: unknown }>;
 }
 
-export function buildPublishBundle(sources: PublishSources, generatedAt: string): PublishBundleV1 {
+export interface PublishStamps {
+  components: PublishStampComponent[];
+  /** The Foundation dump the bundle was built from, or null when it carried
+   *  none. Sent verbatim on `stampPublished` so foundation docs are stamped
+   *  with the hash of exactly the published content, without a second live
+   *  read of the file. */
+  foundation: SerializedFoundation | null;
+}
+
+/** The proxy's dry-run answer. See packages/proxy/README.md, "Dry run". */
+export interface DryRunResult {
+  currentVersion: string | null;
+  unchanged: boolean;
+  minimumBump: Bump | null;
+  proposedVersion: string | null;
+  counts: { major: number; minor: number; patch: number };
+  changes: LibraryChange[];
+  changesTruncated: boolean;
+}
+
+export function buildPublishArtifacts(
+  sources: PublishSources, generatedAt: string,
+): { bundle: PublishBundleV1; stamps: PublishStamps } {
   const build = pluginBuild();
   let foundation: PublishBundleV1['foundation'] = null;
   let foundationArtifact: FoundationArtifactV5 | undefined;
@@ -53,12 +77,23 @@ export function buildPublishBundle(sources: PublishSources, generatedAt: string)
     foundationArtifact = artifact;
     foundation = { ai: `${JSON.stringify(foundationDtcgDocument(artifact), null, 2)}\n`, artifact };
   }
+  const stamps: PublishStampComponent[] = [];
   const components = [...sources.components]
     .sort((a, b) => compareCodeUnits(a.name, b.name))
     .map(({ name, node, prose }) => {
       const spec = extract(node, {
         figmaFile: sources.fileKey,
         ...(sources.fileName ? { figmaFileName: sources.fileName } : {}),
+      });
+      // The same extraction the doc's Generate ran (actions.ts passes the same
+      // options), hashed both ways a doc can be configured, so the main thread
+      // can stamp each doc with the hash its own includeHidden produces.
+      stamps.push({
+        sourceNodeId: node.id,
+        hashes: {
+          visible: specContentHash(spec, { includeHidden: false }),
+          hidden: specContentHash(spec, { includeHidden: true }),
+        },
       });
       const artifact = buildComponentArtifactV5(spec, {
         exportId: `component:${node.id}:${generatedAt}`,
@@ -69,7 +104,7 @@ export function buildPublishBundle(sources: PublishSources, generatedAt: string)
       });
       return { name, ai: toYaml(componentAiContext(artifact) as unknown as YamlValue), artifact };
     });
-  return {
+  const bundle: PublishBundleV1 = {
     schema: 'spec-layer-library-bundle',
     version: '1.0.0',
     fileName: sources.fileName || null,
@@ -78,12 +113,21 @@ export function buildPublishBundle(sources: PublishSources, generatedAt: string)
     foundation,
     components,
   };
+  return { bundle, stamps: { components: stamps, foundation: sources.foundation } };
+}
+
+export function buildPublishBundle(sources: PublishSources, generatedAt: string): PublishBundleV1 {
+  return buildPublishArtifacts(sources, generatedAt).bundle;
 }
 
 export type PublishOutcome =
-  | { kind: 'created'; libraryId: string; pullKey: string; publishedAt: string }
-  | { kind: 'updated'; libraryId: string; publishedAt: string }
-  | { kind: 'unchanged'; libraryId: string; publishedAt: string }
+  | { kind: 'created'; libraryId: string; pullKey: string; publishedAt: string; version: string | null }
+  | { kind: 'updated'; libraryId: string; publishedAt: string; version: string | null }
+  | { kind: 'unchanged'; libraryId: string; publishedAt: string; version: string | null }
+  /** The proxy refused because the chosen bump undercounts the actual changes.
+   *  Carries the minimum it will accept and the version that bump produces, so
+   *  the screen can re-render with both without a second round trip. */
+  | { kind: 'below_minimum'; minimumBump: Bump; proposedVersion: string }
   | { kind: 'gone' }
   | { kind: 'error'; message: string };
 
@@ -169,7 +213,16 @@ const withPullKey = (headers: Record<string, string>, pullKey: string | null | u
 
 export async function publishBundle(
   bundle: PublishBundleV1,
-  opts: { auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch },
+  opts: {
+    auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch;
+    /** The publisher's raise. Omitted or null lets the proxy apply the
+     *  minimum bump the changes require. */
+    bump?: Bump | null;
+    note?: string | null;
+    /** Only meaningful on a create; the proxy ignores it on an update, since
+     *  an existing library already has a version. */
+    initialVersion?: string | null;
+  },
 ): Promise<PublishResult> {
   const headers = authHeaders(opts.auth);
   if (!headers) return { outcome: { kind: 'error', message: NO_IDENTITY }, quota: null };
@@ -179,7 +232,13 @@ export async function publishBundle(
     res = await doFetch(`${PROXY_URL}/v1/libraries`, {
       method: 'POST',
       headers: { ...withPullKey(headers, opts.libraryId ? opts.pullKey : null), 'content-type': 'application/json' },
-      body: JSON.stringify({ ...(opts.libraryId ? { libraryId: opts.libraryId } : {}), bundle }),
+      body: JSON.stringify({
+        ...(opts.libraryId ? { libraryId: opts.libraryId } : {}),
+        bundle,
+        ...(opts.bump ? { bump: opts.bump } : {}),
+        ...(opts.note ? { note: opts.note } : {}),
+        ...(!opts.libraryId && opts.initialVersion ? { initialVersion: opts.initialVersion } : {}),
+      }),
     });
   } catch {
     return {
@@ -195,18 +254,67 @@ export async function publishBundle(
   // 402 is exactly when the screen's count matters most.
   const quota = parseQuotaHeaders(res.headers);
   const result = (outcome: PublishOutcome): PublishResult => ({ outcome, quota });
+  const version = typeof body.version === 'string' ? body.version : null;
   if (res.status === 201) {
-    return result({ kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey), publishedAt: String(body.publishedAt) });
+    return result({
+      kind: 'created', libraryId: String(body.libraryId), pullKey: String(body.pullKey),
+      publishedAt: String(body.publishedAt), version,
+    });
   }
   if (res.ok && body.unchanged === true) {
-    return result({ kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
+    return result({ kind: 'unchanged', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt), version });
   }
-  if (res.ok) return result({ kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt) });
+  if (res.ok) return result({ kind: 'updated', libraryId: String(body.libraryId), publishedAt: String(body.publishedAt), version });
+  if (
+    res.status === 400 && body.error === 'bump_below_minimum'
+    && typeof body.minimumBump === 'string' && typeof body.proposedVersion === 'string'
+  ) {
+    return result({ kind: 'below_minimum', minimumBump: body.minimumBump as Bump, proposedVersion: body.proposedVersion });
+  }
   // Only a library the proxy no longer has is gone. A 403 means it exists and
   // someone else owns it (or this device lacks its key): the id in the file
   // is still the one developers pull, so it must stay put.
   if (opts.libraryId && res.status === 404) return result({ kind: 'gone' });
   return result({ kind: 'error', message: publishErrorCopy(res.status, body) });
+}
+
+const DRY_RUN_FAILED = 'Could not check what changed.';
+
+export async function dryRunBundle(
+  bundle: PublishBundleV1,
+  opts: { auth: ProxyAuth; libraryId: string; pullKey?: string | null; fetcher?: typeof fetch },
+): Promise<{ kind: 'ok'; result: DryRunResult } | { kind: 'error'; message: string }> {
+  const headers = authHeaders(opts.auth);
+  if (!headers) return { kind: 'error', message: NO_IDENTITY };
+  const doFetch = opts.fetcher ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(`${PROXY_URL}/v1/libraries`, {
+      method: 'POST',
+      headers: { ...withPullKey(headers, opts.pullKey), 'content-type': 'application/json' },
+      body: JSON.stringify({ libraryId: opts.libraryId, bundle, dryRun: true }),
+    });
+  } catch {
+    return { kind: 'error', message: DRY_RUN_FAILED };
+  }
+  const body = await bodyOf(res);
+  if (!res.ok) return { kind: 'error', message: publishErrorCopy(res.status, body) };
+  const bumps = new Set(['major', 'minor', 'patch']);
+  const bump = (v: unknown): Bump | null => (typeof v === 'string' && bumps.has(v) ? (v as Bump) : null);
+  const counts = (body.counts ?? {}) as Record<string, unknown>;
+  const n = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  return {
+    kind: 'ok',
+    result: {
+      currentVersion: typeof body.currentVersion === 'string' ? body.currentVersion : null,
+      unchanged: body.unchanged === true,
+      minimumBump: bump(body.minimumBump),
+      proposedVersion: typeof body.proposedVersion === 'string' ? body.proposedVersion : null,
+      counts: { major: n(counts.major), minor: n(counts.minor), patch: n(counts.patch) },
+      changes: Array.isArray(body.changes) ? (body.changes as LibraryChange[]) : [],
+      changesTruncated: body.changesTruncated === true,
+    },
+  };
 }
 
 export async function rotatePullKey(
@@ -274,16 +382,50 @@ export interface PublishState {
   libraryId: string | null;
   pullKey: string | null;
   lastPublishedAt: string | null;
-  /** Which action the in-flight collect belongs to. Both actions share one
-   *  round trip to the main thread, and only this says which reply handler
-   *  should run. */
-  intent: 'publish' | 'download';
+  /** Which action the in-flight collect belongs to. All three actions share
+   *  one round trip to the main thread, and only this says which reply
+   *  handler should run. */
+  intent: 'publish' | 'download' | 'dryRun';
+  /** The library's current version as last reported; null before the first
+   *  versioned publish. */
+  version: string | null;
+  /** The last dry-run answer, or the local first-publish proposal. Null while
+   *  none is known. */
+  proposal: DryRunResult | null;
+  proposalStatus: 'idle' | 'loading' | 'failed';
+  /** The publisher's raise. Null means "apply the minimum". */
+  chosenBump: Bump | null;
+  note: string;
+  /** The editable first version, only sent on a create. */
+  initialVersion: string;
 }
 
-function createPublishState(): PublishState {
+export function createPublishState(): PublishState {
   return {
     status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'publish',
+    version: null, proposal: null, proposalStatus: 'idle', chosenBump: null, note: '', initialVersion: '1.0.0',
   };
+}
+
+/** The local proposal for a library with no id yet: no proxy round trip can
+ *  answer this, since there is nothing published to diff against. */
+export function firstPublishProposal(): DryRunResult {
+  return {
+    currentVersion: null, unchanged: false, minimumBump: null, proposedVersion: '1.0.0',
+    counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+  };
+}
+
+export const PROPOSAL_FAILED_MESSAGE = 'Could not compute the next version. Publishing will apply the minimum bump.';
+export const BELOW_MINIMUM_MESSAGE = (minimum: Bump): string => `The changes need at least a ${minimum} bump.`;
+const INVALID_FIRST_VERSION = 'The first version needs three numbers, like 1.0.0.';
+
+/** The bump the publish will send: the choice when it is at or above the
+ *  minimum, else none (the proxy applies the minimum). */
+export function effectiveBump(s: Readonly<PublishState>): Bump | null {
+  if (!s.chosenBump) return null;
+  const minimum = s.proposal?.minimumBump ?? 'patch';
+  return compareBump(s.chosenBump, minimum) >= 0 ? s.chosenBump : null;
 }
 
 let state: PublishState = createPublishState();
@@ -350,14 +492,47 @@ export function onDownloadSkillClick(): void {
 }
 
 /**
- * The publish and download intents share this one guard (see
- * `onPublishSources`, first check), but they must not share its wording: a
- * download that stops here never touched the proxy, and telling that user
- * something was "published" would be a fabricated claim about their own
- * action. Only the verb, its object, and the retry step vary; the count and
- * the component names are identical either way.
+ * Open the publish screen for a known library: start a dry run so the
+ * proposed version and change counts are on screen before the publisher
+ * commits to anything. A library with no id yet has nothing to diff against,
+ * so it gets the fixed 1.0.0 proposal locally, with no round trip.
  */
-function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: 'publish' | 'download'): string {
+export function onPublishOpen(): void {
+  if (state.status === 'collecting' || state.status === 'uploading') return;
+  if (!state.libraryId) {
+    state = { ...state, proposal: firstPublishProposal(), proposalStatus: 'idle' };
+    host.repaint();
+    return;
+  }
+  state = { ...state, status: 'collecting', intent: 'dryRun', proposalStatus: 'loading', message: null };
+  host.repaint();
+  host.send({ type: 'requestPublishSources' });
+}
+
+export function onBumpChoice(bump: Bump): void {
+  state = { ...state, chosenBump: bump };
+  host.repaint();
+}
+
+export function onNoteInput(text: string): void {
+  state = { ...state, note: text.slice(0, 500) };
+  // No repaint: the textarea already shows the text, and a repaint would move
+  // the caret.
+}
+
+export function onInitialVersionInput(text: string): void {
+  state = { ...state, initialVersion: text.trim() };
+}
+
+/**
+ * The publish, download and dry-run intents share this one guard (see
+ * `onPublishSources`, first check), but they must not share its wording: a
+ * download or a dry run that stops here never touched the proxy, and telling
+ * that user something was "published" would be a fabricated claim about
+ * their own action. Only the verb, its object, and the retry step vary; the
+ * count and the component names are identical either way.
+ */
+function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: PublishState['intent']): string {
   const names = skipped.map((s) => s.name).join(', ');
   const count = skipped.length;
   const found = `${count} component${count === 1 ? '' : 's'} could not be read: ${names}.`;
@@ -377,13 +552,33 @@ const GONE_MESSAGE =
   'That library no longer exists on the publish service. Nothing was published. '
   + 'Publish again to create a new library, then share its setup command with your developers.';
 
+/**
+ * Stamp only when the proxy named a version. A proxy that predates
+ * versioning answers without one; then the date is recorded as before and no
+ * pill can claim a version nobody assigned.
+ */
+function stamp(libraryId: string, version: string | null, publishedAt: string, stamps: PublishStamps): void {
+  if (version === null) {
+    host.send({ type: 'setPublishedAt', libraryId, publishedAt });
+    return;
+  }
+  host.send({
+    type: 'stampPublished', libraryId, version, publishedAt,
+    components: stamps.components, foundation: stamps.foundation,
+  });
+}
+
 export async function onPublishSources(
   msg: PublishSourcesMsg,
   auth: ProxyAuth,
   fetcher?: typeof fetch,
 ): Promise<void> {
   if (msg.skipped.length > 0) {
-    state = { ...state, status: 'error', message: skippedMessage(msg.skipped, state.intent) };
+    if (state.intent === 'dryRun') {
+      state = { ...state, status: 'idle', proposalStatus: 'failed', message: null };
+    } else {
+      state = { ...state, status: 'error', message: skippedMessage(msg.skipped, state.intent) };
+    }
     host.repaint();
     return;
   }
@@ -415,17 +610,51 @@ export async function onPublishSources(
     return;
   }
 
+  if (state.intent === 'dryRun') {
+    const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
+    const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
+    if (!libraryId) {
+      // Nothing published yet to diff against: the fixed local proposal
+      // stands, and no round trip was ever needed.
+      state = { ...state, status: 'idle', proposal: firstPublishProposal(), proposalStatus: 'idle' };
+      host.repaint();
+      return;
+    }
+    const { bundle } = buildPublishArtifacts(msg, new Date().toISOString());
+    const answer = await dryRunBundle(bundle, { auth, libraryId, pullKey, fetcher });
+    state = answer.kind === 'ok'
+      ? { ...state, status: 'idle', proposal: answer.result, proposalStatus: 'idle' }
+      : { ...state, status: 'idle', proposal: null, proposalStatus: 'failed' };
+    host.repaint();
+    return;
+  }
+
   // What this session already knows wins; otherwise the identity the main
   // thread read from the file in this same round trip. A publishInfo reply
   // that has not landed yet can no longer cost us a republish.
   const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
   const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
   const lastPublishedAt = state.lastPublishedAt ?? msg.publishInfo.publishedAt;
+
+  // A pre-versioning library (one with an id) always gets 1.0.0 from the
+  // proxy, which is the spec's rule, so only a true create needs a valid
+  // first version before any network call.
+  if (!libraryId && !isSemver(state.initialVersion)) {
+    state = { ...state, status: 'error', message: INVALID_FIRST_VERSION };
+    host.repaint();
+    return;
+  }
+
   state = { ...state, status: 'uploading', libraryId, pullKey, lastPublishedAt };
   host.repaint();
 
-  const bundle = buildPublishBundle(msg, new Date().toISOString());
-  const { outcome, quota } = await publishBundle(bundle, { auth, libraryId, pullKey, fetcher });
+  const { bundle, stamps } = buildPublishArtifacts(msg, new Date().toISOString());
+  const { outcome, quota } = await publishBundle(bundle, {
+    auth, libraryId, pullKey, fetcher,
+    bump: effectiveBump(state),
+    note: state.note.trim() || null,
+    initialVersion: libraryId ? null : state.initialVersion,
+  });
   // Before the repaint below, so one paint shows both the result and the count
   // it left behind.
   if (quota) host.onPublishQuota(quota);
@@ -438,11 +667,19 @@ export async function onPublishSources(
         libraryId: outcome.libraryId,
         pullKey: outcome.pullKey,
         lastPublishedAt: outcome.publishedAt,
+        version: outcome.version ?? state.version,
         message: null,
+        chosenBump: null,
+        note: '',
+        proposal: null,
       };
       host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
-      host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
-      host.notify('Published. Anyone with the key can pull this version.');
+      stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
+      host.notify(
+        outcome.version
+          ? `Published ${outcome.version}. Anyone with the key can pull this version.`
+          : 'Published. Anyone with the key can pull this version.',
+      );
       break;
     case 'updated':
       state = {
@@ -450,23 +687,51 @@ export async function onPublishSources(
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
+        version: outcome.version ?? state.version,
         message: null,
+        chosenBump: null,
+        note: '',
+        proposal: null,
       };
-      host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
-      host.notify('Published. Developers get this version on their next pull.');
+      stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
+      host.notify(
+        outcome.version
+          ? `Published ${outcome.version}. Developers get this version on their next pull.`
+          : 'Published. Developers get this version on their next pull.',
+      );
       break;
     case 'unchanged':
       // The unchanged answer carries the stored library's existing date, which
       // is the true last-published time, so it is recorded like the others.
+      // Nothing changed, so no doc gets a fresh stamp.
       state = {
         ...state,
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
+        version: outcome.version ?? state.version,
         message: null,
       };
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
       host.notify('Nothing changed since the last publish.');
+      break;
+    case 'below_minimum':
+      // Re-render with the server's own minimum and the version it would
+      // produce, so the screen shows the real floor without a second dry run.
+      state = {
+        ...state,
+        status: 'error',
+        chosenBump: null,
+        message: BELOW_MINIMUM_MESSAGE(outcome.minimumBump),
+        proposal: {
+          ...(state.proposal ?? firstPublishProposal()),
+          currentVersion: state.version,
+          unchanged: false,
+          minimumBump: outcome.minimumBump,
+          proposedVersion: outcome.proposedVersion,
+        },
+        proposalStatus: 'idle',
+      };
       break;
     case 'gone':
       // Never recreate on the user's behalf: the developers pulling the old id
@@ -485,13 +750,14 @@ export async function onPublishSources(
 }
 
 /**
- * `requestPublishSources`' outer catch (main.ts) reaches this on either
+ * `requestPublishSources`' outer catch (main.ts) reaches this on every
  * intent, exactly like the `skipped` guard above, so it needs the same
- * intent-aware treatment `skippedMessage` got: a download that never read a
- * usable source never touched the proxy, and telling that user something was
- * "published" would be a fabricated claim about their own action.
+ * intent-aware treatment `skippedMessage` got: a download or a dry run that
+ * never read a usable source never touched the proxy, and telling that user
+ * something was "published" would be a fabricated claim about their own
+ * action.
  */
-function sourcesErrorMessage(message: string, intent: 'publish' | 'download'): string {
+function sourcesErrorMessage(message: string, intent: PublishState['intent']): string {
   const outcome = intent === 'download' ? 'downloaded' : 'published';
   // `message` is a caught error's own text (main.ts forwards `err.message`
   // verbatim), which has no guaranteed terminal punctuation, so the retry
@@ -502,11 +768,11 @@ function sourcesErrorMessage(message: string, intent: 'publish' | 'download'): s
 }
 
 export function onPublishSourcesError(message: string): void {
-  state = {
-    ...state,
-    status: 'error',
-    message: sourcesErrorMessage(message, state.intent),
-  };
+  if (state.intent === 'dryRun') {
+    state = { ...state, status: 'idle', proposalStatus: 'failed', message: null };
+  } else {
+    state = { ...state, status: 'error', message: sourcesErrorMessage(message, state.intent) };
+  }
   host.repaint();
 }
 
@@ -520,7 +786,9 @@ export function onPublishSourcesError(message: string): void {
  */
 export function onPublishInfo(msg: PublishInfoMsg): void {
   if (state.status !== 'idle') return;
-  state = { ...state, libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt };
+  state = {
+    ...state, libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt, version: msg.version,
+  };
   host.repaint();
 }
 
