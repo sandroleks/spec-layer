@@ -225,6 +225,15 @@ describe('route', () => {
     expect(await res.json()).toEqual({ error: 'unauthenticated' });
   });
 
+  it('routes GET /v1/libraries/lib_<24hex>/versions to versions', async () => {
+    const libraryId = `lib_${'0'.repeat(24)}`;
+    const res = await route(new Request(`https://p.test/v1/libraries/${libraryId}/versions`, {
+      headers: { Authorization: 'Bearer nope' },
+    }), baseDeps());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_key' });
+  });
+
   it('404s a malformed library id path', async () => {
     const res = await route(new Request('https://p.test/v1/libraries/nope'), baseDeps());
     expect(res.status).toBe(404);
@@ -317,5 +326,10 @@ describe('CORS', () => {
     const exposed = res.headers.get('Access-Control-Expose-Headers');
     expect(exposed).toContain('ETag');
     expect(exposed).toContain('X-Published-At');
+  });
+
+  it('exposes X-Library-Version through CORS', async () => {
+    const res = await route(new Request('https://p.test/v1/prose', { method: 'OPTIONS' }), baseDeps());
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Library-Version');
   });
 });

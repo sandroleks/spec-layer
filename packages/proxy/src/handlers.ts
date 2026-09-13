@@ -4,7 +4,7 @@ import {
   proseFewShot,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
-import { handlePublish, handlePull, handleRotate } from './libraries';
+import { handlePublish, handlePull, handleRotate, handleVersions } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
 import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
@@ -335,7 +335,7 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, X-Pull-Key, If-None-Match',
   // Without this, the plugin iframe cannot read the quota headers at all.
   'Access-Control-Expose-Headers':
-    'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At',
+    'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At, X-Library-Version',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -356,6 +356,8 @@ async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
   if (req.method === 'GET' && pull) return handlePull(req, deps, pull[1]);
   const rotate = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/rotate$/.exec(pathname);
   if (req.method === 'POST' && rotate) return handleRotate(req, deps, rotate[1]);
+  const versions = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/versions$/.exec(pathname);
+  if (req.method === 'GET' && versions) return handleVersions(req, deps, versions[1]);
   return json(404, { error: 'not_found' });
 }
 

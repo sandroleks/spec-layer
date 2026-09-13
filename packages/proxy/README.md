@@ -63,6 +63,35 @@ must carry `schema: "spec-layer-library-bundle"`, a string `version`, and a
 `components` array; the proxy validates that shape and nothing else. It never
 derives, re-validates, or re-projects v5 output.
 
+The body also accepts `dryRun: true`, `bump: "major" | "minor" | "patch"`,
+`note` (up to 500 characters), and `initialVersion` (a `major.minor.patch`
+semver, first publish only). Every one is optional and a plugin build that
+sends none of them keeps working.
+
+**Versions.** Every changed publish assigns a semantic version. The proxy
+loads the stored bundle, runs `libraryDiff` from the extractor over Figma
+facts only (component properties, variant axes and options, states, anatomy
+parts, token bindings, layout and effect values, collections, modes, tokens
+and their per-mode values, styles), and derives the minimum bump: a removal
+or rename of a structural entity is `major`, an addition is `minor`,
+everything else is `patch`. A bundle whose content hash moved without any
+property change (a description edit) is a `patch`. The client may raise the
+bump and never lower it; a `bump` below the minimum answers
+`400 {"error":"bump_below_minimum","minimumBump":…,"proposedVersion":…}` with
+no write. A first versioned publish is `1.0.0`, or `initialVersion` when it is
+a valid semver (`400 {"error":"invalid_initial_version"}` otherwise), with
+`bump: "initial"`. A library published before versioning gets its first
+version on its next changed publish. The response carries `version`, `bump`,
+and `minimumBump`, plus the header `X-Library-Version`.
+
+**Dry run.** `dryRun: true` authenticates and authorises exactly like a
+publish, then answers `200` with
+`{ currentVersion, unchanged, minimumBump, proposedVersion, counts, changes, changesTruncated }`
+and writes nothing, spends no quota, and takes no publish reservation. When
+the content hash matches the stored one, `unchanged` is true and the bump
+fields are null. The client's dry-run result is never trusted: the publish
+recomputes the diff.
+
 Omitting `libraryId` creates a library (201) and returns
 `{ libraryId, pullKey, publishedAt }`. That response is the only copy of the
 pull key the server ever hands back; only its SHA-256 is stored. A new library
@@ -116,7 +145,9 @@ on free (`fileName` may be null; Pro gets `limit: 10` and no `existing`),
 Pull key required: `Authorization: Bearer sl_...`. Returns the stored bundle
 verbatim with `ETag: "<bundleHash>"` and `X-Published-At`. An `If-None-Match`
 matching the current hash gets a bare `304`, which is how `spec-layer status`
-decides whether a local pull is behind.
+decides whether a local pull is behind. The response also carries
+`X-Library-Version` when the library has one; a library published before
+versioning omits it.
 
 Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 `404 {"error":"not_found"}`, `429`.
@@ -128,6 +159,18 @@ sends the current key as `X-Pull-Key` beside the Figma header. Returns
 `{ pullKey }`. The previous key stops working once the KV write propagates,
 up to about a minute. Errors: `401`,
 `403 {"error":"not_owner"}`, `404`, `429`.
+
+### `GET /v1/libraries/:libraryId/versions`
+
+Pull key required, as for pull. Returns the version log
+`{ "v": 1, "records": [ … ] }`, newest first. Each record carries `version`,
+`publishedAt`, `bump` (`major`, `minor`, `patch`, or `initial`),
+`minimumBump`, `note`, `contentHash`, `bundleHash`, `extractorVersion`,
+`pluginVersion`, `counts`, `changes`, and `changesTruncated`. `changes` is
+capped at 64 KB of JSON per record, cut after the last change that fits in
+sorted order; `counts` always reflects the full diff. `ETag` is the sha256 of
+the log bytes and a matching `If-None-Match` gets a bare `304`. A library that
+predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 ## Quota rules
 
@@ -142,7 +185,8 @@ up to about a minute. Errors: `401`,
   ignores each artifact's export id and timestamp; a changed update counts
   once, with the 24-hour response cache protecting retries of that same
   transition. Counted in a separate Durable Object per identity
-  (`publish:<identity>`). Pull is not metered.
+  (`publish:<identity>`). Pull is not metered. A `dryRun` publish never
+  reserves or counts.
 - Quota engine rate limit: 10 uncached generation reservations/min per
   identity, both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
@@ -182,13 +226,30 @@ cache inside the DO; prompts and prose are never logged.
   every free identity's Durable Object: quotas reset and every user
   re-enters the boost window. Rotate only with that intent.
 - **Published libraries live in the license-cache namespace, permanently.**
-  `lib:<id>:bundle`, `lib:<id>:meta`, `lib:<id>:key`, and
-  `libowner:<licenseId>:<id>` are written
+  `lib:<id>:bundle`, `lib:<id>:meta`, `lib:<id>:key`, `lib:<id>:versions`,
+  `lib:<id>:bundle:<version>`, and `libowner:<licenseId>:<id>` are written
   with no `expirationTtl` into the KV namespace bound as `LICENSE_CACHE`.
   Recreating or clearing that namespace to "reset the cache" destroys every
   published library, and the pull keys cannot be recovered: only their
   SHA-256 digests were ever stored. Every affected user has to republish and
   redistribute a new setup command.
+- **Version writes are not atomic.** A publish writes the current bundle, the
+  per-version bundle, the version log, then the meta, in that order. A stop
+  between the log and the meta leaves a log record the meta does not carry;
+  publish reads the current version from the log, so the next publish
+  continues from the right number and rewrites the meta. Until then `pull`
+  and `X-Library-Version` report the meta's older version.
+- **The diff runs inside the Worker.** Measured at 195 ms on a synthetic
+  4.2 MB bundle of 300 components with 120 bindings each and 2000 tokens,
+  above the 50 ms the design hoped for and far below the paid plan's 30 s
+  CPU limit per invocation. A publish is a rare request, so the diff stays
+  in the request path; a Durable Object would not lower the CPU cost, only
+  move it.
+- **Per-version bundles are kept for the newest ten versions.** The eleventh
+  publish deletes the oldest per-version bundle. The log itself is not
+  capped: at the 64 KB per-record change cap a library would need roughly
+  four hundred publishes to approach KV's 25 MB value limit. Storage per
+  library is at most eleven bundles, 55 MB at the 5 MB cap.
 - **KV writes are eventually consistent.** A publish immediately followed by
   a pull from another region can serve the previous bundle for up to about a
   minute. Republish tests should allow for that before treating a stale
