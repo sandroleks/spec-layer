@@ -55,6 +55,47 @@ function withComponent(mutate: (artifact: Record<string, unknown>) => void): Lib
   return bundle({ components: [component('Button', artifact)] });
 }
 
+function foundationArtifact(over: Record<string, unknown> = {}) {
+  const literal = (hex: string) => ({ kind: 'literal', value: { type: 'color', color_space: 'srgb', hex, alpha: 1 } });
+  return {
+    spec_layer: {
+      kind: 'foundation', schema_version: '5.1.0',
+      export: { id: 'export:f', generated_at: '2026-09-12T00:00:00.000Z', deterministic: true, content_hash: 'f1' },
+    },
+    completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },
+    collections: [{ id: 'VariableCollectionId:1', name: 'Theme', path: ['Theme'], default_mode_id: 'm1', modes: [{ id: 'm1', name: 'Light', order: 0 }, { id: 'm2', name: 'Dark', order: 1 }] }],
+    tokens: [{
+      id: 'VariableID:1', name: 'color/primary', path: ['color', 'primary'], collection_id: 'VariableCollectionId:1',
+      type: 'color', description: 'Brand colour', scopes: ['ALL_SCOPES'],
+      values: { m1: literal('#6750a4'), m2: literal('#d0bcff') },
+    }],
+    styles: {
+      typography: [{
+        id: 'S:t1', name: 'Body', path: ['Body'], description: '',
+        properties: {
+          font_family: { source: { kind: 'literal' }, resolved: { type: 'font_family', value: 'Inter' } },
+          font_weight: { source: { kind: 'literal' }, resolved: { type: 'number', value: 400 } },
+          font_size: { source: { kind: 'literal' }, resolved: { type: 'dimension', number: 16, unit: 'px' } },
+          line_height: { source: { kind: 'literal' }, resolved: { type: 'dimension', number: 24, unit: 'px' } },
+          letter_spacing: { source: { kind: 'literal' }, resolved: null },
+          paragraph_spacing: { source: { kind: 'literal' }, resolved: null },
+          paragraph_indent: { source: { kind: 'literal' }, resolved: null },
+          text_case: 'ORIGINAL', text_decoration: 'NONE',
+        },
+      }],
+      effects: [{ id: 'S:e1', name: 'Shadow', path: ['Shadow'], mode_id: 'm1', effects: [{ type: 'drop_shadow', visible: true }] }],
+    },
+    diagnostics: [], statistics: {},
+    ...over,
+  };
+}
+
+function withFoundation(mutate: (artifact: Record<string, unknown>) => void): LibraryBundleV1 {
+  const artifact = foundationArtifact();
+  mutate(artifact);
+  return bundle({ foundation: { ai: '{}', artifact: artifact as unknown as LibraryBundleV1['components'][number]['artifact'] } });
+}
+
 const only = (diff: LibraryDiff, entity: string) => diff.changes.filter((c) => c.entity === entity);
 
 describe('bumpFor', () => {
@@ -319,5 +360,136 @@ describe('libraryDiff: components', () => {
     const backward = bundle({ components: [component('Card', card), component('Button', componentArtifact())] });
     const empty = bundle({ components: [] });
     expect(JSON.stringify(libraryDiff(empty, forward))).toBe(JSON.stringify(libraryDiff(empty, backward)));
+  });
+});
+
+describe('libraryDiff: foundation', () => {
+  const base = withFoundation(() => {});
+
+  it('collection: removed is major, added is minor, renamed is major', () => {
+    expect(libraryDiff(base, bundle({ foundation: null })).changes.filter((c) => c.entity === 'collection'))
+      .toEqual([expect.objectContaining({ kind: 'removed', id: 'VariableCollectionId:1', component: null, bump: 'major' })]);
+
+    const renamed = withFoundation((a) => { (a.collections as Array<{ name: string }>)[0].name = 'Brand theme'; });
+    expect(only(libraryDiff(base, renamed), 'collection')).toEqual([expect.objectContaining({ kind: 'renamed', from: 'Theme', to: 'Brand theme', bump: 'major' })]);
+
+    const added = withFoundation((a) => {
+      (a.collections as unknown[]).push({ id: 'VariableCollectionId:2', name: 'Density', path: ['Density'], default_mode_id: 'd1', modes: [{ id: 'd1', name: 'Default', order: 0 }] });
+    });
+    expect(only(libraryDiff(base, added), 'collection')).toEqual([expect.objectContaining({ kind: 'added', id: 'VariableCollectionId:2', bump: 'minor' })]);
+  });
+
+  it('mode: identity is the mode id within its collection; removed major, added minor, renamed major', () => {
+    const collection = (a: Record<string, unknown>) => (a.collections as Array<{ modes: Array<{ id: string; name: string; order: number }> }>)[0];
+    const fewer = withFoundation((a) => { collection(a).modes = [{ id: 'm1', name: 'Light', order: 0 }]; });
+    expect(only(libraryDiff(base, fewer), 'mode')).toEqual([expect.objectContaining({ kind: 'removed', id: 'VariableCollectionId:1/m2', name: 'Dark', scope: 'Theme', bump: 'major' })]);
+
+    const renamed = withFoundation((a) => { collection(a).modes[1].name = 'Night'; });
+    expect(only(libraryDiff(base, renamed), 'mode')).toEqual([expect.objectContaining({ kind: 'renamed', id: 'VariableCollectionId:1/m2', from: 'Dark', to: 'Night', bump: 'major' })]);
+
+    const more = withFoundation((a) => { collection(a).modes.push({ id: 'm3', name: 'Contrast', order: 2 }); });
+    expect(only(libraryDiff(base, more), 'mode')).toEqual([expect.objectContaining({ kind: 'added', id: 'VariableCollectionId:1/m3', bump: 'minor' })]);
+  });
+
+  it('token: identity is the source id, so a new name is a rename (major); removed major, added minor', () => {
+    const renamed = withFoundation((a) => { (a.tokens as Array<{ name: string }>)[0].name = 'color/brand'; });
+    expect(only(libraryDiff(base, renamed), 'token')).toEqual([expect.objectContaining({ kind: 'renamed', id: 'VariableID:1', from: 'color/primary', to: 'color/brand', bump: 'major' })]);
+
+    const gone = withFoundation((a) => { a.tokens = []; });
+    expect(only(libraryDiff(base, gone), 'token')).toEqual([expect.objectContaining({ kind: 'removed', id: 'VariableID:1', name: 'color/primary', bump: 'major' })]);
+  });
+
+  it('token: type or scopes changed is patch and renders both', () => {
+    const rescoped = withFoundation((a) => { (a.tokens as Array<{ scopes: string[] }>)[0].scopes = ['FRAME_FILL']; });
+    expect(only(libraryDiff(base, rescoped), 'token')).toEqual([expect.objectContaining({
+      kind: 'changed', id: 'VariableID:1', from: 'color in Theme, scopes ALL_SCOPES', to: 'color in Theme, scopes FRAME_FILL', bump: 'patch',
+    })]);
+  });
+
+  it('token_value: a per-mode value change is patch, scoped by mode name, rendered like the Library screen', () => {
+    const darker = withFoundation((a) => {
+      (a.tokens as Array<{ values: Record<string, unknown> }>)[0].values.m2 = { kind: 'literal', value: { type: 'color', color_space: 'srgb', hex: '#eaddff', alpha: 0.5 } };
+    });
+    expect(only(libraryDiff(base, darker), 'token_value')).toEqual([expect.objectContaining({
+      kind: 'changed', id: 'VariableID:1', name: 'color/primary', scope: 'Dark', from: '#d0bcff', to: '#eaddff at 50%', bump: 'patch',
+    })]);
+  });
+
+  it('token_value: an alias renders its target and resolution, and a missing value its reason', () => {
+    const aliased = withFoundation((a) => {
+      (a.tokens as Array<{ values: Record<string, unknown> }>)[0].values.m1 = {
+        kind: 'alias',
+        reference: { target_id: 'VariableID:2', target_collection_id: 'VariableCollectionId:1', target_path: ['color', 'base'], external: false },
+        resolved: { status: 'resolved', value: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 1 }, chain: [{ token_id: 'VariableID:2', mode_id: 'm1' }] },
+      };
+      (a.tokens as Array<{ values: Record<string, unknown> }>)[0].values.m2 = { kind: 'missing', reason: 'no_value_for_mode' };
+    });
+    const values = only(libraryDiff(base, aliased), 'token_value');
+    expect(values.find((c) => c.scope === 'Light')?.to).toBe('{color/base} resolving to #000000');
+    expect(values.find((c) => c.scope === 'Dark')?.to).toBe('missing (no_value_for_mode)');
+  });
+
+  it('style: every kind is patch; typography renders family weight size/line height', () => {
+    const bigger = withFoundation((a) => {
+      const typo = (a.styles as { typography: Array<{ properties: Record<string, unknown> }> }).typography[0];
+      typo.properties.font_size = { source: { kind: 'literal' }, resolved: { type: 'dimension', number: 18, unit: 'px' } };
+    });
+    expect(only(libraryDiff(base, bigger), 'style')).toEqual([expect.objectContaining({
+      kind: 'changed', id: 'S:t1', name: 'Body', from: 'Inter 400 16px/24px', to: 'Inter 400 18px/24px', bump: 'patch',
+    })]);
+
+    const noShadow = withFoundation((a) => { (a.styles as { effects: unknown[] }).effects = []; });
+    expect(only(libraryDiff(base, noShadow), 'style')).toEqual([expect.objectContaining({ kind: 'removed', id: 'S:e1', name: 'Shadow', bump: 'patch' })]);
+  });
+
+  it('style: an effect whose layers moved but whose summary reads the same has null from and to', () => {
+    const shifted = withFoundation((a) => {
+      (a.styles as { effects: Array<{ effects: unknown[] }> }).effects[0].effects = [{ type: 'drop_shadow', visible: true, blur: { type: 'dimension', number: 8, unit: 'px' } }];
+    });
+    expect(only(libraryDiff(base, shifted), 'style')).toEqual([expect.objectContaining({ kind: 'changed', id: 'S:e1', from: null, to: null })]);
+  });
+
+  it('a description-only change is an empty diff', () => {
+    const described = withFoundation((a) => { (a.tokens as Array<{ description: string }>)[0].description = 'Now with more words.'; });
+    expect(libraryDiff(base, described).changes).toEqual([]);
+  });
+
+  it('ignores diagnostics, statistics, guidelines, completeness and the envelope', () => {
+    const noisy = withFoundation((a) => {
+      a.diagnostics = [{ code: 'MISSING_DESCRIPTION', severity: 'info', entity_id: 'VariableID:1', message: 'm' }];
+      a.statistics = { tokens: 1 };
+      a.guidelines = { origin: 'generated', group_descriptions: { color: { primary: 'Use sparingly.' } } };
+      a.completeness = { collections: 'partial', styles: 'complete', unavailable_sources: ['lib'] };
+      (a.spec_layer as { export: { generated_at: string } }).export.generated_at = '2027-01-01T00:00:00.000Z';
+    });
+    expect(libraryDiff(base, noisy).changes).toEqual([]);
+  });
+
+  it('a mode whose id is not declared on the collection is scoped by its id', () => {
+    const stray = withFoundation((a) => {
+      (a.tokens as Array<{ values: Record<string, unknown> }>)[0].values.m9 = { kind: 'literal', value: { type: 'number', value: 1 } };
+    });
+    expect(only(libraryDiff(base, stray), 'token_value')).toEqual([expect.objectContaining({ kind: 'added', scope: 'm9', to: '1' })]);
+  });
+
+  it('is deterministic across token order', () => {
+    const two = (order: 'ab' | 'ba') => withFoundation((a) => {
+      const second = { ...(a.tokens as unknown[])[0] as object, id: 'VariableID:2', name: 'color/secondary', path: ['color', 'secondary'] };
+      a.tokens = order === 'ab' ? [(a.tokens as unknown[])[0], second] : [second, (a.tokens as unknown[])[0]];
+    });
+    const none = bundle({ foundation: null });
+    expect(JSON.stringify(libraryDiff(none, two('ab')))).toBe(JSON.stringify(libraryDiff(none, two('ba'))));
+  });
+
+  it('minimumBump is the highest bump and counts cover every change', () => {
+    const mixed = withFoundation((a) => {
+      (a.tokens as Array<{ values: Record<string, unknown> }>)[0].values.m2 = { kind: 'literal', value: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 1 } };
+      (a.collections as Array<{ modes: unknown[] }>)[0].modes.push({ id: 'm3', name: 'Contrast', order: 2 });
+      (a.tokens as Array<{ name: string }>)[0].name = 'color/brand';
+    });
+    const diff = libraryDiff(base, mixed);
+    expect(diff.minimumBump).toBe('major');
+    expect(diff.counts).toEqual({ major: 1, minor: 1, patch: 1 });
+    expect(diff.changes).toHaveLength(3);
   });
 });

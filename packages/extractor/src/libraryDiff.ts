@@ -433,11 +433,179 @@ function diffComponents(before: LibraryBundleV1, after: LibraryBundleV1, out: Li
 }
 
 // ---------------------------------------------------------------------------
-// Entry point. The foundation half is added in Task 3.
+// Foundation facts
+// ---------------------------------------------------------------------------
+
+interface ModeFact { id: string; name: string }
+interface CollectionFact { id: string; name: string; modes: ModeFact[] }
+interface TokenFact {
+  id: string;
+  name: string;
+  type: string;
+  scopes: string[];
+  collectionId: string;
+  /** mode id to rendered value. */
+  values: Record<string, string>;
+}
+interface StyleFact { id: string; name: string; summary: string; body: string }
+
+interface FoundationFacts {
+  collections: CollectionFact[];
+  tokens: TokenFact[];
+  styles: StyleFact[];
+  /** collection id to name, and `${collectionId}/${modeId}` to mode name. */
+  names: Record<string, string>;
+}
+
+function formatTypography(properties: Record<string, unknown>): string {
+  const resolved = (key: string): string => {
+    const property = asRecord(properties[key]);
+    const value = property.resolved;
+    return isRecord(value) && typeof value.type === 'string' ? formatTyped(value as unknown as TypedValue) : 'unknown';
+  };
+  return `${resolved('font_family')} ${resolved('font_weight')} ${resolved('font_size')}/${resolved('line_height')}`;
+}
+
+function formatEffects(effects: unknown[]): string {
+  if (effects.length === 0) return 'no layers';
+  return effects.map((effect) => {
+    const record = asRecord(effect);
+    const type = asString(record.type) ?? 'effect';
+    return record.visible === false ? `${type} hidden` : type;
+  }).join(', ');
+}
+
+function readFoundationFacts(entry: LibraryBundleV1['foundation']): FoundationFacts {
+  const names: Record<string, string> = {};
+  if (entry === null) return { collections: [], tokens: [], styles: [], names };
+  const artifact = asRecord(entry.artifact);
+
+  const collections: CollectionFact[] = [];
+  for (const raw of asArray(artifact.collections)) {
+    const record = asRecord(raw);
+    const id = asString(record.id);
+    if (id === null) continue;
+    const name = asString(record.name) ?? id;
+    names[id] = name;
+    const modes: ModeFact[] = [];
+    for (const rawMode of asArray(record.modes)) {
+      const mode = asRecord(rawMode);
+      const modeId = asString(mode.id);
+      if (modeId === null) continue;
+      const modeName = asString(mode.name) ?? modeId;
+      names[`${id}/${modeId}`] = modeName;
+      modes.push({ id: modeId, name: modeName });
+    }
+    collections.push({ id, name, modes });
+  }
+
+  const tokens: TokenFact[] = [];
+  for (const raw of asArray(artifact.tokens)) {
+    const record = asRecord(raw);
+    const id = asString(record.id);
+    if (id === null) continue;
+    const values: Record<string, string> = {};
+    for (const [modeId, value] of Object.entries(asRecord(record.values))) {
+      values[modeId] = isRecord(value) && typeof value.kind === 'string'
+        ? formatCanonicalValue(value as unknown as CanonicalValue)
+        : canonicalJson(value);
+    }
+    tokens.push({
+      id,
+      name: asString(record.name) ?? id,
+      type: asString(record.type) ?? 'unknown',
+      scopes: asArray(record.scopes).map(String),
+      collectionId: asString(record.collection_id) ?? '',
+      values,
+    });
+  }
+
+  const styles: StyleFact[] = [];
+  const styleGroups = asRecord(artifact.styles);
+  for (const raw of asArray(styleGroups.typography)) {
+    const record = asRecord(raw);
+    const id = asString(record.id);
+    if (id === null) continue;
+    const properties = asRecord(record.properties);
+    styles.push({ id, name: asString(record.name) ?? id, summary: formatTypography(properties), body: canonicalJson(properties) });
+  }
+  for (const raw of asArray(styleGroups.effects)) {
+    const record = asRecord(raw);
+    const id = asString(record.id);
+    if (id === null) continue;
+    const effects = asArray(record.effects);
+    styles.push({
+      id, name: asString(record.name) ?? id, summary: formatEffects(effects),
+      body: canonicalJson({ effects, bindings: record.bindings ?? null, mode_id: record.mode_id ?? null }),
+    });
+  }
+
+  return { collections, tokens, styles, names };
+}
+
+function formatTokenShape(token: TokenFact, names: Record<string, string>): string {
+  const collection = names[token.collectionId] ?? token.collectionId;
+  const scopes = token.scopes.length > 0 ? token.scopes.join(', ') : 'none';
+  return `${token.type} in ${collection}, scopes ${scopes}`;
+}
+
+function diffFoundation(before: LibraryBundleV1, after: LibraryBundleV1, out: LibraryChange[]): void {
+  const b = readFoundationFacts(before.foundation);
+  const a = readFoundationFacts(after.foundation);
+  const modeName = (collectionId: string, modeId: string): string =>
+    a.names[`${collectionId}/${modeId}`] ?? b.names[`${collectionId}/${modeId}`] ?? modeId;
+
+  const collections = diffKeyed(b.collections, a.collections, (c) => c.id, sameJson);
+  for (const c of collections.added) out.push(change({ kind: 'added', entity: 'collection', component: null, id: c.id, name: c.name, from: null, to: null, scope: null }));
+  for (const c of collections.removed) out.push(change({ kind: 'removed', entity: 'collection', component: null, id: c.id, name: c.name, from: null, to: null, scope: null }));
+  for (const { before: cb, after: ca } of collections.changed) {
+    if (cb.name !== ca.name) {
+      out.push(change({ kind: 'renamed', entity: 'collection', component: null, id: ca.id, name: ca.name, from: cb.name, to: ca.name, scope: null }));
+    }
+    const modes = diffKeyed(cb.modes, ca.modes, (m) => m.id, sameJson);
+    for (const m of modes.added) out.push(change({ kind: 'added', entity: 'mode', component: null, id: `${ca.id}/${m.id}`, name: m.name, from: null, to: null, scope: ca.name }));
+    for (const m of modes.removed) out.push(change({ kind: 'removed', entity: 'mode', component: null, id: `${ca.id}/${m.id}`, name: m.name, from: null, to: null, scope: ca.name }));
+    for (const { before: mb, after: ma } of modes.changed) {
+      out.push(change({ kind: 'renamed', entity: 'mode', component: null, id: `${ca.id}/${ma.id}`, name: ma.name, from: mb.name, to: ma.name, scope: ca.name }));
+    }
+  }
+
+  const tokens = diffKeyed(b.tokens, a.tokens, (t) => t.id, sameJson);
+  for (const t of tokens.added) out.push(change({ kind: 'added', entity: 'token', component: null, id: t.id, name: t.name, from: null, to: formatTokenShape(t, a.names), scope: null }));
+  for (const t of tokens.removed) out.push(change({ kind: 'removed', entity: 'token', component: null, id: t.id, name: t.name, from: formatTokenShape(t, b.names), to: null, scope: null }));
+  for (const { before: tb, after: ta } of tokens.changed) {
+    if (tb.name !== ta.name) {
+      out.push(change({ kind: 'renamed', entity: 'token', component: null, id: ta.id, name: ta.name, from: tb.name, to: ta.name, scope: null }));
+    }
+    const shapeBefore = formatTokenShape(tb, b.names);
+    const shapeAfter = formatTokenShape(ta, a.names);
+    if (shapeBefore !== shapeAfter) {
+      out.push(change({ kind: 'changed', entity: 'token', component: null, id: ta.id, name: ta.name, from: shapeBefore, to: shapeAfter, scope: null }));
+    }
+    const values = diffKeyed(Object.entries(tb.values), Object.entries(ta.values), ([modeId]) => modeId, ([, x], [, y]) => x === y);
+    for (const [modeId, value] of values.added) out.push(change({ kind: 'added', entity: 'token_value', component: null, id: ta.id, name: ta.name, from: null, to: value, scope: modeName(ta.collectionId, modeId) }));
+    for (const [modeId, value] of values.removed) out.push(change({ kind: 'removed', entity: 'token_value', component: null, id: ta.id, name: ta.name, from: value, to: null, scope: modeName(ta.collectionId, modeId) }));
+    for (const { before: [modeId, from], after: [, to] } of values.changed) {
+      out.push(change({ kind: 'changed', entity: 'token_value', component: null, id: ta.id, name: ta.name, from, to, scope: modeName(ta.collectionId, modeId) }));
+    }
+  }
+
+  const styles = diffKeyed(b.styles, a.styles, (s) => s.id, sameJson);
+  for (const s of styles.added) out.push(change({ kind: 'added', entity: 'style', component: null, id: s.id, name: s.name, from: null, to: s.summary, scope: null }));
+  for (const s of styles.removed) out.push(change({ kind: 'removed', entity: 'style', component: null, id: s.id, name: s.name, from: s.summary, to: null, scope: null }));
+  for (const { before: sb, after: sa } of styles.changed) {
+    const readable = sb.summary !== sa.summary;
+    out.push(change({ kind: 'changed', entity: 'style', component: null, id: sa.id, name: sa.name, from: readable ? sb.summary : null, to: readable ? sa.summary : null, scope: null }));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Entry point.
 // ---------------------------------------------------------------------------
 
 export function libraryDiff(before: LibraryBundleV1, after: LibraryBundleV1): LibraryDiff {
   const changes: LibraryChange[] = [];
+  diffFoundation(before, after, changes);
   diffComponents(before, after, changes);
   return summarize(changes);
 }
