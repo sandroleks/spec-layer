@@ -46,6 +46,7 @@ import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
+import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
   applyGroupBulk,
@@ -137,6 +138,12 @@ import {
   setupCommand,
   type PublishQuotaSnapshot,
 } from './publish';
+import {
+  historyState,
+  onHistoryOpen,
+  onHistoryToggle,
+  setHistoryHost,
+} from './history';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -196,7 +203,7 @@ let libraryFilter: LibraryFilter = 'all';
  * peer, it is something you do to the library you are looking at. Keeping
  * `view` at 'library' also keeps the rail correctly highlighted for free.
  */
-let libraryPane: 'list' | 'publish' = 'list';
+let libraryPane: 'list' | 'publish' | 'history' = 'list';
 let libraryExpandedDocId: string | null = null;
 /**
  * The row the global search palette last opened, marked in the list until the
@@ -288,6 +295,12 @@ setPublishHost({
   // Publish and rotate successes are toasts; the screen itself shows only
   // errors, which need to stay on view.
   notify: (message) => nativeNotify(message),
+});
+
+setHistoryHost({
+  repaint: () => {
+    if (view === 'library' && libraryPane === 'history') paint();
+  },
 });
 
 /**
@@ -385,6 +398,10 @@ function paint(): void {
       return;
     case 'library':
       {
+        if (libraryPane === 'history') {
+          renderHistoryScreen(refs, historyState());
+          return;
+        }
         if (libraryPane === 'publish') {
           renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot));
           return;
@@ -1367,7 +1384,7 @@ function toggle<T>(set: Set<T>, value: T): void {
  * scrolled by an unrelated amount. Any open row menu is dropped too, since it
  * is positioned against a list that is about to stop being rendered.
  */
-function setLibraryPane(next: 'list' | 'publish', focusSelector: string): void {
+function setLibraryPane(next: 'list' | 'publish' | 'history', focusSelector: string): void {
   libraryPane = next;
   libraryMenuDocId = null;
   libraryMenuRestore = null;
@@ -1527,6 +1544,30 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-publish-back]')) {
     setLibraryPane('list', '[data-publish-open]');
+    return;
+  }
+
+  if (target.closest('[data-publish-history]')) {
+    setLibraryPane('history', '[data-history-back]');
+    const { libraryId, pullKey } = publishState();
+    void onHistoryOpen(libraryId, pullKey);
+    return;
+  }
+
+  if (target.closest('[data-history-back]')) {
+    setLibraryPane('publish', '[data-publish-history]');
+    return;
+  }
+
+  if (target.closest('[data-history-retry]')) {
+    const { libraryId, pullKey } = publishState();
+    void onHistoryOpen(libraryId, pullKey);
+    return;
+  }
+
+  const historyDisclosure = target.closest<HTMLButtonElement>('[data-history-disclosure]');
+  if (historyDisclosure?.dataset.historyDisclosure) {
+    onHistoryToggle(historyDisclosure.dataset.historyDisclosure);
     return;
   }
 
@@ -2158,6 +2199,11 @@ document.addEventListener('keydown', (event) => {
    * menu cannot be open here anyway (setLibraryPane drops it), but ordering
    * this by luck rather than by structure is how that stops being true.
    */
+  if (event.key === 'Escape' && view === 'library' && libraryPane === 'history') {
+    event.preventDefault();
+    setLibraryPane('publish', '[data-publish-history]');
+    return;
+  }
   if (event.key === 'Escape' && view === 'library' && libraryPane === 'publish') {
     event.preventDefault();
     setLibraryPane('list', '[data-publish-open]');

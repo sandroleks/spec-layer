@@ -3084,3 +3084,53 @@
     -webkit-text-fill-color: var(--sl-color-text);
   }
 }
+
+/* Version history rows reuse the Library row; these are the few extras. */
+.sl-history-row .sl-library-summary {
+  flex-wrap: wrap;
+}
+
+/*
+ * The Library's fallback box is a 2-column grid (icon, text) because its own
+ * fallback always carries a warning icon. A record with no property changes
+ * carries no icon, so the single child would be squeezed into the 18px icon
+ * column without this override.
+ */
+.sl-history-row .sl-library-change-fallback {
+  grid-template-columns: 1fr;
+}
+
+.sl-history-row .sl-library-update-disclosure > strong {
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-history-note {
+  flex: 1 1 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-history-values {
+  display: inline-flex;
+  gap: var(--sl-space-6);
+  margin-left: var(--sl-space-6);
+}
+
+.sl-history-from {
+  color: var(--sl-color-text-muted);
+  text-decoration: line-through;
+}
+
+.sl-history-to {
+  color: var(--sl-color-text);
+}
+
+.sl-history-truncated {
+  margin: var(--sl-space-8) 0 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+}

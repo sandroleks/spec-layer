@@ -8,13 +8,14 @@
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
  *   ui-harness.html?view=library&pane=publish&publish=published
  *   ui-harness.html?view=library&pane=publish&publish=proposal
+ *   ui-harness.html?view=library&pane=history&history=ready
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
  * thing we are verifying.
  */
 
-import type { FoundationSpec, FoundationSelection } from '@spec-layer/extractor';
+import type { FoundationSpec, FoundationSelection, VersionLog } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   parseBrandHex,
@@ -37,6 +38,8 @@ import { renderSettingsScreen, type SettingsScreenState } from './screens/settin
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
 import { createPublishState, firstPublishProposal, type PublishState } from './publish';
+import { renderHistoryScreen } from './screens/history';
+import type { HistoryState } from './history';
 import type { PublishAllowance } from './viewModel/allowance';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
@@ -598,8 +601,48 @@ if (view === 'library') {
     // The dry run round trip failed: the minimum bump still applies on publish.
     dryRunFailed: { ...PUBLISHED_BASE, status: 'idle', proposalStatus: 'failed' },
   };
-  let libraryPane: 'list' | 'publish' =
-    param('pane', 'list') === 'publish' ? 'publish' : 'list';
+
+  // Two records: the same shape historyScreen.test.ts's LOG uses, so the
+  // fixture and the covering test never drift apart.
+  const HISTORY_LOG: VersionLog = { v: 1, records: [
+    {
+      version: '2.0.0', publishedAt: '2026-09-12T10:00:00.000Z', bump: 'major', minimumBump: 'minor',
+      note: 'Card is new API and the old icon slot is gone.', contentHash: 'c2', bundleHash: 'b2',
+      extractorVersion: '2', pluginVersion: '5.1.0',
+      counts: { major: 1, minor: 1, patch: 1 },
+      changes: [
+        { kind: 'removed', entity: 'property', component: 'Button', id: 'icon', name: 'icon', from: 'instanceSwap', to: null, scope: null, bump: 'major' },
+        { kind: 'added', entity: 'component', component: 'Card', id: 'key-card', name: 'Card', from: null, to: null, scope: null, bump: 'minor' },
+        { kind: 'changed', entity: 'token_value', component: null, id: 'V1', name: 'color/primary', from: '#6750a4', to: '#5b438f', scope: 'Light', bump: 'patch' },
+      ],
+      changesTruncated: false,
+    },
+    {
+      version: '1.0.0', publishedAt: '2026-09-01T10:00:00.000Z', bump: 'initial', minimumBump: null, note: null,
+      contentHash: 'c1', bundleHash: 'b1', extractorVersion: '2', pluginVersion: '5.0.0',
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    },
+  ] };
+
+  const HISTORY_FIXTURES: Record<string, HistoryState> = {
+    // The newest record starts expanded, so the grouped change list is
+    // visible without a click.
+    ready: { status: 'ready', log: HISTORY_LOG, etag: null, message: null, expanded: '2.0.0' },
+    loading: { status: 'loading', log: null, etag: null, message: null, expanded: null },
+    empty: { status: 'ready', log: { v: 1, records: [] }, etag: null, message: null, expanded: null },
+    noLibrary: { status: 'noLibrary', log: null, etag: null, message: null, expanded: null },
+    noKey: { status: 'noKey', log: null, etag: null, message: null, expanded: null },
+    error: {
+      status: 'error', log: null, etag: null, expanded: null,
+      message: 'Could not reach the publish service. Check your connection and try again.',
+    },
+    gone: { status: 'gone', log: null, etag: null, message: null, expanded: null },
+  };
+  let historyFixture: HistoryState =
+    { ...(HISTORY_FIXTURES[param('history', 'ready')] ?? HISTORY_FIXTURES.ready) };
+
+  let libraryPane: 'list' | 'publish' | 'history' =
+    param('pane', 'list') === 'history' ? 'history' : param('pane', 'list') === 'publish' ? 'publish' : 'list';
   const publishFixture =
     PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
   // `?pane=publish&plan=free` shows the free plan's updates line. Its own
@@ -612,6 +655,10 @@ if (view === 'library') {
       : { kind: 'hidden' };
 
   const renderLibraryFixture = () => {
+    if (libraryPane === 'history') {
+      renderHistoryScreen(refs, historyFixture);
+      return;
+    }
     if (libraryPane === 'publish') {
       renderPublishScreen(refs, publishFixture, publishAllowanceFixture);
       return;
@@ -659,7 +706,7 @@ if (view === 'library') {
   };
 
   /** Mirrors ui-vnext.ts's setLibraryPane, including where focus lands. */
-  const setPane = (next: 'list' | 'publish', focusSelector: string) => {
+  const setPane = (next: 'list' | 'publish' | 'history', focusSelector: string) => {
     libraryPane = next;
     menuDocId = null;
     renderLibraryFixture();
@@ -667,7 +714,13 @@ if (view === 'library') {
   };
 
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || libraryPane !== 'publish') return;
+    if (event.key !== 'Escape') return;
+    if (libraryPane === 'history') {
+      event.preventDefault();
+      setPane('publish', '[data-publish-history]');
+      return;
+    }
+    if (libraryPane !== 'publish') return;
     event.preventDefault();
     setPane('list', '[data-publish-open]');
   });
@@ -681,6 +734,21 @@ if (view === 'library') {
     }
     if (target.closest('[data-publish-back]')) {
       setPane('list', '[data-publish-open]');
+      return;
+    }
+    if (target.closest('[data-publish-history]')) {
+      setPane('history', '[data-history-back]');
+      return;
+    }
+    if (target.closest('[data-history-back]')) {
+      setPane('publish', '[data-publish-history]');
+      return;
+    }
+    const historyDisclosure = target.closest<HTMLButtonElement>('[data-history-disclosure]');
+    if (historyDisclosure?.dataset.historyDisclosure) {
+      const version = historyDisclosure.dataset.historyDisclosure;
+      historyFixture = { ...historyFixture, expanded: historyFixture.expanded === version ? null : version };
+      renderLibraryFixture();
       return;
     }
     const filterButton = target.closest<HTMLButtonElement>('[data-library-filter]');
