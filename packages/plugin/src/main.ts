@@ -1469,10 +1469,11 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'stampPublished': {
       // Same guard as setPublishedAt: never label a library the file no longer holds.
       if (figma.root.getPluginData(PUBLISH_LIBRARY_KEY) !== msg.libraryId) break;
+      figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
       // Never fabricate a version on a pill: a malformed or empty string here
       // would otherwise be stamped and shown as if the proxy had assigned it.
+      // The date above is still a fact about this publish, so it stays.
       if (!isSemver(msg.version)) break;
-      figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
       figma.root.setPluginData(PUBLISH_VERSION_KEY, msg.version);
       const bySource = new Map(msg.components.map((c) => [c.sourceNodeId, c.hashes]));
       // The hash is taken over the published dump, never a live re-read, so

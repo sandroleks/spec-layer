@@ -753,21 +753,28 @@ export async function onPublishSources(
           : 'Published. Developers get this version on their next pull.',
       );
       break;
-    case 'unchanged':
+    case 'unchanged': {
       // The unchanged answer carries the stored library's existing date, which
       // is the true last-published time, so it is recorded like the others.
-      // Nothing changed, so no doc gets a fresh stamp.
+      // Nothing changed, so no doc gets a fresh stamp, and the proposal
+      // settles to "nothing changed" so the screen stops offering a next
+      // version the proxy just said it would not assign.
+      const version = outcome.version ?? state.version;
       state = {
         ...state,
         status: 'done',
         libraryId: outcome.libraryId,
         lastPublishedAt: outcome.publishedAt,
-        version: outcome.version ?? state.version,
+        version,
         message: null,
+        chosenBump: null,
+        proposal: version ? publishedProposal(version) : null,
+        proposalStatus: 'idle',
       };
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
       host.notify('Nothing changed since the last publish.');
       break;
+    }
     case 'below_minimum':
       // Re-render with the server's own minimum and the version it would
       // produce, so the screen shows the real floor without a second dry run.

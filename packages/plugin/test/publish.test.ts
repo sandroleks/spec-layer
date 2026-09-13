@@ -1076,6 +1076,25 @@ describe('publish controller', () => {
     ]);
   });
 
+  it('an unchanged publish settles the proposal so the screen stops offering a next version', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    const dryFetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, dryFetcher);
+    publish.onBumpChoice('major');
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn(async () => jsonResponse(200, { libraryId: LIB, publishedAt: '2026-09-01T00:00:00.000Z', unchanged: true, version: '1.4.2' })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(publish.publishState()).toMatchObject({
+      status: 'done', version: '1.4.2', chosenBump: null,
+      proposal: publish.publishedProposal('1.4.2'),
+    });
+    expect(publish.nextVersionFor(publish.publishState())).toBeNull();
+  });
+
   it('onPublishOpen with a known library id runs a dry run and stores the proposal', async () => {
     publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
     publish.onPublishOpen();
