@@ -737,8 +737,21 @@ export async function onPublishSources(
       // Never recreate on the user's behalf: the developers pulling the old id
       // would be stranded without anyone being told. Drop the stale identity
       // here and in the file so the next click is a deliberate new library.
+      // The dead library's version, proposal and chosen bump go with it: the
+      // next publish is a create, and none of the three may leak onto it
+      // (a resurrected version, a stale minimum behind effectiveBump, or a
+      // bump sent alongside initialVersion).
       state = {
-        ...state, status: 'error', libraryId: null, pullKey: null, lastPublishedAt: null, message: GONE_MESSAGE,
+        ...state,
+        status: 'error',
+        libraryId: null,
+        pullKey: null,
+        lastPublishedAt: null,
+        message: GONE_MESSAGE,
+        version: null,
+        proposal: null,
+        proposalStatus: 'idle',
+        chosenBump: null,
       };
       host.send({ type: 'clearPublishInfo' });
       break;

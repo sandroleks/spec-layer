@@ -750,13 +750,26 @@ describe('publish controller', () => {
     expect(sent).not.toContainEqual({ type: 'clearPublishInfo' });
   });
 
-  it('stops on a gone republish target, clears the identity, and never recreates', async () => {
+  it('stops on a gone republish target, clears the identity and version state, and never recreates', async () => {
     publish.onPublishClick(AUTH);
     const createFetcher = vi.fn(async () => jsonResponse(201, {
-      libraryId: 'lib_old', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z',
+      libraryId: 'lib_old', pullKey: 'sl_old', publishedAt: '2026-09-01T00:00:01.000Z', version: '1.4.2',
     }));
     await publish.onPublishSources(sourcesMsg(), AUTH, createFetcher);
     expect(publish.publishState().libraryId).toBe('lib_old');
+    expect(publish.publishState().version).toBe('1.4.2');
+
+    // A dry-run proposal and a chosen bump both belong to lib_old; neither
+    // may survive the proxy reporting it gone.
+    publish.onPublishOpen();
+    const dryRunFetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, dryRunFetcher);
+    expect(publish.publishState().proposal).not.toBeNull();
+    publish.onBumpChoice('major');
+    expect(publish.publishState().chosenBump).toBe('major');
 
     publish.onPublishClick(AUTH);
     const fetcher = vi.fn(async (_url, init) => {
@@ -778,16 +791,25 @@ describe('publish controller', () => {
     // click is a deliberate create rather than another failed republish.
     expect(state.libraryId).toBeNull();
     expect(state.pullKey).toBeNull();
+    // The dead library's version, proposal and chosen bump must not survive
+    // it either: a create is coming next, and none of the three belongs to it.
+    expect(state.version).toBeNull();
+    expect(state.proposal).toBeNull();
+    expect(state.chosenBump).toBeNull();
     expect(sent.at(-1)).toEqual({ type: 'clearPublishInfo' });
 
     publish.onPublishClick(AUTH);
+    let recreateBody: Record<string, unknown> = {};
     const recreate = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { libraryId?: string };
-      expect('libraryId' in body).toBe(false);
+      recreateBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+      expect('libraryId' in recreateBody).toBe(false);
       return jsonResponse(201, { libraryId: 'lib_new', pullKey: 'sl_new', publishedAt: '2026-09-01T00:00:03.000Z' });
     });
     await publish.onPublishSources(sourcesMsg(), AUTH, recreate);
     expect(publish.publishState().libraryId).toBe('lib_new');
+    // No bump left over from the dead library's chosen major rides along on
+    // the fresh create.
+    expect(recreateBody.bump).toBeUndefined();
   });
 
   it('republishes with the identity carried by publishSources when the session has none', async () => {
