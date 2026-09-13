@@ -33,19 +33,19 @@ const isBump = (value: unknown): value is Bump => typeof value === 'string' && B
 
 /**
  * Cut the sorted change list after the last change that fits in `maxBytes`
- * of JSON. Measured in UTF-16 code units of the serialized array, which is a
- * conservative stand-in for bytes: every non-ASCII character counts at least
- * once, so the stored JSON is never larger than the cap in code units.
+ * of UTF-8 bytes. Bytes are measured with TextEncoder, including the JSON
+ * structure (brackets, commas, quotes).
  */
 export function truncateChanges(
   changes: LibraryChange[],
   maxBytes: number = MAX_CHANGES_BYTES,
 ): { changes: LibraryChange[]; changesTruncated: boolean } {
-  if (JSON.stringify(changes).length <= maxBytes) return { changes, changesTruncated: false };
+  const full = JSON.stringify(changes);
+  if (new TextEncoder().encode(full).byteLength <= maxBytes) return { changes, changesTruncated: false };
   let size = 2; // the brackets
   const kept: LibraryChange[] = [];
   for (const change of changes) {
-    const next = JSON.stringify(change).length + (kept.length > 0 ? 1 : 0);
+    const next = new TextEncoder().encode(JSON.stringify(change)).byteLength + (kept.length > 0 ? 1 : 0);
     if (size + next > maxBytes) break;
     size += next;
     kept.push(change);
@@ -114,7 +114,7 @@ export function readNote(value: unknown): string | null | undefined {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-/** The dry-run body for a changed bundle. `diff` is null when there is no stored bundle to compare against. */
+/** The dry-run body for a changed bundle. `diff` is null when there is no stored bundle to compare against, or when the stored one could not be parsed. */
 export function proposalFor(storedVersion: string | null, diff: LibraryDiff | null): {
   currentVersion: string | null;
   minimumBump: Bump | null;
@@ -123,11 +123,21 @@ export function proposalFor(storedVersion: string | null, diff: LibraryDiff | nu
   changes: LibraryChange[];
   changesTruncated: boolean;
 } {
-  if (storedVersion === null || diff === null) {
+  if (storedVersion === null) {
     return {
       currentVersion: null, minimumBump: null, proposedVersion: '1.0.0',
       counts: diff?.counts ?? { major: 0, minor: 0, patch: 0 },
       ...truncateChanges(diff?.changes ?? []),
+    };
+  }
+  if (diff === null) {
+    return {
+      currentVersion: storedVersion,
+      minimumBump: 'patch',
+      proposedVersion: nextVersion(storedVersion, 'patch'),
+      counts: { major: 0, minor: 0, patch: 0 },
+      changes: [],
+      changesTruncated: false,
     };
   }
   const minimum: Bump = diff.minimumBump ?? 'patch';

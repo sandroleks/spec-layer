@@ -41,6 +41,17 @@ describe('truncateChanges', () => {
   it('defaults to the 64 KB cap', () => {
     expect(MAX_CHANGES_BYTES).toBe(65_536);
   });
+
+  it('measures bytes, not code units, with UTF-8 encoding', () => {
+    const name = '色'.repeat(40);
+    const changes = Array.from({ length: 50 }, (_, _i) => change(name, 'patch'));
+    const first10 = changes.slice(0, 10);
+    const cap = new TextEncoder().encode(JSON.stringify(first10)).byteLength + 5;
+    const out = truncateChanges(changes, cap);
+    expect(out.changesTruncated).toBe(true);
+    expect(out.changes).toEqual(first10);
+    expect(new TextEncoder().encode(JSON.stringify(out.changes)).byteLength).toBeLessThanOrEqual(cap);
+  });
 });
 
 describe('readVersionLog and currentVersion', () => {
@@ -135,6 +146,13 @@ describe('proposalFor', () => {
   it('a changed bundle with no property changes proposes a patch', () => {
     const diff = { changes: [], minimumBump: null, counts: { major: 0, minor: 0, patch: 0 } };
     expect(proposalFor('1.4.2', diff)).toMatchObject({ minimumBump: 'patch', proposedVersion: '1.4.3' });
+  });
+
+  it('keeps the stored version when the bundle could not be parsed', () => {
+    expect(proposalFor('1.4.2', null)).toEqual({
+      currentVersion: '1.4.2', minimumBump: 'patch', proposedVersion: '1.4.3',
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    });
   });
 });
 
