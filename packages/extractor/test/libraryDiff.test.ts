@@ -215,7 +215,7 @@ describe('libraryDiff: components', () => {
     const gone = withComponent((a) => {
       a.anatomy = [{ part: 'Container', path: 'Container', type: 'FRAME', children: [{ part: 'Label', path: 'Container/Label', type: 'TEXT' }] }];
     });
-    expect(only(libraryDiff(base, gone), 'anatomy_part')).toEqual([expect.objectContaining({ kind: 'removed', id: 'Icon', bump: 'major' })]);
+    expect(only(libraryDiff(base, gone), 'anatomy_part')).toEqual([expect.objectContaining({ kind: 'removed', id: 'Container/Icon', name: 'Icon', bump: 'major' })]);
 
     const retyped = withComponent((a) => {
       a.anatomy = [{ part: 'Container', path: 'Container', type: 'FRAME', children: [
@@ -224,8 +224,31 @@ describe('libraryDiff: components', () => {
       ] }];
     });
     expect(only(libraryDiff(base, retyped), 'anatomy_part')).toEqual([expect.objectContaining({
-      kind: 'changed', id: 'Icon', from: 'INSTANCE, shown by showIcon, component Icon', to: 'INSTANCE, shown by hasIcon, component Icon', bump: 'patch',
+      kind: 'changed', id: 'Container/Icon', name: 'Icon', from: 'INSTANCE, shown by showIcon, component Icon', to: 'INSTANCE, shown by hasIcon, component Icon', bump: 'patch',
     })]);
+  });
+
+  it('anatomy part: identity is path, so a same-named part in a different branch is not paired with it', () => {
+    const before = bundle({ components: [component('Button', componentArtifact({
+      anatomy: [
+        { part: 'A', path: 'A', type: 'FRAME', children: [{ part: 'Label', path: 'A/Label', type: 'TEXT' }] },
+        { part: 'B', path: 'B', type: 'FRAME', children: [{ part: 'Label', path: 'B/Label', type: 'TEXT' }] },
+        { part: 'C', path: 'C', type: 'FRAME', children: [] },
+      ],
+    }))] });
+    const after = bundle({ components: [component('Button', componentArtifact({
+      anatomy: [
+        { part: 'A', path: 'A', type: 'FRAME', children: [] },
+        { part: 'B', path: 'B', type: 'FRAME', children: [{ part: 'Label', path: 'B/Label', type: 'TEXT' }] },
+        { part: 'C', path: 'C', type: 'FRAME', children: [{ part: 'Label', path: 'C/Label', type: 'TEXT' }] },
+      ],
+    }))] });
+    const changes = only(libraryDiff(before, after), 'anatomy_part');
+    expect(changes).toEqual([
+      expect.objectContaining({ kind: 'removed', id: 'A/Label', name: 'Label' }),
+      expect.objectContaining({ kind: 'added', id: 'C/Label', name: 'Label' }),
+    ]);
+    expect(changes.some((c) => c.kind === 'changed')).toBe(false);
   });
 
   it('binding: identity is path, property and condition; the value is the bound token name; every kind is patch', () => {

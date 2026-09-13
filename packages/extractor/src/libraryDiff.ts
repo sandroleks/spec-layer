@@ -227,7 +227,11 @@ export function formatCanonicalValue(value: CanonicalValue): string {
 
 interface AxisFact { name: string; options: string[]; default: string | null }
 interface PropertyFact { name: string; kind: string; default: string | null; options: string[] | null }
-interface PartFact { name: string; type: string; shownBy: string | null; component: string | null }
+/** Keyed by `path`, not `name`: a part name repeats across anatomy branches
+ *  (e.g. two containers each with a `Label`), and pairing by name alone would
+ *  let `diffKeyed`'s positional matching fabricate a `changed` between two
+ *  unrelated nodes, or swallow a real add/remove. */
+interface PartFact { path: string; name: string; type: string; shownBy: string | null; component: string | null }
 interface BindingFact { path: string; property: string; when: Record<string, string[]> | null; sourceId: string }
 interface ValueFact { id: string; value: string }
 
@@ -248,8 +252,10 @@ function flattenAnatomy(nodes: unknown[], out: PartFact[]): void {
   for (const node of nodes) {
     const record = asRecord(node);
     const name = asString(record.part);
-    if (name !== null) {
+    const path = asString(record.path);
+    if (name !== null && path !== null) {
       out.push({
+        path,
         name,
         type: asString(record.type) ?? 'unknown',
         shownBy: asString(record.shown_by),
@@ -393,11 +399,11 @@ function diffComponentPair(before: ComponentFacts, after: ComponentFacts, out: L
   for (const s of states.added) out.push(change({ kind: 'added', entity: 'state', component, id: s, name: s, from: null, to: null, scope: null }));
   for (const s of states.removed) out.push(change({ kind: 'removed', entity: 'state', component, id: s, name: s, from: null, to: null, scope: null }));
 
-  const parts = diffKeyed(before.parts, after.parts, (p) => p.name, sameJson);
-  for (const p of parts.added) out.push(change({ kind: 'added', entity: 'anatomy_part', component, id: p.name, name: p.name, from: null, to: formatPart(p), scope: null }));
-  for (const p of parts.removed) out.push(change({ kind: 'removed', entity: 'anatomy_part', component, id: p.name, name: p.name, from: formatPart(p), to: null, scope: null }));
+  const parts = diffKeyed(before.parts, after.parts, (p) => p.path, sameJson);
+  for (const p of parts.added) out.push(change({ kind: 'added', entity: 'anatomy_part', component, id: p.path, name: p.name, from: null, to: formatPart(p), scope: null }));
+  for (const p of parts.removed) out.push(change({ kind: 'removed', entity: 'anatomy_part', component, id: p.path, name: p.name, from: formatPart(p), to: null, scope: null }));
   for (const { before: b, after: a } of parts.changed) {
-    out.push(change({ kind: 'changed', entity: 'anatomy_part', component, id: a.name, name: a.name, from: formatPart(b), to: formatPart(a), scope: null }));
+    out.push(change({ kind: 'changed', entity: 'anatomy_part', component, id: a.path, name: a.name, from: formatPart(b), to: formatPart(a), scope: null }));
   }
 
   const tokenName = (facts: ComponentFacts, sourceId: string): string => facts.tokenNames[sourceId] ?? sourceId;
