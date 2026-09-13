@@ -7,7 +7,7 @@
 
 import {
   extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
-  type SpecHashProjection,
+  type SpecHashProjection, type Bump,
 } from '@spec-layer/extractor';
 import type { ProseDrafts } from '@spec-layer/extractor';
 import {
@@ -122,9 +122,13 @@ import {
 import { copyText, renderManualCopyModal } from './clipboard';
 import {
   agentSetupMessage,
+  onBumpChoice,
   onDownloadSkillClick,
+  onInitialVersionInput,
+  onNoteInput,
   onPublishClick,
   onPublishInfo,
+  onPublishOpen,
   onPublishSources,
   onPublishSourcesError,
   onRotateClick,
@@ -1517,6 +1521,7 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-publish-open]')) {
     setLibraryPane('publish', '[data-publish-back]');
+    onPublishOpen();
     return;
   }
 
@@ -1565,6 +1570,12 @@ document.addEventListener('click', (event) => {
     void onRotateClick(
       publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
     );
+    return;
+  }
+
+  const bumpButton = target.closest<HTMLButtonElement>('[data-publish-bump]');
+  if (bumpButton?.dataset.publishBump) {
+    onBumpChoice(bumpButton.dataset.publishBump as Bump);
     return;
   }
 
@@ -1927,7 +1938,15 @@ document.addEventListener('change', (event) => {
 });
 
 document.addEventListener('input', (event) => {
-  const input = event.target;
+  const target = event.target;
+  // The note is a textarea, so it never satisfies the HTMLInputElement guard
+  // below. It repaints nothing itself (see onNoteInput's own comment), so it
+  // is handled and returned before that guard narrows the type.
+  if (target instanceof HTMLTextAreaElement && target.matches('[data-publish-note]')) {
+    onNoteInput(target.value);
+    return;
+  }
+  const input = target;
   if (!(input instanceof HTMLInputElement)) return;
   if (input.matches('[data-global-search-input]')) {
     searchQuery = input.value;
@@ -1936,6 +1955,20 @@ document.addEventListener('input', (event) => {
     return;
   }
   if (operation.active) return;
+  if (input.matches('[data-publish-initial-version]')) {
+    onInitialVersionInput(input.value);
+    // Validity is shown next to the field, so the screen has to repaint; the
+    // note field does not, which is why its handler stays silent above.
+    // paintAndFocus re-renders the markup from scratch, so the fresh <input>
+    // it focuses starts with its caret at 0 rather than where the reader was
+    // typing; setSelectionRange puts it back at the end.
+    if (view === 'library' && libraryPane === 'publish') {
+      paintAndFocus('[data-publish-initial-version]');
+      const refocused = document.querySelector<HTMLInputElement>('[data-publish-initial-version]');
+      refocused?.setSelectionRange(refocused.value.length, refocused.value.length);
+    }
+    return;
+  }
   if (input.matches('[data-license-input]')) {
     licenseInput = input.value;
     const activateButton = document.querySelector<HTMLButtonElement>('[data-license-activate]');

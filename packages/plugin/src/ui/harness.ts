@@ -7,6 +7,7 @@
  *
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
  *   ui-harness.html?view=library&pane=publish&publish=published
+ *   ui-harness.html?view=library&pane=publish&publish=proposal
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
@@ -35,7 +36,7 @@ import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
-import type { PublishState } from './publish';
+import { createPublishState, firstPublishProposal, type PublishState } from './publish';
 import type { PublishAllowance } from './viewModel/allowance';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
@@ -531,66 +532,71 @@ if (view === 'library') {
    * fixtures are synthetic or explicitly publishable, and a pull key in a
    * dev-only file is still a pull key.
    */
+  const PUBLISHED_BASE: PublishState = {
+    ...createPublishState(),
+    libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+    pullKey: `sl_${'0f'.repeat(24)}`,
+    lastPublishedAt: '2026-09-01T09:12:00.000Z',
+    version: '1.4.2',
+  };
+  const IDLE_BASE: PublishState = { ...createPublishState() };
+
   const PUBLISH_FIXTURES: Record<string, PublishState> = {
-    idle: {
-      status: 'idle',
-      message: null,
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
-    collecting: {
-      status: 'collecting',
-      message: null,
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
+    idle: { ...IDLE_BASE },
+    collecting: { ...IDLE_BASE, status: 'collecting' },
     uploading: {
+      ...IDLE_BASE,
       status: 'uploading',
-      message: null,
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
-      intent: 'publish',
+      version: '1.4.2',
     },
     // Success is a toast, so a published screen carries no message of its own.
-    published: {
-      status: 'done',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
-      pullKey: `sl_${'0f'.repeat(24)}`,
-      lastPublishedAt: '2026-09-01T09:12:00.000Z',
-      intent: 'publish',
-    },
+    published: { ...PUBLISHED_BASE, status: 'done' },
     // A second device: the id is in the file, the key is not on this machine.
     idOnly: {
+      ...PUBLISHED_BASE,
       status: 'idle',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: null,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
-      intent: 'publish',
     },
     // Published by a build that stored no date: the status block says so.
-    unrecorded: {
-      status: 'idle',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
-      pullKey: `sl_${'0f'.repeat(24)}`,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
+    unrecorded: { ...PUBLISHED_BASE, status: 'idle', lastPublishedAt: null },
     error: {
+      ...IDLE_BASE,
       status: 'error',
       message: 'Could not reach the publish service. Check your connection and try again.',
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
     },
+    // The dry run answered: current, next, reason, raise control, note.
+    proposal: {
+      ...PUBLISHED_BASE,
+      status: 'idle',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+        counts: { major: 0, minor: 2, patch: 5 },
+        changes: [
+          { kind: 'added', entity: 'property', component: 'Button', id: 'icon', name: 'icon', from: null, to: 'instanceSwap', scope: null, bump: 'minor' },
+          { kind: 'added', entity: 'state', component: 'Button', id: 'Pressed', name: 'Pressed', from: null, to: null, scope: null, bump: 'minor' },
+          { kind: 'changed', entity: 'token_value', component: null, id: 'VariableID:1', name: 'color/primary', from: '#6750a4', to: '#5b438f', scope: 'Light', bump: 'patch' },
+        ],
+        changesTruncated: false,
+      },
+    },
+    // No library id yet: the local 1.0.0 proposal, no proxy round trip.
+    firstVersion: { ...IDLE_BASE, proposal: firstPublishProposal() },
+    // The dry run answered, but the publisher tried to pick a bump under it.
+    belowMinimum: {
+      ...PUBLISHED_BASE,
+      status: 'error',
+      message: 'The changes need at least a minor bump.',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+        counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+      },
+    },
+    // The dry run round trip failed: the minimum bump still applies on publish.
+    dryRunFailed: { ...PUBLISHED_BASE, status: 'idle', proposalStatus: 'failed' },
   };
   let libraryPane: 'list' | 'publish' =
     param('pane', 'list') === 'publish' ? 'publish' : 'list';

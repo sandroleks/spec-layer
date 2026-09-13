@@ -1423,6 +1423,80 @@
   margin-top: var(--sl-space-16);
 }
 
+/* Version block: the next-version line, the raise control, the note. */
+.sl-publish-version-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-2);
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text);
+}
+
+.sl-publish-version-next > span {
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+}
+
+.sl-publish-bumps {
+  margin-bottom: var(--sl-space-8);
+}
+
+/*
+ * .sl-segmented > button fixes a 24px single-line height, which the disabled
+ * choice's second line (its "below the minimum" small print) would overflow.
+ * Each button becomes a small centred column instead, so the row's height
+ * follows whichever choice needs the most room and the other two centre
+ * inside it, rather than the row clipping the explanation or the choices
+ * sitting at mismatched heights.
+ */
+.sl-publish-bumps > button {
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sl-space-2);
+  padding: var(--sl-space-6) var(--sl-space-10);
+  text-align: center;
+}
+
+/* A disabled choice explains itself in place instead of hiding. */
+.sl-publish-bumps > button > small {
+  display: block;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-regular);
+  white-space: normal;
+}
+
+.sl-publish-note-field {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--sl-space-6) var(--sl-space-8);
+  color: var(--sl-color-text);
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border);
+  border-radius: var(--sl-radius-sm);
+  font: inherit;
+}
+
+.sl-publish-note-field:focus-visible {
+  outline: 2px solid var(--sl-color-focus);
+  outline-offset: 1px;
+}
+
+/*
+ * Before the first publish the version block is followed by the plain intro
+ * paragraph, not another .sl-publish-block, so the "+ .sl-publish-block" rule
+ * above never fires between them. Once there is a library the block after it
+ * (Developer setup, or the id-only note) is a .sl-publish-block and that rule
+ * already spaces the two, so this only ever fires in the pre-publish case.
+ */
+.sl-publish-version + .sl-publish-intro {
+  margin-top: var(--sl-space-16);
+}
+
 /*
  * Reports whichever action ran last, so it follows both groups. It needs the
  * same air between it and the group above as the groups have between them;
