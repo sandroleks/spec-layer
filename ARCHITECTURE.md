@@ -44,6 +44,8 @@ Hashed implies rendered: the rendered projection carries only what a frame draws
 
 AI-written group descriptions are the one deliberate exception to "rendered implies hashed", and it is an exception rather than an oversight. A description is not derived from the file: rewording it is not the token layer drifting, and a token changing does not make the sentence wrong. Hashing it would report every doc as out of date for a reason that has nothing to do with the source, which is precisely the noise the invariant exists to prevent. Component prose is excluded from `specContentHash` for the same reason. What does cover it is `selfHash`, the manual-edit check, since the description is part of the rendered document. Descriptions are stored on the doc's own link so an Update re-renders them rather than deleting them or spending another generation, which is the failure the part numbers already taught this branch once.
 
+The publish pill is the second deliberate exception, for the same shape of reason. It states a fact about the library (which version this doc's source was published as, and whether the source has moved since) rather than a fact derived from the source, so hashing it would make every publish look like drift. It lives outside all four hashes: `collectGeneratedText` skips any node carrying `specLayerPill`, so `selfHash` never sees it; it is not a field of any drift projection, so `specContentHash` and `foundationContentHash` cannot move on it; and it never reaches the extractor, so `semanticContentHash` cannot either. Its state is computed in `publishPill.ts` from the Section's `specLayerPublish` record and the doc's own drift hash, which is the hash the plugin already computes on Generate and Update, and the one the UI takes from the live source at publish. An unknown hash reads as Changed since, never Published.
+
 `resolvedType` is the worked example of that last sentence. It sat outside the projection for as long as nothing drew it, and moved back in when colour variables gained their own layout: it now decides whether a row is drawn as a swatch or as a table cell, which makes it the most consequential field in the projection rather than an unrendered one. Both directions still hold, and the hash moving on a retyped variable is now correct rather than noise. It has to be the declared type and not the resolved value's `kind`, because a colour aliased entirely into a published library resolves to no local value, and inferring "not a colour" from that would drop a whole semantic collection into the numbers table.
 
 `unitContent` returns `null` when the scope's source is gone, which means a missing collection id *or* a named group that matches nothing. A group is derived from names, so a named group with no members cannot legitimately exist; treating zero rows as a valid empty unit would let a doc whose group was renamed away read "In sync" while rebuilding to a headed, rowless frame. A collection-scoped unit with genuinely zero variables is a different case and still returns an empty unit.
@@ -114,6 +116,8 @@ written only when the request also carries its current pull key
 - `POST /v1/libraries/:libraryId/rotate` (caller must own the library; there
   is no tier check): issues a new pull key. The old key stops working once
   the KV write propagates, which can take up to about a minute.
+
+`packages/proxy/src/versions.ts` gives a published library a semantic version. On every changed publish the proxy loads the stored bundle, runs the extractor's `libraryDiff` over Figma facts, and derives the minimum bump; the client may raise it and never lower it. One `VersionRecord` per publish is appended to `lib:<id>:versions`, newest first, and the bundle bytes are kept under `lib:<id>:bundle:<version>` for the newest ten versions. The log, not the meta, is the source of truth for the current version: KV writes are not atomic, and publish writes bundles, then the log, then the meta, so a stop between the last two leaves a record the meta lacks and the next publish reads the log. `dryRun: true` computes the same proposal without writing, spending quota, or taking the publish reservation, and the plugin never sends its dry-run result back: publish recomputes.
 
 KV layout, all under the `libraryStore` binding. The records a publish writes
 share no field with the record a rotate writes, so the two can overlap
@@ -270,14 +274,17 @@ chosen for its lifetime:
   each session rather than trusting a stored verdict.
 - `figma.root` plugin data holds the document registry, so a file knows which
   documents it contains without scanning every page. It also holds the file's
-  published library id (`speclayer.publish.libraryId`), because
-  `figma.fileKey` is undefined for a Community plugin and a per-user store
-  cannot tell two files apart. The matching pull key is a secret, so it stays
-  in `figma.clientStorage` under `publishKey:<libraryId>`; a second device
-  sees the id without the key and can rotate to get one.
+  published library id (`speclayer.publish.libraryId`) and the library's
+  current version (`speclayer.publish.version`), because `figma.fileKey` is
+  undefined for a Community plugin and a per-user store cannot tell two files
+  apart. The matching pull key is a secret, so it stays in
+  `figma.clientStorage` under `publishKey:<libraryId>`; a second device sees
+  the id without the key and can rotate to get one.
 - Each generated Section holds its own doc link and prose under plugin data on
   the node, which is what lets a document be found, drift-checked, and updated
-  from the node itself rather than from a registry that could disagree with it.
+  from the node itself rather than from a registry that could disagree with it,
+  and, once published, a publish record (`specLayerPublish`) naming the
+  version and the drift hash the doc was published at.
 
 The proxy holds the only server-side state: a KV namespace caching license
 verdicts, and a Durable Object per hashed identity serializing quota updates.

@@ -430,6 +430,43 @@ action. The rows below start there.
       and the meter appears; Rotate key works.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
+- [ ] First version: a file with a Foundation doc and two component docs,
+      never published. Open Publish; the Version block reads "Not versioned
+      yet" with First version prefilled 1.0.0. Type `2.0` and see "Use three
+      numbers, like 1.0.0."; restore 1.0.0. The primary reads "Publish 1.0.0".
+      Publish; the toast names 1.0.0; the meta line reads "Version 1.0.0,
+      published <local date>"; every group frame header and the Foundation card
+      header carries a pill reading `v1.0.0 · Published`, right of the
+      eyebrow and left of the logo when one is set.
+- [ ] Hand-edit detector stays quiet: after that publish, open the Library;
+      every row reads In sync, none reads Edited. Run Update on one doc; the
+      pill is still `v1.0.0 · Published` and the row is still In sync.
+- [ ] Changed since: add a variant option to one component. Update its doc;
+      its pill reads `v1.0.0 · Changed since`; the other docs keep
+      `Published`. Move a group frame's header by hand, then Update again; the
+      pill repaints where the header now sits.
+- [ ] Proposal and raise: open Publish. The block reads "Current version
+      1.0.0", "Next version 1.1.0 (minor)" with a reason naming 1 addition,
+      patch disabled and labelled "below the minimum", minor checked. Choose
+      major; the next version reads 2.0.0 and the primary "Publish 2.0.0".
+      Type a note. Publish; every pill now reads `v2.0.0 · Published`.
+- [ ] History: open Version history from the block. Two rows, v2.0.0 first
+      with a "major, breaking" badge, the date, and the note on one line;
+      v1.0.0 with "first version". Expand v2.0.0: Components lists the added
+      option; no Removed group. Back returns to Publish; Escape from history
+      returns to Publish, and again to the list.
+- [ ] Nothing changed: publish again without editing; the toast reads
+      "Nothing changed since the last publish." and the version stays 2.0.0.
+- [ ] Pull prints the version: run `spec-layer pull` in the developer
+      directory; the line ends `(v2.0.0, published <date>)`; `spec-layer
+      status` reads "Up to date (v2.0.0, …)"; `spec-layer list` names v2.0.0.
+- [ ] Second device (no key): open Publish in the same file from another
+      account; the Version block says the dry run could not run or the
+      history says the key is on the publishing device; nothing claims a
+      version it did not fetch.
+- [ ] Pre-versioning library: a library published before this build. Open
+      Publish; the block says the library has no version yet and the next
+      publish creates 1.0.0. Publish; pills appear at v1.0.0.
 
 ## Download skill
 

@@ -17,6 +17,47 @@ plugin portion adds a download feature to the Publish screen and ships in the
 plugin's own release, on its own schedule; it needs no CLI version and moves
 none of the reasoning above.
 
+### Added
+
+- **Published libraries have a semantic version.** Every changed publish
+  assigns one. The proxy diffs the stored bundle against the new one over
+  Figma facts only (component properties, variant axes and options, states,
+  anatomy parts, token bindings, layout and effect values, collections, modes,
+  tokens and their per-mode values, styles) with the new Figma-free
+  `libraryDiff` in the extractor, and derives the minimum bump: removing or
+  renaming a structural entity is major, adding one is minor, everything else
+  is patch. Prose, descriptions, diagnostics and export metadata never move
+  it. The publisher may raise the bump and add a note, never lower it. The
+  first version is 1.0.0, editable on the first publish. The proxy stores one
+  record per version and the last ten bundles under `lib:<id>:versions` and
+  `lib:<id>:bundle:<version>`, answers `dryRun: true` with the proposal
+  without writing or spending quota, serves `GET /v1/libraries/:id/versions`,
+  and adds `X-Library-Version` to publish and pull responses. Deploy the proxy
+  before this plugin build.
+- **Every doc frame carries a publish pill.** The header band of each
+  component group frame and each Foundation card shows `v1.5.0 · Published`,
+  `v1.5.0 · Changed since`, or `Not published`. Published means the doc's
+  source drift hash matches the one taken at publish; a doc whose hash cannot
+  be computed reads Changed since, never Published. The pill enters none of
+  the hashes: it is skipped by the hand-edit check, absent from every drift
+  projection, and never reaches the extractor. A rebuild carries the record
+  forward.
+- **The Publish screen proposes the next version.** Opening it runs a dry run
+  and shows the current version, the next version with its bump and a
+  one-line reason, a raise control with choices below the minimum disabled,
+  a 500-character note, and on a first publish an editable first version. The
+  publish button names the version it will create. A dry run that fails says
+  the minimum will apply rather than guessing.
+- **A Version history pane.** Newest first, one row per version with its bump,
+  date, and note, and a disclosure listing the changes grouped Removed,
+  Components, Foundations, so breaking changes read first. A truncated list
+  says so with the full counts.
+- **The CLI prints the version.** `pull` and `status` print
+  `(v1.5.0, published <date>)` when the proxy reports a version, and the
+  current form when it does not; `list` names it in its own header line
+  (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
+  `version`. Pinned pulls are not yet available.
+
 ### Fixed
 
 - **A dimension token that aliases a number token no longer projects an
