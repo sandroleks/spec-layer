@@ -381,7 +381,7 @@ export function publishFooterMarkup(state: PublishState): string {
       }
     })()
     : null;
-  const label = busy ? busyLabel(state) : next ? `Publish ${next}` : 'Publish library';
+  const label = busy ? busyLabel(state) : next ? `Publish ${esc(next)}` : 'Publish library';
   return (
     progress +
     '<div class="sl-footer-actions">' +

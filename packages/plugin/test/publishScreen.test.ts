@@ -541,6 +541,15 @@ describe('publish screen version block', () => {
     expect(meta).toMatch(/<span>Version 1\.5\.0, published \d{1,2} \w{3,4} 2026, \d{2}:\d{2}<\/span>/);
   });
 
+  it('escapes the next version in the publish button label', () => {
+    const markup = publishFooterMarkup(state({
+      libraryId: LIBRARY_ID,
+      proposal: { ...PROPOSAL, currentVersion: null, proposedVersion: '<b>x</b>' },
+    }));
+    expect(markup).toContain('Publish &lt;b&gt;x&lt;/b&gt;');
+    expect(markup).not.toContain('<b>x</b>');
+  });
+
   it('carries no em dash anywhere', () => {
     for (const s of [versioned, state({ proposal: firstPublishProposal() }), state({ libraryId: LIBRARY_ID, proposalStatus: 'failed' })]) {
       expect(proScroll(s)).not.toContain('—');
