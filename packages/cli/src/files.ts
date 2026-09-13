@@ -41,6 +41,10 @@ export interface Manifest {
   libraryId: string;
   publishedAt: string;
   bundleHash: string;
+  /** The library's semantic version from `X-Library-Version`. Absent when the
+   *  proxy sent none: a library published before versioning, or a pull made
+   *  by a CLI before this field. Never invented. */
+  version?: string;
   pluginVersion: string | null;
   extractorVersion: string;
   /**
@@ -122,6 +126,7 @@ function assertReplaceable(outDir: string, cwd: string): void {
 /** Stage the record into <outDir>.partial, swap, then write the visible directories. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
+  version?: string | null;
   selection?: Selection; dtcg?: DtcgOptions; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
 }): { written: string[]; componentSpecs: { path: string; files: string[] }; outputs: Array<{ path: string; files: string[] }> } {
   assertReplaceable(opts.outDir, opts.cwd);
@@ -216,6 +221,7 @@ export function writeBundleFiles(opts: {
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
       cliVersion: cliVersion(),
       selection, componentSpecsDir, artifacts,
+      ...(opts.version ? { version: opts.version } : {}),
       ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
       ...(opts.platforms && opts.platforms.length > 0 ? { platforms: opts.platforms } : {}),
       ...(opts.outputs ? { outputs: opts.outputs } : {}),
