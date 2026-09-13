@@ -252,6 +252,12 @@ cache inside the DO; prompts and prose are never logged.
   out of the retained window per publish. The log keeps the full change list
   for the newest 50 versions and only the counts, note, and dates for older
   ones, so it stays small; per-version bundles are kept for the newest ten.
+  The prune looks at exactly one version per publish, the one that just left
+  the window, so a publish never fans out into an unbounded number of
+  deletes. The cost is that a delete that fails is not retried: that
+  version's bundle stays in KV until the next time something deletes it by
+  hand. `lib:<id>:bundle:<version>` keys older than the newest ten are
+  therefore safe to remove at any time.
 - **KV writes are eventually consistent.** A publish immediately followed by
   a pull from another region can serve the previous bundle for up to about a
   minute. Republish tests should allow for that before treating a stale
