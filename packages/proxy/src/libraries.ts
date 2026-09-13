@@ -1,6 +1,6 @@
 import { sha256 } from 'js-sha256';
 import {
-  LibraryBundleError, libraryBundleContentHash, libraryDiff, parseLibraryBundle,
+  LibraryBundleError, isSemver, libraryBundleContentHash, libraryDiff, parseLibraryBundle,
   type LibraryBundleV1, type LibraryDiff,
 } from '@spec-layer/extractor';
 import {
@@ -350,7 +350,10 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
         counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
       });
     }
-    return json(200, { unchanged: false, ...proposalFor(storedVersion, diff) });
+    if (storedVersion === null && body.initialVersion !== undefined && body.initialVersion !== null && !isSemver(body.initialVersion)) {
+      return json(400, { error: 'invalid_initial_version' });
+    }
+    return json(200, { unchanged: false, ...proposalFor(storedVersion, diff, body.initialVersion) });
   }
 
   if (unchanged && libraryId && meta) {

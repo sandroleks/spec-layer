@@ -90,7 +90,8 @@ publish, then answers `200` with
 and writes nothing, spends no quota, and takes no publish reservation. When
 the content hash matches the stored one, `unchanged` is true and the bump
 fields are null. The client's dry-run result is never trusted: the publish
-recomputes the diff.
+recomputes the diff. For a library with no version yet, a dry run validates
+and proposes `initialVersion` exactly as the publish would.
 
 Omitting `libraryId` creates a library (201) and returns
 `{ libraryId, pullKey, publishedAt }`. That response is the only copy of the

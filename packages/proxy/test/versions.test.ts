@@ -154,6 +154,19 @@ describe('proposalFor', () => {
       counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
     });
   });
+
+  it('previews a valid initialVersion on a first publish', () => {
+    expect(proposalFor(null, null, '2.1.0')).toMatchObject({ proposedVersion: '2.1.0' });
+  });
+
+  it('falls back to 1.0.0 for an invalid initialVersion; proposalFor itself does not reject it', () => {
+    expect(proposalFor(null, null, '2.0')).toMatchObject({ proposedVersion: '1.0.0' });
+  });
+
+  it('ignores initialVersion once a version is already stored', () => {
+    const diff = { changes: [change('a', 'minor')], minimumBump: 'minor' as const, counts: { major: 0, minor: 1, patch: 0 } };
+    expect(proposalFor('1.4.2', diff, '9.9.9')).toMatchObject({ proposedVersion: '1.5.0' });
+  });
 });
 
 describe('bundlesToPrune', () => {

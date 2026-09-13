@@ -1085,6 +1085,19 @@ describe('dry run', () => {
     expect((await d.libraryStore.list({ prefix: 'lib:' })).keys).toEqual([]);
   });
 
+  it('previews and validates initialVersion on a first-publish dry run exactly as the publish would', async () => {
+    const d = deps();
+    await seedPro(d);
+    const good = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.1.0', dryRun: true }), d);
+    expect(good.status).toBe(200);
+    expect(((await good.json()) as { proposedVersion: string }).proposedVersion).toBe('2.1.0');
+    expect((await d.libraryStore.list({ prefix: 'lib:' })).keys).toEqual([]);
+
+    const bad = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.0', dryRun: true }), d);
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_initial_version' });
+  });
+
   it('authenticates and authorises like a publish', async () => {
     const d = deps();
     const anonymous = await handlePublish(publishReq({ bundle: BUNDLE, dryRun: true }, {}), d);

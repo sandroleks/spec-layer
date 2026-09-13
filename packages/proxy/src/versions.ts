@@ -114,8 +114,14 @@ export function readNote(value: unknown): string | null | undefined {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-/** The dry-run body for a changed bundle. `diff` is null when there is no stored bundle to compare against, or when the stored one could not be parsed. */
-export function proposalFor(storedVersion: string | null, diff: LibraryDiff | null): {
+/**
+ * The dry-run body for a changed bundle. `diff` is null when there is no
+ * stored bundle to compare against, or when the stored one could not be
+ * parsed. `initialVersion` mirrors what a real first publish would assign
+ * when it is a valid semver; this function never rejects it (it returns a
+ * proposal, not a response) — the caller validates before calling in.
+ */
+export function proposalFor(storedVersion: string | null, diff: LibraryDiff | null, initialVersion: unknown = undefined): {
   currentVersion: string | null;
   minimumBump: Bump | null;
   proposedVersion: string;
@@ -125,7 +131,8 @@ export function proposalFor(storedVersion: string | null, diff: LibraryDiff | nu
 } {
   if (storedVersion === null) {
     return {
-      currentVersion: null, minimumBump: null, proposedVersion: '1.0.0',
+      currentVersion: null, minimumBump: null,
+      proposedVersion: isSemver(initialVersion) ? initialVersion : '1.0.0',
       counts: diff?.counts ?? { major: 0, minor: 0, patch: 0 },
       ...truncateChanges(diff?.changes ?? []),
     };
