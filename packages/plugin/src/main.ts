@@ -29,6 +29,11 @@ import {
   type DocLinkData, type FoundationDocLink, type DocRegistry, type DocBaseline,
 } from './docLink';
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
+import { repaintPills } from './pillNode';
+import {
+  PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
+  type DocPublishRecord, type PillState,
+} from './publishPill';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -336,18 +341,21 @@ function pageOf(node: BaseNode): PageNode | null {
 const PUBLISH_LIBRARY_KEY = 'speclayer.publish.libraryId';
 /** ISO time of the last recorded publish. Lives in the file, like the id. */
 const PUBLISH_DATE_KEY = 'speclayer.publish.publishedAt';
+/** The library's current version as the proxy last reported it. In the file, like the date. */
+const PUBLISH_VERSION_KEY = 'speclayer.publish.version';
 const publishKeyStorageKey = (libraryId: string): string => `publishKey:${libraryId}`;
 
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
-  if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null };
+  if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null, version: null };
   let pullKey: string | null = null;
   try {
     const raw = await figma.clientStorage.getAsync(publishKeyStorageKey(libraryId)) as unknown;
     pullKey = typeof raw === 'string' && raw ? raw : null;
   } catch { pullKey = null; }
   const publishedAt = figma.root.getPluginData(PUBLISH_DATE_KEY) || null;
-  return { libraryId, pullKey, publishedAt };
+  const version = figma.root.getPluginData(PUBLISH_VERSION_KEY) || null;
+  return { libraryId, pullKey, publishedAt, version };
 }
 
 function readRegistry() {
@@ -610,6 +618,10 @@ figma.ui.onmessage = async (raw: unknown) => {
         // property of a removed node (except `removed`) throws, and this id is
         // needed post-commit to prune the old doc from the registry.
         const existingId = existing ? existing.id : null;
+        // The publish record survives a rebuild: rebuilding does not change
+        // what was published. Read before remove(), like the position.
+        const publishRaw = existing ? existing.getPluginData(PUBLISH_RECORD_KEY) : '';
+        const pill: PillState = pillState(parsePublishRecord(publishRaw), msg.contentHash);
 
         // Regenerate in place: reuse the old doc's position AND its page.
         let targetPage: PageNode = figma.currentPage;
@@ -632,7 +644,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           await figma.setCurrentPageAsync(targetPage);
         }
 
-        section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo);
+        section = await buildDocFrames(msg.model, resolveTheme(brandTheme), brandLogo, pill);
 
         // Stamp the durable link BEFORE removing the old one, so a failure
         // mid-way never leaves an unstamped orphan replacing a good doc.
@@ -663,6 +675,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
           v: 1, kind: 'component', contentHash: msg.contentHash, projection: msg.baseline,
         }));
+        if (publishRaw) section.setPluginData(PUBLISH_RECORD_KEY, publishRaw);
 
         // Point of no return: replace the old doc with the new one. After this,
         // `section` IS the doc and must survive any later (cosmetic) failure.
@@ -947,6 +960,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           const prior = existingByScope.get(foundationScopeKey(unit.scope));
           const targetPage = prior ? (pageOf(prior) ?? invokedPage) : invokedPage;
           if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
+          const publishRaw = prior ? prior.getPluginData(PUBLISH_RECORD_KEY) : '';
+          const currentHash = foundationContentHash(spec, unit.scope);
+          const pill: PillState = pillState(parsePublishRecord(publishRaw), currentHash);
 
           // The UI sends one map for the whole build, keyed collectionId|folder
           // because two collections can hold a folder of the same name. Each doc
@@ -956,14 +972,14 @@ figma.ui.onmessage = async (raw: unknown) => {
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, brandLogo, descriptions,
-            msg.config.includeContrast, contrastReport,
+            msg.config.includeContrast, contrastReport, pill,
           );
 
           const data: FoundationDocLink = {
             v: 1,
             kind: 'foundation',
             scope: unit.scope,
-            contentHash: foundationContentHash(spec, unit.scope),
+            contentHash: currentHash,
             selfHash: '',   // set below, once the section's text exists
             config: msg.config,
             ...(descriptions ? { groupDescriptions: descriptions } : {}),
@@ -990,6 +1006,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
             v: 1, kind: 'foundation', contentHash: data.contentHash, projection: content,
           }));
+          if (publishRaw) section.setPluginData(PUBLISH_RECORD_KEY, publishRaw);
 
           if (prior) {
             // Compute the registry with the prior id dropped, but don't write
@@ -1123,6 +1140,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           omittedModeNames: content.omittedModeNames,
         };
 
+        const publishRaw = prior.getPluginData(PUBLISH_RECORD_KEY);
+        const currentHash = foundationContentHash(spec, scope);
+        const pill: PillState = pillState(parsePublishRecord(publishRaw), currentHash);
+
         // Reuse the descriptions this doc was generated with. An Update is a
         // source refresh, not a reason to re-ask the model and re-bill the quota.
         // An Update re-renders with the config the doc was created under, the
@@ -1133,11 +1154,12 @@ figma.ui.onmessage = async (raw: unknown) => {
           brandLogo, link.groupDescriptions,
           link.config.includeContrast,
           link.config.includeContrast ? colorContrast(spec) : undefined,
+          pill,
         );
 
         const data: FoundationDocLink = {
           v: 1, kind: 'foundation', scope,
-          contentHash: foundationContentHash(spec, scope),
+          contentHash: currentHash,
           selfHash: '',
           config: link.config,
           ...(link.groupDescriptions ? { groupDescriptions: link.groupDescriptions } : {}),
@@ -1158,6 +1180,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         section.setPluginData(DOC_BASELINE_KEY, serializeBaseline({
           v: 1, kind: 'foundation', contentHash: data.contentHash, projection: content,
         }));
+        if (publishRaw) section.setPluginData(PUBLISH_RECORD_KEY, publishRaw);
 
         // Point of no return, matching the component path (renderDocFrame
         // above): the new section is stamped and placed before the old one
@@ -1443,12 +1466,77 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
     }
 
+    case 'stampPublished': {
+      // Same guard as setPublishedAt: never label a library the file no longer holds.
+      if (figma.root.getPluginData(PUBLISH_LIBRARY_KEY) !== msg.libraryId) break;
+      figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
+      figma.root.setPluginData(PUBLISH_VERSION_KEY, msg.version);
+      const bySource = new Map(msg.components.map((c) => [c.sourceNodeId, c.hashes]));
+      // Foundation docs hash the live file, one extraction for all of them,
+      // exactly as requestLibrary does for drift.
+      let foundationSpec: FoundationSpec | null = null;
+      let foundationFailed = false;
+      const liveFoundation = async (): Promise<FoundationSpec | null> => {
+        if (foundationSpec || foundationFailed) return foundationSpec;
+        try {
+          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const dump = await serializeFoundation(
+            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
+          );
+          foundationSpec = buildFoundation(dump);
+        } catch {
+          foundationFailed = true;
+        }
+        return foundationSpec;
+      };
+      for (const docId of readRegistry().docIds) {
+        let node: BaseNode | null = null;
+        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
+        if (!node || node.type !== 'SECTION') continue;
+        const section = node as SectionNode;
+        const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+        if (!link) continue;
+        let sourceHash: string | null = null;
+        if (isFoundationLink(link)) {
+          if (!msg.foundation) continue;
+          const live = await liveFoundation();
+          if (!live) continue; // no hash, no record: the pill keeps its last honest state
+          sourceHash = foundationContentHash(live, retargetScope(link.scope, live.collections));
+        } else {
+          const hashes = bySource.get(link.sourceNodeId);
+          if (!hashes) continue; // this doc's source was not in the publish
+          sourceHash = link.config.includeHidden ? hashes.hidden : hashes.visible;
+        }
+        const record: DocPublishRecord = {
+          v: 1, libraryId: msg.libraryId, version: msg.version, publishedAt: msg.publishedAt, sourceHash,
+        };
+        section.setPluginData(PUBLISH_RECORD_KEY, serializePublishRecord(record));
+        try {
+          await repaintPills(section, pillState(record, sourceHash));
+        } catch (err) {
+          console.error('[Spec Layer] could not repaint the publish pill', err);
+        }
+      }
+      break;
+    }
+
     case 'clearPublishInfo': {
       const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY);
       figma.root.setPluginData(PUBLISH_LIBRARY_KEY, '');
       figma.root.setPluginData(PUBLISH_DATE_KEY, '');
+      figma.root.setPluginData(PUBLISH_VERSION_KEY, '');
       if (libraryId) {
         try { await figma.clientStorage.deleteAsync(publishKeyStorageKey(libraryId)); } catch { /* nothing to drop */ }
+      }
+      // Every doc's record described this library; with the library gone the
+      // pills read Not published again.
+      for (const docId of readRegistry().docIds) {
+        let node: BaseNode | null = null;
+        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
+        if (!node || node.type !== 'SECTION') continue;
+        const section = node as SectionNode;
+        section.setPluginData(PUBLISH_RECORD_KEY, '');
+        try { await repaintPills(section, { kind: 'unpublished' }); } catch { /* cosmetic */ }
       }
       break;
     }
