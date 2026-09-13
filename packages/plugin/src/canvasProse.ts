@@ -15,6 +15,7 @@
  * sandbox realm, so it may use only ECMAScript built-ins.
  */
 import type { ProseDrafts, AnatomyPartProse } from '@spec-layer/extractor';
+import { PILL_KEY } from './publishPill';
 
 /** pluginData key naming which editorial slot a node (and its subtree) fills. */
 export const SLOT_KEY = 'specLayerSlot';
@@ -279,12 +280,18 @@ export function mergeProse(stored: ProseDrafts | null, canvas: CanvasProse): Pro
  * covers, so an edit here means "Update will replace this" and an edit in a
  * slot means nothing, because Update keeps it. A doc rendered before tagging
  * has no slots, so this returns all its text, matching its stored hash.
+ *
+ * The publish pill is skipped by `PILL_KEY` for the same reason slots are:
+ * Update repaints it, so an edit there is not something Update would destroy.
  */
 export function collectGeneratedText(root: ProseNodeLike): string[] {
   const out: string[] = [];
   const visit = (n: ProseNodeLike): void => {
     if (n.type === 'INSTANCE') return;
     if (n.getPluginData(SLOT_KEY) !== '') return;
+    // The publish pill is a status stamp, not generated prose: a version that
+    // moves must never read as a hand edit. See publishPill.ts.
+    if (n.getPluginData(PILL_KEY) !== '') return;
     if (n.type === 'TEXT') {
       out.push(n.characters ?? '');
       return;

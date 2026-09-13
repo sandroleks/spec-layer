@@ -32,6 +32,7 @@ import {
   contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
 } from './foundationContrast';
 import type { resolveTheme } from './brandColors';
+import type { PillState } from './publishPill';
 
 /**
  * Label for a single value. Never returns an empty string.
@@ -753,6 +754,7 @@ export async function buildFoundationFrame(
   // baseline where it is.
   includeContrast = false,
   contrast?: ColorContrastReport,
+  pill: PillState | null = null,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -846,6 +848,7 @@ export async function buildFoundationFrame(
     title,
     subtitle: headerSubtitle(content, isText),
     logoBase64,
+    pill,
   });
   card.appendChild(header);
   header.layoutSizingHorizontal = 'FILL';

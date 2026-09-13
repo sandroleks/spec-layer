@@ -11,6 +11,7 @@ import type {
 } from './ui/docModel';
 import type { SectionId } from './ui/docModel';
 import type { resolveTheme } from './brandColors';
+import type { PillState } from './publishPill';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
   headingFont, matchVariableModes, radius, applyThemeToKit,
@@ -1103,6 +1104,7 @@ async function buildHeader(
   subtitleMd: string | null,
   eyebrow: string,
   logoBase64?: string | null,
+  pill: PillState | null = null,
 ): Promise<FrameNode> {
   // Parse the lead for **bold** runs and drop any leading list marker so no
   // raw markdown shows in the subtitle.
@@ -1112,6 +1114,7 @@ async function buildHeader(
     title: componentName,
     subtitle: runs ? runs.map((r) => r.text).join('') : null,
     logoBase64,
+    pill,
     styleSubtitle: runs
       ? (node) => {
           applyBoldRuns(node, runs, 0);
@@ -1186,6 +1189,7 @@ async function buildGroupFrame(
   subtitle: string | null,
   logoBase64: string | null,
   includeHidden: boolean,
+  pill: PillState | null = null,
 ): Promise<FrameNode> {
   const frame = figma.createFrame();
   frame.name = group.label; // "Usage" | "Specifications" | "Accessibility"
@@ -1212,7 +1216,7 @@ async function buildGroupFrame(
   ];
 
   try {
-    const header = await buildHeader(componentName, subtitle, group.label, logoBase64);
+    const header = await buildHeader(componentName, subtitle, group.label, logoBase64, pill);
     frame.appendChild(header);
     header.layoutSizingHorizontal = 'FILL';
 
@@ -1266,6 +1270,7 @@ export async function buildDocFrames(
   model: DocFrameModel,
   theme: ReturnType<typeof resolveTheme>,
   logoBase64?: string | null,
+  pill: PillState | null = null,
 ): Promise<SectionNode> {
   // Resolved-value caches (color/float variables, text styles) are module
   // state in tokenResolve — reset them per build so a rebuild after the user
@@ -1304,7 +1309,7 @@ export async function buildDocFrames(
   try {
     for (const group of groups) {
       const sub = group.sections.some((s) => s.id === 'definition') ? subtitle : null;
-      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64 ?? null, includeHidden));
+      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64 ?? null, includeHidden, pill));
     }
 
     // A freshly created Section keeps its default (small) size — it does NOT
