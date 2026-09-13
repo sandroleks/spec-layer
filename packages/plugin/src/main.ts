@@ -1472,23 +1472,9 @@ figma.ui.onmessage = async (raw: unknown) => {
       figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
       figma.root.setPluginData(PUBLISH_VERSION_KEY, msg.version);
       const bySource = new Map(msg.components.map((c) => [c.sourceNodeId, c.hashes]));
-      // Foundation docs hash the live file, one extraction for all of them,
-      // exactly as requestLibrary does for drift.
-      let foundationSpec: FoundationSpec | null = null;
-      let foundationFailed = false;
-      const liveFoundation = async (): Promise<FoundationSpec | null> => {
-        if (foundationSpec || foundationFailed) return foundationSpec;
-        try {
-          const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(
-            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-          );
-          foundationSpec = buildFoundation(dump);
-        } catch {
-          foundationFailed = true;
-        }
-        return foundationSpec;
-      };
+      // The hash is taken over the published dump, never a live re-read, so
+      // the record can only describe what was actually published.
+      const publishedFoundation = msg.foundation ? buildFoundation(msg.foundation) : null;
       for (const docId of readRegistry().docIds) {
         let node: BaseNode | null = null;
         try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
@@ -1498,10 +1484,8 @@ figma.ui.onmessage = async (raw: unknown) => {
         if (!link) continue;
         let sourceHash: string | null = null;
         if (isFoundationLink(link)) {
-          if (!msg.foundation) continue;
-          const live = await liveFoundation();
-          if (!live) continue; // no hash, no record: the pill keeps its last honest state
-          sourceHash = foundationContentHash(live, retargetScope(link.scope, live.collections));
+          if (!publishedFoundation) continue;
+          sourceHash = foundationContentHash(publishedFoundation, retargetScope(link.scope, publishedFoundation.collections));
         } else {
           const hashes = bySource.get(link.sourceNodeId);
           if (!hashes) continue; // this doc's source was not in the publish

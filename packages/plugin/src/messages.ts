@@ -245,11 +245,13 @@ export type UiToMain =
   | { type: 'setPublishedAt'; libraryId: string; publishedAt: string }
   /** After a successful versioned publish: record the version and date in the
    *  file, write a publish record on every doc the publish covered, and repaint
-   *  each doc's pill to Published. `foundation` says whether the bundle carried
-   *  the Foundation, so foundation docs are stamped only when it did. Ignored
-   *  when `libraryId` is not the id the file holds, like `setPublishedAt`. */
+   *  each doc's pill to Published. `foundation` is the Foundation dump the
+   *  bundle was built from, so foundation docs are stamped with the hash of
+   *  exactly the published content; null when the bundle carried no
+   *  Foundation. Ignored when `libraryId` is not the id the file holds, like
+   *  `setPublishedAt`. */
   | { type: 'stampPublished'; libraryId: string; version: string; publishedAt: string;
-      components: PublishStampComponent[]; foundation: boolean }
+      components: PublishStampComponent[]; foundation: SerializedFoundation | null }
   /** Drop the file's stored library id after the server said it is gone or
    *  belongs to another license, so the next publish creates a new one. */
   | { type: 'clearPublishInfo' };
