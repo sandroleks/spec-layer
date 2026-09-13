@@ -237,6 +237,12 @@ function versionRecord(input: {
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
 
+  // Every request spends one token from the shared request budget before
+  // the Worker reads a byte of body, so a client that sends nothing but
+  // malformed or oversized bodies is throttled like any other caller. The
+  // publish budget below is charged only once the body says which it is.
+  if (!deps.requestLimiter.allow(`libreq:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+
   const declared = Number(req.headers.get('content-length') ?? 0);
   if (declared > MAX_BUNDLE_BYTES) {
     return json(413, { error: 'bundle_too_large', size: declared, limit: MAX_BUNDLE_BYTES });
@@ -252,9 +258,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // A dry run opens the Publish screen every time it is shown, not just when
   // the publisher commits, so it must not spend the same 20/min publish
   // budget a real publish does. It shares the pull/versions request budget
-  // instead. Gated on the parsed body, after the size checks above, so this
-  // still costs nothing to determine and the size cap alone bounds how much
-  // the Worker reads before either limiter applies.
+  // instead, so a dry run spends two requestLimiter tokens in total (the
+  // `libreq:` charge above plus this `libdry:` one): fine at 60/min, and
+  // simpler than exempting the second charge for one caller.
   const limiter = body.dryRun === true ? deps.requestLimiter : deps.licenseLimiter;
   const limiterKey = body.dryRun === true ? `libdry:${ip}` : `libpub:${ip}`;
   if (!limiter.allow(limiterKey, deps.now())) return json(429, { error: 'rate_limited' });
@@ -399,7 +405,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   switch (reserved.kind) {
     case 'cached': {
       const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string; version?: string };
-      return respond(200, { ...prior, unchanged: true });
+      return respond(200, { ...prior, unchanged: true }, prior.version ? { 'X-Library-Version': prior.version } : {});
     }
     case 'pending':
       return respond(409, { error: 'publish_pending' });

@@ -639,6 +639,7 @@ describe('handlePublish', () => {
       expect(await replay.json()).toEqual({
         libraryId: firstBody.libraryId, publishedAt: firstBody.publishedAt, unchanged: true, version: '1.0.0',
       });
+      expect(replay.headers.get('X-Library-Version')).toBe('1.0.0');
     } finally {
       spy.mockRestore();
     }
@@ -698,6 +699,36 @@ describe('handlePublish', () => {
     await handlePublish(publishReq({ bundle: { schema: 'nope' } }, figma()), d);
     const snap = await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').snapshot('free');
     expect(snap.used).toBe(0);
+  });
+});
+
+describe('publish rate limiting', () => {
+  it('throttles malformed bodies per IP before reading them', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(3, 60_000) });
+    const bad = () => new Request('https://proxy.test/v1/libraries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' },
+      body: '{not json',
+    });
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    const fourth = await handlePublish(bad(), d);
+    expect(fourth.status).toBe(429);
+    expect(await fourth.json()).toEqual({ error: 'rate_limited' });
+  });
+
+  it('a well-formed publish spends the request token and the publish token, a dry run only the request token', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(60, 60_000), licenseLimiter: new SlidingWindowLimiter(1, 60_000) });
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(first.status).toBe(201);
+    const { libraryId } = await first.json() as { libraryId: string };
+    // The publish budget is spent; a dry run must still be answered.
+    const dry = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, dryRun: true }), d);
+    expect(dry.status).toBe(200);
+    const second = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    expect(second.status).toBe(429);
   });
 });
 

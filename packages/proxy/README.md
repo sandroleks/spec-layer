@@ -283,13 +283,11 @@ cache inside the DO; prompts and prose are never logged.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
-- **The publish rate limiter now runs after the body is read.** A dry run
-  (opened every time the Publish screen shows) spends the 60/min request
-  limiter instead of the 20/min publish limiter, so it can no longer starve a
-  real publish of its budget. The limiter choice depends on the parsed
-  `dryRun` field, which means an unlimited IP can make the Worker read and
-  parse up to 5 MB of request body before either limiter applies; the
-  content-length cap bounds that.
+- **Every publish request first spends one token of the 60/min per-IP request
+  budget before its body is read, so malformed or oversized bodies are
+  throttled.** A real publish then spends the 20/min publish budget and a dry
+  run a second request token. The content-length cap bounds what one request
+  can make the Worker read.
 
 ## Bindings & secrets
 
