@@ -68,7 +68,7 @@ export function parsePublishRecord(raw: string): DocPublishRecord | null {
   try {
     const parsed = JSON.parse(raw) as Partial<DocPublishRecord> | null;
     if (!parsed || parsed.v !== 1) return null;
-    if (typeof parsed.libraryId !== 'string' || typeof parsed.version !== 'string'
+    if (typeof parsed.libraryId !== 'string' || typeof parsed.version !== 'string' || parsed.version.length === 0
       || typeof parsed.publishedAt !== 'string' || typeof parsed.sourceHash !== 'string') return null;
     return { v: 1, libraryId: parsed.libraryId, version: parsed.version, publishedAt: parsed.publishedAt, sourceHash: parsed.sourceHash };
   } catch {

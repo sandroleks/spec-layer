@@ -53,10 +53,21 @@ describe('history screen', () => {
     expect(markup).toContain('<span class="sl-library-change-scope">Light</span>');
   });
 
-  it('says No property changes for an empty record and states truncation with counts', () => {
-    expect(historyScrollMarkup(state({ expanded: '1.0.0' }), 'en-GB')).toContain('No property changes');
+  it('says a first version has nothing to compare, and states truncation with counts for a truncated one', () => {
+    // 1.0.0 is bump 'initial' with no changes: never "No property changes",
+    // which would read as if there was something to diff against.
+    expect(historyScrollMarkup(state({ expanded: '1.0.0' }), 'en-GB')).toContain('First version, nothing to compare against.');
     const truncated: VersionLog = { v: 1, records: [{ ...LOG.records[0], changesTruncated: true, counts: { major: 1, minor: 2, patch: 40 } }] };
     expect(historyScrollMarkup(state({ log: truncated, expanded: '2.0.0' }), 'en-GB')).toContain('Showing the first 3 changes of 43');
+  });
+
+  it('says the changes are no longer stored for a record the log compacted, with the real counts', () => {
+    // versions.ts compactLog empties `changes` and sets `changesTruncated` on
+    // an old record; the pane must not read that as "No property changes".
+    const compacted: VersionLog = { v: 1, records: [{ ...LOG.records[0], changes: [], changesTruncated: true }] };
+    const markup = historyScrollMarkup(state({ log: compacted, expanded: '2.0.0' }), 'en-GB');
+    expect(markup).toContain('The changes for this version are no longer stored (3 changes).');
+    expect(markup).not.toContain('No property changes');
   });
 
   it('names every empty and failed state in plain words', () => {

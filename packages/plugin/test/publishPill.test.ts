@@ -51,6 +51,10 @@ describe('publish record round trip', () => {
     expect(parsePublishRecord(JSON.stringify({ ...record, sourceHash: 7 }))).toBeNull();
   });
 
+  it('rejects an empty version string rather than stamping a pill with nothing to show', () => {
+    expect(parsePublishRecord(JSON.stringify({ ...record, version: '' }))).toBeNull();
+  });
+
   it('names the keys other modules look for', () => {
     expect(PUBLISH_RECORD_KEY).toBe('specLayerPublish');
     expect(PILL_KEY).toBe('specLayerPill');

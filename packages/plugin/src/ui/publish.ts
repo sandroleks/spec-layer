@@ -10,7 +10,7 @@ import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
-  compareBump, isSemver, specContentHash,
+  compareBump, isSemver, nextVersion, specContentHash,
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
@@ -416,6 +416,20 @@ export function firstPublishProposal(): DryRunResult {
   };
 }
 
+/**
+ * The proposal to show right after a publish just landed: nothing changed
+ * since the version the proxy just assigned, since no dry run has run since.
+ * Used instead of a bare `proposal: null` so `versionBlock` never falls back
+ * to `PROPOSAL_FAILED_MESSAGE` (a failure) under a publish that just
+ * succeeded.
+ */
+export function publishedProposal(version: string): DryRunResult {
+  return {
+    currentVersion: version, unchanged: true, minimumBump: null, proposedVersion: null,
+    counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+  };
+}
+
 export const PROPOSAL_FAILED_MESSAGE = 'Could not compute the next version. Publishing will apply the minimum bump.';
 export const BELOW_MINIMUM_MESSAGE = (minimum: Bump): string => `The changes need at least a ${minimum} bump.`;
 const INVALID_FIRST_VERSION = 'The first version needs three numbers, like 1.0.0.';
@@ -426,6 +440,36 @@ export function effectiveBump(s: Readonly<PublishState>): Bump | null {
   if (!s.chosenBump) return null;
   const minimum = s.proposal?.minimumBump ?? 'patch';
   return compareBump(s.chosenBump, minimum) >= 0 ? s.chosenBump : null;
+}
+
+/**
+ * The version to show as "current". The proxy's own answer (the dry run or
+ * the last publish's proposal) is the authority; the locally stored version
+ * is only a fallback for a screen that has not heard back from the proxy yet.
+ */
+export function currentVersionOf(s: Readonly<PublishState>): string | null {
+  return s.proposal?.currentVersion ?? s.version;
+}
+
+/**
+ * The version a publish would produce right now, or null when there is
+ * nothing to propose: no proposal known yet, the proposal says nothing
+ * changed, or there is no library to version at all. `nextVersion` throws on
+ * a current version it cannot parse; a version the proxy assigned is always a
+ * semver, but the guard costs nothing and keeps a corrupt value from taking
+ * the whole screen down with it.
+ */
+export function nextVersionFor(s: Readonly<PublishState>): string | null {
+  if (!s.proposal || s.proposal.unchanged || !s.libraryId) return null;
+  const current = currentVersionOf(s);
+  if (current === null) return s.proposal.proposedVersion;
+  const minimum: Bump = s.proposal.minimumBump ?? 'patch';
+  const applied = effectiveBump(s) ?? minimum;
+  try {
+    return nextVersion(current, applied);
+  } catch {
+    return s.proposal.proposedVersion ?? null;
+  }
 }
 
 let state: PublishState = createPublishState();
@@ -671,7 +715,12 @@ export async function onPublishSources(
         message: null,
         chosenBump: null,
         note: '',
-        proposal: null,
+        // Nothing changed since the version this publish just assigned: no
+        // dry run has run since, so the block must not read as a failed one.
+        // A proxy that predates versioning names no version, and there is
+        // nothing to propose against; the next Publish open dry-runs afresh.
+        proposal: outcome.version ? publishedProposal(outcome.version) : null,
+        proposalStatus: 'idle',
       };
       host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
       stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
@@ -691,7 +740,11 @@ export async function onPublishSources(
         message: null,
         chosenBump: null,
         note: '',
-        proposal: null,
+        // See the 'created' case just above: an unchanged proposal for the
+        // version just published, not null, so the block never reads as a
+        // failed dry run under a publish that just succeeded.
+        proposal: outcome.version ? publishedProposal(outcome.version) : null,
+        proposalStatus: 'idle',
       };
       stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
       host.notify(
@@ -725,7 +778,7 @@ export async function onPublishSources(
         message: BELOW_MINIMUM_MESSAGE(outcome.minimumBump),
         proposal: {
           ...(state.proposal ?? firstPublishProposal()),
-          currentVersion: state.version,
+          currentVersion: state.proposal?.currentVersion ?? state.version,
           unchanged: false,
           minimumBump: outcome.minimumBump,
           proposedVersion: outcome.proposedVersion,

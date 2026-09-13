@@ -42,7 +42,16 @@ function groupMarkup(group: HistoryGroup): string {
 function detailsMarkup(record: VersionRecord, expanded: boolean): string {
   const total = record.counts.major + record.counts.minor + record.counts.patch;
   let content: string;
-  if (record.changes.length === 0) {
+  if (record.changes.length === 0 && record.changesTruncated) {
+    // Compacted by the proxy's log cap (see versions.ts compactLog): the
+    // counts survive, but the per-change list this old does not. Never claim
+    // "No property changes" over a version that plainly had some.
+    content =
+      `<p class="sl-library-change-fallback"><strong>The changes for this version are no longer ` +
+      `stored (${total} changes).</strong></p>`;
+  } else if (record.changes.length === 0 && record.bump === 'initial') {
+    content = '<p class="sl-library-change-fallback"><strong>First version, nothing to compare against.</strong></p>';
+  } else if (record.changes.length === 0) {
     content = '<p class="sl-library-change-fallback"><strong>No property changes</strong></p>';
   } else {
     content = groupChanges(record.changes).map(groupMarkup).join('');

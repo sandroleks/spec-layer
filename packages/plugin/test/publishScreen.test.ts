@@ -556,6 +556,56 @@ describe('publish screen version block', () => {
       expect(publishFooterMarkup(s)).not.toContain('—');
     }
   });
+
+  /**
+   * Regression for the review fix: a successful publish sets `proposal` to an
+   * unchanged proposal and `proposalStatus: 'idle'` (see ui/publish.ts,
+   * onPublishSources' 'created'/'updated' cases), so the done screen must
+   * read as a success, never as a failed dry run.
+   */
+  it('reads as a success right after a publish, never as a failed dry run', () => {
+    const done = state({
+      status: 'done',
+      libraryId: LIBRARY_ID,
+      pullKey: PULL_KEY,
+      version: '1.4.2',
+      proposalStatus: 'idle',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: true, minimumBump: null, proposedVersion: null,
+        counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+      },
+    });
+    const markup = block(proScroll(done), 'Version');
+    expect(markup).toContain('Nothing changed since 1.4.2 was published.');
+    expect(markup).not.toContain('Could not compute the next version');
+  });
+
+  /**
+   * A library with no proposal known yet (proposalStatus idle, proposal
+   * null) reads as neutral, not as a failed dry run: the failure copy is only
+   * for `proposalStatus === 'failed'`.
+   */
+  it('says nothing yet is known rather than claiming the dry run failed', () => {
+    const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2' })), 'Version');
+    expect(markup).toContain('Open Publish again to check what changed.');
+    expect(markup).not.toContain('Could not compute the next version');
+  });
+
+  /**
+   * The proxy's own `currentVersion` outranks the locally stored version:
+   * `currentVersionOf`/`nextVersionFor` in ui/publish.ts are the shared
+   * source both the block and the footer read from.
+   */
+  it('trusts the proxy over the locally stored version for current and next', () => {
+    const s = state({
+      libraryId: LIBRARY_ID, pullKey: PULL_KEY, version: '1.0.0',
+      proposal: { ...PROPOSAL, currentVersion: '2.4.0', minimumBump: 'minor', proposedVersion: '2.5.0' },
+    });
+    const markup = block(proScroll(s), 'Version');
+    expect(markup).toContain('Current version 2.4.0');
+    expect(markup).toContain('Next version 2.5.0 (minor)');
+    expect(publishFooterMarkup(s)).toContain('<span>Publish 2.5.0</span>');
+  });
 });
 
 describe('proposalReason', () => {

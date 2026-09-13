@@ -15,7 +15,8 @@
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import {
-  agentSetupMessage, setupCommand, effectiveBump, PROPOSAL_FAILED_MESSAGE,
+  agentSetupMessage, setupCommand, effectiveBump, currentVersionOf, nextVersionFor,
+  PROPOSAL_FAILED_MESSAGE,
   type PublishState, type DryRunResult,
 } from '../publish';
 import { PUBLISH_DOCS_URL } from '../proxy';
@@ -23,7 +24,7 @@ import {
   formatPublishedAt, publishAllowanceCopy, type PublishAllowance,
 } from '../viewModel/allowance';
 import { progressMarkup } from './progress';
-import { isSemver, nextVersion, type Bump } from '@spec-layer/extractor';
+import { isSemver, type Bump } from '@spec-layer/extractor';
 
 function esc(value: string): string {
   return value
@@ -196,7 +197,7 @@ function versionBlock(state: PublishState): string {
       noteField;
     return `<section class="sl-publish-block sl-publish-version">${head()}${body}</section>`;
   }
-  const current = state.version ?? state.proposal?.currentVersion ?? null;
+  const current = currentVersionOf(state);
   const currentLine = current
     ? `Current version ${esc(current)}`
     : 'This library has no version yet. The next publish creates 1.0.0.';
@@ -205,7 +206,7 @@ function versionBlock(state: PublishState): string {
       `<p class="sl-publish-note">${currentLine}</p>` +
       `<p class="sl-publish-note">Checking what changed since ${esc(current ?? 'the last publish')}` +
       '<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>';
-  } else if (state.proposalStatus === 'failed' || !state.proposal) {
+  } else if (state.proposalStatus === 'failed') {
     // A dry run that could not be computed still lets the publish go through:
     // the proxy applies the minimum bump on its own, so the reader is told
     // that rather than left staring at a blank block.
@@ -213,20 +214,19 @@ function versionBlock(state: PublishState): string {
       `<p class="sl-publish-note">${currentLine}</p>` +
       `<p class="sl-publish-note">${PROPOSAL_FAILED_MESSAGE}</p>` +
       noteField;
+  } else if (!state.proposal) {
+    // No failure and no answer yet: either nothing has asked (a fresh publish
+    // just landed) or the reply has not arrived. Neutral, not a failure claim.
+    body =
+      `<p class="sl-publish-note">${currentLine}</p>` +
+      '<p class="sl-publish-note">Open Publish again to check what changed.</p>' +
+      noteField;
   } else if (state.proposal.unchanged) {
     body = `<p class="sl-publish-note">Nothing changed since ${esc(current ?? 'it')} was published.</p>`;
   } else {
     const minimum: Bump = state.proposal.minimumBump ?? 'patch';
     const applied = effectiveBump(state) ?? minimum;
-    // `nextVersion` throws on a current version it cannot parse. A version
-    // the proxy assigned is always a semver, but the guard costs nothing and
-    // keeps a corrupt value from taking the whole screen down with it.
-    let next: string;
-    try {
-      next = current ? nextVersion(current, applied) : (state.proposal.proposedVersion ?? '1.0.0');
-    } catch {
-      next = state.proposal.proposedVersion ?? '1.0.0';
-    }
+    const next = nextVersionFor(state) ?? '1.0.0';
     body =
       `<p class="sl-publish-note">${currentLine}</p>` +
       `<p class="sl-publish-version-next"><strong>Next version ${esc(next)} (${applied})</strong>` +
@@ -368,19 +368,9 @@ export function publishFooterMarkup(state: PublishState): string {
   // The primary names the version a publish would make, so the reader never
   // has to hold the raise control's choice in their head to know what
   // clicking it does. Silent when there is nothing to propose yet (no
-  // library) or nothing to publish (the dry run reported unchanged).
-  const next = !busy && state.proposal && !state.proposal.unchanged && state.libraryId
-    ? (() => {
-      const current = state.version ?? state.proposal.currentVersion;
-      const minimum: Bump = state.proposal.minimumBump ?? 'patch';
-      const applied = effectiveBump(state) ?? minimum;
-      try {
-        return current ? nextVersion(current, applied) : (state.proposal.proposedVersion ?? null);
-      } catch {
-        return null;
-      }
-    })()
-    : null;
+  // library) or nothing to publish (the dry run reported unchanged):
+  // `nextVersionFor` already carries that guard.
+  const next = busy ? null : nextVersionFor(state);
   const label = busy ? busyLabel(state) : next ? `Publish ${esc(next)}` : 'Publish library';
   return (
     progress +

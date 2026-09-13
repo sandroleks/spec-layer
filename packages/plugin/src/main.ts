@@ -10,7 +10,7 @@ import { createFoundationReader } from './foundationReader';
 import { FoundationPostGate } from './foundationPost';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
-  foundationUnitTitle, groupRowsByFolder, colorContrast,
+  foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
   type ProseDrafts,
@@ -1469,12 +1469,25 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'stampPublished': {
       // Same guard as setPublishedAt: never label a library the file no longer holds.
       if (figma.root.getPluginData(PUBLISH_LIBRARY_KEY) !== msg.libraryId) break;
+      // Never fabricate a version on a pill: a malformed or empty string here
+      // would otherwise be stamped and shown as if the proxy had assigned it.
+      if (!isSemver(msg.version)) break;
       figma.root.setPluginData(PUBLISH_DATE_KEY, msg.publishedAt);
       figma.root.setPluginData(PUBLISH_VERSION_KEY, msg.version);
       const bySource = new Map(msg.components.map((c) => [c.sourceNodeId, c.hashes]));
       // The hash is taken over the published dump, never a live re-read, so
-      // the record can only describe what was actually published.
-      const publishedFoundation = msg.foundation ? buildFoundation(msg.foundation) : null;
+      // the record can only describe what was actually published. A dump this
+      // build cannot read (a shape buildFoundation does not expect) must not
+      // take the whole stamp down with it: component docs still get stamped,
+      // and the Foundation doc simply keeps whatever hash it already had.
+      let publishedFoundation: FoundationSpec | null = null;
+      if (msg.foundation) {
+        try {
+          publishedFoundation = buildFoundation(msg.foundation);
+        } catch (err) {
+          console.error('[Spec Layer] could not read the published foundation', err);
+        }
+      }
       for (const docId of readRegistry().docIds) {
         let node: BaseNode | null = null;
         try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
@@ -1511,16 +1524,17 @@ figma.ui.onmessage = async (raw: unknown) => {
       figma.root.setPluginData(PUBLISH_VERSION_KEY, '');
       if (libraryId) {
         try { await figma.clientStorage.deleteAsync(publishKeyStorageKey(libraryId)); } catch { /* nothing to drop */ }
-      }
-      // Every doc's record described this library; with the library gone the
-      // pills read Not published again.
-      for (const docId of readRegistry().docIds) {
-        let node: BaseNode | null = null;
-        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-        if (!node || node.type !== 'SECTION') continue;
-        const section = node as SectionNode;
-        section.setPluginData(PUBLISH_RECORD_KEY, '');
-        try { await repaintPills(section, { kind: 'unpublished' }); } catch { /* cosmetic */ }
+        // Every doc's record described this library; with the library gone the
+        // pills read Not published again. Nothing to sweep when the file never
+        // held a library id in the first place.
+        for (const docId of readRegistry().docIds) {
+          let node: BaseNode | null = null;
+          try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
+          if (!node || node.type !== 'SECTION') continue;
+          const section = node as SectionNode;
+          section.setPluginData(PUBLISH_RECORD_KEY, '');
+          try { await repaintPills(section, { kind: 'unpublished' }); } catch { /* cosmetic */ }
+        }
       }
       break;
     }

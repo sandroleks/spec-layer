@@ -24,6 +24,10 @@ export type { VersionLog, VersionRecord };
 export const MAX_CHANGES_BYTES = 65_536;
 export const RETAINED_BUNDLES = 10;
 export const MAX_NOTE_LENGTH = 500;
+/** How many of the newest log records keep their full change list. Older
+ *  records are compacted (see `compactLog`) so the log itself cannot grow
+ *  without bound across a library's lifetime. */
+export const DETAILED_RECORDS = 50;
 
 export const versionsKey = (libraryId: string): string => `lib:${libraryId}:versions`;
 export const versionBundleKey = (libraryId: string, version: string): string => `lib:${libraryId}:bundle:${version}`;
@@ -157,7 +161,32 @@ export function proposalFor(storedVersion: string | null, diff: LibraryDiff | nu
   };
 }
 
-/** Versions past the newest RETAINED_BUNDLES whose per-version bundle should be deleted. */
+/**
+ * The one version whose per-version bundle should be deleted after this
+ * publish: the record that just fell past the newest RETAINED_BUNDLES. Each
+ * publish pushes exactly one record onto the log, so at most one bundle ever
+ * falls out of the window; deleting every record past the window (as this
+ * once did) means one subrequest per publish forever, which crosses the
+ * Worker's subrequest limit by roughly the thousandth publish.
+ */
 export function bundlesToPrune(log: VersionLog): string[] {
-  return log.records.slice(RETAINED_BUNDLES).map((record) => record.version);
+  return log.records.slice(RETAINED_BUNDLES, RETAINED_BUNDLES + 1).map((record) => record.version);
+}
+
+/**
+ * Caps the log's stored detail: the newest `DETAILED_RECORDS` keep their
+ * change list untouched; every older record with a non-empty `changes` has it
+ * replaced with `[]` and gains `changesTruncated: true`. `counts`, `note`,
+ * `version` and the dates are never touched, so the summary a library's
+ * history keeps forever stays intact even once the change list is gone. Pure
+ * and idempotent: compacting an already-compacted log changes nothing.
+ */
+export function compactLog(log: VersionLog): VersionLog {
+  return {
+    v: log.v,
+    records: log.records.map((record, i) => {
+      if (i < DETAILED_RECORDS || record.changes.length === 0) return record;
+      return { ...record, changes: [], changesTruncated: true };
+    }),
+  };
 }

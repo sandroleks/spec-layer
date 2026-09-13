@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { LibraryChange } from '@spec-layer/extractor';
 import {
-  truncateChanges, readVersionLog, currentVersion, resolveBump, readNote, proposalFor, bundlesToPrune,
-  MAX_CHANGES_BYTES, RETAINED_BUNDLES, MAX_NOTE_LENGTH, versionsKey, versionBundleKey,
+  truncateChanges, readVersionLog, currentVersion, resolveBump, readNote, proposalFor, bundlesToPrune, compactLog,
+  MAX_CHANGES_BYTES, RETAINED_BUNDLES, MAX_NOTE_LENGTH, DETAILED_RECORDS, versionsKey, versionBundleKey,
   type VersionLog, type VersionRecord,
 } from '../src/versions';
 
@@ -14,6 +14,11 @@ const record = (version: string): VersionRecord => ({
   version, publishedAt: '2026-09-12T00:00:00.000Z', bump: 'patch', minimumBump: 'patch', note: null,
   contentHash: 'c', bundleHash: 'b', extractorVersion: '2', pluginVersion: '5.1.0',
   counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+});
+
+/** A record with a non-empty change list, so compactLog has something to strip. */
+const detailedRecord = (version: string): VersionRecord => ({
+  ...record(version), counts: { major: 0, minor: 0, patch: 1 }, changes: [change(`c-${version}`)],
 });
 
 describe('keys', () => {
@@ -170,11 +175,55 @@ describe('proposalFor', () => {
 });
 
 describe('bundlesToPrune', () => {
-  it('names every version past the newest ten', () => {
+  it('names only the one version that just fell past the newest ten, not every older one', () => {
     const versions = Array.from({ length: 12 }, (_, i) => `1.${11 - i}.0`);
     const log: VersionLog = { v: 1, records: versions.map(record) };
     expect(RETAINED_BUNDLES).toBe(10);
-    expect(bundlesToPrune(log)).toEqual(['1.1.0', '1.0.0']);
+    // Only the record that just fell out of the retained window (index 10):
+    // a publish only ever pushes one record onto the log, so at most one
+    // bundle ever falls out. Naming every older one too (the old behavior)
+    // means one subrequest per publish forever, which crosses the Worker's
+    // subrequest limit by roughly the thousandth publish.
+    expect(bundlesToPrune(log)).toEqual(['1.1.0']);
     expect(bundlesToPrune({ v: 1, records: versions.slice(0, 10).map(record) })).toEqual([]);
+  });
+});
+
+describe('compactLog', () => {
+  it('leaves the newest DETAILED_RECORDS records untouched', () => {
+    expect(DETAILED_RECORDS).toBe(50);
+    const records = Array.from({ length: DETAILED_RECORDS }, (_, i) => detailedRecord(`1.${DETAILED_RECORDS - i}.0`));
+    const log: VersionLog = { v: 1, records };
+    expect(compactLog(log)).toEqual(log);
+  });
+
+  it('empties changes and flags truncation for records past the newest 50, keeping counts, note, version and dates', () => {
+    const records = Array.from({ length: 52 }, (_, i) => detailedRecord(`1.${51 - i}.0`));
+    const log: VersionLog = { v: 1, records };
+    const out = compactLog(log);
+    expect(out.records).toHaveLength(52);
+    for (const rec of out.records.slice(0, 50)) expect(rec.changes.length).toBeGreaterThan(0);
+    for (const rec of out.records.slice(50)) {
+      expect(rec.changes).toEqual([]);
+      expect(rec.changesTruncated).toBe(true);
+    }
+    // Nothing but `changes`/`changesTruncated` moved on the compacted ones.
+    const compacted = out.records[50];
+    const original = records[50];
+    expect(compacted).toEqual({ ...original, changes: [], changesTruncated: true });
+    expect(compacted.counts).toEqual(original.counts);
+    expect(compacted.version).toBe(original.version);
+    expect(compacted.publishedAt).toBe(original.publishedAt);
+    expect(compacted.note).toBe(original.note);
+  });
+
+  it('is idempotent and leaves a record with no changes alone', () => {
+    const log: VersionLog = { v: 1, records: [record('1.0.0'), detailedRecord('2.0.0')] };
+    const once = compactLog(log);
+    expect(compactLog(once)).toEqual(once);
+    // An already-empty record (an 'initial' publish, say) gains no
+    // changesTruncated flag it did not already carry: it was never truncated,
+    // just genuinely empty.
+    expect(once.records.find((r) => r.version === '1.0.0')?.changesTruncated).toBe(false);
   });
 });

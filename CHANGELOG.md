@@ -52,10 +52,12 @@ none of the reasoning above.
   date, and note, and a disclosure listing the changes grouped Removed,
   Components, Foundations, so breaking changes read first. A truncated list
   says so with the full counts.
-- **The CLI prints the version.** `pull` and `status` print
-  `(v1.5.0, published <date>)` when the proxy reports a version, and the
-  current form when it does not; `list` names it in its own header line
-  (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
+- **The CLI prints the version.** `pull` prints `(v1.5.0, published <date>)`
+  when the proxy reports a version, and the current form when it does not.
+  `status` prints `Up to date (v1.5.0, published <date>).` when the local
+  pull matches the remote, and `Behind: remote is v1.6.0, published <date>.
+  Run spec-layer pull.` when it does not; `list` names it in its own header
+  line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
   `version`. Pinned pulls are not yet available.
 
 ### Fixed

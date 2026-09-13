@@ -555,8 +555,18 @@ if (view === 'library') {
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
       version: '1.4.2',
     },
-    // Success is a toast, so a published screen carries no message of its own.
-    published: { ...PUBLISHED_BASE, status: 'done' },
+    // Success is a toast, so a published screen carries no message of its
+    // own. Carries the unchanged proposal a real publish leaves behind (see
+    // onPublishSources' 'created'/'updated' cases): no dry run has run since,
+    // so the block reads "Nothing changed" rather than a failed dry run.
+    published: {
+      ...PUBLISHED_BASE,
+      status: 'done',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: true, minimumBump: null, proposedVersion: null,
+        counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+      },
+    },
     // A second device: the id is in the file, the key is not on this machine.
     idOnly: {
       ...PUBLISHED_BASE,

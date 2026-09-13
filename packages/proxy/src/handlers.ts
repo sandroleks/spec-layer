@@ -363,5 +363,15 @@ async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
 
 export async function route(req: Request, deps: HandlerDeps): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
-  return withCors(await routeInner(req, deps));
+  try {
+    return withCors(await routeInner(req, deps));
+  } catch (err) {
+    // The last line of defence: an uncaught throw from any handler must still
+    // answer with CORS headers, or the plugin sees an opaque network failure
+    // instead of a real status. Handlers that need a more specific answer
+    // (activation's 502 on an unreachable Lemon Squeezy, say) catch their own
+    // errors before this ever runs; this is only for what nothing else caught.
+    deps.log('internal_error', { message: err instanceof Error ? err.message : String(err) });
+    return withCors(json(500, { error: 'internal' }));
+  }
 }

@@ -467,6 +467,13 @@ action. The rows below start there.
 - [ ] Pre-versioning library: a library published before this build. Open
       Publish; the block says the library has no version yet and the next
       publish creates 1.0.0. Publish; pills appear at v1.0.0.
+- [ ] Deploy order: before releasing the plugin, confirm the deployed proxy
+      answers a dry run (`curl -X POST https://api.spec-layer.com/v1/libraries
+      -H 'X-Figma-User: probe' -H 'content-type: application/json' -d
+      '{"bundle":<a minimal bundle>,"dryRun":true}'` returns a body with
+      `proposedVersion` or `unchanged`). Against a proxy that predates dry
+      runs the plugin would publish for real on every open of the Publish
+      screen.
 
 ## Download skill
 

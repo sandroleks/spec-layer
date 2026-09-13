@@ -734,6 +734,21 @@ describe('publish controller', () => {
     expect(updateFetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('sets an unchanged proposal for the assigned version after an update, never a failed one', async () => {
+    publish.onPublishClick(AUTH);
+    const updateFetcher = vi.fn(async () => jsonResponse(200, {
+      libraryId: 'lib_existing', publishedAt: '2026-09-01T00:00:02.000Z', version: '2.0.0',
+    }));
+    await publish.onPublishSources(sourcesMsg({ publishInfo: { libraryId: 'lib_existing', pullKey: 'sl_pull_1', publishedAt: null, version: null } }), AUTH, updateFetcher);
+    const state = publish.publishState();
+    expect(state.status).toBe('done');
+    expect(state.proposalStatus).toBe('idle');
+    expect(state.proposal).toEqual({
+      currentVersion: '2.0.0', unchanged: true, minimumBump: null, proposedVersion: null,
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    });
+  });
+
   it('keeps the identity on a not_owner refusal, so a teammate cannot strand the owner', async () => {
     publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_theirs', pullKey: null, publishedAt: '2026-08-30T09:12:00.000Z', version: null });
     publish.onPublishClick(AUTH);

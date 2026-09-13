@@ -613,6 +613,37 @@ describe('handlePublish', () => {
     expect(retry.headers.get('X-Quota-Used')).toBe('2');
   });
 
+  it('replays a committed create reservation with the assigned version, not just the id and date', async () => {
+    // A genuine retry of the exact same create request (network hiccup on the
+    // first response, say) reuses the exact same reservation cache key, since
+    // that key is `publish:new:<newLibraryId()>`. Force the same id twice by
+    // fixing the randomness `newLibraryId`/`newPullKey` draw on, so the second
+    // call is a true replay of the first commit rather than a second create.
+    const fixed = new Uint8Array(24).fill(7);
+    const spy = vi.spyOn(crypto, 'getRandomValues').mockImplementation(((buf: Uint8Array) => {
+      buf.set(fixed.subarray(0, buf.length));
+      return buf;
+    }) as typeof crypto.getRandomValues);
+    try {
+      const d = deps();
+      await seedPro(d);
+      const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+      expect(first.status).toBe(201);
+      const firstBody = await first.json() as { libraryId: string; publishedAt: string; version: string };
+      expect(firstBody.version).toBe('1.0.0');
+
+      const replay = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+      // The cached reservation short-circuits before any write: a 200, not a
+      // second 201, and it carries the version the first call was assigned.
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual({
+        libraryId: firstBody.libraryId, publishedAt: firstBody.publishedAt, unchanged: true, version: '1.0.0',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('refuses the eleventh changed publish in a month with 402', async () => {
     let t = Date.parse('2026-07-01T00:00:00Z');
     const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
@@ -1120,6 +1151,30 @@ describe('dry run', () => {
     const res = await handlePublish(publishReq({ libraryId: lib.libraryId, bundle: BUNDLE_WITH_CARD }, lib.headers), d);
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Quota-Used')).toBe('2');
+  });
+
+  /**
+   * A dry run happens every time the Publish screen opens, not just when the
+   * publisher commits, so it must not spend the 20/min publish rate limit: 25
+   * dry runs in a minute would otherwise leave no room for the real publish
+   * that follows. The default deps() licenseLimiter is 20/min; a dry run now
+   * spends the separate 60/min requestLimiter instead (see `libdry:` in
+   * handlePublish).
+   */
+  it('does not share the publish rate limiter, so many dry runs never block the publish that follows', async () => {
+    const d = deps();
+    await seedPro(d);
+    const req = (dryRun: boolean) => {
+      const r = publishReq({ bundle: BUNDLE, dryRun });
+      r.headers.set('CF-Connecting-IP', '9.9.9.9');
+      return r;
+    };
+    for (let i = 0; i < 25; i += 1) {
+      const res = await handlePublish(req(true), d);
+      expect(res.status).toBe(200);
+    }
+    const published = await handlePublish(req(false), d);
+    expect(published.status).toBe(201);
   });
 });
 

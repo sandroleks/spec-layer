@@ -247,10 +247,11 @@ cache inside the DO; prompts and prose are never logged.
   in the request path; a Durable Object would not lower the CPU cost, only
   move it.
 - **Per-version bundles are kept for the newest ten versions.** The eleventh
-  publish deletes the oldest per-version bundle. The log itself is not
-  capped: at the 64 KB per-record change cap a library would need roughly
-  four hundred publishes to approach KV's 25 MB value limit. Storage per
-  library is at most eleven bundles, 55 MB at the 5 MB cap.
+  publish deletes the oldest per-version bundle, and only that one: a publish
+  only ever pushes one record onto the log, so at most one bundle ever falls
+  out of the retained window per publish. The log keeps the full change list
+  for the newest 50 versions and only the counts, note, and dates for older
+  ones, so it stays small; per-version bundles are kept for the newest ten.
 - **KV writes are eventually consistent.** A publish immediately followed by
   a pull from another region can serve the previous bundle for up to about a
   minute. Republish tests should allow for that before treating a stale
@@ -282,6 +283,13 @@ cache inside the DO; prompts and prose are never logged.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
+- **The publish rate limiter now runs after the body is read.** A dry run
+  (opened every time the Publish screen shows) spends the 60/min request
+  limiter instead of the 20/min publish limiter, so it can no longer starve a
+  real publish of its budget. The limiter choice depends on the parsed
+  `dryRun` field, which means an unlimited IP can make the Worker read and
+  parse up to 5 MB of request body before either limiter applies; the
+  content-length cap bounds that.
 
 ## Bindings & secrets
 

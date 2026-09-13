@@ -4,7 +4,7 @@ import {
   type LibraryBundleV1, type LibraryDiff,
 } from '@spec-layer/extractor';
 import {
-  bundlesToPrune, currentVersion, proposalFor, readNote, readVersionLog, resolveBump, truncateChanges,
+  bundlesToPrune, compactLog, currentVersion, proposalFor, readNote, readVersionLog, resolveBump, truncateChanges,
   versionBundleKey, versionsKey, type VersionLog, type VersionRecord,
 } from './versions';
 import { callerProofs, licenseIdentityId } from './identity';
@@ -210,7 +210,7 @@ async function writeVersion(
   const next: VersionLog = { v: 1, records: [record, ...log.records] };
   await store.put(bundleKey(libraryId), stored);
   await store.put(versionBundleKey(libraryId, record.version), stored);
-  await store.put(versionsKey(libraryId), JSON.stringify(next));
+  await store.put(versionsKey(libraryId), JSON.stringify(compactLog(next)));
   return next;
 }
 
@@ -236,18 +236,6 @@ function versionRecord(input: {
 
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(`libpub:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
-  const caller = await resolveCaller(req, deps);
-  if (caller instanceof Response) return caller;
-  // A legacy plugin build that sends only a lapsed bearer gets the answer it
-  // always got: publish needs a tier, rotate does not. An `unreachable`
-  // verdict is not a tier either: the license may well be active, so
-  // publishing it as free would meter, cap, and own the library under the
-  // wrong identity. Refuse without writing and let the client retry.
-  if (caller.tier === 'free' && caller.licenseReason
-    && (!caller.figmaIdentity || caller.licenseReason === 'unreachable')) {
-    return json(401, { error: 'license_not_active', reason: caller.licenseReason });
-  }
 
   const declared = Number(req.headers.get('content-length') ?? 0);
   if (declared > MAX_BUNDLE_BYTES) {
@@ -260,6 +248,28 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   }
   let body: { libraryId?: unknown; bundle?: unknown; dryRun?: unknown; bump?: unknown; note?: unknown; initialVersion?: unknown };
   try { body = JSON.parse(new TextDecoder().decode(bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+
+  // A dry run opens the Publish screen every time it is shown, not just when
+  // the publisher commits, so it must not spend the same 20/min publish
+  // budget a real publish does. It shares the pull/versions request budget
+  // instead. Gated on the parsed body, after the size checks above, so this
+  // still costs nothing to determine and the size cap alone bounds how much
+  // the Worker reads before either limiter applies.
+  const limiter = body.dryRun === true ? deps.requestLimiter : deps.licenseLimiter;
+  const limiterKey = body.dryRun === true ? `libdry:${ip}` : `libpub:${ip}`;
+  if (!limiter.allow(limiterKey, deps.now())) return json(429, { error: 'rate_limited' });
+
+  const caller = await resolveCaller(req, deps);
+  if (caller instanceof Response) return caller;
+  // A legacy plugin build that sends only a lapsed bearer gets the answer it
+  // always got: publish needs a tier, rotate does not. An `unreachable`
+  // verdict is not a tier either: the license may well be active, so
+  // publishing it as free would meter, cap, and own the library under the
+  // wrong identity. Refuse without writing and let the client retry.
+  if (caller.tier === 'free' && caller.licenseReason
+    && (!caller.figmaIdentity || caller.licenseReason === 'unreachable')) {
+    return json(401, { error: 'license_not_active', reason: caller.licenseReason });
+  }
 
   let parsed: LibraryBundleV1;
   try {
@@ -388,7 +398,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const reserved = await quota.reserve(caller.tier, cacheKey);
   switch (reserved.kind) {
     case 'cached': {
-      const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string };
+      const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string; version?: string };
       return respond(200, { ...prior, unchanged: true });
     }
     case 'pending':
@@ -424,7 +434,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
       await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
-      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt }));
+      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
       deps.log('library_publish', { libraryId, size: bytes.byteLength, version: record.version, bump: record.bump });
       return respond(200, {
         libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
@@ -448,7 +458,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
-    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt }));
+    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
     deps.log('library_publish', { libraryId: id, size: bytes.byteLength, created: true, version: record.version });
     return respond(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
