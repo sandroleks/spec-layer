@@ -445,16 +445,27 @@ action. The rows below start there.
       its pill reads `v1.0.0 · Changed since`; the other docs keep
       `Published`. Move a group frame's header by hand, then Update again; the
       pill repaints where the header now sits.
-- [ ] Proposal and raise: open Publish. The block reads "Current version
-      1.0.0", "Next version 1.1.0 (minor)" with a reason naming 1 addition,
-      patch disabled and labelled "below the minimum", minor checked. Choose
-      major; the next version reads 2.0.0 and the primary "Publish 2.0.0".
-      Type a note. Publish; every pill now reads `v2.0.0 · Published`.
+- [ ] Proposal and raise: open Publish. The meta line reads "Version 1.0.0,
+      published <date>". The block reads "Next version 1.1.0" and "Minor: 1
+      addition" and nothing about the current version; the control shows
+      Patch, Minor, Major with Patch disabled, and hovering Patch shows "The
+      changes need at least a minor bump." Minor is checked. Choose Major; the
+      block reads "Next version 2.0.0" and "Major, raised from minor: 1
+      addition", the primary reads "Publish 2.0.0", and the screen does not
+      jump to the top. Type a note. Publish; every pill now reads
+      `v2.0.0 · Published`.
+- [ ] Variant, not removals: the addition above was a whole variant with its
+      own token bindings. The reason must say "1 addition" and never a
+      removal, and the change list in the next row must not list any binding
+      of the variants that already existed.
 - [ ] History: open Version history from the block. Two rows, v2.0.0 first
-      with a "major, breaking" badge, the date, and the note on one line;
-      v1.0.0 with "first version". Expand v2.0.0: Components lists the added
-      option; no Removed group. Back returns to Publish; Escape from history
-      returns to Publish, and again to the list.
+      with a "Major" badge that is not cropped and whose tooltip reads
+      "Something was removed or renamed. Code that used it may break.", the
+      date, and the note on one line; v1.0.0 with "First version". Expand
+      v2.0.0: one card named after the component lists "Option <name> added
+      to <axis>"; no other card and no bindings of existing variants. Back
+      returns to Publish; Escape from history returns to Publish, and again
+      to the list.
 - [ ] Nothing changed: publish again without editing; the toast reads
       "Nothing changed since the last publish." and the version stays 2.0.0.
 - [ ] Pull prints the version: run `spec-layer pull` in the developer
