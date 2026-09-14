@@ -16,7 +16,7 @@ import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import {
   agentSetupMessage, setupCommand, effectiveBump, currentVersionOf, nextVersionFor,
-  PROPOSAL_FAILED_MESSAGE,
+  PROPOSAL_FAILED_MESSAGE, BELOW_MINIMUM_MESSAGE,
   type PublishState, type DryRunResult,
 } from '../publish';
 import { PUBLISH_DOCS_URL } from '../proxy';
@@ -102,11 +102,14 @@ function metaMarkup(state: PublishState, allowance: PublishAllowance, locale?: s
   const parts: string[] = [];
   if (state.libraryId) {
     const when = state.lastPublishedAt ? formatPublishedAt(state.lastPublishedAt, locale) : null;
-    if (state.version) {
+    // The same source the Version block reads, so the two never name
+    // different versions.
+    const version = currentVersionOf(state);
+    if (version) {
       parts.push(
         when
-          ? `Version ${esc(state.version)}, published ${esc(when)}`
-          : `Version ${esc(state.version)}, publish date not recorded`,
+          ? `Version ${esc(version)}, published ${esc(when)}`
+          : `Version ${esc(version)}, publish date not recorded`,
       );
     } else {
       parts.push(when ? `Last published ${esc(when)}` : 'Last published date not recorded');
@@ -145,19 +148,27 @@ export function proposalReason(proposal: DryRunResult): string {
   return parts.length > 0 ? parts.join(', ') : 'No property changes';
 }
 
+const BUMP_WORD: Record<Bump, string> = { patch: 'Patch', minor: 'Minor', major: 'Major' };
+
 /**
- * The raise control: patch, minor, major. Anything below the dry run's
- * minimum is disabled and says why in place, rather than hiding a choice the
- * reader might expect to see.
+ * The raise control: Patch, Minor, Major, plain words only. A choice below
+ * the dry run's minimum is disabled and explains itself in a tooltip rather
+ * than in small print inside the button. When the minimum is already major
+ * there is nothing to choose, so no control is drawn; the line above it
+ * already says why. Each button sits in a span (the segmented control styles
+ * `> span > button` too) because the tooltip needs a positioned wrapper.
  */
 function bumpControl(minimum: Bump, chosen: Bump | null): string {
+  if (minimum === 'major') return '';
   const buttons = BUMPS.map((bump) => {
     const below = RANK[bump] < RANK[minimum];
     const checked = (chosen ?? minimum) === bump;
-    return (
+    const button =
       `<button type="button" role="radio" data-publish-bump="${bump}" aria-checked="${checked}"` +
-      `${below ? ' disabled' : ''}>${bump}${below ? '<small>below the minimum</small>' : ''}</button>`
-    );
+      `${below ? ' disabled' : ''}>${BUMP_WORD[bump]}</button>`;
+    return below
+      ? `<span data-tooltip-trigger>${button}<span class="sl-tooltip" role="tooltip">${esc(BELOW_MINIMUM_MESSAGE(minimum))}</span></span>`
+      : `<span>${button}</span>`;
   }).join('');
   return `<div class="sl-segmented sl-publish-bumps" role="radiogroup" aria-label="Version bump">${buttons}</div>`;
 }
@@ -170,18 +181,20 @@ function historyLink(): string {
 }
 
 /**
- * The version block: where the library's version stands, what the next
- * publish will make it and why, the raise control, the note, and the way to
- * the history. Every line states only what the proxy or the rules said, never
- * a guessed version.
+ * The version block: the next version and one line of why, the raise
+ * control, the note, and the way to the history. The meta line under the
+ * header already names the current version, so the block never repeats it.
+ * Every line states only what the proxy or the rules said, never a guessed
+ * version.
  */
 function versionBlock(state: PublishState): string {
   const head = (extra = '') =>
     `<div class="sl-publish-block-head"><h2>Version</h2>${extra}</div>`;
+  const note = (text: string) => `<p class="sl-publish-note">${text}</p>`;
   const noteField = (
     '<label class="sl-field"><span class="sl-field-label">Note</span>' +
     '<textarea class="sl-publish-note-field" data-publish-note maxlength="500" rows="2" ' +
-    `placeholder="Why this version, optional">${esc(state.note)}</textarea></label>`
+    `placeholder="Optional">${esc(state.note)}</textarea></label>`
   );
   let body: string;
   if (!state.libraryId) {
@@ -189,7 +202,7 @@ function versionBlock(state: PublishState): string {
     // is whatever the publisher types here, and it becomes 1.0.0 by default.
     const valid = isSemver(state.initialVersion);
     body =
-      '<p class="sl-publish-note">Not versioned yet. The first publish creates the version below.</p>' +
+      note('The first publish creates this version.') +
       `<label class="sl-field"${valid ? '' : ' data-invalid="true"'}><span class="sl-field-label">First version</span>` +
       '<span class="sl-input-wrap"><input data-publish-initial-version inputmode="decimal" ' +
       `value="${esc(state.initialVersion)}" aria-invalid="${!valid}"></span></label>` +
@@ -198,40 +211,35 @@ function versionBlock(state: PublishState): string {
     return `<section class="sl-publish-block sl-publish-version">${head()}${body}</section>`;
   }
   const current = currentVersionOf(state);
-  const currentLine = current
-    ? `Current version ${esc(current)}`
-    : 'This library has no version yet. The next publish creates 1.0.0.';
+  const since = current ?? 'the last publish';
   if (state.proposalStatus === 'loading') {
-    body =
-      `<p class="sl-publish-note">${currentLine}</p>` +
-      `<p class="sl-publish-note">Checking what changed since ${esc(current ?? 'the last publish')}` +
-      '<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>';
+    body = note(`Checking what changed since ${esc(since)}<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>`);
   } else if (state.proposalStatus === 'failed') {
     // A dry run that could not be computed still lets the publish go through:
     // the proxy applies the minimum bump on its own, so the reader is told
     // that rather than left staring at a blank block.
-    body =
-      `<p class="sl-publish-note">${currentLine}</p>` +
-      `<p class="sl-publish-note">${PROPOSAL_FAILED_MESSAGE}</p>` +
-      noteField;
+    body = note(PROPOSAL_FAILED_MESSAGE) + noteField;
   } else if (!state.proposal) {
     // No failure and no answer yet: either nothing has asked (a fresh publish
     // just landed) or the reply has not arrived. Neutral, not a failure claim.
-    body =
-      `<p class="sl-publish-note">${currentLine}</p>` +
-      '<p class="sl-publish-note">Open Publish again to check what changed.</p>' +
-      noteField;
+    body = note('Open Publish again to check what changed.') + noteField;
   } else if (state.proposal.unchanged) {
-    body = `<p class="sl-publish-note">Nothing changed since ${esc(current ?? 'it')} was published.</p>`;
+    body = note(`Nothing changed since ${esc(since)}.`);
+  } else if (current === null) {
+    // A library published before versions existed: no baseline version to
+    // bump, so the next publish creates the first one and there is no raise.
+    body = note(`No version yet. The next publish creates ${esc(state.proposal.proposedVersion ?? '1.0.0')}.`) + noteField;
   } else {
     const minimum: Bump = state.proposal.minimumBump ?? 'patch';
     const applied = effectiveBump(state) ?? minimum;
-    const next = nextVersionFor(state) ?? '1.0.0';
+    const next = nextVersionFor(state) ?? state.proposal.proposedVersion ?? '';
+    const reason = proposalReason(state.proposal);
+    const why = applied === minimum
+      ? `${BUMP_WORD[applied]}: ${reason}`
+      : `${BUMP_WORD[applied]}, raised from ${minimum}: ${reason}`;
     body =
-      `<p class="sl-publish-note">${currentLine}</p>` +
-      `<p class="sl-publish-version-next"><strong>Next version ${esc(next)} (${applied})</strong>` +
-      `<span>${esc(proposalReason(state.proposal))}</span></p>` +
-      (current ? bumpControl(minimum, state.chosenBump) : '') +
+      `<p class="sl-publish-version-next"><strong>Next version ${esc(next)}</strong><span>${esc(why)}</span></p>` +
+      bumpControl(minimum, state.chosenBump) +
       noteField;
   }
   return `<section class="sl-publish-block sl-publish-version">${head(historyLink())}${body}</section>`;
@@ -388,11 +396,16 @@ export function publishFooterMarkup(state: PublishState): string {
 export function renderPublishScreen(
   refs: ShellRefs, state: PublishState, allowance: PublishAllowance,
 ): void {
+  // A repaint of the screen already on show (a bump choice, a note) keeps
+  // the reader's place; arriving from another screen starts at the top.
+  const samePane = refs.screen.classList.contains('sl-publish-screen')
+    && !refs.screen.classList.contains('sl-history-screen');
+  const top = refs.scroll.scrollTop;
   refs.screen.className = 'sl-screen sl-publish-screen';
   refs.pageHeader.innerHTML = publishHeaderMarkup(state);
   refs.pageHeader.hidden = false;
   refs.scroll.innerHTML = publishScrollMarkup(state, allowance);
-  refs.scroll.scrollTop = 0;
+  refs.scroll.scrollTop = samePane ? top : 0;
   refs.footer.innerHTML = publishFooterMarkup(state);
   refs.footer.hidden = false;
 }

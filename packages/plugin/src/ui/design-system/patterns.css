@@ -1441,31 +1441,10 @@
   margin-bottom: var(--sl-space-8);
 }
 
-/*
- * .sl-segmented > button fixes a 24px single-line height, which the disabled
- * choice's second line (its "below the minimum" small print) would overflow.
- * Each button becomes a small centred column instead, so the row's height
- * follows whichever choice needs the most room and the other two centre
- * inside it, rather than the row clipping the explanation or the choices
- * sitting at mismatched heights.
- */
-.sl-publish-bumps > button {
-  height: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sl-space-2);
-  padding: var(--sl-space-6) var(--sl-space-10);
-  text-align: center;
-}
-
-/* A disabled choice explains itself in place instead of hiding. */
-.sl-publish-bumps > button > small {
-  display: block;
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
-  font-weight: var(--sl-font-weight-regular);
+/* A disabled choice explains itself in a tooltip under the control. */
+.sl-publish-bumps .sl-tooltip {
+  top: calc(100% + var(--sl-space-6));
+  left: 0;
   white-space: normal;
 }
 

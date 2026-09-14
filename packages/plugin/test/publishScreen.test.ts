@@ -478,39 +478,54 @@ const PROPOSAL = {
 describe('publish screen version block', () => {
   const versioned = state({ libraryId: LIBRARY_ID, pullKey: PULL_KEY, version: '1.4.2', proposal: PROPOSAL });
 
-  it('states the current and next version with the bump and a reason', () => {
+  it('states the next version and one line of why, without repeating the current version', () => {
     const markup = block(proScroll(versioned), 'Version');
-    expect(markup).toContain('Current version 1.4.2');
-    expect(markup).toContain('Next version 1.5.0 (minor)');
-    expect(markup).toContain('2 additions, 1 removal, 4 value changes');
+    expect(markup).toContain('<strong>Next version 1.5.0</strong>');
+    expect(markup).toContain('<span>Minor: 2 additions, 1 removal, 4 value changes</span>');
+    expect(markup).not.toContain('Current version');
+    expect(markup).not.toContain('(minor)');
   });
 
-  it('offers the raise control with choices below the minimum disabled and labelled', () => {
+  it('offers the raise control with plain labels, the choice below the minimum disabled with a tooltip', () => {
     const markup = block(proScroll(versioned), 'Version');
-    expect(markup).toMatch(/<button[^>]*data-publish-bump="patch"[^>]*disabled[^>]*>/);
-    expect(markup).toContain('below the minimum');
-    expect(markup).toMatch(/<button[^>]*data-publish-bump="minor"[^>]*aria-checked="true"/);
-    expect(markup).toMatch(/<button[^>]*data-publish-bump="major"[^>]*aria-checked="false"/);
+    expect(markup).toMatch(/<button[^>]*data-publish-bump="patch"[^>]*disabled[^>]*>Patch<\/button>/);
+    expect(markup).toMatch(/<span data-tooltip-trigger><button[^>]*data-publish-bump="patch"/);
+    expect(markup).toContain('<span class="sl-tooltip" role="tooltip">The changes need at least a minor bump.</span>');
+    expect(markup).not.toContain('below the minimum');
+    expect(markup).toMatch(/<button[^>]*data-publish-bump="minor"[^>]*aria-checked="true"[^>]*>Minor<\/button>/);
+    expect(markup).toMatch(/<button[^>]*data-publish-bump="major"[^>]*aria-checked="false"[^>]*>Major<\/button>/);
+    // Only the disabled choice explains itself.
+    expect(markup.split('role="tooltip"').length - 1).toBe(1);
   });
 
-  it('marks the chosen raise and moves the next version to match', () => {
+  it('marks the chosen raise, moves the next version, and says the bump was raised', () => {
     const markup = block(proScroll(state({ ...versioned, chosenBump: 'major' })), 'Version');
     expect(markup).toMatch(/data-publish-bump="major"[^>]*aria-checked="true"/);
-    expect(markup).toContain('Next version 2.0.0 (major)');
+    expect(markup).toContain('<strong>Next version 2.0.0</strong>');
+    expect(markup).toContain('<span>Major, raised from minor: 2 additions, 1 removal, 4 value changes</span>');
   });
 
-  it('has a 500-character note field and a history link', () => {
+  it('renders no raise control when the minimum is already major', () => {
+    const forced = state({ ...versioned, proposal: { ...PROPOSAL, minimumBump: 'major', proposedVersion: '2.0.0' } });
+    const markup = block(proScroll(forced), 'Version');
+    expect(markup).not.toContain('data-publish-bump');
+    expect(markup).toContain('<strong>Next version 2.0.0</strong>');
+    expect(markup).toContain('<span>Major: 2 additions, 1 removal, 4 value changes</span>');
+  });
+
+  it('has a 500-character note field with a one-word placeholder and a history link', () => {
     const markup = block(proScroll(versioned), 'Version');
     expect(markup).toMatch(/<textarea[^>]*data-publish-note[^>]*maxlength="500"/);
-    expect(markup).toContain('placeholder="Why this version, optional"');
+    expect(markup).toContain('placeholder="Optional"');
     expect(markup).toContain('data-publish-history');
   });
 
   it('before the first publish, shows an editable first version prefilled 1.0.0 and no raise control', () => {
     const markup = block(proScroll(state({ proposal: firstPublishProposal() })), 'Version');
-    expect(markup).toContain('Not versioned yet');
+    expect(markup).toContain('The first publish creates this version.');
     expect(markup).toMatch(/<input[^>]*data-publish-initial-version[^>]*value="1\.0\.0"/);
     expect(markup).not.toContain('data-publish-bump');
+    expect(markup).not.toContain('Not versioned yet');
   });
 
   it('flags an invalid first version', () => {
@@ -518,15 +533,26 @@ describe('publish screen version block', () => {
     expect(markup).toContain('Use three numbers, like 1.0.0.');
   });
 
+  it('says a library without a version gets 1.0.0 next, with no raise control', () => {
+    const markup = block(proScroll(state({
+      libraryId: LIBRARY_ID, version: null,
+      proposal: { ...PROPOSAL, currentVersion: null, minimumBump: null, proposedVersion: '1.0.0' },
+    })), 'Version');
+    expect(markup).toContain('No version yet. The next publish creates 1.0.0.');
+    expect(markup).not.toContain('data-publish-bump');
+    expect(markup).not.toContain('Next version');
+  });
+
   it('says the minimum will apply when the dry run failed, with no raise control', () => {
     const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2', proposalStatus: 'failed' })), 'Version');
     expect(markup).toContain('Could not compute the next version. Publishing will apply the minimum bump.');
     expect(markup).not.toContain('data-publish-bump');
+    expect(markup).not.toContain('Current version');
   });
 
   it('says nothing changed when the dry run reported unchanged content', () => {
     const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2', proposal: { ...PROPOSAL, unchanged: true, minimumBump: null, proposedVersion: null } })), 'Version');
-    expect(markup).toContain('Nothing changed since 1.4.2 was published.');
+    expect(markup).toContain('Nothing changed since 1.4.2.');
   });
 
   it('shows a checking line while the dry run runs', () => {
@@ -576,7 +602,7 @@ describe('publish screen version block', () => {
       },
     });
     const markup = block(proScroll(done), 'Version');
-    expect(markup).toContain('Nothing changed since 1.4.2 was published.');
+    expect(markup).toContain('Nothing changed since 1.4.2.');
     expect(markup).not.toContain('Could not compute the next version');
   });
 
@@ -602,8 +628,8 @@ describe('publish screen version block', () => {
       proposal: { ...PROPOSAL, currentVersion: '2.4.0', minimumBump: 'minor', proposedVersion: '2.5.0' },
     });
     const markup = block(proScroll(s), 'Version');
-    expect(markup).toContain('Current version 2.4.0');
-    expect(markup).toContain('Next version 2.5.0 (minor)');
+    expect(markup).toContain('<strong>Next version 2.5.0</strong>');
+    expect(publishScrollMarkup(s, allowance, 'en-GB')).toContain('<span>Version 2.4.0, publish date not recorded</span>');
     expect(publishFooterMarkup(s)).toContain('<span>Publish 2.5.0</span>');
   });
 });
@@ -649,6 +675,14 @@ describe('publish screen styling', () => {
     const body = rule('.sl-publish-body');
     expect(body).not.toBe('');
     expect(body).not.toMatch(/border-top/);
+  });
+
+  it('gives the raise control plain buttons in tooltip wrappers, with no small print rules', () => {
+    expect(rule('.sl-publish-bumps > button > small')).toBe('');
+    expect(rule('.sl-publish-bumps > button')).toBe('');
+    expect(rule('.sl-publish-bumps .sl-tooltip')).toMatch(/top:\s*calc\(100% \+/);
+    const components = readFileSync(new URL('../src/ui/design-system/components.css', import.meta.url), 'utf-8');
+    expect(components).toMatch(/\n\.sl-segmented > span \{[^}]*position:\s*relative/);
   });
 
   /**
