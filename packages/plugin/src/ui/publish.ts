@@ -36,7 +36,12 @@ export interface PublishBundleV1 {
   pluginVersion: string | null;
   extractorVersion: string;
   foundation: { ai: string; artifact: FoundationArtifactV5 } | null;
-  components: Array<{ name: string; ai: string; artifact: unknown }>;
+  components: Array<{
+    name: string; ai: string; artifact: unknown;
+    /** Every variant instance, name and axis values, so the proxy's diff can
+     *  compare bindings per variant (libraryDiff.ts). */
+    variants: Array<{ name: string; values: Record<string, string> }>;
+  }>;
 }
 
 export interface PublishStamps {
@@ -102,7 +107,12 @@ export function buildPublishArtifacts(
         ...(foundationArtifact ? { foundation: foundationArtifact } : {}),
         prose,
       });
-      return { name, ai: toYaml(componentAiContext(artifact) as unknown as YamlValue), artifact };
+      return {
+        name,
+        ai: toYaml(componentAiContext(artifact) as unknown as YamlValue),
+        artifact,
+        variants: spec.variantInstances.map(({ name: variantName, values }) => ({ name: variantName, values })),
+      };
     });
   const bundle: PublishBundleV1 = {
     schema: 'spec-layer-library-bundle',

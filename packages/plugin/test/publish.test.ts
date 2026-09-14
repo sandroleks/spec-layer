@@ -187,6 +187,27 @@ describe('buildPublishBundle', () => {
       },
     }]);
   });
+
+  it('carries each component\'s variant instances beside the artifact', () => {
+    const set = {
+      id: 'set', name: 'Button', type: 'COMPONENT_SET', visible: true, key: 'k-set',
+      propertyDefinitions: { size: { type: 'VARIANT', variantOptions: ['Small', 'Large'] } },
+      children: [
+        { id: 'v0', name: 'size=Small', type: 'COMPONENT', visible: true, children: [], bindings: [] },
+        { id: 'v1', name: 'size=Large', type: 'COMPONENT', visible: true, children: [], bindings: [] },
+      ],
+    } as never;
+    const bundle = buildPublishBundle(baseSources({
+      components: [{ docId: 'doc-set', name: 'Button', node: set, prose: null }],
+    }), GENERATED_AT);
+    expect(bundle.components[0].variants).toEqual([
+      { name: 'size=Small', values: { size: 'Small' } },
+      { name: 'size=Large', values: { size: 'Large' } },
+    ]);
+    // A lone component is one variant with no axis values.
+    const lone = buildPublishBundle(baseSources(), GENERATED_AT);
+    expect(lone.components[0].variants).toEqual([{ name: 'Badge', values: {} }]);
+  });
 });
 
 describe('publishBundle', () => {
