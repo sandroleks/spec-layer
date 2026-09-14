@@ -77,20 +77,25 @@ function detailsMarkup(record: VersionRecord, expanded: boolean): string {
   );
 }
 
+/**
+ * One row is one button. The version, its badge, the date, the chevron, and
+ * the note all sit inside the disclosure, so a click anywhere on the row
+ * opens the changes; a chip-sized target on a full-width row read as a
+ * control that only worked in one spot. The button's accessible name is its
+ * content, which names the version, the bump, and the date in reading order.
+ */
 function rowMarkup(record: VersionRecord, expanded: boolean, locale?: string): string {
   const when = formatPublishedAt(record.publishedAt, locale);
+  const version = esc(record.version);
   return (
-    `<article class="sl-library-row sl-history-row${expanded ? ' is-expanded' : ''}" data-version="${esc(record.version)}">` +
-    '<div class="sl-library-summary">' +
-    '<button class="sl-library-update-disclosure" type="button" ' +
-    `data-history-disclosure="${esc(record.version)}" aria-expanded="${expanded}" ` +
-    `aria-controls="sl-history-details-${esc(record.version)}" aria-label="Changes in ${esc(record.version)}">` +
-    `<strong>v${esc(record.version)}</strong>${badge(record)}` +
-    `<span class="sl-library-chevron${expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
-    '</button>' +
+    `<article class="sl-library-row sl-history-row${expanded ? ' is-expanded' : ''}" data-version="${version}">` +
+    `<button class="sl-history-summary" type="button" data-history-disclosure="${version}" ` +
+    `aria-expanded="${expanded}" aria-controls="sl-history-details-${version}">` +
+    `<strong>v${version}</strong>${badge(record)}` +
     `<time datetime="${esc(record.publishedAt)}">${esc(when ?? record.publishedAt)}</time>` +
-    (record.note ? `<p class="sl-history-note">${esc(record.note)}</p>` : '') +
-    '</div>' +
+    `<span class="sl-library-chevron${expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
+    (record.note ? `<span class="sl-history-note">${esc(record.note)}</span>` : '') +
+    '</button>' +
     detailsMarkup(record, expanded) +
     '</article>'
   );

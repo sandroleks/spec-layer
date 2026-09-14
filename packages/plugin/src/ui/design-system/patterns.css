@@ -3067,21 +3067,46 @@
 }
 
 /*
- * Version history rows reuse the Library row's surface and hover, but not its
- * four-column grid: that grid's first column is minmax(0, 1fr) holding a
- * min-width: 0 button, and a nowrap badge inside it overflowed under the
- * date. Two columns here: the disclosure, which may wrap its badge onto a
- * second line, and the date, which never wraps.
+ * A version row is one button: the version, its badge, the date, the chevron,
+ * and the note on a second line all sit inside it, so clicking anywhere on
+ * the row opens the changes. It reuses the Library row's surface, hairline
+ * and hover, but carries its own grid: the Library summary's four columns put
+ * the disclosure in a minmax(0, 1fr) column where a nowrap badge overflowed
+ * under the date. Here the date column is the one that flexes, and the note
+ * spans the whole row.
  */
-.sl-history-row .sl-library-summary {
-  grid-template-columns: minmax(0, 1fr) auto;
+.sl-history-summary {
+  width: 100%;
+  min-height: 49px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sl-space-6);
+  /* The same inset .sl-library-summary uses, so the two lists share an edge. */
+  padding: var(--sl-space-6) var(--sl-space-14);
+  color: var(--sl-color-text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sl-history-row .sl-library-update-disclosure {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-self: start;
+.sl-history-summary > strong {
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-history-summary > time {
+  justify-self: end;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  white-space: nowrap;
+}
+
+/* An open row keeps its hover band on the summary, like the Library row
+   (see .sl-library-row.is-expanded:hover): the details below are content. */
+.sl-history-row.is-expanded:hover .sl-history-summary {
+  background: var(--sl-color-surface-hover);
 }
 
 /*
@@ -3092,10 +3117,6 @@
  */
 .sl-history-row .sl-library-change-fallback {
   grid-template-columns: 1fr;
-}
-
-.sl-history-row .sl-library-update-disclosure > strong {
-  font-weight: var(--sl-font-weight-semibold);
 }
 
 /* The badge and its tooltip. The trigger is positioned so the tooltip hangs
@@ -3117,13 +3138,14 @@
   white-space: normal;
 }
 
-.sl-history-row .sl-library-update-disclosure:focus-visible .sl-tooltip {
+.sl-history-summary:focus-visible .sl-tooltip {
   opacity: 1;
   transform: translateX(0);
 }
 
 .sl-history-note {
   grid-column: 1 / -1;
+  display: block;
   margin: 0;
   overflow: hidden;
   color: var(--sl-color-text-muted);

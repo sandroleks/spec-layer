@@ -41,6 +41,13 @@ describe('history screen', () => {
     expect(markup).toContain('<span class="sl-tooltip" role="tooltip">Something was removed or renamed. Code that used it may break.</span>');
     expect(markup).toContain('<span class="sl-tooltip" role="tooltip">The first publish. Nothing to compare against.</span>');
     expect(markup).toMatch(/<span class="sl-history-bump" data-tooltip-trigger><span class="sl-badge"/);
+    // The whole row is the disclosure: version, badge, date, and note all sit
+    // inside the one button, so a click anywhere on the row opens it.
+    expect(markup).toMatch(
+      /<button class="sl-history-summary" type="button" data-history-disclosure="2\.0\.0" aria-expanded="false" aria-controls="sl-history-details-2\.0\.0">[\s\S]*?<time[\s\S]*?<span class="sl-history-note">[^<]*<\/span><\/button>/,
+    );
+    expect(markup).not.toContain('sl-library-update-disclosure');
+    expect(markup).not.toContain('sl-library-summary');
     expect(markup).toMatch(/<time datetime="2026-09-12T10:00:00.000Z">\d{1,2} Sept 2026, \d{2}:\d{2}<\/time>/);
     expect(markup).toContain('class="sl-history-note">Card is new API and the old icon slot is gone.<');
   });
@@ -66,11 +73,14 @@ describe('history screen', () => {
     const css = readFileSync(new URL('../src/ui/design-system/patterns.css', import.meta.url), 'utf-8');
     const rule = (selector: string) =>
       new RegExp(`\\n${selector.replace(/[.+*?^$(){}|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-    expect(rule('.sl-history-row .sl-library-summary')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) auto/);
-    expect(rule('.sl-history-row .sl-library-summary')).not.toMatch(/flex-wrap/);
-    expect(rule('.sl-history-row .sl-library-update-disclosure')).toMatch(/flex-wrap:\s*wrap/);
+    const summary = rule('.sl-history-summary');
+    expect(summary).toMatch(/width:\s*100%/);
+    expect(summary).toMatch(/grid-template-columns:\s*auto auto minmax\(0, 1fr\) auto/);
+    expect(rule('.sl-history-summary > time')).toMatch(/white-space:\s*nowrap/);
     expect(rule('.sl-history-note')).toMatch(/grid-column:\s*1 \/ -1/);
     expect(rule('.sl-history-bump')).toMatch(/position:\s*relative/);
+    expect(rule('.sl-history-row .sl-library-summary')).toBe('');
+    expect(rule('.sl-history-row .sl-library-update-disclosure')).toBe('');
   });
 
   it('says a first version has nothing to compare, and states truncation with counts for a truncated one', () => {
