@@ -259,7 +259,7 @@ export function foundationChangeGroups(
 
 type TokenEntry = SpecHashProjection['tokens'][number];
 type GapEntry = SpecHashProjection['gaps'][number];
-type Combo = Record<string, string>;
+export type Combo = Record<string, string>;
 
 /** Axis order is not identity: two rules with the same axes and values are the same rule. */
 function conditionsKey(conditions: Record<string, string[]>): string {
@@ -299,7 +299,7 @@ function tokenLabel(rule: TokenEntry): string {
   return `${rule.part} / ${rule.property}${formatConditions(rule.conditions)}`;
 }
 
-function comboKey(values: Combo): string {
+export function comboKey(values: Combo): string {
   return JSON.stringify(Object.entries(values ?? {}).sort(([a], [b]) => compareCodeUnits(a, b)));
 }
 
@@ -341,11 +341,15 @@ function bindingCells(projection: SpecHashProjection): CellsByProperty {
  * `variants` axis order and option order where available, then anything else
  * the instances actually carry, in first-seen order. Only values some variant
  * carries are kept, so a declared option nobody uses is never named as changed.
+ * Exported for libraryDiff.ts, which feeds it the v5 artifact's declared axes.
  */
-function axisModel(projection: SpecHashProjection, universe: readonly Combo[]): Map<string, string[]> {
+export function axisModel(
+  declared: readonly { prop: string; values: readonly string[] }[],
+  universe: readonly Combo[],
+): Map<string, string[]> {
   const axes = new Map<string, string[]>();
-  for (const axis of list(projection.variants)) {
-    if (!axes.has(axis.prop)) axes.set(axis.prop, [...list(axis.values)]);
+  for (const axis of declared) {
+    if (!axes.has(axis.prop)) axes.set(axis.prop, [...axis.values]);
   }
   for (const combo of universe) {
     for (const [axis, value] of Object.entries(combo)) {
@@ -381,7 +385,7 @@ function variantDefaults(projection: SpecHashProjection): Map<string, string> {
  * names a variant that did not change; a subset that is not one product of
  * axis values takes more than one line rather than an inaccurate one.
  */
-function coverConditions(
+export function coverConditions(
   subset: readonly Combo[],
   universe: readonly Combo[],
   axes: Map<string, string[]>,
@@ -430,7 +434,7 @@ function coverConditions(
  * variant". An axis with no recorded default is always spelled out. No scope
  * at all when the conditions are empty: the change reaches every variant.
  */
-function describeScope(
+export function describeScope(
   conditions: Record<string, string[]>,
   count: number,
   total: number,
@@ -489,7 +493,7 @@ function tokenItems(before: SpecHashProjection, after: SpecHashProjection): Chan
       shared.push(variant.values);
     }
   }
-  const axes = axisModel(after, shared);
+  const axes = axisModel(list(after.variants), shared);
   const defaults = variantDefaults(after);
   const beforeCells = bindingCells(before);
   const afterCells = bindingCells(after);
