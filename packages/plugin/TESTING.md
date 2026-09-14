@@ -461,9 +461,11 @@ action. The rows below start there.
 - [ ] History: open Version history from the block. Two rows, v2.0.0 first
       with a "Major" badge that is not cropped and whose tooltip reads
       "Something was removed or renamed. Code that used it may break.", the
-      date, and the note on one line; v1.0.0 with "First version". Expand
-      v2.0.0: one card named after the component lists "Option <name> added
-      to <axis>"; no other card and no bindings of existing variants. Back
+      date, and the note on one line; v1.0.0 with "First version". Click the
+      date side of the v2.0.0 row, not the badge: the whole row is the
+      control and it opens. One card named after the component lists "Option
+      <name> added to <axis>"; no other card and no bindings of existing
+      variants. Back
       returns to Publish; Escape from history returns to Publish, and again
       to the list.
 - [ ] Nothing changed: publish again without editing; the toast reads
