@@ -34,6 +34,14 @@ describe('groupChanges', () => {
     ]);
     expect(cards[0].items.map((i) => i.text)).toEqual(['State A added', 'State B added']);
   });
+
+  it('puts Foundations first even when the foundation change arrives last', () => {
+    const cards = groupChanges([
+      change({ component: 'Button', kind: 'added', entity: 'state', id: 'A', name: 'A', scope: null, bump: 'minor' }),
+      change({}),
+    ]);
+    expect(cards.map((c) => c.label)).toEqual(['Foundations', 'Button']);
+  });
 });
 
 describe('describeChange', () => {

@@ -1,14 +1,15 @@
 /**
  * history.ts (screen): the version history pane. Presentation only, the same
  * split screens/publish.ts has against ui/publish.ts. One sl-library-row per
- * record, newest first, with a disclosure that opens the grouped change list.
+ * record, newest first, with a disclosure that opens one card of changes per
+ * component.
  */
 import type { VersionRecord } from '@spec-layer/extractor';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import type { HistoryState } from '../history';
 import { formatPublishedAt } from '../viewModel/allowance';
-import { groupChanges, bumpLabel, bumpTone, type HistoryGroup } from '../viewModel/history';
+import { groupChanges, bumpLabel, bumpExplanation, bumpTone, type HistoryCard } from '../viewModel/history';
 
 function esc(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -22,21 +23,32 @@ export function historyHeaderMarkup(): string {
   );
 }
 
+/**
+ * The bump word, with its one-sentence meaning in the shell's tooltip
+ * pattern. The trigger is the wrapper span, so hovering the badge shows it;
+ * a focus rule in patterns.css shows it when the disclosure has keyboard
+ * focus, since the badge sits inside that button.
+ */
 function badge(record: VersionRecord): string {
   const tone = bumpTone(record.bump);
-  return `<span class="sl-badge"${tone ? ` data-tone="${tone}"` : ''}>${esc(bumpLabel(record.bump))}</span>`;
+  return (
+    '<span class="sl-history-bump" data-tooltip-trigger>' +
+    `<span class="sl-badge"${tone ? ` data-tone="${tone}"` : ''}>${esc(bumpLabel(record.bump))}</span>` +
+    `<span class="sl-tooltip" role="tooltip">${esc(bumpExplanation(record.bump))}</span>` +
+    '</span>'
+  );
 }
 
-function groupMarkup(group: HistoryGroup): string {
-  const items = group.items.map((item) => {
+function cardMarkup(card: HistoryCard): string {
+  const items = card.items.map((item) => {
     const values = item.from !== null || item.to !== null
       ? `<span class="sl-history-values">${item.from !== null ? `<span class="sl-history-from">${esc(item.from)}</span>` : ''}` +
         `${item.to !== null ? `<span class="sl-history-to">${esc(item.to)}</span>` : ''}</span>`
       : '';
     const scope = item.scope ? `<span class="sl-library-change-scope">${esc(item.scope)}</span>` : '';
-    return `<li><span class="sl-history-name">${esc(item.label)}</span>${values}${scope}</li>`;
+    return `<li data-change-kind="${item.kind}"><span class="sl-history-name">${esc(item.text)}</span>${values}${scope}</li>`;
   }).join('');
-  return `<div class="sl-library-change-group"><strong>${group.label}</strong><ul>${items}</ul></div>`;
+  return `<div class="sl-library-change-group"><strong>${esc(card.label)}</strong><ul>${items}</ul></div>`;
 }
 
 function detailsMarkup(record: VersionRecord, expanded: boolean): string {
@@ -54,7 +66,7 @@ function detailsMarkup(record: VersionRecord, expanded: boolean): string {
   } else if (record.changes.length === 0) {
     content = '<p class="sl-library-change-fallback"><strong>No property changes</strong></p>';
   } else {
-    content = groupChanges(record.changes).map(groupMarkup).join('');
+    content = groupChanges(record.changes).map(cardMarkup).join('');
     if (record.changesTruncated) {
       content += `<p class="sl-history-truncated">Showing the first ${record.changes.length} changes of ${total}</p>`;
     }

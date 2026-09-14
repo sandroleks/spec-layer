@@ -106,9 +106,12 @@ export function groupChanges(changes: LibraryChange[]): HistoryCard[] {
     if (items) items.push(item);
     else cards.set(label, [item]);
   }
-  // Card order is the change list's: foundation (null component) first, then
-  // components by name. Within a card, rank first and the list's order second.
-  return [...cards].map(([label, items]) => ({
+  // Foundations first, then components in the change list's order (the proxy
+  // sorts changes foundation first, then by component name, so this only
+  // matters for a list that arrived unsorted). Within a card, rank first and
+  // the list's order second.
+  const ordered = [...cards].sort(([a], [b]) => Number(b === FOUNDATIONS) - Number(a === FOUNDATIONS));
+  return ordered.map(([label, items]) => ({
     label,
     items: items
       .map((item, index) => ({ item, index }))

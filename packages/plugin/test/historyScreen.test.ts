@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type { VersionLog } from '@spec-layer/extractor';
 import { historyHeaderMarkup, historyScrollMarkup } from '../src/ui/screens/history';
@@ -35,22 +36,41 @@ describe('history screen', () => {
   it('renders one row per record, newest first, with version, bump badge, time, and the note', () => {
     const markup = historyScrollMarkup(state(), 'en-GB');
     expect(markup.indexOf('v2.0.0')).toBeLessThan(markup.indexOf('v1.0.0'));
-    expect(markup).toContain('<span class="sl-badge" data-tone="danger">major, breaking</span>');
-    expect(markup).toContain('<span class="sl-badge" data-tone="success">first version</span>');
+    expect(markup).toContain('<span class="sl-badge" data-tone="danger">Major</span>');
+    expect(markup).toContain('<span class="sl-badge" data-tone="success">First version</span>');
+    expect(markup).toContain('<span class="sl-tooltip" role="tooltip">Something was removed or renamed. Code that used it may break.</span>');
+    expect(markup).toContain('<span class="sl-tooltip" role="tooltip">The first publish. Nothing to compare against.</span>');
+    expect(markup).toMatch(/<span class="sl-history-bump" data-tooltip-trigger><span class="sl-badge"/);
     expect(markup).toMatch(/<time datetime="2026-09-12T10:00:00.000Z">\d{1,2} Sept 2026, \d{2}:\d{2}<\/time>/);
     expect(markup).toContain('class="sl-history-note">Card is new API and the old icon slot is gone.<');
   });
 
-  it('groups an expanded record with Removed first, and renders from and to in two spans', () => {
+  it('renders one card per subject, Foundations first, and renders from and to in two spans', () => {
     const markup = historyScrollMarkup(state({ expanded: '2.0.0' }), 'en-GB');
-    const removed = markup.indexOf('<strong>Removed</strong>');
-    const components = markup.indexOf('<strong>Components</strong>');
     const foundations = markup.indexOf('<strong>Foundations</strong>');
-    expect(removed).toBeGreaterThan(-1);
-    expect(removed).toBeLessThan(components);
-    expect(components).toBeLessThan(foundations);
+    const button = markup.indexOf('<strong>Button</strong>');
+    const card = markup.indexOf('<strong>Card</strong>');
+    expect(foundations).toBeGreaterThan(-1);
+    expect(foundations).toBeLessThan(button);
+    expect(button).toBeLessThan(card);
+    expect(markup).not.toContain('<strong>Removed</strong>');
+    expect(markup).not.toContain('<strong>Components</strong>');
+    expect(markup).toContain('<li data-change-kind="removed"><span class="sl-history-name">Property icon removed</span>');
+    expect(markup).toContain('<span class="sl-history-name">color/primary in Light</span>');
     expect(markup).toContain('<span class="sl-history-from">#6750a4</span><span class="sl-history-to">#5b438f</span>');
-    expect(markup).toContain('<span class="sl-library-change-scope">Light</span>');
+    // The mode is in the sentence, so no scope line repeats it.
+    expect(markup).not.toContain('<span class="sl-library-change-scope">Light</span>');
+  });
+
+  it('lays the row out so the badge cannot run under the date', () => {
+    const css = readFileSync(new URL('../src/ui/design-system/patterns.css', import.meta.url), 'utf-8');
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector.replace(/[.+*?^$(){}|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+    expect(rule('.sl-history-row .sl-library-summary')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) auto/);
+    expect(rule('.sl-history-row .sl-library-summary')).not.toMatch(/flex-wrap/);
+    expect(rule('.sl-history-row .sl-library-update-disclosure')).toMatch(/flex-wrap:\s*wrap/);
+    expect(rule('.sl-history-note')).toMatch(/grid-column:\s*1 \/ -1/);
+    expect(rule('.sl-history-bump')).toMatch(/position:\s*relative/);
   });
 
   it('says a first version has nothing to compare, and states truncation with counts for a truncated one', () => {

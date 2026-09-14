@@ -3085,9 +3085,22 @@
   }
 }
 
-/* Version history rows reuse the Library row; these are the few extras. */
+/*
+ * Version history rows reuse the Library row's surface and hover, but not its
+ * four-column grid: that grid's first column is minmax(0, 1fr) holding a
+ * min-width: 0 button, and a nowrap badge inside it overflowed under the
+ * date. Two columns here: the disclosure, which may wrap its badge onto a
+ * second line, and the date, which never wraps.
+ */
 .sl-history-row .sl-library-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sl-history-row .sl-library-update-disclosure {
+  display: inline-flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-self: start;
 }
 
 /*
@@ -3104,8 +3117,27 @@
   font-weight: var(--sl-font-weight-semibold);
 }
 
+/* The badge and its tooltip. The trigger is positioned so the tooltip hangs
+   under the badge; the focus rule covers keyboard users, whose focus lands
+   on the disclosure button around it rather than on the badge. */
+.sl-history-bump {
+  position: relative;
+  display: inline-flex;
+}
+
+.sl-history-bump > .sl-tooltip {
+  top: calc(100% + var(--sl-space-4));
+  left: 0;
+  white-space: normal;
+}
+
+.sl-history-row .sl-library-update-disclosure:focus-visible .sl-tooltip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 .sl-history-note {
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   margin: 0;
   overflow: hidden;
   color: var(--sl-color-text-muted);
