@@ -98,6 +98,15 @@ function withFoundation(mutate: (artifact: Record<string, unknown>) => void): Li
 
 const only = (diff: LibraryDiff, entity: string) => diff.changes.filter((c) => c.entity === entity);
 
+const VARIANTS = [{ name: 'size=Small', values: { size: 'Small' } }, { name: 'size=Large', values: { size: 'Large' } }];
+const BRAND = { source_id: 'VariableID:2', name: 'color/brand', kind: 'variable', remote: false, status: 'resolved' };
+const refsOf = () => componentArtifact().references as { used: unknown[]; bindings: unknown[] };
+
+/** The same bundle with a variants list on every component. */
+function withVariants(b: LibraryBundleV1, variants: { name: string; values: Record<string, string> }[] = VARIANTS): LibraryBundleV1 {
+  return { ...b, components: b.components.map((c) => ({ ...c, variants })) };
+}
+
 describe('bumpFor', () => {
   const structural: ChangeEntity[] = [
     'component', 'property', 'option', 'variant_axis', 'state', 'anatomy_part', 'collection', 'mode', 'token',
@@ -322,6 +331,86 @@ describe('libraryDiff: components', () => {
     const diff = libraryDiff(base, orphan);
     const changed = only(diff, 'binding').find((c) => c.kind === 'changed');
     expect(changed?.to).toBe('VariableID:9');
+  });
+
+  it('binding, per variant: adding an option reports the option alone, never the bindings the minimizer re-expressed', () => {
+    const after = withVariants(withComponent((a) => {
+      (a.api as Record<string, unknown>).variants = { size: { options: ['Small', 'Large', 'Huge'], default: 'Small' } };
+      a.references = {
+        used: [...refsOf().used, BRAND],
+        bindings: [
+          { path: 'Container', property: 'fill', source_id: 'VariableID:1', kind: 'variable', when: { size: ['Small', 'Large'] } },
+          { path: 'Container', property: 'fill', source_id: 'VariableID:2', kind: 'variable', when: { size: ['Huge'] } },
+        ],
+      };
+    }), [...VARIANTS, { name: 'size=Huge', values: { size: 'Huge' } }]);
+    const diff = libraryDiff(withVariants(base), after);
+    expect(diff.changes.map((c) => [c.entity, c.kind, c.name])).toEqual([['option', 'added', 'Huge']]);
+    expect(diff.minimumBump).toBe('minor');
+  });
+
+  it('binding, per variant: rebinding one variant is one change scoped to that variant', () => {
+    const after = withVariants(withComponent((a) => {
+      a.references = {
+        used: [...refsOf().used, BRAND],
+        bindings: [
+          { path: 'Container', property: 'fill', source_id: 'VariableID:1', kind: 'variable', when: { size: ['Small'] } },
+          { path: 'Container', property: 'fill', source_id: 'VariableID:2', kind: 'variable', when: { size: ['Large'] } },
+        ],
+      };
+    }));
+    expect(only(libraryDiff(withVariants(base), after), 'binding')).toEqual([expect.objectContaining({
+      kind: 'changed', id: 'Container / fill', from: 'color/primary', to: 'color/brand',
+      scope: '1 of 2 variants: size Large', bump: 'patch',
+    })]);
+  });
+
+  it('binding, per variant: a binding gone from every variant is one removal with no scope, and a lone component works', () => {
+    const stripped = withVariants(withComponent((a) => { a.references = { used: refsOf().used, bindings: [] }; }));
+    expect(only(libraryDiff(withVariants(base), stripped), 'binding')).toEqual([expect.objectContaining({
+      kind: 'removed', id: 'Container / fill', from: 'color/primary', to: null, scope: null,
+    })]);
+    const lone = [{ name: 'Button', values: {} }];
+    const loneStripped = withVariants(withComponent((a) => { a.references = { used: refsOf().used, bindings: [] }; }), lone);
+    expect(only(libraryDiff(withVariants(base, lone), loneStripped), 'binding')).toEqual([expect.objectContaining({
+      kind: 'removed', id: 'Container / fill', from: 'color/primary', scope: null,
+    })]);
+  });
+
+  it('binding, per variant: a variant that gains a second token reads as an addition of that token', () => {
+    const after = withVariants(withComponent((a) => {
+      a.references = {
+        used: [...refsOf().used, BRAND],
+        bindings: [
+          ...refsOf().bindings,
+          { path: 'Container', property: 'fill', source_id: 'VariableID:2', kind: 'variable', when: { size: ['Large'] } },
+        ],
+      };
+    }));
+    expect(only(libraryDiff(withVariants(base), after), 'binding')).toEqual([expect.objectContaining({
+      kind: 'added', id: 'Container / fill', from: null, to: 'color/brand', scope: '1 of 2 variants: size Large',
+    })]);
+  });
+
+  it('binding: falls back to rule identity when either side carries no variants', () => {
+    const unbound = withComponent((a) => { a.references = { used: refsOf().used, bindings: [refsOf().bindings[0]] }; });
+    const ruleKeyed = expect.objectContaining({ kind: 'removed', id: 'Container / fill', scope: 'size Large', from: 'color/primary' });
+    expect(only(libraryDiff(base, withVariants(unbound)), 'binding')).toEqual([ruleKeyed]);
+    expect(only(libraryDiff(withVariants(base), unbound), 'binding')).toEqual([ruleKeyed]);
+  });
+
+  it('binding, per variant: is deterministic across variant and binding order', () => {
+    const after = withVariants(withComponent((a) => {
+      a.references = {
+        used: [...refsOf().used, BRAND],
+        bindings: [
+          { path: 'Container', property: 'fill', source_id: 'VariableID:2', kind: 'variable', when: { size: ['Large'] } },
+          { path: 'Container', property: 'fill', source_id: 'VariableID:1', kind: 'variable', when: { size: ['Small'] } },
+        ],
+      };
+    }), [...VARIANTS].reverse());
+    const straight = libraryDiff(withVariants(base), withVariants({ ...after, components: after.components.map((c) => ({ ...c, variants: VARIANTS })) }));
+    expect(JSON.stringify(libraryDiff(withVariants(base), after))).toBe(JSON.stringify(straight));
   });
 
   it('value: a layout summary change is patch and the id names the path', () => {

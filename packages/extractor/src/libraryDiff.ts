@@ -11,12 +11,15 @@
  * foundation collections, modes, tokens and their per-mode values, and
  * styles. Prose, descriptions, diagnostics, completeness, the export envelope,
  * the AI projections and the bundle's file and plugin metadata are never read.
+ * Token bindings are compared per variant when both bundles carry a variants
+ * list, and by rule identity otherwise.
  *
  * Built on `diffKeyed` from diff.ts. `diff.ts` explains changes to a designer
  * on the Library screen; this module explains them to a version number and a
  * history pane, so its output is structured rather than prose.
  */
-import { diffKeyed } from './diff';
+import { diffKeyed, axisModel, comboKey, coverConditions, describeScope, type Combo } from './diff';
+import { matchesVariant } from './resolve';
 import { canonicalJson } from './v5/canonical';
 import { compareCodeUnits } from './v5/diagnostics';
 import type { LibraryBundleV1 } from './libraryBundle';
@@ -102,13 +105,15 @@ export function nextVersion(current: string | null, bump: Bump): string {
   return `${major}.${minor}.${patch + 1}`;
 }
 
-/** Foundation first (null component sorts before any name), then by component, entity, id, scope, kind. */
+/** Foundation first (null component sorts before any name), then by component, entity, id, scope, kind, from, to. */
 export function compareChanges(a: LibraryChange, b: LibraryChange): number {
   return compareCodeUnits(a.component ?? '', b.component ?? '')
     || compareCodeUnits(a.entity, b.entity)
     || compareCodeUnits(a.id, b.id)
     || compareCodeUnits(a.scope ?? '', b.scope ?? '')
-    || compareCodeUnits(a.kind, b.kind);
+    || compareCodeUnits(a.kind, b.kind)
+    || compareCodeUnits(a.from ?? '', b.from ?? '')
+    || compareCodeUnits(a.to ?? '', b.to ?? '');
 }
 
 /**
@@ -234,6 +239,7 @@ interface PropertyFact { name: string; kind: string; default: string | null; opt
 interface PartFact { path: string; name: string; type: string; shownBy: string | null; component: string | null }
 interface BindingFact { path: string; property: string; when: Record<string, string[]> | null; sourceId: string }
 interface ValueFact { id: string; value: string }
+interface VariantFact { name: string; values: Record<string, string> }
 
 interface ComponentFacts {
   id: string;
@@ -244,6 +250,8 @@ interface ComponentFacts {
   parts: PartFact[];
   bindings: BindingFact[];
   values: ValueFact[];
+  /** From the bundle entry, not the artifact; empty when the bundle predates it. */
+  variants: VariantFact[];
   /** source_id to display name, from `references.used`. */
   tokenNames: Record<string, string>;
 }
@@ -357,7 +365,9 @@ function readComponentFacts(entry: LibraryBundleV1['components'][number]): Compo
     values.push({ id: `unbound:${key}`, value: canonicalJson(item) });
   }
 
-  return { id, name, axes, properties, states, parts, bindings, values, tokenNames };
+  const variants: VariantFact[] = (entry.variants ?? []).map((v) => ({ name: v.name, values: { ...v.values } }));
+
+  return { id, name, axes, properties, states, parts, bindings, values, variants, tokenNames };
 }
 
 const bindingKey = (b: BindingFact): string =>
@@ -367,6 +377,89 @@ function change(
   partial: Omit<LibraryChange, 'bump'>,
 ): LibraryChange {
   return { ...partial, bump: bumpFor(partial.entity, partial.kind) };
+}
+
+/**
+ * Bindings compared per variant, not per rule, the way the Library screen's
+ * diff does (tokenItems in diff.ts): the minimizer recomputes every rule's
+ * condition over the whole grid, so adding one variant rewrites the
+ * condition on every existing binding, and a diff keyed by condition reads
+ * that as one removal plus additions per binding. Both sides are expanded
+ * over the variants they share and compared cell by cell; cells that moved
+ * the same way share one change, scoped by the fewest conditions that
+ * select exactly them. Variants on one side only are the option and axis
+ * changes' story and are not compared here.
+ */
+function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, out: LibraryChange[]): void {
+  const component = after.name;
+  const beforeKeys = new Set(before.variants.map((v) => comboKey(v.values)));
+  const seen = new Set<string>();
+  const shared: Combo[] = [];
+  for (const variant of after.variants) {
+    const k = comboKey(variant.values);
+    if (beforeKeys.has(k) && !seen.has(k)) {
+      seen.add(k);
+      shared.push(variant.values);
+    }
+  }
+  if (shared.length === 0) return;
+  const axes = axisModel(after.axes.map((a) => ({ prop: a.name, values: a.options })), shared);
+  const defaults = new Map<string, string>();
+  for (const axis of after.axes) if (axis.default !== null) defaults.set(axis.name, axis.default);
+
+  // property key -> variant key -> sorted token names bound there.
+  const cells = (facts: ComponentFacts): Map<string, Map<string, string[]>> => {
+    const sets = new Map<string, Map<string, Set<string>>>();
+    for (const combo of shared) {
+      const vk = comboKey(combo);
+      for (const binding of facts.bindings) {
+        if (!matchesVariant(binding.when ?? {}, combo)) continue;
+        const pk = `${binding.path} / ${binding.property}`;
+        let byVariant = sets.get(pk);
+        if (!byVariant) sets.set(pk, (byVariant = new Map()));
+        const name = facts.tokenNames[binding.sourceId] ?? binding.sourceId;
+        const tokens = byVariant.get(vk);
+        if (tokens) tokens.add(name);
+        else byVariant.set(vk, new Set([name]));
+      }
+    }
+    const result = new Map<string, Map<string, string[]>>();
+    for (const [pk, byVariant] of sets) {
+      result.set(pk, new Map([...byVariant].map(([vk, tokens]) => [vk, [...tokens].sort(compareCodeUnits)])));
+    }
+    return result;
+  };
+  const b = cells(before);
+  const a = cells(after);
+  const properties = [...new Set([...a.keys(), ...b.keys()])].sort(compareCodeUnits);
+  for (const pk of properties) {
+    const buckets = new Map<string, { kind: ChangeKind; from: string | null; to: string | null; combos: Combo[] }>();
+    for (const combo of shared) {
+      const vk = comboKey(combo);
+      const from = b.get(pk)?.get(vk) ?? [];
+      const to = a.get(pk)?.get(vk) ?? [];
+      const lost = from.filter((t) => !to.includes(t));
+      const gained = to.filter((t) => !from.includes(t));
+      if (lost.length === 0 && gained.length === 0) continue;
+      const movement: { kind: ChangeKind; from: string | null; to: string | null } = lost.length > 0 && gained.length > 0
+        ? { kind: 'changed', from: lost.join(', '), to: gained.join(', ') }
+        : gained.length > 0
+          ? { kind: 'added', from: null, to: gained.join(', ') }
+          : { kind: 'removed', from: lost.join(', '), to: null };
+      const key = JSON.stringify([movement.kind, movement.from, movement.to]);
+      const bucket = buckets.get(key);
+      if (bucket) bucket.combos.push(combo);
+      else buckets.set(key, { ...movement, combos: [combo] });
+    }
+    for (const { kind, from, to, combos } of buckets.values()) {
+      for (const { conditions, count } of coverConditions(combos, shared, axes)) {
+        out.push(change({
+          kind, entity: 'binding', component, id: pk, name: pk, from, to,
+          scope: describeScope(conditions, count, shared.length, axes.size, defaults) ?? null,
+        }));
+      }
+    }
+  }
 }
 
 /** Changes inside one component that exists on both sides. */
@@ -406,13 +499,19 @@ function diffComponentPair(before: ComponentFacts, after: ComponentFacts, out: L
     out.push(change({ kind: 'changed', entity: 'anatomy_part', component, id: a.path, name: a.name, from: formatPart(b), to: formatPart(a), scope: null }));
   }
 
-  const tokenName = (facts: ComponentFacts, sourceId: string): string => facts.tokenNames[sourceId] ?? sourceId;
-  const bindings = diffKeyed(before.bindings, after.bindings, bindingKey, (x, y) => x.sourceId === y.sourceId);
-  const bindingId = (b: BindingFact): string => `${b.path} / ${b.property}`;
-  for (const b of bindings.added) out.push(change({ kind: 'added', entity: 'binding', component, id: bindingId(b), name: bindingId(b), from: null, to: tokenName(after, b.sourceId), scope: formatWhen(b.when) }));
-  for (const b of bindings.removed) out.push(change({ kind: 'removed', entity: 'binding', component, id: bindingId(b), name: bindingId(b), from: tokenName(before, b.sourceId), to: null, scope: formatWhen(b.when) }));
-  for (const { before: b, after: a } of bindings.changed) {
-    out.push(change({ kind: 'changed', entity: 'binding', component, id: bindingId(a), name: bindingId(a), from: tokenName(before, b.sourceId), to: tokenName(after, a.sourceId), scope: formatWhen(a.when) }));
+  if (before.variants.length > 0 && after.variants.length > 0) {
+    diffBindingsPerVariant(before, after, out);
+  } else {
+    // Rule identity: the only comparison possible for a bundle that predates
+    // the variants list. Reads a re-expressed condition as remove plus add.
+    const tokenName = (facts: ComponentFacts, sourceId: string): string => facts.tokenNames[sourceId] ?? sourceId;
+    const bindings = diffKeyed(before.bindings, after.bindings, bindingKey, (x, y) => x.sourceId === y.sourceId);
+    const bindingId = (b: BindingFact): string => `${b.path} / ${b.property}`;
+    for (const b of bindings.added) out.push(change({ kind: 'added', entity: 'binding', component, id: bindingId(b), name: bindingId(b), from: null, to: tokenName(after, b.sourceId), scope: formatWhen(b.when) }));
+    for (const b of bindings.removed) out.push(change({ kind: 'removed', entity: 'binding', component, id: bindingId(b), name: bindingId(b), from: tokenName(before, b.sourceId), to: null, scope: formatWhen(b.when) }));
+    for (const { before: b, after: a } of bindings.changed) {
+      out.push(change({ kind: 'changed', entity: 'binding', component, id: bindingId(a), name: bindingId(a), from: tokenName(before, b.sourceId), to: tokenName(after, a.sourceId), scope: formatWhen(a.when) }));
+    }
   }
 
   const values = diffKeyed(before.values, after.values, (v) => v.id, (x, y) => x.value === y.value);
