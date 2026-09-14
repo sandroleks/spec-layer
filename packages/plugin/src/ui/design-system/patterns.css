@@ -1441,10 +1441,12 @@
   margin-bottom: var(--sl-space-8);
 }
 
-/* A disabled choice explains itself in a tooltip under the control. */
+/* A disabled choice explains itself in a tooltip under the control. Sized to
+   its text (see .sl-history-bump > .sl-tooltip for why), up to the cap. */
 .sl-publish-bumps .sl-tooltip {
   top: calc(100% + var(--sl-space-6));
   left: 0;
+  width: max-content;
   white-space: normal;
 }
 
@@ -3107,6 +3109,11 @@
 .sl-history-bump > .sl-tooltip {
   top: calc(100% + var(--sl-space-4));
   left: 0;
+  /* An absolutely positioned box shrinks to fit its containing block, and the
+     trigger span is only as wide as the badge, so without this the sentence
+     wrapped one word per line. max-content sizes it to the text, up to the
+     shared 240px cap. */
+  width: max-content;
   white-space: normal;
 }
 
