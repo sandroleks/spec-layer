@@ -48,6 +48,12 @@ describe('history screen', () => {
     );
     expect(markup).not.toContain('sl-library-update-disclosure');
     expect(markup).not.toContain('sl-library-summary');
+    // Rows run edge to edge like the Library list, not inside the padded
+    // Publish body, so the hover band and hairlines span the panel.
+    expect(markup).toMatch(/^<div class="sl-history-list">/);
+    expect(markup).not.toContain('sl-publish-body');
+    // The empty and failed states keep the padded body: they are prose.
+    expect(historyScrollMarkup(state({ status: 'noLibrary' }))).toMatch(/^<div class="sl-publish-body sl-history-body">/);
     expect(markup).toMatch(/<time datetime="2026-09-12T10:00:00.000Z">\d{1,2} Sept 2026, \d{2}:\d{2}<\/time>/);
     expect(markup).toContain('class="sl-history-note">Card is new API and the old icon slot is gone.<');
   });

@@ -124,9 +124,14 @@ export function historyScrollMarkup(state: HistoryState, locale?: string): strin
       body = empty(esc(state.message ?? 'Could not load the version history.'), true);
       break;
     case 'ready':
-      body = !state.log || state.log.records.length === 0
-        ? empty('No versions yet. The first publish creates 1.0.0.')
-        : state.log.records.map((record) => rowMarkup(record, state.expanded === record.version, locale)).join('');
+      if (state.log && state.log.records.length > 0) {
+        // Rows run edge to edge, the way the Library list does, so the hover
+        // band and the hairlines span the panel instead of reading as an
+        // inset card. Prose states below keep the padded Publish body.
+        const rows = state.log.records.map((record) => rowMarkup(record, state.expanded === record.version, locale)).join('');
+        return `<div class="sl-history-list">${rows}</div>`;
+      }
+      body = empty('No versions yet. The first publish creates 1.0.0.');
       break;
   }
   return `<div class="sl-publish-body sl-history-body">${body}</div>`;

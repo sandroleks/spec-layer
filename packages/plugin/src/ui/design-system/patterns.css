@@ -3067,6 +3067,17 @@
 }
 
 /*
+ * The version list. No side padding, like .sl-library-list: rows run edge to
+ * edge and carry their own 14px inset, so hover and hairlines span the panel
+ * instead of reading as a cropped card inside the Publish body. The history
+ * screen has no footer, so only a little air at the bottom.
+ */
+.sl-history-list {
+  min-width: 0;
+  padding: 0 0 var(--sl-space-16);
+}
+
+/*
  * A version row is one button: the version, its badge, the date, the chevron,
  * and the note on a second line all sit inside it, so clicking anywhere on
  * the row opens the changes. It reuses the Library row's surface, hairline
