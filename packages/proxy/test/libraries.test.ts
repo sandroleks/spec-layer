@@ -5,6 +5,7 @@ import {
   handlePublish,
   handlePull,
   handleRotate,
+  handleVersions,
   newLibraryId,
   newPullKey,
   LIBRARY_ID_RE,
@@ -13,6 +14,7 @@ import {
   LIBRARY_LIMITS,
   type LibraryMeta,
 } from '../src/libraries';
+import { versionsKey, versionBundleKey, type VersionLog } from '../src/versions';
 import { hashFigmaId } from '../src/identity';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import { QuotaEngine, QUOTA_PROFILES, PRO_SOFT_THRESHOLD, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
@@ -74,6 +76,29 @@ const bundleAt = (generatedAt: string) => ({
 });
 
 const BUNDLE = bundleAt('2026-07-01T00:00:00.000Z');
+
+/** BUNDLE with a Card component added: a minor change. */
+const BUNDLE_WITH_CARD = {
+  ...BUNDLE,
+  components: [
+    ...BUNDLE.components,
+    { name: 'Card', ai: 'component: Card\n', artifact: {
+      ...artifact('ccc', '2026-07-01T00:00:00.000Z'),
+      spec_layer: { ...artifact('ccc', '2026-07-01T00:00:00.000Z').spec_layer, source: { node_id: '9:9', node_name: 'Card', component_key: 'key-card' } },
+    } },
+  ],
+};
+/** BUNDLE with its only component removed: a major change. */
+const BUNDLE_EMPTY = { ...BUNDLE, components: [] };
+/** BUNDLE with a description-only change: content moved, no property changes. */
+const BUNDLE_DESCRIBED = { ...BUNDLE, fileName: 'Renamed File' };
+
+function versionsReq(libraryId: string, key: string, etag?: string) {
+  return new Request(`https://proxy.test/v1/libraries/${libraryId}/versions`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${key}`, ...(etag ? { 'If-None-Match': etag } : {}) },
+  });
+}
 
 function publishReq(body: unknown, headers: Record<string, string> = { Authorization: `Bearer ${UUID_KEY}` }) {
   return new Request('https://proxy.test/v1/libraries', {
@@ -539,7 +564,7 @@ describe('handlePublish', () => {
     expect(JSON.stringify(rebuilt)).not.toBe(JSON.stringify(BUNDLE));
     const res = await handlePublish(publishReq({ libraryId, bundle: rebuilt }, headers), d);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ libraryId, publishedAt, unchanged: true });
+    expect(await res.json()).toEqual({ libraryId, publishedAt, unchanged: true, version: '1.0.0' });
     expect(res.headers.get('X-Quota-Used')).toBe('1');
     expect(d.libraryStore.map.size).toBe(puts);
     // The first bytes are still the published ones: no write happened.
@@ -584,8 +609,40 @@ describe('handlePublish', () => {
     const retry = await handlePublish(publishReq({ libraryId, bundle: changed }, headers), d);
     expect(retry.status).toBe(200);
     // The stored hash already matches, so the retry costs nothing: one update spent.
-    expect(await retry.json()).toEqual({ libraryId, publishedAt, unchanged: true });
+    expect(await retry.json()).toEqual({ libraryId, publishedAt, unchanged: true, version: '1.0.1' });
     expect(retry.headers.get('X-Quota-Used')).toBe('2');
+  });
+
+  it('replays a committed create reservation with the assigned version, not just the id and date', async () => {
+    // A genuine retry of the exact same create request (network hiccup on the
+    // first response, say) reuses the exact same reservation cache key, since
+    // that key is `publish:new:<newLibraryId()>`. Force the same id twice by
+    // fixing the randomness `newLibraryId`/`newPullKey` draw on, so the second
+    // call is a true replay of the first commit rather than a second create.
+    const fixed = new Uint8Array(24).fill(7);
+    const spy = vi.spyOn(crypto, 'getRandomValues').mockImplementation(((buf: Uint8Array) => {
+      buf.set(fixed.subarray(0, buf.length));
+      return buf;
+    }) as typeof crypto.getRandomValues);
+    try {
+      const d = deps();
+      await seedPro(d);
+      const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+      expect(first.status).toBe(201);
+      const firstBody = await first.json() as { libraryId: string; publishedAt: string; version: string };
+      expect(firstBody.version).toBe('1.0.0');
+
+      const replay = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+      // The cached reservation short-circuits before any write: a 200, not a
+      // second 201, and it carries the version the first call was assigned.
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual({
+        libraryId: firstBody.libraryId, publishedAt: firstBody.publishedAt, unchanged: true, version: '1.0.0',
+      });
+      expect(replay.headers.get('X-Library-Version')).toBe('1.0.0');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('refuses the eleventh changed publish in a month with 402', async () => {
@@ -642,6 +699,36 @@ describe('handlePublish', () => {
     await handlePublish(publishReq({ bundle: { schema: 'nope' } }, figma()), d);
     const snap = await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').snapshot('free');
     expect(snap.used).toBe(0);
+  });
+});
+
+describe('publish rate limiting', () => {
+  it('throttles malformed bodies per IP before reading them', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(3, 60_000) });
+    const bad = () => new Request('https://proxy.test/v1/libraries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' },
+      body: '{not json',
+    });
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    expect((await handlePublish(bad(), d)).status).toBe(400);
+    const fourth = await handlePublish(bad(), d);
+    expect(fourth.status).toBe(429);
+    expect(await fourth.json()).toEqual({ error: 'rate_limited' });
+  });
+
+  it('a well-formed publish spends the request token and the publish token, a dry run only the request token', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(60, 60_000), licenseLimiter: new SlidingWindowLimiter(1, 60_000) });
+    await seedPro(d);
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(first.status).toBe(201);
+    const { libraryId } = await first.json() as { libraryId: string };
+    // The publish budget is spent; a dry run must still be answered.
+    const dry = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, dryRun: true }), d);
+    expect(dry.status).toBe(200);
+    const second = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    expect(second.status).toBe(429);
   });
 });
 
@@ -847,5 +934,308 @@ describe('handleRotate', () => {
     const res = await handleRotate(rotateReq(unknownLibId), d, unknownLibId);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'not_found' });
+  });
+});
+
+describe('library versions', () => {
+  it('a first publish is version 1.0.0 with bump initial, and writes the log and the version bundle', async () => {
+    const d = deps();
+    await seedPro(d);
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    expect(res.status).toBe(201);
+    const body = await res.json() as { libraryId: string; version: string; bump: string; minimumBump: string | null };
+    expect(body.version).toBe('1.0.0');
+    expect(body.bump).toBe('initial');
+    expect(body.minimumBump).toBeNull();
+    expect(res.headers.get('X-Library-Version')).toBe('1.0.0');
+
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(body.libraryId)))!) as VersionLog;
+    expect(log.v).toBe(1);
+    expect(log.records).toHaveLength(1);
+    expect(log.records[0]).toMatchObject({ version: '1.0.0', bump: 'initial', minimumBump: null, note: null, changes: [], changesTruncated: false, extractorVersion: '2', pluginVersion: '5.0.0' });
+    expect(await d.libraryStore.get(versionBundleKey(body.libraryId, '1.0.0'))).toBe(JSON.stringify(BUNDLE));
+    const meta = JSON.parse((await d.libraryStore.get(`lib:${body.libraryId}:meta`))!) as LibraryMeta;
+    expect(meta.version).toBe('1.0.0');
+  });
+
+  it('honours a valid initialVersion on the first publish and refuses an invalid one', async () => {
+    const d = deps();
+    await seedPro(d);
+    const bad = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.0' }), d);
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_initial_version' });
+
+    const good = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.1.0' }), d);
+    expect(good.status).toBe(201);
+    expect(((await good.json()) as { version: string }).version).toBe('2.1.0');
+  });
+
+  it('a second publish computes the minimum bump from the stored bundle and applies it', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ libraryId, version: '1.1.0', bump: 'minor', minimumBump: 'minor' });
+    expect(res.headers.get('X-Library-Version')).toBe('1.1.0');
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records.map((r) => r.version)).toEqual(['1.1.0', '1.0.0']);
+    expect(log.records[0].changes).toEqual([expect.objectContaining({ entity: 'component', kind: 'added', component: 'Card' })]);
+    expect(log.records[0].counts).toEqual({ major: 0, minor: 1, patch: 0 });
+  });
+
+  it('a content change with no property changes is a patch', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_DESCRIBED }), d);
+    expect(await res.json()).toMatchObject({ version: '1.0.1', bump: 'patch', minimumBump: 'patch' });
+  });
+
+  it('lets the publisher raise the bump with a note, and refuses to lower it', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const low = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, bump: 'patch' }), d);
+    expect(low.status).toBe(400);
+    expect(await low.json()).toEqual({ error: 'bump_below_minimum', minimumBump: 'minor', proposedVersion: '1.1.0' });
+    expect(await d.libraryStore.get(versionBundleKey(libraryId, '1.0.1'))).toBeNull();
+
+    const high = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, bump: 'major', note: 'Card is new API.' }), d);
+    expect(await high.json()).toMatchObject({ version: '2.0.0', bump: 'major', minimumBump: 'minor' });
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records[0].note).toBe('Card is new API.');
+  });
+
+  it('refuses an invalid bump word and an over-long note without writing', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const badBump = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, bump: 'huge' }), d);
+    expect(badBump.status).toBe(400);
+    expect(await badBump.json()).toEqual({ error: 'invalid_bump' });
+    const badNote = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, note: 'x'.repeat(501) }), d);
+    expect(badNote.status).toBe(400);
+    expect(await badNote.json()).toEqual({ error: 'invalid_note' });
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records).toHaveLength(1);
+  });
+
+  it('an unchanged republish assigns no version and keeps the log as it was', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePublish(publishReq({ libraryId, bundle: bundleAt('2026-07-02T00:00:00.000Z') }), d);
+    expect(await res.json()).toMatchObject({ libraryId, unchanged: true });
+    expect(res.headers.get('X-Library-Version')).toBe('1.0.0');
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records).toHaveLength(1);
+  });
+
+  it('a removed component is a major bump', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_EMPTY }), d);
+    expect(await res.json()).toMatchObject({ version: '2.0.0', bump: 'major', minimumBump: 'major' });
+  });
+
+  it('a library published before versioning reads its first versioned publish as initial', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    // Imitate a pre-versioning library: no log, no version on meta.
+    await d.libraryStore.delete(versionsKey(libraryId));
+    const metaRaw = (await d.libraryStore.get(`lib:${libraryId}:meta`))!;
+    const meta = JSON.parse(metaRaw) as LibraryMeta;
+    delete meta.version;
+    await d.libraryStore.put(`lib:${libraryId}:meta`, JSON.stringify(meta));
+
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    expect(await res.json()).toMatchObject({ version: '1.0.0', bump: 'initial', minimumBump: null });
+  });
+
+  it('reads the current version from the log, not the meta', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    // A failure between the log write and the meta write leaves the meta behind.
+    const metaRaw = (await d.libraryStore.get(`lib:${libraryId}:meta`))!;
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    log.records.unshift({ ...log.records[0], version: '1.3.0', contentHash: 'stale' });
+    await d.libraryStore.put(versionsKey(libraryId), JSON.stringify(log));
+    await d.libraryStore.put(`lib:${libraryId}:meta`, metaRaw);
+
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    expect(await res.json()).toMatchObject({ version: '1.4.0' });
+  });
+
+  it('writes bundles, then the log, then the meta', async () => {
+    const order: string[] = [];
+    const recording = new MemKV();
+    const put = recording.put.bind(recording);
+    recording.put = async (k: string, v: string) => { order.push(k); await put(k, v); };
+    const d = deps({ libraryStore: recording });
+    await seedPro(d);
+    const created = await handlePublish(publishReq({ bundle: BUNDLE }), d);
+    const { libraryId } = await created.json() as { libraryId: string };
+    order.length = 0;
+    await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    const relevant = order.filter((k) => k.startsWith(`lib:${libraryId}:`));
+    expect(relevant).toEqual([
+      `lib:${libraryId}:bundle`,
+      versionBundleKey(libraryId, '1.1.0'),
+      versionsKey(libraryId),
+      `lib:${libraryId}:meta`,
+    ]);
+  });
+
+  it('keeps the last ten per-version bundles and deletes the eleventh', async () => {
+    // The quota engine's reservation rate limiter caps attempts at 10/min
+    // regardless of tier, so the clock must advance between publishes the
+    // way the other multi-publish tests in this file already do.
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t) });
+    const { libraryId } = await publishedLibrary(d);
+    for (let i = 1; i <= 10; i += 1) {
+      t += 60_000;
+      const res = await handlePublish(publishReq({ libraryId, bundle: { ...BUNDLE, fileName: `File ${i}` } }), d);
+      expect(res.status).toBe(200);
+    }
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records).toHaveLength(11);
+    expect(log.records[0].version).toBe('1.0.10');
+    expect(await d.libraryStore.get(versionBundleKey(libraryId, '1.0.0'))).toBeNull();
+    expect(await d.libraryStore.get(versionBundleKey(libraryId, '1.0.1'))).not.toBeNull();
+    expect(await d.libraryStore.get(versionBundleKey(libraryId, '1.0.10'))).not.toBeNull();
+  });
+
+  it('pull carries X-Library-Version, and omits it for a library without one', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const res = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(res.headers.get('X-Library-Version')).toBe('1.0.0');
+
+    const metaRaw = (await d.libraryStore.get(`lib:${libraryId}:meta`))!;
+    const meta = JSON.parse(metaRaw) as LibraryMeta;
+    delete meta.version;
+    await d.libraryStore.put(`lib:${libraryId}:meta`, JSON.stringify(meta));
+    const legacy = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(legacy.headers.get('X-Library-Version')).toBeNull();
+  });
+});
+
+describe('dry run', () => {
+  it('describes the proposal for an existing library without writing or spending quota', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const before = await d.libraryStore.get(`lib:${libraryId}:meta`);
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, dryRun: true }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      currentVersion: '1.0.0', unchanged: false, minimumBump: 'minor', proposedVersion: '1.1.0',
+      counts: { major: 0, minor: 1, patch: 0 },
+      changes: [expect.objectContaining({ entity: 'component', kind: 'added', component: 'Card', bump: 'minor' })],
+      changesTruncated: false,
+    });
+    expect(await d.libraryStore.get(`lib:${libraryId}:meta`)).toBe(before);
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE));
+    const log = JSON.parse((await d.libraryStore.get(versionsKey(libraryId)))!) as VersionLog;
+    expect(log.records).toHaveLength(1);
+  });
+
+  it('reports unchanged content with null bump fields', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    const res = await handlePublish(publishReq({ libraryId, bundle: bundleAt('2026-07-02T00:00:00.000Z'), dryRun: true }), d);
+    expect(await res.json()).toEqual({
+      currentVersion: '1.0.0', unchanged: true, minimumBump: null, proposedVersion: null,
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    });
+  });
+
+  it('describes a first publish when there is no library yet', async () => {
+    const d = deps();
+    await seedPro(d);
+    const res = await handlePublish(publishReq({ bundle: BUNDLE, dryRun: true }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      currentVersion: null, unchanged: false, minimumBump: null, proposedVersion: '1.0.0',
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    });
+    expect((await d.libraryStore.list({ prefix: 'lib:' })).keys).toEqual([]);
+  });
+
+  it('previews and validates initialVersion on a first-publish dry run exactly as the publish would', async () => {
+    const d = deps();
+    await seedPro(d);
+    const good = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.1.0', dryRun: true }), d);
+    expect(good.status).toBe(200);
+    expect(((await good.json()) as { proposedVersion: string }).proposedVersion).toBe('2.1.0');
+    expect((await d.libraryStore.list({ prefix: 'lib:' })).keys).toEqual([]);
+
+    const bad = await handlePublish(publishReq({ bundle: BUNDLE, initialVersion: '2.0', dryRun: true }), d);
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_initial_version' });
+  });
+
+  it('authenticates and authorises like a publish', async () => {
+    const d = deps();
+    const anonymous = await handlePublish(publishReq({ bundle: BUNDLE, dryRun: true }, {}), d);
+    expect(anonymous.status).toBe(401);
+    const { deps: d2, libraryId } = await publishedLibrary();
+    // A lapsed or unrecognised bearer would 401 before reaching ownership
+    // (the same gate a real publish hits), so the stranger needs an active
+    // license of their own to prove the ownership check itself is reached.
+    await seedPro(d2, OTHER_UUID_KEY);
+    const stranger = await handlePublish(publishReq({ libraryId, bundle: BUNDLE, dryRun: true }, bearer(OTHER_UUID_KEY)), d2);
+    expect(stranger.status).toBe(403);
+  });
+
+  it('a dry run does not count against the publish quota', async () => {
+    const d = deps();
+    const lib = await freeLibrary(d);
+    for (let i = 0; i < 5; i += 1) {
+      await handlePublish(publishReq({ libraryId: lib.libraryId, bundle: BUNDLE_WITH_CARD, dryRun: true }, lib.headers), d);
+    }
+    const res = await handlePublish(publishReq({ libraryId: lib.libraryId, bundle: BUNDLE_WITH_CARD }, lib.headers), d);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Quota-Used')).toBe('2');
+  });
+
+  /**
+   * A dry run happens every time the Publish screen opens, not just when the
+   * publisher commits, so it must not spend the 20/min publish rate limit: 25
+   * dry runs in a minute would otherwise leave no room for the real publish
+   * that follows. The default deps() licenseLimiter is 20/min; a dry run now
+   * spends the separate 60/min requestLimiter instead (see `libdry:` in
+   * handlePublish).
+   */
+  it('does not share the publish rate limiter, so many dry runs never block the publish that follows', async () => {
+    const d = deps();
+    await seedPro(d);
+    const req = (dryRun: boolean) => {
+      const r = publishReq({ bundle: BUNDLE, dryRun });
+      r.headers.set('CF-Connecting-IP', '9.9.9.9');
+      return r;
+    };
+    for (let i = 0; i < 25; i += 1) {
+      const res = await handlePublish(req(true), d);
+      expect(res.status).toBe(200);
+    }
+    const published = await handlePublish(req(false), d);
+    expect(published.status).toBe(201);
+  });
+});
+
+describe('GET /v1/libraries/:id/versions', () => {
+  it('returns the log to a pull-key holder with an ETag, and 304 on a match', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }), d);
+    const res = await handleVersions(versionsReq(libraryId, pullKey), d, libraryId);
+    expect(res.status).toBe(200);
+    const stored = (await d.libraryStore.get(versionsKey(libraryId)))!;
+    expect(res.headers.get('ETag')).toBe(`"${sha256(stored)}"`);
+    const log = await res.json() as VersionLog;
+    expect(log.records.map((r) => r.version)).toEqual(['1.1.0', '1.0.0']);
+
+    const again = await handleVersions(versionsReq(libraryId, pullKey, res.headers.get('ETag')!), d, libraryId);
+    expect(again.status).toBe(304);
+  });
+
+  it('returns an empty log for a library that predates versioning', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    await d.libraryStore.delete(versionsKey(libraryId));
+    const res = await handleVersions(versionsReq(libraryId, pullKey), d, libraryId);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ v: 1, records: [] });
+  });
+
+  it('rejects a bad key and an unknown library the way pull does', async () => {
+    const { deps: d, libraryId } = await publishedLibrary();
+    expect((await handleVersions(versionsReq(libraryId, newPullKey()), d, libraryId)).status).toBe(401);
+    expect((await handleVersions(versionsReq(libraryId, 'nope'), d, libraryId)).status).toBe(401);
+    expect((await handleVersions(versionsReq('lib_000000000000000000000000', newPullKey()), d, 'lib_000000000000000000000000')).status).toBe(404);
   });
 });

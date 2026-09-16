@@ -135,15 +135,18 @@ const PATH_COLLISION_BUNDLE = {
   ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithPathCollision() },
 };
 
-function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z') {
+function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z', version: string | null = null) {
   return vi.fn(async () => new Response(body, {
     status: 200,
-    headers: { 'X-Published-At': publishedAt },
+    headers: { 'X-Published-At': publishedAt, ...(version ? { 'X-Library-Version': version } : {}) },
   })) as unknown as typeof fetch;
 }
 
-function stub304() {
-  return vi.fn(async () => new Response(null, { status: 304 })) as unknown as typeof fetch;
+function stub304(version: string | null = null) {
+  return vi.fn(async () => new Response(null, {
+    status: 304,
+    headers: { ...(version ? { 'X-Library-Version': version } : {}) },
+  })) as unknown as typeof fetch;
 }
 
 function stub401() {
@@ -157,14 +160,14 @@ function stub401() {
  * stubs above, so the freshness decision made by runPull's ETag header
  * actually drives the response.
  */
-function stubEtagAware(body: string, publishedAt = '2026-09-03T00:00:00.000Z') {
+function stubEtagAware(body: string, publishedAt = '2026-09-03T00:00:00.000Z', version: string | null = null) {
   const hash = createHash('sha256').update(body).digest('hex');
   return vi.fn(async (_url: string, init?: RequestInit) => {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     if (headers['If-None-Match'] === `"${hash}"`) {
-      return new Response(null, { status: 304 });
+      return new Response(null, { status: 304, headers: { ...(version ? { 'X-Library-Version': version } : {}) } });
     }
-    return new Response(body, { status: 200, headers: { 'X-Published-At': publishedAt } });
+    return new Response(body, { status: 200, headers: { 'X-Published-At': publishedAt, ...(version ? { 'X-Library-Version': version } : {}) } });
   }) as unknown as typeof fetch;
 }
 
@@ -340,6 +343,25 @@ describe('runPull', () => {
     expect(afterButton).toBe(beforeButton);
     expect(afterManifest).toBe(beforeManifest);
   });
+
+  it('prints the version beside the publish date and stores it in the manifest', async () => {
+    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    const io = makeIo();
+    await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
+    expect(io.outLines.join('\n')).toMatch(/\(v1\.5\.0, published 2026-09-01T00:00:00\.000Z\)/);
+    const manifest = JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf-8')) as { version?: string };
+    expect(manifest.version).toBe('1.5.0');
+  });
+
+  it('keeps the current form when the proxy sends no version', async () => {
+    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    const io = makeIo();
+    await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200());
+    expect(io.outLines.join('\n')).toMatch(/\(published 2026-09-01T00:00:00\.000Z\)\./);
+    expect(io.outLines.join('\n')).not.toMatch(/v\d+\.\d+\.\d+/);
+    const manifest = JSON.parse(readFileSync(join(cwd, '.speclayer/manifest.json'), 'utf-8')) as { version?: string };
+    expect(manifest.version).toBeUndefined();
+  });
 });
 
 describe('runStatus', () => {
@@ -394,6 +416,17 @@ describe('runStatus', () => {
 
     expect(code).toBe(1);
     expect(io.errLines).toEqual(['speclayer.json is not valid JSON. Fix or delete it, then retry.']);
+  });
+
+  it('names the version when up to date and when behind', async () => {
+    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
+    const upToDate = makeIo();
+    expect(await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, upToDate, stub304('1.5.0'))).toBe(0);
+    expect(upToDate.outLines[0]).toBe('Up to date (v1.5.0, published 2026-09-01T00:00:00.000Z).');
+    const behind = makeIo();
+    expect(await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, behind, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-02T00:00:00.000Z', '1.6.0'))).toBe(2);
+    expect(behind.outLines[0]).toBe('Behind: remote is v1.6.0, published 2026-09-02T00:00:00.000Z. Run spec-layer pull.');
   });
 });
 
@@ -941,6 +974,14 @@ describe('runList', () => {
     expect(out).toMatch(/foundation\s+foundation\s+\.speclayer\/tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
     expect(out).toMatch(/component\s+Card\s+component-specs\/card\.yaml\s+b{64}/);
+  });
+
+  it('prints the version in the header line when the manifest has one', async () => {
+    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
+    const io = makeIo();
+    runList(cwd, {}, io);
+    expect(io.outLines[0]).toBe('Library lib_abc, v1.5.0, published 2026-09-01T00:00:00.000Z.');
   });
 });
 

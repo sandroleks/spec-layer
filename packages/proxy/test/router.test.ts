@@ -225,6 +225,15 @@ describe('route', () => {
     expect(await res.json()).toEqual({ error: 'unauthenticated' });
   });
 
+  it('routes GET /v1/libraries/lib_<24hex>/versions to versions', async () => {
+    const libraryId = `lib_${'0'.repeat(24)}`;
+    const res = await route(new Request(`https://p.test/v1/libraries/${libraryId}/versions`, {
+      headers: { Authorization: 'Bearer nope' },
+    }), baseDeps());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_key' });
+  });
+
   it('404s a malformed library id path', async () => {
     const res = await route(new Request('https://p.test/v1/libraries/nope'), baseDeps());
     expect(res.status).toBe(404);
@@ -267,12 +276,14 @@ describe('route', () => {
     expect('licenseReason' in body).toBe(false);
   });
 
-  it('rethrows a non-LsUnreachable error raised during activation instead of turning it into a 502', async () => {
+  it('turns a non-LsUnreachable error raised during activation into a 500, not a 502', async () => {
     // callLs funnels every fetch-level failure (thrown errors, non-2xx, missing verdict
     // field) into the LsUnreachable/502 path, so a fetch throw alone can't reach the
     // `throw err` branch in handleActivate's catch. Force a *different* failure past
     // the transient check: let LS report a successful activation, then make the cache
     // write (which only runs after a definitive verdict) throw a plain Error.
+    // `route`'s own catch-all (see "500s and logs a handler throw" below) now
+    // turns that rethrow into a 500 instead of letting it escape as a rejection.
     const d = baseDeps();
     d.fetcher = vi.fn(async () => new Response(JSON.stringify({
       activated: true, instance: { id: 'i1' }, license_key: { status: 'active' },
@@ -282,10 +293,16 @@ describe('route', () => {
       put: async () => { throw new Error('boom'); },
       delete: async () => {},
     };
-    await expect(route(new Request('https://proxy.test/v1/license/activate', {
+    const res = await route(new Request('https://proxy.test/v1/license/activate', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ key: UUID_KEY }),
-    }), d)).rejects.toThrow('boom');
+    }), d);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'internal' });
+    // The catch-all still runs `withCors`, so a caller never sees an opaque
+    // network failure in place of a real (if generic) status.
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(d.log).toHaveBeenCalledWith('internal_error', { message: 'boom' });
   });
 });
 
@@ -317,5 +334,10 @@ describe('CORS', () => {
     const exposed = res.headers.get('Access-Control-Expose-Headers');
     expect(exposed).toContain('ETag');
     expect(exposed).toContain('X-Published-At');
+  });
+
+  it('exposes X-Library-Version through CORS', async () => {
+    const res = await route(new Request('https://p.test/v1/prose', { method: 'OPTIONS' }), baseDeps());
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Library-Version');
   });
 });

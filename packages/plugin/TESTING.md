@@ -430,6 +430,63 @@ action. The rows below start there.
       and the meter appears; Rotate key works.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
+- [ ] First version: a file with a Foundation doc and two component docs,
+      never published. Open Publish; the Version block reads "Not versioned
+      yet" with First version prefilled 1.0.0. Type `2.0` and see "Use three
+      numbers, like 1.0.0."; restore 1.0.0. The primary reads "Publish 1.0.0".
+      Publish; the toast names 1.0.0; the meta line reads "Version 1.0.0,
+      published <local date>"; every group frame header and the Foundation card
+      header carries a pill reading `v1.0.0 · Published`, right of the
+      eyebrow and left of the logo when one is set.
+- [ ] Hand-edit detector stays quiet: after that publish, open the Library;
+      every row reads In sync, none reads Edited. Run Update on one doc; the
+      pill is still `v1.0.0 · Published` and the row is still In sync.
+- [ ] Changed since: add a variant option to one component. Update its doc;
+      its pill reads `v1.0.0 · Changed since`; the other docs keep
+      `Published`. Move a group frame's header by hand, then Update again; the
+      pill repaints where the header now sits.
+- [ ] Proposal and raise: open Publish. The meta line reads "Version 1.0.0,
+      published <date>". The block reads "Next version 1.1.0" and "Minor: 1
+      addition" and nothing about the current version; the control shows
+      Patch, Minor, Major with Patch disabled, and hovering Patch shows "The
+      changes need at least a minor bump." Minor is checked. Choose Major; the
+      block reads "Next version 2.0.0" and "Major, raised from minor: 1
+      addition", the primary reads "Publish 2.0.0", and the screen does not
+      jump to the top. Type a note. Publish; every pill now reads
+      `v2.0.0 · Published`.
+- [ ] Variant, not removals: the addition above was a whole variant with its
+      own token bindings. The reason must say "1 addition" and never a
+      removal, and the change list in the next row must not list any binding
+      of the variants that already existed.
+- [ ] History: open Version history from the block. Two rows, v2.0.0 first
+      with a "Major" badge that is not cropped and whose tooltip reads
+      "Something was removed or renamed. Code that used it may break.", the
+      date, and the note on one line; v1.0.0 with "First version". Click the
+      date side of the v2.0.0 row, not the badge: the whole row is the
+      control and it opens. One card named after the component lists "Option
+      <name> added to <axis>"; no other card and no bindings of existing
+      variants. Back
+      returns to Publish; Escape from history returns to Publish, and again
+      to the list.
+- [ ] Nothing changed: publish again without editing; the toast reads
+      "Nothing changed since the last publish." and the version stays 2.0.0.
+- [ ] Pull prints the version: run `spec-layer pull` in the developer
+      directory; the line ends `(v2.0.0, published <date>)`; `spec-layer
+      status` reads "Up to date (v2.0.0, …)"; `spec-layer list` names v2.0.0.
+- [ ] Second device (no key): open Publish in the same file from another
+      account; the Version block says the dry run could not run or the
+      history says the key is on the publishing device; nothing claims a
+      version it did not fetch.
+- [ ] Pre-versioning library: a library published before this build. Open
+      Publish; the block says the library has no version yet and the next
+      publish creates 1.0.0. Publish; pills appear at v1.0.0.
+- [ ] Deploy order: before releasing the plugin, confirm the deployed proxy
+      answers a dry run (`curl -X POST https://api.spec-layer.com/v1/libraries
+      -H 'X-Figma-User: probe' -H 'content-type: application/json' -d
+      '{"bundle":<a minimal bundle>,"dryRun":true}'` returns a body with
+      `proposedVersion` or `unchanged`). Against a proxy that predates dry
+      runs the plugin would publish for real on every open of the Publish
+      screen.
 
 ## Download skill
 

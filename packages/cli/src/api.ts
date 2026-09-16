@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
 export type FetchBundleResult =
-  | { kind: 'ok'; raw: string; publishedAt: string; bundleHash: string }
-  | { kind: 'not_modified' }
+  | { kind: 'ok'; raw: string; publishedAt: string; bundleHash: string; version: string | null }
+  | { kind: 'not_modified'; version: string | null }
   | { kind: 'error'; message: string };
 
 export async function fetchBundle(opts: {
@@ -20,7 +20,8 @@ export async function fetchBundle(opts: {
   } catch {
     return { kind: 'error', message: `Could not reach ${opts.api}.` };
   }
-  if (res.status === 304) return { kind: 'not_modified' };
+  const version = res.headers.get('X-Library-Version');
+  if (res.status === 304) return { kind: 'not_modified', version };
   if (res.status === 401) {
     return {
       kind: 'error',
@@ -36,5 +37,6 @@ export async function fetchBundle(opts: {
     raw,
     publishedAt: res.headers.get('X-Published-At') ?? 'unknown',
     bundleHash: createHash('sha256').update(raw).digest('hex'),
+    version,
   };
 }

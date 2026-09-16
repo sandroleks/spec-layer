@@ -17,6 +17,65 @@ plugin portion adds a download feature to the Publish screen and ships in the
 plugin's own release, on its own schedule; it needs no CLI version and moves
 none of the reasoning above.
 
+### Added
+
+- **Published libraries have a semantic version.** Every changed publish
+  assigns one. The proxy diffs the stored bundle against the new one over
+  Figma facts only (component properties, variant axes and options, states,
+  anatomy parts, token bindings, layout and effect values, collections, modes,
+  tokens and their per-mode values, styles) with the new Figma-free
+  `libraryDiff` in the extractor, and derives the minimum bump: removing or
+  renaming a structural entity is major, adding one is minor, everything else
+  is patch. Prose, descriptions, diagnostics and export metadata never move
+  it. The publisher may raise the bump and add a note, never lower it. The
+  first version is 1.0.0, editable on the first publish. The proxy stores one
+  record per version and the last ten bundles under `lib:<id>:versions` and
+  `lib:<id>:bundle:<version>`, answers `dryRun: true` with the proposal
+  without writing or spending quota, serves `GET /v1/libraries/:id/versions`,
+  and adds `X-Library-Version` to publish and pull responses. Deploy the proxy
+  before this plugin build.
+- **Token bindings are diffed per variant.** The bundle now carries each
+  component's variant list (`variants`, name and axis values beside the
+  artifact), and `libraryDiff` expands both sides' bindings over the variants
+  they share and compares cell by cell, the way the Library screen's own diff
+  does. Adding a variant therefore reads as one added option, not as a
+  removal and re-addition of every binding the minimizer re-expressed, and
+  no longer forces a major bump. Bundles stored before this build have no
+  variant list and diff by rule identity as before. Because the field is
+  part of the bundle, the first publish of an existing library from this
+  build registers one patch with no property changes.
+- **Every doc frame carries a publish pill.** The header band of each
+  component group frame and each Foundation card shows `v1.5.0 · Published`,
+  `v1.5.0 · Changed since`, or `Not published`. Published means the doc's
+  source drift hash matches the one taken at publish; a doc whose hash cannot
+  be computed reads Changed since, never Published. The pill enters none of
+  the hashes: it is skipped by the hand-edit check, absent from every drift
+  projection, and never reaches the extractor. A rebuild carries the record
+  forward.
+- **The Publish screen proposes the next version.** Opening it runs a dry run
+  and shows the next version with one line of why (`Minor: 1 addition`), a
+  raise control with plain Patch, Minor, Major choices where a choice below
+  the minimum is disabled and explains itself in a tooltip, a 500-character
+  note, and on a first publish an editable first version. The current version
+  is stated once, in the meta line. When the minimum is already major there is
+  nothing to choose and no control is drawn. The publish button names the
+  version it will create. A dry run that fails says the minimum will apply
+  rather than guessing. A repaint from a choice keeps the scroll position.
+- **A Version history pane.** Newest first, one row per version with its
+  bump as a plain word (Major, Minor, Patch, First version) whose tooltip says
+  what happened, the date, and the note. A disclosure opens one card of
+  changes per component, and one for Foundations, with removals and renames
+  first, then additions, then value changes, each a short sentence with the
+  old value struck through beside the new one and the variant scope on a
+  second line. A truncated list says so with the full counts.
+- **The CLI prints the version.** `pull` prints `(v1.5.0, published <date>)`
+  when the proxy reports a version, and the current form when it does not.
+  `status` prints `Up to date (v1.5.0, published <date>).` when the local
+  pull matches the remote, and `Behind: remote is v1.6.0, published <date>.
+  Run spec-layer pull.` when it does not; `list` names it in its own header
+  line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
+  `version`. Pinned pulls are not yet available.
+
 ### Fixed
 
 - **A dimension token that aliases a number token no longer projects an

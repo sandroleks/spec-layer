@@ -181,6 +181,19 @@ export interface PublishInfo {
   libraryId: string | null;
   pullKey: string | null;
   publishedAt: string | null;
+  /** The library's current semantic version as the proxy last reported it,
+   *  stored in the file beside the id. Null before the first versioned
+   *  publish, and for a file published by a build that did not record it. */
+  version: string | null;
+}
+
+/** One published component's drift hashes, both ways a doc can be configured
+ *  to render it, so the main thread can pick the one each doc's `includeHidden`
+ *  calls for. Keyed by source node, because two docs of one source publish
+ *  once but both get stamped. */
+export interface PublishStampComponent {
+  sourceNodeId: string;
+  hashes: { visible: string; hidden: string };
 }
 
 export type UiToMain =
@@ -230,6 +243,15 @@ export type UiToMain =
    *  thread when `libraryId` is not the id the file holds, so a slow reply for
    *  a library the file has since dropped cannot label the new one. */
   | { type: 'setPublishedAt'; libraryId: string; publishedAt: string }
+  /** After a successful versioned publish: record the version and date in the
+   *  file, write a publish record on every doc the publish covered, and repaint
+   *  each doc's pill to Published. `foundation` is the Foundation dump the
+   *  bundle was built from, so foundation docs are stamped with the hash of
+   *  exactly the published content; null when the bundle carried no
+   *  Foundation. Ignored when `libraryId` is not the id the file holds, like
+   *  `setPublishedAt`. */
+  | { type: 'stampPublished'; libraryId: string; version: string; publishedAt: string;
+      components: PublishStampComponent[]; foundation: SerializedFoundation | null }
   /** Drop the file's stored library id after the server said it is gone or
    *  belongs to another license, so the next publish creates a new one. */
   | { type: 'clearPublishInfo' };

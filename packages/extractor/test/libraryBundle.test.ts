@@ -75,4 +75,15 @@ describe('parseLibraryBundle', () => {
       ...GOOD, components: [GOOD.components[0], { name: 'Card', artifact: artifact('d') }],
     })).toThrow(/component 1/);
   });
+
+  it('passes a well-formed variants list through and omits a malformed one', () => {
+    const variants = [{ name: 'size=Small', values: { size: 'Small' } }, { name: 'size=Large', values: { size: 'Large' } }];
+    const withVariants = parseLibraryBundle({ ...GOOD, components: [{ ...GOOD.components[0], variants }] });
+    expect(withVariants.components[0].variants).toEqual(variants);
+    expect(parseLibraryBundle(GOOD).components[0]).not.toHaveProperty('variants');
+    const malformed = parseLibraryBundle({ ...GOOD, components: [{ ...GOOD.components[0], variants: [{ name: 1, values: {} }] }] });
+    expect(malformed.components[0]).not.toHaveProperty('variants');
+    const badValue = parseLibraryBundle({ ...GOOD, components: [{ ...GOOD.components[0], variants: [{ name: 'x', values: { size: 2 } }] }] });
+    expect(badValue.components[0]).not.toHaveProperty('variants');
+  });
 });

@@ -482,7 +482,15 @@ button {
   border-radius: var(--sl-radius-md);
 }
 
-.sl-segmented > button {
+/* A choice may sit in a span when it needs a positioned tooltip wrapper (the
+   Publish screen's raise control); the span is layout-neutral. */
+.sl-segmented > span {
+  position: relative;
+  display: inline-flex;
+}
+
+.sl-segmented > button,
+.sl-segmented > span > button {
   min-width: 0;
   height: 24px;
   padding: 0 var(--sl-space-10);
@@ -495,15 +503,22 @@ button {
   cursor: pointer;
 }
 
-.sl-segmented > button:hover:not(:disabled):not([aria-checked="true"]) {
+.sl-segmented > button:hover:not(:disabled):not([aria-checked="true"]),
+.sl-segmented > span > button:hover:not(:disabled):not([aria-checked="true"]) {
   color: var(--sl-color-text);
 }
 
 .sl-segmented > button[aria-checked="true"],
-.sl-segmented > button[aria-selected="true"] {
+.sl-segmented > button[aria-selected="true"],
+.sl-segmented > span > button[aria-checked="true"] {
   color: var(--sl-color-text);
   background: var(--sl-color-surface-raised);
   box-shadow: var(--sl-shadow-raised);
+}
+
+.sl-segmented > span > button:disabled {
+  color: var(--sl-color-text-quiet);
+  cursor: default;
 }
 
 .sl-field {

@@ -7,7 +7,7 @@
 
 import {
   extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
-  type SpecHashProjection,
+  type SpecHashProjection, type Bump,
 } from '@spec-layer/extractor';
 import type { ProseDrafts } from '@spec-layer/extractor';
 import {
@@ -46,6 +46,7 @@ import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
+import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
   applyGroupBulk,
@@ -122,9 +123,13 @@ import {
 import { copyText, renderManualCopyModal } from './clipboard';
 import {
   agentSetupMessage,
+  onBumpChoice,
   onDownloadSkillClick,
+  onInitialVersionInput,
+  onNoteInput,
   onPublishClick,
   onPublishInfo,
+  onPublishOpen,
   onPublishSources,
   onPublishSourcesError,
   onRotateClick,
@@ -133,6 +138,12 @@ import {
   setupCommand,
   type PublishQuotaSnapshot,
 } from './publish';
+import {
+  historyState,
+  onHistoryOpen,
+  onHistoryToggle,
+  setHistoryHost,
+} from './history';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -192,7 +203,7 @@ let libraryFilter: LibraryFilter = 'all';
  * peer, it is something you do to the library you are looking at. Keeping
  * `view` at 'library' also keeps the rail correctly highlighted for free.
  */
-let libraryPane: 'list' | 'publish' = 'list';
+let libraryPane: 'list' | 'publish' | 'history' = 'list';
 let libraryExpandedDocId: string | null = null;
 /**
  * The row the global search palette last opened, marked in the list until the
@@ -284,6 +295,12 @@ setPublishHost({
   // Publish and rotate successes are toasts; the screen itself shows only
   // errors, which need to stay on view.
   notify: (message) => nativeNotify(message),
+});
+
+setHistoryHost({
+  repaint: () => {
+    if (view === 'library' && libraryPane === 'history') paint();
+  },
 });
 
 /**
@@ -381,6 +398,10 @@ function paint(): void {
       return;
     case 'library':
       {
+        if (libraryPane === 'history') {
+          renderHistoryScreen(refs, historyState());
+          return;
+        }
         if (libraryPane === 'publish') {
           renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot));
           return;
@@ -1363,7 +1384,7 @@ function toggle<T>(set: Set<T>, value: T): void {
  * scrolled by an unrelated amount. Any open row menu is dropped too, since it
  * is positioned against a list that is about to stop being rendered.
  */
-function setLibraryPane(next: 'list' | 'publish', focusSelector: string): void {
+function setLibraryPane(next: 'list' | 'publish' | 'history', focusSelector: string): void {
   libraryPane = next;
   libraryMenuDocId = null;
   libraryMenuRestore = null;
@@ -1517,11 +1538,36 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-publish-open]')) {
     setLibraryPane('publish', '[data-publish-back]');
+    onPublishOpen();
     return;
   }
 
   if (target.closest('[data-publish-back]')) {
     setLibraryPane('list', '[data-publish-open]');
+    return;
+  }
+
+  if (target.closest('[data-publish-history]')) {
+    setLibraryPane('history', '[data-history-back]');
+    const { libraryId, pullKey } = publishState();
+    void onHistoryOpen(libraryId, pullKey);
+    return;
+  }
+
+  if (target.closest('[data-history-back]')) {
+    setLibraryPane('publish', '[data-publish-history]');
+    return;
+  }
+
+  if (target.closest('[data-history-retry]')) {
+    const { libraryId, pullKey } = publishState();
+    void onHistoryOpen(libraryId, pullKey);
+    return;
+  }
+
+  const historyDisclosure = target.closest<HTMLButtonElement>('[data-history-disclosure]');
+  if (historyDisclosure?.dataset.historyDisclosure) {
+    onHistoryToggle(historyDisclosure.dataset.historyDisclosure);
     return;
   }
 
@@ -1565,6 +1611,12 @@ document.addEventListener('click', (event) => {
     void onRotateClick(
       publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
     );
+    return;
+  }
+
+  const bumpButton = target.closest<HTMLButtonElement>('[data-publish-bump]');
+  if (bumpButton?.dataset.publishBump) {
+    onBumpChoice(bumpButton.dataset.publishBump as Bump);
     return;
   }
 
@@ -1927,7 +1979,15 @@ document.addEventListener('change', (event) => {
 });
 
 document.addEventListener('input', (event) => {
-  const input = event.target;
+  const target = event.target;
+  // The note is a textarea, so it never satisfies the HTMLInputElement guard
+  // below. It repaints nothing itself (see onNoteInput's own comment), so it
+  // is handled and returned before that guard narrows the type.
+  if (target instanceof HTMLTextAreaElement && target.matches('[data-publish-note]')) {
+    onNoteInput(target.value);
+    return;
+  }
+  const input = target;
   if (!(input instanceof HTMLInputElement)) return;
   if (input.matches('[data-global-search-input]')) {
     searchQuery = input.value;
@@ -1936,6 +1996,20 @@ document.addEventListener('input', (event) => {
     return;
   }
   if (operation.active) return;
+  if (input.matches('[data-publish-initial-version]')) {
+    onInitialVersionInput(input.value);
+    // Validity is shown next to the field, so the screen has to repaint; the
+    // note field does not, which is why its handler stays silent above.
+    // paintAndFocus re-renders the markup from scratch, so the fresh <input>
+    // it focuses starts with its caret at 0 rather than where the reader was
+    // typing; setSelectionRange puts it back at the end.
+    if (view === 'library' && libraryPane === 'publish') {
+      paintAndFocus('[data-publish-initial-version]');
+      const refocused = document.querySelector<HTMLInputElement>('[data-publish-initial-version]');
+      refocused?.setSelectionRange(refocused.value.length, refocused.value.length);
+    }
+    return;
+  }
   if (input.matches('[data-license-input]')) {
     licenseInput = input.value;
     const activateButton = document.querySelector<HTMLButtonElement>('[data-license-activate]');
@@ -2125,6 +2199,11 @@ document.addEventListener('keydown', (event) => {
    * menu cannot be open here anyway (setLibraryPane drops it), but ordering
    * this by luck rather than by structure is how that stops being true.
    */
+  if (event.key === 'Escape' && view === 'library' && libraryPane === 'history') {
+    event.preventDefault();
+    setLibraryPane('publish', '[data-publish-history]');
+    return;
+  }
   if (event.key === 'Escape' && view === 'library' && libraryPane === 'publish') {
     event.preventDefault();
     setLibraryPane('list', '[data-publish-open]');

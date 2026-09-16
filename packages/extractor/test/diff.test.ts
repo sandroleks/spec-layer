@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   diffKeyed, formatFoundationValue, formatTextMetrics, foundationChangeGroups, componentChangeGroups,
+  axisModel, coverConditions, describeScope, comboKey,
 } from '../src/diff';
 import { extract, specHashProjection } from '../src/index';
 import type { FoundationUnitContent, FoundationValue, FoundationVariableRow, FoundationTextRow } from '../src/foundation';
@@ -650,5 +651,18 @@ describe('the projection key sets the diff itemizes', () => {
         for (const key of keys) expect(allowed, field).toContain(key);
       }
     }
+  });
+});
+
+describe('exported scope helpers', () => {
+  it('build an axis model from declared axes, cover a subset, and describe it', () => {
+    const universe = [{ size: 'Small' }, { size: 'Large' }, { size: 'Huge' }];
+    const axes = axisModel([{ prop: 'size', values: ['Small', 'Large', 'Huge', 'Unused'] }], universe);
+    expect([...axes]).toEqual([['size', ['Small', 'Large', 'Huge']]]);
+    const cover = coverConditions([{ size: 'Large' }, { size: 'Huge' }], universe, axes);
+    expect(cover).toEqual([{ conditions: { size: ['Large', 'Huge'] }, count: 2 }]);
+    expect(describeScope(cover[0].conditions, 2, 3, 1, new Map([['size', 'Small']]))).toBe('2 of 3 variants: size Large or Huge');
+    expect(describeScope({}, 3, 3, 1, new Map())).toBeUndefined();
+    expect(comboKey({ b: '1', a: '2' })).toBe(comboKey({ a: '2', b: '1' }));
   });
 });

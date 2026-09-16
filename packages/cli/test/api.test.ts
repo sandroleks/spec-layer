@@ -15,7 +15,7 @@ describe('fetchBundle', () => {
     const expectedHash = createHash('sha256').update(body).digest('hex');
     const fetcher = vi.fn(async () => new Response(body, {
       status: 200,
-      headers: { ETag: `"${expectedHash}"`, 'X-Published-At': '2026-09-01T00:00:00.000Z' },
+      headers: { ETag: `"${expectedHash}"`, 'X-Published-At': '2026-09-01T00:00:00.000Z', 'X-Library-Version': '1.5.0' },
     })) as unknown as typeof fetch;
 
     const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
@@ -25,6 +25,7 @@ describe('fetchBundle', () => {
       raw: body,
       publishedAt: '2026-09-01T00:00:00.000Z',
       bundleHash: expectedHash,
+      version: '1.5.0',
     });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -42,9 +43,16 @@ describe('fetchBundle', () => {
       api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', etag: 'abc123', fetcher,
     });
 
-    expect(result).toEqual({ kind: 'not_modified' });
+    expect(result).toEqual({ kind: 'not_modified', version: null });
     const [, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     expect(init.headers).toMatchObject({ 'If-None-Match': '"abc123"' });
+  });
+
+  it('reads a missing version header as null, on 200 and on 304', async () => {
+    const ok = vi.fn(async () => new Response('{}', { status: 200, headers: { 'X-Published-At': '2026-09-01T00:00:00.000Z' } })) as unknown as typeof fetch;
+    expect(await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher: ok })).toMatchObject({ kind: 'ok', version: null });
+    const notModified = vi.fn(async () => new Response(null, { status: 304, headers: { 'X-Library-Version': '1.5.0' } })) as unknown as typeof fetch;
+    expect(await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', etag: 'e', fetcher: notModified })).toEqual({ kind: 'not_modified', version: '1.5.0' });
   });
 
   it('maps 401 to the rotated-key message', async () => {

@@ -13,6 +13,8 @@
  * have applied the theme (buildDocFrames' preamble or applyThemeToKit) first.
  */
 import { palette, solidFill, makeText, vstack, hstack, headingFont } from './frameKit';
+import { buildPillNode } from './pillNode';
+import type { PillState } from './publishPill';
 
 /** Horizontal padding of the band. Content columns below it use the same value. */
 export const HEADER_PAD_X = 56;
@@ -28,6 +30,12 @@ export interface BrandHeaderOptions {
   subtitle?: string | null;
   /** Base64 PNG of the user's captured logo, if they have one. */
   logoBase64?: string | null;
+  /**
+   * Publish pill on the eyebrow row, right-aligned, left of the logo when one
+   * is shown. Null or absent draws no pill and leaves every existing document
+   * byte-identical to what it rendered before pills existed.
+   */
+  pill?: PillState | null;
   /**
    * Hook to restyle the subtitle node (docFrame applies bold runs to its lifted
    * definition lead). Called after the node is appended and before the FILL
@@ -60,22 +68,26 @@ export async function buildBrandHeader(opts: BrandHeaderOptions): Promise<FrameN
   const tmp: (TextNode | FrameNode)[] = [];
 
   const eyebrowNode = makeText(opts.eyebrow.toUpperCase(), 'Medium', 12, palette.onHeaderMuted);
-  if (opts.logoBase64) {
-    // Eyebrow + logo on one row, logo pushed to the right edge.
+  if (opts.logoBase64 || opts.pill) {
+    // Eyebrow, then the pill, then the logo on one row; the eyebrow FILLs so
+    // the other two sit at the right edge.
     const row = hstack(12);
     band.appendChild(row);
     row.counterAxisAlignItems = 'CENTER';
     row.appendChild(eyebrowNode);
     eyebrowNode.layoutSizingHorizontal = 'FILL';
-    try {
-      const image = figma.createImage(figma.base64Decode(opts.logoBase64));
-      const { width, height } = await image.getSizeAsync();
-      const logo = figma.createRectangle();
-      logo.resize(Math.round((width / Math.max(height, 1)) * LOGO_HEIGHT), LOGO_HEIGHT);
-      logo.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FIT' }];
-      row.appendChild(logo);
-    } catch {
-      /* corrupt logo → header renders without it */
+    if (opts.pill) row.appendChild(buildPillNode(opts.pill));
+    if (opts.logoBase64) {
+      try {
+        const image = figma.createImage(figma.base64Decode(opts.logoBase64));
+        const { width, height } = await image.getSizeAsync();
+        const logo = figma.createRectangle();
+        logo.resize(Math.round((width / Math.max(height, 1)) * LOGO_HEIGHT), LOGO_HEIGHT);
+        logo.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FIT' }];
+        row.appendChild(logo);
+      } catch {
+        /* corrupt logo → header renders without it */
+      }
     }
     tmp.push(row); // the row FILLs; the eyebrow already FILLs within it
   } else {

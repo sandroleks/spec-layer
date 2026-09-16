@@ -74,7 +74,7 @@ files without those fields.
 | `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
 | `pull [--id lib_...] [--key sl_...] [--platform P]... [selection]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
-| `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Exits `2` when the local copy is behind. |
+| `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--canonical]` | Prints one component's AI YAML to stdout. |
@@ -249,7 +249,7 @@ matter what the ignore rules say.
 ```text
 .speclayer/
   bundle.json                the published bundle, verbatim
-  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, and componentSpecsDir
+  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, componentSpecsDir, and the library version when one was reported
   tokens/                    the Foundation as Design Tokens Format Module 2025.10 files
     <collection>.<mode>.json one file per collection and mode, rooted at the collection name
     styles.typography.json   text styles as typography composites (when present)
@@ -418,6 +418,28 @@ second source, so import one or the other.
 Commit `.speclayer/`, `speclayer.json`, `component-specs/`, and the output
 paths. A repository that would rather regenerate in CI ignores them and runs
 `pull` there; `status` exits `2` when a pull is due.
+
+## Library versions
+
+A published library carries a semantic version, assigned by the publish
+service when the plugin publishes. `pull`, `status`, and `list` print it
+beside the publish date, for example `Up to date (v1.5.0, published …)`. A
+library published before versioning has none until its next publish, and
+the CLI then prints the date alone rather than a guessed version.
+
+The minimum bump is computed from the Figma facts in the bundle. Prose,
+descriptions, and export metadata never move it. The publisher may raise the
+bump, never lower it.
+
+| Change | Bump |
+|---|---|
+| A component, property, option, variant axis, state, anatomy part, collection, mode, or token removed or renamed | major |
+| Any of those added | minor |
+| A binding, layout or effect value, token value, or style added, removed, or changed | patch |
+| A property's kind or default, or a part's type or visibility toggle, changed | patch |
+
+Pinned pulls (`pull --version`) are not available yet: `pull` always fetches
+the current version.
 
 ## Exit codes
 

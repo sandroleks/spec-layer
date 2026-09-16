@@ -7,13 +7,15 @@
  *
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
  *   ui-harness.html?view=library&pane=publish&publish=published
+ *   ui-harness.html?view=library&pane=publish&publish=proposal
+ *   ui-harness.html?view=library&pane=history&history=ready
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
  * thing we are verifying.
  */
 
-import type { FoundationSpec, FoundationSelection } from '@spec-layer/extractor';
+import type { FoundationSpec, FoundationSelection, VersionLog } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   parseBrandHex,
@@ -35,7 +37,9 @@ import { renderFoundationScreen } from './screens/foundations';
 import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
-import type { PublishState } from './publish';
+import { createPublishState, firstPublishProposal, type PublishState } from './publish';
+import { renderHistoryScreen } from './screens/history';
+import type { HistoryState } from './history';
 import type { PublishAllowance } from './viewModel/allowance';
 import { globalSearchMarkup, patchGlobalSearch } from './screens/search';
 import {
@@ -531,69 +535,124 @@ if (view === 'library') {
    * fixtures are synthetic or explicitly publishable, and a pull key in a
    * dev-only file is still a pull key.
    */
+  const PUBLISHED_BASE: PublishState = {
+    ...createPublishState(),
+    libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
+    pullKey: `sl_${'0f'.repeat(24)}`,
+    lastPublishedAt: '2026-09-01T09:12:00.000Z',
+    version: '1.4.2',
+  };
+  const IDLE_BASE: PublishState = { ...createPublishState() };
+
   const PUBLISH_FIXTURES: Record<string, PublishState> = {
-    idle: {
-      status: 'idle',
-      message: null,
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
-    collecting: {
-      status: 'collecting',
-      message: null,
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
+    idle: { ...IDLE_BASE },
+    collecting: { ...IDLE_BASE, status: 'collecting' },
     uploading: {
+      ...IDLE_BASE,
       status: 'uploading',
-      message: null,
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
-      intent: 'publish',
+      version: '1.4.2',
     },
-    // Success is a toast, so a published screen carries no message of its own.
+    // Success is a toast, so a published screen carries no message of its
+    // own. Carries the unchanged proposal a real publish leaves behind (see
+    // onPublishSources' 'created'/'updated' cases): no dry run has run since,
+    // so the block reads "Nothing changed" rather than a failed dry run.
     published: {
+      ...PUBLISHED_BASE,
       status: 'done',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
-      pullKey: `sl_${'0f'.repeat(24)}`,
-      lastPublishedAt: '2026-09-01T09:12:00.000Z',
-      intent: 'publish',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: true, minimumBump: null, proposedVersion: null,
+        counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+      },
     },
     // A second device: the id is in the file, the key is not on this machine.
     idOnly: {
+      ...PUBLISHED_BASE,
       status: 'idle',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: null,
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
-      intent: 'publish',
     },
     // Published by a build that stored no date: the status block says so.
-    unrecorded: {
-      status: 'idle',
-      message: null,
-      libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
-      pullKey: `sl_${'0f'.repeat(24)}`,
-      lastPublishedAt: null,
-      intent: 'publish',
-    },
+    unrecorded: { ...PUBLISHED_BASE, status: 'idle', lastPublishedAt: null },
     error: {
+      ...IDLE_BASE,
       status: 'error',
       message: 'Could not reach the publish service. Check your connection and try again.',
-      libraryId: null,
-      pullKey: null,
-      lastPublishedAt: null,
-      intent: 'publish',
     },
+    // The dry run answered: current, next, reason, raise control, note.
+    proposal: {
+      ...PUBLISHED_BASE,
+      status: 'idle',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+        counts: { major: 0, minor: 2, patch: 5 },
+        changes: [
+          { kind: 'added', entity: 'property', component: 'Button', id: 'icon', name: 'icon', from: null, to: 'instanceSwap', scope: null, bump: 'minor' },
+          { kind: 'added', entity: 'state', component: 'Button', id: 'Pressed', name: 'Pressed', from: null, to: null, scope: null, bump: 'minor' },
+          { kind: 'changed', entity: 'token_value', component: null, id: 'VariableID:1', name: 'color/primary', from: '#6750a4', to: '#5b438f', scope: 'Light', bump: 'patch' },
+        ],
+        changesTruncated: false,
+      },
+    },
+    // No library id yet: the local 1.0.0 proposal, no proxy round trip.
+    firstVersion: { ...IDLE_BASE, proposal: firstPublishProposal() },
+    // The dry run answered, but the publisher tried to pick a bump under it.
+    belowMinimum: {
+      ...PUBLISHED_BASE,
+      status: 'error',
+      message: 'The changes need at least a minor bump.',
+      proposal: {
+        currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+        counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+      },
+    },
+    // The dry run round trip failed: the minimum bump still applies on publish.
+    dryRunFailed: { ...PUBLISHED_BASE, status: 'idle', proposalStatus: 'failed' },
   };
-  let libraryPane: 'list' | 'publish' =
-    param('pane', 'list') === 'publish' ? 'publish' : 'list';
+
+  // Two records: the same shape historyScreen.test.ts's LOG uses, so the
+  // fixture and the covering test never drift apart.
+  const HISTORY_LOG: VersionLog = { v: 1, records: [
+    {
+      version: '2.0.0', publishedAt: '2026-09-12T10:00:00.000Z', bump: 'major', minimumBump: 'minor',
+      note: 'Card is new API and the old icon slot is gone.', contentHash: 'c2', bundleHash: 'b2',
+      extractorVersion: '2', pluginVersion: '5.1.0',
+      counts: { major: 1, minor: 1, patch: 1 },
+      changes: [
+        { kind: 'removed', entity: 'property', component: 'Button', id: 'icon', name: 'icon', from: 'instanceSwap', to: null, scope: null, bump: 'major' },
+        { kind: 'added', entity: 'component', component: 'Card', id: 'key-card', name: 'Card', from: null, to: null, scope: null, bump: 'minor' },
+        { kind: 'changed', entity: 'token_value', component: null, id: 'V1', name: 'color/primary', from: '#6750a4', to: '#5b438f', scope: 'Light', bump: 'patch' },
+      ],
+      changesTruncated: false,
+    },
+    {
+      version: '1.0.0', publishedAt: '2026-09-01T10:00:00.000Z', bump: 'initial', minimumBump: null, note: null,
+      contentHash: 'c1', bundleHash: 'b1', extractorVersion: '2', pluginVersion: '5.0.0',
+      counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+    },
+  ] };
+
+  const HISTORY_FIXTURES: Record<string, HistoryState> = {
+    // The newest record starts expanded, so the grouped change list is
+    // visible without a click.
+    ready: { status: 'ready', log: HISTORY_LOG, etag: null, message: null, expanded: '2.0.0' },
+    loading: { status: 'loading', log: null, etag: null, message: null, expanded: null },
+    empty: { status: 'ready', log: { v: 1, records: [] }, etag: null, message: null, expanded: null },
+    noLibrary: { status: 'noLibrary', log: null, etag: null, message: null, expanded: null },
+    noKey: { status: 'noKey', log: null, etag: null, message: null, expanded: null },
+    error: {
+      status: 'error', log: null, etag: null, expanded: null,
+      message: 'Could not reach the publish service. Check your connection and try again.',
+    },
+    gone: { status: 'gone', log: null, etag: null, message: null, expanded: null },
+  };
+  let historyFixture: HistoryState =
+    { ...(HISTORY_FIXTURES[param('history', 'ready')] ?? HISTORY_FIXTURES.ready) };
+
+  let libraryPane: 'list' | 'publish' | 'history' =
+    param('pane', 'list') === 'history' ? 'history' : param('pane', 'list') === 'publish' ? 'publish' : 'list';
   const publishFixture =
     PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
   // `?pane=publish&plan=free` shows the free plan's updates line. Its own
@@ -606,6 +665,10 @@ if (view === 'library') {
       : { kind: 'hidden' };
 
   const renderLibraryFixture = () => {
+    if (libraryPane === 'history') {
+      renderHistoryScreen(refs, historyFixture);
+      return;
+    }
     if (libraryPane === 'publish') {
       renderPublishScreen(refs, publishFixture, publishAllowanceFixture);
       return;
@@ -653,7 +716,7 @@ if (view === 'library') {
   };
 
   /** Mirrors ui-vnext.ts's setLibraryPane, including where focus lands. */
-  const setPane = (next: 'list' | 'publish', focusSelector: string) => {
+  const setPane = (next: 'list' | 'publish' | 'history', focusSelector: string) => {
     libraryPane = next;
     menuDocId = null;
     renderLibraryFixture();
@@ -661,7 +724,13 @@ if (view === 'library') {
   };
 
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || libraryPane !== 'publish') return;
+    if (event.key !== 'Escape') return;
+    if (libraryPane === 'history') {
+      event.preventDefault();
+      setPane('publish', '[data-publish-history]');
+      return;
+    }
+    if (libraryPane !== 'publish') return;
     event.preventDefault();
     setPane('list', '[data-publish-open]');
   });
@@ -675,6 +744,21 @@ if (view === 'library') {
     }
     if (target.closest('[data-publish-back]')) {
       setPane('list', '[data-publish-open]');
+      return;
+    }
+    if (target.closest('[data-publish-history]')) {
+      setPane('history', '[data-history-back]');
+      return;
+    }
+    if (target.closest('[data-history-back]')) {
+      setPane('publish', '[data-publish-history]');
+      return;
+    }
+    const historyDisclosure = target.closest<HTMLButtonElement>('[data-history-disclosure]');
+    if (historyDisclosure?.dataset.historyDisclosure) {
+      const version = historyDisclosure.dataset.historyDisclosure;
+      historyFixture = { ...historyFixture, expanded: historyFixture.expanded === version ? null : version };
+      renderLibraryFixture();
       return;
     }
     const filterButton = target.closest<HTMLButtonElement>('[data-library-filter]');

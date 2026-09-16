@@ -1423,6 +1423,61 @@
   margin-top: var(--sl-space-16);
 }
 
+/* Version block: the next-version line, the raise control, the note. */
+.sl-publish-version-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-2);
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text);
+}
+
+.sl-publish-version-next > span {
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+}
+
+.sl-publish-bumps {
+  margin-bottom: var(--sl-space-8);
+}
+
+/* A disabled choice explains itself in a tooltip under the control. Sized to
+   its text (see .sl-history-bump > .sl-tooltip for why), up to the cap. */
+.sl-publish-bumps .sl-tooltip {
+  top: calc(100% + var(--sl-space-6));
+  left: 0;
+  width: max-content;
+  white-space: normal;
+}
+
+.sl-publish-note-field {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--sl-space-6) var(--sl-space-8);
+  color: var(--sl-color-text);
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border);
+  border-radius: var(--sl-radius-sm);
+  font: inherit;
+}
+
+.sl-publish-note-field:focus-visible {
+  outline: 2px solid var(--sl-color-focus);
+  outline-offset: 1px;
+}
+
+/*
+ * Before the first publish the version block is followed by the plain intro
+ * paragraph, not another .sl-publish-block, so the "+ .sl-publish-block" rule
+ * above never fires between them. Once there is a library the block after it
+ * (Developer setup, or the id-only note) is a .sl-publish-block and that rule
+ * already spaces the two, so this only ever fires in the pre-publish case.
+ */
+.sl-publish-version + .sl-publish-intro {
+  margin-top: var(--sl-space-16);
+}
+
 /*
  * Reports whichever action ran last, so it follows both groups. It needs the
  * same air between it and the group above as the groups have between them;
@@ -3009,4 +3064,124 @@
     color: var(--sl-color-text);
     -webkit-text-fill-color: var(--sl-color-text);
   }
+}
+
+/*
+ * The version list. No side padding, like .sl-library-list: rows run edge to
+ * edge and carry their own 14px inset, so hover and hairlines span the panel
+ * instead of reading as a cropped card inside the Publish body. The history
+ * screen has no footer, so only a little air at the bottom.
+ */
+.sl-history-list {
+  min-width: 0;
+  padding: 0 0 var(--sl-space-16);
+}
+
+/*
+ * A version row is one button: the version, its badge, the date, the chevron,
+ * and the note on a second line all sit inside it, so clicking anywhere on
+ * the row opens the changes. It reuses the Library row's surface, hairline
+ * and hover, but carries its own grid: the Library summary's four columns put
+ * the disclosure in a minmax(0, 1fr) column where a nowrap badge overflowed
+ * under the date. Here the date column is the one that flexes, and the note
+ * spans the whole row.
+ */
+.sl-history-summary {
+  width: 100%;
+  min-height: 49px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sl-space-6);
+  /* The same inset .sl-library-summary uses, so the two lists share an edge. */
+  padding: var(--sl-space-6) var(--sl-space-14);
+  color: var(--sl-color-text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sl-history-summary > strong {
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-history-summary > time {
+  justify-self: end;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  white-space: nowrap;
+}
+
+/* An open row keeps its hover band on the summary, like the Library row
+   (see .sl-library-row.is-expanded:hover): the details below are content. */
+.sl-history-row.is-expanded:hover .sl-history-summary {
+  background: var(--sl-color-surface-hover);
+}
+
+/*
+ * The Library's fallback box is a 2-column grid (icon, text) because its own
+ * fallback always carries a warning icon. A record with no property changes
+ * carries no icon, so the single child would be squeezed into the 18px icon
+ * column without this override.
+ */
+.sl-history-row .sl-library-change-fallback {
+  grid-template-columns: 1fr;
+}
+
+/* The badge and its tooltip. The trigger is positioned so the tooltip hangs
+   under the badge; the focus rule covers keyboard users, whose focus lands
+   on the disclosure button around it rather than on the badge. */
+.sl-history-bump {
+  position: relative;
+  display: inline-flex;
+}
+
+.sl-history-bump > .sl-tooltip {
+  top: calc(100% + var(--sl-space-4));
+  left: 0;
+  /* An absolutely positioned box shrinks to fit its containing block, and the
+     trigger span is only as wide as the badge, so without this the sentence
+     wrapped one word per line. max-content sizes it to the text, up to the
+     shared 240px cap. */
+  width: max-content;
+  white-space: normal;
+}
+
+.sl-history-summary:focus-visible .sl-tooltip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.sl-history-note {
+  grid-column: 1 / -1;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-history-values {
+  display: inline-flex;
+  gap: var(--sl-space-6);
+  margin-left: var(--sl-space-6);
+}
+
+.sl-history-from {
+  color: var(--sl-color-text-muted);
+  text-decoration: line-through;
+}
+
+.sl-history-to {
+  color: var(--sl-color-text);
+}
+
+.sl-history-truncated {
+  margin: var(--sl-space-8) 0 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
 }

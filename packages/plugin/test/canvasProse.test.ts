@@ -330,4 +330,12 @@ describe('collectGeneratedText', () => {
     const section = frame([text('A'), frame([text('B')])], {}, 'SECTION');
     expect(collectGeneratedText(section)).toEqual(['A', 'B']);
   });
+
+  it('skips any node carrying the pill key, and its subtree', () => {
+    const section = frame([
+      text('Heading'),
+      frame([text('v1.0.0 · Published')], { specLayerPill: '1' }),
+    ], {}, 'SECTION');
+    expect(collectGeneratedText(section)).toEqual(['Heading']);
+  });
 });

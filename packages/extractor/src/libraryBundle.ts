@@ -12,7 +12,16 @@ export const LIBRARY_BUNDLE_SCHEMA = 'spec-layer-library-bundle';
 export const LIBRARY_BUNDLE_VERSION = '1.0.0';
 
 export interface LibraryBundleArtifact { spec_layer: { export: { content_hash: string } } }
-export interface LibraryBundleComponent { name: string; ai: string; artifact: LibraryBundleArtifact }
+/** One variant instance of a component set: its Figma name and its axis values. A lone
+ *  component is one variant with no values. The diff expands token bindings over these. */
+export interface LibraryBundleVariant { name: string; values: Record<string, string> }
+export interface LibraryBundleComponent {
+  name: string;
+  ai: string;
+  artifact: LibraryBundleArtifact;
+  /** Absent in bundles written before variants were carried; the diff then falls back to rule identity. */
+  variants?: LibraryBundleVariant[];
+}
 export interface LibraryBundleV1 {
   schema: typeof LIBRARY_BUNDLE_SCHEMA;
   version: string;
@@ -44,11 +53,30 @@ function hasContentHash(artifact: unknown): artifact is LibraryBundleArtifact {
   return isRecord(exp) && typeof exp.content_hash === 'string';
 }
 
+/** The variants list when every item is well formed, else undefined: an
+ *  unreadable list is dropped rather than failing the whole bundle, since
+ *  nothing but the diff's per-variant path needs it. */
+function readVariants(value: unknown): LibraryBundleVariant[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: LibraryBundleVariant[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.name !== 'string' || !isRecord(item.values)) return undefined;
+    const values: Record<string, string> = {};
+    for (const [axis, v] of Object.entries(item.values)) {
+      if (typeof v !== 'string') return undefined;
+      values[axis] = v;
+    }
+    out.push({ name: item.name, values });
+  }
+  return out;
+}
+
 function entry(v: unknown, where: string): LibraryBundleComponent {
   if (!isRecord(v) || typeof v.name !== 'string' || typeof v.ai !== 'string' || !hasContentHash(v.artifact)) {
     throw new LibraryBundleError('malformed', `The ${where} entry in this bundle is malformed.`);
   }
-  return { name: v.name, ai: v.ai, artifact: v.artifact };
+  const variants = readVariants(v.variants);
+  return { name: v.name, ai: v.ai, artifact: v.artifact, ...(variants ? { variants } : {}) };
 }
 
 /** Major version 1 is the only one this code reads. */

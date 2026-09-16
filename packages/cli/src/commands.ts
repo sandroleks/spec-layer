@@ -449,6 +449,11 @@ function printReportSummary(cwd: string, outDir: string, outputs: OutputConfig[]
   return errors;
 }
 
+/** "(v1.5.0, published <date>)" when a version is known, else "(published <date>)". */
+function publishedPhrase(version: string | null | undefined, publishedAt: string): string {
+  return version ? `(v${version}, published ${publishedAt})` : `(published ${publishedAt})`;
+}
+
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
@@ -518,7 +523,7 @@ export async function runPull(
     return 1;
   }
   if (result.kind === 'not_modified') {
-    io.out(`Already up to date (published ${manifest?.publishedAt ?? 'unknown'}).`);
+    io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);
     // A 304 for a Foundation pull is granted only once both report files are
     // confirmed present on disk (foundationFilesOnDisk and outputFilesOnDisk
     // above), so the exact state where a stale error report sits unread is the
@@ -537,6 +542,7 @@ export async function runPull(
     const writeResult = writeBundleFiles({
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
+      version: result.version,
       dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir,
     });
     written = writeResult.written;
@@ -544,7 +550,7 @@ export async function runPull(
     outputResults = writeResult.outputs;
     io.out(
       `Pulled ${bundle.fileName ?? opts.libraryId}: ${describePull(bundle, selection, selected)} ` +
-      `(published ${result.publishedAt}).`,
+      `${publishedPhrase(result.version, result.publishedAt)}.`,
     );
   } catch (err) {
     io.err(errorText(err));
@@ -609,10 +615,12 @@ export async function runStatus(
     return 1;
   }
   if (result.kind === 'not_modified') {
-    io.out(`Up to date (published ${manifest.publishedAt}).`);
+    io.out(`Up to date ${publishedPhrase(result.version ?? manifest.version, manifest.publishedAt)}.`);
     return 0;
   }
-  io.out(`Behind: remote published ${result.publishedAt}. Run spec-layer pull.`);
+  io.out(result.version
+    ? `Behind: remote is v${result.version}, published ${result.publishedAt}. Run spec-layer pull.`
+    : `Behind: remote published ${result.publishedAt}. Run spec-layer pull.`);
   return 2;
 }
 
@@ -624,7 +632,9 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     io.err(NO_LOCAL_PULL);
     return 1;
   }
-  io.out(`Library ${manifest.libraryId}, published ${manifest.publishedAt}.`);
+  io.out(manifest.version
+    ? `Library ${manifest.libraryId}, v${manifest.version}, published ${manifest.publishedAt}.`
+    : `Library ${manifest.libraryId}, published ${manifest.publishedAt}.`);
   const rows = manifest.artifacts.map((a) => [a.kind, a.name, a.path ?? 'not written', a.contentHash]);
   const widths = [0, 1, 2].map((i) => Math.max(...rows.map((r) => r[i].length)));
   for (const row of rows) {

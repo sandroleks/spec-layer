@@ -27,6 +27,22 @@ export function licenseExternalUrl(action: string): string | null {
   }
 }
 
+/**
+ * A library id, exactly as the proxy defines it (`proxy/src/libraries.ts`).
+ *
+ * Every caller that interpolates an id into a request path validates it first.
+ * The id lands in the URL while the pull key travels in the Authorization
+ * header, so a value carrying a slash or a scheme would address a different
+ * host and hand that key to whoever answers. The stored id has always come
+ * from a publish response, so this is a guard rather than a known hole, and it
+ * is cheap enough to keep the class of bug closed.
+ */
+export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
+
+export function isLibraryId(value: string): boolean {
+  return LIBRARY_ID_RE.test(value);
+}
+
 export interface ProxyAuth {
   licenseKey: string | null;
   licenseInstanceId: string | null;

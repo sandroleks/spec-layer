@@ -1,5 +1,12 @@
 import { sha256 } from 'js-sha256';
-import { LibraryBundleError, libraryBundleContentHash, parseLibraryBundle } from '@spec-layer/extractor';
+import {
+  LibraryBundleError, isSemver, libraryBundleContentHash, libraryDiff, parseLibraryBundle,
+  type LibraryBundleV1, type LibraryDiff,
+} from '@spec-layer/extractor';
+import {
+  bundlesToPrune, compactLog, currentVersion, proposalFor, readNote, readVersionLog, resolveBump, truncateChanges,
+  versionBundleKey, versionsKey, type VersionLog, type VersionRecord,
+} from './versions';
 import { callerProofs, licenseIdentityId } from './identity';
 import { checkLicense, type LibraryStore, type LicenseReason } from './license';
 import { quotaHeaders } from './quota';
@@ -41,6 +48,13 @@ export interface LibraryMeta {
    * Figma session; `ownedMeta` backfills it opportunistically.
    */
   figmaOwnerHash?: string;
+  /**
+   * The library's current semantic version, a cache of the newest record in
+   * `lib:<id>:versions`. Publish reads the log, not this field, so a write
+   * that stopped between the log and the meta cannot fork the version. Absent
+   * on libraries published before versioning; pull then omits the header.
+   */
+  version?: string;
 }
 
 /**
@@ -49,6 +63,8 @@ export interface LibraryMeta {
  *   lib:<id>:bundle             the bundle JSON, verbatim
  *   lib:<id>:meta               LibraryMeta (no key digest)
  *   lib:<id>:key                sha256 of the current pull key
+ *   lib:<id>:versions           VersionLog, newest first (versions.ts)
+ *   lib:<id>:bundle:<version>   that version's bundle bytes, newest ten kept
  *   libowner:<licenseId>:<id>   one record per owned library, counted by prefix
  */
 const bundleKey = (id: string) => `lib:${id}:bundle`;
@@ -177,9 +193,78 @@ async function ownedLibraryIds(store: LibraryStore, owners: string[]): Promise<s
   return all;
 }
 
+/**
+ * The version record for this publish and the ordered writes that store it.
+ * Order: the current bundle, the per-version bundle, the log, then the meta
+ * (written by the caller). KV is not atomic, so a stop after the log leaves a
+ * record the meta does not know about; publish reads the log, so that is
+ * safe, and the meta is repaired on the next publish.
+ */
+async function writeVersion(
+  store: LibraryStore,
+  libraryId: string,
+  stored: string,
+  log: VersionLog,
+  record: VersionRecord,
+): Promise<VersionLog> {
+  const next: VersionLog = { v: 1, records: [record, ...log.records] };
+  await store.put(bundleKey(libraryId), stored);
+  await store.put(versionBundleKey(libraryId, record.version), stored);
+  await store.put(versionsKey(libraryId), JSON.stringify(compactLog(next)));
+  return next;
+}
+
+function versionRecord(input: {
+  version: string; publishedAt: string; bump: VersionRecord['bump']; minimumBump: VersionRecord['minimumBump'];
+  note: string | null; contentHash: string; bundleHash: string; parsed: LibraryBundleV1; diff: LibraryDiff | null;
+}): VersionRecord {
+  const changes = input.diff?.changes ?? [];
+  return {
+    version: input.version,
+    publishedAt: input.publishedAt,
+    bump: input.bump,
+    minimumBump: input.minimumBump,
+    note: input.note,
+    contentHash: input.contentHash,
+    bundleHash: input.bundleHash,
+    extractorVersion: input.parsed.extractorVersion,
+    pluginVersion: input.parsed.pluginVersion ?? 'unknown',
+    counts: input.diff?.counts ?? { major: 0, minor: 0, patch: 0 },
+    ...truncateChanges(changes),
+  };
+}
+
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(`libpub:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+
+  // Every request spends one token from the shared request budget before
+  // the Worker reads a byte of body, so a client that sends nothing but
+  // malformed or oversized bodies is throttled like any other caller. The
+  // publish budget below is charged only once the body says which it is.
+  if (!deps.requestLimiter.allow(`libreq:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+
+  const declared = Number(req.headers.get('content-length') ?? 0);
+  if (declared > MAX_BUNDLE_BYTES) {
+    return json(413, { error: 'bundle_too_large', size: declared, limit: MAX_BUNDLE_BYTES });
+  }
+  let bytes: ArrayBuffer;
+  try { bytes = await req.arrayBuffer(); } catch { return json(400, { error: 'invalid body' }); }
+  if (bytes.byteLength > MAX_BUNDLE_BYTES) {
+    return json(413, { error: 'bundle_too_large', size: bytes.byteLength, limit: MAX_BUNDLE_BYTES });
+  }
+  let body: { libraryId?: unknown; bundle?: unknown; dryRun?: unknown; bump?: unknown; note?: unknown; initialVersion?: unknown };
+  try { body = JSON.parse(new TextDecoder().decode(bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+
+  // A dry run opens the Publish screen every time it is shown, not just when
+  // the publisher commits, so it must not spend the same 20/min publish
+  // budget a real publish does. It shares the pull/versions request budget
+  // instead, so a dry run spends two requestLimiter tokens in total (the
+  // `libreq:` charge above plus this `libdry:` one): fine at 60/min, and
+  // simpler than exempting the second charge for one caller.
+  const limiter = body.dryRun === true ? deps.requestLimiter : deps.licenseLimiter;
+  const limiterKey = body.dryRun === true ? `libdry:${ip}` : `libpub:${ip}`;
+  if (!limiter.allow(limiterKey, deps.now())) return json(429, { error: 'rate_limited' });
+
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
   // A legacy plugin build that sends only a lapsed bearer gets the answer it
@@ -192,20 +277,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     return json(401, { error: 'license_not_active', reason: caller.licenseReason });
   }
 
-  const declared = Number(req.headers.get('content-length') ?? 0);
-  if (declared > MAX_BUNDLE_BYTES) {
-    return json(413, { error: 'bundle_too_large', size: declared, limit: MAX_BUNDLE_BYTES });
-  }
-  let bytes: ArrayBuffer;
-  try { bytes = await req.arrayBuffer(); } catch { return json(400, { error: 'invalid body' }); }
-  if (bytes.byteLength > MAX_BUNDLE_BYTES) {
-    return json(413, { error: 'bundle_too_large', size: bytes.byteLength, limit: MAX_BUNDLE_BYTES });
-  }
-  let body: { libraryId?: unknown; bundle?: unknown };
-  try { body = JSON.parse(new TextDecoder().decode(bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
-
+  let parsed: LibraryBundleV1;
   try {
-    parseLibraryBundle(body.bundle);
+    parsed = parseLibraryBundle(body.bundle);
   } catch (err) {
     if (err instanceof LibraryBundleError && err.code === 'unsupported_version') {
       const version = (body.bundle as { version?: unknown }).version;
@@ -227,8 +301,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const store = deps.libraryStore;
 
   const quota = deps.quotaFor(caller.tierIdentity, 'publish');
-  const respond = async (status: number, payload: Record<string, unknown>) =>
-    json(status, payload, quotaHeaders(await quota.snapshot(caller.tier)));
+  const respond = async (status: number, payload: Record<string, unknown>, extra: Record<string, string> = {}) =>
+    json(status, payload, { ...quotaHeaders(await quota.snapshot(caller.tier)), ...extra });
 
   let libraryId: string | null = null;
   let meta: LibraryMeta | null = null;
@@ -264,9 +338,49 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // to share a content hash. `meta.contentHash` is undefined on libraries
   // published before it was stored, which never equals a computed hash, so
   // those republish once and gain one.
-  if (libraryId && meta && meta.contentHash === contentHash) {
-    return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true });
+  // The stored version comes from the log. The meta's copy is a cache.
+  const log: VersionLog = libraryId ? await readVersionLog(store, libraryId) : { v: 1, records: [] };
+  const storedVersion = currentVersion(log);
+  const unchanged = Boolean(libraryId && meta && meta.contentHash === contentHash);
+
+  // The diff against what is stored, recomputed here on every publish and on
+  // every dry run. The client's own dry-run result is never trusted.
+  let diff: LibraryDiff | null = null;
+  if (libraryId && meta && !unchanged) {
+    const storedRaw = await store.get(bundleKey(libraryId));
+    if (storedRaw !== null) {
+      try {
+        diff = libraryDiff(parseLibraryBundle(storedRaw), parsed);
+      } catch {
+        // A stored bundle this reader cannot parse has no baseline; the
+        // publish still proceeds and the minimum is a patch.
+        diff = null;
+      }
+    }
   }
+
+  if (body.dryRun === true) {
+    if (unchanged) {
+      return json(200, {
+        currentVersion: storedVersion, unchanged: true, minimumBump: null, proposedVersion: null,
+        counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
+      });
+    }
+    if (storedVersion === null && body.initialVersion !== undefined && body.initialVersion !== null && !isSemver(body.initialVersion)) {
+      return json(400, { error: 'invalid_initial_version' });
+    }
+    return json(200, { unchanged: false, ...proposalFor(storedVersion, diff, body.initialVersion) });
+  }
+
+  if (unchanged && libraryId && meta) {
+    return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true, version: storedVersion },
+      storedVersion ? { 'X-Library-Version': storedVersion } : {});
+  }
+
+  const note = readNote(body.note);
+  if (note === undefined) return json(400, { error: 'invalid_note' });
+  const resolution = resolveBump({ storedVersion, minimumBump: diff?.minimumBump ?? null, bump: body.bump, initialVersion: body.initialVersion });
+  if (!resolution.ok) return json(resolution.status, resolution.body);
 
   // A create is a new library by definition, so its reservation must never
   // replay an earlier one: the id is generated up front and folded into the
@@ -290,8 +404,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const reserved = await quota.reserve(caller.tier, cacheKey);
   switch (reserved.kind) {
     case 'cached': {
-      const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string };
-      return respond(200, { ...prior, unchanged: true });
+      const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string; version?: string };
+      return respond(200, { ...prior, unchanged: true }, prior.version ? { 'X-Library-Version': prior.version } : {});
     }
     case 'pending':
       return respond(409, { error: 'publish_pending' });
@@ -310,37 +424,51 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
   try {
     if (libraryId && meta) {
+      const record = versionRecord({
+        version: resolution.version, publishedAt, bump: resolution.bump, minimumBump: resolution.minimumBump,
+        note, contentHash, bundleHash, parsed, diff,
+      });
       const next: LibraryMeta = {
-        ...meta, publishedAt, bundleHash, contentHash, size: bytes.byteLength, fileName,
+        ...meta, publishedAt, bundleHash, contentHash, size: bytes.byteLength, fileName, version: record.version,
         // Plants the Figma-identity fallback on a library that predates it,
         // the next time its real owner (who still holds whatever proved
         // ownership just now) publishes with a Figma identity present.
         ...(meta.figmaOwnerHash === undefined && caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
       };
-      // Bundle first: meta must never describe a bundle that is not there yet.
-      await store.put(bundleKey(libraryId), stored);
+      // Bundles, then the log, then the meta: the meta must never describe a
+      // bundle or a version that is not there yet.
+      const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
-      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt }));
-      deps.log('library_publish', { libraryId, size: bytes.byteLength });
-      return respond(200, { libraryId, publishedAt });
+      await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
+      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
+      deps.log('library_publish', { libraryId, size: bytes.byteLength, version: record.version, bump: record.bump });
+      return respond(200, {
+        libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
+      }, { 'X-Library-Version': record.version });
     }
     const id = newId as string; // set above whenever libraryId is null
     const pullKey = newPullKey();
+    const record = versionRecord({
+      version: resolution.version, publishedAt, bump: resolution.bump, minimumBump: resolution.minimumBump,
+      note, contentHash, bundleHash, parsed, diff: null,
+    });
     const created: LibraryMeta = {
       licenseId: caller.tierIdentity, publishedAt, bundleHash, contentHash,
-      size: bytes.byteLength, fileName,
+      size: bytes.byteLength, fileName, version: record.version,
       ...(caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
     };
-    await store.put(bundleKey(id), stored);
+    await writeVersion(store, id, stored, { v: 1, records: [] }, record);
     await Promise.all([
       store.put(metaKey(id), JSON.stringify(created)),
       store.put(keyRecord(id), sha256(pullKey)),
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
-    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt }));
-    deps.log('library_publish', { libraryId: id, size: bytes.byteLength, created: true });
-    return respond(201, { libraryId: id, pullKey, publishedAt });
+    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
+    deps.log('library_publish', { libraryId: id, size: bytes.byteLength, created: true, version: record.version });
+    return respond(201, {
+      libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
+    }, { 'X-Library-Version': record.version });
   } catch (err) {
     await quota.release(cacheKey);
     throw err;
@@ -361,9 +489,8 @@ export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: s
   return json(200, { pullKey });
 }
 
-export async function handlePull(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
-  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+/** The meta when the bearer is this library's current pull key, else the error Response. Shared by pull and versions. */
+async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string): Promise<LibraryMeta | Response> {
   const auth = req.headers.get('Authorization') ?? '';
   const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!PULL_KEY_RE.test(key)) return json(401, { error: 'invalid_key' });
@@ -374,11 +501,32 @@ export async function handlePull(req: Request, deps: HandlerDeps, libraryId: str
   // Digest-vs-digest comparison: timing over two fixed-length hashes reveals
   // nothing about the key itself, so plain equality is safe here.
   if (keyHash === null || sha256(key) !== keyHash) return json(401, { error: 'invalid_key' });
+  return meta;
+}
+
+export async function handleVersions(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  const meta = await pullAuthorized(req, deps, libraryId);
+  if (meta instanceof Response) return meta;
+  const raw = (await deps.libraryStore.get(versionsKey(libraryId))) ?? JSON.stringify({ v: 1, records: [] });
+  const etag = `"${sha256(raw)}"`;
+  const headers: Record<string, string> = { ETag: etag, 'content-type': 'application/json' };
+  if (req.headers.get('If-None-Match') === etag) return new Response(null, { status: 304, headers });
+  return new Response(raw, { status: 200, headers });
+}
+
+export async function handlePull(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  const meta = await pullAuthorized(req, deps, libraryId);
+  if (meta instanceof Response) return meta;
   const headers: Record<string, string> = {
     ETag: `"${meta.bundleHash}"`,
     'X-Published-At': meta.publishedAt,
     'content-type': 'application/json',
   };
+  if (meta.version) headers['X-Library-Version'] = meta.version;
   if (req.headers.get('If-None-Match') === `"${meta.bundleHash}"`) {
     return new Response(null, { status: 304, headers });
   }
