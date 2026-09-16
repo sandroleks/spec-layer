@@ -30,7 +30,11 @@ export default defineConfig([
     files: ["packages/extractor/src/yaml.ts"],
     rules: { "no-control-regex": "off" },
   },
+  // `docs/` is a local scratch tree that .gitignore excludes, so nothing in it
+  // reaches CI. Linting it anyway only ever breaks the local gate over a file
+  // the repository does not carry.
   globalIgnores([
+    "docs/**",
     "**/coverage/**",
     "**/dist/**",
     "**/node_modules/**",
