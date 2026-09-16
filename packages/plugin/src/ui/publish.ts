@@ -15,7 +15,7 @@ import {
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
 import { pluginBuild, generatedGuidelines } from './actions';
-import { PROXY_URL, authHeaders, type ProxyAuth } from './proxy';
+import { PROXY_URL, authHeaders, isLibraryId, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { buildSkillFiles, skillZipFilename } from './skillZip';
 import { downloadBytes, zipFiles } from './download';
@@ -157,6 +157,7 @@ export interface PublishResult {
 
 const NO_IDENTITY = 'Publishing needs a signed-in Figma account or a license key.';
 const ROTATE_NO_IDENTITY = 'Rotating the key needs a signed-in Figma account or a license key.';
+const ROTATE_BAD_ID = 'The library id stored for this file is not valid, so the key cannot be rotated.';
 
 const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Free plans publish one Figma file.';
 
@@ -332,6 +333,9 @@ export async function rotatePullKey(
 ): Promise<{ kind: 'rotated'; pullKey: string } | { kind: 'error'; message: string }> {
   const headers = authHeaders(auth);
   if (!headers) return { kind: 'error', message: ROTATE_NO_IDENTITY };
+  // Same guard as the history fetch: the id is interpolated into the path
+  // while the caller's key rides in the header.
+  if (!isLibraryId(libraryId)) return { kind: 'error', message: ROTATE_BAD_ID };
   const doFetch = fetcher ?? fetch;
   let res: Response;
   try {

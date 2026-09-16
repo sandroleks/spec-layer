@@ -8,7 +8,7 @@
  * on a 304.
  */
 import type { VersionLog } from '@spec-layer/extractor';
-import { PROXY_URL } from './proxy';
+import { PROXY_URL, isLibraryId } from './proxy';
 
 export interface HistoryState {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'gone' | 'noLibrary' | 'noKey';
@@ -26,6 +26,7 @@ export function setHistoryHost(next: { repaint(): void }): void { host = next; }
 export function historyState(): Readonly<HistoryState> { return state; }
 
 const UNREACHABLE = 'Could not reach the publish service. Check your connection and try again.';
+const BAD_LIBRARY_ID = 'The library id stored for this file is not valid, so the history cannot be loaded.';
 
 export async function fetchVersionLog(opts: {
   libraryId: string; pullKey: string; etag: string | null; fetcher?: typeof fetch;
@@ -36,6 +37,9 @@ export async function fetchVersionLog(opts: {
   | { kind: 'error'; message: string }
 > {
   const doFetch = opts.fetcher ?? fetch;
+  // The id goes into the path and the pull key into the header, so an id that
+  // is not the shape the proxy issues never becomes a request.
+  if (!isLibraryId(opts.libraryId)) return { kind: 'error', message: BAD_LIBRARY_ID };
   let res: Response;
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries/${opts.libraryId}/versions`, {

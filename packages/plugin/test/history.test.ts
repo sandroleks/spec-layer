@@ -130,11 +130,11 @@ describe('history controller', () => {
 
   it('loads the log with the pull key and remembers the ETag', async () => {
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_1/versions');
+      expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_000000000000000000000001/versions');
       expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer sl_key');
       return response(200, LOG, { ETag: '"abc"' });
     }) as unknown as typeof fetch;
-    await history.onHistoryOpen('lib_1', 'sl_key', fetcher);
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', fetcher);
     expect(history.historyState()).toMatchObject({ status: 'ready', log: LOG, etag: '"abc"' });
     expect(repaints).toBe(2);
   });
@@ -146,19 +146,19 @@ describe('history controller', () => {
         expect((init?.headers as Record<string, string>)['If-None-Match']).toBe('"abc"');
         return response(304, null);
       }) as unknown as typeof fetch;
-    await history.onHistoryOpen('lib_1', 'sl_key', fetcher);
-    await history.onHistoryOpen('lib_1', 'sl_key', fetcher);
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', fetcher);
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', fetcher);
     expect(history.historyState()).toMatchObject({ status: 'ready', log: LOG });
   });
 
   it('names the no-library, no-key, gone, and error states honestly', async () => {
     await history.onHistoryOpen(null, null);
     expect(history.historyState().status).toBe('noLibrary');
-    await history.onHistoryOpen('lib_1', null);
+    await history.onHistoryOpen('lib_000000000000000000000001', null);
     expect(history.historyState().status).toBe('noKey');
-    await history.onHistoryOpen('lib_1', 'sl_key', vi.fn(async () => response(404, { error: 'not_found' })) as unknown as typeof fetch);
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', vi.fn(async () => response(404, { error: 'not_found' })) as unknown as typeof fetch);
     expect(history.historyState().status).toBe('gone');
-    await history.onHistoryOpen('lib_1', 'sl_key', vi.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch);
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', vi.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch);
     expect(history.historyState()).toMatchObject({ status: 'error', message: 'Could not reach the publish service. Check your connection and try again.' });
   });
 
