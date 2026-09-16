@@ -49,7 +49,7 @@ written, and are not an invitation to add more.
 
 ```bash
 npm run check                        # full local gate
-npm test                             # vitest run (133 files, 2507 tests, 9 todo, ~17s)
+npm test                             # vitest run (146 files, 2952 tests, 9 todo, ~11s)
 npm run typecheck
 npm run lint
 npm run build:plugin                 # runs the brand build first, so a contrast failure stops it
@@ -173,14 +173,19 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-09)
+## Where things stand (2026-09-16)
 
-`main` is clean, green, and fully pushed: 133 test files, 2507 tests passing,
-9 todo.
+`main` is clean, green, and fully pushed: 146 test files, 2952 tests passing,
+9 todo. `npm audit` reports no vulnerabilities, and `npm run check:site-live`
+passes, so `spec-layer.com/schemas/**` serves exactly the committed bytes.
 
-5.0.0 is shipped on all three surfaces: the Figma Community listing, the
-GitHub release on tag `v5.0.0`, and `spec-layer@0.7.0` on npm. The listing
-serves schema `5.1.0`, so a pulled sidecar now carries `code_syntax`.
+The CLI is shipped and the plugin is not. `spec-layer@0.9.0` is the published
+`latest` on npm. `packages/plugin/manifest.json` reads 5.1.0 and `CHANGELOG.md`
+dates its 5.1.0 section 2026-09-10, but `v5.0.0` is still the only release tag
+in the repository, so 5.1.0 was merged and never cut. Whether the Figma
+Community listing serves 5.1.0 has not been verified. Five further pull
+requests (#59 to #63) landed after that section was written and sit under
+`[Unreleased]`.
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
