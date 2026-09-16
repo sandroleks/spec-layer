@@ -49,7 +49,7 @@ written, and are not an invitation to add more.
 
 ```bash
 npm run check                        # full local gate
-npm test                             # vitest run (146 files, 2952 tests, 9 todo, ~11s)
+npm test                             # vitest run (139 files, 2761 tests, 9 todo, ~11s)
 npm run typecheck
 npm run lint
 npm run build:plugin                 # runs the brand build first, so a contrast failure stops it
@@ -175,7 +175,7 @@ descriptions, and diagnostics before it can be committed.
 
 ## Where things stand (2026-09-16)
 
-`main` is clean, green, and fully pushed: 146 test files, 2952 tests passing,
+`main` is clean, green, and fully pushed: 139 test files, 2761 tests passing,
 9 todo. `npm audit` reports no vulnerabilities, and `npm run check:site-live`
 passes, so `spec-layer.com/schemas/**` serves exactly the committed bytes.
 
