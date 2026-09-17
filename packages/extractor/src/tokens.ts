@@ -147,6 +147,14 @@ const RADIUS_INDIVIDUAL_MAP: Record<string, string> = {
   bottomRightRadius: 'border-bottom-right-radius',
 };
 
+/** Every node property a radius can be bound on. One binding on any of them
+ *  means the radius is tokenised, whichever corner Figma put it on. Shared
+ *  with rawValues.ts so the gap report and the raw-value table cannot
+ *  disagree about the same node. */
+export const RADIUS_BINDINGS: ReadonlySet<string> = new Set([
+  'cornerRadius', 'topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius',
+]);
+
 const PADDING_RAW_PROPS = new Set([
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'verticalPadding', 'horizontalPadding',
 ]);
@@ -751,7 +759,7 @@ export function extractGaps(root: SerializedNode): Gap[] {
     if (l.itemSpacing !== undefined && !bound.has('itemSpacing')) {
       pushGap(part, path, simpleProperty('itemSpacing'), 'hardcoded-value', l.itemSpacing);
     }
-    if (l.cornerRadius !== undefined && !bound.has('cornerRadius') && !bound.has('topLeftRadius')) {
+    if (l.cornerRadius !== undefined && ![...RADIUS_BINDINGS].some((p) => bound.has(p))) {
       pushGap(part, path, simpleProperty('cornerRadius'), 'hardcoded-value', l.cornerRadius);
     }
     if (!PADDING_PROPS.some((p) => bound.has(p))) {
