@@ -137,7 +137,7 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
 export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number): FrameNode {
   const grid = vstack(16);
   grid.resize(contentWidth, 1);
-  grid.counterAxisSizingMode = 'AUTO';
+  grid.primaryAxisSizingMode = 'AUTO';
   pairs.forEach((pair, i) => {
     const row = hstack(16);
     tagSlot(row, 'guidelinePair');

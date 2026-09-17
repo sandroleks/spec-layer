@@ -83,4 +83,16 @@ describe('docBlocks', () => {
     const table = buildPropertiesTable([{ name: 'a', type: 'Text', values: '', defaultValue: '', description: null }], false, 768) as unknown as FakeFrame;
     expect(table.textChars()).toEqual(['PROPERTY', 'TYPE', 'VALUES', 'DEFAULT', 'a', 'Text', '', '']);
   });
+
+  it('lets the guideline grid hug its height instead of clipping to a 1px placeholder', () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: 'It confuses screen readers.' } },
+      { do: { rule: 'Give it a large tap target.', reason: 'Small targets miss taps.' }, dont: null },
+    ], 768) as unknown as FakeFrame;
+    expect(grid.width).toBe(768);
+    expect(grid.height).toBeGreaterThan(1);
+    const rows = grid.children as FakeFrame[];
+    const expectedHeight = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(rows.length - 1, 0) * 16;
+    expect(grid.height).toBe(expectedHeight);
+  });
 });
