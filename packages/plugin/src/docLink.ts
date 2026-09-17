@@ -430,26 +430,18 @@ function commonValid(j: { contentHash?: unknown; selfHash?: unknown; generatedAt
     && typeof j.pluginVersion === 'string';
 }
 
-/** Ids a legacy mapping produces (e.g. 'properties'). ALL_SECTIONS does not
- *  list these yet (Task 8 adds their renderer), so without this a freshly
- *  migrated id would immediately fail the "known" check that runs on every
- *  subsequent parse. */
-const LEGACY_TARGET_IDS: ReadonlySet<string> = new Set(Object.values(LEGACY_SECTION_IDS).flat());
-
-/** Legacy ids expand to their successors first, even where the old id also
- *  still happens to render (`configuration` and `interactions` are not
- *  removed from ALL_SECTIONS until Task 8) — a stored legacy id must always
- *  converge on the new vocabulary rather than surviving unmapped because it
- *  is still technically renderable. Anything else known, or one of the
- *  mapping's own target ids, passes through; anything unrecognized drops.
- *  Order is preserved and no id appears twice. */
+/** Legacy ids expand to their successors first: a stored legacy id must always
+ *  converge on the new vocabulary rather than surviving unmapped. Every
+ *  successor (`properties`, `pointer`, `keyboard`) is itself in ALL_SECTIONS,
+ *  so `KNOWN_SECTION_IDS` alone covers the pass-through case. Anything else
+ *  known passes through; anything unrecognized drops. Order is preserved and
+ *  no id appears twice. */
 function migrateSectionIds(raw: unknown[]): SectionId[] {
   const out: SectionId[] = [];
   for (const x of raw) {
     if (typeof x !== 'string') continue;
     const legacy = LEGACY_SECTION_IDS[x];
-    const mapped: SectionId[] = legacy
-      ?? (KNOWN_SECTION_IDS.has(x) || LEGACY_TARGET_IDS.has(x) ? [x as SectionId] : []);
+    const mapped: SectionId[] = legacy ?? (KNOWN_SECTION_IDS.has(x) ? [x as SectionId] : []);
     for (const id of mapped) if (!out.includes(id)) out.push(id);
   }
   return out;

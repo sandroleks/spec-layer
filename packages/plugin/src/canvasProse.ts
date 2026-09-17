@@ -118,6 +118,27 @@ function readBullets(container: ProseNodeLike): string[] {
 
 const LIST_SLOTS = new Set<ProseSlot>(['whenToUse', 'whenNotToUse', 'pointer', 'semantics', 'content']);
 
+/** Exactly what `anatomySection.ts` writes before the note. */
+const SHOWN_WHEN_LEAD = '  ·  Shown when ';
+const SHOWN_WHEN_TAIL = ' is true';
+
+/**
+ * Drop the trailing "  ·  Shown when <prop> is true" note the anatomy legend
+ * appends, so it never reads back as part of an authored role.
+ *
+ * indexOf on the writer's own separator rather than
+ * `/\s+·\s+Shown when .+ is true$/`: that pattern's unanchored leading `\s+`
+ * backtracks quadratically over a whitespace run, and this runs on
+ * user-editable canvas text on the main thread.
+ */
+function stripShownWhenNote(role: string): string {
+  if (!role.endsWith(SHOWN_WHEN_TAIL)) return role;
+  const at = role.lastIndexOf(SHOWN_WHEN_LEAD);
+  // A note needs a property name between the lead-in and the tail.
+  if (at < 0 || at + SHOWN_WHEN_LEAD.length >= role.length - SHOWN_WHEN_TAIL.length) return role;
+  return role.slice(0, at).trim();
+}
+
 /** Walk a Section and collect what its editorial slots currently say. */
 export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   const lists = new Map<string, string[]>();
@@ -193,7 +214,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         else if (chars.startsWith(`${shown}: `)) role = chars.slice(shown.length + 2).trim();
         else { const i = chars.indexOf(': '); if (i >= 0) role = chars.slice(i + 2).trim(); }
         // A revealed part's "Shown when X is true" note is not editorial.
-        if (role) role = role.replace(/\s+·\s+Shown when .+ is true$/, '').trim();
+        if (role) role = stripShownWhenNote(role);
         if (role) parts.push({ name: key, role });
         return;
       }

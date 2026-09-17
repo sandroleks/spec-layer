@@ -113,7 +113,8 @@ none of the reasoning above.
 - **Empty sections are left out, and the result says so.** A section with
   nothing to show, or an AI section when AI writing is off, is not drawn. No
   "To be written." or "None." appears on canvas. The result message reads,
-  for example, "Docs created. Left out Keyboard: nothing to show." A Library
+  for example, "Docs created. Left out Keyboard: nothing to show." Updating a
+  document from the Library reports left-out sections the same way. A Library
   row that needs a rebuild now says that frames are rebuilt in the new layout
   and written sections are kept. Stored prose moves to a structured shape;
   a document written by an earlier build upgrades on read, and its keyboard

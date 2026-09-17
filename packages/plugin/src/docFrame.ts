@@ -216,17 +216,11 @@ async function buildTokenTable(
     sizeCol(cell, i);
   }
 
-  if (rows.length === 0) {
-    const empty = hstack(0);
-    table.appendChild(empty);
-    empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(palette.divider);
-    empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, palette.muted);
-    empty.appendChild(cell);
-    cell.layoutSizingHorizontal = 'FILL';
-    return table;
-  }
+  // No "None." row. A variant card with no rows is a non-default variant
+  // whose tokens all match the default, and the "Identical to default (N
+  // tokens)" note the caller appends already says so; printing "None." under
+  // it would read as "this variant binds no tokens", which is the opposite.
+  if (rows.length === 0) return table;
 
   let currentPart: string | null = null;
   for (const r of rows) {

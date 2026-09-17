@@ -20,11 +20,31 @@ describe('fanOutPins', () => {
   it('returns an empty list for no pins', () => {
     expect(fanOutPins([], 18, 6)).toEqual([]);
   });
+
+  it('does not spread one run into the pin next to it', () => {
+    // Regression: a single grouping pass returned [0, 24, 40] here, whose last
+    // two pins are 16 apart against a 24 step. Pooling merges all three.
+    const out = fanOutPins([10, 14, 40], 18, 6);
+    for (let i = 1; i < out.length; i += 1) expect(out[i] - out[i - 1]).toBeGreaterThanOrEqual(24);
+    // All three pool into one run, spread at 24 and centred on their mean
+    // (21.33, rounded per pin).
+    expect(out).toEqual([-3, 21, 45]);
+  });
+
+  it('leaves a pin that clears the spread run exactly where it was', () => {
+    const out = fanOutPins([10, 14, 100], 18, 6);
+    expect(out).toEqual([0, 24, 100]);
+  });
 });
 
 describe('scaleNote', () => {
-  it('is null at true size and names the rounded percentage otherwise', () => {
+  beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
+  afterEach(() => uninstallFakeFigma());
+
+  it('is null at true size and names the floored percentage otherwise', () => {
     expect(scaleNote(1)).toBeNull();
+    // Floored, so a diagram that did shrink never claims true size.
+    expect((scaleNote(0.996) as unknown as FakeText).characters).toBe('Shown at 99%');
   });
 });
 

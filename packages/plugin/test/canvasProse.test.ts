@@ -141,6 +141,18 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(doc).anatomyParts).toEqual([{ name: 'Label', role: 'Names it.' }]);
   });
 
+  it('reads a revealed part\'s role without the "Shown when" note the legend appends', () => {
+    const doc = frame([
+      keyed('anatomyPart', 'Required', [text('Required: Marks the field as mandatory.  ·  Shown when isRequired is true')]),
+      // No note, and a role that merely ends in "is true": nothing to strip.
+      keyed('anatomyPart', 'Label', [text('Label: Reads back when the statement is true')]),
+    ]);
+    expect(readCanvasProse(doc).anatomyParts).toEqual([
+      { name: 'Required', role: 'Marks the field as mandatory.' },
+      { name: 'Label', role: 'Reads back when the statement is true' },
+    ]);
+  });
+
   it('does not invent a role from a nested part whose component name contains a colon', () => {
     // The legend prints the DISPLAY name ("Icon leading") while the tag keeps
     // the raw key ("iconLeading"); the nested note here ("Icon: 24") itself

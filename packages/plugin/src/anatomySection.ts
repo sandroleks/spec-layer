@@ -28,32 +28,54 @@ function clamp01(n: number): number { return n < 0 ? 0 : n > 1 ? 1 : n; }
  * step, centred on the run's mean, in input order, so the numbers still read
  * left to right (or top to bottom) and a far-away pin is not dragged along.
  * Pure, so it can be tested without Figma.
+ *
+ * Pool adjacent violators, not a single grouping pass. A single pass grouped
+ * runs by the ORIGINAL centres and so could spread one run straight into the
+ * next pin: `fanOutPins([10, 14, 40], 18, 6)` returned `[0, 24, 40]`, whose
+ * last two pins are 16 apart against a 24 step. Pooling merges a block with
+ * its neighbour whenever the spread would crowd it and re-centres over the
+ * merged block, which reaches a fixed point in one left-to-right sweep. On
+ * every input the single pass got right, this returns the same answer: a
+ * block of one keeps its exact centre, and a block of several is the same
+ * "evenly at `step`, centred on the mean" placement.
  */
 export function fanOutPins(centers: number[], pinSize: number, gap: number): number[] {
   const step = pinSize + gap;
   const order = centers.map((c, i) => ({ c, i })).sort((a, b) => a.c - b.c || a.i - b.i);
-  const placed = order.map((o) => o.c);
-  // Group consecutive pins closer than one step into runs.
-  let start = 0;
-  while (start < order.length) {
-    let end = start;
-    while (end + 1 < order.length && order[end + 1].c - order[end].c < step) end += 1;
-    if (end > start) {
-      const mean = order.slice(start, end + 1).reduce((s, o) => s + o.c, 0) / (end - start + 1);
-      const first = mean - ((end - start) * step) / 2;
-      for (let k = start; k <= end; k += 1) placed[k] = Math.round(first + (k - start) * step);
+  // Each block covers order[start .. start+count-1] and holds the sum of its
+  // members' `c - k * step`. That offset turns "at least `step` apart" into
+  // "non-decreasing", so merging out-of-order neighbours is all that is left.
+  const blocks: { start: number; count: number; sum: number }[] = [];
+  order.forEach((o, k) => {
+    blocks.push({ start: k, count: 1, sum: o.c - k * step });
+    while (blocks.length > 1) {
+      const last = blocks[blocks.length - 1];
+      const prev = blocks[blocks.length - 2];
+      if (prev.sum / prev.count <= last.sum / last.count) break;
+      blocks.pop();
+      prev.count += last.count;
+      prev.sum += last.sum;
     }
-    start = end + 1;
+  });
+  const placed = new Array<number>(order.length);
+  for (const b of blocks) {
+    const base = b.sum / b.count;
+    for (let k = b.start; k < b.start + b.count; k += 1) {
+      // A lone pin keeps its measured centre exactly; only a spread run rounds.
+      placed[k] = b.count === 1 ? order[k].c : Math.round(base + k * step);
+    }
   }
   const out = new Array<number>(centers.length);
   order.forEach((o, k) => { out[o.i] = placed[k]; });
   return out;
 }
 
-/** `Shown at 60%` under a diagram that had to shrink; null at true size. */
+/** `Shown at 60%` under a diagram that had to shrink; null at true size.
+ *  Floored, not rounded: 0.996 is not true size, and "Shown at 100%" would
+ *  say it was. */
 export function scaleNote(scale: number): TextNode | null {
   if (scale >= 1) return null;
-  return makeText(`Shown at ${Math.round(scale * 100)}%`, 'Regular', 12, palette.muted, 145);
+  return makeText(`Shown at ${Math.floor(scale * 100)}%`, 'Regular', 12, palette.muted, 145);
 }
 
 function numberBadge(n: string, size: number): FrameNode {

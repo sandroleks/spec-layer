@@ -183,6 +183,29 @@ describe('docFrame', () => {
     expect(node.getRangeFill(codeStart)).toEqual(solidFill(palette.onHeader));
   });
 
+  it('draws no "None." row for a variant whose tokens all match the default', async () => {
+    // A non-default variant with no differing bindings produces an empty token
+    // table. The "Identical to default" note under it is what explains that;
+    // a "None." row would read as "this variant binds nothing".
+    const twoVariants = {
+      ...spec,
+      props: [{ name: 'type', kind: 'variant', options: ['Primary', 'Secondary'], default: 'Primary' }],
+      variants: [{ prop: 'type', values: ['Primary', 'Secondary'] }],
+      variantInstances: [
+        { nodeId: '1:10', name: 'type=Primary', values: { type: 'Primary' } },
+        { nodeId: '1:11', name: 'type=Secondary', values: { type: 'Secondary' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      twoVariants, null, new Set<SectionId>(['tokens']), new Set(['1:10', '1:11']),
+      { measureViews: [], aiEnabled: false },
+    );
+    const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
+    const chars = section.children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(chars.join('\n')).toContain('Identical to default');
+    expect(chars).not.toContain('None.');
+  });
+
   it('keeps the Overview as a body section when lifting it would leave no Usage frame', async () => {
     // The subtitle rides the Usage header. A one-sentence description on a
     // component with nothing else in Usage would otherwise lift away into a
@@ -228,13 +251,19 @@ function fakeMeasureComponent(width: number, height = 100): Record<string, unkno
   };
 }
 
+/** The instance the last buildMeasureDoc created, so a test can assert what
+ *  was (or was not) done to it. */
+let lastMeasureInstance: { rescaleCalls: number[] } | null = null;
+
 function fakeMeasureInstance(width: number, height: number): Record<string, unknown> {
+  const rescaleCalls: number[] = [];
   const inst: Record<string, unknown> = {
-    id: 'measure-inst', x: 0, y: 0, width, height,
+    id: 'measure-inst', x: 0, y: 0, width, height, rescaleCalls,
     setExplicitVariableModeForCollection: () => {},
     remove: () => {},
   };
-  inst.rescale = (s: number) => { inst.width = width * s; inst.height = height * s; };
+  inst.rescale = (s: number) => { rescaleCalls.push(s); inst.width = width * s; inst.height = height * s; };
+  lastMeasureInstance = inst as unknown as { rescaleCalls: number[] };
   return inst;
 }
 
@@ -271,6 +300,7 @@ function findText(root: unknown, pattern: RegExp): string | null {
 }
 
 async function buildMeasureDoc(componentWidth: number): Promise<FakeSection> {
+  lastMeasureInstance = null;
   installFakeFigma({
     createFrame: () => looseFrame(),
     getNodeByIdAsync: async (id: string) =>
@@ -294,5 +324,110 @@ describe('docFrame measure section', () => {
   it('prints no scale note when the component fits at true size', async () => {
     const section = await buildMeasureDoc(200);
     expect(findText(section, /^Shown at \d+%$/)).toBeNull();
+  });
+
+  it('never upscales a narrow component: rescale is not called at all', async () => {
+    // The absent scale note above passes just as well if the code upscaled and
+    // then refused to mention it, so assert on the instance itself.
+    await buildMeasureDoc(200);
+    expect(lastMeasureInstance).not.toBeNull();
+    expect(lastMeasureInstance!.rescaleCalls).toEqual([]);
+  });
+
+  it('scales a wide component down, and only down', async () => {
+    await buildMeasureDoc(3000);
+    expect(lastMeasureInstance!.rescaleCalls).toHaveLength(1);
+    expect(lastMeasureInstance!.rescaleCalls[0]).toBeLessThan(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The keyed writing slots on a component that has both variant axes and a
+// state matrix. `variantsIntro` is one blob, `variantsGuide` is keyed by
+// option value and `stateMeaning` by state name, so each has to survive the
+// build -> read-back -> merge -> rebuild loop under its own key. This is the
+// seam where a guide entry naming an option the spec no longer has used to
+// live forever, so the fixture is worth holding onto.
+// ---------------------------------------------------------------------------
+
+/** A component with a non-state axis (`type`) and a state axis (`State`), so
+ *  the Variants matrix and the States table are both drawn. */
+const variantSpec = {
+  name: 'button', figmaKey: '', figmaFile: 'f', figmaFileName: 'DS', figmaNode: '3:1',
+  description: '', documentationLinks: [],
+  anatomy: [{ name: 'Label', nested: false, id: '3:4', depth: 0, type: 'TEXT', path: 'Container/Label' }],
+  anatomyComponentId: '3:2',
+  props: [
+    { name: 'type', kind: 'variant', options: ['Primary', 'Secondary'], default: 'Primary' },
+    { name: 'State', kind: 'variant', options: ['Default', 'Hover'], default: 'Default' },
+  ],
+  variants: [
+    { prop: 'type', values: ['Primary', 'Secondary'] },
+    { prop: 'State', values: ['Default', 'Hover'] },
+  ],
+  variantInstances: [
+    { nodeId: '3:10', name: 'Primary/Default', values: { type: 'Primary', State: 'Default' } },
+    { nodeId: '3:11', name: 'Primary/Hover', values: { type: 'Primary', State: 'Hover' } },
+    { nodeId: '3:12', name: 'Secondary/Default', values: { type: 'Secondary', State: 'Default' } },
+    { nodeId: '3:13', name: 'Secondary/Hover', values: { type: 'Secondary', State: 'Hover' } },
+  ],
+  states: ['Default', 'Hover'],
+  tokens: [
+    { part: 'Label', path: 'Container/Label', property: 'fill', ...ident('color/text'), conditions: {} },
+    { part: 'Label', path: 'Container/Label', property: 'fill', ...ident('color/text/hover'), conditions: { State: ['Hover'] } },
+  ],
+  rawValues: [], related: [], gaps: [], layout: [], nodeEffects: [],
+} as unknown as IntermediateSpec;
+
+const variantProse: ProseV2 = {
+  v: 2,
+  variantsIntro: 'Type carries the emphasis; state is not a type.',
+  variantsGuide: [
+    { name: 'Primary', guidance: 'the one action you want taken.' },
+    { name: 'Secondary', guidance: 'everything else on the same surface.' },
+  ],
+  states: [
+    { name: 'Default', whenItApplies: 'Nothing is pointing at the button.' },
+    { name: 'Hover', whenItApplies: 'A pointer is over the button.' },
+  ],
+};
+
+async function buildVariantDoc(p: ProseV2 | null): Promise<FakeSection> {
+  const model = buildDocModel(
+    variantSpec, p, new Set<SectionId>(['variants', 'states']), new Set(),
+    { measureViews: [], aiEnabled: true },
+  );
+  return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
+}
+
+describe('docFrame variant and state writing slots', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('writes the intro, the per-option guide and the per-state meaning, and reads all three back', async () => {
+    const read = readCanvasProse(asNode(await buildVariantDoc(variantProse)));
+    expect(read.variantsIntro).toBe(variantProse.variantsIntro);
+    expect(read.variantsGuide).toEqual(variantProse.variantsGuide);
+    expect(read.states).toEqual(variantProse.states);
+  });
+
+  it('is a fixed point across merge and rebuild', async () => {
+    const first = readCanvasProse(asNode(await buildVariantDoc(variantProse)));
+    const second = readCanvasProse(asNode(await buildVariantDoc(mergeProse(null, first))));
+    expect(second).toEqual(first);
+  });
+
+  it('drops a stored guide entry whose option value the spec no longer has', async () => {
+    const stale: ProseV2 = {
+      ...variantProse,
+      variantsGuide: [
+        ...(variantProse.variantsGuide ?? []),
+        { name: 'Ghost', guidance: 'renamed away since this was written.' },
+      ],
+    };
+    const section = await buildVariantDoc(stale);
+    expect(section.children.flatMap((f) => (f as FakeFrame).textChars()).join('\n'))
+      .not.toContain('renamed away since this was written.');
+    expect(readCanvasProse(asNode(section)).variantsGuide).toEqual(variantProse.variantsGuide);
   });
 });

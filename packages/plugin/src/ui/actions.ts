@@ -402,7 +402,12 @@ async function assembleDocFor(
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
-    aiEnabled: state.aiEnabled,
+    // The SAME flag the model was built with, not the raw checkbox. Update
+    // feeds this back into buildDocModel, and that is what decides whether an
+    // empty AI section reads "AI writing is off" or "nothing to show"; storing
+    // `state.aiEnabled` here let a user with the box ticked but no licence or
+    // Figma identity get one classification on Create and the other on Update.
+    aiEnabled: canGenerate(state),
     anatomyView: 'diagram',
     measureViews: state.measureViews,
     includeHidden: state.includeHidden,
@@ -487,7 +492,7 @@ export type DocSource = {
 };
 
 export async function updateFromSource(
-  _state: UiState,
+  state: UiState,
   src: DocSource,
   ui: BuildPresenter,
 ): Promise<boolean> {
@@ -506,6 +511,9 @@ export async function updateFromSource(
       includeHidden: src.config.includeHidden,
       aiEnabled: src.config.aiEnabled,
     });
+    // Same record the Create path keeps, so the Library's completion message
+    // can name the sections it left out instead of staying silent about them.
+    state.lastOmitted = model.omitted;
     send({
       type: 'renderDocFrame',
       model,

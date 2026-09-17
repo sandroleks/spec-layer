@@ -10,6 +10,7 @@ vi.mock('../src/ui/ai', () => ({
 
 import { generateProse } from '../src/ui/ai';
 import {
+  canGenerate,
   createDocFrame,
   createState,
   updateFromSource,
@@ -165,6 +166,32 @@ describe('updateFromSource', () => {
     expect('prose' in msg).toBe(false);
   });
 
+  it('records what it left out, so the Library can report it the way Create does', async () => {
+    const ui = fakePresenter();
+    const state = createState();
+    // AI is off for this doc, so its AI-only sections are left out with that
+    // reason rather than silently missing.
+    const source: DocSource = {
+      ...goodSource,
+      config: { ...goodSource.config, sections: ['definition', 'whenToUse', 'dosDonts'], aiEnabled: false },
+      prose: null,
+    };
+    await expect(updateFromSource(state, source, ui)).resolves.toBe(true);
+    expect(state.lastOmitted.map((o) => [o.id, o.reason])).toEqual([
+      ['definition', 'nothingToShow'],
+      ['whenToUse', 'aiOff'],
+      ['dosDonts', 'aiOff'],
+    ]);
+  });
+
+  it('clears the record when a rebuild leaves nothing out', async () => {
+    const ui = fakePresenter();
+    const state = createState();
+    state.lastOmitted = [{ id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' }];
+    await expect(updateFromSource(state, goodSource, ui)).resolves.toBe(true);
+    expect(state.lastOmitted).toEqual([]);
+  });
+
   it('sends the hash projection as the baseline, and its hash is the message contentHash', async () => {
     const ui = fakePresenter();
     await updateFromSource(createState(), goodSource, ui);
@@ -239,5 +266,41 @@ describe('createDocFrame', () => {
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
       { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
     ]);
+  });
+
+  it('persists the flag the model was built with, so Update classifies omissions the same way', async () => {
+    // The checkbox is on but there is no licence and no Figma identity, so
+    // canGenerate is false and the build ran without AI. Update reads this
+    // stored flag back; persisting the raw checkbox instead made the same doc
+    // read 'nothing to show' on Create and 'AI writing is off' on Update.
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    state.aiEnabled = true;
+    state.licenseKey = null;
+    state.figmaUserId = null;
+    expect(canGenerate(state)).toBe(false);
+
+    await createDocFrame(state, { sections: new Set(['definition']), variantIds: new Set() }, fakePresenter());
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      config: { aiEnabled: boolean };
+    };
+    expect(msg.config.aiEnabled).toBe(canGenerate(state));
+    expect(msg.config.aiEnabled).toBe(false);
+  });
+
+  it('persists a true flag when the build really could generate', async () => {
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    state.aiEnabled = true;
+    state.figmaUserId = 'u1';
+    expect(canGenerate(state)).toBe(true);
+
+    await createDocFrame(state, { sections: new Set(['definition']), variantIds: new Set() }, fakePresenter());
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      config: { aiEnabled: boolean };
+    };
+    expect(msg.config.aiEnabled).toBe(true);
   });
 });

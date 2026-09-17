@@ -868,6 +868,49 @@ describe('variants matrix section', () => {
     expect(block.guide).toEqual([{ name: 'Primary', guidance: 'the default.' }]);
   });
 
+  it('drops a guide entry naming an option the spec no longer has, and keeps a matching one whatever its case', () => {
+    const model = buildDocModel(
+      spec,
+      {
+        v: 2,
+        variantsGuide: [
+          { name: 'Ghost', guidance: 'renamed away since this was written.' },
+          { name: 'outLINE', guidance: 'for secondary actions.' },
+        ],
+      },
+      new Set<SectionId>(['variants']),
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.guide).toEqual([{ name: 'outLINE', guidance: 'for secondary actions.' }]);
+  });
+
+  it('drops a guide entry that names a state-axis value, because the matrix never draws that column', () => {
+    const withFlag = {
+      ...spec,
+      props: [
+        { name: 'Hover', kind: 'variant', options: ['True', 'False'], default: 'False' },
+        { name: 'size', kind: 'variant', options: ['Large', 'Small'], default: 'Large' },
+      ],
+      variants: [
+        { prop: 'Hover', values: ['True', 'False'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Large/Default', values: { Hover: 'False', size: 'Large' } },
+        { nodeId: '1:4', name: 'Small/Default', values: { Hover: 'False', size: 'Small' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      withFlag,
+      { v: 2, variantsGuide: [{ name: 'True', guidance: 'on hover.' }, { name: 'Large', guidance: 'the default.' }] },
+      new Set<SectionId>(['variants']),
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.guide).toEqual([{ name: 'Large', guidance: 'the default.' }]);
+  });
+
   it('sets intro to null and guide to empty when prose is null', () => {
     const model = buildDocModel(spec, null, new Set<SectionId>(['variants']));
     const block = model.sections[0];

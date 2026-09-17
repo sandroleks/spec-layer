@@ -1,7 +1,7 @@
 import type { IntermediateSpec, ProseKey, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence,
+  detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence, foldName,
 } from '@spec-layer/extractor';
 import { displayComponentName } from './displayNames';
 
@@ -600,7 +600,16 @@ function buildSection(
       if (axes.length === 0) return null;
       const defaults = defaultAxisValues(spec);
       const intro = prose?.variantsIntro?.trim() || null;
-      const guide = prose?.variantsGuide ?? [];
+      // Re-checked against the live spec on every build, not just when the AI
+      // wrote it. The prose reaching here is the stored blob merged with what
+      // the canvas says, neither of which has seen validateProseV2 since the
+      // day it was written, so renaming an option value would otherwise leave
+      // its bullet on the page for good. Same fold as validateProseV2's, and
+      // over the non-state axes only, because those are the columns this
+      // matrix draws.
+      const optionValues = new Set(axes.flatMap((a) => a.values).map(foldName));
+      const guide = (prose?.variantsGuide ?? [])
+        .filter((g) => optionValues.has(foldName(typeof g?.name === 'string' ? g.name : '')));
 
       // A boolean axis (True/False) has no self-describing values, so a bare
       // "FALSE"/"TRUE" header reads as meaningless. Qualify those with the axis

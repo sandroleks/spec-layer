@@ -160,6 +160,15 @@ const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[
 /** An unknown value as a string, or `''` when it is missing or not a string. */
 const asStr = (value: unknown): string => (typeof value === 'string' ? value : '');
 
+/**
+ * The one fold used to match an AI-written name against a name the spec
+ * carries: trimmed, lower-cased, nothing else. Exported because a renderer
+ * has to re-check a stored name against the live spec with exactly this
+ * comparison. A second spelling of the fold would let a name pass validation
+ * and fail at render, or the reverse.
+ */
+export const foldName = (s: string): string => s.trim().toLowerCase();
+
 const bulletLines = (md: string | undefined): string[] =>
   (md ?? '').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !/^#{1,6}\s/.test(l))
     .map((l) => l.replace(/^[-*]\s+/, ''));
@@ -328,7 +337,7 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
   const dropped: Partial<Record<ProseV2Key, number>> = {};
   const out: ProseV2 = { v: 2 };
   const drop = (key: ProseV2Key, n = 1): void => { if (n > 0) dropped[key] = (dropped[key] ?? 0) + n; };
-  const fold = (s: string): string => s.trim().toLowerCase();
+  const fold = foldName;
   const nameSet = (names: string[]): Set<string> => new Set(names.map(fold));
 
   const optionValues = nameSet(spec.variants.flatMap((v) => v.values));
