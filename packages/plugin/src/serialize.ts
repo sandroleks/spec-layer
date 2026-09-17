@@ -83,6 +83,8 @@ interface RawNode {
   type: string;
   visible?: boolean;
   key?: string;
+  description?: string;
+  documentationLinks?: Array<{ uri?: string }>;
   // `| symbol` for the same reason fontSize/fontName carry it below: Figma
   // returns figma.mixed from all four of these when a TEXT node's character
   // ranges are not uniform. Typing them as a bare array/string is what let
@@ -338,6 +340,21 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     // Not a property-bearing node — leave it absent.
   }
 
+  // --- Description and documentation links (component roots only) ---
+  // Figma exposes both on COMPONENT and COMPONENT_SET. A variant inside a set
+  // shares the set's description, and findComponent() already resolves the
+  // selection to the set, so reading the root is reading the right node.
+  const description = (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
+    && typeof node.description === 'string' && node.description.trim() !== ''
+    ? node.description.trim()
+    : undefined;
+  const documentationLinks = (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
+    && Array.isArray(node.documentationLinks)
+    ? node.documentationLinks
+        .map((l) => (typeof l?.uri === 'string' ? l.uri.trim() : ''))
+        .filter((uri) => uri !== '')
+    : [];
+
   // --- Recurse children ---
   const children = node.children
     ? await Promise.all(node.children.map(c => serializeNode(c, resolver)))
@@ -350,6 +367,8 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     visible: node.visible ?? true,
     ...(visibleProperty !== undefined ? { visibleProperty } : {}),
     ...(node.key !== undefined ? { key: node.key } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(documentationLinks.length > 0 ? { documentationLinks } : {}),
     ...(propertyDefinitions ? { propertyDefinitions } : {}),
     ...(bindings.length > 0 ? { bindings } : {}),
     ...(hasUnboundPaint ? { hasUnboundPaint } : {}),

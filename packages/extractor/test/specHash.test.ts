@@ -30,15 +30,13 @@ describe('specContentHash', () => {
   });
 });
 
-/** Re-cut on 2026-08-19 by Task 8: gap issue strings became stable ids (fixing
- *  `unbound` contradicting `tokens`) and gap properties were aligned with the
- *  token path's own vocabulary. Real content changes, so this supersedes the
- *  pre-v2-brief value `d445791b...` once: every existing component doc
- *  legitimately reports "update available" a single time, and must settle
- *  after a single Update. Every component doc on canvas stores a baseline
- *  computed this way, so a change to this constant means every one of them
- *  reports drift. Only a task that says it re-cuts the baseline may change it. */
-const BUTTON_HASH = 'adcffcb7d2eec911d960bb883794cf1e387d8b8d729064670b708abce8490516';
+/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1: `description` and
+ *  `documentationLinks` entered the projection and canonical key order moved
+ *  from localeCompare to code units. Both are real content changes gated by
+ *  EXTRACTOR_VERSION '3', so every doc stamped '2' reads rebuild-required
+ *  once and settles after one rebuild. Only a task that says it re-cuts the
+ *  baseline may change this constant. */
+const BUTTON_HASH = 'd88b0870cfdfffb0c82f86079181b74886f844b2d7a9e978126d2f128aec7e92';
 
 it('is unchanged by removing the contrast field', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
@@ -62,14 +60,12 @@ it('is unchanged by the Figma file name', () => {
   expect(specContentHash(renamed)).toBe(BUTTON_HASH);     // so a rename is not drift
 });
 
-/** Cut on 2026-08-25 before Phase A of the brief-resolution-fidelity plan, from
- *  the tree as it stood at BRIEF_VERSION 3. Its whole job is to fail loudly if
- *  the `token` to `name` rename, the ref-keyed minimization, or the composite-key
- *  change moves the drift baseline. Same rule as BUTTON_HASH above: only a task
- *  that says it re-cuts the baseline may change it, and no task in this plan does.
- *  Re-derived from cf299fb, the merge base of the hidden-elements branch, and
- *  unchanged, so it also serves as the pre-feature value for that branch. */
-const CHIP_HASH = 'f2f7e6432f44b8405f31a9094a7494bdf89f68483a52dedd222a0d48e006d12b';
+/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1, same reason as BUTTON_HASH
+ *  above: `description` and `documentationLinks` entered the projection (both
+ *  empty on this fixture, but the keys now exist) and canonical key order
+ *  moved from localeCompare to code units. Only a task that says it re-cuts
+ *  the baseline may change this constant. */
+const CHIP_HASH = '3d98da0c9d7bce55f8a8e394577cb170944f3b22a76ff35e8f92f3fa9b43c27a';
 
 it('is unchanged across the whole of Phase A, on both fixtures', () => {
   for (const [file, expected] of [
@@ -179,15 +175,11 @@ describe('specContentHash and parts hidden by default', () => {
   });
 });
 
-/** Pre-feature canvas hash of chip-hidden.json, computed at cf299fb (the merge
- *  base of the hidden-elements branch) with this fixture copied into a
- *  throwaway worktree, so the pre-feature extractor simply ignored
- *  `visibleProperty`. Together with CHIP_HASH above, which was computed the
- *  same way and matched, it proves the toggle-off path is byte-identical to
- *  what shipped: one fixture that carries hidden bound layers and one that
- *  carries none. A change here means every committed component doc reports an
- *  update it did not earn. */
-const CHIP_HIDDEN_OFF_HASH = '5929fb9a46b5c4258933b2068efc89d3c4eb5c0b072eae334ba2b75ebca441ff';
+/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1, same reason as BUTTON_HASH
+ *  and CHIP_HASH above: `description` and `documentationLinks` entered the
+ *  projection and canonical key order moved from localeCompare to code units.
+ *  Only a task that says it re-cuts the baseline may change this constant. */
+const CHIP_HIDDEN_OFF_HASH = '2e3d7b3a4709e6f59fc53cd54bbec8f7a3f72a5fde44a150d6bfba0d02e74697';
 
 describe('the toggle-off canvas hash matches the pre-feature extractor', () => {
   it('is unchanged on a fixture with no hidden bound layers', () => {

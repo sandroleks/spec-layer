@@ -18,4 +18,7 @@
  * The value is an opaque identifier compared for equality. It is never ordered
  * with string comparison, so it does not need to look like semver.
  */
-export const EXTRACTOR_VERSION = '2';
+// '3' (2026-09-17, Docs 2.0 Plan 1): description and documentationLinks
+// enter the canvas hash, canonical key order is by code unit rather than
+// locale, and the radius gap check honours every per-corner binding.
+export const EXTRACTOR_VERSION = '3';

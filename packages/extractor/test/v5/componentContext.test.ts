@@ -127,6 +127,7 @@ function spec(tokens: TokenRule[]): IntermediateSpec {
   return {
     name: 'Button', figmaKey: 'ComponentKey:button', figmaFile: 'FILE1',
     figmaFileName: 'Design System', figmaNode: 'NodeID:button',
+    description: '', documentationLinks: [],
     anatomy: [], anatomyComponentId: 'NodeID:button', props: [], variants: [],
     variantInstances: [{ nodeId: 'NodeID:button', name: 'Button', values: {} }],
     states: ['Default'], tokens, related: [], gaps: [], layout: [], rawValues: [],
