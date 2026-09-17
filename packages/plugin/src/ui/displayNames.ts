@@ -24,7 +24,12 @@ export function displayPartName(raw: string): string {
   const name = raw.trim();
   if (!name || name.includes(' ')) return name;
   if (/[_-]/.test(name)) {
-    const words = name.split(/[_-]+/).filter(Boolean).map((w) => w.toLowerCase());
+    const segments = name.split(/[_-]+/).filter(Boolean);
+    // If any segment has an uppercase after its first character, leave as-typed
+    if (segments.some((seg) => /[A-Z]/.test(seg.slice(1)))) {
+      return name;
+    }
+    const words = segments.map((w) => w.toLowerCase());
     return capitalise(words.join(' '));
   }
   if (/^[a-z][a-z0-9]*(?:[A-Z][a-z0-9]+)+$/.test(name)) {

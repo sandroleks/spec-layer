@@ -34,4 +34,8 @@ describe('displayPartName', () => {
     expect(displayPartName('iOSToggle')).toBe('iOSToggle');
     expect(displayPartName('URLField')).toBe('URLField');
   });
+  it('leaves mixed separator + camelCase names as typed', () => {
+    expect(displayPartName('iconLeft-2')).toBe('iconLeft-2');
+    expect(displayPartName('leadingIcon_default')).toBe('leadingIcon_default');
+  });
 });
