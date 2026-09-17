@@ -103,11 +103,10 @@ none of the reasoning above.
   spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 
-- **Measurement badges clear each other on a small component.** The right
-  rail now spreads badges the way the bottom rail always did, the diagram no
-  longer shrinks a tall component to a fixed height, and the measured values
-  also appear in a table under the diagram, so no value depends on a badge
-  being legible.
+- Measurements render the component at true size. A component wider than the
+  column is scaled down to fit and the diagram says by how much. Dimension
+  rails nudge overlapping labels apart instead of stacking them, and the
+  token bindings the diagram draws are listed in a table under it.
 
 ### Fixed
 
