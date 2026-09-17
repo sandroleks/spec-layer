@@ -126,12 +126,15 @@ describe('updateFromSource', () => {
     expect(generateProse).not.toHaveBeenCalled();
 
     const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
-      prose?: ProseDrafts; model: { sections: { id: string; kind: string; text?: string }[] };
+      prose?: ProseDrafts;
+      model: { sections: { id: string; kind: string; text?: string; subtitle?: { text: string } | null }[] };
     };
     expect(msg).toBeDefined();
     expect(msg.prose).toEqual(prose);
+    // The component has no Figma description, so the hand-edited lead sentence
+    // is what the model lifts into the Usage header subtitle.
     const definition = msg.model.sections.find((s) => s.id === 'definition');
-    expect(definition?.kind === 'prose' && definition.text).toBe('Edited by hand on the canvas.');
+    expect(definition?.kind === 'prose' && definition.subtitle?.text).toBe('Edited by hand on the canvas.');
   });
 
   it('omits prose from the render request when the doc has none', async () => {

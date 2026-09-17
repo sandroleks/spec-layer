@@ -42,9 +42,18 @@ const prose: ProseV2 = {
 
 const ALL = new Set<SectionId>(ALL_SECTIONS.map((s) => s.id));
 
-async function build(p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
-  const model = buildDocModel(spec, p, ALL, new Set(), { measureViews: [], aiEnabled });
+/** The same component with no Figma description, so the AI lede is what leads
+ *  the header. With a description present the description leads instead, and
+ *  the AI lede renders inside the Overview. */
+const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
+
+async function buildFrom(s: IntermediateSpec, p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
+  const model = buildDocModel(s, p, ALL, new Set(), { measureViews: [], aiEnabled });
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
+}
+
+async function build(p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
+  return buildFrom(spec, p, aiEnabled);
 }
 const asNode = (s: FakeSection): ProseNodeLike => s as unknown as ProseNodeLike;
 
@@ -129,14 +138,32 @@ describe('docFrame', () => {
   });
 
   it('tags the header lead when it came from the AI, and never the title', async () => {
-    const section = await build(prose);
     const tagged: string[] = [];
     const visit = (n: ProseNodeLike): void => {
       if (n.getPluginData(SLOT_KEY) === 'definitionLead') tagged.push(n.characters ?? '');
       for (const c of n.children ?? []) visit(c);
     };
-    visit(asNode(section));
+    visit(asNode(await buildFrom(undescribed, prose)));
     expect(tagged).toEqual(['A checkbox selects options.']);
+  });
+
+  it('lets the description lead the header and keeps the AI lede in the Overview', async () => {
+    const described = {
+      ...spec, description: 'Selects one or more options. It pairs a box with a label.',
+    } as unknown as IntermediateSpec;
+    const section = await buildFrom(described, prose);
+    const usage = (section.children as FakeFrame[])[0];
+
+    // The header carries the designer's first sentence, and carries it as
+    // generated text: an Update re-reads it from the component.
+    expect(usage.textChars()).toContain('Selects one or more options.');
+    expect(findSlot(asNode(section), 'definitionLead')?.characters).toBe('A checkbox selects options.');
+    expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
+
+    // The AI lede is not lost and not duplicated: it opens the Overview body.
+    const read = readCanvasProse(asNode(section));
+    expect(read.overview).toEqual({ lede: 'A checkbox selects options.', body: ['Use it in forms.'] });
+    expect(mergeProse(prose, read)?.overview).toEqual(prose.overview);
   });
 
   it('paints a code span in the header lead with an ink other than the heading ink', async () => {
@@ -147,7 +174,8 @@ describe('docFrame', () => {
       ...prose,
       overview: { lede: 'Use `aria-checked` on the box.', body: ['It updates on toggle.'] },
     };
-    const lead = findSlot(asNode(await build(withCode)), 'definitionLead');
+    // No description, so the AI lede is what lands on the header band.
+    const lead = findSlot(asNode(await buildFrom(undescribed, withCode)), 'definitionLead');
     expect(lead).not.toBeNull();
     const node = lead as unknown as FakeText;
     const codeStart = node.characters.indexOf('aria-checked');

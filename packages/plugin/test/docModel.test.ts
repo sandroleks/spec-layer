@@ -111,10 +111,12 @@ describe('buildDocModel with prose', () => {
     });
   });
 
-  it('renders the AI overview as tagged prose', () => {
+  it('renders the AI overview as tagged prose, led by the designer description', () => {
     expect(find(model, 'definition')).toEqual({
       id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
-      text: 'A checkbox selects one or more options.\n\nUse it in forms.',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: 'A checkbox selects one or more options.',
+      text: 'Use it in forms.',
     });
   });
 
@@ -189,7 +191,9 @@ describe('buildDocModel without prose', () => {
     const model = buildDocModel(spec, null, ALL, new Set(), { aiEnabled: false });
     expect(find(model, 'definition')).toEqual({
       id: 'definition', heading: 'Overview', kind: 'prose', source: 'description',
-      text: 'Selects one or more options. Pairs a box with a label.',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: null,
+      text: 'Pairs a box with a label.',
     });
     // No variant is ticked, so Tokens falls back to the conditioned table.
     expect(model.sections.map((s) => s.id)).toEqual([
@@ -1003,9 +1007,47 @@ describe('variant token cards: diff vs default', () => {
   });
 });
 
+describe('the Overview header subtitle', () => {
+  const only = new Set<SectionId>(['definition']);
+  const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
+  const overview = (s: IntermediateSpec, p: ProseV2 | null): SectionBlock | undefined =>
+    find(buildDocModel(s, p, only, new Set(), { aiEnabled: p !== null }), 'definition');
+
+  it('leads with the designer description whenever there is one, even beside AI prose', () => {
+    expect(overview(spec, prose)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: 'A checkbox selects one or more options.',
+      text: 'Use it in forms.',
+    });
+  });
+
+  it('falls back to the AI lede when the component carries no description', () => {
+    expect(overview(undescribed, prose)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
+      subtitle: { text: 'A checkbox selects one or more options.', source: 'ai' },
+      lede: null,
+      text: 'Use it in forms.',
+    });
+  });
+
+  it('has no subtitle, and no Overview at all, when there is neither', () => {
+    expect(overview(undescribed, null)).toBeUndefined();
+  });
+
+  it('keeps the rest of the description as the body when the AI wrote nothing', () => {
+    expect(overview(spec, null)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'description',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: null,
+      text: 'Pairs a box with a label.',
+    });
+  });
+});
+
 describe('groupSections', () => {
   const mk = (id: SectionBlock['id']): SectionBlock =>
-    ({ id, heading: id, kind: 'prose', text: 'x', source: 'ai' });
+    ({ id, heading: id, kind: 'prose', text: 'x', source: 'ai', subtitle: null, lede: null });
 
   it('every section id has a group', () => {
     for (const s of ALL_SECTIONS) {

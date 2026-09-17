@@ -12,7 +12,7 @@
  * Runs on the main thread, in Figma's bare sandbox: ECMAScript built-ins and
  * the `figma` API only.
  */
-import { parseRuns, groupSections, firstSentence } from './ui/docModel';
+import { parseRuns, groupSections } from './ui/docModel';
 import type {
   DocFrameModel,
   DocGroup,
@@ -85,32 +85,14 @@ function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, l
 }
 
 /** One paragraph at the prose measure, with the slot tag on the TEXT node
- *  itself. A single-string slot (anatomySummary) is read straight off the node
- *  it is tagged on, so tagging a container would read back as nothing. */
-function buildTaggedParagraph(text: string, slot: ProseSlot): FrameNode {
-  const box = measuredParagraph(text, CONTENT_WIDTH);
+ *  itself. A single-string slot (anatomySummary, definitionLead) is read
+ *  straight off the node it is tagged on, so tagging a container would read
+ *  back as nothing. */
+function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNode {
+  const box = measuredParagraph(text, CONTENT_WIDTH, size);
   const node = box.children[0];
   if (node) tagSlot(node, slot);
   return box;
-}
-
-/**
- * Split a markdown block into its lead paragraph (first non-empty line) and the
- * remainder. The lead becomes the header subtitle; the rest renders as a body
- * section. Prevents multi-line markdown (headings, bullets) from leaking raw
- * `**`/`- ` markers into the single-line header subtitle.
- */
-function splitLead(md: string): { lead: string; rest: string } {
-  const lines = md.split('\n');
-  let i = 0;
-  while (i < lines.length && lines[i].trim() === '') i++;
-  const firstLine = i < lines.length ? lines[i].trim() : '';
-  const following = lines.slice(i + 1).join('\n').trim();
-  // The header takes only the first sentence; the rest of the paragraph plus any
-  // following lines drop into the Overview body, so the header stays a one-liner.
-  const { sentence, remainder } = firstSentence(firstLine);
-  const rest = [remainder, following].filter(Boolean).join('\n\n').trim();
-  return { lead: sentence, rest };
 }
 
 // ---------------------------------------------------------------------------
@@ -362,11 +344,18 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
 
   switch (section.kind) {
     case 'prose': {
+      // An AI lede the description outranked opens the Overview as its own
+      // tagged paragraph, a SIBLING of the definition container: readCanvasProse
+      // stops at the first tagged node, so a definitionLead nested inside the
+      // definition slot would never be read back.
+      if (section.lede) body.appendChild(buildTaggedParagraph(section.lede, 'definitionLead', 17));
       // The description is generated-lane: it comes from the component, is
       // hashed, and an Update re-reads it from Figma, so it is NOT tagged. An
       // AI overview is editorial and is.
       const slot = section.source === 'ai' ? 'definition' : null;
-      body.appendChild(buildProseSlot(section.text, slot, bodySpacing, section.id === 'definition'));
+      if (section.text) {
+        body.appendChild(buildProseSlot(section.text, slot, bodySpacing, section.id === 'definition' && !section.lede));
+      }
       break;
     }
     case 'bullets': {
@@ -709,18 +698,27 @@ async function buildGroupFrame(
   return frame;
 }
 
-/** Lift the Overview's first sentence into the Usage header subtitle. The
- *  source travels with it: an AI lede is tagged editorial by buildHeader, a
- *  description lede is not. */
-function liftDefinitionLead(
+/** The Usage header subtitle, and the sections that still have a body to draw.
+ *  The model decided whose words lead (see HeaderSubtitle); the source travels
+ *  with them, so buildHeader tags an AI lede editorial and leaves a
+ *  description untagged. An Overview whose whole text went into the header
+ *  draws no empty heading. */
+function liftHeaderSubtitle(
   sections: SectionBlock[],
 ): { subtitle: string | null; subtitleSource: 'ai' | 'description' | null; sections: SectionBlock[] } {
   const def = sections.find((s) => s.id === 'definition' && s.kind === 'prose') as
     Extract<SectionBlock, { kind: 'prose' }> | undefined;
   if (!def) return { subtitle: null, subtitleSource: null, sections };
-  const { lead, rest } = splitLead(def.text);
-  const rebuilt = sections.flatMap((s) => (s === def ? (rest ? [{ ...def, text: rest }] : []) : [s]));
-  return { subtitle: lead || null, subtitleSource: def.source, sections: rebuilt };
+  const rebuilt = sections.filter((s) => s !== def || Boolean(def.text) || def.lede !== null);
+  return { subtitle: def.subtitle?.text ?? null, subtitleSource: def.subtitle?.source ?? null, sections: rebuilt };
+}
+
+/** Put a lifted lead back at the top of the Overview body, for the one case
+ *  where no header will be drawn to carry it. */
+function inlineSubtitle(sections: SectionBlock[], lead: string): SectionBlock[] {
+  return sections.map((s) => (s.id === 'definition' && s.kind === 'prose'
+    ? { ...s, subtitle: null, text: [lead, s.text].filter(Boolean).join('\n\n') }
+    : s));
 }
 
 /**
@@ -747,16 +745,18 @@ export async function buildDocFrames(
   await fitFrameWidth(model);
 
   const includeHidden = model.includeHidden === true;
-  const lifted = liftDefinitionLead(model.sections);
+  const lifted = liftHeaderSubtitle(model.sections);
   let subtitle = lifted.subtitle;
+  let subtitleSource = lifted.subtitleSource;
   let groups = groupSections(lifted.sections);
-  // The subtitle rides the Usage header, so lifting the Overview must never be
+  // The subtitle rides the Usage header, so lifting the lead must never be
   // what removes that header: when the lift empties the Usage group (or the
-  // whole document), keep the Overview as a body section rather than losing
-  // the only words the component carries.
+  // whole document), put those words back into the Overview body rather than
+  // losing the only line the component carries.
   if (subtitle !== null && !groups.some((g) => g.id === 'usage')) {
+    groups = groupSections(inlineSubtitle(model.sections, subtitle));
     subtitle = null;
-    groups = groupSections(model.sections);
+    subtitleSource = null;
   }
   if (groups.length === 0) throw new Error('No sections selected.');
 
@@ -769,7 +769,7 @@ export async function buildDocFrames(
     for (const [i, group] of groups.entries()) {
       const isUsage = group.id === 'usage';
       frames.push(await buildGroupFrame(
-        group, i, model.displayName, isUsage ? subtitle : null, isUsage ? lifted.subtitleSource : null,
+        group, i, model.displayName, isUsage ? subtitle : null, isUsage ? subtitleSource : null,
         logoBase64 ?? null, includeHidden, pill, isUsage ? model.facts : null,
       ));
     }

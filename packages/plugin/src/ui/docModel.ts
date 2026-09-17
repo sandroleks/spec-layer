@@ -190,8 +190,23 @@ export interface StateChange { part: string; property: string; from: string | nu
 export interface StateTableRow { name: string; changes: StateChange[]; whenItApplies: string | null }
 export interface ColumnBlock { heading: string; items: Bullet[]; slot: 'whenToUse' | 'whenNotToUse' }
 
+/** The words the Usage header carries, and whose they are. The designer's own
+ *  Figma description leads whenever the component has one; the AI lede takes
+ *  the header only when there is no description to take it. The source decides
+ *  whether the rendered subtitle is editorial (an Update keeps it) or
+ *  generated (an Update re-reads it from the component). */
+export interface HeaderSubtitle { text: string; source: 'ai' | 'description' }
+
 export type SectionBlock =
-  | { id: SectionId; heading: string; kind: 'prose'; text: string; source: 'ai' | 'description' }
+  | {
+      id: SectionId; heading: string; kind: 'prose'; text: string; source: 'ai' | 'description';
+      /** The first sentence, lifted out of `text` into the Usage header. */
+      subtitle: HeaderSubtitle | null;
+      /** The AI's opening line when the description took the header instead:
+       *  it opens the Overview body as its own editorial paragraph, so both
+       *  sets of words appear, once each. Null everywhere else. */
+      lede: string | null;
+    }
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[]; slot: 'pointer' | 'semantics' | 'content' | null }
   | { id: SectionId; heading: string; kind: 'twoColumns'; left: ColumnBlock; right: ColumnBlock }
   | { id: SectionId; heading: string; kind: 'guidelinePairs'; pairs: GuidelinePair[] }
@@ -389,6 +404,24 @@ export function parseRuns(md: string): TextRun[] {
   return runs;
 }
 
+/**
+ * Split a markdown block into its lead paragraph (first non-empty line) and the
+ * remainder. The lead becomes the Usage header subtitle; the rest renders as
+ * the Overview body. Only the first SENTENCE of that line is lifted, so the
+ * header stays a one-liner, and taking the line first keeps multi-line
+ * markdown (headings, bullets) out of it.
+ */
+export function splitLead(md: string): { lead: string; rest: string } {
+  const lines = md.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  const firstLine = i < lines.length ? lines[i].trim() : '';
+  const following = lines.slice(i + 1).join('\n').trim();
+  const { sentence, remainder } = firstSentence(firstLine);
+  const rest = [remainder, following].filter(Boolean).join('\n\n').trim();
+  return { lead: sentence, rest };
+}
+
 /** Strip leading "- " or "* " list markers from a plain text string. */
 function stripListMarker(text: string): string {
   return text.replace(/^[-*]\s+/, '');
@@ -410,14 +443,41 @@ function buildSection(
   const includeHidden = options?.includeHidden === true;
   switch (id) {
     case 'definition': {
-      if (prose?.overview && (prose.overview.lede.trim() || prose.overview.body.length)) {
-        const text = [prose.overview.lede, ...prose.overview.body].filter((s) => s.trim()).join('\n\n');
-        return { id, heading: label, kind: 'prose', text, source: 'ai' };
+      // The designer's own Figma description leads the header: it is the one
+      // human-authored line the file itself carries, so it outranks anything a
+      // model wrote. The AI lede takes the header only when there is no
+      // description to take it, and otherwise opens the Overview body, so
+      // neither set of words is dropped and neither is printed twice.
+      const description = spec.description.trim();
+      const fromDescription = description ? splitLead(description) : null;
+      const descriptionLead: HeaderSubtitle | null =
+        fromDescription?.lead ? { text: fromDescription.lead, source: 'description' } : null;
+
+      const overview = prose?.overview;
+      const aiLede = overview?.lede.trim() ?? '';
+      const aiBody = (overview?.body ?? []).filter((s) => s.trim());
+      if (aiLede || aiBody.length) {
+        if (descriptionLead) {
+          return {
+            id, heading: label, kind: 'prose', text: aiBody.join('\n\n'), source: 'ai',
+            subtitle: descriptionLead, lede: aiLede || null,
+          };
+        }
+        // No description: the AI's first sentence leads, and the rest of its
+        // lede paragraph drops into the body, so the header stays one line.
+        const { lead, rest } = splitLead([aiLede, ...aiBody].filter(Boolean).join('\n\n'));
+        return {
+          id, heading: label, kind: 'prose', text: rest, source: 'ai',
+          subtitle: lead ? { text: lead, source: 'ai' } : null, lede: null,
+        };
       }
       // The component's own Figma description, rendered verbatim: the doc says
       // what the file says rather than inventing an opening line.
-      if (spec.description.trim()) {
-        return { id, heading: label, kind: 'prose', text: spec.description.trim(), source: 'description' };
+      if (fromDescription) {
+        return {
+          id, heading: label, kind: 'prose', text: fromDescription.rest, source: 'description',
+          subtitle: descriptionLead, lede: null,
+        };
       }
       return null;
     }

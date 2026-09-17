@@ -90,7 +90,10 @@ none of the reasoning above.
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
   gains a facts strip, a When to use and When not to use pair, and Do and
-  Don't as paired cards. Specifications gains a Properties table (replacing
+  Don't as paired cards. The header subtitle is the component's own Figma
+  description when it has one and the AI opening line otherwise, so the
+  designer's words lead the page and the AI lede stays in the Overview.
+  Specifications gains a Properties table (replacing
   Configuration) and a States table of token changes per state. Accessibility
   gains a Keyboard table and a Pointer and touch section. Titles capitalise a
   lowercase component name, anatomy parts read as words, and user-authored
