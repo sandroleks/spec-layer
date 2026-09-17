@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS,
-  LEGACY_SECTION_IDS, firstSentence, proseKeysForSections, headingLine, factsFor, stateChanges,
-  type SectionId, type SectionBlock,
+  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
+  stateChanges, type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
 import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
 
@@ -215,6 +215,33 @@ describe('buildDocModel without prose', () => {
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
       { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
     ]);
+  });
+
+  it('reports aiOff only for the sections AI writing would have filled', () => {
+    // A plain component: no variant axes, so Variants is empty whatever AI
+    // does. Saying 'aiOff' there would promise a section that turning AI on
+    // could not produce.
+    const plain = {
+      ...spec, variants: [], variantInstances: [], states: [],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      plain, null, new Set<SectionId>(['variants', 'whenToUse']), new Set(), { aiEnabled: false },
+    );
+    expect(model.omitted).toEqual([
+      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+      { id: 'variants', label: 'Variants', reason: 'nothingToShow' },
+    ]);
+  });
+
+  it('names exactly the prose-fed sections as AI-only', () => {
+    expect([...AI_ONLY_SECTIONS].sort()).toEqual(
+      ['accessibility', 'contentConsiderations', 'dosDonts', 'keyboard', 'pointer', 'whenToUse'],
+    );
+    // Overview falls back to the Figma description, and these four are built
+    // from the spec, so none of them is AI-only.
+    for (const id of ['definition', 'variants', 'anatomy', 'properties', 'states'] as SectionId[]) {
+      expect(AI_ONLY_SECTIONS.has(id)).toBe(false);
+    }
   });
 
   it('drops a properties description column when no row has one', () => {

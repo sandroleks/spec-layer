@@ -107,6 +107,18 @@ describe('docFrame editorial tags', () => {
     expect(tagged).toEqual(['A button.']);
   });
 
+  // The five slots the Docs 2.0 renderer stopped writing. Each was covered by
+  // a real round-trip assertion before this branch; the block kinds that carry
+  // them (guidelinePairs, bullets, keyboardTable) have no tag site in
+  // docFrame.ts yet, so a hand edit in one of these sections is lost on Update
+  // until Task 12 re-tags it. These stay todo so re-tagging four and forgetting
+  // the fifth is visible.
+  it.todo('writes the dos slot on a built doc and reads it back through readCanvasProse');
+  it.todo('writes the donts slot on a built doc and reads it back through readCanvasProse');
+  it.todo('writes the accessibility (semantics) slot on a built doc and reads it back through readCanvasProse');
+  it.todo('writes the interactions (keyboard and pointer) slots on a built doc and reads them back through readCanvasProse');
+  it.todo('writes the contentConsiderations slot on a built doc and reads it back through readCanvasProse');
+
   it('paints a code span in the header lead with an ink other than the heading ink', async () => {
     // The header band uses palette.headerBg, which is the same colour as
     // palette.heading on the default theme; a code span there must not use

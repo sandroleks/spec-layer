@@ -58,6 +58,21 @@ export const GROUPS: { id: GroupId; label: string }[] = [
 ];
 
 /**
+ * The sections whose whole body is written prose, and which therefore produce
+ * nothing at all when AI writing is off. This is what decides an omission's
+ * reason, not `ALL_SECTIONS`'s `ai` flag: that flag says a section can carry AI
+ * text, and Variants, Anatomy, Properties and States all can, but each of them
+ * is built from the spec and is omitted only when the component has no non-state
+ * axis, no parts, no props or no state matrix. Reporting those as `aiOff` would
+ * tell someone that turning AI on brings a section back when nothing would
+ * change. Overview is excluded too: it falls back to the Figma description, so
+ * an empty Overview means there was no description either.
+ */
+export const AI_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
+  'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
+]);
+
+/**
  * Which v1 prose keys each section needs from the v8 prompt. Plan 2 replaces
  * this table with the v2 contract; until then a section whose content the v8
  * prompt cannot produce (whenToUse, properties, states meanings) requests
@@ -698,13 +713,15 @@ export function buildDocModel(
 ): DocFrameModel {
   const sections: SectionBlock[] = [];
   const omitted: OmittedSection[] = [];
-  for (const { id, label, ai } of ALL_SECTIONS) {
+  for (const { id, label } of ALL_SECTIONS) {
     if (!selected.has(id)) continue;
     const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
     if (block) { sections.push(block); continue; }
-    // Overview counts as AI-off only when there is also no description to
-    // fall back on; otherwise buildSection would have rendered it.
-    const reason: OmittedSection['reason'] = ai && options?.aiEnabled === false && id !== 'definition' ? 'aiOff' : 'nothingToShow';
+    // Only a section AI writing would have filled reports 'aiOff'; everything
+    // else had nothing in the spec to draw, and turning AI on would not change
+    // that. See AI_ONLY_SECTIONS.
+    const reason: OmittedSection['reason'] =
+      options?.aiEnabled === false && AI_ONLY_SECTIONS.has(id) ? 'aiOff' : 'nothingToShow';
     omitted.push({ id, label, reason });
   }
   return {

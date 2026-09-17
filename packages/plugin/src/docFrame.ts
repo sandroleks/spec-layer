@@ -56,7 +56,10 @@ import {
  *  today is one; a future generated prose section would simply be absent.
  *  Overview is the only prose block the Docs 2.0 model emits — Semantics,
  *  Content and the former Interactions section are bullets and a keyboard
- *  table now, and Task 12 gives each of those its own slot. */
+ *  table now, and Do and don't is a pair of guideline cards, so the `dos`,
+ *  `donts`, `accessibility`, `interactions` and `contentConsiderations` slots
+ *  are written by nothing on this branch. Task 12 gives each of those its own
+ *  slot; the `it.todo` entries in docFrameProse.test.ts name them until it does. */
 const PROSE_SLOT_BY_SECTION: Partial<Record<SectionId, ProseSlot>> = {
   definition: 'definition',
 };
@@ -617,27 +620,6 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         body.appendChild(node);
         (node as TextNode).layoutSizingHorizontal = 'FILL';
       }
-    }
-  } else if (section.kind === 'bullets' && section.id === 'dosDonts') {
-    // Dos and don'ts are two slots sharing one section. Rows are routed by
-    // their marker; the placeholder (no marker) lands in `dos`, where the
-    // read-back recognises it and reports the slot as absent.
-    const dos = vstack(bodySpacing);
-    const donts = vstack(bodySpacing);
-    for (const b of section.items) {
-      const row = makeBulletRow(b);
-      const holder = b.text.startsWith('❌') ? donts : dos;
-      holder.appendChild(row);
-      row.layoutSizingHorizontal = 'FILL';
-    }
-    for (const [holder, slot] of [[dos, 'dos'], [donts, 'donts']] as const) {
-      if (holder.children.length === 0) {
-        holder.remove();
-        continue;
-      }
-      tagSlot(holder, slot);
-      body.appendChild(holder);
-      holder.layoutSizingHorizontal = 'FILL';
     }
   } else if (section.kind === 'bullets') {
     for (const b of section.items) {
