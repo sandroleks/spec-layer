@@ -27,6 +27,7 @@ export {
 export * from './prose/prompt';
 export * from './prose/foundationPrompt';
 export * from './prose/client';
+export * from './prose/v2';
 export * from './yaml';
 export * from './brief';
 export * from './validate';
