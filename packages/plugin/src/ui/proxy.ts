@@ -98,16 +98,17 @@ export function generationErrorCopy(code: ProseProxyErrorCode): string {
   switch (code) {
     case 'rate_limited': return 'Too many requests just now. Give it a minute.';
     case 'generation_pending': return "That one's already generating. Hang tight.";
-    default: return "AI didn't run this time, so placeholders were used.";
+    default: return "AI didn't run this time, so the AI sections were left out.";
   }
 }
 
 /**
  * The same failures, worded for a foundation build.
  *
- * A foundation frame has no placeholders to fall back on, so the component copy
- * ("placeholders were used") describes something that did not happen. Same
- * causes, different consequence, so different words.
+ * A component doc drops the sections AI would have written; a foundation frame
+ * has no such sections to drop, so the component copy ("the AI sections were
+ * left out") describes something that did not happen. Same causes, different
+ * consequence, so different words.
  */
 export function groupErrorCopy(code: ProseProxyErrorCode): string {
   switch (code) {

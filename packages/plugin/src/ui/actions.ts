@@ -75,7 +75,7 @@ export interface UiState {
   // Set by every assembled build and cleared once it has been reported.
   lastOmitted: OmittedSection[];
   // Set when an AI generation attempt fails so the next frame-build can note it
-  // ("built with placeholders") instead of aborting the whole frame.
+  // ("the AI sections were left out") instead of aborting the whole frame.
   pendingAiNote: string;
   // User-customized brand theme for the generated frame (null fields = default).
   brandTheme: BrandTheme;
@@ -235,8 +235,9 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
 
   // The generating loader (started by runCreateDocFrame) surfaces progress; this
   // path is best-effort. AI is an enhancement, never a blocker. If generation fails
-  // (rate limit, network, unexpected response), fall back to placeholders and
-  // let the frame build anyway — the note surfaces on the success banner.
+  // (rate limit, network, unexpected response), leave the sections AI would have
+  // written out and let the frame build anyway — the note surfaces on the
+  // success banner.
   try {
     // willGenerateProse guarantees a non-null identity, spec, and node. A key
     // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
@@ -271,8 +272,8 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       if (err.code === 'license_not_active') {
         // Key lapsed mid-session (or the license server was unreachable): drop to
         // the free identity ONLY on a definite lapse, never on a mere outage, and
-        // explain it. This frame builds with placeholders; the next generation
-        // re-probes. Settings reflects the lapse on its next refresh.
+        // explain it. This frame builds without the AI sections; the next
+        // generation re-probes. Settings reflects the lapse on its next refresh.
         const { note, markInactive } = licenseFailureNote(err.reason);
         if (markInactive) state.licenseActive = false;
         state.pendingAiNote = note;
@@ -282,7 +283,7 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       return;
     }
     const detail = err instanceof Error ? err.message : String(err);
-    state.pendingAiNote = `AI didn't run (${detail}), so placeholders were used`;
+    state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
   }
 }
 
