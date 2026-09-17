@@ -5,8 +5,8 @@ import {
 } from '@spec-layer/extractor';
 
 export type SectionId =
-  | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'variants'
-  | 'states' | 'tokens' | 'interactions'
+  | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'properties' | 'variants'
+  | 'states' | 'tokens' | 'interactions' | 'pointer' | 'keyboard'
   | 'contentConsiderations' | 'accessibility' | 'dosDonts' | 'related';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
@@ -31,6 +31,16 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
  *  an unknown id would fall through the section switch and silently produce
  *  nothing, so parsing filters against this set instead of trusting the list. */
 export const KNOWN_SECTION_IDS: ReadonlySet<string> = new Set(ALL_SECTIONS.map((s) => s.id));
+
+/** Section ids a stored DocConfig may still carry from an earlier build, and
+ *  the ids that render their content now. `configuration` became the
+ *  Properties table; `interactions` split into Pointer and touch plus the
+ *  Keyboard table. Read at parse time so an old doc rebuilds into the new
+ *  map instead of silently losing sections. */
+export const LEGACY_SECTION_IDS: Readonly<Record<string, SectionId[]>> = {
+  configuration: ['properties'],
+  interactions: ['pointer', 'keyboard'],
+};
 
 /** The three output groups, in canonical display/build order. The a11y group
  *  keeps the "Accessibility" label (its sections are aspects of accessibility);
@@ -653,6 +663,14 @@ function buildSection(
         : [makeBullet('None.')];
       return { id, heading: label, kind: 'bullets', items };
     }
+
+    // 'properties', 'pointer' and 'keyboard' exist on SectionId (Task 5, for
+    // LEGACY_SECTION_IDS's migration targets) but are not yet selectable from
+    // ALL_SECTIONS and have no renderer here; Task 8 adds both. Falling
+    // through to null keeps this switch exhaustive without pre-building
+    // Task 8's output.
+    default:
+      return null;
   }
 }
 
