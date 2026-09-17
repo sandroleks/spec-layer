@@ -103,6 +103,12 @@ none of the reasoning above.
   spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 
+- **Measurement badges clear each other on a small component.** The right
+  rail now spreads badges the way the bottom rail always did, the diagram no
+  longer shrinks a tall component to a fixed height, and the measured values
+  also appear in a table under the diagram, so no value depends on a badge
+  being legible.
+
 ### Fixed
 
 - **A radius bound on any corner no longer reads as a hardcoded gap.** The gap

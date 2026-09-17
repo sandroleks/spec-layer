@@ -196,3 +196,103 @@ describe('docFrame', () => {
     expect(frames[0].textChars()).toContain('Selects one or more options.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Measure section seam (Task 13): docFrame's 'measure' case must call the new
+// three-argument buildMeasureSection and print scaleNote's text under the
+// diagram, but only when the component was too wide for the column.
+// ---------------------------------------------------------------------------
+
+/** A minimal spec that draws nothing but the Measurements section: no anatomy,
+ *  no tokens, no variants, so buildDocModel's other branches stay untouched
+ *  and the only thing on canvas is the measure diagram (or its fallback). */
+const measureSpec = {
+  name: 'button', figmaKey: '', figmaFile: 'f', figmaFileName: 'DS', figmaNode: '2:1',
+  description: '', documentationLinks: [],
+  anatomy: [], anatomyComponentId: 'comp:measure',
+  props: [], variants: [], states: [], variantInstances: [],
+  tokens: [], rawValues: [], related: [], gaps: [], layout: [], nodeEffects: [],
+} as unknown as IntermediateSpec;
+
+/** A COMPONENT node wide/narrow enough to drive buildMeasureSection's own
+ *  scale math, with no auto-layout so the diagram only draws the plain
+ *  top/left total-size badges (no rails to nudge). */
+function fakeMeasureComponent(width: number, height = 100): Record<string, unknown> {
+  return {
+    type: 'COMPONENT',
+    width, height,
+    paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0,
+    itemSpacing: 0, layoutMode: 'NONE', cornerRadius: 0,
+    children: [] as unknown[],
+    createInstance: () => fakeMeasureInstance(width, height),
+  };
+}
+
+function fakeMeasureInstance(width: number, height: number): Record<string, unknown> {
+  const inst: Record<string, unknown> = {
+    id: 'measure-inst', x: 0, y: 0, width, height,
+    setExplicitVariableModeForCollection: () => {},
+    remove: () => {},
+  };
+  inst.rescale = (s: number) => { inst.width = width * s; inst.height = height * s; };
+  return inst;
+}
+
+/** A frame stand-in that never throws on a hugging width. measureSection's own
+ *  badges hug their text and the module reads badge.width/.height directly to
+ *  place them (see placeRightRail/placeBottomRail and the single centered
+ *  width/height badges), which the shared FakeFrame deliberately refuses to
+ *  model (by design — see fakeFigma.ts). This test only cares whether the
+ *  scale note text appears, not exact badge geometry, so a loose stub whose
+ *  width/height default to 0 and change only via resize() is enough. */
+function looseFrame(): Record<string, unknown> {
+  const f: Record<string, unknown> = {
+    type: 'FRAME', children: [] as unknown[], width: 0, height: 0, x: 0, y: 0, fills: [],
+    remove: () => {},
+  };
+  const pluginData: Record<string, string> = {};
+  f.appendChild = (n: unknown) => { (f.children as unknown[]).push(n); };
+  f.resize = (w: number, h: number) => { f.width = w; f.height = h; };
+  f.resizeWithoutConstraints = (w: number, h: number) => { f.width = w; f.height = h; };
+  f.setPluginData = (k: string, v: string) => { pluginData[k] = v; };
+  f.getPluginData = (k: string) => pluginData[k] ?? '';
+  return f;
+}
+
+/** Depth-first search for a FakeText whose characters match `pattern`. */
+function findText(root: unknown, pattern: RegExp): string | null {
+  if (root instanceof FakeText && pattern.test(root.characters)) return root.characters;
+  const children = (root as { children?: unknown[] })?.children ?? [];
+  for (const child of children) {
+    const hit = findText(child, pattern);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function buildMeasureDoc(componentWidth: number): Promise<FakeSection> {
+  installFakeFigma({
+    createFrame: () => looseFrame(),
+    getNodeByIdAsync: async (id: string) =>
+      (id === measureSpec.anatomyComponentId ? fakeMeasureComponent(componentWidth) : null),
+  });
+  const model = buildDocModel(
+    measureSpec, null, new Set<SectionId>(['measurements']), new Set(), { measureViews: [], aiEnabled: false },
+  );
+  return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
+}
+
+describe('docFrame measure section', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('prints the scale note under the diagram when the component is wider than the column', async () => {
+    const section = await buildMeasureDoc(3000);
+    expect(findText(section, /^Shown at \d+%$/)).toBe('Shown at 35%');
+  });
+
+  it('prints no scale note when the component fits at true size', async () => {
+    const section = await buildMeasureDoc(200);
+    expect(findText(section, /^Shown at \d+%$/)).toBeNull();
+  });
+});

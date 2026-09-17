@@ -16,7 +16,6 @@ const PAD_BLUE: RGB = hex('#2979ff'); // padding
 const GAP_PINK: RGB = hex('#ec4899'); // gaps
 const WHITE: RGB = hex('#ffffff'); // badge text
 
-const IMG_MAX_H = 480;
 const CARD_PAD = 24;
 
 // Initial placement offsets for the scaled image inside the (oversized) box.
@@ -162,9 +161,11 @@ interface Child {
   h: number;
 }
 
-/** Everything the rail placement needs: rail items with their desired centers. */
-interface RailItem {
-  node: FrameNode;
+/** Everything the rail placement needs: rail items with their desired centers.
+ *  `node` only needs the geometry fields a rail actually reads/writes, so a
+ *  test can drive it with a plain object instead of a real FrameNode. */
+export interface RailItem {
+  node: { x: number; y: number; width: number; height: number };
   center: number; // desired center along the axis (y for right/left, x for top/bottom)
 }
 
@@ -260,21 +261,24 @@ function computeGeom(
   };
 }
 
-/** Place a top-to-bottom rail: badges left-aligned at `railX`, each centered on
- *  its region. No vertical spreading — on short components the padding/size
- *  badges overlap each other rather than drift away from what they mark (and,
- *  critically, they don't spill down into the bottom rail). Overlap between
- *  badges is acceptable; the lens toggles are the decluttering mechanism. */
-function placeRightRail(items: RailItem[], railX: number): void {
+/** Place a top-to-bottom rail: badges left-aligned at `railX`, each centred on
+ *  its region, pushed down so each clears the previous. Instances render at
+ *  true size now, so a short component's badges would otherwise stack on top
+ *  of one another; spreading along the rail keeps every number readable. */
+export function placeRightRail(items: RailItem[], railX: number): void {
+  let prevBottom = -Infinity;
   for (const item of items) {
     item.node.x = Math.round(railX);
-    item.node.y = Math.round(item.center - item.node.height / 2);
+    let y = Math.round(item.center - item.node.height / 2);
+    if (y < prevBottom + NUDGE) y = Math.round(prevBottom + NUDGE);
+    item.node.y = y;
+    prevBottom = y + item.node.height;
   }
 }
 
 /** Place a left-to-right rail: badges top-aligned at `railY`, horizontally
  *  centered under their span, pushed right so each clears the previous. */
-function placeBottomRail(items: RailItem[], railY: number, imgRight: number): { maxRight: number; maxBottom: number } {
+export function placeBottomRail(items: RailItem[], railY: number, imgRight: number): { maxRight: number; maxBottom: number } {
   let prevRight = -Infinity;
   let maxBottom = railY;
   let maxRight = imgRight;
@@ -676,7 +680,9 @@ function removeCanvasSubtree(node: SceneNode): void {
   } catch { /* already gone */ }
 }
 
-export async function buildMeasureSection(block: MeasureBlockData, includeHidden = false): Promise<FrameNode | null> {
+export async function buildMeasureSection(
+  block: MeasureBlockData, includeHidden = false, contentWidth = 880 - 56 * 2,
+): Promise<{ card: FrameNode; scale: number } | null> {
   let node: BaseNode | null;
   try {
     node = await figma.getNodeByIdAsync(block.componentId);
@@ -711,8 +717,10 @@ export async function buildMeasureSection(block: MeasureBlockData, includeHidden
     // of the frozen component whenever the reveal ran.
     if (includeHidden) await revealBooleanParts(inst, component);
 
-    const innerMax = 880 - 56 * 2 - CARD_PAD * 2 - (M_LEFT + 160);
-    const scale = Math.min(innerMax / inst.width, IMG_MAX_H / inst.height, 1);
+    // True size unless the artwork is wider than the column can hold beside
+    // its left rail; never taller-than-cap shrinking, and never upscaling.
+    const innerMax = contentWidth - CARD_PAD * 2 - (M_LEFT + 160);
+    const scale = Math.min(1, innerMax / inst.width);
     // Read geometry from the reveal-following source BEFORE rescale mutates
     // width/height/children in place. computeGeom's own arithmetic multiplies
     // these raw values by scale, so reading them after rescale would apply
@@ -745,7 +753,7 @@ export async function buildMeasureSection(block: MeasureBlockData, includeHidden
     const bindings = buildBindingsRow(component, block.tokens, part);
     if (bindings) card.appendChild(bindings);
 
-    return card;
+    return { card, scale };
   } catch {
     // Unexpected throw during composition (card/bindings): tear down the whole
     // subtree inst now lives in (box, or the card wrapping it) so the canvas is

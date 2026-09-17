@@ -474,13 +474,13 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
       break;
     }
     case 'measure': {
-      // Task 13 gives buildMeasureSection the content width and a scale factor
-      // to report; until then it fits its own width and says nothing.
-      const card = await buildMeasureSection(section, includeHidden);
-      if (card) {
+      const result = await buildMeasureSection(section, includeHidden, CONTENT_WIDTH);
+      if (result) {
         const holder = vstack(8);
         holder.counterAxisAlignItems = 'CENTER';
-        holder.appendChild(card);
+        holder.appendChild(result.card);
+        const note = scaleNote(result.scale);
+        if (note) holder.appendChild(note);
         fill(holder);
       }
       // The table always follows: it is the guaranteed-legible source.
