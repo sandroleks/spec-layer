@@ -72,8 +72,8 @@ export function proseKeysForSections(ids: Iterable<SectionId>): Set<ProseKey> {
   return out;
 }
 
-/** An inline run of text; `bold` marks bold lead-ins parsed from **markers**. */
-export interface TextRun { text: string; bold?: boolean }
+/** An inline run of text; `bold` marks **lead-ins**, `code` marks `spans`. */
+export interface TextRun { text: string; bold?: boolean; code?: boolean }
 export interface Bullet { runs: TextRun[]; text: string } // text = plain fallback
 
 /** One row in a variant's token table: a resolved token binding, or a raw
@@ -288,16 +288,19 @@ export function headingLine(line: string): string | null {
 }
 
 /**
- * Parse a Markdown string with **bold** markers into an array of TextRun objects.
- * Runs between ** markers are bold; everything else is plain.
+ * Parse a Markdown string with **bold** and `code` markers into runs. Runs
+ * between ** are bold, runs between backticks are code, everything else is
+ * plain. The two never nest: a backtick inside a bold run is literal.
  */
 export function parseRuns(md: string): TextRun[] {
   const runs: TextRun[] = [];
-  const parts = md.split(/(\*\*[^*]+\*\*)/g);
+  const parts = md.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   for (const part of parts) {
     if (!part) continue;
-    if (part.startsWith('**') && part.endsWith('**')) {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       runs.push({ text: part.slice(2, -2), bold: true });
+    } else if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      runs.push({ text: part.slice(1, -1), code: true });
     } else {
       runs.push({ text: part });
     }
@@ -312,7 +315,7 @@ function stripListMarker(text: string): string {
 
 /** Build a Bullet from a raw string (may have ** markers and/or a list marker). */
 function makeBullet(raw: string): Bullet {
-  const plain = stripListMarker(raw).replace(/\*\*/g, '');
+  const plain = stripListMarker(raw).replace(/\*\*/g, '').replace(/`/g, '');
   const runs = parseRuns(stripListMarker(raw));
   return { text: plain, runs };
 }

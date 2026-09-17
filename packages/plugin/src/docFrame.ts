@@ -1,12 +1,10 @@
 /// <reference types="@figma/plugin-typings" />
-import { parseRuns, groupSections, firstSentence, headingLine } from './ui/docModel';
+import { parseRuns, groupSections, firstSentence } from './ui/docModel';
 import type {
   AnatomyPartBlock,
-  Bullet,
   DocFrameModel,
   DocGroup,
   SectionBlock,
-  TextRun,
   VariantRow,
 } from './ui/docModel';
 import type { SectionId } from './ui/docModel';
@@ -16,13 +14,12 @@ import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
   headingFont, matchVariableModes, radius, applyThemeToKit,
   revealBooleanParts,
-  type FontStyle,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
 import { buildMatrixSection } from './statesSection';
 import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
-import { SLOT_KEY, SLOT_PART_KEY, LINE_KEY, type ProseSlot, type LineKind } from './canvasProse';
+import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
@@ -50,13 +47,10 @@ let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 // the designer owns; an Update reads it back instead of regenerating it.
 // ---------------------------------------------------------------------------
 
-function tagSlot(node: SceneNode, slot: ProseSlot): void {
-  node.setPluginData(SLOT_KEY, slot);
-}
-
-function tagLine(node: SceneNode, kind: LineKind): void {
-  node.setPluginData(LINE_KEY, kind);
-}
+import {
+  tagSlot, applyRuns, emphasisOnly, accentRule, makeBulletRow, buildProse,
+  makeCell, buildTable,
+} from './docText';
 
 /** Which prose sections are editorial slots. Every `kind: 'prose'` section
  *  today is one; a future generated prose section would simply be absent. */
@@ -78,33 +72,6 @@ function buildProseSlot(text: string, slot: ProseSlot, spacing: number): FrameNo
   return holder;
 }
 
-// ---------------------------------------------------------------------------
-// Text construction
-// ---------------------------------------------------------------------------
-
-/**
- * Apply the Inter Bold face over the character ranges that correspond to bold
- * runs. `prefix` accounts for any leading characters prepended ahead of the
- * runs in the node's `characters`.
- */
-function applyBoldRuns(node: TextNode, runs: TextRun[], prefix = 0): void {
-  let cursor = prefix;
-  for (const run of runs) {
-    const start = cursor;
-    const end = cursor + run.text.length;
-    if (run.bold && run.text.length > 0) {
-      node.setRangeFontName(start, end, font('Bold'));
-    }
-    cursor = end;
-  }
-}
-
-/** Detect "_italic placeholder_" lines (e.g. "_To be written._", "_None._"). */
-function emphasisOnly(line: string): string | null {
-  const m = /^_(.+)_$/.exec(line.trim());
-  return m ? m[1] : null;
-}
-
 /**
  * Split a markdown block into its lead paragraph (first non-empty line) and the
  * remainder. The lead becomes the header subtitle; the rest renders as a body
@@ -122,243 +89,6 @@ function splitLead(md: string): { lead: string; rest: string } {
   const { sentence, remainder } = firstSentence(firstLine);
   const rest = [remainder, following].filter(Boolean).join('\n\n').trim();
   return { lead: sentence, rest };
-}
-
-// ---------------------------------------------------------------------------
-// Layout helpers
-// ---------------------------------------------------------------------------
-
-/** A small teal accent bar used as a section eyebrow rule. */
-function accentRule(): FrameNode {
-  const rule = figma.createFrame();
-  rule.resize(28, 3);
-  rule.cornerRadius = radius(2);
-  rule.fills = solidFill(palette.accent);
-  return rule;
-}
-
-// ---------------------------------------------------------------------------
-// Bullets — hanging-indent rows (marker column + wrapping content)
-// ---------------------------------------------------------------------------
-
-/** Pull a leading emoji/marker (✅ ❌ •) off the text so it can sit in the
- *  marker column; default to a bullet dot otherwise. */
-function splitMarker(text: string): { marker: string; rest: string } {
-  const m = /^([✅❌•▪◦–-])\s+(.*)$/u.exec(text);
-  if (m) return { marker: m[1], rest: m[2] };
-  return { marker: '•', rest: text };
-}
-
-/** Drop `count` leading characters from a run list, discarding runs it fully
- *  consumes and slicing the first run it only partly consumes. Used to carry
- *  a bullet's parsed runs past the marker split without re-parsing already
- *  plain text. */
-function dropLeading(runs: TextRun[], count: number): TextRun[] {
-  const out: TextRun[] = [];
-  let remaining = count;
-  for (const run of runs) {
-    if (remaining >= run.text.length) {
-      remaining -= run.text.length;
-      continue;
-    }
-    out.push(remaining > 0 ? { ...run, text: run.text.slice(remaining) } : run);
-    remaining = 0;
-  }
-  return out;
-}
-
-/** Render a single bullet as marker-column + wrapping content row. */
-function makeBulletRow(bullet: Bullet): FrameNode {
-  const placeholder = emphasisOnly(bullet.text);
-  const row = hstack(10);
-  row.counterAxisAlignItems = 'MIN'; // top-align marker with first text line
-
-  if (placeholder) {
-    // Muted, marker-less placeholder line ("None.", "To be written.")
-    const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
-    row.appendChild(node);
-    node.layoutSizingHorizontal = 'FILL';
-    node.textAutoResize = 'HEIGHT';
-    return row;
-  }
-
-  const { marker, rest } = splitMarker(bullet.text);
-  const markerColor = marker === '✅' ? palette.accent : marker === '❌' ? palette.muted : palette.accent;
-  const markerNode = makeText(marker, 'Medium', 15, markerColor, 155);
-  row.appendChild(markerNode);
-  markerNode.textAutoResize = 'WIDTH_AND_HEIGHT';
-
-  // bullet.runs already carries any bold lead-ins parsed from the source
-  // markdown, and its concatenated text matches bullet.text for every
-  // current caller (docModel's makeBullet and buildProse both derive text
-  // from runs). Drop the same number of leading characters the marker split
-  // consumed so those runs line up with `rest`, rather than re-parsing
-  // already-plain text and losing the bold. Fall back to a fresh parse if a
-  // future caller ever breaks that invariant.
-  const runsMatchText = bullet.runs.map((r) => r.text).join('') === bullet.text;
-  const runs = runsMatchText ? dropLeading(bullet.runs, bullet.text.length - rest.length) : parseRuns(rest);
-  const plain = runs.map((r) => r.text).join('');
-  const content = makeText(plain, 'Regular', 15, palette.body, 155);
-  row.appendChild(content);
-  content.layoutSizingHorizontal = 'FILL';
-  content.textAutoResize = 'HEIGHT';
-  applyBoldRuns(content, runs, 0);
-  return row;
-}
-
-// ---------------------------------------------------------------------------
-// Prose — paragraphs and inline bullet lines
-// ---------------------------------------------------------------------------
-
-function buildProse(text: string): SceneNode[] {
-  const out: SceneNode[] = [];
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trimEnd();
-    if (line.trim() === '') continue;
-
-    const placeholder = emphasisOnly(line);
-    if (placeholder) {
-      const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
-      tagLine(node, 'placeholder');
-      out.push(node);
-      continue;
-    }
-
-    const subheading = headingLine(line);
-    if (subheading !== null) {
-      // "### Mouse" → a small subheading. Wrapped in a padded frame so it gets
-      // extra separation from the bullet group above (body spacing is a flat 10).
-      const wrap = vstack(0);
-      wrap.paddingTop = 8;
-      const node = makeText(subheading, 'Bold', 17, palette.heading, 130);
-      node.fontName = headingFont('Bold');
-      wrap.appendChild(node);
-      node.layoutSizingHorizontal = 'FILL';
-      node.textAutoResize = 'HEIGHT';
-      tagLine(wrap, 'heading');
-      out.push(wrap);
-      continue;
-    }
-
-    const bulletMatch = /^[-*]\s+(.*)$/.exec(line);
-    if (bulletMatch) {
-      const runs = parseRuns(bulletMatch[1]);
-      const plain = runs.map((r) => r.text).join('');
-      const row = makeBulletRow({ runs, text: plain });
-      tagLine(row, 'bullet');
-      out.push(row);
-    } else {
-      const runs = parseRuns(line);
-      const plain = runs.map((r) => r.text).join('');
-      const node = makeText(plain, 'Regular', 15, palette.body, 155);
-      applyBoldRuns(node, runs, 0);
-      tagLine(node, 'paragraph');
-      out.push(node);
-    }
-  }
-  if (out.length === 0) {
-    const empty = makeText('', 'Regular', 15, palette.body, 155);
-    tagLine(empty, 'paragraph');
-    out.push(empty);
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Tables — rounded bordered container, tinted header, per-column widths
-// ---------------------------------------------------------------------------
-
-/** Per-column sizing: a fixed pixel width, or 'grow' to fill remaining space. */
-type ColWidth = number | 'grow';
-
-/** Heuristic column widths so the longest/free-text column grows. */
-function columnWidths(columns: string[]): ColWidth[] {
-  const n = columns.length;
-  // Last column is typically the descriptive one → let it grow.
-  return columns.map((_, i) => (i === n - 1 ? ('grow' as const) : Math.floor((CONTENT_WIDTH * 0.7) / Math.max(n - 1, 1))));
-}
-
-function makeCell(text: string, style: FontStyle, size: number, color: RGB, trackingPct?: number): FrameNode {
-  const cell = vstack(0);
-  cell.paddingTop = 12;
-  cell.paddingBottom = 12;
-  cell.paddingLeft = 16;
-  cell.paddingRight = 16;
-  const node = makeText(text, style, size, color, 145, trackingPct);
-  cell.appendChild(node);
-  node.layoutSizingHorizontal = 'FILL';
-  node.textAutoResize = 'HEIGHT';
-  return cell;
-}
-
-function applyColWidth(cell: FrameNode, width: ColWidth): void {
-  if (width === 'grow') {
-    cell.layoutSizingHorizontal = 'FILL';
-  } else {
-    cell.layoutSizingHorizontal = 'FIXED';
-    cell.resize(width, cell.height);
-  }
-}
-
-function buildTable(columns: string[], rows: string[][]): FrameNode {
-  const widths = columnWidths(columns);
-  const table = vstack(0);
-  table.cornerRadius = radius(8);
-  table.clipsContent = true;
-  table.strokes = solidFill(palette.border);
-  table.strokeWeight = 1;
-
-  const colCount = Math.max(columns.length, 1);
-
-  // Header row
-  const head = hstack(0);
-  head.fills = solidFill(palette.tableHeadBg);
-  table.appendChild(head);
-  head.layoutSizingHorizontal = 'FILL';
-  head.counterAxisAlignItems = 'MIN';
-  for (let i = 0; i < colCount; i++) {
-    const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, palette.muted);
-    head.appendChild(cell);
-    applyColWidth(cell, widths[i]);
-  }
-
-  // Data rows
-  if (rows.length === 0) {
-    const empty = hstack(0);
-    table.appendChild(empty);
-    empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(palette.divider);
-    empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, palette.muted);
-    empty.appendChild(cell);
-    applyColWidth(cell, 'grow');
-  }
-
-  for (const r of rows) {
-    const row = hstack(0);
-    table.appendChild(row);
-    row.layoutSizingHorizontal = 'FILL';
-    row.counterAxisAlignItems = 'MIN';
-    row.strokes = solidFill(palette.divider);
-    row.strokeTopWeight = 1;
-    row.strokeBottomWeight = 0;
-    row.strokeLeftWeight = 0;
-    row.strokeRightWeight = 0;
-    for (let i = 0; i < colCount; i++) {
-      // First column reads as the row's "key" → slightly stronger ink + weight.
-      const isKey = i === 0;
-      const cell = makeCell(
-        r[i] ?? '',
-        isKey ? 'Medium' : 'Regular',
-        14,
-        isKey ? palette.heading : palette.body,
-      );
-      row.appendChild(cell);
-      applyColWidth(cell, widths[i]);
-    }
-  }
-
-  return table;
 }
 
 // ---------------------------------------------------------------------------
@@ -948,7 +678,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
           ? p.tokens.join(' · ')
           : `${p.tokens.slice(0, 3).join(' · ')} +${p.tokens.length - 3}`,
       ]);
-      const table = buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows);
+      const table = buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows, CONTENT_WIDTH);
       body.appendChild(table);
       table.layoutSizingHorizontal = 'FILL';
     }
@@ -1031,7 +761,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
           return [part, property, token] as string[];
         })
         .filter((r) => !['fill', 'border', 'typography'].includes(r[1]));
-      const table = buildTable(['Part', 'Property', 'Token'], rows);
+      const table = buildTable(['Part', 'Property', 'Token'], rows, CONTENT_WIDTH);
       body.appendChild(table);
       table.layoutSizingHorizontal = 'FILL';
     }
@@ -1081,7 +811,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     // body's default 10px spacing reads as cramped against the prose above.
     if (section.summary) grid.paddingTop = 24;
   } else {
-    const table = buildTable(section.columns, section.rows);
+    const table = buildTable(section.columns, section.rows, CONTENT_WIDTH);
     body.appendChild(table);
     table.layoutSizingHorizontal = 'FILL';
   }
@@ -1117,7 +847,7 @@ async function buildHeader(
     pill,
     styleSubtitle: runs
       ? (node) => {
-          applyBoldRuns(node, runs, 0);
+          applyRuns(node, runs, 0);
           // The lead is the first sentence of the Definition, lifted here.
           tagSlot(node, 'definitionLead');
         }
