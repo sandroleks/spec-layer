@@ -28,4 +28,19 @@ describe('specHashProjection', () => {
     const b = contentHash(specHashProjection(extract({ ...node, description: 'Edited.' }, { figmaFile: 'F' })));
     expect(a).not.toBe(b);
   });
+
+  it('includes the Figma file name, because the facts strip renders it', () => {
+    const projection = specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System' }));
+    expect(projection.figmaFileName).toBe('Design System');
+    // Absent rather than defaulted when the caller never knew the name.
+    expect('figmaFileName' in specHashProjection(extract(node, { figmaFile: 'F' }))).toBe(false);
+  });
+
+  it('moves the hash when the Figma file is renamed', () => {
+    const named = contentHash(specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System' })));
+    const renamed = contentHash(specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System (2026)' })));
+    const unnamed = contentHash(specHashProjection(extract(node, { figmaFile: 'F' })));
+    expect(named).not.toBe(renamed);
+    expect(named).not.toBe(unnamed);
+  });
 });

@@ -287,6 +287,21 @@ describe('componentChangeGroups', () => {
     ]);
   });
 
+  it('itemizes a renamed source file under Name, because the facts strip prints it', () => {
+    expect(componentChangeGroups(
+      projection({ figmaFileName: 'Design System' }),
+      projection({ figmaFileName: 'Design System (2026)' }),
+    )).toEqual([
+      G('Name', 'Source file Design System changed to Design System (2026)'),
+    ]);
+    expect(componentChangeGroups(projection(), projection({ figmaFileName: 'Design System' }))).toEqual([
+      G('Name', 'Added source file Design System'),
+    ]);
+    expect(componentChangeGroups(projection({ figmaFileName: 'Design System' }), projection())).toEqual([
+      G('Name', 'Removed source file Design System'),
+    ]);
+  });
+
   it('itemizes documentation links added and removed, under Name', () => {
     expect(componentChangeGroups(
       projection(),

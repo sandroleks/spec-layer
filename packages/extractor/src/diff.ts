@@ -591,6 +591,11 @@ export function componentChangeGroups(
   }
   name.push(...stringSetItems(before.documentationLinks, after.documentationLinks,
     (link) => `Added documentation link ${link}`, (link) => `Removed documentation link ${link}`));
+  // The facts strip prints the source file name, so a rename is a rendered
+  // change and belongs in the list beside the identity line.
+  if (before.figmaFileName !== after.figmaFileName) {
+    name.push(scalarItem('Source file', before.figmaFileName, after.figmaFileName));
+  }
   if (
     before.figmaKey !== after.figmaKey
     || before.figmaFile !== after.figmaFile

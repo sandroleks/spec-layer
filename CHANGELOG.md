@@ -22,7 +22,9 @@ none of the reasoning above.
 - **The component description and documentation links reach the document.**
   Extraction now carries the root component's Figma description and its
   documentation link URLs, the one human-authored signal a file has, and both
-  are rendered, so both enter the canvas drift hash. This is the sanctioned
+  are rendered, so both enter the canvas drift hash. Renaming the Figma file
+  now counts as drift, because the facts strip shows the file name. This is
+  the sanctioned
   `EXTRACTOR_VERSION` bump to `'3'`: every component doc built by `'2'` reads
   "Rebuild needed" once. The same bump makes canonical hashing order keys by
   code unit rather than locale, so a hash no longer depends on the machine

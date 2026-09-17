@@ -27,8 +27,8 @@ export interface IntermediateSpec {
   /** The Figma file's NAME, when a caller knows it. `figma.root.name` is
    *  main-thread only, so it reaches the UI on the message that already
    *  carries the file key; a caller without one omits it rather than
-   *  inventing a placeholder. Excluded from specContentHash: renaming a
-   *  Figma file is not component drift. */
+   *  inventing a placeholder. Rendered in the facts strip, so it enters
+   *  specContentHash: renaming the Figma file is drift. */
   figmaFileName?: string;
   figmaNode: string;
   /** The root component's Figma description, verbatim. Empty string when the
