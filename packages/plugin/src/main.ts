@@ -11,10 +11,9 @@ import { FoundationPostGate } from './foundationPost';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
-  proseToLegacy, upgradeProseV1,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
-  type ProseDrafts,
+  type ProseV2,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
@@ -315,13 +314,9 @@ function collectGeneratedLane(node: BaseNode): string[] {
  * The guidelines a doc currently carries: what its canvas says, with the
  * stored blob filling any slot the canvas does not render.
  */
-function mergedProse(section: SectionNode): ProseDrafts | null {
-  // TEMPORARY: canvasProse.ts's mergeProse now speaks ProseV2 end to end
-  // (Task 9), but every caller of mergedProse still wants the v1 shape.
-  // Removed when Task 14 moves main.ts to ProseV2 end to end.
+function mergedProse(section: SectionNode): ProseV2 | null {
   const prose = parseProse(section.getPluginData(DOC_PROSE_KEY));
-  const merged = mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
-  return merged ? proseToLegacy(merged) : null;
+  return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
 // The PageNode a node lives on, or null. Walks parents until a PAGE.
@@ -669,9 +664,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // succeeded, so a failed build never leaves guidelines describing a
         // document that does not exist. An over-budget payload serializes to
         // '' and simply stores nothing.
-        // TEMPORARY: msg.prose is still v1 ProseDrafts; upgrade before storing
-        // v2. Removed when Task 14 moves main.ts to ProseV2 end to end.
-        section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(upgradeProseV1(msg.prose)) : '');
+        section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(msg.prose) : '');
         // The diff baseline: the projection msg.contentHash was computed over,
         // written in the same commit as the link so the two can never disagree.
         // Over budget serializes to '' and the row shows the fallback. An

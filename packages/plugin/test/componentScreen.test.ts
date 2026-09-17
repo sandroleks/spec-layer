@@ -109,6 +109,16 @@ describe('sectionGroups', () => {
     expect(off.flatMap((g) => g.options).every((o) => !o.disabled)).toBe(true);
   });
 
+  it('shows the Docs 2.0 labels', () => {
+    const groups = sectionGroups(defaultSections(), ALL_GROUPS, true);
+    const labels = groups.flatMap((g) => g.options.map((o) => o.label));
+    expect(labels).toEqual([
+      'Overview', 'When to use', 'Variants', "Do and don't", 'Related components',
+      'Anatomy', 'Properties', 'States', 'Measurements', 'Tokens',
+      'Keyboard', 'Pointer and touch', 'Semantics and focus', 'Content',
+    ]);
+  });
+
   it('reports only the groups asked to be expanded', () => {
     const groups = sectionGroups(defaultSections(), new Set(['usage'] as const), true);
     expect(groups.find((g) => g.id === 'usage')!.expanded).toBe(true);
@@ -404,6 +414,21 @@ describe('component screen markup', () => {
     );
     expect(markup).toContain('data-measure="size" aria-pressed="false"');
     expect(markup).toContain('sl-option-check');
+  });
+
+  it('draws the section-map labels, with no screen-only rewording', () => {
+    // The screen used to override two of them ("Semantics & focus",
+    // "Content considerations"), so the picker and the heading drawn on
+    // canvas disagreed, and one of them carried an ampersand.
+    const markup = componentScrollMarkup(
+      READY,
+      createComponentSelection(true),
+      facts({ hasStates: true }),
+    );
+    expect(markup).toContain('<strong>Semantics and focus</strong>');
+    expect(markup).toContain('<strong>Content</strong>');
+    expect(markup).not.toContain('Semantics &amp; focus');
+    expect(markup).not.toContain('Content considerations');
   });
 
   it('makes the whole section label the selection target', () => {

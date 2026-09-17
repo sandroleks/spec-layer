@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { load } from 'js-yaml';
+import type { ProseV2 } from '@spec-layer/extractor';
 import type { DocSource } from '../src/ui/actions';
 
 const copyText = vi.fn();
@@ -37,6 +38,14 @@ const NODE = {
   id: '1:100', name: 'Button', type: 'COMPONENT', visible: true, key: 'k',
   children: [], bindings: [],
 } as never;
+
+/** Stored guidelines in the shape a doc now holds. The brief still reads the
+ *  v1 shape, so copyBriefFromSource flattens this on the way to the artifact. */
+const STORED: ProseV2 = {
+  v: 2,
+  overview: { lede: 'A button.', body: [] },
+  semantics: ['Name it.'],
+};
 
 const SRC: DocSource = {
   docId: 'doc-1', node: NODE, fileKey: 'F1',
@@ -80,8 +89,7 @@ describe('copyBriefFromSource', () => {
   });
 
   it('includes stored guidelines without generating any', async () => {
-    await copyBriefFromSource(createState(), SRC,
-      { definition: 'A button.', accessibility: 'Name it.', dos: [], donts: [] }, presenter());
+    await copyBriefFromSource(createState(), SRC, STORED, presenter());
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect(y.guidelines?.definition).toBe('A button.');
   });
@@ -110,8 +118,7 @@ describe('copyBriefFromSource', () => {
 
   it('omits the modal caveat entirely when nothing is missing', async () => {
     copyText.mockResolvedValue('manual');
-    await copyBriefFromSource(createState(), SRC,
-      { definition: 'A button.', accessibility: 'Name it.', dos: [], donts: [] }, presenter());
+    await copyBriefFromSource(createState(), SRC, STORED, presenter());
     // foundationSpec is still unset in this test file's module state, so the
     // "token values missing" caveat is unavoidable here; assert only that a
     // present prose stops contributing its own half of the caveat.

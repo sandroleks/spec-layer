@@ -108,6 +108,17 @@ none of the reasoning above.
   rails nudge overlapping labels apart instead of stacking them, and the
   token bindings the diagram draws are listed in a table under it.
 
+- **Empty sections are left out, and the result says so.** A section with
+  nothing to show, or an AI section when AI writing is off, is not drawn. No
+  "To be written." or "None." appears on canvas. The result message reads,
+  for example, "Docs created. Left out Keyboard: nothing to show." A Library
+  row that needs a rebuild now says that frames are rebuilt in the new layout
+  and written sections are kept. Stored prose moves to a structured shape;
+  a document written by an earlier build upgrades on read, and its keyboard
+  bullets that open with a key become table rows. That upgrade retires the v1
+  `designConsiderations` field, which no section ever rendered, so the copied
+  YAML brief no longer carries its optional `design_considerations` key.
+
 ### Fixed
 
 - **A radius bound on any corner no longer reads as a hardcoded gap.** The gap

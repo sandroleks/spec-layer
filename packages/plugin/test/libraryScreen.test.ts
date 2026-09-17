@@ -6,6 +6,7 @@ import { ICON_PATHS } from '../src/ui/shell/icons';
 import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
+  libraryRowMarkup,
   libraryScrollMarkup,
   revealScrollTop,
   rowMenuTop,
@@ -121,6 +122,19 @@ describe('library screen presentation', () => {
     expect(markup).toContain('Checking…');
     expect(markup).toContain('Check unavailable');
     expect(markup).not.toContain('data-library-status="inSync"');
+  });
+
+  it('explains a rebuild under the status', () => {
+    const html = libraryRowMarkup(row('buttonRebuild', 'rebuildNeeded'), null, false);
+    expect(html).toContain('Rebuild needed');
+    expect(html).toContain('Frames are rebuilt in the new layout. Your written sections are kept.');
+  });
+
+  it('leaves every other status without a rebuild note', () => {
+    for (const status of ['inSync', 'edited', 'orphaned'] as const) {
+      expect(libraryRowMarkup(row('button', status), null, false))
+        .not.toContain('Frames are rebuilt in the new layout.');
+    }
   });
 
   it('uses the honest detailed-comparison fallback verbatim', () => {

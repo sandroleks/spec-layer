@@ -9,7 +9,7 @@ import {
   extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
   type SpecHashProjection, type Bump,
 } from '@spec-layer/extractor';
-import type { ProseDrafts } from '@spec-layer/extractor';
+import type { ProseV2 } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -97,6 +97,7 @@ import {
   onFoundationMessage,
   setFoundationGroupDescriptions,
   onSelectionFoundation,
+  omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
   send,
@@ -238,7 +239,7 @@ type LibraryUpdateOperation = {
 type LibraryCopyOperation = {
   kind: 'copy';
   currentDocId: string;
-  prose?: ProseDrafts | null;
+  prose?: ProseV2 | null;
 };
 let libraryOperation: LibraryUpdateOperation | LibraryCopyOperation | null = null;
 let searchOpen = false;
@@ -2322,16 +2323,17 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = msg.replaced ? 'Docs replaced' : 'Docs created';
+        const outcome = omissionsMessage(msg.replaced ? 'Docs replaced.' : 'Docs created.', state.lastOmitted);
         screen = {
           kind: 'success',
           componentName: currentName(),
           replaced: msg.replaced,
         };
         nativeNotify(
-          note ? `${outcome}. ${note}` : outcome,
-          note ? { timeout: 5500 } : {},
+          note ? `${outcome} ${note}` : outcome,
+          (note || state.lastOmitted.length) ? { timeout: 5500 } : {},
         );
+        state.lastOmitted = [];
         state.pendingAiNote = '';
       }
       paint();

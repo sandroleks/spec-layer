@@ -60,10 +60,9 @@ const GROUP_ICONS: Record<GroupId, IconName> = {
   a11y: 'accessible',
 };
 
-const DISPLAY_LABELS: Partial<Record<SectionId, string>> = {
-  contentConsiderations: 'Content considerations',
-  accessibility: 'Semantics & focus',
-};
+/** Labels come from ALL_SECTIONS now; this map exists for a UI-only override
+ *  and is empty on purpose. */
+const DISPLAY_LABELS: Partial<Record<SectionId, string>> = {};
 
 const AI_HELP =
   'AI can assist sections labeled AI. Component data, measurements, states, ' +

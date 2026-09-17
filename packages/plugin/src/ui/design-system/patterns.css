@@ -1017,6 +1017,20 @@
   color: var(--sl-color-text-quiet);
 }
 
+/* The rebuild note. It follows the status in the DOM, because it explains that
+   status, but it is placed on its own row spanning every track: a fifth item
+   in the summary's four-column flow would push the timestamp and the row menu
+   onto a second line, and a note sized into the status column would widen it
+   and break the column alignment the eye scans down. */
+.sl-library-note {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: block;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+}
+
 .sl-library-update-disclosure {
   min-width: 0;
   gap: var(--sl-space-4);

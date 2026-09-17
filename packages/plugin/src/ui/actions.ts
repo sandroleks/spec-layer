@@ -9,10 +9,11 @@
 import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext, toYaml, upgradeProseV1,
+  buildComponentArtifactV5, componentAiContext, toYaml,
+  upgradeProseV1, validateProseV2, proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
-  SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
+  SerializedNode, IntermediateSpec, ProseKey, ProseV2, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
   FoundationScope, FoundationGuidelinesV5, YamlValue,
 } from '@spec-layer/extractor';
@@ -22,7 +23,10 @@ import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
+import {
+  buildDocModel, proseKeysForSections,
+  type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
+} from './docModel';
 import {
   defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
@@ -62,11 +66,14 @@ export interface UiState {
   quota: ProxyQuota | null;
   quotaExhausted: boolean;
   aiEnabled: boolean;
-  generatedProse: ProseDrafts | null;
+  generatedProse: ProseV2 | null;
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
   generatedProseKeys: Set<ProseKey> | null;
+  // What the last build left out, and why, so the result message can say so.
+  // Set by every assembled build and cleared once it has been reported.
+  lastOmitted: OmittedSection[];
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("built with placeholders") instead of aborting the whole frame.
   pendingAiNote: string;
@@ -98,6 +105,7 @@ export function createState(): UiState {
     aiEnabled: false,
     generatedProse: null,
     generatedProseKeys: null,
+    lastOmitted: [],
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -232,13 +240,23 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
   try {
     // willGenerateProse guarantees a non-null identity, spec, and node. A key
     // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
-    state.generatedProse = await generateProse(
+    const draft = await generateProse(
       state.currentSpec!,
       effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
       state.currentNode!.id,
       requested,
       (q) => { state.quota = q; },
     );
+    if (draft) {
+      // The v8 prompt writes v1; the canvas renders v2. Upgrade, then validate
+      // every name against the spec so nothing the model invented is drawn.
+      const { prose, dropped } = validateProseV2(state.currentSpec!, upgradeProseV1(draft));
+      const droppedCount = Object.values(dropped).reduce((a, b) => a + (b ?? 0), 0);
+      if (droppedCount > 0) console.warn('[Spec Layer] prose items dropped by validation', dropped);
+      state.generatedProse = hasProseContent(prose) ? prose : null;
+    } else {
+      state.generatedProse = null;
+    }
     // Record the covered key set only when a draft actually came back, so a
     // null result (degraded mode) leaves the reuse guard forcing a retry.
     state.generatedProseKeys = state.generatedProse ? requested : null;
@@ -376,15 +394,10 @@ async function assembleDocFor(
   // because the two UIs put that message in different places.
   if (selected.size === 0) return null;
 
-  const model = buildDocModel(
-    state.currentSpec!,
-    // The v8 prompt still answers in v1; `upgradeProseV1` is the seam the doc
-    // model reads through until Task 14 stores ProseV2 on the state itself.
-    state.generatedProse ? upgradeProseV1(state.generatedProse) : null,
-    selected,
-    variantIds,
-    { measureViews: state.measureViews, includeHidden: state.includeHidden },
-  );
+  const model = buildDocModel(state.currentSpec!, state.generatedProse, selected, variantIds, {
+    measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
+  });
+  state.lastOmitted = model.omitted;
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
@@ -394,6 +407,17 @@ async function assembleDocFor(
     includeHidden: state.includeHidden,
   };
   return { model, config };
+}
+
+const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
+  nothingToShow: 'nothing to show',
+  aiOff: 'AI writing is off',
+};
+
+/** The result line: the outcome, then one sentence per omitted section. */
+export function omissionsMessage(outcome: string, omitted: OmittedSection[]): string {
+  const parts = [outcome, ...omitted.map((o) => `Left out ${o.label}: ${OMISSION_REASON[o.reason]}.`)];
+  return parts.join(' ');
 }
 
 /** Status lines for the generating loader. The AI path narrates the slow
@@ -458,7 +482,7 @@ export type DocSource = {
   /** What the doc's writing sections currently say, read off the canvas by the
    *  main thread with the stored blob filling anything the canvas does not
    *  show. Null when the doc has never had guidelines. */
-  prose: ProseDrafts | null;
+  prose: ProseV2 | null;
 };
 
 export async function updateFromSource(
@@ -476,11 +500,10 @@ export async function updateFromSource(
     const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const selected = new Set<SectionId>(src.config.sections);
     const variantIds = new Set<string>(src.config.variantIds);
-    // Same v1 → v2 seam as runCreateDocFrame; Task 14 carries ProseV2 through
-    // the message instead.
-    const model = buildDocModel(spec, src.prose ? upgradeProseV1(src.prose) : null, selected, variantIds, {
+    const model = buildDocModel(spec, src.prose, selected, variantIds, {
       measureViews: src.config.measureViews,
       includeHidden: src.config.includeHidden,
+      aiEnabled: src.config.aiEnabled,
     });
     send({
       type: 'renderDocFrame',
@@ -543,7 +566,7 @@ export function sizeCaveat(text: string): string {
 export async function copyBriefFromSource(
   state: UiState,
   src: CopySource,
-  prose: ProseDrafts | null,
+  prose: ProseV2 | null,
   ui: BuildPresenter,
   options: CopyBriefOptions = {},
 ): Promise<void> {
@@ -565,7 +588,9 @@ export async function copyBriefFromSource(
       generatedAt,
       build: pluginBuild(),
       ...(foundation ? { foundation } : {}),
-      prose,
+      // The v5 artifact still reads the v1 shape, so the structured prose is
+      // flattened at the extractor call rather than carried as v1 anywhere.
+      prose: prose ? proseToLegacy(prose) : null,
     });
     const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
     const size = sizeCaveat(yaml);
