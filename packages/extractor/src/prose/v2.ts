@@ -12,6 +12,7 @@
  */
 import type { IntermediateSpec } from '../extract';
 import type { ProseDrafts } from './prompt';
+import { replaceAround } from './prompt';
 
 export interface GuidelineCard { rule: string; reason: string }
 export interface GuidelinePair { do: GuidelineCard | null; dont: GuidelineCard | null }
@@ -50,11 +51,26 @@ export const KEYBOARD_KEYS: readonly string[] = [
 
 const ARROWS = ['Arrow Up', 'Arrow Down', 'Arrow Left', 'Arrow Right'];
 
+/**
+ * Bare `up`/`down`/`left`/`right`/`return` are deliberately absent: those are
+ * ordinary English words ("Down the list, focus wraps.", "Return focus to
+ * the trigger.") and accepting them as keys fabricates a binding table row
+ * out of plain prose that `validateProseV2` cannot catch afterwards, because
+ * a fabricated row still names a real vocabulary key. An arrow or Enter must
+ * be spelled out as a key: "Arrow Down", "Down Arrow", "Down Key", or the
+ * glyph. `Space`, `Home`, `End`, `Enter`, `Tab`, `Escape`, `Delete`,
+ * `Backspace`, `Page Up` and `Page Down` keep their bare forms: those words
+ * do not open ordinary sentences about component behaviour the way the
+ * directional words and "return" do.
+ */
 const KEY_ALIASES: Record<string, string[]> = {
-  tab: ['Tab'], shifttab: ['Shift+Tab'], enter: ['Enter'], return: ['Enter'], space: ['Space'],
-  spacebar: ['Space'], escape: ['Escape'], esc: ['Escape'], arrowup: ['Arrow Up'], up: ['Arrow Up'],
-  arrowdown: ['Arrow Down'], down: ['Arrow Down'], arrowleft: ['Arrow Left'], left: ['Arrow Left'],
-  arrowright: ['Arrow Right'], right: ['Arrow Right'], arrowkeys: ARROWS, arrows: ARROWS,
+  tab: ['Tab'], shifttab: ['Shift+Tab'], enter: ['Enter'], returnkey: ['Enter'], space: ['Space'],
+  spacebar: ['Space'], escape: ['Escape'], esc: ['Escape'],
+  arrowup: ['Arrow Up'], uparrow: ['Arrow Up'], upkey: ['Arrow Up'], '↑': ['Arrow Up'],
+  arrowdown: ['Arrow Down'], downarrow: ['Arrow Down'], downkey: ['Arrow Down'], '↓': ['Arrow Down'],
+  arrowleft: ['Arrow Left'], leftarrow: ['Arrow Left'], leftkey: ['Arrow Left'], '←': ['Arrow Left'],
+  arrowright: ['Arrow Right'], rightarrow: ['Arrow Right'], rightkey: ['Arrow Right'], '→': ['Arrow Right'],
+  arrowkeys: ARROWS, arrows: ARROWS,
   home: ['Home'], end: ['End'], pageup: ['Page Up'], pagedown: ['Page Down'],
   delete: ['Delete'], del: ['Delete'], backspace: ['Backspace'],
 };
@@ -120,17 +136,48 @@ export function splitRuleReason(text: string): GuidelineCard {
   return { rule: sentence, reason: remainder };
 }
 
+/**
+ * Cheap discriminator: true when `value` is an object with `v === 2`. It does
+ * not validate any sub-shape — a value can pass this check and still be
+ * missing `overview.body`, a keyboard row's `keys`, or any other nested
+ * field a caller assumes is there. Callers still need `validateProseV2` to
+ * turn a value shaped like this into one whose fields can be trusted; that is
+ * also why every reader below (`validateProseV2`, `proseToLegacy`,
+ * `hasProseContent`) treats each field defensively instead of assuming the
+ * declared `ProseV2` type holds at runtime.
+ */
 export function isProseV2(value: unknown): value is ProseV2 {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     && (value as { v?: unknown }).v === 2;
 }
 
+/** An unknown value as an array of `T`, or `[]` when it is missing or not an
+ *  array. AI-authored `ProseV2` values are only shaped like the type, not
+ *  guaranteed to satisfy it, so every reader below normalises through this
+ *  instead of trusting a declared array field is actually an array. */
+const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+/** An unknown value as a string, or `''` when it is missing or not a string. */
+const asStr = (value: unknown): string => (typeof value === 'string' ? value : '');
+
 const bulletLines = (md: string | undefined): string[] =>
   (md ?? '').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !/^#{1,6}\s/.test(l))
     .map((l) => l.replace(/^[-*]\s+/, ''));
 
+/**
+ * Split model-authored markdown into paragraphs on a blank line, then collapse
+ * any single line-wrap left inside a paragraph to one space. The inner join is
+ * a plain line split rather than a global `\s*\n\s*` replace: that pattern is
+ * quadratic on a long run of horizontal whitespace that never reaches a `\n`
+ * (measured through `upgradeProseV1`: 2.9s at 40k spaces, quadrupling on every
+ * doubling), the same class of bug `normalizeDashes` below was already fixed
+ * for. This runs on model output, which nobody in this repository controls
+ * the length of.
+ */
 const paragraphs = (md: string | undefined): string[] =>
-  (md ?? '').split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
+  (md ?? '').split(/\n\s*\n/)
+    .map((p) => p.split('\n').map((l) => l.trim()).filter(Boolean).join(' '))
+    .filter(Boolean);
 
 /** Upgrade a v1 draft. Deterministic; see spec section 8.1 for the table. */
 export function upgradeProseV1(v1: ProseDrafts): ProseV2 {
@@ -199,29 +246,44 @@ export function upgradeProseV1(v1: ProseDrafts): ProseV2 {
   return out;
 }
 
-const cardToLegacy = (c: GuidelineCard): string => (c.reason ? `**${c.rule}** ${c.reason}` : `**${c.rule}**`);
+const cardToLegacy = (c: GuidelineCard | null | undefined): string => {
+  const rule = asStr(c?.rule);
+  const reason = asStr(c?.reason);
+  return reason ? `**${rule}** ${reason}` : `**${rule}**`;
+};
 
-/** Flatten v2 to the v1 shape the brief and the v5 artifact still consume. */
+/** Flatten v2 to the v1 shape the brief and the v5 artifact still consume.
+ *  `p` is only shaped like a validated `ProseV2` (see `isProseV2`'s doc
+ *  comment), so every field is read through `asArray`/`asStr` rather than
+ *  trusted outright — a caller that skips `validateProseV2` still gets a v1
+ *  shape back instead of a thrown `TypeError`. */
 export function proseToLegacy(p: ProseV2): ProseDrafts {
+  const guidelines = asArray<GuidelinePair>(p.guidelines);
+  const overviewBody = p.overview ? asArray<unknown>(p.overview.body).map(asStr) : [];
   const out: ProseDrafts = {
-    definition: p.overview ? [p.overview.lede, ...p.overview.body].filter(Boolean).join('\n\n') : '',
-    accessibility: (p.semantics ?? []).map((s) => `- ${s}`).join('\n'),
-    dos: (p.guidelines ?? []).flatMap((g) => (g.do ? [cardToLegacy(g.do)] : [])),
-    donts: (p.guidelines ?? []).flatMap((g) => (g.dont ? [cardToLegacy(g.dont)] : [])),
+    definition: p.overview ? [asStr(p.overview.lede), ...overviewBody].filter(Boolean).join('\n\n') : '',
+    accessibility: asArray<unknown>(p.semantics).map(asStr).filter(Boolean).map((s) => `- ${s}`).join('\n'),
+    dos: guidelines.flatMap((g) => (g?.do ? [cardToLegacy(g.do)] : [])),
+    donts: guidelines.flatMap((g) => (g?.dont ? [cardToLegacy(g.dont)] : [])),
   };
   const interactions: string[] = [];
-  if (p.keyboard?.length) {
-    interactions.push('### Keyboard', ...p.keyboard.map((r) => `- ${r.keys.join(' or ')}: ${r.action}`));
+  const keyboard = asArray<{ keys?: unknown; action?: unknown }>(p.keyboard);
+  if (keyboard.length) {
+    interactions.push('### Keyboard', ...keyboard.map((r) => `- ${asArray<unknown>(r.keys).map(asStr).join(' or ')}: ${asStr(r.action)}`));
   }
-  if (p.pointer?.length) interactions.push('### Other', ...p.pointer.map((s) => `- ${s}`));
+  const pointer = asArray<unknown>(p.pointer).map(asStr).filter(Boolean);
+  if (pointer.length) interactions.push('### Other', ...pointer.map((s) => `- ${s}`));
   if (interactions.length) out.interactions = interactions.join('\n');
   const variants: string[] = [];
-  if (p.variantsIntro) variants.push(p.variantsIntro);
-  if (p.variantsGuide?.length) variants.push(...p.variantsGuide.map((g) => `- **${g.name}**: ${g.guidance}`));
+  if (asStr(p.variantsIntro)) variants.push(asStr(p.variantsIntro));
+  const variantsGuide = asArray<{ name?: unknown; guidance?: unknown }>(p.variantsGuide);
+  if (variantsGuide.length) variants.push(...variantsGuide.map((g) => `- **${asStr(g.name)}**: ${asStr(g.guidance)}`));
   if (variants.length) out.variantsSummary = variants.join('\n');
-  if (p.anatomySummary) out.anatomySummary = p.anatomySummary;
-  if (p.anatomyParts?.length) out.anatomyParts = p.anatomyParts.map((a) => ({ name: a.name, description: a.role }));
-  if (p.content?.length) out.contentConsiderations = p.content.map((s) => `- ${s}`).join('\n');
+  if (asStr(p.anatomySummary)) out.anatomySummary = asStr(p.anatomySummary);
+  const anatomyParts = asArray<{ name?: unknown; role?: unknown }>(p.anatomyParts);
+  if (anatomyParts.length) out.anatomyParts = anatomyParts.map((a) => ({ name: asStr(a.name), description: asStr(a.role) }));
+  const content = asArray<unknown>(p.content).map(asStr).filter(Boolean);
+  if (content.length) out.contentConsiderations = content.map((s) => `- ${s}`).join('\n');
   return out;
 }
 
@@ -232,48 +294,15 @@ export function hasProseContent(p: ProseV2 | null | undefined): boolean {
     if (typeof value === 'string') { if (value.trim()) return true; continue; }
     if (Array.isArray(value)) { if (value.length) return true; continue; }
     if (value && typeof value === 'object') {
-      const o = value as { lede: string; body: string[] };
-      if (o.lede.trim() || o.body.length) return true;
+      const o = value as { lede?: unknown; body?: unknown };
+      if (asStr(o.lede).trim() || asArray(o.body).length) return true;
     }
   }
   return false;
 }
 
-/** One character's worth of `[ \t]`. Horizontal only, so a line break survives. */
-const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
-
-/**
- * Replace every `separator`, together with the horizontal whitespace hugging
- * it, with `replacement`. Same algorithm as `replaceAround` in `prose/prompt.ts`
- * (duplicated rather than imported, since that one is private): a single
- * left-to-right scan, because the equivalent global regex is quadratic on a
- * run of horizontal whitespace that never reaches a dash, and this runs on
- * model output, which nobody in this repository controls the length of.
- */
-function replaceAround(value: string, separator: string, replacement: string, requireSpace: boolean): string {
-  let out = '';
-  let from = 0;
-  let cursor = 0;
-  for (;;) {
-    const at = value.indexOf(separator, cursor);
-    if (at === -1) break;
-    let left = at;
-    while (left > from && isHorizontalSpace(value[left - 1])) left--;
-    const afterSeparator = at + separator.length;
-    let right = afterSeparator;
-    while (right < value.length && isHorizontalSpace(value[right])) right++;
-    if (requireSpace && (left === at || right === afterSeparator)) {
-      cursor = afterSeparator;
-      continue;
-    }
-    out += value.slice(from, left) + replacement;
-    from = right;
-    cursor = right;
-  }
-  return out + value.slice(from);
-}
-
-/** Em dashes and spaced en dashes become commas; same rule as prompt.ts. */
+/** Em dashes and spaced en dashes become commas; same rule as prompt.ts, and
+ *  the same shared, redos-tested `replaceAround` implementation. */
 function normalizeDashes(value: string): string {
   return replaceAround(replaceAround(value, '—', ', ', false), '–', ', ', true);
 }
@@ -287,6 +316,13 @@ export interface ProseValidation {
  * Enforce never-fabricate on the AI lane: every name must exist in the spec,
  * every key must be in the vocabulary, every string must be non-empty. Dropped
  * items are counted per key; a key with no survivors is omitted.
+ *
+ * `prose` is only shaped like a validated `ProseV2` (see `isProseV2`'s doc
+ * comment) — this function is what makes it trustworthy, not a precondition
+ * of calling it — so every field is read through `asArray`/`asStr` rather
+ * than assumed present: a missing or wrong-typed sub-field (a keyboard row
+ * with no `keys`, an `overview` with no `body`) is treated as empty and
+ * dropped like any other empty value, instead of throwing.
  */
 export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseValidation {
   const dropped: Partial<Record<ProseV2Key, number>> = {};
@@ -302,69 +338,73 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
   const keyNames = new Set(KEYBOARD_KEYS);
 
   const strings = (key: 'whenToUse' | 'whenNotToUse' | 'pointer' | 'semantics' | 'content'): void => {
-    const list = prose[key];
-    if (!list) return;
-    const kept = list.map((s) => normalizeDashes(s).trim()).filter(Boolean);
+    const list = asArray<unknown>(prose[key]);
+    if (!list.length) return;
+    const kept = list.map((s) => normalizeDashes(asStr(s)).trim()).filter(Boolean);
     drop(key, list.length - kept.length);
     if (kept.length) out[key] = kept;
   };
 
   if (prose.overview) {
-    const lede = normalizeDashes(prose.overview.lede).trim();
-    const body = prose.overview.body.map((s) => normalizeDashes(s).trim()).filter(Boolean);
+    const lede = normalizeDashes(asStr(prose.overview.lede)).trim();
+    const body = asArray<unknown>(prose.overview.body).map((s) => normalizeDashes(asStr(s)).trim()).filter(Boolean);
     if (lede || body.length) out.overview = { lede, body };
     else drop('overview');
   }
   strings('whenToUse');
   strings('whenNotToUse');
-  if (prose.variantsIntro?.trim()) out.variantsIntro = normalizeDashes(prose.variantsIntro).trim();
+  if (asStr(prose.variantsIntro).trim()) out.variantsIntro = normalizeDashes(asStr(prose.variantsIntro)).trim();
 
   const named = <T extends { name: string }>(
     key: ProseV2Key, list: T[] | undefined, names: Set<string>, textOf: (t: T) => string,
     rebuild: (t: T, text: string) => T,
   ): void => {
-    if (!list) return;
+    const items = asArray<T>(list);
+    if (!items.length) return;
     const kept: T[] = [];
-    for (const item of list) {
-      const text = normalizeDashes(textOf(item)).trim();
-      if (names.has(fold(item.name)) && text) kept.push(rebuild(item, text));
+    for (const item of items) {
+      const text = normalizeDashes(asStr(textOf(item))).trim();
+      const name = asStr((item as { name?: unknown } | null | undefined)?.name);
+      if (names.has(fold(name)) && text) kept.push(rebuild(item, text));
     }
-    drop(key, list.length - kept.length);
+    drop(key, items.length - kept.length);
     if (kept.length) (out as unknown as Record<string, unknown>)[key] = kept;
   };
-  named('variantsGuide', prose.variantsGuide, optionValues, (g) => g.guidance, (g, t) => ({ ...g, guidance: t }));
-  named('anatomyParts', prose.anatomyParts, partNames, (a) => a.role, (a, t) => ({ ...a, role: t }));
-  named('properties', prose.properties, propNames, (p) => p.description, (p, t) => ({ ...p, description: t }));
-  named('states', prose.states, stateNames, (s) => s.whenItApplies, (s, t) => ({ ...s, whenItApplies: t }));
+  named('variantsGuide', prose.variantsGuide, optionValues, (g) => g?.guidance, (g, t) => ({ ...g, guidance: t }));
+  named('anatomyParts', prose.anatomyParts, partNames, (a) => a?.role, (a, t) => ({ ...a, role: t }));
+  named('properties', prose.properties, propNames, (p) => p?.description, (p, t) => ({ ...p, description: t }));
+  named('states', prose.states, stateNames, (s) => s?.whenItApplies, (s, t) => ({ ...s, whenItApplies: t }));
 
-  if (prose.anatomySummary?.trim()) out.anatomySummary = normalizeDashes(prose.anatomySummary).trim();
+  if (asStr(prose.anatomySummary).trim()) out.anatomySummary = normalizeDashes(asStr(prose.anatomySummary)).trim();
 
-  if (prose.keyboard) {
+  const keyboardRows = asArray<{ keys?: unknown; action?: unknown } | null | undefined>(prose.keyboard);
+  if (keyboardRows.length) {
     const kept: { keys: string[]; action: string }[] = [];
-    for (const row of prose.keyboard) {
-      const keys = row.keys.flatMap((k) => normalizeKey(k) ?? [k]);
-      const action = normalizeDashes(row.action).trim();
+    for (const row of keyboardRows) {
+      const keys = asArray<unknown>(row?.keys).flatMap((k) => normalizeKey(asStr(k)) ?? [asStr(k)]);
+      const action = normalizeDashes(asStr(row?.action)).trim();
       if (keys.length && keys.every((k) => keyNames.has(k)) && action) kept.push({ keys: [...new Set(keys)], action });
     }
-    drop('keyboard', prose.keyboard.length - kept.length);
+    drop('keyboard', keyboardRows.length - kept.length);
     if (kept.length) out.keyboard = kept;
   }
   strings('pointer');
   strings('semantics');
   strings('content');
 
-  if (prose.guidelines) {
-    const card = (c: GuidelineCard | null): GuidelineCard | null => {
-      if (!c) return null;
-      const rule = normalizeDashes(c.rule).trim();
-      return rule ? { rule, reason: normalizeDashes(c.reason).trim() } : null;
+  const guidelineRows = asArray<{ do?: unknown; dont?: unknown } | null | undefined>(prose.guidelines);
+  if (guidelineRows.length) {
+    const card = (c: unknown): GuidelineCard | null => {
+      if (!c || typeof c !== 'object') return null;
+      const rule = normalizeDashes(asStr((c as { rule?: unknown }).rule)).trim();
+      return rule ? { rule, reason: normalizeDashes(asStr((c as { reason?: unknown }).reason)).trim() } : null;
     };
     const kept: GuidelinePair[] = [];
-    for (const pair of prose.guidelines) {
-      const p = { do: card(pair.do), dont: card(pair.dont) };
+    for (const pair of guidelineRows) {
+      const p = { do: card(pair?.do), dont: card(pair?.dont) };
       if (p.do || p.dont) kept.push(p);
     }
-    drop('guidelines', prose.guidelines.length - kept.length);
+    drop('guidelines', guidelineRows.length - kept.length);
     if (kept.length) out.guidelines = kept;
   }
   return { prose: out, dropped };

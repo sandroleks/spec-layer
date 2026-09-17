@@ -351,8 +351,13 @@ const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
  * `from` is the boundary of what a previous replacement already consumed, and
  * the left scan will not cross it. That is what `lastIndex` did for the `g`
  * regexes, and it is what makes two adjacent dashes collapse the same way.
+ *
+ * Exported so `prose/v2.ts`'s `normalizeDashes` can call this implementation
+ * instead of keeping its own copy: one algorithm, and `redos.test.ts`'s
+ * fuzz and timing coverage (pinned through `parseProseResponse`) backs both
+ * callers instead of only this one.
  */
-function replaceAround(
+export function replaceAround(
   value: string, separator: string, replacement: string, requireSpace: boolean,
 ): string {
   let out = '';

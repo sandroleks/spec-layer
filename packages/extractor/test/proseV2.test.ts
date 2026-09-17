@@ -66,6 +66,24 @@ describe('parseKeyboardBullet', () => {
   it('returns null when the sentence does not open with a key', () => {
     expect(parseKeyboardBullet('The focus ring is drawn by the browser.')).toBeNull();
   });
+  it('does not fabricate a key from an ordinary word that starts a sentence', () => {
+    // "Down", "Return" etc. are common English words, not qualified key names;
+    // accepting them as bare keys would turn ordinary prose under a Keyboard
+    // heading into a fabricated binding table row that validateProseV2 cannot
+    // catch afterwards, since the row would still name a real vocabulary key.
+    expect(parseKeyboardBullet('Down the list, focus wraps.')).toBeNull();
+    expect(parseKeyboardBullet('Return focus to the trigger.')).toBeNull();
+  });
+  it('accepts a direction only once it is qualified as a key', () => {
+    expect(parseKeyboardBullet('Down arrow moves to the next option.')).toEqual({ keys: ['Arrow Down'], action: 'Moves to the next option.' });
+    expect(parseKeyboardBullet('Space toggles the option.')).toEqual({ keys: ['Space'], action: 'Toggles the option.' });
+  });
+  it('still reads the Shift+Tab combo after the bare directional aliases are gone', () => {
+    // Regression check for the KEY_ALIASES prune: "Shift + Tab" folds to the
+    // existing `shifttab` alias (one compound key), not to two separate
+    // entries -- pruning `up`/`down`/`left`/`right`/`return` must not touch it.
+    expect(parseKeyboardBullet('Shift + Tab moves focus backwards.')).toEqual({ keys: ['Shift+Tab'], action: 'Moves focus backwards.' });
+  });
 });
 
 describe('splitRuleReason', () => {
@@ -173,5 +191,43 @@ describe('validateProseV2', () => {
   it('omits a key whose survivors are empty', () => {
     const { prose: p } = validateProseV2(spec, { v: 2, keyboard: [{ keys: ['Cmd+K'], action: 'x' }] });
     expect('keyboard' in p).toBe(false);
+  });
+});
+
+// isProseV2 only checks `v === 2`; a value can pass it and still be missing a
+// sub-field a caller assumes is there (a keyboard row's `keys`, an overview's
+// `body` or `lede`). These three shapes are exactly that: structurally valid
+// enough to pass isProseV2, but not fully shaped. validateProseV2, proseToLegacy
+// and hasProseContent must treat the missing half as empty rather than throw.
+const overviewMissingBody = { v: 2, overview: { lede: 'x' } } as unknown as ProseV2;
+const overviewMissingLede = { v: 2, overview: { body: ['y'] } } as unknown as ProseV2;
+const keyboardRowMissingKeys = { v: 2, keyboard: [{ action: 'x' }] } as unknown as ProseV2;
+
+describe('validateProseV2 tolerates a partially shaped ProseV2', () => {
+  it('does not throw on an overview missing its body array', () => {
+    expect(() => validateProseV2(spec, overviewMissingBody)).not.toThrow();
+  });
+  it('does not throw on a keyboard row missing its keys array', () => {
+    expect(() => validateProseV2(spec, keyboardRowMissingKeys)).not.toThrow();
+  });
+  it('treats the missing half as empty and drops what has nothing left', () => {
+    expect(validateProseV2(spec, overviewMissingBody).prose.overview).toEqual({ lede: 'x', body: [] });
+    const { prose, dropped } = validateProseV2(spec, keyboardRowMissingKeys);
+    expect('keyboard' in prose).toBe(false);
+    expect(dropped.keyboard).toBe(1);
+  });
+});
+
+describe('proseToLegacy tolerates a partially shaped ProseV2', () => {
+  it('does not throw on an overview missing its body array', () => {
+    expect(() => proseToLegacy(overviewMissingBody)).not.toThrow();
+    expect(proseToLegacy(overviewMissingBody).definition).toBe('x');
+  });
+});
+
+describe('hasProseContent tolerates a partially shaped ProseV2', () => {
+  it('does not throw on an overview missing its lede', () => {
+    expect(() => hasProseContent(overviewMissingLede)).not.toThrow();
+    expect(hasProseContent(overviewMissingLede)).toBe(true);
   });
 });
