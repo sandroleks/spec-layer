@@ -208,6 +208,17 @@ export class FakeText {
     this.ranges.push({ start, end, font });
   }
 
+  private fillRanges: { start: number; end: number; fills: unknown }[] = [];
+
+  setRangeFills(start: number, end: number, fills: unknown): void {
+    this.fillRanges.push({ start, end, fills });
+  }
+
+  /** Ranges given a distinct fill, for tests that check code-run styling. */
+  filledRanges(): { start: number; end: number }[] {
+    return this.fillRanges.map(({ start, end }) => ({ start, end }));
+  }
+
   getStyledTextSegments(_fields: ['fontName']): { characters: string; fontName: FakeFont; start: number; end: number }[] {
     const styles: FakeFont[] = Array.from(this.characters, () => this.fontName);
     for (const r of this.ranges) {

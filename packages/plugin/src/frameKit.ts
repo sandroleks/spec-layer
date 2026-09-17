@@ -181,16 +181,28 @@ export function hstack(spacing: number): FrameNode {
   return frame;
 }
 
-/** A slot holding a live instance of the variant (or a placeholder). `width` is
- *  the slot's box width; the instance is rescaled to fit inside its padding.
- *  `includeHidden` sets every boolean property to true on the instance (see
- *  revealBooleanParts). */
-export async function buildSlot(nodeId: string, width: number, maxH = 160, includeHidden = false): Promise<FrameNode> {
+/**
+ * The readable measure for prose on any generated frame: paragraphs, bullets,
+ * card text. Tables, matrices and diagrams keep the full content column. One
+ * constant so the component and foundation frames cannot drift apart.
+ */
+export const PROSE_MEASURE = 640;
+
+/** Shortest a preview cell may be, so a tiny instance still reads as a cell. */
+export const SLOT_MIN_H = 72;
+
+/**
+ * Place a live instance of `nodeId` inside a slot of the given width. The
+ * instance renders at true size; it is scaled DOWN only when it would not fit
+ * the slot's inner width or `maxH`, and the factor is returned so the caller
+ * can say so on canvas. Never scales up.
+ */
+export async function placeInstance(
+  nodeId: string, width: number, maxH = 160, includeHidden = false,
+): Promise<{ slot: FrameNode; scale: number }> {
   const slot = figma.createFrame();
   slot.name = 'Instance slot';
   slot.layoutMode = 'VERTICAL';
-  slot.counterAxisSizingMode = 'FIXED'; // fixed width
-  slot.primaryAxisSizingMode = 'AUTO'; // hug height
   slot.primaryAxisAlignItems = 'CENTER';
   slot.counterAxisAlignItems = 'CENTER';
   slot.paddingTop = slot.paddingBottom = slot.paddingLeft = slot.paddingRight = 12;
@@ -199,9 +211,14 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160, inclu
   slot.clipsContent = true;
   slot.strokes = solidFill(palette.divider);
   slot.strokeWeight = 1;
-  slot.resize(width, width);
+  // resize() fixes BOTH axes, so the hug on the vertical (primary) axis has
+  // to be restored after it. The old order drew every slot as a square.
+  slot.resize(width, SLOT_MIN_H);
+  slot.primaryAxisSizingMode = 'AUTO';
+  slot.minHeight = SLOT_MIN_H;
 
   let placed = false;
+  let scale = 1;
   try {
     const node = await figma.getNodeByIdAsync(nodeId);
     if (node && node.type === 'COMPONENT') {
@@ -212,7 +229,7 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160, inclu
       if (includeHidden) await revealBooleanParts(inst, node);
       slot.appendChild(inst);
       const maxW = width - 24;
-      const scale = Math.min(1, maxW / inst.width, maxH / inst.height);
+      scale = Math.min(1, maxW / inst.width, maxH / inst.height);
       if (scale < 1) inst.rescale(scale);
       placed = true;
     }
@@ -222,7 +239,12 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160, inclu
   if (!placed) {
     slot.appendChild(makeText('Drop instance', 'Regular', 11, palette.muted));
   }
-  return slot;
+  return { slot, scale };
+}
+
+/** A slot holding a live instance (or a placeholder). See placeInstance. */
+export async function buildSlot(nodeId: string, width: number, maxH = 160, includeHidden = false): Promise<FrameNode> {
+  return (await placeInstance(nodeId, width, maxH, includeHidden)).slot;
 }
 
 /**

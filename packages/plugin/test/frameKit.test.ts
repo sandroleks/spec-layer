@@ -13,9 +13,12 @@ import {
   vstack,
   hstack,
   buildSlot,
+  placeInstance,
+  PROSE_MEASURE,
   matchVariableModes,
   revealBooleanParts,
 } from '../src/frameKit';
+import { FakeFrame as RealFakeFrame } from './fakeFigma';
 
 describe('radius', () => {
   it('soft keeps the base values (the current look)', () => {
@@ -249,6 +252,41 @@ describe('buildSlot', () => {
     installFigma({ getNodeByIdAsync: async () => ({ type: 'FRAME' }) });
     const slot = await buildSlot('1:1', 200) as unknown as FakeFrame;
     expect((slot.children[0] as Record<string, unknown>).characters).toBe('Drop instance');
+  });
+
+  it('hugs its height instead of drawing a square', async () => {
+    // Needs the shared FakeFrame (not the local dumb stub above): it is the
+    // one fake that models resize() fixing both axes, which is exactly the
+    // behaviour this test is pinning the fix for.
+    const inst = { width: 100, height: 40, rescale: vi.fn(), setExplicitVariableModeForCollection: vi.fn() };
+    installFigma({
+      createFrame: () => new RealFakeFrame(),
+      getNodeByIdAsync: async () => ({ type: 'COMPONENT', createInstance: () => inst }),
+    });
+    const slot = await buildSlot('1:1', 200) as unknown as RealFakeFrame;
+    expect(slot.layoutSizingHorizontal).toBe('FIXED');
+    expect(slot.width).toBe(200);
+    expect(slot.layoutSizingVertical).toBe('HUG');
+    expect(slot.minHeight).toBe(72);
+  });
+
+  it('reports the scale it applied, and never scales up', async () => {
+    const small = { width: 20, height: 20, rescale: vi.fn(), setExplicitVariableModeForCollection: vi.fn() };
+    installFigma({ getNodeByIdAsync: async () => ({ type: 'COMPONENT', createInstance: () => small }) });
+    expect((await placeInstance('1:1', 200, 160, false)).scale).toBe(1);
+    expect(small.rescale).not.toHaveBeenCalled();
+
+    const wide = { width: 800, height: 40, rescale: vi.fn(), setExplicitVariableModeForCollection: vi.fn() };
+    installFigma({ getNodeByIdAsync: async () => ({ type: 'COMPONENT', createInstance: () => wide }) });
+    const placed = await placeInstance('1:1', 200, 160, false);
+    expect(placed.scale).toBeCloseTo(176 / 800);
+    expect(wide.rescale).toHaveBeenCalledWith(176 / 800);
+  });
+});
+
+describe('PROSE_MEASURE', () => {
+  it('is the one readable measure both frame families use', () => {
+    expect(PROSE_MEASURE).toBe(640);
   });
 });
 
