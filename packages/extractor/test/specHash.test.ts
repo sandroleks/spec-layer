@@ -60,11 +60,15 @@ it('is unchanged by the Figma file name', () => {
   expect(specContentHash(renamed)).toBe(BUTTON_HASH);     // so a rename is not drift
 });
 
-/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1, same reason as BUTTON_HASH
- *  above: `description` and `documentationLinks` entered the projection (both
- *  empty on this fixture, but the keys now exist) and canonical key order
- *  moved from localeCompare to code units. Only a task that says it re-cuts
- *  the baseline may change this constant. */
+/** Cut on 2026-08-25 before Phase A of the brief-resolution-fidelity plan, from
+ *  the tree as it stood at BRIEF_VERSION 3. Re-derived from cf299fb, the merge
+ *  base of the hidden-elements branch: held from cf299fb through
+ *  EXTRACTOR_VERSION '2', so until this re-cut it also served as the
+ *  pre-feature value for that branch. Re-cut at '3' by Docs 2.0 Plan 1 Task 1,
+ *  same reason as BUTTON_HASH above: `description` and `documentationLinks`
+ *  entered the projection (both empty on this fixture, but the keys now
+ *  exist) and canonical key order moved from localeCompare to code units.
+ *  Only a task that says it re-cuts the baseline may change this constant. */
 const CHIP_HASH = '3d98da0c9d7bce55f8a8e394577cb170944f3b22a76ff35e8f92f3fa9b43c27a';
 
 it('is unchanged across the whole of Phase A, on both fixtures', () => {
@@ -175,13 +179,24 @@ describe('specContentHash and parts hidden by default', () => {
   });
 });
 
-/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1, same reason as BUTTON_HASH
- *  and CHIP_HASH above: `description` and `documentationLinks` entered the
- *  projection and canonical key order moved from localeCompare to code units.
- *  Only a task that says it re-cuts the baseline may change this constant. */
+/** Pre-feature canvas hash of chip-hidden.json, computed at cf299fb (the merge
+ *  base of the hidden-elements branch) with this fixture copied into a
+ *  throwaway worktree, so the pre-feature extractor simply ignored
+ *  `visibleProperty`. Together with CHIP_HASH above, computed the same way and
+ *  matching, it proved the toggle-off path was byte-identical to what shipped:
+ *  one fixture that carries hidden bound layers and one that carries none.
+ *  Held from cf299fb through EXTRACTOR_VERSION '2'; re-cut at '3' by Docs 2.0
+ *  Plan 1 Task 1, same reason as BUTTON_HASH and CHIP_HASH above:
+ *  `description` and `documentationLinks` entered the projection and
+ *  canonical key order moved from localeCompare to code units. The cf299fb
+ *  anchor no longer holds past this re-cut — see the describe block below,
+ *  which no longer claims parity with the pre-feature extractor — but a
+ *  change here still means every committed component doc reports an update it
+ *  did not earn. Only a task that says it re-cuts the baseline may change
+ *  this constant. */
 const CHIP_HIDDEN_OFF_HASH = '2e3d7b3a4709e6f59fc53cd54bbec8f7a3f72a5fde44a150d6bfba0d02e74697';
 
-describe('the toggle-off canvas hash matches the pre-feature extractor', () => {
+describe('the toggle-off canvas hash is pinned', () => {
   it('is unchanged on a fixture with no hidden bound layers', () => {
     const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip.json', 'utf8'));
     expect(specContentHash(extract(node, { figmaFile: 'FILE1' }))).toBe(CHIP_HASH);
