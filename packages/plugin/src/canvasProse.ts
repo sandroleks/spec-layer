@@ -7,27 +7,28 @@
  * writing sections) is authored, first by the AI or a placeholder and then by
  * whoever edits the canvas, so the canvas is its source of truth. docFrame.ts
  * tags editorial nodes with pluginData at render time; this module turns
- * those tags back into a ProseDrafts overlay so an Update can rebuild the
+ * those tags back into a ProseV2 overlay so an Update can rebuild the
  * generated lane without losing a word anyone wrote.
  *
  * No Figma globals. The main thread passes real nodes; tests pass plain
  * objects. This module is imported by main.ts, which runs in Figma's bare
  * sandbox realm, so it may use only ECMAScript built-ins.
  */
-import type { ProseDrafts, AnatomyPartProse } from '@spec-layer/extractor';
+import { hasProseContent, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
 import { PILL_KEY } from './publishPill';
 
 /** pluginData key naming which editorial slot a node (and its subtree) fills. */
 export const SLOT_KEY = 'specLayerSlot';
-/** pluginData key on an `anatomyPart` row holding the part's name. */
+/** pluginData key on a keyed row (anatomyPart, propertyDescription, stateMeaning,
+ *  keyboardRow, variantsGuide, guidelinePair) holding the row's key. */
 export const SLOT_PART_KEY = 'specLayerSlotKey';
 /** pluginData key on a node inside a prose slot saying what kind of line it is. */
 export const LINE_KEY = 'specLayerLine';
 
 export type ProseSlot =
-  | 'definitionLead' | 'definition' | 'accessibility' | 'interactions'
-  | 'contentConsiderations' | 'dos' | 'donts' | 'variantsSummary'
-  | 'anatomySummary' | 'anatomyPart';
+  | 'definitionLead' | 'definition' | 'whenToUse' | 'whenNotToUse' | 'variantsIntro' | 'variantsGuide'
+  | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'stateMeaning' | 'keyboardRow'
+  | 'pointer' | 'semantics' | 'content' | 'guidelinePair' | 'guidelineDo' | 'guidelineDont';
 
 export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
 
@@ -50,32 +51,26 @@ export interface ProseNodeLike {
     readonly { characters: string; fontName: { family: string; style: string } }[];
 }
 
-/** Every field optional: absent means the canvas does not show that slot, or
- *  shows only the untouched placeholder. */
-export type CanvasProse = Partial<ProseDrafts>;
-
-type BlockSlot = 'definition' | 'accessibility' | 'interactions' | 'contentConsiderations' | 'variantsSummary';
-const BLOCK_SLOTS: ReadonlySet<string> = new Set<BlockSlot>([
-  'definition', 'accessibility', 'interactions', 'contentConsiderations', 'variantsSummary',
-]);
+/** Every field optional: absent means the canvas does not show that slot. */
+export type CanvasProse = Partial<Omit<ProseV2, 'v'>>;
 
 /**
- * A text node's characters as markdown: bold segments wrapped in `**`, which
- * is exactly the markup parseRuns understands, so a rebuilt node bolds the
- * same characters. Other styling is not carried.
+ * A text node's characters as markdown. Bold segments become **bold**, Medium
+ * segments become `code`: body text is Regular and lead-ins are Bold, so
+ * Medium can only mean a code span (see docText.applyRuns). A whitespace-only
+ * styled segment is left plain.
  */
 export function textToMarkdown(node: ProseNodeLike): string {
   const chars = node.characters ?? '';
   if (!node.getStyledTextSegments) return chars;
   let segments: ReturnType<NonNullable<ProseNodeLike['getStyledTextSegments']>>;
-  try {
-    segments = node.getStyledTextSegments(['fontName']);
-  } catch {
-    return chars;
-  }
-  return segments
-    .map((s) => (s.fontName.style === 'Bold' && s.characters.trim() !== '' ? `**${s.characters}**` : s.characters))
-    .join('');
+  try { segments = node.getStyledTextSegments(['fontName']); } catch { return chars; }
+  return segments.map((s) => {
+    if (s.characters.trim() === '') return s.characters;
+    if (s.fontName.style === 'Bold') return `**${s.characters}**`;
+    if (s.fontName.style === 'Medium') return `\`${s.characters}\``;
+    return s.characters;
+  }).join('');
 }
 
 function allTexts(node: ProseNodeLike, out: ProseNodeLike[] = []): ProseNodeLike[] {
@@ -84,21 +79,15 @@ function allTexts(node: ProseNodeLike, out: ProseNodeLike[] = []): ProseNodeLike
   return out;
 }
 
-/** One markdown line per child of a prose slot container. */
+/** One markdown line per child of a prose block container. */
 function readLines(container: ProseNodeLike): string[] {
   const lines: string[] = [];
   for (const child of container.children ?? []) {
     const kind = child.getPluginData(LINE_KEY);
     const texts = allTexts(child);
     if (texts.length === 0) continue;
-    if (kind === 'heading') {
-      lines.push(`### ${texts[0].characters ?? ''}`);
-      continue;
-    }
-    if (kind === 'bullet') {
-      lines.push(`- ${textToMarkdown(texts[texts.length - 1])}`);
-      continue;
-    }
+    if (kind === 'heading') { lines.push(`### ${texts[0].characters ?? ''}`); continue; }
+    if (kind === 'bullet') { lines.push(textToMarkdown(texts[texts.length - 1])); continue; }
     const md = textToMarkdown(texts[0]);
     if (kind === 'placeholder' && md.trim() === PLACEHOLDER_TEXT) continue;
     if (md.trim() === '') continue;
@@ -107,174 +96,145 @@ function readLines(container: ProseNodeLike): string[] {
   return lines;
 }
 
-/**
- * One item per row of a dos/donts container. The marker node is skipped and
- * the content node is read. Returns null when the container holds only the
- * placeholder, so the slot reads as absent rather than as an empty list; an
- * empty container is a real empty list, since someone deleted every row.
- */
-function readBullets(container: ProseNodeLike): string[] | null {
+/** One item per bullet row of a list block: the last text node is the content. */
+function readBullets(container: ProseNodeLike): string[] {
   const items: string[] = [];
-  let sawPlaceholder = false;
   for (const row of container.children ?? []) {
     const texts = allTexts(row);
     if (texts.length === 0) continue;
     const md = textToMarkdown(texts[texts.length - 1]);
-    if (texts.length === 1 && md.trim() === PLACEHOLDER_TEXT) {
-      sawPlaceholder = true;
-      continue;
-    }
-    if (md.trim() === '') continue;
+    if (md.trim() === '' || md.trim() === PLACEHOLDER_TEXT) continue;
     items.push(md);
   }
-  return items.length === 0 && sawPlaceholder ? null : items;
+  return items;
 }
+
+const LIST_SLOTS = new Set<ProseSlot>(['whenToUse', 'whenNotToUse', 'pointer', 'semantics', 'content']);
 
 /** Walk a Section and collect what its editorial slots currently say. */
 export function readCanvasProse(root: ProseNodeLike): CanvasProse {
-  const blocks = new Map<BlockSlot, string[]>();
+  const lists = new Map<string, string[]>();
+  const definitionLines: string[] = [];
   let lead: string | undefined;
+  let variantsIntro: string[] | undefined;
   let anatomySummary: string | undefined;
-  let dos: string[] | undefined;
-  let donts: string[] | undefined;
-  let parts: AnatomyPartProse[] | undefined;
+  let guide: { name: string; guidance: string }[] | undefined;
+  let parts: { name: string; role: string }[] | undefined;
+  let properties: { name: string; description: string }[] | undefined;
+  let states: { name: string; whenItApplies: string }[] | undefined;
+  let keyboard: { keys: string[]; action: string }[] | undefined;
+  const pairs = new Map<number, GuidelinePair>();
+
+  const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
+  const lastText = (node: ProseNodeLike): string => {
+    const texts = allTexts(node);
+    return texts.length ? textToMarkdown(texts[texts.length - 1]).trim() : '';
+  };
+  const card = (node: ProseNodeLike): GuidelineCard | null => {
+    const texts = allTexts(node);
+    const rule = texts[0] ? textToMarkdown(texts[0]).trim() : '';
+    if (!rule) return null;
+    const reason = texts[1] ? textToMarkdown(texts[1]).trim() : '';
+    return { rule, reason };
+  };
 
   const visit = (node: ProseNodeLike): void => {
-    // Instance text mirrors the source component; it is never editorial.
     if (node.type === 'INSTANCE') return;
-    const slot = node.getPluginData(SLOT_KEY);
-    if (slot === '') {
-      for (const c of node.children ?? []) visit(c);
-      return;
-    }
-    if (BLOCK_SLOTS.has(slot)) {
-      // A repeated or pasted tagged block accumulates rather than overwrites,
-      // so a duplicated container does not silently drop the earlier one.
-      const key = slot as BlockSlot;
-      const existing = blocks.get(key) ?? [];
-      blocks.set(key, [...existing, ...readLines(node)]);
+    const slotName = node.getPluginData(SLOT_KEY);
+    if (slotName === '') { for (const c of node.children ?? []) visit(c); return; }
+    const slot = slotName as ProseSlot;
+    const key = node.getPluginData(SLOT_PART_KEY);
+    if (LIST_SLOTS.has(slot)) {
+      lists.set(slot, [...(lists.get(slot) ?? []), ...readBullets(node)]);
       return;
     }
     switch (slot) {
-      case 'definitionLead': {
-        const value = textToMarkdown(node);
-        lead = lead !== undefined ? `${lead}\n${value}` : value;
-        return;
-      }
-      case 'anatomySummary': {
-        const value = textToMarkdown(node);
-        anatomySummary = anatomySummary !== undefined ? `${anatomySummary}\n${value}` : value;
-        return;
-      }
-      case 'dos': {
-        const items = readBullets(node);
-        // A placeholder-only repeat contributes nothing; it must not turn an
-        // already-accumulated list back into absent.
-        if (items) dos = [...(dos ?? []), ...items];
-        return;
-      }
-      case 'donts': {
-        const items = readBullets(node);
-        if (items) donts = [...(donts ?? []), ...items];
+      case 'definitionLead': { const v = textToMarkdown(node).trim(); if (v) lead = lead ? `${lead} ${v}` : v; return; }
+      case 'definition': definitionLines.push(...readLines(node)); return;
+      case 'variantsIntro': variantsIntro = [...(variantsIntro ?? []), ...readLines(node)]; return;
+      case 'anatomySummary': { const v = textToMarkdown(node).trim(); if (v) anatomySummary = anatomySummary ? `${anatomySummary} ${v}` : v; return; }
+      case 'variantsGuide': {
+        if (!guide) guide = [];
+        if (!key) return;
+        const chars = lastText(node);
+        const guidance = chars.startsWith(`${key}: `) ? chars.slice(key.length + 2).trim() : chars.replace(/^\*\*[^*]+\*\*:?\s*/, '').trim();
+        if (guidance) guide.push({ name: key, guidance });
         return;
       }
       case 'anatomyPart': {
-        // Seeing any row means the anatomy legend is on canvas, so an empty
-        // list is a real answer: every description was removed.
         if (!parts) parts = [];
-        const name = node.getPluginData(SLOT_PART_KEY);
-        if (!name) return;
-        const texts = allTexts(node);
-        const chars = texts.length ? (texts[texts.length - 1].characters ?? '') : '';
-        // Split by the tagged name first, not by the first ': ' in the row
-        // text: anatomyLegendRow renders an undescribed part as exactly the
-        // name (plus an optional "  ·  component" nested note) and a
-        // described part as "name: description". Using the tagged name keeps
-        // a part named e.g. "Icon: Left" from reading its own name as a
-        // fabricated description. Fall back to the first ': ' only when the
-        // row text does not start with the tagged name at all (a typo in the
-        // name text), so the description is still found.
-        let description: string | undefined;
-        if (chars === name || chars.startsWith(`${name}  ·  `)) {
-          description = undefined;
-        } else if (chars.startsWith(`${name}: `)) {
-          description = chars.slice(name.length + 2).trim();
-        } else {
-          const i = chars.indexOf(': ');
-          if (i >= 0) description = chars.slice(i + 2).trim();
+        if (!key) return;
+        const chars = allTexts(node).length ? (allTexts(node).slice(-1)[0].characters ?? '') : '';
+        let role: string | undefined;
+        if (chars === key || chars.startsWith(`${key}  ·  `)) role = undefined;
+        else if (chars.startsWith(`${key}: `)) role = chars.slice(key.length + 2).trim();
+        else { const i = chars.indexOf(': '); if (i >= 0) role = chars.slice(i + 2).trim(); }
+        // A revealed part's "Shown when X is true" note is not editorial.
+        if (role) role = role.replace(/\s+·\s+Shown when .+ is true$/, '').trim();
+        if (role) parts.push({ name: key, role });
+        return;
+      }
+      case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
+      case 'stateMeaning': { if (!key) return; const w = lastText(node); if (w) states = push(states, { name: key, whenItApplies: w }); return; }
+      case 'keyboardRow': {
+        // Keys are joined with " + " (spaces included) by docBlocks, so that
+        // "Shift+Tab" survives as one key.
+        if (!key) return;
+        const action = lastText(node);
+        if (action) keyboard = push(keyboard, { keys: key.split(' + ').map((k) => k.trim()).filter(Boolean), action });
+        return;
+      }
+      case 'guidelinePair': {
+        const index = Number(key);
+        if (!Number.isInteger(index) || index < 0) return;
+        let doCard: GuidelineCard | null = null;
+        let dontCard: GuidelineCard | null = null;
+        for (const c of node.children ?? []) {
+          const inner = c.getPluginData(SLOT_KEY);
+          if (inner === 'guidelineDo') doCard = card(c);
+          else if (inner === 'guidelineDont') dontCard = card(c);
         }
-        if (description) parts.push({ name, description });
+        if (doCard || dontCard) pairs.set(index, { do: doCard, dont: dontCard });
         return;
       }
       default:
-        // A slot this build does not know (written by a newer plugin): leave
-        // it alone rather than guess which field it belongs to.
         return;
     }
   };
   visit(root);
 
   const out: CanvasProse = {};
-  const definitionLines = [...(lead && lead.trim() ? [lead] : []), ...(blocks.get('definition') ?? [])];
-  if (definitionLines.length) out.definition = definitionLines.join('\n');
-  for (const slot of ['accessibility', 'interactions', 'contentConsiderations', 'variantsSummary'] as const) {
-    const lines = blocks.get(slot);
-    if (lines && lines.length) out[slot] = lines.join('\n');
-  }
-  if (anatomySummary !== undefined && anatomySummary.trim()) out.anatomySummary = anatomySummary;
-  if (dos) out.dos = dos;
-  if (donts) out.donts = donts;
+  if (lead !== undefined || definitionLines.length) out.overview = { lede: lead ?? '', body: definitionLines };
+  for (const slot of LIST_SLOTS) { const items = lists.get(slot); if (items && items.length) out[slot as 'pointer'] = items; }
+  if (variantsIntro && variantsIntro.length) out.variantsIntro = variantsIntro.join('\n');
+  if (guide) out.variantsGuide = guide;
+  if (anatomySummary) out.anatomySummary = anatomySummary;
   if (parts) out.anatomyParts = parts;
+  if (properties) out.properties = properties;
+  if (states) out.states = states;
+  if (keyboard) out.keyboard = keyboard;
+  if (pairs.size) out.guidelines = [...pairs.keys()].sort((a, b) => a - b).map((i) => pairs.get(i)!);
   return out;
 }
 
-const OPTIONAL_KEYS = [
-  'variantsSummary', 'anatomySummary', 'anatomyParts',
-  'interactions', 'designConsiderations', 'contentConsiderations',
+/** Every ProseV2 field this module reads off the canvas. Referenced only in
+ *  the type position below, so it is prefixed like the guard it feeds. */
+const _HANDLED_PROSE_KEYS = [
+  'overview', 'whenToUse', 'whenNotToUse', 'variantsIntro', 'variantsGuide',
+  'anatomySummary', 'anatomyParts', 'properties', 'states', 'keyboard',
+  'pointer', 'semantics', 'content', 'guidelines',
 ] as const;
 
-// Compile-time guard: a future optional field added to ProseDrafts must be
-// added to OPTIONAL_KEYS above, or mergeProse would silently drop it. This
-// fails to compile when ProseDrafts gains a field this list does not name.
-type RequiredKeys = 'definition' | 'accessibility' | 'dos' | 'donts';
-type UncoveredOptionalKey = Exclude<keyof ProseDrafts, RequiredKeys | (typeof OPTIONAL_KEYS)[number]>;
-const _everyOptionalKeyIsListed: UncoveredOptionalKey extends never ? true : never = true;
+// Compile-time guard: a future field added to ProseV2 must be added to
+// _HANDLED_PROSE_KEYS above, or readCanvasProse would silently never fill it.
+// This fails to compile when ProseV2 gains a field this list does not name.
+type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
+const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = true;
 
-/** True when at least one field carries real content: a non-blank string
- *  after trimming, or a non-empty array. An object with only empty strings
- *  and empty arrays (e.g. an anatomy legend on canvas with no descriptions)
- *  is not content — it must not read as "this doc has prose". */
-function hasContent(p: ProseDrafts): boolean {
-  for (const value of Object.values(p)) {
-    if (typeof value === 'string') {
-      if (value.trim() !== '') return true;
-    } else if (Array.isArray(value)) {
-      if (value.length > 0) return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Canvas wins per field; stored fills whatever the canvas does not show. A
- * section the config does not render leaves no tags, so its stored text
- * survives. Null when neither side has anything at all, or when the merge
- * itself carries no real content (e.g. canvas contributed only an empty
- * anatomyParts array and stored was null).
- */
-export function mergeProse(stored: ProseDrafts | null, canvas: CanvasProse): ProseDrafts | null {
-  if (!stored && Object.keys(canvas).length === 0) return null;
-  const out: ProseDrafts = {
-    definition: canvas.definition ?? stored?.definition ?? '',
-    accessibility: canvas.accessibility ?? stored?.accessibility ?? '',
-    dos: canvas.dos ?? stored?.dos ?? [],
-    donts: canvas.donts ?? stored?.donts ?? [],
-  };
-  for (const key of OPTIONAL_KEYS) {
-    const value = canvas[key] ?? stored?.[key];
-    if (value !== undefined) (out as unknown as Record<string, unknown>)[key] = value;
-  }
-  return hasContent(out) ? out : null;
+/** Canvas wins per field; stored fills whatever the canvas does not show. */
+export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2 | null {
+  const out: ProseV2 = { ...(stored ?? {}), ...canvas, v: 2 };
+  return hasProseContent(out) ? out : null;
 }
 
 /**

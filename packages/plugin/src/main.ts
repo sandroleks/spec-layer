@@ -316,13 +316,12 @@ function collectGeneratedLane(node: BaseNode): string[] {
  * stored blob filling any slot the canvas does not render.
  */
 function mergedProse(section: SectionNode): ProseDrafts | null {
-  // TEMPORARY: docLink.ts now stores/returns ProseV2; this whole function
-  // still speaks v1. Removed when Task 14 moves main.ts to ProseV2 end to end.
+  // TEMPORARY: canvasProse.ts's mergeProse now speaks ProseV2 end to end
+  // (Task 9), but every caller of mergedProse still wants the v1 shape.
+  // Removed when Task 14 moves main.ts to ProseV2 end to end.
   const prose = parseProse(section.getPluginData(DOC_PROSE_KEY));
-  return mergeProse(
-    prose ? proseToLegacy(prose) : null,
-    readCanvasProse(section as unknown as ProseNodeLike),
-  );
+  const merged = mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
+  return merged ? proseToLegacy(merged) : null;
 }
 
 // The PageNode a node lives on, or null. Walks parents until a PAGE.

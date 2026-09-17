@@ -769,14 +769,17 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     //
     // The model now carries the intro and the per-option guide separately;
     // this recomposes the markdown the single `summary` field used to hold so
-    // the existing slot round-trips unchanged. Task 12 renders the two parts
-    // as their own blocks and retires this.
+    // the combined text still round-trips through one slot. Tagged
+    // `variantsIntro` rather than a dedicated per-option slot because
+    // splitting the guide into its own `variantsGuide` rows is Task 12's job;
+    // this stopgap only keeps Task 9's canvas reader (which no longer knows
+    // a `variantsSummary` slot) from losing the guide lines on Update.
     const summary = [
       section.intro ?? '',
       ...section.guide.map((g) => `- **${g.name}**: ${g.guidance}`),
     ].filter(Boolean).join('\n').trim() || null;
     if (summary) {
-      const holder = buildProseSlot(summary, 'variantsSummary', bodySpacing);
+      const holder = buildProseSlot(summary, 'variantsIntro', bodySpacing);
       body.appendChild(holder);
       holder.layoutSizingHorizontal = 'FILL';
     }

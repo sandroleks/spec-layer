@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { IntermediateSpec, ProseV2, RefIdentity } from '@spec-layer/extractor';
-import { upgradeProseV1 } from '@spec-layer/extractor';
 import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
 import { buildDocModel, type SectionId } from '../src/ui/docModel';
@@ -59,19 +58,17 @@ describe('docFrame editorial tags', () => {
     const read = readCanvasProse(asNode(await build(prose)));
     expect(read).toEqual({
       // The lead sentence is lifted into the header, so the definition comes
-      // back as lead + body on separate lines. Same words, same order.
-      definition: 'A button.\nUse it for the main action on a screen.',
+      // back as lede + body, same words and order as the source prose.
+      overview: prose.overview,
       anatomySummary: prose.anatomySummary,
-      // The read-back is still v1-shaped, so a part's role comes back under
-      // `description`; Task 9 moves it to the v2 field.
-      anatomyParts: [{ name: 'Label', description: 'The visible text.' }],
+      anatomyParts: [{ name: 'Label', role: 'The visible text.' }],
     });
   });
 
   it('is a fixed point: building from the read-back and reading again changes nothing', async () => {
     const first = readCanvasProse(asNode(await build(prose)));
     const merged = mergeProse(null, first);
-    const second = readCanvasProse(asNode(await build(merged ? upgradeProseV1(merged) : null)));
+    const second = readCanvasProse(asNode(await build(merged)));
     expect(second).toEqual(first);
   });
 
