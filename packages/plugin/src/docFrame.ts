@@ -75,6 +75,20 @@ function buildProseSlot(text: string, slot: ProseSlot, spacing: number): FrameNo
   return holder;
 }
 
+/** Render markdown into an untagged container: generated text, not an
+ *  editorial slot, so it is always rebuilt on Update rather than read back.
+ *  Used where content does not yet have its own slot to land in (see the
+ *  variantsMatrix stopgap below); tagging it into the wrong ProseV2 field
+ *  would let a hand edit duplicate on every further Update. */
+function buildUntaggedProse(text: string, spacing: number): FrameNode {
+  const holder = vstack(spacing);
+  for (const node of buildProse(text)) {
+    holder.appendChild(node);
+    (node as TextNode).layoutSizingHorizontal = 'FILL';
+  }
+  return holder;
+}
+
 /**
  * Split a markdown block into its lead paragraph (first non-empty line) and the
  * remainder. The lead becomes the header subtitle; the rest renders as a body
@@ -769,17 +783,19 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     //
     // The model now carries the intro and the per-option guide separately;
     // this recomposes the markdown the single `summary` field used to hold so
-    // the combined text still round-trips through one slot. Tagged
-    // `variantsIntro` rather than a dedicated per-option slot because
-    // splitting the guide into its own `variantsGuide` rows is Task 12's job;
-    // this stopgap only keeps Task 9's canvas reader (which no longer knows
-    // a `variantsSummary` slot) from losing the guide lines on Update.
+    // the combined text still renders as one block. Left untagged rather than
+    // stamped into `variantsIntro`: that slot is a single string, and this
+    // blob mixes the intro with the per-option guide, so tagging it would
+    // make readCanvasProse fold the guide lines back into `variantsIntro`
+    // while `variantsGuide` stays whatever was last stored, duplicating the
+    // guide on every further Update. Task 12 renders the intro and the guide
+    // as their own tagged slots and retires this untagged stopgap.
     const summary = [
       section.intro ?? '',
       ...section.guide.map((g) => `- **${g.name}**: ${g.guidance}`),
     ].filter(Boolean).join('\n').trim() || null;
     if (summary) {
-      const holder = buildProseSlot(summary, 'variantsIntro', bodySpacing);
+      const holder = buildUntaggedProse(summary, bodySpacing);
       body.appendChild(holder);
       holder.layoutSizingHorizontal = 'FILL';
     }

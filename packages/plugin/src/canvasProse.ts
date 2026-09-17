@@ -51,8 +51,14 @@ export interface ProseNodeLike {
     readonly { characters: string; fontName: { family: string; style: string } }[];
 }
 
-/** Every field optional: absent means the canvas does not show that slot. */
-export type CanvasProse = Partial<Omit<ProseV2, 'v'>>;
+/** Every field optional: absent means the canvas does not show that slot.
+ *  `overview` is further split into its own two optional halves: the header
+ *  lead and the definition body are two separate tagged slots, so a doc with
+ *  only one of them tagged must report only that half, never a fabricated
+ *  empty string or empty array for the other. */
+export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview'>> & {
+  overview?: { lede?: string; body?: string[] };
+};
 
 /**
  * A text node's characters as markdown. Bold segments become **bold**, Medium
@@ -131,10 +137,18 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     return texts.length ? textToMarkdown(texts[texts.length - 1]).trim() : '';
   };
   const card = (node: ProseNodeLike): GuidelineCard | null => {
-    const texts = allTexts(node);
-    const rule = texts[0] ? textToMarkdown(texts[0]).trim() : '';
+    // The last two text nodes are the rule then the reason. A card built with
+    // a leading DO/DON'T label (three nodes) drops that label by taking only
+    // the tail; a two-node card (no label) is unaffected. The rule node is
+    // read as plain characters, not through textToMarkdown: Task 11 renders
+    // the whole rule in the Bold face as card styling, not as a bold markdown
+    // run, so converting it would stamp every stored rule with `**...**`.
+    const texts = allTexts(node).slice(-2);
+    const ruleNode = texts[0];
+    const rule = ruleNode ? (ruleNode.characters ?? '').trim() : '';
     if (!rule) return null;
-    const reason = texts[1] ? textToMarkdown(texts[1]).trim() : '';
+    const reasonNode = texts[1];
+    const reason = reasonNode ? textToMarkdown(reasonNode).trim() : '';
     return { rule, reason };
   };
 
@@ -204,7 +218,13 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   visit(root);
 
   const out: CanvasProse = {};
-  if (lead !== undefined || definitionLines.length) out.overview = { lede: lead ?? '', body: definitionLines };
+  // Set only the half actually seen: a doc with just the header lead tagged
+  // must not report a fabricated empty body, and vice versa.
+  if (lead !== undefined || definitionLines.length) {
+    out.overview = {};
+    if (lead !== undefined) out.overview.lede = lead;
+    if (definitionLines.length) out.overview.body = definitionLines;
+  }
   for (const slot of LIST_SLOTS) { const items = lists.get(slot); if (items && items.length) out[slot as 'pointer'] = items; }
   if (variantsIntro && variantsIntro.length) out.variantsIntro = variantsIntro.join('\n');
   if (guide) out.variantsGuide = guide;
@@ -231,9 +251,20 @@ const _HANDLED_PROSE_KEYS = [
 type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
 const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = true;
 
-/** Canvas wins per field; stored fills whatever the canvas does not show. */
+/**
+ * Canvas wins per field; stored fills whatever the canvas does not show.
+ * `overview` merges sub-field-wise rather than wholesale, since the canvas
+ * can show only the lede or only the body: each half falls back to the
+ * stored half independently, and the merged overview is included only when
+ * at least one half exists, never fabricated as `{ lede: '', body: [] }`.
+ */
 export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2 | null {
-  const out: ProseV2 = { ...(stored ?? {}), ...canvas, v: 2 };
+  const { overview: canvasOverview, ...restCanvas } = canvas;
+  const out: ProseV2 = { ...(stored ?? {}), ...restCanvas, v: 2 };
+  const lede = canvasOverview?.lede ?? stored?.overview?.lede;
+  const body = canvasOverview?.body ?? stored?.overview?.body;
+  if (lede !== undefined || body !== undefined) out.overview = { lede: lede ?? '', body: body ?? [] };
+  else delete out.overview;
   return hasProseContent(out) ? out : null;
 }
 

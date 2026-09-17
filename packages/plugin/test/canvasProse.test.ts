@@ -164,6 +164,21 @@ describe('readCanvasProse', () => {
     ]);
     expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B']);
   });
+
+  it('reads a three-node guideline card as plain text, ignoring the leading DO/DONT label', () => {
+    const doc = frame([
+      keyed('guidelinePair', '0', [
+        frame([
+          text('DO', { segments: [{ characters: 'DO', fontName: MEDIUM }] }),
+          text('Pair it with a label.', { segments: [{ characters: 'Pair it with a label.', fontName: BOLD }] }),
+          text('It widens the target.'),
+        ], slot('guidelineDo')),
+      ]),
+    ]);
+    expect(readCanvasProse(doc).guidelines).toEqual([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: null },
+    ]);
+  });
 });
 
 describe('mergeProse', () => {
@@ -176,6 +191,18 @@ describe('mergeProse', () => {
   it('is null when neither side has content', () => {
     expect(mergeProse(null, {})).toBeNull();
     expect(mergeProse({ v: 2 }, { anatomyParts: [] })).toBeNull();
+  });
+
+  const storedOverview: ProseV2 = { v: 2, overview: { lede: 'Stored lede.', body: ['Stored body.'] } };
+  it('keeps the stored body when only the header lead is tagged on canvas', () => {
+    expect(mergeProse(storedOverview, { overview: { lede: 'Canvas lede.' } })).toEqual({
+      v: 2, overview: { lede: 'Canvas lede.', body: ['Stored body.'] },
+    });
+  });
+  it('keeps the stored lede when only the Overview body is tagged on canvas', () => {
+    expect(mergeProse(storedOverview, { overview: { body: ['Canvas body.'] } })).toEqual({
+      v: 2, overview: { lede: 'Stored lede.', body: ['Canvas body.'] },
+    });
   });
 });
 
