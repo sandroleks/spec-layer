@@ -16,6 +16,7 @@
  */
 import { hasProseContent, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
 import { PILL_KEY } from './publishPill';
+import { displayPartName } from './ui/displayNames';
 
 /** pluginData key naming which editorial slot a node (and its subtree) fills. */
 export const SLOT_KEY = 'specLayerSlot';
@@ -179,9 +180,17 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         if (!parts) parts = [];
         if (!key) return;
         const chars = allTexts(node).length ? (allTexts(node).slice(-1)[0].characters ?? '') : '';
+        // The legend prints the DISPLAY name (see anatomySection.ts), while the
+        // tag keeps the RAW key, so both spellings of "no role" (and both
+        // lead-ins) must be checked before falling through to the loose
+        // ": "-search below — otherwise a nested part named in camelCase/
+        // snake_case/kebab-case whose component note itself contains ": "
+        // (e.g. "Icon leading  ·  Icon: 24") is misread as an authored role.
+        const shown = displayPartName(key);
         let role: string | undefined;
-        if (chars === key || chars.startsWith(`${key}  ·  `)) role = undefined;
+        if (chars === key || chars === shown || chars.startsWith(`${key}  ·  `) || chars.startsWith(`${shown}  ·  `)) role = undefined;
         else if (chars.startsWith(`${key}: `)) role = chars.slice(key.length + 2).trim();
+        else if (chars.startsWith(`${shown}: `)) role = chars.slice(shown.length + 2).trim();
         else { const i = chars.indexOf(': '); if (i >= 0) role = chars.slice(i + 2).trim(); }
         // A revealed part's "Shown when X is true" note is not editorial.
         if (role) role = role.replace(/\s+·\s+Shown when .+ is true$/, '').trim();

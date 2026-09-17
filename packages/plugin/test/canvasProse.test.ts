@@ -141,6 +141,17 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(doc).anatomyParts).toEqual([{ name: 'Label', role: 'Names it.' }]);
   });
 
+  it('does not invent a role from a nested part whose component name contains a colon', () => {
+    // The legend prints the DISPLAY name ("Icon leading") while the tag keeps
+    // the raw key ("iconLeading"); the nested note here ("Icon: 24") itself
+    // contains ": ", which used to fool the loose fallback into reading "24"
+    // as an authored role.
+    const doc = frame([
+      keyed('anatomyPart', 'iconLeading', [text('Icon leading  ·  Icon: 24')]),
+    ]);
+    expect(readCanvasProse(doc).anatomyParts).toEqual([]);
+  });
+
   it('skips instance subtrees and leaves an unknown slot alone', () => {
     const doc = frame([
       frame([text('Label', { data: slot('definitionLead') })], {}, 'INSTANCE'),

@@ -165,8 +165,22 @@ export async function buildAnatomyDiagram(
     });
   }
 
+  // Which side the callouts sit on depends only on the parts' normalized
+  // spread, never on the render size, so it can be settled before the scale
+  // below: a side callout zone widens the box, and that width has to come out
+  // of the same column budget the instance itself is fit to.
+  const xs = pins.map((p) => p.nx);
+  const ys = pins.map((p) => p.ny);
+  const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
+  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+  const sideCallouts = yRange > xRange;
+  const ZONE = pins.length ? PIN_SIZE + RAIL_GAP + 24 : 0;
+
   // True size, unless wider than the column. Never taller-than-cap shrinking.
-  const maxW = contentWidth - ANATOMY_PAD * 2;
+  // A side callout zone sits beside the instance and widens the box by ZONE,
+  // so that much comes off the instance's own budget up front; a top callout
+  // zone only adds height, which this diagram never caps.
+  const maxW = Math.max(1, contentWidth - ANATOMY_PAD * 2 - (sideCallouts ? ZONE : 0));
   const scale = Math.min(1, maxW / inst.width);
   if (scale < 1) inst.rescale(scale);
   const renderedW = inst.width;
@@ -179,17 +193,31 @@ export async function buildAnatomyDiagram(
   card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
-
-  const xs = pins.map((p) => p.nx);
-  const ys = pins.map((p) => p.ny);
-  const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
-  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
-  const sideCallouts = yRange > xRange;
-  const ZONE = pins.length ? PIN_SIZE + RAIL_GAP + 24 : 0;
+  // Fixed to the column width — only the height hugs. A hugging WIDTH card
+  // shrinks to whatever the (possibly tiny) diagram box measures, which then
+  // leaves the legend inside it nothing real to FILL against; fixing the
+  // width here gives a small component's box room to sit centred, and the
+  // legend below a real inner width to stretch to.
+  card.resize(contentWidth, 1);
+  card.primaryAxisSizingMode = 'AUTO';
 
   // Natural pin centres along the callout axis, then fanned so none overlap.
   const natural = pins.map((p) => Math.round((sideCallouts ? p.ny * renderedH : p.nx * renderedW)));
-  const fanned = fanOutPins(natural, PIN_SIZE, PIN_GAP);
+  let fanned = fanOutPins(natural, PIN_SIZE, PIN_GAP);
+  if (!sideCallouts) {
+    // A crowded top row can fan past the instance's own left/right edges,
+    // which would otherwise widen the box past the column budget the scale
+    // above already fit the instance to. Clamp back inside when that would
+    // happen; pins may then touch, which only occurs when more pins exist
+    // than physically fit across the column.
+    const spanMin = Math.min(0, ...fanned.map((c) => c - PIN_SIZE / 2));
+    const spanMax = Math.max(renderedW, ...fanned.map((c) => c + PIN_SIZE / 2));
+    if (spanMax - spanMin > maxW) {
+      const lo = PIN_SIZE / 2;
+      const hi = Math.max(lo, renderedW - PIN_SIZE / 2);
+      fanned = fanned.map((c) => Math.min(Math.max(c, lo), hi));
+    }
+  }
   const minPos = Math.min(0, ...fanned.map((c) => c - PIN_SIZE / 2));
   const maxPos = Math.max(sideCallouts ? renderedH : renderedW, ...fanned.map((c) => c + PIN_SIZE / 2));
   const shift = -minPos; // fanned pins may overhang the instance's start edge
