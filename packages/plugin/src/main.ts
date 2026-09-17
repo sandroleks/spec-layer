@@ -11,6 +11,7 @@ import { FoundationPostGate } from './foundationPost';
 import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
+  proseToLegacy, upgradeProseV1,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
   type ProseDrafts,
@@ -315,8 +316,11 @@ function collectGeneratedLane(node: BaseNode): string[] {
  * stored blob filling any slot the canvas does not render.
  */
 function mergedProse(section: SectionNode): ProseDrafts | null {
+  // TEMPORARY: docLink.ts now stores/returns ProseV2; this whole function
+  // still speaks v1. Removed when Task 14 moves main.ts to ProseV2 end to end.
+  const prose = parseProse(section.getPluginData(DOC_PROSE_KEY));
   return mergeProse(
-    parseProse(section.getPluginData(DOC_PROSE_KEY)),
+    prose ? proseToLegacy(prose) : null,
     readCanvasProse(section as unknown as ProseNodeLike),
   );
 }
@@ -666,7 +670,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // succeeded, so a failed build never leaves guidelines describing a
         // document that does not exist. An over-budget payload serializes to
         // '' and simply stores nothing.
-        section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(msg.prose) : '');
+        // TEMPORARY: msg.prose is still v1 ProseDrafts; upgrade before storing
+        // v2. Removed when Task 14 moves main.ts to ProseV2 end to end.
+        section.setPluginData(DOC_PROSE_KEY, msg.prose ? serializeProse(upgradeProseV1(msg.prose)) : '');
         // The diff baseline: the projection msg.contentHash was computed over,
         // written in the same commit as the link so the two can never disagree.
         // Over budget serializes to '' and the row shows the fallback. An
