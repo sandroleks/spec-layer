@@ -85,6 +85,21 @@ none of the reasoning above.
   line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
   `version`. Pinned pulls are not yet available.
 
+### Changed
+
+- **Component documents read as authored pages.** The three frames carry a
+  reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
+  gains a facts strip, a When to use and When not to use pair, and Do and
+  Don't as paired cards. Specifications gains a Properties table (replacing
+  Configuration) and a States table of token changes per state. Accessibility
+  gains a Keyboard table and a Pointer and touch section. Titles capitalise a
+  lowercase component name, anatomy parts read as words, and user-authored
+  matrix labels render as typed. Instances render at true size everywhere;
+  anatomy pins fan out with elbow leaders, and a component wider than the
+  column says "Shown at N%". Prose is capped at a readable measure and code
+  spans render without backticks. A section with nothing to show is omitted,
+  and the result message says which and why.
+
 ### Fixed
 
 - **A radius bound on any corner no longer reads as a hardcoded gap.** The gap

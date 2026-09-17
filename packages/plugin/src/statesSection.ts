@@ -1,11 +1,11 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, buildSlot } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, placeInstance } from './frameKit';
 
 const LABEL_W = 120;
 const CELL_MAX_W = 180;
 const MIN_CELL_W = 160; // below this the live instance previews become illegible
 const GRID_GAP = 12;
-const HEADER_H = 30; // fits a two-line column header (e.g. "ACTIVE (FILLED)")
+const HEADER_H = 30; // fits a two-line column header (e.g. "Active (filled)")
 const BAND_GAP = 28; // vertical space between wrapped column bands
 
 export interface MatrixBlockData {
@@ -49,6 +49,10 @@ export async function buildMatrixSection(
 
   const { colsPerBand, cellW } = matrixBandLayout(block.columns.length, contentWidth);
   const bandCount = Math.ceil(block.columns.length / colsPerBand);
+  // A preview that had to shrink to fit its cell is said so once, under the
+  // whole grid: the cell is the one place in the document where an instance
+  // is not shown at true size.
+  let anyScaled = false;
 
   for (let b = 0; b < bandCount; b++) {
     const start = b * colsPerBand;
@@ -70,7 +74,9 @@ export async function buildMatrixSection(
     corner.textAlignVertical = 'BOTTOM';
     head.appendChild(corner);
     for (const column of bandColumns) {
-      const h = makeText(column.toUpperCase(), 'Medium', 10, palette.muted, 130, 6);
+      // As typed: a column name is an axis value the designer wrote
+      // ("isInvalid: true"), not plugin copy, so it is never re-cased.
+      const h = makeText(column, 'Medium', 10, palette.muted, 130, 6);
       h.textAutoResize = 'NONE';
       h.resize(cellW, HEADER_H);
       h.textAlignHorizontal = 'CENTER';
@@ -89,8 +95,9 @@ export async function buildMatrixSection(
       r.appendChild(label);
       for (const nodeId of row.cells.slice(start, end)) {
         if (nodeId) {
-          const slot = await buildSlot(nodeId, cellW, 96, includeHidden);
-          r.appendChild(slot);
+          const placed = await placeInstance(nodeId, cellW, 96, includeHidden);
+          if (placed.scale < 1) anyScaled = true;
+          r.appendChild(placed.slot);
         } else {
           const empty = vstack(0);
           empty.resize(cellW, 40);
@@ -104,6 +111,12 @@ export async function buildMatrixSection(
         }
       }
     }
+  }
+
+  if (anyScaled) {
+    const scaled = makeText('Previews are scaled to fit the grid.', 'Regular', 12, palette.muted, 145);
+    wrap.appendChild(scaled);
+    scaled.layoutSizingHorizontal = 'FILL';
   }
 
   if (block.note) {

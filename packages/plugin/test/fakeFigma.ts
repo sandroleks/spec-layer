@@ -190,6 +190,7 @@ interface FakeFont { family: string; style: string }
 export class FakeText {
   type = 'TEXT';
   height = TEXT_H;
+  width = 0;
   characters = '';
   fontName: FakeFont = { family: 'Inter', style: 'Regular' };
   pluginData: Record<string, string> = {};
@@ -202,6 +203,14 @@ export class FakeText {
 
   getPluginData(key: string): string {
     return this.pluginData[key] ?? '';
+  }
+
+  /** A text node can be sized like any other: the matrix grid pins its column
+   *  headers to a fixed box so they baseline-align. Both axes are taken as
+   *  given, the way Figma does with textAutoResize 'NONE'. */
+  resize(w: number, h: number): void {
+    this.width = w;
+    this.height = h;
   }
 
   setRangeFontName(start: number, end: number, font: FakeFont): void {

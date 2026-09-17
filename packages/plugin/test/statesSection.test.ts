@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { matrixBandLayout } from '../src/statesSection';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
+import { matrixBandLayout, buildMatrixSection } from '../src/statesSection';
+import { applyThemeToKit } from '../src/frameKit';
+import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 
 describe('matrixBandLayout', () => {
   it('wraps many columns into bands so cells keep a legible width', () => {
@@ -23,5 +26,21 @@ describe('matrixBandLayout', () => {
   it('never drops below one column per band, even on a narrow frame', () => {
     const { colsPerBand } = matrixBandLayout(5, 250);
     expect(colsPerBand).toBe(1);
+  });
+});
+
+describe('buildMatrixSection', () => {
+  beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
+  afterEach(() => uninstallFakeFigma());
+
+  it('renders user-authored headers and labels as typed, and the axis caption in caps', async () => {
+    const grid = await buildMatrixSection({
+      axisName: 'State', columns: ['isInvalid: true', 'Hover'], rows: [{ label: 'checkbox', cells: [null, null] }],
+    }, 768) as unknown as FakeFrame;
+    const chars = grid.textChars();
+    expect(chars).toContain('STATE');
+    expect(chars).toContain('isInvalid: true');
+    expect(chars).not.toContain('ISINVALID: TRUE');
+    expect(chars).toContain('checkbox');
   });
 });
