@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
-import { buildProse, makeBulletRow, buildTable } from '../src/docText';
+import { buildProse, makeBulletRow, buildTable, applyRuns } from '../src/docText';
 import { parseRuns } from '../src/ui/docModel';
-import { applyThemeToKit } from '../src/frameKit';
+import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 
 describe('parseRuns', () => {
@@ -43,5 +43,20 @@ describe('docText', () => {
     expect(keyCell.width).toBe(Math.floor(768 * 0.7));
     expect(actionCell.layoutSizingHorizontal).toBe('FILL');
     expect(table.textChars()).toEqual(['KEY', 'ACTION', 'Tab', 'Moves focus']);
+  });
+
+  it('renders a None. row when there are no data rows, instead of a bare header strip', () => {
+    const table = buildTable(['Key', 'Action'], [], 768) as unknown as FakeFrame;
+    expect(table.textChars()).toEqual(['KEY', 'ACTION', 'None.']);
+  });
+
+  it('paints a code run in an explicit ink instead of the heading ink when given one', () => {
+    const node = new FakeText();
+    node.characters = 'a code span';
+    applyRuns(node as unknown as TextNode, [
+      { text: 'a ' }, { text: 'code', code: true }, { text: ' span' },
+    ], 0, palette.onHeader);
+    expect(node.getRangeFill(3)).toEqual(solidFill(palette.onHeader));
+    expect(node.getRangeFill(3)).not.toEqual(solidFill(palette.heading));
   });
 });

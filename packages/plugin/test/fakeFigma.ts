@@ -219,6 +219,18 @@ export class FakeText {
     return this.fillRanges.map(({ start, end }) => ({ start, end }));
   }
 
+  /** The fill last recorded for the range covering character `index` (last
+   *  write wins, matching real Figma's range semantics), or undefined if that
+   *  character was never given its own fill. Lets a test check WHICH ink a
+   *  range got, not just that it got one. */
+  getRangeFill(index: number): unknown {
+    let result: unknown;
+    for (const r of this.fillRanges) {
+      if (index >= r.start && index < r.end) result = r.fills;
+    }
+    return result;
+  }
+
   getStyledTextSegments(_fields: ['fontName']): { characters: string; fontName: FakeFont; start: number; end: number }[] {
     const styles: FakeFont[] = Array.from(this.characters, () => this.fontName);
     for (const r of this.ranges) {

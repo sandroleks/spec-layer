@@ -847,7 +847,10 @@ async function buildHeader(
     pill,
     styleSubtitle: runs
       ? (node) => {
-          applyRuns(node, runs, 0);
+          // The subtitle sits on the header band, not the page background, so
+          // a code span needs the on-header ink, not the default heading ink
+          // (which is the same colour as the band on the default theme).
+          applyRuns(node, runs, 0, palette.onHeader);
           // The lead is the first sentence of the Definition, lifted here.
           tagSlot(node, 'definitionLead');
         }

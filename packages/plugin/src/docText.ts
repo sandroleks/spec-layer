@@ -22,13 +22,19 @@ export function tagLine(node: SceneNode, kind: LineKind): void {
 
 /**
  * Apply run styling over `node.characters`. Bold runs take the Bold face.
- * Code runs take the Medium face in heading ink, which is how a code span is
+ * Code runs take the Medium face in `codeInk`, which is how a code span is
  * drawn on canvas: Figma text has no inline boxes, so a chip is impossible
  * inside wrapping text, and Medium is otherwise unused in body text, which is
  * what lets textToMarkdown read it back as backticks. `prefix` accounts for
  * leading characters placed ahead of the runs.
+ *
+ * `codeInk` defaults to the heading ink, right for every body-surface caller
+ * (prose, bullets). The header subtitle sits on the dark header band instead
+ * of the page background, so its caller (docFrame.ts's buildHeader) must pass
+ * an ink that reads there — the default would paint a code span the same
+ * colour as the band on the default theme, making it invisible.
  */
-export function applyRuns(node: TextNode, runs: TextRun[], prefix = 0): void {
+export function applyRuns(node: TextNode, runs: TextRun[], prefix = 0, codeInk: RGB = palette.heading): void {
   let cursor = prefix;
   for (const run of runs) {
     const start = cursor;
@@ -37,7 +43,7 @@ export function applyRuns(node: TextNode, runs: TextRun[], prefix = 0): void {
       if (run.bold) node.setRangeFontName(start, end, font('Bold'));
       else if (run.code) {
         node.setRangeFontName(start, end, font('Medium'));
-        node.setRangeFills(start, end, solidFill(palette.heading));
+        node.setRangeFills(start, end, solidFill(codeInk));
       }
     }
     cursor = end;
@@ -197,6 +203,19 @@ export function buildTable(columns: string[], rows: string[][], contentWidth: nu
     const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, palette.muted);
     head.appendChild(cell);
     applyColWidth(cell, widths[i]);
+  }
+  // Data rows. Kept as a permanent fallback: a table with no rows still says
+  // "None." rather than reading as a bare header strip, matching the sibling
+  // variant-token table's own empty-state row.
+  if (rows.length === 0) {
+    const empty = hstack(0);
+    table.appendChild(empty);
+    empty.layoutSizingHorizontal = 'FILL';
+    empty.strokes = solidFill(palette.divider);
+    empty.strokeTopWeight = 1;
+    const cell = makeCell('None.', 'Regular', 14, palette.muted);
+    empty.appendChild(cell);
+    applyColWidth(cell, 'grow');
   }
   for (const r of rows) {
     const row = hstack(0);

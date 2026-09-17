@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { IntermediateSpec, ProseDrafts, RefIdentity } from '@spec-layer/extractor';
-import { installFakeFigma, uninstallFakeFigma, FakeSection } from './fakeFigma';
+import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
 import { buildDocModel, type SectionId } from '../src/ui/docModel';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
+import { palette, solidFill } from '../src/frameKit';
 import {
   readCanvasProse, mergeProse, collectGeneratedText, SLOT_KEY, type ProseNodeLike,
 } from '../src/canvasProse';
@@ -102,5 +103,28 @@ describe('docFrame editorial tags', () => {
     };
     visit(asNode(section));
     expect(tagged).toEqual(['A button.']);
+  });
+
+  it('paints a code span in the header lead with an ink other than the heading ink', async () => {
+    // The header band uses palette.headerBg, which is the same colour as
+    // palette.heading on the default theme; a code span there must not use
+    // applyRuns' default (heading) ink, or it disappears against the band.
+    const withCode: ProseDrafts = {
+      ...prose,
+      definition: 'Use `aria-checked` on the box. It updates on toggle.',
+    };
+    const section = await build(withCode);
+    let leadNode: FakeText | null = null;
+    const visit = (n: ProseNodeLike): void => {
+      if (n.getPluginData(SLOT_KEY) === 'definitionLead') leadNode = n as unknown as FakeText;
+      for (const c of n.children ?? []) visit(c);
+    };
+    visit(asNode(section));
+    expect(leadNode).not.toBeNull();
+    const node = leadNode as unknown as FakeText;
+    const codeStart = node.characters.indexOf('aria-checked');
+    expect(codeStart).toBeGreaterThanOrEqual(0);
+    expect(node.getRangeFill(codeStart)).not.toEqual(solidFill(palette.heading));
+    expect(node.getRangeFill(codeStart)).toEqual(solidFill(palette.onHeader));
   });
 });
