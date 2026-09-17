@@ -53,12 +53,12 @@ import {
 } from './docText';
 
 /** Which prose sections are editorial slots. Every `kind: 'prose'` section
- *  today is one; a future generated prose section would simply be absent. */
+ *  today is one; a future generated prose section would simply be absent.
+ *  Overview is the only prose block the Docs 2.0 model emits — Semantics,
+ *  Content and the former Interactions section are bullets and a keyboard
+ *  table now, and Task 12 gives each of those its own slot. */
 const PROSE_SLOT_BY_SECTION: Partial<Record<SectionId, ProseSlot>> = {
   definition: 'definition',
-  accessibility: 'accessibility',
-  interactions: 'interactions',
-  contentConsiderations: 'contentConsiderations',
 };
 
 /** Render markdown into a tagged slot container. */
@@ -381,7 +381,7 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   row.paddingLeft = part.depth * 18;
   row.appendChild(numberBadge(part.label, LEGEND_BADGE));
 
-  const desc = part.description?.trim();
+  const desc = part.role?.trim();
   const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
   // A revealed part says which property shows it, after the description or the
   // nested note, so the reader knows it is not on by default.
@@ -784,8 +784,17 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     // The variants guide (orientation + bulleted "when to use which type") renders
     // as prose above the matrix so bold type names and bullet lines format
     // correctly, rather than as a single flat line of raw markdown.
-    if (section.summary) {
-      const holder = buildProseSlot(section.summary, 'variantsSummary', bodySpacing);
+    //
+    // The model now carries the intro and the per-option guide separately;
+    // this recomposes the markdown the single `summary` field used to hold so
+    // the existing slot round-trips unchanged. Task 12 renders the two parts
+    // as their own blocks and retires this.
+    const summary = [
+      section.intro ?? '',
+      ...section.guide.map((g) => `- **${g.name}**: ${g.guidance}`),
+    ].filter(Boolean).join('\n').trim() || null;
+    if (summary) {
+      const holder = buildProseSlot(summary, 'variantsSummary', bodySpacing);
       body.appendChild(holder);
       holder.layoutSizingHorizontal = 'FILL';
     }
@@ -809,12 +818,16 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     grid.layoutSizingHorizontal = 'FILL';
     // Extra breathing room between the guide/bullets and the preview matrix; the
     // body's default 10px spacing reads as cramped against the prose above.
-    if (section.summary) grid.paddingTop = 24;
-  } else {
+    if (summary) grid.paddingTop = 24;
+  } else if (section.kind === 'table') {
     const table = buildTable(section.columns, section.rows, CONTENT_WIDTH);
     body.appendChild(table);
     table.layoutSizingHorizontal = 'FILL';
   }
+  // The remaining Docs 2.0 block kinds — twoColumns, guidelinePairs,
+  // propertiesTable and keyboardTable — have no renderer here yet; Task 12
+  // draws them. Until then they build a heading with an empty body rather
+  // than a placeholder or a crash.
 
   return group;
 }

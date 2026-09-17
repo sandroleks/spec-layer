@@ -60,7 +60,8 @@ describe('defaultSections', () => {
   it('leaves only Related components off', () => {
     const selected = defaultSections();
     expect(selected.has('related')).toBe(false);
-    expect(selected.has('interactions')).toBe(true);
+    expect(selected.has('keyboard')).toBe(true);
+    expect(selected.has('pointer')).toBe(true);
     expect(selected.has('contentConsiderations')).toBe(true);
   });
 
@@ -82,9 +83,10 @@ describe('sectionGroups', () => {
   it('counts included against total per group', () => {
     const groups = sectionGroups(defaultSections(), ALL_GROUPS, true);
     const usage = groups.find((g) => g.id === 'usage')!;
-    // Usage holds Overview, Variants, Do's & Don'ts, and Related; Related is off.
-    expect(usage.total).toBe(4);
-    expect(usage.included).toBe(3);
+    // Usage holds Overview, When to use, Variants, Do and don't, and Related;
+    // Related is off.
+    expect(usage.total).toBe(5);
+    expect(usage.included).toBe(4);
   });
 
   it('reports zero included when nothing is selected, without dropping options', () => {
@@ -117,14 +119,14 @@ describe('sectionGroups', () => {
 describe('includedLabel', () => {
   it('reads "{included} of {total} included"', () => {
     const usage = sectionGroups(defaultSections(), ALL_GROUPS, true).find((g) => g.id === 'usage')!;
-    expect(includedLabel(usage)).toBe('3 of 4 included');
+    expect(includedLabel(usage)).toBe('4 of 5 included');
   });
 });
 
 describe('sectionIdsInGroup', () => {
   it('returns the group members and nothing else', () => {
     expect(sectionIdsInGroup('a11y').sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'interactions'].sort(),
+      ['accessibility', 'contentConsiderations', 'keyboard', 'pointer'].sort(),
     );
   });
 });
@@ -172,7 +174,7 @@ describe('applyGroupBulk', () => {
     const sections = new Set<SectionId>();
     applyGroupBulk(sections, 'a11y', true, new Set());
     expect([...sections].sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'interactions'].sort(),
+      ['accessibility', 'contentConsiderations', 'keyboard', 'pointer'].sort(),
     );
   });
 
@@ -412,7 +414,7 @@ describe('component screen markup', () => {
     );
     expect(markup).toContain('<label class="sl-choice sl-section-choice">');
     expect(markup).toContain(
-      '<span class="sl-choice-copy"><strong>Interactions</strong></span>' +
+      '<span class="sl-choice-copy"><strong>Keyboard</strong></span>' +
       '<span class="sl-badge" data-tone="accent">AI</span></label>',
     );
   });

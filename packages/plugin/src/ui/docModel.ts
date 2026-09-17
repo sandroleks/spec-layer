@@ -1,29 +1,37 @@
-import type { IntermediateSpec, ProseDrafts, ProseKey, VariantInstance, StateColumn } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseKey, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
-  detectStateMatrix, stateAxisProps, anatomyFor, tokensFor,
+  detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence,
 } from '@spec-layer/extractor';
+import { displayComponentName } from './displayNames';
+
+export { firstSentence };
 
 export type SectionId =
-  | 'definition' | 'anatomy' | 'measurements' | 'configuration' | 'properties' | 'variants'
-  | 'states' | 'tokens' | 'interactions' | 'pointer' | 'keyboard'
-  | 'contentConsiderations' | 'accessibility' | 'dosDonts' | 'related';
+  | 'definition' | 'whenToUse' | 'variants' | 'dosDonts' | 'related'
+  | 'anatomy' | 'properties' | 'states' | 'measurements' | 'tokens'
+  | 'keyboard' | 'pointer' | 'accessibility' | 'contentConsiderations';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
 
+/** The section map, in frame order: Usage, then Specifications, then
+ *  Accessibility. `label` is the heading drawn on canvas and the name the
+ *  plugin uses when it reports an omission. */
 export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: GroupId }[] = [
-  { id: 'definition',    label: 'Overview',      ai: true,  group: 'usage' },
-  { id: 'anatomy',       label: 'Anatomy',       ai: true,  group: 'specs' },
-  { id: 'measurements',  label: 'Measurements',  ai: false, group: 'specs' },
-  { id: 'configuration', label: 'Configuration', ai: false, group: 'specs' },
-  { id: 'variants',      label: 'Variants',      ai: true,  group: 'usage' },
-  { id: 'states',        label: 'States',        ai: false, group: 'specs' },
-  { id: 'tokens',        label: 'Tokens used',   ai: false, group: 'specs' },
-  { id: 'interactions',          label: 'Interactions',           ai: true,  group: 'a11y'  },
-  { id: 'contentConsiderations', label: 'Content Considerations', ai: true,  group: 'a11y'  },
-  { id: 'accessibility', label: 'Semantics & Focus', ai: true, group: 'a11y' },
-  { id: 'dosDonts',      label: "Do's & Don'ts", ai: true,  group: 'usage' },
-  { id: 'related',       label: 'Related components', ai: false, group: 'usage' },
+  { id: 'definition',            label: 'Overview',             ai: true,  group: 'usage' },
+  { id: 'whenToUse',             label: 'When to use',          ai: true,  group: 'usage' },
+  { id: 'variants',              label: 'Variants',             ai: true,  group: 'usage' },
+  { id: 'dosDonts',              label: "Do and don't",         ai: true,  group: 'usage' },
+  { id: 'related',               label: 'Related components',   ai: false, group: 'usage' },
+  { id: 'anatomy',               label: 'Anatomy',              ai: true,  group: 'specs' },
+  { id: 'properties',            label: 'Properties',           ai: true,  group: 'specs' },
+  { id: 'states',                label: 'States',               ai: true,  group: 'specs' },
+  { id: 'measurements',          label: 'Measurements',         ai: false, group: 'specs' },
+  { id: 'tokens',                label: 'Tokens',               ai: false, group: 'specs' },
+  { id: 'keyboard',              label: 'Keyboard',             ai: true,  group: 'a11y'  },
+  { id: 'pointer',               label: 'Pointer and touch',    ai: true,  group: 'a11y'  },
+  { id: 'accessibility',         label: 'Semantics and focus',  ai: true,  group: 'a11y'  },
+  { id: 'contentConsiderations', label: 'Content',              ai: true,  group: 'a11y'  },
 ];
 
 /** Every section id the current build knows how to render. A stored config can
@@ -42,25 +50,26 @@ export const LEGACY_SECTION_IDS: Readonly<Record<string, SectionId[]>> = {
   interactions: ['pointer', 'keyboard'],
 };
 
-/** The three output groups, in canonical display/build order. The a11y group
- *  keeps the "Accessibility" label (its sections are aspects of accessibility);
- *  the semantics section inside it is named "Semantics & Focus" so the frame
- *  never repeats its own heading. */
+/** The three output groups, in canonical display/build order. */
 export const GROUPS: { id: GroupId; label: string }[] = [
   { id: 'usage', label: 'Usage' },
   { id: 'specs', label: 'Specifications' },
   { id: 'a11y',  label: 'Accessibility' },
 ];
 
-/** Which prose keys each AI section needs from the prose pass. Non-AI sections
- *  are absent (→ no keys). Drives the selection-aware prose request so unchecked
- *  sections cost zero output tokens. */
+/**
+ * Which v1 prose keys each section needs from the v8 prompt. Plan 2 replaces
+ * this table with the v2 contract; until then a section whose content the v8
+ * prompt cannot produce (whenToUse, properties, states meanings) requests
+ * nothing and is omitted when its v2 field is empty.
+ */
 const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseKey[]>> = {
   definition: ['definition'],
   variants: ['variantsSummary'],
   anatomy: ['anatomySummary', 'anatomyParts'],
   accessibility: ['accessibility'],
-  interactions: ['interactions'],
+  keyboard: ['interactions'],
+  pointer: ['interactions'],
   contentConsiderations: ['contentConsiderations'],
   dosDonts: ['dos', 'donts'],
 };
@@ -123,7 +132,8 @@ export interface AnatomyPartBlock {
   component?: string;
   tokens: string[];
   type: string;
-  description?: string; // AI-supplied role text, matched by part name (optional)
+  /** AI role sentence, matched by raw part name. */
+  role?: string;
   /** Present only on a part hidden by default: the boolean property that shows
    *  it. The legend reads "Shown when <shownBy> is true". */
   shownBy?: string;
@@ -134,41 +144,59 @@ export interface AnatomyPartBlock {
 export type MeasureView = 'size' | 'padding' | 'spacing';
 
 /** Options threaded through `buildDocModel` that affect how sections render
- *  without changing the underlying spec — the anatomy view mode and which
- *  measurement lenses to render. */
+ *  without changing the underlying spec — the anatomy view mode, which
+ *  measurement lenses to render, and whether AI writing was on. */
 export interface DocModelOptions {
   anatomyView?: 'diagram' | 'table' | 'both';
   measureViews?: MeasureView[];
   /** Draw the parts a boolean property hides by default (DocConfig.includeHidden). */
   includeHidden?: boolean;
+  /** Whether AI writing was on for this build. Decides how an empty AI
+   *  section is reported: 'aiOff' when off, 'nothingToShow' when on. */
+  aiEnabled?: boolean;
 }
 
+/** The counted facts a frame prints above its first section: what the spec
+ *  holds, the file it came from, and any documentation links the component
+ *  carries. Counts only, never adjectives. */
+export interface FactsStrip {
+  items: { label: string; value: string }[];
+  sourceFile: string | null;
+  links: string[];
+}
+
+/** A selected section that produced nothing, with why. `aiOff` means the
+ *  writing lane was off; `nothingToShow` means the spec (or the AI) had
+ *  nothing for it. Never a placeholder on canvas. */
+export interface OmittedSection { id: SectionId; label: string; reason: 'nothingToShow' | 'aiOff' }
+export interface PropertyRow { name: string; type: string; values: string; defaultValue: string; description: string | null }
+export interface KeyboardRow { keys: string[]; action: string }
+export interface StateChange { part: string; property: string; from: string | null; to: string | null }
+export interface StateTableRow { name: string; changes: StateChange[]; whenItApplies: string | null }
+export interface ColumnBlock { heading: string; items: Bullet[]; slot: 'whenToUse' | 'whenNotToUse' }
+
 export type SectionBlock =
-  | { id: SectionId; heading: string; kind: 'prose'; text: string }
-  | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[] }
+  | { id: SectionId; heading: string; kind: 'prose'; text: string; source: 'ai' | 'description' }
+  | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[]; slot: 'pointer' | 'semantics' | 'content' | null }
+  | { id: SectionId; heading: string; kind: 'twoColumns'; left: ColumnBlock; right: ColumnBlock }
+  | { id: SectionId; heading: string; kind: 'guidelinePairs'; pairs: GuidelinePair[] }
+  | { id: SectionId; heading: string; kind: 'propertiesTable'; rows: PropertyRow[]; hasDescriptions: boolean }
+  | { id: SectionId; heading: string; kind: 'keyboardTable'; rows: KeyboardRow[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
   | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both'; summary: string | null }
-  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[] }
-  | {
-      id: SectionId; heading: string; kind: 'statesMatrix';
-      axisName: string;
-      states: string[];                       // column headers, lifecycle-ordered
-      rows: { label: string; cells: (string | null)[] }[]; // cell = variant nodeId or null
-      capped: boolean;                        // true when >4 row values existed
-    }
-  | {
-      id: SectionId; heading: string; kind: 'variantsMatrix';
-      summary: string | null;                 // AI orientation, or null
-      columns: string[];                       // second-axis values, or [''] for 1-axis
-      rows: { label: string; cells: (string | null)[] }[];
-      capped: boolean;
-      note: string | null;                     // held-axis note, or null
-    };
+  | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[]; tableRows: string[][] }
+  | { id: SectionId; heading: string; kind: 'statesMatrix'; axisName: string; states: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean; table: StateTableRow[] }
+  | { id: SectionId; heading: string; kind: 'variantsMatrix'; intro: string | null; guide: { name: string; guidance: string }[]; columns: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean; note: string | null };
 
 export interface DocFrameModel {
   componentName: string;
+  /** The component name as a reader sees it; `componentName` stays raw. */
+  displayName: string;
   sections: SectionBlock[];
+  facts: FactsStrip;
+  /** Selected sections that produced nothing, in section-map order. */
+  omitted: OmittedSection[];
   /** Present and true only when the doc reveals hidden-by-default parts; the
    *  frame builder then sets every boolean property on each placed instance. */
   includeHidden?: true;
@@ -220,6 +248,58 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
   return inst?.values ?? {};
 }
 
+/** The plain word a property kind reads as in the Properties table. An
+ *  unrecognised kind falls through as typed rather than being guessed at. */
+const TYPE_WORDS: Record<string, string> = {
+  variant: 'Variant', boolean: 'Boolean', text: 'Text', instanceSwap: 'Instance swap',
+};
+
+/** Counts only, never adjectives. The token count is of the rules the doc
+ *  draws, so it matches the Tokens section. */
+export function factsFor(spec: IntermediateSpec, includeHidden: boolean): FactsStrip {
+  const parts = anatomyFor(spec.anatomy, { includeHidden }).filter((p) => p.depth === 0).length;
+  const tokens = tokensFor(spec.tokens, { includeHidden }).length;
+  const items = [
+    { label: 'Properties', value: String(spec.props.length) },
+    { label: 'Variants', value: String(spec.variantInstances.length) },
+    { label: 'States', value: String(spec.states.length) },
+    { label: 'Parts', value: String(parts) },
+    { label: 'Tokens', value: String(tokens) },
+  ].filter((i) => i.value !== '0');
+  return { items, sourceFile: spec.figmaFileName ?? null, links: [...spec.documentationLinks] };
+}
+
+/**
+ * Per state column, the token bindings that differ from the default variant,
+ * as part + property + from + to. Deterministic: this is the "What changes"
+ * column of the States table. Returns [] when the component has no state axis.
+ */
+export function stateChanges(spec: IntermediateSpec, includeHidden: boolean): StateTableRow[] {
+  const info = detectStateMatrix(spec.variants);
+  if (!info) return [];
+  const tokens = tokensFor(spec.tokens, { includeHidden });
+  const defaults = defaultAxisValues(spec);
+  const resolvedMap = (values: Record<string, string>): Map<string, { part: string; property: string; token: string }> => {
+    const m = new Map<string, { part: string; property: string; token: string }>();
+    for (const t of resolveTokensForVariant(tokens, values)) m.set(`${t.part} ${t.property}`, t);
+    return m;
+  };
+  const base = resolvedMap(defaults);
+  return info.columns.map((column) => {
+    const here = resolvedMap({ ...defaults, ...column.override });
+    const changes: StateChange[] = [];
+    const keys = new Set([...base.keys(), ...here.keys()]);
+    for (const key of keys) {
+      const from = base.get(key)?.token ?? null;
+      const to = here.get(key)?.token ?? null;
+      if (from === to) continue;
+      const src = here.get(key) ?? base.get(key)!;
+      changes.push({ part: src.part, property: src.property, from, to });
+    }
+    return { name: column.label, changes, whenItApplies: null };
+  });
+}
+
 /**
  * Hierarchical callout numbers for a depth-first anatomy list: "1", "2",
  * "2.1", "2.2", "3".
@@ -242,8 +322,6 @@ export function calloutLabels(depths: readonly number[]): string[] {
   });
 }
 
-const AI_PLACEHOLDER = '_To be written._';
-
 /**
  * Merge raw (unbound) rows into the resolved token rows so each raw row sits
  * inside its matching part group. Each raw row is inserted after the last
@@ -264,18 +342,6 @@ function mergeRawIntoParts<T extends { part: string }>(resolved: T[], raw: T[]):
     else out.splice(insertAt, 0, r);
   }
   return out;
-}
-
-/** Split a paragraph into its first sentence and the remainder. A sentence ends
- *  at the first `.`/`!`/`?` that is followed by whitespace and an uppercase
- *  letter or `(` — so "e.g. a Toggle" and "3.5 items" do not end it. Returns the
- *  whole text as the sentence (empty remainder) when no boundary is found. */
-export function firstSentence(text: string): { sentence: string; remainder: string } {
-  const t = text.trim();
-  const m = /[.!?](?=\s+[A-Z(])/.exec(t);
-  if (!m) return { sentence: t, remainder: '' };
-  const end = m.index + 1; // include the punctuation
-  return { sentence: t.slice(0, end).trim(), remainder: t.slice(end).trim() };
 }
 
 /** Extract the text of a Markdown subheading line ("### Mouse" → "Mouse"), or
@@ -320,104 +386,127 @@ function makeBullet(raw: string): Bullet {
   return { text: plain, runs };
 }
 
+const bulletsOf = (items: string[] | undefined): Bullet[] => (items ?? []).map((s) => makeBullet(s));
+
 function buildSection(
-  id: SectionId,
-  label: string,
-  spec: IntermediateSpec,
-  prose: ProseDrafts | null,
-  selectedVariantIds?: Set<string>,
-  options?: DocModelOptions,
+  id: SectionId, label: string, spec: IntermediateSpec, prose: ProseV2 | null,
+  selectedVariantIds?: Set<string>, options?: DocModelOptions,
 ): SectionBlock | null {
+  const includeHidden = options?.includeHidden === true;
   switch (id) {
     case 'definition': {
+      if (prose?.overview && (prose.overview.lede.trim() || prose.overview.body.length)) {
+        const text = [prose.overview.lede, ...prose.overview.body].filter((s) => s.trim()).join('\n\n');
+        return { id, heading: label, kind: 'prose', text, source: 'ai' };
+      }
+      // The component's own Figma description, rendered verbatim: the doc says
+      // what the file says rather than inventing an opening line.
+      if (spec.description.trim()) {
+        return { id, heading: label, kind: 'prose', text: spec.description.trim(), source: 'description' };
+      }
+      return null;
+    }
+
+    case 'whenToUse': {
+      const left = bulletsOf(prose?.whenToUse);
+      const right = bulletsOf(prose?.whenNotToUse);
+      if (!left.length && !right.length) return null;
       return {
-        id, heading: label, kind: 'prose',
-        // `||`, not `??`: a merged prose object fills a field it has no text
-        // for with '', and a blank section is a claim of emptiness while the
-        // placeholder is an honest "nobody wrote this yet".
-        text: prose?.definition || AI_PLACEHOLDER,
+        id, heading: label, kind: 'twoColumns',
+        left: { heading: 'When to use', items: left, slot: 'whenToUse' },
+        right: { heading: 'When not to use', items: right, slot: 'whenNotToUse' },
       };
-    }
-
-    case 'accessibility': {
-      return {
-        id, heading: label, kind: 'prose',
-        text: prose?.accessibility || AI_PLACEHOLDER,
-      };
-    }
-
-    case 'interactions': {
-      return { id, heading: label, kind: 'prose', text: prose?.interactions || AI_PLACEHOLDER };
-    }
-
-    case 'contentConsiderations': {
-      return { id, heading: label, kind: 'prose', text: prose?.contentConsiderations || AI_PLACEHOLDER };
     }
 
     case 'dosDonts': {
-      const items: Bullet[] = prose
-        ? [
-            ...prose.dos.map((d) => makeBullet(`✅ ${d}`)),
-            ...prose.donts.map((d) => makeBullet(`❌ ${d}`)),
-          ]
-        : [];
-      return {
-        id, heading: label, kind: 'bullets',
-        items: items.length ? items : [makeBullet(AI_PLACEHOLDER)],
-      };
+      const pairs = prose?.guidelines ?? [];
+      return pairs.length ? { id, heading: label, kind: 'guidelinePairs', pairs } : null;
+    }
+
+    case 'keyboard': {
+      const rows = prose?.keyboard ?? [];
+      return rows.length ? { id, heading: label, kind: 'keyboardTable', rows } : null;
+    }
+
+    case 'pointer': {
+      const items = bulletsOf(prose?.pointer);
+      return items.length ? { id, heading: label, kind: 'bullets', items, slot: 'pointer' } : null;
+    }
+
+    case 'accessibility': {
+      const items = bulletsOf(prose?.semantics);
+      return items.length ? { id, heading: label, kind: 'bullets', items, slot: 'semantics' } : null;
+    }
+
+    case 'contentConsiderations': {
+      const items = bulletsOf(prose?.content);
+      return items.length ? { id, heading: label, kind: 'bullets', items, slot: 'content' } : null;
+    }
+
+    case 'related': {
+      if (!spec.related.length) return null;
+      return { id, heading: label, kind: 'bullets', items: spec.related.map((r) => makeBullet(r)), slot: null };
+    }
+
+    case 'properties': {
+      if (!spec.props.length) return null;
+      // AI descriptions are matched back to each extracted property by name
+      // (case-insensitive, trimmed); first match for a name wins.
+      const descByName = new Map<string, string>();
+      for (const p of prose?.properties ?? []) {
+        const key = p.name.trim().toLowerCase();
+        if (!descByName.has(key)) descByName.set(key, p.description);
+      }
+      const rows: PropertyRow[] = spec.props.map((pr) => ({
+        name: pr.name,
+        type: TYPE_WORDS[pr.kind] ?? pr.kind,
+        values: pr.kind === 'boolean' ? 'true / false' : pr.options?.length ? pr.options.join(' · ') : '',
+        defaultValue: pr.default === undefined ? '' : String(pr.default),
+        description: descByName.get(pr.name.trim().toLowerCase()) ?? null,
+      }));
+      return { id, heading: label, kind: 'propertiesTable', rows, hasDescriptions: rows.some((r) => r.description !== null) };
     }
 
     case 'anatomy': {
       // Structured anatomy block: the frame builder turns this into a numbered
-      // callout diagram (screenshot + pins). It carries each part's node id and
-      // the component's node id so geometry can be resolved live on canvas.
-      // Falls back to a plain "None." bullet when there are no parts or no
-      // component to screenshot.
-      const included = anatomyFor(spec.anatomy, { includeHidden: options?.includeHidden === true });
-      if (included.length && spec.anatomyComponentId) {
-        // AI role text is matched back to each extracted part by name
-        // (case-insensitive, trimmed); first match for a name wins.
-        const descByName = new Map<string, string>();
-        for (const p of prose?.anatomyParts ?? []) {
-          const key = p.name.trim().toLowerCase();
-          if (!descByName.has(key)) descByName.set(key, p.description);
-        }
-        const labels = calloutLabels(included.map((a) => a.depth));
-        const parts = included.map((a, i) => ({
-          label: labels[i],
-          name: a.name,
-          nested: a.nested,
-          id: a.id,
-          depth: a.depth,
-          component: a.component,
-          // Same filter as the Tokens section: a part the doc does not draw
-          // must not lend its token names to a legend row either.
-          tokens: [...new Set(
-            tokensFor(spec.tokens, { includeHidden: options?.includeHidden === true })
-              .filter((t) => t.part === a.name)
-              .map((t) => t.name),
-          )],
-          type: a.type,
-          shownBy: a.shownBy,
-          description: descByName.get(a.name.trim().toLowerCase()),
-        }));
-        return {
-          id, heading: label, kind: 'anatomy',
-          componentId: spec.anatomyComponentId, parts, view: 'diagram',
-          summary: prose?.anatomySummary || null,
-        };
+      // callout diagram (live instance + pins). It carries each part's node id
+      // and the component's node id so geometry can be resolved on canvas.
+      const included = anatomyFor(spec.anatomy, { includeHidden });
+      if (!included.length || !spec.anatomyComponentId) return null;
+      // AI role text is matched back to each extracted part by name
+      // (case-insensitive, trimmed); first match for a name wins.
+      const roleByName = new Map<string, string>();
+      for (const p of prose?.anatomyParts ?? []) {
+        const key = p.name.trim().toLowerCase();
+        if (!roleByName.has(key)) roleByName.set(key, p.role);
       }
-      return { id, heading: label, kind: 'bullets', items: [makeBullet('_None._')] };
+      const labels = calloutLabels(included.map((a) => a.depth));
+      const parts: AnatomyPartBlock[] = included.map((a, i) => ({
+        label: labels[i], name: a.name, nested: a.nested, id: a.id, depth: a.depth, component: a.component,
+        // Same filter as the Tokens section: a part the doc does not draw must
+        // not lend its token names to a legend row either.
+        tokens: [...new Set(tokensFor(spec.tokens, { includeHidden }).filter((t) => t.part === a.name).map((t) => t.name))],
+        type: a.type, shownBy: a.shownBy,
+        role: roleByName.get(a.name.trim().toLowerCase()),
+      }));
+      return {
+        id, heading: label, kind: 'anatomy', componentId: spec.anatomyComponentId, parts,
+        view: options?.anatomyView ?? 'diagram', summary: prose?.anatomySummary?.trim() || null,
+      };
     }
 
     case 'measurements': {
-      // Token lookup for the DEFAULT variant only: the measure diagram renders the
-      // default variant's geometry, so its labels must resolve exactly the tokens
-      // that variant carries. Raw (unbound) values fall out naturally: the builder
-      // reads live px values and shows them un-decorated when no key matches.
+      // Token lookup for the DEFAULT variant only: the measure diagram renders
+      // the default variant's geometry, so its labels must resolve exactly the
+      // tokens that variant carries. Raw (unbound) values fall out naturally:
+      // the builder reads live px values and shows them un-decorated when no
+      // key matches. `tableRows` is the same data as a flat table, for the
+      // fallback when the diagram cannot be drawn.
       const tokens: Record<string, string> = {};
-      for (const t of resolveTokensForVariant(spec.tokens, defaultAxisValues(spec))) {
+      const tableRows: string[][] = [];
+      for (const t of resolveTokensForVariant(tokensFor(spec.tokens, { includeHidden }), defaultAxisValues(spec))) {
         tokens[measureKey(t.part, t.property)] = t.token;
+        tableRows.push([t.part, t.property, t.token]);
       }
       const rootPart = spec.variants.length > 0 ? 'Container' : cleanPartName(spec.name);
       // Each selected lens renders as its own focused mini-diagram. Preserve the
@@ -426,51 +515,26 @@ function buildSection(
       // guard resolves to the default here).
       const ALL_MEASURE_VIEWS: MeasureView[] = ['size', 'padding', 'spacing'];
       const requested = options?.measureViews;
-      const views = requested && requested.length
-        ? ALL_MEASURE_VIEWS.filter((v) => requested.includes(v))
-        : ALL_MEASURE_VIEWS;
-      return {
-        id, heading: label, kind: 'measure',
-        componentId: spec.anatomyComponentId, rootPart, tokens, views,
-      };
-    }
-
-    case 'configuration': {
-      const configProps = spec.props.filter((p) => p.kind !== 'variant');
-      if (!configProps.length) {
-        return {
-          id, heading: label, kind: 'table',
-          columns: ['Name', 'Kind', 'Options', 'Default'],
-          rows: [],
-        };
-      }
-      const rows = configProps.map((pr) => {
-        const options =
-          pr.kind === 'boolean' ? 'true / false'
-          : pr.options?.length ? pr.options.join(' · ')
-          : '—';
-        return [pr.name, pr.kind, options, String(pr.default ?? '—')];
-      });
-      return {
-        id, heading: label, kind: 'table',
-        columns: ['Name', 'Kind', 'Options', 'Default'],
-        rows,
-      };
+      const views = requested && requested.length ? ALL_MEASURE_VIEWS.filter((v) => requested.includes(v)) : ALL_MEASURE_VIEWS;
+      return { id, heading: label, kind: 'measure', componentId: spec.anatomyComponentId, rootPart, tokens, views, tableRows };
     }
 
     case 'variants': {
       const stateProps = stateAxisProps(spec.variants);
       const axes = spec.variants.filter((v) => !stateProps.has(v.prop));
+      if (axes.length === 0) return null;
       const defaults = defaultAxisValues(spec);
-      const summary = prose?.variantsSummary || null;
+      const intro = prose?.variantsIntro?.trim() || null;
+      const guide = prose?.variantsGuide ?? [];
 
       // A boolean axis (True/False) has no self-describing values, so a bare
       // "FALSE"/"TRUE" header reads as meaningless. Qualify those with the axis
-      // name; enum axes (Small/Large, Primary/…) are left as-is. Display only —
-      // findCell still keys off the raw axis values.
-      const isBooleanAxis = (a: { values: string[] }) =>
+      // name; enum axes (Small/Large, Primary/…) are left as-is. Display only,
+      // as typed: "isInvalid: true", never uppercased — findCell still keys off
+      // the raw axis values.
+      const isBooleanAxis = (a: { values: string[] }): boolean =>
         a.values.length === 2 && a.values.every((v) => v.toLowerCase() === 'true' || v.toLowerCase() === 'false');
-      const axisLabel = (a: { prop: string; values: string[] }, value: string) =>
+      const axisLabel = (a: { prop: string; values: string[] }, value: string): string =>
         isBooleanAxis(a) ? `${a.prop}: ${value}` : value;
 
       // Cell = the instance matching { ...defaults, ...overrides } exactly;
@@ -478,27 +542,19 @@ function buildSection(
       // (so held/extra axes don't block a match when no exact combo exists).
       const findCell = (overrides: Record<string, string>): string | null => {
         const want: Record<string, string> = { ...defaults, ...overrides };
-        const exact = spec.variantInstances.find((i) =>
-          Object.entries(want).every(([a, v]) => i.values[a] === v));
+        const exact = spec.variantInstances.find((i) => Object.entries(want).every(([a, v]) => i.values[a] === v));
         if (exact) return exact.nodeId;
-        const loose = spec.variantInstances.find((i) =>
-          Object.entries(overrides).every(([a, v]) => i.values[a] === v));
+        const loose = spec.variantInstances.find((i) => Object.entries(overrides).every(([a, v]) => i.values[a] === v));
         return loose?.nodeId ?? null;
       };
-
-      if (axes.length === 0) {
-        return { id, heading: label, kind: 'bullets', items: [makeBullet('No variants.')] };
-      }
 
       if (axes.length === 1) {
         const [A] = axes;
         return {
-          id, heading: label, kind: 'variantsMatrix',
-          summary,
+          id, heading: label, kind: 'variantsMatrix', intro, guide,
           columns: A.values.map((v) => axisLabel(A, v)),
           rows: [{ label: spec.name, cells: A.values.map((v) => findCell({ [A.prop]: v })) }],
-          capped: false,
-          note: null,
+          capped: false, note: null,
         };
       }
 
@@ -508,10 +564,9 @@ function buildSection(
 
       // Row values: axis A's values, default-first, then capped at 4.
       const defaultA = defaults[A.prop];
-      const rowAxisValues =
-        defaultA !== undefined && A.values.includes(defaultA)
-          ? [defaultA, ...A.values.filter((v) => v !== defaultA)]
-          : A.values;
+      const rowAxisValues = defaultA !== undefined && A.values.includes(defaultA)
+        ? [defaultA, ...A.values.filter((v) => v !== defaultA)]
+        : A.values;
       const capped = rowAxisValues.length > 4;
       const rowValues = rowAxisValues.slice(0, 4);
 
@@ -525,12 +580,12 @@ function buildSection(
         ? `Others held at default: ${held.map((h) => `${h.prop}=${defaults[h.prop] ?? h.values[0]}`).join(', ')}`
         : null;
 
-      return { id, heading: label, kind: 'variantsMatrix', summary, columns, rows, capped, note };
+      return { id, heading: label, kind: 'variantsMatrix', intro, guide, columns, rows, capped, note };
     }
 
     case 'states': {
       const info = detectStateMatrix(spec.variants);
-      if (!info) return null; // auto-hide: no state axis → no section
+      if (!info) return null; // no state axis → nothing to show
       const defaults = defaultAxisValues(spec);
 
       // Row values: the non-state axis's values, default-first, then capped at 4.
@@ -552,23 +607,22 @@ function buildSection(
       const findCell = (rowValue: string | null, column: StateColumn): string | null => {
         const want: Record<string, string> = { ...defaults, ...column.override };
         if (info.rowAxis && rowValue !== null) want[info.rowAxis] = rowValue;
-        const exact = spec.variantInstances.find((i) =>
-          Object.entries(want).every(([a, v]) => i.values[a] === v));
+        const exact = spec.variantInstances.find((i) => Object.entries(want).every(([a, v]) => i.values[a] === v));
         if (exact) return exact.nodeId;
         const loose = spec.variantInstances.find((i) =>
-          Object.entries(column.override).every(([a, v]) => i.values[a] === v) &&
-          (!info.rowAxis || rowValue === null || i.values[info.rowAxis] === rowValue));
+          Object.entries(column.override).every(([a, v]) => i.values[a] === v)
+          && (!info.rowAxis || rowValue === null || i.values[info.rowAxis] === rowValue));
         return loose?.nodeId ?? null;
       };
 
-      const rows = rowValues.map((rv) => ({
-        label: rv ?? spec.name,
-        cells: info.columns.map((c) => findCell(rv, c)),
-      }));
-
+      const rows = rowValues.map((rv) => ({ label: rv ?? spec.name, cells: info.columns.map((c) => findCell(rv, c)) }));
+      // The deterministic table gets the AI "when it applies" line by state name.
+      const whenBy = new Map((prose?.states ?? []).map((s) => [s.name.trim().toLowerCase(), s.whenItApplies]));
+      const table = stateChanges(spec, includeHidden)
+        .map((r) => ({ ...r, whenItApplies: whenBy.get(r.name.trim().toLowerCase()) ?? null }));
       return {
         id, heading: label, kind: 'statesMatrix',
-        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped,
+        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped, table,
       };
     }
 
@@ -581,7 +635,7 @@ function buildSection(
       // about which rules the doc shows. A rule marked `shownBy` only applies
       // once a boolean property is on, and the instances this section draws
       // have those properties set only when the doc's option is on.
-      const tokens = tokensFor(spec.tokens, { includeHidden: options?.includeHidden === true });
+      const tokens = tokensFor(spec.tokens, { includeHidden });
       const instances = spec.variantInstances;
       if (instances.length && selectedVariantIds && selectedVariantIds.size) {
         const defId = defaultVariantId(spec);
@@ -594,107 +648,71 @@ function buildSection(
         // Baseline keyed by part+property+token — a row is "same" only when the
         // exact token matches; a changed token on the same slot is a diff row.
         const defInst = instances.find((i) => i.nodeId === defId) ?? instances[0];
-        const baseline = new Set(
-          resolveRows(defInst.values).map((r) => `${r.part} ${r.property} ${r.token}`),
-        );
+        const baseline = new Set(resolveRows(defInst.values).map((r) => `${r.part} ${r.property} ${r.token}`));
 
         const variants: VariantTokenBlock[] = instances
           .filter((inst) => selectedVariantIds.has(inst.nodeId))
           .map((inst) => {
             const isDefault = inst.nodeId === defInst.nodeId;
             const resolved = resolveRows(inst.values);
-            // Raw values are observed on the default variant only. Merge each raw
-            // row into its matching part group (stable): insert after the last
-            // existing row of the same part so buildTokenTable's part-change
-            // grouping doesn't emit a duplicate group-header band. Raw rows whose
-            // part has no token rows append at the end in first-seen order.
+            // Raw values are observed on the default variant only. Merge each
+            // raw row into its matching part group (stable) so buildTokenTable's
+            // part-change grouping doesn't emit a duplicate group-header band.
             const withRaw = isDefault
-              ? mergeRawIntoParts(
-                  resolved,
-                  spec.rawValues.map((r) => ({
-                    part: r.part, property: r.property, token: r.value, unbound: true,
-                  })),
-                )
+              ? mergeRawIntoParts(resolved, spec.rawValues.map((r) => ({
+                  part: r.part, property: r.property, token: r.value, unbound: true,
+                })))
               : resolved;
 
             let sameAsDefault = 0;
             const rows: VariantRow[] = [];
             for (const r of withRaw) {
               const same = baseline.has(`${r.part} ${r.property} ${r.token}`);
-              if (isDefault) {
-                rows.push({ ...r, diff: false });
-              } else if (same) {
-                sameAsDefault++;
-              } else {
-                rows.push({ ...r, diff: true });
-              }
+              if (isDefault) rows.push({ ...r, diff: false });
+              else if (same) sameAsDefault++;
+              else rows.push({ ...r, diff: true });
             }
             return {
               name: variantLabel(inst),
               props: Object.entries(inst.values).map(([name, value]) => ({ name, value })),
-              nodeId: inst.nodeId,
-              isDefault,
-              rows,
-              sameAsDefault,
+              nodeId: inst.nodeId, isDefault, rows, sameAsDefault,
             };
           });
         if (variants.length) {
-          return {
-            id, heading: label, kind: 'variantTokens',
-            columns: ['Part', 'Property', 'Token'],
-            variants,
-          };
+          return { id, heading: label, kind: 'variantTokens', columns: ['Part', 'Property', 'Token'], variants };
         }
       }
 
-      const rows = tokens.map((t) => [
-        t.part,
-        t.property,
-        t.name,
-        formatConditions(t.conditions),
-      ]);
-      return {
-        id, heading: label, kind: 'table',
-        columns: ['Part', 'Property', 'Token', 'Condition'],
-        rows,
-      };
+      // Plain component, or no variant ticked: the conditioned table, as
+      // before, but omitted rather than drawn empty.
+      const rows = tokens.map((t) => [t.part, t.property, t.name, formatConditions(t.conditions)]);
+      if (!rows.length) return null;
+      return { id, heading: label, kind: 'table', columns: ['Part', 'Property', 'Token', 'Condition'], rows };
     }
-
-    case 'related': {
-      const items = spec.related.length
-        ? spec.related.map((r) => makeBullet(r))
-        : [makeBullet('None.')];
-      return { id, heading: label, kind: 'bullets', items };
-    }
-
-    // 'properties', 'pointer' and 'keyboard' exist on SectionId (Task 5, for
-    // LEGACY_SECTION_IDS's migration targets) but are not yet selectable from
-    // ALL_SECTIONS and have no renderer here; Task 8 adds both. Named
-    // explicitly (not a `default`) so the switch stays exhaustive and a
-    // future SectionId addition still fails to compile until handled.
-    case 'properties':
-    case 'pointer':
-    case 'keyboard':
-      return null;
   }
 }
 
 export function buildDocModel(
-  spec: IntermediateSpec,
-  prose: ProseDrafts | null,
-  selected: Set<SectionId>,
-  selectedVariantIds?: Set<string>,
-  options?: DocModelOptions,
+  spec: IntermediateSpec, prose: ProseV2 | null, selected: Set<SectionId>,
+  selectedVariantIds?: Set<string>, options?: DocModelOptions,
 ): DocFrameModel {
-  const out: SectionBlock[] = [];
-  for (const { id, label } of ALL_SECTIONS) {
+  const sections: SectionBlock[] = [];
+  const omitted: OmittedSection[] = [];
+  for (const { id, label, ai } of ALL_SECTIONS) {
     if (!selected.has(id)) continue;
     const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
-    if (block) out.push(block);
+    if (block) { sections.push(block); continue; }
+    // Overview counts as AI-off only when there is also no description to
+    // fall back on; otherwise buildSection would have rendered it.
+    const reason: OmittedSection['reason'] = ai && options?.aiEnabled === false && id !== 'definition' ? 'aiOff' : 'nothingToShow';
+    omitted.push({ id, label, reason });
   }
   return {
     componentName: spec.name,
-    sections: out,
+    displayName: displayComponentName(spec.name),
+    sections,
+    facts: factsFor(spec, options?.includeHidden === true),
+    omitted,
     ...(options?.includeHidden ? { includeHidden: true as const } : {}),
   };
 }

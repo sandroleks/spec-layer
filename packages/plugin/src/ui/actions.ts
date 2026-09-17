@@ -9,7 +9,7 @@
 import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext, toYaml,
+  buildComponentArtifactV5, componentAiContext, toYaml, upgradeProseV1,
 } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
@@ -378,7 +378,9 @@ async function assembleDocFor(
 
   const model = buildDocModel(
     state.currentSpec!,
-    state.generatedProse,
+    // The v8 prompt still answers in v1; `upgradeProseV1` is the seam the doc
+    // model reads through until Task 14 stores ProseV2 on the state itself.
+    state.generatedProse ? upgradeProseV1(state.generatedProse) : null,
     selected,
     variantIds,
     { measureViews: state.measureViews, includeHidden: state.includeHidden },
@@ -474,7 +476,9 @@ export async function updateFromSource(
     const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const selected = new Set<SectionId>(src.config.sections);
     const variantIds = new Set<string>(src.config.variantIds);
-    const model = buildDocModel(spec, src.prose, selected, variantIds, {
+    // Same v1 → v2 seam as runCreateDocFrame; Task 14 carries ProseV2 through
+    // the message instead.
+    const model = buildDocModel(spec, src.prose ? upgradeProseV1(src.prose) : null, selected, variantIds, {
       measureViews: src.config.measureViews,
       includeHidden: src.config.includeHidden,
     });

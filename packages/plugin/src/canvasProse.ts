@@ -31,8 +31,11 @@ export type ProseSlot =
 
 export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
 
-/** The placeholder as it reads on canvas: docModel's `_To be written._` with
- *  the emphasis markers stripped by the renderer. */
+/** The placeholder as it reads on canvas: the `_To be written._` earlier
+ *  builds wrote, with the emphasis markers stripped by the renderer. The doc
+ *  model no longer emits it (an empty section is omitted instead), but a
+ *  document already on canvas still carries it, so the read-back must keep
+ *  recognising it as "nobody wrote this". */
 export const PLACEHOLDER_TEXT = 'To be written.';
 
 /** The slice of a Figma node this module reads. Structural so tests can pass
