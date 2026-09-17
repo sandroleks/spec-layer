@@ -160,6 +160,9 @@ function readProseV1(o: Record<string, unknown>): ProseV2 | null {
     dos: strings(o.dos),
     donts: strings(o.donts),
   };
+  // `designConsiderations` is deliberately absent here: no section ever
+  // rendered it, and Docs 2.0 retires it, so a stored v1 blob carrying it
+  // reads as prose with everything else intact and that field gone.
   for (const k of ['interactions', 'variantsSummary', 'anatomySummary', 'contentConsiderations'] as const) {
     if (typeof o[k] === 'string') v1[k] = o[k] as string;
   }

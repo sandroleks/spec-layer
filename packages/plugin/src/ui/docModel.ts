@@ -666,10 +666,12 @@ function buildSection(
 
     // 'properties', 'pointer' and 'keyboard' exist on SectionId (Task 5, for
     // LEGACY_SECTION_IDS's migration targets) but are not yet selectable from
-    // ALL_SECTIONS and have no renderer here; Task 8 adds both. Falling
-    // through to null keeps this switch exhaustive without pre-building
-    // Task 8's output.
-    default:
+    // ALL_SECTIONS and have no renderer here; Task 8 adds both. Named
+    // explicitly (not a `default`) so the switch stays exhaustive and a
+    // future SectionId addition still fails to compile until handled.
+    case 'properties':
+    case 'pointer':
+    case 'keyboard':
       return null;
   }
 }

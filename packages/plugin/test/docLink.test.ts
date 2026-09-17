@@ -421,6 +421,20 @@ describe('prose storage', () => {
     });
   });
 
+  it('drops a v1 designConsiderations field: Docs 2.0 retires it because no section ever rendered it', () => {
+    const v1 = JSON.stringify({
+      definition: 'A button triggers an action.',
+      accessibility: 'Always give it an accessible name.',
+      dos: [],
+      donts: [],
+      designConsiderations: 'Keep the label short.',
+    });
+    const parsed = parseProse(v1);
+    expect(parsed).not.toBeNull();
+    expect(parsed && 'designConsiderations' in parsed).toBe(false);
+    expect(parsed?.overview?.lede).toBe('A button triggers an action.');
+  });
+
   it('returns null for absent, unparseable, empty, or unknown-shape data', () => {
     expect(parseProse('')).toBeNull();
     expect(parseProse('not json')).toBeNull();
@@ -463,6 +477,47 @@ describe('prose storage', () => {
     } finally {
       g.TextEncoder = saved;
     }
+  });
+
+  it('counts UTF-8 bytes, not UTF-16 units, for multi-byte and astral text', () => {
+    // The budget is a BYTE budget because Figma stores pluginData as UTF-8.
+    // Measuring string length instead would let a payload of emoji or CJK sail
+    // past a limit it actually exceeds by up to 4x.
+    const g = globalThis as Record<string, unknown>;
+    const saved = g.TextEncoder;
+    delete g.TextEncoder;
+    try {
+      // Each rocket is 4 UTF-8 bytes but only 2 UTF-16 units, so a string of
+      // them sized to just clear the budget in bytes must be dropped.
+      const rockets = '\u{1F680}'.repeat(Math.ceil(PROSE_BUDGET_BYTES / 4) + 10);
+      expect(serializeProse({ ...PROSE, overview: { lede: rockets, body: [] } })).toBe('');
+      // A 3-byte-per-char CJK string just under budget must survive.
+      const cjk = '中'.repeat(Math.floor(PROSE_BUDGET_BYTES / 3) - 200);
+      expect(serializeProse({ ...PROSE, overview: { lede: cjk, body: [] } })).not.toBe('');
+    } finally {
+      g.TextEncoder = saved;
+    }
+  });
+
+  it('does not log anything for a payload within budget', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      serializeProse(PROSE);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('omits absent optional keys instead of writing empty strings or arrays', () => {
+    const minimal: ProseV2 = { v: 2, overview: { lede: 'D', body: [] } };
+    const raw = serializeProse(minimal);
+    expect(raw).not.toContain('semantics');
+    expect(raw).not.toContain('guidelines');
+    const parsed = parseProse(raw);
+    expect(parsed).toEqual(minimal);
+    expect(parsed && 'semantics' in parsed).toBe(false);
+    expect(parsed && 'guidelines' in parsed).toBe(false);
   });
 });
 
