@@ -358,6 +358,38 @@ describe('draftProse proxy mode', () => {
     expect([...store.store.values()]).toEqual(['{"overview":{"lede":"D","body":[]}}']);
   });
 
+  it('reads the answer from the first text block, past a leading thinking block', async () => {
+    // Sonnet 5 thinks before it answers unless told not to, and at low effort
+    // the thinking arrives as an empty block with a signature ahead of the text.
+    // The first Pro generation after the tier assignment shipped threw the
+    // shape error on exactly this envelope.
+    const envelope = JSON.stringify({
+      model: 'claude-sonnet-5', type: 'message', role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: '', signature: 'EosCCpABCBEYAipA' },
+        { type: 'text', text: '{"overview":{"lede":"Thought first.","body":[]}}' },
+      ],
+      stop_reason: 'end_turn',
+    });
+    const fetcher = vi.fn(async () => new Response(envelope, { status: 200 }));
+    const { get, set } = memStore();
+    const out = await draftProse(spec, {
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set },
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1' },
+    });
+    expect(out?.prose.overview?.lede).toBe('Thought first.');
+  });
+
+  it('still rejects an envelope with no text block at all', async () => {
+    const envelope = JSON.stringify({ content: [{ type: 'thinking', thinking: '', signature: 'x' }] });
+    const fetcher = vi.fn(async () => new Response(envelope, { status: 200 }));
+    const { get, set } = memStore();
+    await expect(draftProse(spec, {
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set },
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1' },
+    })).rejects.toThrow(/Unexpected Claude API response shape/);
+  });
+
   it('sends key:instanceId in the bearer when the proxy auth has an instance', async () => {
     const fetcher = vi.fn(async () => new Response(PROSE_OK, { status: 200 }));
     const { get, set } = memStore();
