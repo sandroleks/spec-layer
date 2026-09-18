@@ -6,12 +6,13 @@
  * slot and key contract). Deterministic text is left untagged so selfHash
  * covers it and an Update rebuilds it.
  */
-import type { ColumnBlock, KeyboardRow, PropertyRow, StateTableRow } from './ui/docModel';
+import type { ColumnBlock, KeyboardRow, PropertyRow, StateChange, StateTableRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
 import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
 import { tagSlot, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
 import { SLOT_PART_KEY } from './canvasProse';
+import { displayPartName } from './ui/displayNames';
 
 const KEY_JOINER = ' + ';
 
@@ -40,6 +41,20 @@ export function chip(text: string, tone: 'default' | 'muted' = 'default'): Frame
   t.textAutoResize = 'WIDTH_AND_HEIGHT';
   c.appendChild(t);
   return c;
+}
+
+/** A chip hugs its text, so a long token path makes it wider than its column
+ *  and the table clips it. When the text needs more room than `maxWidth`, the
+ *  chip fills its row and the text wraps inside it. Call after the chip is in
+ *  its auto-layout row: FILL needs a parent. The text's width is read from
+ *  Figma, which sizes a text node as soon as it has characters. */
+export function fitChip(c: FrameNode, maxWidth: number): void {
+  const t = c.children[0];
+  if (!t || t.type !== 'TEXT') return;
+  if (t.width + c.paddingLeft + c.paddingRight <= maxWidth) return;
+  c.layoutSizingHorizontal = 'FILL';
+  t.layoutSizingHorizontal = 'FILL';
+  t.textAutoResize = 'HEIGHT';
 }
 
 function columnHeading(text: string): TextNode {
@@ -195,8 +210,11 @@ export function buildKeyboardTable(rows: KeyboardRow[], contentWidth: number): F
  *  Only the description cell is editorial; it carries the property name. */
 export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boolean, contentWidth: number): FrameNode {
   const labels = hasDescriptions ? ['Property', 'Type', 'Values', 'Default', 'Description'] : ['Property', 'Type', 'Values', 'Default'];
-  const fixed = Math.floor((contentWidth * (hasDescriptions ? 0.55 : 0.7)) / (labels.length - 1));
-  const widths: (number | 'grow')[] = labels.map((_, i) => (i === labels.length - 1 ? 'grow' : fixed));
+  // Shares of the column for the fixed cells; the last column grows. Values
+  // takes the widest fixed share: when four fixed columns split 55% evenly,
+  // Values had 105px and an option such as "Color Background" broke mid-word.
+  const shares = hasDescriptions ? [0.16, 0.12, 0.22, 0.13] : [0.22, 0.16, 0.32];
+  const widths: (number | 'grow')[] = [...shares.map((share) => Math.floor(contentWidth * share)), 'grow'];
   const table = tableShell();
   const head = headerRow(labels, widths);
   table.appendChild(head);
@@ -222,15 +240,44 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
   return table;
 }
 
-function changeText(c: { part: string; property: string; from: string | null; to: string | null }): string {
-  if (c.from && c.to) return `${c.part} ${c.property}: ${c.from} → ${c.to}`;
-  if (c.to) return `${c.part} ${c.property}: added ${c.to}`;
-  return `${c.part} ${c.property}: removed ${c.from ?? ''}`;
+/** One token change: the part and property on a line of their own, then the
+ *  old and new token as chips around an arrow, or "added" / "removed" and
+ *  the one token. One chip used to hold "part property: a → b"; two token
+ *  paths in one chip overran the column and the table clipped it. */
+function changeBlock(c: StateChange, innerWidth: number): FrameNode {
+  const block = vstack(4);
+  const label = makeText(`${displayPartName(c.part)} ${c.property}`, 'Medium', 12, palette.label, 140);
+  block.appendChild(label);
+  label.layoutSizingHorizontal = 'FILL';
+  label.textAutoResize = 'HEIGHT';
+  const row = hstack(6);
+  row.layoutWrap = 'WRAP';
+  row.counterAxisSpacing = 6;
+  row.counterAxisAlignItems = 'CENTER';
+  block.appendChild(row);
+  row.layoutSizingHorizontal = 'FILL';
+  const word = (text: string): void => { row.appendChild(makeText(text, 'Regular', 13, palette.muted, 140)); };
+  const token = (text: string): void => { const t = chip(text); row.appendChild(t); fitChip(t, innerWidth); };
+  if (c.from && c.to) { token(c.from); word('→'); token(c.to); }
+  else if (c.to) { word('added'); token(c.to); }
+  else { word('removed'); token(c.from ?? ''); }
+  return block;
 }
 
-/** State, What changes (chips from token deltas), When it applies (editorial). */
+/** The What changes cell: one block per change, stacked. */
+function changesCell(blocks: FrameNode[]): FrameNode {
+  const cell = vstack(10);
+  cell.paddingTop = cell.paddingBottom = 10;
+  cell.paddingLeft = cell.paddingRight = 16;
+  for (const b of blocks) { cell.appendChild(b); b.layoutSizingHorizontal = 'FILL'; }
+  return cell;
+}
+
+/** State, What changes (a block per token delta), When it applies (editorial).
+ *  The changes column takes just over half the table; token paths are long. */
 export function buildStatesTable(rows: StateTableRow[], contentWidth: number): FrameNode {
-  const widths: (number | 'grow')[] = [Math.floor(contentWidth * 0.18), Math.floor(contentWidth * 0.47), 'grow'];
+  const changesWidth = Math.floor(contentWidth * 0.52);
+  const widths: (number | 'grow')[] = [Math.floor(contentWidth * 0.18), changesWidth, 'grow'];
   const table = tableShell();
   const head = headerRow(['State', 'What changes', 'When it applies'], widths);
   table.appendChild(head);
@@ -243,7 +290,7 @@ export function buildStatesTable(rows: StateTableRow[], contentWidth: number): F
     row.appendChild(name);
     applyColWidth(name, widths[0]);
     const changes = r.changes.length
-      ? chipCell(r.changes.map((c) => chip(changeText(c))))
+      ? changesCell(r.changes.map((c) => changeBlock(c, changesWidth - 32)))
       : makeCell('No token changes', 'Regular', 13, palette.muted);
     row.appendChild(changes);
     applyColWidth(changes, widths[1]);

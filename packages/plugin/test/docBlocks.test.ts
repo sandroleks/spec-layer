@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, columnParagraph,
+  buildPropertiesTable, buildStatesTable, columnParagraph, chip, fitChip,
 } from '../src/docBlocks';
 import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
@@ -58,15 +58,49 @@ describe('docBlocks', () => {
     });
   });
 
-  it('writes the states table changes as chips and says when nothing changes', () => {
+  it('writes each state change as a part and property line over from and to chips, and says when nothing changes', () => {
     const table = buildStatesTable([
       { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'Box', property: 'border', from: 'color/a', to: 'color/b' }, { part: 'Box', property: 'shadow', from: null, to: 'shadow/1' }], whenItApplies: null },
+      { name: 'Hover', changes: [{ part: 'checkBox', property: 'border', from: 'color/a', to: 'color/b' }, { part: 'checkBox', property: 'shadow', from: null, to: 'shadow/1' }], whenItApplies: null },
     ], 768) as unknown as FakeFrame;
     const chars = table.textChars();
     expect(chars).toContain('No token changes');
-    expect(chars).toContain('Box border: color/a → color/b');
-    expect(chars).toContain('Box shadow: added shadow/1');
+    // One chip per token, never one chip holding "part property: a → b": a
+    // token path is long, and two of them in one chip overran the column.
+    expect(chars).toEqual(expect.arrayContaining(['Check box border', 'color/a', '→', 'color/b', 'Check box shadow', 'added', 'shadow/1']));
+    expect(chars.some((c) => c.includes('→ color'))).toBe(false);
+    // The changes column gets more than half the table; the sentence column
+    // grows into the rest.
+    const head = table.children[0] as FakeFrame;
+    const cells = head.children as FakeFrame[];
+    expect(cells[1].width).toBeGreaterThanOrEqual(Math.floor(768 * 0.5));
+    expect(cells[2].layoutSizingHorizontal).toBe('FILL');
+  });
+
+  it('lets a chip wider than its column wrap its text instead of overrunning it', () => {
+    const wide = chip('Background/Chip/Chip Neutral Hover Pressed Selected') as unknown as FakeFrame;
+    (wide.children[0] as FakeText).width = 400;
+    fitChip(wide as unknown as FrameNode, 300);
+    expect(wide.layoutSizingHorizontal).toBe('FILL');
+    expect((wide.children[0] as FakeText).textAutoResize).toBe('HEIGHT');
+
+    const narrow = chip('color/a') as unknown as FakeFrame;
+    (narrow.children[0] as FakeText).width = 60;
+    fitChip(narrow as unknown as FrameNode, 300);
+    expect(narrow.layoutSizingHorizontal).toBe('HUG');
+    expect((narrow.children[0] as FakeText).textAutoResize).toBe('WIDTH_AND_HEIGHT');
+  });
+
+  it('gives the properties table a Values column wide enough for a two-word option', () => {
+    const table = buildPropertiesTable([
+      { name: 'Style', type: 'Variant', values: 'Default · Color Background · Status', defaultValue: 'Default', description: 'Sets the treatment.' },
+    ], true, 768) as unknown as FakeFrame;
+    const cells = (table.children[0] as FakeFrame).children as FakeFrame[];
+    // Four equal fixed columns at 55% gave Values 105px, and "Color
+    // Background" broke mid-word. Values now gets the widest fixed share.
+    expect(cells[2].width).toBeGreaterThanOrEqual(160);
+    expect(cells[2].width).toBeGreaterThan(cells[0].width);
+    expect(cells[4].layoutSizingHorizontal).toBe('FILL');
   });
 
   it('omits the description column when no row has one', () => {
