@@ -155,6 +155,16 @@ none of the reasoning above.
 
 ### Fixed
 
+- **A Pro generation no longer fails on Sonnet 5's thinking block.** Sonnet 5
+  thinks before it answers unless told not to, and the thinking arrives as a
+  leading `thinking` content block ahead of the text. The client read the
+  first block only, so the very first Pro generation after the proxy began
+  assigning Sonnet 5 ended with "AI didn't run (Unexpected Claude API response
+  shape ...)" and every AI section left out. The client now reads the first
+  block that carries text. Haiku 4.5 answers with the text block first, so
+  free generations were never affected. This is the gap the release checklist
+  named: no repository test can reach the live model's response shape, and
+  the one live call that would have caught it had not been made.
 - **A radius bound on any corner no longer reads as a hardcoded gap.** The gap
   check looked only at `cornerRadius` and `topLeftRadius`, so a radius bound
   on another corner was reported as unbound while the raw-value table

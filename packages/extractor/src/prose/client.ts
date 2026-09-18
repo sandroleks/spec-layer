@@ -232,13 +232,29 @@ async function postCompletion(
   }
 
   const data = await res.json() as {
-    content?: Array<{ text?: unknown }>;
+    content?: Array<{ type?: unknown; text?: unknown }>;
   };
-  const raw = data?.content?.[0]?.text;
-  if (typeof raw !== 'string') {
-    throw new Error(`Unexpected Claude API response shape: ${JSON.stringify(data).slice(0, 200)}`);
+  return answerText(data);
+}
+
+/**
+ * The model's answer: the text of the first `text` block in `content`.
+ *
+ * Not `content[0]`: Sonnet 5 thinks before it answers unless told not to, and
+ * its thinking arrives as a leading `{ type: 'thinking' }` block (a `thinking`
+ * string plus a signature, no `text`) ahead of the text block. Reading the
+ * first block therefore threw "Unexpected Claude API response shape" on every
+ * Pro generation the day the proxy started assigning Sonnet 5. Haiku 4.5
+ * answers with a text block first, so the shipped free path never met this.
+ * A block is the answer when it carries a string `text`; thinking, redacted
+ * thinking and tool blocks never do.
+ */
+function answerText(data: { content?: Array<{ type?: unknown; text?: unknown }> } | null | undefined): string {
+  const blocks = Array.isArray(data?.content) ? data.content : [];
+  for (const block of blocks) {
+    if (block && typeof block.text === 'string') return block.text;
   }
-  return raw;
+  throw new Error(`Unexpected Claude API response shape: ${JSON.stringify(data).slice(0, 200)}`);
 }
 
 export interface ProseRequest { max_tokens: number; system: string; messages: ProseRequestMessage[] }
