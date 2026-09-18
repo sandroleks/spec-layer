@@ -20,6 +20,7 @@ import {
   missingProseKeys,
   mergeTopUp,
   topUpProseForRebuild,
+  takeTopUpNote,
   type BuildPresenter,
   type DocSource,
 } from '../src/ui/actions';
@@ -291,6 +292,52 @@ describe('topUpProseForRebuild', () => {
     const state = aiState();
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.pendingAiNote).toBe('Too many requests just now. Give it a minute.');
+  });
+});
+
+describe('takeTopUpNote', () => {
+  it('returns the note and clears the slot', () => {
+    const state = createState();
+    state.pendingAiNote = 'Too many requests just now. Give it a minute.';
+    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    expect(state.pendingAiNote).toBe('');
+  });
+
+  it('returns null when there is nothing to report', () => {
+    expect(takeTopUpNote(createState())).toBeNull();
+  });
+
+  it('pins the fix: draining the note for one failed rebuild leaves nothing for a later, unrelated document to inherit', async () => {
+    // A stale-version doc whose top-up fails leaves a note on the shared slot.
+    const failing: DocSource = {
+      docId: 'a', node: buttonNode(), fileKey: 'F',
+      config: { sections: ['whenToUse', 'keyboard'], variantIds: [], measureViews: [], includeHidden: false, aiEnabled: true, anatomyView: 'diagram' },
+      prose: null,
+    };
+    const state = Object.assign(createState(), { aiEnabled: true, figmaUserId: 'u1' });
+    vi.mocked(generateProse).mockReset();
+    vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('rate_limited'));
+    await topUpProseForRebuild(state, failing);
+    expect(state.pendingAiNote).not.toBe('');
+
+    // The UI drains the note the instant this document's own top-up finishes
+    // (this is the fix: ui-vnext.ts no longer waits for a later, unrelated
+    // completion to read the shared slot).
+    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    expect(state.pendingAiNote).toBe('');
+    vi.mocked(generateProse).mockClear();
+
+    // A later document whose stored prose already covers everything its
+    // config requests never calls the model at all, and must not inherit the
+    // earlier document's failure note.
+    const complete: DocSource = {
+      docId: 'c', node: buttonNode(), fileKey: 'F',
+      config: { sections: ['accessibility'], variantIds: [], measureViews: [], includeHidden: false, aiEnabled: true, anatomyView: 'diagram' },
+      prose: { v: 2, semantics: ['Focusable.'] },
+    };
+    expect(await topUpProseForRebuild(state, complete)).toEqual(complete.prose);
+    expect(generateProse).not.toHaveBeenCalled();
+    expect(state.pendingAiNote).toBe('');
   });
 });
 

@@ -106,6 +106,7 @@ import {
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
+  takeTopUpNote,
   topUpProseForRebuild,
   updateFromSource,
   type BuildPresenter,
@@ -975,6 +976,12 @@ function finishLibraryOperation(error = ''): void {
     message = error;
   }
   state.lastOmitted = [];
+  // Mirrors lastOmitted: whatever a rebuild's top-up left here belongs to
+  // this operation and no other, so it must not survive to be misread by a
+  // later, unrelated Library action. The normal path already drains this
+  // slot per document (see the docSource handler below); this is the
+  // backstop for an operation that aborts before that drain runs.
+  state.pendingAiNote = '';
   if (message) {
     nativeNotify(
       message,
@@ -1031,9 +1038,11 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     if (!ok) return;
   }
   if (!beginOperation(operation)) return;
-  // Start from nothing: a Create earlier in this session may have left a
-  // record behind, and it says nothing about these documents.
+  // Start from nothing: a Create earlier in this session (or an aborted
+  // Library run) may have left a record behind, and it says nothing about
+  // these documents.
   state.lastOmitted = [];
+  state.pendingAiNote = '';
   libraryOperation = {
     kind: 'update',
     queue: [...docIds],
@@ -1061,15 +1070,11 @@ function completeCurrentLibraryUpdate(): void {
     if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
   }
   state.lastOmitted = [];
-  // A stale-version rebuild's top-up runs before this document's build and
-  // may have left a note (e.g. a rate limit) on state.pendingAiNote, the same
-  // slot Create reads. Fold it in and clear the slot the same way, so a
-  // failed top-up is reported without the next document in the queue
-  // inheriting it.
-  if (state.pendingAiNote && !active.aiNotes.includes(state.pendingAiNote)) {
-    active.aiNotes.push(state.pendingAiNote);
-  }
-  state.pendingAiNote = '';
+  // A stale-version rebuild's aiNotes entry, if any, was already taken from
+  // state.pendingAiNote (and the slot cleared) at the docSource handler's
+  // topUpProseForRebuild call site below, for exactly this document — not
+  // read here, where any document's docFrameDone (rebuild or not) would
+  // otherwise risk folding in a note left over from a different one.
   dispatchNextLibraryUpdate();
 }
 
@@ -2680,7 +2685,18 @@ window.onmessage = (event: MessageEvent): void => {
         // not write before the frame rebuilds; a plain update sends the
         // source's prose through untouched, exactly as before.
         void (async () => {
-          const prose = msg.intent === 'rebuild' ? await topUpProseForRebuild(state, src) : src.prose;
+          let prose = src.prose;
+          if (msg.intent === 'rebuild') {
+            prose = await topUpProseForRebuild(state, src);
+            // Take the note (if any) right here, for exactly the document
+            // whose top-up just finished, and clear the shared slot in the
+            // same step. Waiting until this document's own completion (or
+            // reading it from any other document's) would risk reporting a
+            // failure against the wrong document, or losing it if this whole
+            // operation aborts before that later point ever runs.
+            const note = takeTopUpNote(state);
+            if (note && !active.aiNotes.includes(note)) active.aiNotes.push(note);
+          }
           return updateFromSource(state, { ...src, prose }, libraryPresenter((message) => {
             preparationError = message;
           }));

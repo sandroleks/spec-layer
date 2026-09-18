@@ -612,6 +612,23 @@ export async function topUpProseForRebuild(state: UiState, src: DocSource): Prom
   }
 }
 
+/**
+ * Drain whatever note a `topUpProseForRebuild` call just left on
+ * `state.pendingAiNote`, clearing the slot in the same step.
+ *
+ * The slot is shared, mutable UI state, so it must be read exactly once,
+ * right where the caller knows which document's top-up just finished, and
+ * cleared immediately, never left for some later, unrelated completion to
+ * read. A caller that awaits `topUpProseForRebuild` should call this before
+ * doing anything else, so a failure can never survive to be misattributed to
+ * a document whose dispatch never ran the top-up at all.
+ */
+export function takeTopUpNote(state: UiState): string | null {
+  const note = state.pendingAiNote;
+  state.pendingAiNote = '';
+  return note || null;
+}
+
 // ---------------------------------------------------------------------------
 // Copy for AI (My Library): put a brief on the clipboard. A component copies
 // as Component Context v5 YAML; a foundation copies as the DTCG resolver
