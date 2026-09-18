@@ -108,8 +108,12 @@ none of the reasoning above.
   When to use. The system prompt gains one rule, "Say each fact once", and
   the Text field exemplar demonstrates all of it: its When not to use bullets
   are situations with an alternative and its third guideline pair is a real
-  mirror on Size. The prompt bytes change, so the proxy must be redeployed
-  before a build with this change can generate; nothing shipped is affected.
+  mirror on Size. The Overview asks for a lede and at most one short
+  paragraph that describes where the component appears, never one that
+  argues; the first Pill Action run wrote three paragraphs, the last of them
+  the model's own reasoning. The prompt bytes change, so the proxy must be
+  redeployed before a build with this change can generate; nothing shipped
+  is affected.
 - **AI writing is one structured call per component, written by the model
   your plan proves.** The prompt is rewritten around the Docs 2.0 sections:
   the model sees the display name, the designer's description as an

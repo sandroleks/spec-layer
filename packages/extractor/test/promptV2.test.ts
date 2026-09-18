@@ -158,6 +158,19 @@ describe('buildProsePrompt (v9)', () => {
   });
 });
 
+describe('PROSE_KEY_INSTRUCTIONS for the overview', () => {
+  it('asks for a lede and at most one descriptive paragraph, never an argument', () => {
+    // The first live Pill Action run wrote three paragraphs, the last of
+    // which argued ("Because it carries its own hover, focus, and press
+    // feedback, it reads clearly as interactive rather than as a static
+    // tag."). The overview describes what the component is and where it
+    // appears; the reader does not need the reasoning.
+    const p = buildProsePrompt(spec, new Set(['overview']));
+    expect(p).toContain('body is at most one short paragraph');
+    expect(p).toContain('describe, never explain or justify');
+  });
+});
+
 describe('PROSE_KEY_INSTRUCTIONS for the usage sections', () => {
   it('asks for situations, then alternatives in a fixed shape, then mirrored one-topic pairs', () => {
     const p = buildProsePrompt(spec, new Set(['whenToUse', 'whenNotToUse', 'guidelines']));
@@ -243,6 +256,11 @@ describe('PROSE_SYSTEM_PROMPT (v9)', () => {
     expect(PROSE_SYSTEM_PROMPT).toContain(KEYBOARD_KEYS.join(', '));
   });
 
+  it('tells the model to describe and not argue', () => {
+    expect(PROSE_SYSTEM_PROMPT).toContain('Describe, do not argue.');
+    expect(PROSE_SYSTEM_PROMPT).toContain('"rather than"');
+  });
+
   it('gives When to use and the guidelines different jobs and forbids saying a fact twice', () => {
     // The first live Button run wrote the same three rules under When not to
     // use and again as DON'T cards. The two sections answer different
@@ -305,6 +323,16 @@ describe('the Text field exemplar', () => {
   it('names no component as an alternative, since the exemplar has no related components', () => {
     expect(spec.related).toEqual([]);
     for (const bullet of EXEMPLAR_RESPONSE.whenNotToUse!) expect(bullet).not.toMatch(/\b[A-Z][a-z]+ (field|picker|area)\b/);
+  });
+
+  it('keeps the overview to a lede and one paragraph that describes rather than argues', () => {
+    const overview = EXEMPLAR_RESPONSE.overview!;
+    expect(overview.body).toHaveLength(1);
+    for (const sentence of [overview.lede, ...overview.body]) {
+      expect(sentence, sentence).not.toMatch(/\bbecause\b/i);
+      expect(sentence, sentence).not.toMatch(/\brather than\b/i);
+      expect(sentence, sentence).not.toMatch(/\breads (as|clearly)\b/i);
+    }
   });
 
   it('phrases When not to use as a situation with an alternative, never as a rule', () => {

@@ -44,7 +44,7 @@ export function partKind(part: AnatomyPart): string {
  */
 export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
   overview:
-    'overview ({ lede, body }: lede is one sentence saying what the component is and what a person does with it; body is one to three short paragraphs on where it is used and what it gives people, with no option names)',
+    'overview ({ lede, body }: lede is one sentence saying what the component is and what a person does with it; body is at most one short paragraph, one or two sentences, on where it appears and what it holds; describe, never explain or justify; no option names)',
   whenToUse:
     'whenToUse (string[], 2 to 4 concrete situations where this component is the right choice; each names a task or context, never a rule about how to use it)',
   whenNotToUse:
@@ -300,6 +300,7 @@ export const PROSE_SYSTEM_PROMPT = [
   '- Second person, verb first, one idea per sentence. Every rule carries its reason.',
   '- Anchor guidance in concrete situations: forms, dialogs, toolbars, lists, filters.',
   '- Write for people, not "the user".',
+  '- Describe, do not argue. No sentence explains why the component reads or feels a certain way, and nothing is "rather than" something else.',
   '',
   'Facts:',
   "- Name only what the prompt lists: this component's parts, properties, option values, states, and related components. Never invent an option, a part, a state, or a component.",
@@ -385,7 +386,6 @@ export const EXEMPLAR_RESPONSE: ProseV2 = {
     lede: 'A text field takes a short, single-line answer such as a name, an email address, or a search term.',
     body: [
       'Use it inside forms, dialogs, and filters wherever people type a value the product stores or acts on. The label says what to enter, the placeholder shows the expected shape, and the helper text explains a rule first.',
-      'Keep every field in a form the same size, and let the state colours do the talking: the border changes on focus and on error, nothing else moves.',
     ],
   },
   whenToUse: [
