@@ -91,6 +91,19 @@ describe('docBlocks', () => {
     expect(palette.dontInk).not.toEqual(palette.heading);
   });
 
+  it('stretches both cards of a pair to one height, however long each reason runs', () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'Short.' }, dont: { rule: 'Do not hide the label.', reason: 'A much longer reason that wraps onto several lines on canvas and makes this card taller.' } },
+    ], 768) as unknown as FakeFrame;
+    const row = grid.children[0] as FakeFrame;
+    const [doCard, dontCard] = row.children as FakeFrame[];
+    // The row hugs the taller card; each card fills the row's height, so the
+    // shorter card grows to match instead of ending where its text ends.
+    expect(row.counterAxisSizingMode).toBe('AUTO');
+    expect(doCard.layoutSizingVertical).toBe('FILL');
+    expect(dontCard.layoutSizingVertical).toBe('FILL');
+  });
+
   it('lets the guideline grid hug its height instead of clipping to a 1px placeholder', () => {
     const grid = buildGuidelinePairs([
       { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: 'It confuses screen readers.' } },

@@ -101,7 +101,9 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
   return box;
 }
 
-/** Paired Do and Don't cards, one pair per row. The pair row carries its index. */
+/** Paired Do and Don't cards, one pair per row. The pair row carries its
+ *  index. The row hugs the taller card and both cards fill its height, so a
+ *  pair always reads as two equal blocks however long each reason runs. */
 export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number): FrameNode {
   const grid = vstack(16);
   grid.resize(contentWidth, 1);
@@ -117,6 +119,7 @@ export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number
       const c = guidelineCard(card, kind);
       row.appendChild(c);
       c.layoutSizingHorizontal = 'FILL';
+      c.layoutSizingVertical = 'FILL';
     }
   });
   return grid;

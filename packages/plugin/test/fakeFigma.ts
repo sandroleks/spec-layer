@@ -57,6 +57,7 @@ export class FakeFrame {
   private fixedW = 0.01;
   private fixedH = 0.01;
   private fillH = false;
+  private fillV = false;
 
   appendChild(n: FakeNode): void {
     this.children.push(n);
@@ -104,10 +105,12 @@ export class FakeFrame {
   }
 
   get layoutSizingVertical(): LayoutSizing {
+    if (this.fillV) return 'FILL';
     return this.verticalMode === 'AUTO' ? 'HUG' : 'FIXED';
   }
 
   set layoutSizingVertical(v: LayoutSizing) {
+    this.fillV = v === 'FILL';
     this.setAxis('vertical', v === 'HUG' ? 'AUTO' : 'FIXED');
   }
 
@@ -118,9 +121,12 @@ export class FakeFrame {
     throw new Error('FakeFrame: hugging width is not modelled');
   }
 
-  /** A hugging height is measured from the content, so a clipped row shows up. */
+  /** A hugging height is measured from the content, so a clipped row shows up.
+   *  A vertical FILL child measures its content too: inside a hugging parent,
+   *  Figma sizes the parent by the tallest child's content and stretches the
+   *  fill children to it, so the content height is what the child contributes. */
   get height(): number {
-    if (this.verticalMode === 'FIXED') return this.fixedH;
+    if (this.verticalMode === 'FIXED' && !this.fillV) return this.fixedH;
     const content = this.layoutMode === 'VERTICAL'
       ? this.children.reduce((a, c) => a + (c.height ?? 0), 0)
         + Math.max(this.children.length - 1, 0) * this.itemSpacing
