@@ -23,7 +23,7 @@ import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, radius, applyThemeToKit, PROSE_MEASURE,
+  headingFont, radius, applyThemeToKit,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
@@ -35,7 +35,7 @@ import {
 import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, measuredParagraph,
+  buildPropertiesTable, buildStatesTable, columnParagraph,
 } from './docBlocks';
 import { displayPartName } from './ui/displayNames';
 import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
@@ -68,12 +68,12 @@ let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 // owns; an Update reads it back instead of regenerating it.
 // ---------------------------------------------------------------------------
 
-/** Render markdown into a tagged slot container at the prose measure. The
- *  first paragraph of an Overview is the lede and sets one step larger. */
+/** Render markdown into a tagged slot container spanning the content column.
+ *  The first paragraph of an Overview is the lede and sets one step larger. */
 function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, lede = false): FrameNode {
   const holder = vstack(spacing);
   if (slot) tagSlot(holder, slot);
-  holder.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+  holder.resize(CONTENT_WIDTH, 1);
   holder.primaryAxisSizingMode = 'AUTO';
   buildProse(text).forEach((node, i) => {
     holder.appendChild(node);
@@ -83,12 +83,12 @@ function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, l
   return holder;
 }
 
-/** One paragraph at the prose measure, with the slot tag on the TEXT node
+/** One paragraph spanning the column, with the slot tag on the TEXT node
  *  itself. A single-string slot (anatomySummary, definitionLead) is read
  *  straight off the node it is tagged on, so tagging a container would read
  *  back as nothing. */
 function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNode {
-  const box = measuredParagraph(text, CONTENT_WIDTH, size);
+  const box = columnParagraph(text, CONTENT_WIDTH, size);
   const node = box.children[0];
   if (node) tagSlot(node, slot);
   return box;
@@ -354,7 +354,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'bullets': {
       const list = vstack(bodySpacing);
       if (section.slot) tagSlot(list, section.slot);
-      list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+      list.resize(CONTENT_WIDTH, 1);
       list.primaryAxisSizingMode = 'AUTO';
       for (const b of section.items) {
         const row = makeBulletRow(b);
@@ -493,7 +493,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
       if (section.intro) body.appendChild(buildProseSlot(section.intro, 'variantsIntro', bodySpacing));
       if (section.guide.length) {
         const list = vstack(bodySpacing);
-        list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+        list.resize(CONTENT_WIDTH, 1);
         list.primaryAxisSizingMode = 'AUTO';
         for (const g of section.guide) {
           // One tagged row per option, keyed by the option value: the guide is

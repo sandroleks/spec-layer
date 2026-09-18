@@ -121,8 +121,8 @@ none of the reasoning above.
   lowercase component name, anatomy parts read as words, and user-authored
   matrix labels render as typed. Instances render at true size everywhere;
   anatomy pins fan out with elbow leaders, and a component wider than the
-  column says "Shown at N%". Prose is capped at a readable measure and code
-  spans render without backticks. A section with nothing to show is omitted,
+  column says "Shown at N%". Prose spans the content column, like the tables
+  beside it, and code spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 
 - Measurements render the component at true size. A component wider than the

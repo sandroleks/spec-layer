@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, measuredParagraph,
+  buildPropertiesTable, buildStatesTable, columnParagraph,
 } from '../src/docBlocks';
-import { applyThemeToKit, PROSE_MEASURE } from '../src/frameKit';
+import { applyThemeToKit } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { readCanvasProse, type ProseNodeLike } from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
@@ -15,10 +15,12 @@ describe('docBlocks', () => {
   beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
   afterEach(() => uninstallFakeFigma());
 
-  it('caps a paragraph at the prose measure', () => {
-    const p = measuredParagraph('Some text.', 768) as unknown as FakeFrame;
-    expect(p.width).toBe(PROSE_MEASURE);
-    const narrow = measuredParagraph('Some text.', 500) as unknown as FakeFrame;
+  it('lets a paragraph fill the content column, whatever its width', () => {
+    // Decided 2026-09-18: prose spans the column like the tables under it. The
+    // old 640px readable measure left a visible empty margin on the right.
+    const p = columnParagraph('Some text.', 768) as unknown as FakeFrame;
+    expect(p.width).toBe(768);
+    const narrow = columnParagraph('Some text.', 500) as unknown as FakeFrame;
     expect(narrow.width).toBe(500);
   });
 

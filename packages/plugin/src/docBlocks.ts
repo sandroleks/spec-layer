@@ -9,16 +9,16 @@
 import type { ColumnBlock, KeyboardRow, PropertyRow, StateTableRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
-import { palette, solidFill, vstack, hstack, makeText, radius, headingFont, PROSE_MEASURE } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
 import { tagSlot, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
 import { SLOT_PART_KEY } from './canvasProse';
 
 const KEY_JOINER = ' + ';
 
-/** A paragraph capped at the readable measure. */
-export function measuredParagraph(text: string, contentWidth: number, size = 15): FrameNode {
+/** A paragraph spanning the content column, like the tables around it. */
+export function columnParagraph(text: string, contentWidth: number, size = 15): FrameNode {
   const box = vstack(0);
-  box.resize(Math.min(PROSE_MEASURE, contentWidth), 1);
+  box.resize(contentWidth, 1);
   box.primaryAxisSizingMode = 'AUTO';
   const runs = parseRuns(text);
   const node = makeText(runs.map((r) => r.text).join(''), 'Regular', size, palette.body, 155);

@@ -112,6 +112,23 @@ describe('docFrame', () => {
     expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
   });
 
+  it('lets the Overview, bullet lists and two-column bullets fill the content column', async () => {
+    const section = await build(prose);
+    const usage = (section.children as FakeFrame[])[0];
+    // The content column is the card width (880) less the header padding on
+    // both sides; every prose holder spans it, none stops at a 640px measure.
+    const content = usage.children[usage.children.length - 1] as FakeFrame;
+    const columnWidth = 880 - 2 * (content.paddingLeft as number);
+    expect(columnWidth).toBeGreaterThan(640);
+    const definition = findSlot(asNode(section), 'definition') as unknown as FakeFrame;
+    expect(definition.width).toBe(columnWidth);
+    // Each two-column list fills its column, which the columns split evenly.
+    const whenToUse = findSlot(asNode(section), 'whenToUse') as unknown as FakeFrame;
+    expect(whenToUse.layoutSizingHorizontal).toBe('FILL');
+    const pointer = findSlot(asNode(section), 'pointer') as unknown as FakeFrame;
+    expect(pointer.width).toBe(columnWidth);
+  });
+
   it('draws no facts strip: the header band is followed by the content column', async () => {
     const section = await build(prose);
     for (const frame of section.children as FakeFrame[]) {

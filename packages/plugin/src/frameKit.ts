@@ -182,9 +182,11 @@ export function hstack(spacing: number): FrameNode {
 }
 
 /**
- * The readable measure for prose on any generated frame: paragraphs, bullets,
- * card text. Tables, matrices and diagrams keep the full content column. One
- * constant so the component and foundation frames cannot drift apart.
+ * The readable measure for the foundation frame's notes: the group description
+ * lines and the two contrast sentences, 11px muted text on a card that can
+ * widen to 1440px. Component prose spans its content column instead (decided
+ * 2026-09-18: the 640px cap left a visible empty margin beside tables that
+ * spanned the column), so nothing in docFrame or docBlocks reads this.
  */
 export const PROSE_MEASURE = 640;
 
