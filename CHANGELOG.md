@@ -215,6 +215,15 @@ none of the reasoning above.
   component artifact's own (already schema-declared, unhashed) `validation`
   field: no canonical schema change, no content hash moved, `EXTRACTOR_VERSION`
   (`'2'`) untouched.
+- **Two more prose regexes are linear.** The v1 to v2 prose upgrade read a
+  variants-guide bullet and a markdown heading with regexes whose tails
+  (`\s*:?\s*(.*)$` and `\s+(.+)$`) could share one run of spaces several
+  ways, so a long enough line of model output ran them in polynomial time.
+  Both are now a prefix match and a slice, `variantBullet` and `headingText`
+  in `packages/extractor/src/prose/v2.ts`, with the old regexes kept as
+  executable oracles in `redos.test.ts`. Output is unchanged for every line
+  the upgrade can pass them. Closes CodeQL alerts 65 and 66
+  (`js/polynomial-redos`).
 
 ### Added
 

@@ -126,6 +126,47 @@ export function firstSentence(text: string): { sentence: string; remainder: stri
   return { sentence: t.slice(0, end).trim(), remainder: t.slice(end).trim() };
 }
 
+/**
+ * The characters `.` never matches without the `s` flag. The two line matchers
+ * below replaced regexes whose tail was `(.*)$`, and that tail fails, rather
+ * than matching, when one of these sits after the first non-space character.
+ * The scans keep that answer so they return exactly what the regexes did.
+ */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * A v1 variants-guide bullet, `- **Name**: guidance`, as its two parts, or
+ * null when the line is not one. Replaces
+ * `/^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.*)$/`, whose `\s*:?\s*(.*)` tail could
+ * split a run of spaces three ways and so ran in polynomial time when the
+ * anchor failed (CodeQL alert 65). The prefix is still a regex because nothing
+ * in it overlaps; the tail is a trim, one optional colon, and a second trim,
+ * which is what the greedy quantifiers always resolved to.
+ */
+export function variantBullet(line: string): { name: string; guidance: string } | null {
+  const m = /^[-*]\s+\*\*([^*]+)\*\*/.exec(line);
+  if (!m) return null;
+  let rest = line.slice(m[0].length).trimStart();
+  if (rest.startsWith(':')) rest = rest.slice(1).trimStart();
+  if (LINE_TERMINATOR.test(rest)) return null;
+  return { name: m[1].trim(), guidance: rest.trim() };
+}
+
+/**
+ * The text of a markdown heading line (`#` to `######`, whitespace, text), or
+ * null when the line is not one. Replaces `/^#{1,6}\s+(.+)$/`, where `\s+` and
+ * `.+` both match a space and so shared a run of them in polynomial time when
+ * the anchor failed (CodeQL alert 66). Callers pass a trimmed line, which is
+ * what makes the greedy `\s+` and this slice agree: the text after the
+ * whitespace is then never empty.
+ */
+export function headingText(line: string): string | null {
+  const m = /^#{1,6}\s+/.exec(line);
+  if (!m) return null;
+  const text = line.slice(m[0].length);
+  return text === '' || LINE_TERMINATOR.test(text) ? null : text;
+}
+
 /** A v1 guideline string as rule and reason: the first bold run is the rule;
  *  without one, the first sentence is. */
 export function splitRuleReason(text: string): GuidelineCard {
@@ -203,9 +244,8 @@ export function upgradeProseV1(v1: ProseDrafts): ProseV2 {
     const intro: string[] = [];
     const guide: { name: string; guidance: string }[] = [];
     for (const raw of v1.variantsSummary.split('\n')) {
-      const line = raw.trim();
-      const m = /^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.*)$/.exec(line);
-      if (m) guide.push({ name: m[1].trim(), guidance: m[2].trim() });
+      const bullet = variantBullet(raw.trim());
+      if (bullet) guide.push(bullet);
       else intro.push(raw);
     }
     const introText = intro.join('\n').trim();
@@ -228,8 +268,8 @@ export function upgradeProseV1(v1: ProseDrafts): ProseV2 {
     for (const raw of v1.interactions.split('\n')) {
       const line = raw.trim();
       if (!line) continue;
-      const heading = /^#{1,6}\s+(.+)$/.exec(line);
-      if (heading) { inKeyboard = /keyboard/i.test(heading[1]); continue; }
+      const heading = headingText(line);
+      if (heading !== null) { inKeyboard = /keyboard/i.test(heading); continue; }
       const text = line.replace(/^[-*]\s+/, '');
       if (inKeyboard) {
         const row = parseKeyboardBullet(text);
