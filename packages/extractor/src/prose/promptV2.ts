@@ -83,6 +83,37 @@ function axisDefault(spec: IntermediateSpec, axis: string): string | undefined {
   return typeof prop?.default === 'string' ? prop.default : undefined;
 }
 
+/** One character's worth of `\s`. A per-character test cannot backtrack. */
+const WHITESPACE = /\s/;
+
+/**
+ * Collapse every whitespace run that contains a line break into one space, and
+ * leave every other whitespace run alone. This is exactly what a global
+ * replace of `\s*\n\s*` with one space did: the greedy `\s*` on either side of
+ * the `\n` always swallowed the whole run. That regex is quadratic on a long run of
+ * spaces that never reaches a line break, because every position in the run
+ * retries the whole run looking for one, and the description it ran over is
+ * typed by the designer, so its length is not this repository's to control
+ * (CodeQL alert 67, `js/polynomial-redos`). One pass, pinned against the regex
+ * in `redos.test.ts`.
+ */
+export function collapseLineBreaks(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    if (!WHITESPACE.test(text[i])) { out += text[i]; i += 1; continue; }
+    let j = i;
+    let hasBreak = false;
+    while (j < text.length && WHITESPACE.test(text[j])) {
+      if (text[j] === '\n') hasBreak = true;
+      j += 1;
+    }
+    out += hasBreak ? ' ' : text.slice(i, j);
+    i = j;
+  }
+  return out;
+}
+
 /**
  * Build the user message for one component. Only the requested keys are asked
  * for (default: every key, in `PROSE_V2_KEYS` order).
@@ -97,7 +128,7 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: ReadonlySet
   if (description) {
     lines.push('');
     lines.push("Designer's description (authoritative; build on it, never contradict or restate it):");
-    lines.push(`  ${description.replace(/\s*\n\s*/g, ' ')}`);
+    lines.push(`  ${collapseLineBreaks(description)}`);
   }
 
   if (spec.anatomy.length) {

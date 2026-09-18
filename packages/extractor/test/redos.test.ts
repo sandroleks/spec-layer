@@ -28,6 +28,8 @@ import { fencedBlock } from '../src/prose/prompt';
 import { stateBaseName } from '../src/statesMatrix';
 import { slugify } from '../src/componentSlugs';
 import { headingText, normalizeDashes, variantBullet } from '../src/prose/v2';
+import { collapseLineBreaks } from '../src/prose/promptV2';
+import { collapseDashes } from '../src/prose/foundationPrompt';
 
 // --- The regexes as they were, before the rewrites -------------------------
 
@@ -381,6 +383,82 @@ describe('headingText is exactly the regex it replaced', () => {
     const input = '#' + ' '.repeat(200000) + 'x\ry';
     const started = performance.now();
     expect(headingText(input)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+// --- The two Plan 2 prompt-builder regexes (CodeQL alert 67 and its twin) ---
+
+/** The v9 builder's description collapse as it was. Both `\s*` overlap the
+ *  `\n` they surround, so a run of spaces with no line break retries the whole
+ *  run from every position inside it. Runs over the designer's description. */
+const oldCollapseLineBreaks = (text: string): string => text.replace(/\s*\n\s*/g, ' ');
+
+/** The foundation group parser's dash rule as it was. Same shape with a dash
+ *  in the middle; runs over model output. */
+const oldCollapseDashes = (value: string): string => value.replace(/\s*[—–]\s*/g, ', ');
+
+describe('collapseLineBreaks is exactly the regex it replaced', () => {
+  // Runs with and without a line break, runs that mix every `\s` character,
+  // several breaks in one run, breaks at either end, and no whitespace at all.
+  const CASES = [
+    '', 'a', ' ', '\n', 'a b', 'a\nb', 'a \n b', 'a  \n\n  b', 'a\n\nb', 'a \t\n\t b',
+    'a\r\nb', 'a \r\n b', 'a\rb', 'a \r b', '\na', 'a\n', ' \n a \n ', 'a b', 'a  \n b',
+    'a   b', 'a\t\tb', 'a\n b\n c', 'a\n\n\n', '\n\n\na', 'a \n b   c \n d',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(collapseLineBreaks(input), JSON.stringify(input)).toBe(oldCollapseLineBreaks(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = [' ', ' ', '\t', '\n', '\n', '\r', 'a', 'b'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 24);
+      expect(collapseLineBreaks(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldCollapseLineBreaks(input));
+    }
+  });
+
+  it('is linear on a long run of spaces that never reaches a line break', () => {
+    const input = 'a' + ' '.repeat(200000) + 'b';
+    const started = performance.now();
+    expect(collapseLineBreaks(input)).toBe(input);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('collapseDashes is exactly the regex it replaced', () => {
+  // Both dashes, whitespace of every kind on either side or neither, adjacent
+  // dashes (the second one starts where the first match ended), a dash at
+  // either end, and a hyphen, which is not a dash.
+  const CASES = [
+    '', 'a', '—', '–', 'a—b', 'a — b', 'a  —  b', 'a–b', 'a – b', 'a\n—\nb', 'a \t– \t b',
+    'a — — b', 'a——b', 'a –— b', '—a', 'a—', ' — ', 'a - b', '3-5', 'a — b – c',
+    'a — b', 'a\r\n—\r\nb', 'one—two–three',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(collapseDashes(input), JSON.stringify(input)).toBe(oldCollapseDashes(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = [' ', ' ', '\t', '\n', '—', '–', 'a', 'b', '-'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 20);
+      expect(collapseDashes(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldCollapseDashes(input));
+    }
+  });
+
+  it('is linear on a long run of spaces that never reaches a dash', () => {
+    const input = 'a' + ' '.repeat(200000) + 'b';
+    const started = performance.now();
+    expect(collapseDashes(input)).toBe(input);
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });

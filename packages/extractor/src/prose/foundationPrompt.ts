@@ -101,10 +101,43 @@ export function buildGroupPrompt(
 
 export interface GroupDraft { descriptions: Record<string, string>; overview: string | null }
 
-// The existing dash regex stays as it was in this file; it runs over one short
-// string per key, and MAX_DESCRIPTION/MAX_OVERVIEW bound it. Do not replace it
-// with replaceAround in this task.
-const normalise = (s: string): string => s.trim().replace(/\s*[—–]\s*/g, ', ');
+/** One character's worth of `\s`. A per-character test cannot backtrack. */
+const WHITESPACE = /\s/;
+
+/**
+ * Replace every em or en dash, together with any whitespace hugging it, with
+ * `, `. This is exactly what a global replace of `\s*[—–]\s*` with `, ` did: the
+ * greedy `\s*` on each side always took the whole whitespace run, and a match
+ * never reached back past the end of the previous one. That regex is quadratic
+ * on a run of whitespace that never reaches a dash, because every position in
+ * the run retries the whole run, and it runs over model output, whose length
+ * nobody in this repository controls. `MAX_DESCRIPTION` and `MAX_OVERVIEW`
+ * bound what is kept, not what is scanned. One pass, pinned against the regex
+ * in `redos.test.ts`. Different from `normalizeDashes` in `v2.ts` on purpose:
+ * that rule keeps line breaks and demands spaces around an en dash; this one
+ * never did.
+ */
+export function collapseDashes(value: string): string {
+  let out = '';
+  let from = 0;
+  let cursor = 0;
+  for (;;) {
+    const em = value.indexOf('—', cursor);
+    const en = value.indexOf('–', cursor);
+    const at = em === -1 ? en : en === -1 ? em : Math.min(em, en);
+    if (at === -1) break;
+    let left = at;
+    while (left > from && WHITESPACE.test(value[left - 1])) left--;
+    let right = at + 1;
+    while (right < value.length && WHITESPACE.test(value[right])) right++;
+    out += value.slice(from, left) + ', ';
+    from = right;
+    cursor = right;
+  }
+  return out + value.slice(from);
+}
+
+const normalise = (s: string): string => collapseDashes(s.trim());
 
 /**
  * Parse the model's JSON into the group descriptions and the collection
