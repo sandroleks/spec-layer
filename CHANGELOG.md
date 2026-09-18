@@ -123,7 +123,11 @@ none of the reasoning above.
   matrix labels render as typed. Instances render at true size everywhere;
   each anatomy part is outlined where it draws and its pin's leader ends on
   that outline, pins fan out with elbow leaders when parts crowd, and a
-  component wider than the column says "Shown at N%". Prose spans the content column, like the tables
+  component wider than the column says "Shown at N%". The Variants and
+  States matrices never shrink a preview: cells widen to the widest variant,
+  fewer sit per band, and a component too wide for any cell gets one axis
+  value per band with a slot spanning the column; the frame widens for the
+  widest variant first. Prose spans the content column, like the tables
   beside it, and code spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 

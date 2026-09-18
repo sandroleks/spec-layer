@@ -22,7 +22,7 @@ import type {
 import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 import {
-  palette, solidFill, vstack, hstack, makeText, buildSlot, font,
+  palette, solidFill, vstack, hstack, makeText, buildSlot, font, SLOT_PAD,
   headingFont, radius, applyThemeToKit,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
@@ -621,15 +621,38 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
   const drawn = model.sections.find(
     (s): s is Extract<SectionBlock, { kind: 'anatomy' | 'measure' }> => s.kind === 'anatomy' || s.kind === 'measure',
   );
-  if (!drawn) return;
-  try {
-    const comp = await figma.getNodeByIdAsync(drawn.componentId);
-    if (comp && 'width' in comp) {
-      const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
-      CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
-      CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
-    }
-  } catch { /* keep the token-fitted width */ }
+  if (drawn) {
+    try {
+      const comp = await figma.getNodeByIdAsync(drawn.componentId);
+      if (comp && 'width' in comp) {
+        const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
+        CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+        CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+      }
+    } catch { /* keep the token-fitted width */ }
+  }
+
+  // The widest variant in a matrix widens the frame too. The matrices never
+  // scale a preview; their last resort is one slot spanning the column, so
+  // the column has to hold the widest variant plus the slot's padding. The
+  // default variant the anatomy fitted may be narrower than, say, Large.
+  const cellIds = new Set<string>();
+  for (const s of model.sections) {
+    if (s.kind !== 'statesMatrix' && s.kind !== 'variantsMatrix') continue;
+    for (const row of s.rows) for (const id of row.cells) if (id) cellIds.add(id);
+  }
+  let widestCell = 0;
+  for (const id of cellIds) {
+    try {
+      const node = await figma.getNodeByIdAsync(id);
+      if (node && 'width' in node) widestCell = Math.max(widestCell, (node as SceneNode).width);
+    } catch { /* an unknown width widens nothing */ }
+  }
+  if (widestCell > 0) {
+    const needed = widestCell + SLOT_PAD * 2 + PAD_X * 2;
+    CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+    CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+  }
 }
 
 /** Build one group's frame: root card, header band, content column. Layer

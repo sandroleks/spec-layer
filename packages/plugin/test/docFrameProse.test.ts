@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { IntermediateSpec, ProseV2, RefIdentity } from '@spec-layer/extractor';
 import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeFrame, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
@@ -415,6 +415,27 @@ async function buildVariantDoc(p: ProseV2 | null): Promise<FakeSection> {
   );
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
+
+describe('docFrame matrices at true size', () => {
+  afterEach(() => uninstallFakeFigma());
+
+  it('widens the frame for the widest variant instance so no matrix preview is ever scaled', async () => {
+    const rescale = vi.fn();
+    installFakeFigma({
+      getNodeByIdAsync: async () => ({
+        type: 'COMPONENT', width: 900, height: 40,
+        createInstance: () => ({ width: 900, height: 40, rescale, setExplicitVariableModeForCollection: vi.fn() }),
+      }),
+    });
+    const section = await buildVariantDoc(null);
+    const frames = section.children as FakeFrame[];
+    // The stacked slot spans the content column: 900 for the instance, 12px
+    // of slot padding each side, and the header padding on both sides.
+    expect(frames[0].width).toBeGreaterThanOrEqual(900 + 24 + 2 * 56);
+    expect(frames[0].width).toBeLessThanOrEqual(1440);
+    expect(rescale).not.toHaveBeenCalled();
+  });
+});
 
 describe('docFrame variant and state writing slots', () => {
   beforeEach(() => installFakeFigma());
