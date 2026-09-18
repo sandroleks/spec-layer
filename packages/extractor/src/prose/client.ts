@@ -1,13 +1,14 @@
 import type { IntermediateSpec } from '../extract';
 import { contentHash } from '../hash';
 import {
-  PROSE_SYSTEM_PROMPT,
-  buildProsePrompt,
   parseProseResponse,
+  PROSE_SYSTEM_PROMPT,
+  PROSE_MAX_TOKENS,
+  buildProsePrompt,
   proseFewShot,
-  type ProseDrafts,
-  type ProseKey,
-} from './prompt';
+  type ProseRequestMessage,
+} from './promptV2';
+import { validateProseV2, type ProseV2Key, type ProseValidation } from './v2';
 import {
   FOUNDATION_SYSTEM_PROMPT,
   buildGroupPrompt,
@@ -17,23 +18,17 @@ import {
 
 /**
  * Bumped whenever the prompt, system prompt, or few-shot changes the produced
- * voice. It is part of the cache key so old-voice drafts are never served after
- * a prompt change. v1 = original single-shot prompt; v2 = house-style system
- * prompt + few-shot; v3 = no em dashes, bulleted Accessibility, shorter sentences;
- * v4 = richer Markdown structure (bold lead-ins, variant guide, level-3 grouping);
- * v5 = anatomy summary + per-part role descriptions;
- * v6 = definition/variants rebalance (type guide moved from Definition to Variants);
- * v7 = Definition renamed to Overview, value-led prose (no style names);
- * v8 = accessibility group expansion (Interactions, Design/Content Considerations)
- *      + selection-aware prompting and cache keys.
- *
- * Not bumped when proseInputHash changed from a deny-list over IntermediateSpec
- * to a hash of the rendered prompt. This constant means "the produced voice
- * changed"; a key derivation change is not that. Such a change voids every
- * existing key and regenerates each draft once, which is the price of a key
- * that never again moves for a reason the model cannot see.
+ * voice. Part of the cache key, so an old-voice draft is never served after a
+ * prompt change. v1 to v8 were the markdown contract; v9 is the structured
+ * ProseV2 contract: one call, one exemplar behind a prompt-cache breakpoint,
+ * the model assigned by the proxy from the proved tier.
  */
-export const PROSE_PROMPT_VERSION = 'v8';
+export const PROSE_PROMPT_VERSION = 'v9';
+
+/** Which model writes is the proxy's decision, from the tier it proves. The
+ *  client only names the tier in the cache key so a Haiku draft is never
+ *  served to a Pro user, and the proxy rejects a key whose tier disagrees. */
+export type ProseTier = 'pro' | 'free';
 
 /**
  * The part of a spec a prose draft actually depends on: the prompt itself.
@@ -57,30 +52,33 @@ export const PROSE_PROMPT_VERSION = 'v8';
  * it would serve a stale draft after a real change to the component. The two
  * hashes answer different questions and must not be merged.
  */
-function proseInputHash(spec: IntermediateSpec, requested?: ReadonlySet<ProseKey>): string {
-  return contentHash(buildProsePrompt(spec, requested as Set<ProseKey> | undefined));
+function proseInputHash(spec: IntermediateSpec, requested?: ReadonlySet<ProseV2Key>): string {
+  return contentHash(buildProsePrompt(spec, requested));
 }
 
 /**
  * The cache key for a prose draft. Centralised so the writer (`draftProse`) and
  * every reader (e.g. the detail page's pristine-draft check) stay in lockstep —
  * a key built two different ways is a silent cache miss.
+ *
+ * The tier sits right after the version because the proxy caches the generated
+ * answer under this key and the two tiers are written by different models: a
+ * shared key would replay a Haiku draft to a Pro user. The proxy rejects a key
+ * whose tier segment disagrees with the tier it proved.
  */
 export function proseCacheKey(
   spec: IntermediateSpec,
-  opts: { image?: boolean; keys?: readonly ProseKey[] } = {},
+  opts: { tier: ProseTier; image?: boolean; keys?: readonly ProseV2Key[] },
 ): string {
-  // Sort so the signature is order-independent: {definition, interactions} and
-  // {interactions, definition} are the same request and share one entry.
-  const keySig = opts.keys && opts.keys.length
-    ? `:keys=${[...opts.keys].sort().join(',')}`
-    : '';
+  // Sort so the signature is order-independent: {overview, keyboard} and
+  // {keyboard, overview} are the same request and share one entry.
+  const keySig = opts.keys && opts.keys.length ? `:keys=${[...opts.keys].sort().join(',')}` : '';
   // The requested set is threaded into the hash as well as being spelled out in
   // keySig: buildProsePrompt varies with it, so the hash has to see it or two
   // different requests would collide. keySig stays because it makes a key
   // readable in a log without reversing a hash.
   const requested = opts.keys && opts.keys.length ? new Set(opts.keys) : undefined;
-  return `prose:${PROSE_PROMPT_VERSION}:${proseInputHash(spec, requested)}${opts.image ? ':img' : ''}${keySig}`;
+  return `prose:${PROSE_PROMPT_VERSION}:${opts.tier}:${proseInputHash(spec, requested)}${opts.image ? ':img' : ''}${keySig}`;
 }
 
 export interface CacheStore {
@@ -153,11 +151,13 @@ export interface DraftOptions {
   imageBase64?: string | null;
   imageMediaType?: string; // e.g. 'image/png'
   /**
-   * Which prose keys to generate. Omit to request the full set (legacy
-   * behaviour). Threaded into the prompt, the parse (as the required set), and
-   * the cache key so different selections never collide.
+   * Which prose keys to generate. Omit to request the full set. Threaded into
+   * the prompt and the cache key so different selections never collide.
    */
-  requested?: Set<ProseKey>;
+  requested?: ReadonlySet<ProseV2Key>;
+  /** Every component name in the Figma file, when the caller has it; feeds the
+   *  whenNotToUse alternatives rule in `validateProseV2`. */
+  fileComponents?: readonly string[];
   /**
    * When set, the request goes through the Spec Layer proxy instead of the
    * Anthropic API directly; `apiKey` is ignored. licenseKey (pro) wins over
@@ -241,21 +241,17 @@ async function postCompletion(
   return raw;
 }
 
-export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseDrafts | null> {
-  if (!opts.apiKey && !opts.proxy) return null;
+export interface ProseRequest { max_tokens: number; system: string; messages: ProseRequestMessage[] }
 
-  // Vision and text-only runs produce different output, so they must not share a
-  // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
-  // image URL, which is a signed URL that rotates hourly for an unchanged render.
-  const key = proseCacheKey(spec, {
-    image: Boolean(opts.imageUrl || opts.imageBase64),
-    keys: opts.requested ? [...opts.requested] : undefined,
-  });
-  if (!opts.bypassCache) {
-    const hit = await opts.cacheStore.get(key);
-    if (hit) return parseProseResponse(hit, opts.requested);
-  }
-
+/**
+ * The exact model-agnostic request the plugin posts. Exported so the proxy's
+ * validator can be run against it in a test: the contract lives on the server
+ * and a stubbed fetch cannot enforce it.
+ */
+export function proseRequest(
+  spec: IntermediateSpec,
+  opts: { requested?: ReadonlySet<ProseV2Key>; imageBase64?: string | null; imageMediaType?: string; imageUrl?: string | null } = {},
+): ProseRequest {
   const prompt = buildProsePrompt(spec, opts.requested);
   const imageBlock = opts.imageBase64
     ? { type: 'image', source: { type: 'base64', media_type: opts.imageMediaType ?? 'image/png', data: opts.imageBase64 } }
@@ -263,19 +259,42 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
       ? { type: 'image', source: { type: 'url', url: opts.imageUrl } }
       : null;
   const content = imageBlock ? [imageBlock, { type: 'text', text: prompt }] : prompt;
-
-  const requestBody = {
-    model: 'claude-haiku-4-5',
-    max_tokens: 3000,
+  return {
+    max_tokens: PROSE_MAX_TOKENS,
     system: PROSE_SYSTEM_PROMPT,
-    messages: [...proseFewShot(), { role: 'user', content }],
+    messages: [...proseFewShot(), { role: 'user', content } as ProseRequestMessage],
   };
+}
 
-  const raw = await postCompletion(requestBody, key, opts);
+/** Free is the direct-API model too: a caller with its own key has no proxy
+ *  to assign one, and Haiku is the shape the tests exercise. */
+const DIRECT_MODEL = 'claude-haiku-4-5';
 
-  const prose = parseProseResponse(raw, opts.requested);
-  await opts.cacheStore.set(key, JSON.stringify(prose));
-  return prose;
+export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseValidation | null> {
+  if (!opts.apiKey && !opts.proxy) return null;
+  const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
+  // Vision and text-only runs produce different output, so they must not share a
+  // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
+  // image URL, which is a signed URL that rotates hourly for an unchanged render.
+  const key = proseCacheKey(spec, {
+    tier,
+    image: Boolean(opts.imageUrl || opts.imageBase64),
+    keys: opts.requested ? [...opts.requested] : undefined,
+  });
+  const validate = (raw: string): ProseValidation =>
+    validateProseV2(spec, parseProseResponse(raw), { fileComponents: opts.fileComponents });
+
+  if (!opts.bypassCache) {
+    const hit = await opts.cacheStore.get(key);
+    if (hit) return validate(hit);
+  }
+  const request = proseRequest(spec, opts);
+  const body = opts.proxy ? request : { model: DIRECT_MODEL, ...request };
+  const raw = await postCompletion(body, key, opts);
+  // Cache the raw answer, not the parsed object, so a later parser or
+  // validator fix applies to an existing entry instead of being stuck behind it.
+  await opts.cacheStore.set(key, raw);
+  return validate(raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -286,10 +305,17 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
  * Bumped when the foundation prompt or its system prompt changes the produced
  * voice, so old-voice descriptions are never served from cache afterwards.
  */
-export const GROUP_PROMPT_VERSION = 'v1';
+export const GROUP_PROMPT_VERSION = 'v2';
+
+/** Cap on the group call. The proxy checks equality, not a ceiling. */
+export const GROUP_MAX_TOKENS = 1600;
 
 export interface GroupDraftInput {
   collectionName: string;
+  /** Mode names of the collection; Task 5 sends them to the model. */
+  modeNames?: string[];
+  /** Variables aliasing into each other collection, by collection name. */
+  aliasCounts?: { collection: string; count: number }[];
   groups: FoundationGroupBrief[];
 }
 
@@ -306,9 +332,11 @@ export interface GroupDraftInput {
  * Centralised for the same reason `proseCacheKey` is: a key built two ways is a
  * silent cache miss, and here it is also a hard rejection.
  */
-export function groupCacheKey(input: GroupDraftInput): string {
-  return `prose:${GROUP_PROMPT_VERSION}:groups:${contentHash({
+export function groupCacheKey(input: GroupDraftInput, tier: ProseTier): string {
+  return `prose:${GROUP_PROMPT_VERSION}:groups:${tier}:${contentHash({
     collectionName: input.collectionName,
+    modeNames: input.modeNames ?? [],
+    aliasCounts: input.aliasCounts ?? [],
     groups: input.groups.map((g) => ({
       folder: g.folder,
       title: g.title,
@@ -326,15 +354,14 @@ export function groupCacheKey(input: GroupDraftInput): string {
  * this shape once had (an unprefixed cacheKey) was invisible to any test that
  * stubbed fetch, because the rule being broken lived on the server.
  */
-export function groupProseRequest(input: GroupDraftInput): {
+export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
   cacheKey: string;
-  request: { model: string; max_tokens: number; system: string; messages: unknown[] };
+  request: { max_tokens: number; system: string; messages: unknown[] };
 } {
   return {
-    cacheKey: groupCacheKey(input),
+    cacheKey: groupCacheKey(input, tier),
     request: {
-      model: 'claude-haiku-4-5',
-      max_tokens: 1200,
+      max_tokens: GROUP_MAX_TOKENS,
       system: FOUNDATION_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
@@ -356,16 +383,17 @@ export async function draftGroupDescriptions(
   if (input.groups.length === 0) return {};
 
   const folders = input.groups.map((g) => g.folder);
+  const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
   // Keyed on everything the prompt is built from, so editing a token name or
   // adding a group is a fresh request rather than a stale hit.
-  const { cacheKey, request } = groupProseRequest(input);
+  const { cacheKey, request } = groupProseRequest(input, tier);
 
   if (!opts.bypassCache) {
     const hit = await opts.cacheStore.get(cacheKey);
     if (hit) return parseGroupResponse(hit, folders);
   }
 
-  const raw = await postCompletion(request, cacheKey, opts);
+  const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
 
   const parsed = parseGroupResponse(raw, folders);
   // Cache the raw response, not the parsed map, so a later parser fix applies to

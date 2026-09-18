@@ -10,10 +10,10 @@ import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml,
-  upgradeProseV1, validateProseV2, proseToLegacy, hasProseContent,
+  proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
-  SerializedNode, IntermediateSpec, ProseKey, ProseV2, ProxyQuota,
+  SerializedNode, IntermediateSpec, ProseV2Key, ProseV2, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
   FoundationScope, FoundationGuidelinesV5, YamlValue,
 } from '@spec-layer/extractor';
@@ -70,7 +70,7 @@ export interface UiState {
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
-  generatedProseKeys: Set<ProseKey> | null;
+  generatedProseKeys: Set<ProseV2Key> | null;
   // What the last build left out, and why, so the result message can say so.
   // Set by every assembled build and cleared once it has been reported.
   lastOmitted: OmittedSection[];
@@ -196,7 +196,7 @@ export function autoExtract(
 /** The prose keys the currently-checked sections need. */
 /** True when a fresh draft is needed: no draft yet, or the cached draft was
  *  generated for a key set that does not cover everything now requested. */
-export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boolean {
+export function proseNeedsRegen(state: UiState, requested: Set<ProseV2Key>): boolean {
   if (!state.generatedProse || !state.generatedProseKeys) return true;
   for (const k of requested) if (!state.generatedProseKeys.has(k)) return true;
   return false;
@@ -249,9 +249,10 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       (q) => { state.quota = q; },
     );
     if (draft) {
-      // The v8 prompt writes v1; the canvas renders v2. Upgrade, then validate
-      // every name against the spec so nothing the model invented is drawn.
-      const { prose, dropped } = validateProseV2(state.currentSpec!, upgradeProseV1(draft));
+      // The extractor already validated every name against the spec; what is
+      // left is exactly what the canvas may draw. `dropped` is the count of
+      // what the model invented, logged so a prompt regression is visible.
+      const { prose, dropped } = draft;
       const droppedCount = Object.values(dropped).reduce((a, b) => a + (b ?? 0), 0);
       if (droppedCount > 0) console.warn('[Spec Layer] prose items dropped by validation', dropped);
       state.generatedProse = hasProseContent(prose) ? prose : null;

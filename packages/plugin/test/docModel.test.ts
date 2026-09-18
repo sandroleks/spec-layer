@@ -75,20 +75,23 @@ describe('section map', () => {
     expect(LEGACY_SECTION_IDS.configuration).toEqual(['properties']);
   });
 
-  it('requests the v1 prose keys the v8 prompt can still fill', () => {
-    expect([...proseKeysForSections(['definition', 'keyboard', 'pointer', 'dosDonts', 'properties'])].sort())
-      .toEqual(['definition', 'donts', 'dos', 'interactions']);
-  });
-
-  it('maps checked sections to prose keys', () => {
-    expect([...proseKeysForSections(['anatomy'])].sort()).toEqual(['anatomyParts', 'anatomySummary']);
-    expect([...proseKeysForSections(['related'])]).toEqual([]);
-    expect([...proseKeysForSections(['dosDonts'])].sort()).toEqual(['donts', 'dos']);
-  });
-
   it('groups the a11y sections Keyboard -> Pointer -> Semantics -> Content', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
     expect(a11y).toEqual(['keyboard', 'pointer', 'accessibility', 'contentConsiderations']);
+  });
+});
+
+describe('proseKeysForSections asks the v9 prompt for v2 keys', () => {
+  it('maps every prose-bearing section to its v2 keys', () => {
+    expect([...proseKeysForSections(['definition', 'whenToUse', 'dosDonts'])].sort())
+      .toEqual(['guidelines', 'overview', 'whenNotToUse', 'whenToUse']);
+    expect([...proseKeysForSections(['keyboard', 'pointer', 'accessibility', 'contentConsiderations'])].sort())
+      .toEqual(['content', 'keyboard', 'pointer', 'semantics']);
+    expect([...proseKeysForSections(['variants', 'anatomy', 'properties', 'states'])].sort())
+      .toEqual(['anatomyParts', 'anatomySummary', 'properties', 'states', 'variantsGuide', 'variantsIntro']);
+  });
+  it('asks nothing for the deterministic sections', () => {
+    expect(proseKeysForSections(['measurements', 'tokens', 'related'])).toEqual(new Set());
   });
 });
 

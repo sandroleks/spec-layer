@@ -89,6 +89,19 @@ none of the reasoning above.
 
 ### Changed
 
+- **AI writing is one structured call per component, written by the model
+  your plan proves.** The prompt is rewritten around the Docs 2.0 sections:
+  the model sees the display name, the designer's description as an
+  authoritative statement, the anatomy with part kinds, option axes apart
+  from the state axis, and returns one JSON object whose every name is
+  checked against the component before anything is drawn. A Pro license
+  writes with Claude Sonnet 5; the free plan writes with Claude Haiku 4.5.
+  The proxy assigns the model from the tier it proves, so the plugin never
+  asks for one, and a draft written for one tier is never served to the
+  other. The system prompt and the one exemplar sit behind a prompt-cache
+  breakpoint. Deploy the proxy before this plugin build; the proxy keeps
+  serving the previous plugin until then.
+
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
   gains a facts strip, a When to use and When not to use pair, and Do and

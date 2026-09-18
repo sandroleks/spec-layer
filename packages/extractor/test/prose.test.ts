@@ -1,527 +1,122 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildProsePrompt, parseProseResponse, proseFewShot, PROSE_SYSTEM_PROMPT } from '../src/prose/prompt';
-import { draftProse } from '../src/prose/client';
+import { PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot, buildProsePrompt } from '../src/prose/promptV2';
+import { draftProse, proseCacheKey, proseRequest, PROSE_PROMPT_VERSION } from '../src/prose/client';
 import { extract } from '../src/extract';
 import button from './fixtures/button.json';
 import type { SerializedNode } from '../src/tree';
 
 const spec = extract(button as SerializedNode, { figmaFile: 'FILE1' });
 
-interface AnthropicRequestBody {
-  system?: unknown;
-  messages: Array<{ role?: string; content: unknown }>;
+const ANSWER = JSON.stringify({
+  overview: { lede: 'A Button triggers an action.', body: ['Use it for the primary action.'] },
+  keyboard: [{ keys: ['Enter'], action: 'Activates the button.' }, { keys: ['Bogus'], action: 'Never.' }],
+  anatomyParts: [{ name: 'Label', role: 'Names the action.' }, { name: 'Ghost', role: 'Not a part.' }],
+});
+const OK = JSON.stringify({ content: [{ type: 'text', text: ANSWER }] });
+
+function memStore() {
+  const m = new Map<string, string>();
+  return { get: async (k: string) => m.get(k) ?? null, set: async (k: string, v: string) => { m.set(k, v); }, m };
 }
 
-function parseBody(fetcherMock: { mock: { calls: unknown[][] } }): AnthropicRequestBody {
-  return JSON.parse(
-    String((fetcherMock.mock.calls[0][1] as RequestInit | undefined)?.body),
-  ) as AnthropicRequestBody;
-}
+interface Body { model?: unknown; max_tokens: number; system: string; messages: Array<{ role: string; content: unknown }>; output_config?: unknown; thinking?: unknown }
+const sentBody = (fetcher: { mock: { calls: unknown[][] } }): Body =>
+  JSON.parse(String((fetcher.mock.calls[0][1] as RequestInit).body)) as Body;
 
-function lastMessage(body: AnthropicRequestBody): { role?: string; content: unknown } {
-  return body.messages[body.messages.length - 1];
-}
-
-describe('prose', () => {
-  it('prompt contains the parsed summary, never raw node JSON', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toContain('Style: Filled · Outlined');
-    expect(prompt).not.toContain('"id"'); // no serialized-node internals
+describe('proseRequest (v9)', () => {
+  it('carries no model, the v9 cap, the v9 system prompt, the few-shot and the component prompt', () => {
+    const req = proseRequest(spec, { requested: new Set(['overview']) });
+    expect('model' in req).toBe(false);
+    expect(req.max_tokens).toBe(PROSE_MAX_TOKENS);
+    expect(req.system).toBe(PROSE_SYSTEM_PROMPT);
+    expect(req.messages.slice(0, 2)).toEqual(proseFewShot());
+    expect(req.messages[2]).toEqual({ role: 'user', content: buildProsePrompt(spec, new Set(['overview'])) });
   });
 
-  it('parses a valid JSON response', () => {
-    const out = parseProseResponse('{"definition":"A button.","accessibility":"Use a real <button>.","dos":["x"],"donts":["y"]}');
-    expect(out.definition).toBe('A button.');
+  it('carries exactly one cache_control, on the exemplar answer', () => {
+    const req = proseRequest(spec);
+    expect(JSON.stringify(req).match(/cache_control/g)).toHaveLength(1);
+    const assistant = req.messages[1].content as Array<{ cache_control?: unknown }>;
+    expect(assistant[0].cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  it('strips code fences before parsing', () => {
-    const out = parseProseResponse('```json\n{"definition":"D","accessibility":"A","dos":[],"donts":[]}\n```');
-    expect(out.definition).toBe('D');
-  });
-
-  it('throws on malformed responses', () => {
-    expect(() => parseProseResponse('not json')).toThrow();
-  });
-
-  it('coerces an accessibility array of lines into bulleted text', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":["**Keyboard:** Tab moves focus.","Announces its label."],"dos":[],"donts":[]}',
-    );
-    expect(out.accessibility).toBe('- **Keyboard:** Tab moves focus.\n- Announces its label.');
-  });
-
-  it('coerces a definition array into paragraphs', () => {
-    const out = parseProseResponse('{"definition":["One.","Two."],"accessibility":"A","dos":[],"donts":[]}');
-    expect(out.definition).toBe('One.\n\nTwo.');
-  });
-
-  it('still throws when a required field is truly absent', () => {
-    expect(() =>
-      parseProseResponse('{"definition":"D","dos":[],"donts":[]}'),
-    ).toThrow(/accessibility/);
-  });
-
-  it('normalizes em dashes (and spaced en dashes) out of every field', () => {
-    const out = parseProseResponse(
-      '{"definition":"Use Primary — it leads.","accessibility":"A","dos":["Do this — because reason."],"donts":["Avoid that – it confuses."]}',
-    );
-    expect(out.definition).toBe('Use Primary, it leads.');
-    expect(out.dos[0]).toBe('Do this, because reason.');
-    expect(out.donts[0]).toBe('Avoid that, it confuses.');
-    expect(JSON.stringify(out)).not.toMatch(/[—–]/);
-  });
-
-  it('preserves hyphen ranges and bullet line breaks while stripping dashes', () => {
-    const out = parseProseResponse(
-      '{"definition":"Pick 3-5 items.","accessibility":"- One — reason.\\n- Two thing.","dos":[],"donts":[]}',
-    );
-    expect(out.definition).toBe('Pick 3-5 items.'); // hyphen range untouched
-    expect(out.accessibility).toBe('- One, reason.\n- Two thing.'); // newline survives
-  });
-
-  it('system prompt forbids em dashes and uses none itself', () => {
-    expect(PROSE_SYSTEM_PROMPT).toMatch(/em dash/i);
-    expect(PROSE_SYSTEM_PROMPT).not.toMatch(/—/);
-  });
-
-  it('few-shot exemplar is em-dash-free and renders Accessibility as bullets', () => {
-    const [, assistant] = proseFewShot();
-    expect(assistant.content).not.toMatch(/—/);
-    const drafts = parseProseResponse(assistant.content);
-    expect(drafts.accessibility).toMatch(/(^|\n)- /);
-  });
-
-  it('cache hit skips the API call', async () => {
-    const fetcher = vi.fn();
-    const cached = { definition: 'cached', accessibility: '', dos: [], donts: [] };
-    const store = { get: vi.fn(async () => JSON.stringify(cached)), set: vi.fn() };
-    const result = await draftProse(spec, { apiKey: 'sk-test', fetcher: fetcher as unknown as typeof fetch, cacheStore: store });
-    expect(result).toEqual(cached);
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it('bypassCache skips a cache hit, calls the API, and refreshes the cache', async () => {
-    const cached = { definition: 'cached', accessibility: '', dos: [], donts: [] };
-    const apiText = '{"definition":"Fresh.","accessibility":"A11y.","dos":["do"],"donts":["dont"]}';
-    const fetcher = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ content: [{ text: apiText }] }),
-    })) as unknown as typeof fetch;
-    const store = {
-      get: vi.fn(async () => JSON.stringify(cached)),
-      set: vi.fn(async () => {}),
-    };
-
-    const result = await draftProse(spec, {
-      apiKey: 'sk-test',
-      fetcher,
-      cacheStore: store,
-      bypassCache: true,
-    });
-
-    expect(result?.definition).toBe('Fresh.');
-    expect(store.get).not.toHaveBeenCalled();
-    expect(fetcher).toHaveBeenCalledOnce();
-    expect(store.set).toHaveBeenCalledOnce();
-  });
-
-  it('returns null (degraded mode) when no API key is set', async () => {
-    const store = { get: vi.fn(async () => null), set: vi.fn() };
-    const result = await draftProse(spec, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: store });
-    expect(result).toBeNull();
-  });
-
-  it('on a cache miss, calls the API, parses, and stores', async () => {
-    const apiText = '{"definition":"Fresh.","accessibility":"A11y.","dos":["do"],"donts":["dont"]}';
-    const fetcher = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ content: [{ text: apiText }] }),
-    })) as unknown as typeof fetch;
-    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
-    const result = await draftProse(spec, { apiKey: 'sk-test', fetcher, cacheStore: store });
-    expect(result?.definition).toBe('Fresh.');
-    expect(store.set).toHaveBeenCalledOnce();
-  });
-
-  it('populates variantsSummary when present in the payload', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style varies from solid to outlined to text."}',
-    );
-    expect(out.variantsSummary).toBe('Style varies from solid to outlined to text.');
-  });
-
-  it('leaves variantsSummary undefined when absent, without throwing', () => {
-    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
-    expect(out.variantsSummary).toBeUndefined();
-  });
-
-  it('falls back to undefined when variantsSummary is the wrong type', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":42}',
-    );
-    expect(out.variantsSummary).toBeUndefined();
-  });
-
-  it('coerces an array-of-lines variantsSummary via joinParagraphs', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":["One.","Two."]}',
-    );
-    expect(out.variantsSummary).toBe('One.\n\nTwo.');
-  });
-
-  it('normalizes em dashes out of variantsSummary when present', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"variantsSummary":"Style — controls weight."}',
-    );
-    expect(out.variantsSummary).toBe('Style, controls weight.');
-  });
-
-  it('the 4 required fields are still required when variantsSummary is present', () => {
-    expect(() =>
-      parseProseResponse('{"accessibility":"A","dos":[],"donts":[],"variantsSummary":"x"}'),
-    ).toThrow(/definition/);
-  });
-
-  it('populates anatomySummary when present in the payload', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label inside a container."}',
-    );
-    expect(out.anatomySummary).toBe('A label inside a container.');
-  });
-
-  it('leaves anatomySummary undefined when absent, without throwing', () => {
-    const out = parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}');
-    expect(out.anatomySummary).toBeUndefined();
-  });
-
-  it('normalizes em dashes out of anatomySummary when present', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomySummary":"A label — inside a container."}',
-    );
-    expect(out.anatomySummary).toBe('A label, inside a container.');
-  });
-
-  it('parses anatomyParts as {name, description} pairs', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"Label","description":"Names the action."}]}',
-    );
-    expect(out.anatomyParts).toEqual([
-      { name: 'Container', description: 'Holds the label.' },
-      { name: 'Label', description: 'Names the action.' },
+  it('attaches a base64 image as the first block of the final turn', () => {
+    const req = proseRequest(spec, { imageBase64: 'AAAA', imageMediaType: 'image/png' });
+    expect(req.messages[2].content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+      { type: 'text', text: buildProsePrompt(spec) },
     ]);
   });
+});
 
-  it('drops malformed anatomyParts entries but keeps the usable ones', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Container","description":"Holds the label."},{"name":"","description":"no name"},{"name":"Label"},"nope",{"description":"no name key"}]}',
-    );
-    expect(out.anatomyParts).toEqual([{ name: 'Container', description: 'Holds the label.' }]);
+describe('proseCacheKey (v9)', () => {
+  it('is versioned, carries the tier right after the version, and hashes the prompt', () => {
+    expect(PROSE_PROMPT_VERSION).toBe('v9');
+    const pro = proseCacheKey(spec, { tier: 'pro' });
+    const free = proseCacheKey(spec, { tier: 'free' });
+    expect(pro).toMatch(/^prose:v9:pro:[0-9a-f]{16,}$/);
+    expect(free).toMatch(/^prose:v9:free:[0-9a-f]{16,}$/);
+    expect(pro.slice('prose:v9:pro:'.length)).toBe(free.slice('prose:v9:free:'.length));
   });
 
-  it('leaves anatomyParts undefined when absent, non-array, or empty after filtering', () => {
-    expect(parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[]}').anatomyParts).toBeUndefined();
-    expect(
-      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":"Container"}').anatomyParts,
-    ).toBeUndefined();
-    expect(
-      parseProseResponse('{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"","description":""}]}').anatomyParts,
-    ).toBeUndefined();
+  it('appends the image marker and the sorted key signature as before', () => {
+    const key = proseCacheKey(spec, { tier: 'free', image: true, keys: ['keyboard', 'overview'] });
+    expect(key.endsWith(':img:keys=keyboard,overview')).toBe(true);
+    expect(proseCacheKey(spec, { tier: 'free', keys: ['overview', 'keyboard'] }))
+      .toBe(proseCacheKey(spec, { tier: 'free', keys: ['keyboard', 'overview'] }));
+  });
+});
+
+describe('draftProse (v9)', () => {
+  it('returns the validated prose with the drop counts, and posts a model-free body', async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(OK, { status: 200 }));
+    const out = await draftProse(spec, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: memStore(), proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
+    expect(out?.prose.overview?.lede).toBe('A Button triggers an action.');
+    expect(out?.prose.keyboard).toEqual([{ keys: ['Enter'], action: 'Activates the button.' }]);
+    expect(out?.prose.anatomyParts).toEqual([{ name: 'Label', role: 'Names the action.' }]);
+    expect(out?.dropped).toEqual({ keyboard: 1, anatomyParts: 1 });
+    const posted = JSON.parse(String((fetcher.mock.calls[0][1] as RequestInit).body)) as { cacheKey: string; request: Body };
+    expect(posted.cacheKey.startsWith('prose:v9:free:')).toBe(true);
+    expect('model' in posted.request).toBe(false);
   });
 
-  it('normalizes em dashes out of anatomyParts descriptions', () => {
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"A","dos":[],"donts":[],"anatomyParts":[{"name":"Label","description":"Names the action — clearly."}]}',
-    );
-    expect(out.anatomyParts?.[0].description).toBe('Names the action, clearly.');
+  it('marks the key pro when a license key is sent', async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(OK, { status: 200 }));
+    await draftProse(spec, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: memStore(), proxy: { url: 'https://proxy.test', licenseKey: 'LK', figmaUserId: 'u1' } });
+    const posted = JSON.parse(String((fetcher.mock.calls[0][1] as RequestInit).body)) as { cacheKey: string };
+    expect(posted.cacheKey.startsWith('prose:v9:pro:')).toBe(true);
   });
 
-  it('few-shot exemplar carries an anatomy summary and per-part descriptions', () => {
-    const drafts = parseProseResponse(proseFewShot()[1].content);
-    expect(drafts.anatomySummary).toBeTruthy();
-    expect(drafts.anatomyParts?.map((p) => p.name)).toEqual(['Container', 'Label', 'Leading icon']);
+  it('caches the raw answer and re-validates on a hit without a network call', async () => {
+    const store = memStore();
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(OK, { status: 200 }));
+    await draftProse(spec, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
+    expect([...store.m.values()][0]).toBe(ANSWER);
+    const second = vi.fn();
+    const out = await draftProse(spec, { apiKey: null, fetcher: second as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
+    expect(second).not.toHaveBeenCalled();
+    expect(out?.dropped).toEqual({ keyboard: 1, anatomyParts: 1 });
   });
 
-  it('prompt asks for anatomyParts matching the listed part names', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toContain('anatomyParts');
-    expect(prompt).toMatch(/EXACTLY matches one of the Anatomy part names/);
+  it('adds the free model itself only in direct API mode, where no proxy assigns one', async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(OK, { status: 200 }));
+    await draftProse(spec, { apiKey: 'sk-test', fetcher: fetcher as unknown as typeof fetch, cacheStore: memStore() });
+    expect(sentBody(fetcher).model).toBe('claude-haiku-4-5');
+    expect(sentBody(fetcher).thinking).toBeUndefined();
   });
 
-  it('few-shot definition is a value-led overview with no style names', () => {
-    const [, assistant] = proseFewShot();
-    const drafts = parseProseResponse(assistant.content);
-    // Multi-sentence narrative, not a bare one-liner.
-    expect(drafts.definition.split(/[.!?]\s/).length).toBeGreaterThan(2);
-    // No specific variant/style names leak into the Overview.
-    expect(drafts.definition).not.toMatch(/\b(filled|outlined|ghost|brand|neutral|destructive)\b/i);
-  });
-
-  it('few-shot definition is a plain paragraph with no per-type guide', () => {
-    const [, assistant] = proseFewShot();
-    const drafts = parseProseResponse(assistant.content);
-    expect(drafts.definition).not.toMatch(/^-\s/m);            // no bullet lines
-    expect(drafts.definition.toLowerCase()).not.toContain('when to use');
-  });
-
-  it('few-shot variantsSummary carries a bulleted when-to-use-which-type guide', () => {
-    const [, assistant] = proseFewShot();
-    const drafts = parseProseResponse(assistant.content);
-    expect(drafts.variantsSummary).toMatch(/-\s\*\*/);         // bold-name bullets
-    expect(drafts.variantsSummary?.toLowerCase()).toContain('when to use');
-  });
-
-  it('prompt asks for the type guide under variants, not definition', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toMatch(/when to use which type/i);
-  });
-
-  it('throws when dos contains a non-string element', () => {
-    expect(() =>
-      parseProseResponse('{"definition":"d","accessibility":"a","dos":[1],"donts":[]}'),
-    ).toThrow(/dos/i);
-  });
-
-  it.each([
-    ['definition', '{"definition":"Safe\\n## Accessibility\\nInjected","accessibility":"A","dos":[],"donts":[]}'],
-    ['accessibility', '{"definition":"D","accessibility":"Safe\\n## Do not trust\\nInjected","dos":[],"donts":[]}'],
-    ['dos', '{"definition":"D","accessibility":"A","dos":["Safe\\n## Injected"],"donts":[]}'],
-    ['donts', '{"definition":"D","accessibility":"A","dos":[],"donts":["Safe\\n## Injected"]}'],
-  ])('rejects level-two markdown headings in %s', (_field, input) => {
-    expect(() => parseProseResponse(input)).toThrow(/heading/i);
-  });
-
-  it('rejects level-one headings but allows level-three sub-structure', () => {
-    expect(() =>
-      parseProseResponse('{"definition":"D","accessibility":"# Injected\\n- x","dos":[],"donts":[]}'),
-    ).toThrow(/heading/i);
-    const out = parseProseResponse(
-      '{"definition":"D","accessibility":"### Keyboard\\n- **Tab:** moves focus.","dos":[],"donts":[]}',
-    );
-    expect(out.accessibility).toContain('### Keyboard');
-  });
-
-  it('few-shot exemplar uses a Variants type list and bold lead-ins', () => {
-    const drafts = parseProseResponse(proseFewShot()[1].content);
-    expect(drafts.variantsSummary).toMatch(/\n- \*\*/); // bulleted type guide with bold names
-    expect(drafts.accessibility).toMatch(/^- \*\*/m); // bold lead-in on each bullet
-    expect(drafts.dos[0].startsWith('**')).toBe(true); // bold rule summary
-  });
-
-  it('extracts JSON when the model prepends preamble before a fence', () => {
-    const input = 'Here is the JSON:\n```json\n{"definition":"D","accessibility":"A","dos":[],"donts":[]}\n```';
-    const out = parseProseResponse(input);
-    expect(out.definition).toBe('D');
-  });
-
-  it('throws a useful error on a malformed 200 envelope', async () => {
-    const fetcher = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({}),
-    })) as unknown as typeof fetch;
-    const storeWithNullGet = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
-    await expect(
-      draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: storeWithNullGet }),
-    ).rejects.toThrow(/response shape/i);
-  });
-
-  it('prompt includes layout summaries for the default variant', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toContain('Layout (default variant):');
-    expect(prompt).toContain('container: horizontal, padding 10/24/10/24, gap 8');
-  });
-
-  it('prompt explains conditioned token rules when present', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toContain('container.fill [State=Hovered] → md.sys.color.primary-hover');
-    expect(prompt).toContain('the token applies only to variants matching those axis values');
-  });
-
-  it('prompt omits the layout block when there is no layout data', () => {
-    const prompt = buildProsePrompt({ ...spec, layout: [], tokens: [] });
-    expect(prompt).not.toContain('Layout (default variant):');
-    expect(prompt).not.toContain('bracketed condition');
-  });
-
-  it('sends a multimodal message with an image block when imageUrl is given', async () => {
-    const fetcherMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
-      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","accessibility":"A","dos":[],"donts":[]}' }] }) };
-    });
-    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
-    await draftProse(spec, {
-      apiKey: 'sk-test',
-      fetcher: fetcherMock as unknown as typeof fetch,
-      cacheStore: store,
-      imageUrl: 'https://figma.example/img.png',
-    });
-    const sentBody = parseBody(fetcherMock);
-    const content = lastMessage(sentBody).content as Array<Record<string, unknown>>;
-    expect(Array.isArray(content)).toBe(true);
-    expect(content[0]).toEqual({ type: 'image', source: { type: 'url', url: 'https://figma.example/img.png' } });
-    expect(content[1].type).toBe('text');
-    expect(typeof content[1].text).toBe('string');
-  });
-
-  it('sends a plain string message when no imageUrl is given', async () => {
-    const fetcherMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
-      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","accessibility":"A","dos":[],"donts":[]}' }] }) };
-    });
-    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
-    await draftProse(spec, {
-      apiKey: 'sk-test',
-      fetcher: fetcherMock as unknown as typeof fetch,
-      cacheStore: store,
-    });
-    const sentBody = parseBody(fetcherMock);
-    expect(typeof lastMessage(sentBody).content).toBe('string');
-  });
-
-  it('sends the house-style system prompt and a valid few-shot exemplar', async () => {
-    const fetcherMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
-      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","accessibility":"A","dos":[],"donts":[]}' }] }) };
-    });
-    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
-    await draftProse(spec, {
-      apiKey: 'sk-test',
-      fetcher: fetcherMock as unknown as typeof fetch,
-      cacheStore: store,
-    });
-    const body = parseBody(fetcherMock);
-
-    // House-style system prompt is present and governs voice (the billed-every-call artifact).
-    expect(typeof body.system).toBe('string');
-    expect(body.system as string).toMatch(/rule AND the reason/i);
-
-    // A user→assistant few-shot pair precedes the real turn, and the exemplar
-    // response is valid ProseDrafts JSON (so it teaches the exact output shape).
-    expect(body.messages.length).toBeGreaterThanOrEqual(3);
-    expect(body.messages[0].role).toBe('user');
-    expect(body.messages[1].role).toBe('assistant');
-    expect(() => parseProseResponse(String(body.messages[1].content))).not.toThrow();
-    expect(lastMessage(body).role).toBe('user');
-  });
-
-  it('keys the cache separately for vision vs text-only runs', async () => {
-    const keys: string[] = [];
-    const store = {
-      get: vi.fn(async (k: string) => { keys.push(k); return null; }),
-      set: vi.fn(async () => {}),
-    };
-    const fetcher = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ content: [{ text: '{"definition":"D","accessibility":"A","dos":[],"donts":[]}' }] }),
-    })) as unknown as typeof fetch;
-    await draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: store });
-    await draftProse(spec, { apiKey: 'sk', fetcher, cacheStore: store, imageUrl: 'https://x/y.png' });
-    expect(keys[0]).not.toBe(keys[1]);
-  });
-
-  // --- Task 1: selection-aware buildProsePrompt --------------------------------
-
-  it('buildProsePrompt with a requested subset asks only for those keys', () => {
-    const prompt = buildProsePrompt(spec, new Set(['definition', 'interactions']));
-    expect(prompt).toContain('interactions (');
-    expect(prompt).toContain('definition (');
-    expect(prompt).not.toContain('dos (');
-    expect(prompt).not.toContain('designConsiderations (');
-  });
-
-  it('buildProsePrompt default (no requested set) still asks for the legacy keys', () => {
-    const prompt = buildProsePrompt(spec);
-    expect(prompt).toContain('anatomyParts');
-    expect(prompt).toMatch(/when to use which type/i);
-  });
-
-  it('interactions instruction names the Mouse/Keyboard/Other subheadings', () => {
-    const prompt = buildProsePrompt(spec, new Set(['interactions']));
-    expect(prompt).toMatch(/### Mouse/);
-    expect(prompt).toMatch(/### Keyboard/);
-    expect(prompt).toMatch(/### Other/);
-  });
-
-  it('appends the interactions/accessibility overlap note only when both are requested', () => {
-    expect(buildProsePrompt(spec, new Set(['accessibility', 'interactions'])))
-      .toMatch(/keyboard and mouse mechanics belong to Interactions/i);
-    expect(buildProsePrompt(spec, new Set(['accessibility'])))
-      .not.toMatch(/belong to Interactions/i);
-  });
-
-  // --- Task 2: selection-aware parseProseResponse ------------------------------
-
-  it('parses the three new fields when present', () => {
-    const out = parseProseResponse(JSON.stringify({
-      definition: 'D', accessibility: 'A', dos: [], donts: [],
-      interactions: '### Mouse\n- Click activates.',
-      designConsiderations: '- Meet 4.5:1 contrast.',
-      contentConsiderations: '- Keep labels short.',
-    }));
-    expect(out.interactions).toContain('### Mouse');
-    expect(out.designConsiderations).toContain('4.5:1');
-    expect(out.contentConsiderations).toContain('labels');
-  });
-
-  it('coerces a new-field array of lines into bulleted text', () => {
-    const out = parseProseResponse(JSON.stringify({
-      definition: 'D', accessibility: 'A', dos: [], donts: [],
-      designConsiderations: ['Meet contrast.', 'Show focus.'],
-    }));
-    expect(out.designConsiderations).toBe('- Meet contrast.\n- Show focus.');
-  });
-
-  it('normalizes em dashes out of the new fields', () => {
-    const out = parseProseResponse(JSON.stringify({
-      definition: 'D', accessibility: 'A', dos: [], donts: [],
-      interactions: 'Click — activates.',
-    }));
-    expect(out.interactions).toBe('Click, activates.');
-  });
-
-  it('when requested, requires only the requested keys', () => {
-    const out = parseProseResponse(
-      JSON.stringify({ definition: 'D', interactions: '- x' }),
-      new Set(['definition', 'interactions']),
-    );
-    expect(out.definition).toBe('D');
-    expect(out.interactions).toBe('- x');
-  });
-
-  it('when requested, a missing requested key still throws', () => {
-    expect(() =>
-      parseProseResponse(JSON.stringify({ definition: 'D' }), new Set(['definition', 'interactions'])),
-    ).toThrow(/interactions/);
-  });
-
-  it('no requested set preserves the legacy required contract', () => {
-    expect(() => parseProseResponse('{"definition":"D","dos":[],"donts":[]}')).toThrow(/accessibility/);
-  });
-
-  // --- Task 3: few-shot carries the new sections -------------------------------
-
-  it('few-shot exemplar carries Interactions and both Considerations sections', () => {
-    const drafts = parseProseResponse(proseFewShot()[1].content);
-    expect(drafts.interactions).toMatch(/### Mouse/);
-    expect(drafts.interactions).toMatch(/### Keyboard/);
-    expect(drafts.designConsiderations).toMatch(/^- /m);
-    expect(drafts.contentConsiderations).toMatch(/^- /m);
-    expect(proseFewShot()[1].content).not.toMatch(/—/);
-  });
-
-  // --- Task 4: client threads the requested set --------------------------------
-
-  it('passes the requested set to the prompt, requires it on parse, and lifts max_tokens', async () => {
-    let body: AnthropicRequestBody | undefined;
-    const fetcher = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => {
-      body = JSON.parse(String(init?.body)) as AnthropicRequestBody;
-      return { ok: true, json: async () => ({ content: [{ text: '{"definition":"D","interactions":"- x"}' }] }) };
-    }) as unknown as typeof fetch;
-    const store = { get: vi.fn(async () => null), set: vi.fn(async () => {}) };
+  it('passes the file component list into validation', async () => {
+    const answer = JSON.stringify({ whenNotToUse: ['Use a Slider for a range.', 'Not for navigation.'] });
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ content: [{ type: 'text', text: answer }] }), { status: 200 }));
     const out = await draftProse(spec, {
-      apiKey: 'k', fetcher, cacheStore: store,
-      requested: new Set(['definition', 'interactions']),
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: memStore(),
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1' }, fileComponents: ['Slider'],
     });
-    expect(out?.interactions).toBe('- x');
-    expect((body as unknown as { max_tokens: number }).max_tokens).toBe(3000);
-    const content = String(lastMessage(body!).content);
-    expect(content).toContain('interactions (');
-    expect(content).not.toContain('accessibility (');
+    expect(out?.prose.whenNotToUse).toEqual(['Not for navigation.']);
+    expect(out?.dropped.whenNotToUse).toBe(1);
+  });
+
+  it('returns null with neither apiKey nor proxy', async () => {
+    expect(await draftProse(spec, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: memStore() })).toBeNull();
   });
 });

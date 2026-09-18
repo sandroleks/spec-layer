@@ -1,6 +1,6 @@
 import { draftProse, draftGroupDescriptions } from '@spec-layer/extractor';
 import type {
-  IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota, FoundationGroupBrief,
+  IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, FoundationGroupBrief,
 } from '@spec-layer/extractor';
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
@@ -37,9 +37,9 @@ export async function generateProse(
   spec: IntermediateSpec,
   auth: ProxyAuth,
   nodeId: string,
-  requested?: Set<ProseKey>,
+  requested?: Set<ProseV2Key>,
   onQuota?: (q: ProxyQuota) => void,
-): Promise<ProseDrafts | null> {
+): Promise<ProseValidation | null> {
   const img = await requestImage(nodeId);
   return draftProse(spec, {
     apiKey: null,

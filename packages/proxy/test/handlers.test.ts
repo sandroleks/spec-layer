@@ -4,7 +4,11 @@ import { handleProse, type QuotaClient } from '../src/handlers';
 import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
 import { quotaObjectName } from '../src/index';
 import { SlidingWindowLimiter } from '../src/ratelimit';
-import { PROSE_SYSTEM_PROMPT, proseFewShot } from '@spec-layer/extractor';
+import {
+  proseRequest, proseCacheKey,
+  LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
+  type IntermediateSpec,
+} from '@spec-layer/extractor';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -34,14 +38,31 @@ function memQuota(now: () => number) {
   };
 }
 
-const GOOD_BODY = {
+/** The same stub `proseContract.test.ts` uses: the v9 prompt walks every field
+ *  it lists, so the real client builder runs against it unchanged. */
+const spec = {
+  name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1', description: '', documentationLinks: [],
+  anatomy: [], anatomyComponentId: '1:1', props: [], variants: [], variantInstances: [], states: [],
+  tokens: [], related: [], gaps: [], layout: [], rawValues: [], nodeEffects: [],
+} as unknown as IntermediateSpec;
+
+/** Built by the real client, so the handler is exercised against the bytes the
+ *  plugin actually posts rather than a literal that can drift away from them. */
+const GOOD_BODY = { cacheKey: proseCacheKey(spec, { tier: 'free' }), request: proseRequest(spec) };
+
+/** The same bytes under the key a Pro client sends. The tier is part of the
+ *  key now, so a bearer request has to carry the pro one or be rejected. */
+const PRO_BODY = { ...GOOD_BODY, cacheKey: proseCacheKey(spec, { tier: 'pro' }) };
+
+/** The shipped 5.1.0 plugin's payload, kept until that build is off the wire. */
+const LEGACY_BODY = {
   cacheKey: 'prose:v8:abc123',
   request: {
     model: 'claude-haiku-4-5',
-    max_tokens: 3000,
-    system: PROSE_SYSTEM_PROMPT,
+    max_tokens: LEGACY_PROSE_MAX_TOKENS,
+    system: LEGACY_PROSE_SYSTEM_PROMPT,
     messages: [
-      ...proseFewShot(),
+      ...legacyProseFewShot(),
       {
         role: 'user',
         content: 'Component: Button\n\nReturn ONLY a JSON object with these keys: definition.',
@@ -87,6 +108,44 @@ describe('handleProse', () => {
     expect(call[1].headers['x-api-key']).toBe('sk-ant-test');
   });
 
+  it('forwards the free request with Haiku 4.5 and no output_config', async () => {
+    const d = deps();
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    expect(sent.model).toBe('claude-haiku-4-5');
+    expect(sent.output_config).toBeUndefined();
+    expect(sent.thinking).toBeUndefined();
+  });
+
+  it('forwards the pro request with Sonnet 5 at low effort', async () => {
+    const d = deps();
+    await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    const res = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
+    expect(res.status).toBe(200);
+    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    expect(sent.model).toBe('claude-sonnet-5');
+    expect(sent.output_config).toEqual({ effort: 'low' });
+  });
+
+  it('rejects a key whose tier segment disagrees with the proved tier, before spending quota', async () => {
+    const d = deps();
+    const res = await handleProse(proseReq(PRO_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'tier mismatch' });
+    expect(d._anthropic).not.toHaveBeenCalled();
+    // Nothing was reserved: the next valid free request is the identity's first.
+    const ok = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(ok.headers.get('X-Quota-Used')).toBe('1');
+  });
+
+  it('still serves a shipped v8 client', async () => {
+    const d = deps();
+    const res = await handleProse(proseReq(LEGACY_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(200);
+    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    expect(sent.model).toBe('claude-haiku-4-5');
+  });
+
   it('replays the cached response on retry without a second upstream call', async () => {
     const d = deps();
     await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
@@ -99,10 +158,10 @@ describe('handleProse', () => {
   it('402 when the free quota is exhausted', async () => {
     const d = deps();
     for (let i = 0; i < 20; i++) {
-      await handleProse(proseReq({ ...GOOD_BODY, cacheKey: `prose:v8:k${i}` }, { 'X-Figma-User': 'u1' }), d);
+      await handleProse(proseReq({ ...GOOD_BODY, cacheKey: `prose:v9:free:k${i}` }, { 'X-Figma-User': 'u1' }), d);
     }
     // 20 committed → 21st is exhausted (rate limit is per-minute; use a fresh minute clock if needed)
-    const res = await handleProse(proseReq({ ...GOOD_BODY, cacheKey: 'prose:v8:k-over' }, { 'X-Figma-User': 'u1' }), d);
+    const res = await handleProse(proseReq({ ...GOOD_BODY, cacheKey: 'prose:v9:free:k-over' }, { 'X-Figma-User': 'u1' }), d);
     expect([402, 429]).toContain(res.status); // 429 if the fixed clock trips the rate limit first
   });
 
@@ -145,7 +204,7 @@ describe('handleProse', () => {
   it('pro license: unlimited headers', async () => {
     const d = deps();
     await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
+    const res = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Tier')).toBe('pro');
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
@@ -177,7 +236,7 @@ describe('handleProse', () => {
     };
     const d = deps({ quotaFor: () => flaggedQuota });
     await d.licenseCache.put(`lic:${sha256(UUID_KEY)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
-    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
+    const res = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}` }), d);
     expect(res.status).toBe(200);
 
     // The log path must actually have fired, or this test would be vacuous.

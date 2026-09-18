@@ -26,6 +26,7 @@ export {
   type ContrastFailure, type ColorContrastReport,
 } from './colorContrast';
 export * from './prose/prompt';
+export * from './prose/promptV2';
 export * from './prose/foundationPrompt';
 export * from './prose/client';
 export * from './prose/v2';

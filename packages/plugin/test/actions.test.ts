@@ -8,22 +8,22 @@ import {
   licenseFailureNote,
   type UiState,
 } from '../src/ui/actions';
-import type { ProseKey } from '@spec-layer/extractor';
+import type { ProseV2Key } from '@spec-layer/extractor';
 
 describe('proseNeedsRegen', () => {
-  const withDraft = (keys: ProseKey[]): UiState => ({
+  const withDraft = (keys: ProseV2Key[]): UiState => ({
     generatedProse: { v: 2, overview: { lede: 'd', body: [] } },
     generatedProseKeys: new Set(keys),
   } as unknown as UiState);
 
   it('regenerates when the cached draft misses a requested key', () => {
-    expect(proseNeedsRegen(withDraft(['definition']), new Set(['definition', 'interactions']))).toBe(true);
+    expect(proseNeedsRegen(withDraft(['overview']), new Set(['overview', 'keyboard']))).toBe(true);
   });
   it('reuses when the cached draft covers the request', () => {
-    expect(proseNeedsRegen(withDraft(['definition', 'interactions']), new Set(['interactions']))).toBe(false);
+    expect(proseNeedsRegen(withDraft(['overview', 'keyboard']), new Set(['keyboard']))).toBe(false);
   });
   it('regenerates when there is no draft yet', () => {
-    expect(proseNeedsRegen({ generatedProse: null, generatedProseKeys: null } as unknown as UiState, new Set(['definition']))).toBe(true);
+    expect(proseNeedsRegen({ generatedProse: null, generatedProseKeys: null } as unknown as UiState, new Set(['overview']))).toBe(true);
   });
 });
 
