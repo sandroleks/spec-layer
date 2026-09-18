@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { validateProseBody, parseProseCacheKey, upstreamRequest } from '../src/handlers';
 import {
-  groupProseRequest, groupCacheKey, proseCacheKey, proseRequest,
-  PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot,
+  groupProseRequest, groupCacheKey, proseCacheKey, proseRequest, contentHash,
+  PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot, FOUNDATION_SYSTEM_PROMPT,
   LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
+  LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS,
   type FoundationGroupBrief, type IntermediateSpec,
 } from '@spec-layer/extractor';
 
@@ -31,6 +32,41 @@ const spec = {
 } as unknown as IntermediateSpec;
 
 const v9 = (tier: 'pro' | 'free') => ({ cacheKey: proseCacheKey(spec, { tier }), request: proseRequest(spec) });
+
+/**
+ * The shipped 5.1.0 foundation group payload, rebuilt from the client at this
+ * branch's merge base (9dc840a: `groupCacheKey`, `groupProseRequest` and
+ * `buildGroupPrompt`). It is written out rather than imported because nothing
+ * in the tree builds it any more: the key gained a tier segment, the prompt
+ * gained the modes, alias counts and overview lines, and the request stopped
+ * naming a model. The system bytes come from the frozen export.
+ */
+const LEGACY_GROUP_PROMPT = [
+  'Collection: Semantic',
+  '',
+  'Groups to describe:',
+  '',
+  'key: c1|color/surface',
+  'heading: Surface',
+  'type: COLOR',
+  '  color/surface/primary = #722ED1',
+  '',
+  'Return JSON: { "<key>": "<description>", ... } with one entry per key above.',
+].join('\n');
+
+const LEGACY_GROUP_BODY = {
+  // The v1 hash was `contentHash({ collectionName, groups })` over the same
+  // five brief fields the v2 key still hashes. The validator never reads the
+  // hash, only the key's shape, so any well-formed `prose:v1:groups:<hex>`
+  // would serve here just as well.
+  cacheKey: `prose:v1:groups:${contentHash({ collectionName: 'Semantic', groups: briefs })}`,
+  request: {
+    model: 'claude-haiku-4-5',
+    max_tokens: LEGACY_GROUP_MAX_TOKENS,
+    system: LEGACY_FOUNDATION_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: LEGACY_GROUP_PROMPT }],
+  },
+};
 
 describe('/v1/prose accepts what the v9 client sends', () => {
   it('accepts the component payload for both tiers', () => {
@@ -81,6 +117,28 @@ describe('/v1/prose accepts what the v9 client sends', () => {
     expect(validateProseBody({ ...body, request: { ...body.request, messages: noBreakpoint } })).toBe('invalid messages');
     const onFinal = [user, assistant, { role: 'user', content: [{ type: 'text', text: final.content as string, cache_control: { type: 'ephemeral' } }] }];
     expect(validateProseBody({ ...body, request: { ...body.request, messages: onFinal } })).toBe('invalid messages');
+  });
+
+  it('still accepts the shipped v1 group payload until the 6.0.0 plugin is live', () => {
+    // Task 5 edited FOUNDATION_SYSTEM_PROMPT in place. Without the frozen v8
+    // copy, this body fails 'system not allowed' the moment the proxy deploys,
+    // and every 5.1.0 foundation build reports that AI descriptions were
+    // skipped. The two prompts really are different bytes:
+    expect(LEGACY_FOUNDATION_SYSTEM_PROMPT).not.toBe(FOUNDATION_SYSTEM_PROMPT);
+    expect(validateProseBody(LEGACY_GROUP_BODY)).toBeNull();
+  });
+
+  it('rejects v2 group bytes under a v1 key and v8 group bytes under a v2 key', () => {
+    const v2 = groupProseRequest(groupInput, 'free');
+    // v2 bytes under the old key: the legacy branch requires the model the
+    // shipped client named, and the v2 request names none.
+    expect(validateProseBody({ ...v2, cacheKey: LEGACY_GROUP_BODY.cacheKey })).toBe('model not allowed');
+    // v8 bytes under a v9-era key: the model is refused first...
+    expect(validateProseBody({ ...LEGACY_GROUP_BODY, cacheKey: v2.cacheKey })).toBe('model not allowed');
+    // ...and the old system prompt right after it, which is the assertion that
+    // pins the freeze to the legacy branch alone.
+    const { model: _model, ...noModel } = LEGACY_GROUP_BODY.request;
+    expect(validateProseBody({ cacheKey: v2.cacheKey, request: noModel })).toBe('system not allowed');
   });
 
   it('still accepts the shipped v8 payload until the 6.0.0 plugin is live', () => {

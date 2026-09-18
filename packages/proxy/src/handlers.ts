@@ -2,6 +2,7 @@ import {
   FOUNDATION_SYSTEM_PROMPT,
   PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot,
   LEGACY_PROSE_SYSTEM_PROMPT, LEGACY_PROSE_MAX_TOKENS, LEGACY_GROUP_MAX_TOKENS, legacyProseFewShot,
+  LEGACY_FOUNDATION_SYSTEM_PROMPT,
   GROUP_MAX_TOKENS,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
@@ -153,7 +154,11 @@ export function validateProseBody(body: unknown): string | null {
   if (!Array.isArray(r.messages)) return 'missing messages';
 
   if (info.kind === 'groups') {
-    if (r.system !== FOUNDATION_SYSTEM_PROMPT) return 'system not allowed';
+    // The v8 group prompt and the v9 one are different bytes: Task 5 added the
+    // collection-overview rule in place. A 5.1.0 client keeps sending the old
+    // ones, so the legacy branch has to compare against the frozen copy or
+    // every shipped foundation build loses its AI descriptions on deploy.
+    if (r.system !== (legacy ? LEGACY_FOUNDATION_SYSTEM_PROMPT : FOUNDATION_SYSTEM_PROMPT)) return 'system not allowed';
     if (r.max_tokens !== (legacy ? LEGACY_GROUP_MAX_TOKENS : GROUP_MAX_TOKENS)) return 'max_tokens not allowed';
     if (r.messages.length !== 1) return 'invalid messages';
     const message = r.messages[0] as Record<string, unknown> | null;

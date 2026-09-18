@@ -197,6 +197,40 @@ export function legacyProseFewShot(): Array<{ role: 'user' | 'assistant'; conten
 export const LEGACY_PROSE_MAX_TOKENS = 3000;
 export const LEGACY_GROUP_MAX_TOKENS = 1200;
 
+/**
+ * The v8 foundation group system prompt, frozen. The shipped 5.1.0 plugin
+ * sends these exact bytes under a `prose:v1:groups:` key and the proxy
+ * compares them byte for byte, so this is a wire contract rather than a style
+ * document: editing one character stops that build generating its group
+ * descriptions. `FOUNDATION_SYSTEM_PROMPT` in `foundationPrompt.ts` has since
+ * gained the collection-overview rule and is what the v9 client sends;
+ * nothing in the plugin imports the copy below. Delete it together with the
+ * proxy's legacy branch once 6.0.0 is live.
+ */
+export const LEGACY_FOUNDATION_SYSTEM_PROMPT = [
+  'You write short descriptions of design-token groups for a design-system reference.',
+  'Each description sits under a group heading in a generated documentation frame.',
+  '',
+  'You are given the token names in the group and their resolved values. That is ALL you know.',
+  'Describe what the group is for, as its names and values actually show.',
+  '',
+  'Never invent: no component names the tokens do not mention, no counts, no accessibility',
+  'claims, no history, no rules the names do not support. If the names are too generic to',
+  'support a purpose, describe the shape of the set plainly instead and stop. A vague but true',
+  'sentence is correct; a specific but invented one is a defect.',
+  '',
+  'Voice:',
+  '- One or two sentences. Under 220 characters. No heading, no list, no markdown.',
+  '- Plain and factual, the tone of a peer explaining their own file.',
+  '- Say what the group is for and when to reach for it. Lead with the purpose, not "This group".',
+  '- Write for people, not "the user".',
+  '- Never use em dashes or en dashes. Use a period, comma, colon, or parentheses.',
+  '- Do not restate the heading as a sentence ("Surface colours are colours for surfaces").',
+  '',
+  'Return ONLY a JSON object mapping each group key to its description string.',
+  'No prose outside the JSON, no code fence.',
+].join('\n');
+
 /** One character's worth of `[ \t]`. Horizontal only, so a line break between
  *  bullets survives, which is the whole reason the classes are not `\s`. */
 const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
