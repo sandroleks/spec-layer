@@ -162,6 +162,27 @@ describe('draftProse base64 image', () => {
       } as unknown as IntermediateSpec;
       expect(proseCacheKey(moved, { tier: 'free' })).toEqual(proseCacheKey(base, { tier: 'free' }));
     });
+
+    it('does NOT ignore an anatomy part depth, type, shownBy or nested component', () => {
+      // The inverse of the test above, one field at a time. The v9 prompt draws
+      // each part as `<indent><name>: <partKind>[; shown by X]`, so depth, type
+      // and shownBy all reach it and each has to be a fresh generation rather
+      // than a stale draft served from the old key.
+      const key = (part: Record<string, unknown>): string => proseCacheKey(
+        { ...spec, anatomy: [{ id: '1:2', path: 'Container/Label', ...part }] } as unknown as IntermediateSpec,
+        { tier: 'free' },
+      );
+      const plain = { name: 'Label', type: 'TEXT', nested: false, depth: 0, shownBy: 'Show label' };
+      const plainKey = key(plain);
+      expect(key({ ...plain, depth: 1 })).not.toEqual(plainKey);
+      expect(key({ ...plain, type: 'RECTANGLE' })).not.toEqual(plainKey);
+      expect(key({ ...plain, shownBy: 'Has label' })).not.toEqual(plainKey);
+
+      // `component` reaches the prompt only through a nested part, where
+      // `partKind` reads it in place of the Figma type.
+      const nested = { name: 'Icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' };
+      expect(key({ ...nested, component: 'Glyph' })).not.toEqual(key(nested));
+    });
   });
 
   it('still changes when a token the prompt DOES read changes', () => {
@@ -204,6 +225,10 @@ describe('group request (v2)', () => {
     const { get, set } = memStore();
     const out = await draftGroupDescriptions(input, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set }, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
     expect(out).toEqual({ overview: 'Semantic colours.', descriptions: { 'c1|color/surface': 'Surfaces.' } });
+    // What is stored is the model's own text, not the parsed draft, so a later
+    // parser fix reaches the entry. Asserting the return value alone would
+    // pass just as happily if the parsed object were cached instead.
+    expect(await get(groupCacheKey(input, 'free'))).toBe(raw);
   });
   it('returns an empty draft with no groups or no identity', async () => {
     expect(await draftGroupDescriptions({ ...input, groups: [] }, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: memStore() })).toEqual({ overview: null, descriptions: {} });
@@ -307,6 +332,30 @@ describe('draftProse proxy mode', () => {
     const out = await draftProse(spec, { apiKey: null, fetcher: second as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
     expect(out?.prose.overview?.lede).toBe('D');
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it('caches the raw answer once it has parsed, and never caches one that has not', async () => {
+    // A truncation at the token cap arrives as unparseable JSON. Cached, it
+    // would make every retry in the session re-throw from the cache instead of
+    // asking again, so the parse has to come first.
+    const truncated = '{"overview":{"lede":"D","body":[';
+    const store = memStore();
+    const bad = vi.fn(async () => new Response(
+      JSON.stringify({ content: [{ type: 'text', text: truncated }] }), { status: 200 },
+    ));
+    const proxy = { url: 'https://proxy.test', figmaUserId: 'u1' };
+    await expect(draftProse(spec, {
+      apiKey: null, fetcher: bad as unknown as typeof fetch, cacheStore: store, proxy,
+    })).rejects.toThrow(/parse prose response/i);
+    expect(store.store.size).toBe(0);
+
+    // The same key, answered properly this time, is asked again and stored raw.
+    const good = vi.fn(async () => new Response(PROSE_OK, { status: 200 }));
+    const out = await draftProse(spec, {
+      apiKey: null, fetcher: good as unknown as typeof fetch, cacheStore: store, proxy,
+    });
+    expect(out?.prose.overview?.lede).toBe('D');
+    expect([...store.store.values()]).toEqual(['{"overview":{"lede":"D","body":[]}}']);
   });
 
   it('sends key:instanceId in the bearer when the proxy auth has an instance', async () => {

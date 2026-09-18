@@ -141,8 +141,6 @@ export interface DraftOptions {
   apiKey: string | null;
   fetcher: typeof fetch;
   cacheStore: CacheStore;
-  /** Skip an existing cache entry while still storing the newly generated draft. */
-  bypassCache?: boolean;
   /**
    * Optional rendered component image (e.g. a Figma PNG URL). When provided, it
    * is attached as an image content block so the model can see the component,
@@ -286,17 +284,20 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
   const validate = (raw: string): ProseValidation =>
     validateProseV2(spec, parseProseResponse(raw), { fileComponents: opts.fileComponents });
 
-  if (!opts.bypassCache) {
-    const hit = await opts.cacheStore.get(key);
-    if (hit) return validate(hit);
-  }
+  const hit = await opts.cacheStore.get(key);
+  if (hit) return validate(hit);
+
   const request = proseRequest(spec, opts);
   const body = opts.proxy ? request : { model: DIRECT_MODEL, ...request };
   const raw = await postCompletion(body, key, opts);
-  // Cache the raw answer, not the parsed object, so a later parser or
-  // validator fix applies to an existing entry instead of being stuck behind it.
+  // Parse first, then cache, and cache the raw answer rather than the parsed
+  // object: a later parser or validator fix still applies to an existing entry
+  // instead of being stuck behind it, while an answer that never parsed once
+  // (a response truncated at the token cap, say) is not stored for every retry
+  // in the session to re-throw from.
+  const result = validate(raw);
   await opts.cacheStore.set(key, raw);
-  return validate(raw);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +375,7 @@ export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
  */
 export async function draftGroupDescriptions(
   input: GroupDraftInput,
-  opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'bypassCache' | 'proxy'>,
+  opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'proxy'>,
 ): Promise<GroupDraft> {
   if (!opts.apiKey && !opts.proxy) return { descriptions: {}, overview: null };
   if (input.groups.length === 0) return { descriptions: {}, overview: null };
@@ -385,16 +386,17 @@ export async function draftGroupDescriptions(
   // adding a group is a fresh request rather than a stale hit.
   const { cacheKey, request } = groupProseRequest(input, tier);
 
-  if (!opts.bypassCache) {
-    const hit = await opts.cacheStore.get(cacheKey);
-    if (hit) return parseGroupDraft(hit, folders);
-  }
+  const hit = await opts.cacheStore.get(cacheKey);
+  if (hit) return parseGroupDraft(hit, folders);
 
   const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
 
+  // Parsed before it is cached, like the component path. `parseGroupDraft`
+  // answers unusable output with an empty draft rather than throwing, so this
+  // ordering costs nothing here; it is the same ordering so the two paths
+  // cannot drift into explaining a bad answer differently. The raw text is
+  // what is stored, so a later parser fix reaches an existing entry.
   const parsed = parseGroupDraft(raw, folders);
-  // Cache the raw response, not the parsed map, so a later parser fix applies to
-  // an existing entry instead of being stuck behind one.
   await opts.cacheStore.set(cacheKey, raw);
   return parsed;
 }
