@@ -24,7 +24,7 @@ import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import {
-  buildDocModel, proseKeysForSections,
+  buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
@@ -74,6 +74,8 @@ export interface UiState {
   // What the last build left out, and why, so the result message can say so.
   // Set by every assembled build and cleared once it has been reported.
   lastOmitted: OmittedSection[];
+  // Frames the last assembled build draws, for the result message.
+  lastFrameCount: number;
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("the AI sections were left out") instead of aborting the whole frame.
   pendingAiNote: string;
@@ -106,6 +108,7 @@ export function createState(): UiState {
     generatedProse: null,
     generatedProseKeys: null,
     lastOmitted: [],
+    lastFrameCount: 0,
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -402,6 +405,7 @@ async function assembleDocFor(
     measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
   });
   state.lastOmitted = model.omitted;
+  state.lastFrameCount = frameCountFor(model);
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
@@ -422,6 +426,11 @@ const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
   nothingToShow: 'nothing to show',
   aiOff: 'AI writing is off',
 };
+
+/** The first sentence of the result message, spec 9.3: `Created 3 frames.` */
+export function resultOutcome(replaced: boolean, frames: number): string {
+  return `${replaced ? 'Replaced' : 'Created'} ${frames} frame${frames === 1 ? '' : 's'}.`;
+}
 
 /** The result line: the outcome, then one sentence per omitted section. */
 export function omissionsMessage(outcome: string, omitted: OmittedSection[]): string {
@@ -517,6 +526,7 @@ export async function updateFromSource(
     // Same record the Create path keeps, so the Library's completion message
     // can name the sections it left out instead of staying silent about them.
     state.lastOmitted = model.omitted;
+    state.lastFrameCount = frameCountFor(model);
     send({
       type: 'renderDocFrame',
       model,

@@ -100,6 +100,7 @@ import {
   omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
+  resultOutcome,
   send,
   setAiEnabled,
   setBrandTheme,
@@ -2387,7 +2388,7 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = omissionsMessage(msg.replaced ? 'Docs replaced.' : 'Docs created.', state.lastOmitted);
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), state.lastOmitted);
         screen = {
           kind: 'success',
           componentName: currentName(),

@@ -250,6 +250,16 @@ export function groupSections(sections: SectionBlock[]): DocGroup[] {
     .filter((g) => g.sections.length > 0);
 }
 
+/** How many frames a model draws: one per group that has at least one section. */
+export function frameCountFor(model: DocFrameModel): number {
+  const groups = new Set<string>();
+  for (const section of model.sections) {
+    const group = ALL_SECTIONS.find((s) => s.id === section.id)?.group;
+    if (group) groups.add(group);
+  }
+  return groups.size;
+}
+
 /** Human label for a variant instance as axis=value pairs, e.g.
  *  "Type=Primary, State=Hover" — keeps each value tied to its prop so booleans
  *  ("Danger=false") read clearly. Falls back to the raw Figma name. */
