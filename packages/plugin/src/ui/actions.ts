@@ -17,7 +17,7 @@ import type {
   SerializedFoundation, FoundationSpec, FoundationSelection,
   FoundationScope, FoundationGuidelinesV5, YamlValue, GroupDraftInput,
 } from '@spec-layer/extractor';
-import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
@@ -228,6 +228,27 @@ export function licenseFailureNote(reason: string | undefined): { note: string; 
   };
 }
 
+/**
+ * Turn a failed generation into state: the quota fork, a lapsed license, a
+ * typed proxy code, or a plain error message. Shared by the Create path and
+ * the rebuild top-up so the two never explain the same failure differently.
+ */
+export function noteGenerationError(state: UiState, err: unknown): void {
+  if (err instanceof ProseProxyError) {
+    if (err.code === 'quota_exhausted') { state.quotaExhausted = true; return; }
+    if (err.code === 'license_not_active') {
+      const { note, markInactive } = licenseFailureNote(err.reason);
+      if (markInactive) state.licenseActive = false;
+      state.pendingAiNote = note;
+      return;
+    }
+    state.pendingAiNote = generationErrorCopy(err.code);
+    return;
+  }
+  const detail = err instanceof Error ? err.message : String(err);
+  state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
+}
+
 async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise<void> {
   state.pendingAiNote = '';
   if (!willGenerateProseFor(state, sections)) return;
@@ -265,26 +286,7 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
   } catch (err) {
     state.generatedProse = null;
     state.generatedProseKeys = null;
-    if (err instanceof ProseProxyError) {
-      if (err.code === 'quota_exhausted') {
-        state.quotaExhausted = true;
-        return; // callers proceed without AI; the UI renders the upgrade fork
-      }
-      if (err.code === 'license_not_active') {
-        // Key lapsed mid-session (or the license server was unreachable): drop to
-        // the free identity ONLY on a definite lapse, never on a mere outage, and
-        // explain it. This frame builds without the AI sections; the next
-        // generation re-probes. Settings reflects the lapse on its next refresh.
-        const { note, markInactive } = licenseFailureNote(err.reason);
-        if (markInactive) state.licenseActive = false;
-        state.pendingAiNote = note;
-        return;
-      }
-      state.pendingAiNote = generationErrorCopy(err.code);
-      return;
-    }
-    const detail = err instanceof Error ? err.message : String(err);
-    state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
+    noteGenerationError(state, err);
   }
 }
 
@@ -532,6 +534,81 @@ export async function updateFromSource(
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Update failed: ${msg}`);
     return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stale-version rebuild top-up — a document built by an earlier extractor
+// version upgrades losslessly where v1 has a source, but several v2 keys have
+// none and land empty. When AI writing is on, a rebuild asks the model only
+// for those empty keys (plus keyboard, upgraded lossily from v1 bullets) and
+// merges the answer under the stored prose. Stored prose always wins except
+// keyboard, which the rebuild note promises to rewrite.
+// ---------------------------------------------------------------------------
+
+/** True when the stored prose has something to show for `key`. */
+function hasKeyContent(prose: ProseV2 | null, key: ProseV2Key): boolean {
+  const value = prose?.[key];
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  const overview = value as { lede?: string; body?: string[] };
+  return Boolean(overview.lede?.trim()) || (overview.body?.length ?? 0) > 0;
+}
+
+/**
+ * The keys a stale-version rebuild asks the model for: every requested key the
+ * upgraded prose left empty, plus `keyboard` whenever it is requested, because
+ * the v1 keyboard bullets upgrade lossily (a bullet that did not open with a
+ * key was dropped). This is what the rebuild note promises.
+ */
+export function missingProseKeys(prose: ProseV2 | null, requested: ReadonlySet<ProseV2Key>): Set<ProseV2Key> {
+  const out = new Set<ProseV2Key>();
+  for (const key of requested) {
+    if (key === 'keyboard' || !hasKeyContent(prose, key)) out.add(key);
+  }
+  return out;
+}
+
+/** Stored prose wins wherever it has content; the fresh draft fills the rest
+ *  and always replaces keyboard. Null when the result has nothing to show. */
+export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): ProseV2 | null {
+  if (!generated) return stored;
+  const out: ProseV2 = { ...(stored ?? {}), v: 2 };
+  for (const key of PROSE_V2_KEYS) {
+    const fresh = generated[key];
+    if (fresh === undefined) continue;
+    if (key === 'keyboard' || !hasKeyContent(stored, key)) {
+      (out as unknown as Record<string, unknown>)[key] = fresh;
+    }
+  }
+  return hasProseContent(out) ? out : null;
+}
+
+/**
+ * The AI half of a stale-version rebuild (spec 8.3): when AI writing is on,
+ * ask for the selected keys the stored prose leaves empty (and keyboard), and
+ * merge the answer under the stored prose. A failure keeps the stored prose
+ * and records the same note Create would; the rebuild goes ahead either way.
+ */
+export async function topUpProseForRebuild(state: UiState, src: DocSource): Promise<ProseV2 | null> {
+  if (!canGenerate(state)) return src.prose;
+  const requested = proseKeysForSections(new Set<SectionId>(src.config.sections));
+  const missing = missingProseKeys(src.prose, requested);
+  if (missing.size === 0) return src.prose;
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
+    const draft = await generateProse(
+      spec,
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      src.node.id,
+      missing,
+      (q) => { state.quota = q; },
+    );
+    return mergeTopUp(src.prose, draft?.prose ?? null);
+  } catch (err) {
+    noteGenerationError(state, err);
+    return src.prose;
   }
 }
 

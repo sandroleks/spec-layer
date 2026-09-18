@@ -106,6 +106,7 @@ import {
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
+  topUpProseForRebuild,
   updateFromSource,
   type BuildPresenter,
 } from './actions';
@@ -234,6 +235,10 @@ type LibraryUpdateOperation = {
    *  per document as each one finishes, because `state.lastOmitted` only ever
    *  holds the newest. */
   omitted: OmittedSection[];
+  /** Failed-generation notes from any stale-version rebuild in this run,
+   *  deduplicated by text, the way `omitted` is. Collected per document for
+   *  the same reason: `state.pendingAiNote` only ever holds the newest. */
+  aiNotes: string[];
 };
 /**
  * Copy for AI. Unlike an update, this never writes anything, so it carries no
@@ -945,6 +950,7 @@ function finishLibraryOperation(error = ''): void {
   if (!active) return;
   let message = '';
   let omitted: OmittedSection[] = [];
+  let aiNotes: string[] = [];
   if (active.kind === 'update') {
     message = error
       ? active.completed > 0
@@ -959,11 +965,22 @@ function finishLibraryOperation(error = ''): void {
       omitted = active.omitted;
       message = omissionsMessage(message, omitted);
     }
+    // A failed rebuild top-up, reported the way Create reports its own
+    // pendingAiNote: appended after the outcome (and any omissions).
+    if (!error && active.aiNotes.length) {
+      aiNotes = active.aiNotes;
+      message = `${message} ${aiNotes.join(' ')}`;
+    }
   } else if (error) {
     message = error;
   }
   state.lastOmitted = [];
-  if (message) nativeNotify(message, error ? { error: true, timeout: 5000 } : omitted.length ? { timeout: 5500 } : {});
+  if (message) {
+    nativeNotify(
+      message,
+      error ? { error: true, timeout: 5000 } : (omitted.length || aiNotes.length) ? { timeout: 5500 } : {},
+    );
+  }
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
@@ -987,7 +1004,11 @@ function dispatchNextLibraryUpdate(): void {
   if (entry.kind === 'foundation') {
     send({ type: 'updateFoundationDoc', docId });
   } else {
-    send({ type: 'requestDocSource', docId, intent: 'update' });
+    // A stale-version row asks the docSource handler to top up the AI
+    // sections the old prompt could not write before it rebuilds; every
+    // other row is a plain refresh of the generated lane.
+    const intent = libraryDrift.get(docId) === 'staleVersion' ? 'rebuild' : 'update';
+    send({ type: 'requestDocSource', docId, intent });
   }
   if (view === 'library') paint();
 }
@@ -1022,6 +1043,7 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     batch,
     confirmedOverwrite: new Set(edited),
     omitted: [],
+    aiNotes: [],
   };
   dispatchNextLibraryUpdate();
 }
@@ -1039,6 +1061,15 @@ function completeCurrentLibraryUpdate(): void {
     if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
   }
   state.lastOmitted = [];
+  // A stale-version rebuild's top-up runs before this document's build and
+  // may have left a note (e.g. a rate limit) on state.pendingAiNote, the same
+  // slot Create reads. Fold it in and clear the slot the same way, so a
+  // failed top-up is reported without the next document in the queue
+  // inheriting it.
+  if (state.pendingAiNote && !active.aiNotes.includes(state.pendingAiNote)) {
+    active.aiNotes.push(state.pendingAiNote);
+  }
+  state.pendingAiNote = '';
   dispatchNextLibraryUpdate();
 }
 
@@ -2645,9 +2676,15 @@ window.onmessage = (event: MessageEvent): void => {
       }
       const runUpdate = (): void => {
         let preparationError = '';
-        void updateFromSource(state, src, libraryPresenter((message) => {
-          preparationError = message;
-        })).then((dispatched) => {
+        // A stale-version rebuild tops up the sections the old prompt could
+        // not write before the frame rebuilds; a plain update sends the
+        // source's prose through untouched, exactly as before.
+        void (async () => {
+          const prose = msg.intent === 'rebuild' ? await topUpProseForRebuild(state, src) : src.prose;
+          return updateFromSource(state, { ...src, prose }, libraryPresenter((message) => {
+            preparationError = message;
+          }));
+        })().then((dispatched) => {
           if (!dispatched) {
             finishLibraryOperation(
               preparationError ||

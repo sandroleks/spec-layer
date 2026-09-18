@@ -142,6 +142,12 @@ none of the reasoning above.
   `designConsiderations` field, which no section ever rendered, so the copied
   YAML brief no longer carries its optional `design_considerations` key.
 
+- **Rebuilding a document written by an earlier version fills in what the
+  old prompt could not.** When AI writing is on, a Library rebuild asks the
+  model only for the sections the stored prose leaves empty, and rewrites
+  Keyboard, whose old bullet form does not carry over cleanly. Your written
+  sections are kept. The Library row says so.
+
 ### Fixed
 
 - **A radius bound on any corner no longer reads as a hardcoded gap.** The gap
