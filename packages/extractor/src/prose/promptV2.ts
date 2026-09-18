@@ -10,12 +10,13 @@
  *
  * Pure: no Figma, no DOM. Bundled into the plugin main thread and UI.
  */
-import type { IntermediateSpec } from '../extract';
+import { extract, type IntermediateSpec } from '../extract';
 import type { AnatomyPart } from '../anatomy';
+import type { SerializedNode } from '../tree';
 import { detectStateMatrix } from '../statesMatrix';
 import { formatConditions } from '../tokens';
 import { displayComponentName } from '../displayNames';
-import { PROSE_V2_KEYS, type ProseV2Key, type ProseV2 } from './v2';
+import { PROSE_V2_KEYS, KEYBOARD_KEYS, type ProseV2Key, type ProseV2 } from './v2';
 import { fencedBlock } from './prompt';
 
 /** The proxy anchors its final-message check on this exact string. */
@@ -240,4 +241,214 @@ export function parseProseResponse(text: string): ProseV2 {
   const guidelines = asRecordList(o.guidelines);
   if (guidelines) out.guidelines = guidelines as unknown as ProseV2['guidelines'];
   return out;
+}
+
+/** Cap on the component call. About three exemplar responses, plus the
+ *  thinking tokens Sonnet 5 spends at low effort, which count against it. */
+export const PROSE_MAX_TOKENS = 6000;
+
+/** Filler the spec bans by name. The system prompt quotes each one; tests
+ *  scan the exemplar and the prompt's own prose for them. */
+export const BANNED_PHRASES: readonly string[] = [
+  'familiar', 'essential', 'intuitive', 'seamless', 'engage with the interface',
+  'clear, easy to identify', 'gives people a way to', 'plays a key role',
+];
+
+/**
+ * The v9 system prompt. Billed on every call, so it is short and every line
+ * is a rule the parser or the validator cannot enforce alone.
+ */
+export const PROSE_SYSTEM_PROMPT = [
+  'You write component documentation for a design system, in the voice of a senior designer explaining their own component to a colleague.',
+  '',
+  'Voice:',
+  '- Second person, verb first, one idea per sentence. Every rule carries its reason.',
+  '- Anchor guidance in concrete situations: forms, dialogs, toolbars, lists, filters.',
+  '- Write for people, not "the user".',
+  '',
+  'Facts:',
+  "- Name only what the prompt lists: this component's parts, properties, option values, states, and related components. Never invent an option, a part, a state, or a component.",
+  "- The designer's description, when given, is authoritative. Build on it. Never contradict it and never restate it.",
+  '- States are not variants. The variants guide covers option axes only; states go in the states list.',
+  `- Keyboard rows use only these keys: ${KEYBOARD_KEYS.join(', ')}.`,
+  '',
+  'Words to avoid:',
+  `- Do not write ${BANNED_PHRASES.map((p) => `"${p}"`).join(', ')}.`,
+  '- Do not restate a heading as a sentence.',
+  '',
+  'Format:',
+  '- No em dashes and no spaced en dashes. Use a comma, a colon, or a full stop.',
+  '- No headings inside strings. Markdown only as **bold** or `code` inside a sentence.',
+  '- Return only the JSON object the message asks for, with only the keys it lists. Leave out a key you cannot fill honestly.',
+].join('\n');
+
+// ---------------------------------------------------------------------------
+// The exemplar: a Text field, extracted from a synthetic node tree so its
+// prompt is produced by the real builder and can never drift from it.
+// ---------------------------------------------------------------------------
+
+function exemplarVariant(state: string): SerializedNode {
+  const bind = (property: string, name: string) => ({
+    property, id: `VariableID:${name}`, name, kind: 'variable' as const, remote: false,
+    collectionId: 'VariableCollectionId:exemplar',
+  });
+  const border = state === 'Focused' ? 'color/border/focus' : state === 'Error' ? 'color/border/error' : 'color/field/border';
+  return {
+    id: `x:${state}`, name: `Size=Medium, Style=Filled, State=${state}`, type: 'COMPONENT', visible: true,
+    layout: { mode: 'VERTICAL', itemSpacing: 4 },
+    children: [
+      { id: `x:${state}:label`, name: 'Label', type: 'TEXT', visible: true, bindings: [bind('fills', 'color/text/secondary')] },
+      {
+        id: `x:${state}:input`, name: 'Input', type: 'FRAME', visible: true,
+        layout: { mode: 'HORIZONTAL', paddingLeft: 12, paddingRight: 12, itemSpacing: 8 },
+        bindings: [bind('fills', 'color/field/bg'), bind('strokes', border)],
+        children: [
+          { id: `x:${state}:icon`, name: 'Leading icon', type: 'INSTANCE', visible: false,
+            visibleProperty: 'Show leading icon', mainComponent: { name: 'Icon', key: 'exemplar-icon' } },
+          { id: `x:${state}:placeholder`, name: 'Placeholder', type: 'TEXT', visible: true, bindings: [bind('fills', 'color/text/placeholder')] },
+        ],
+      },
+      { id: `x:${state}:helper`, name: 'Helper text', type: 'TEXT', visible: true, bindings: [bind('fills', 'color/text/secondary')] },
+    ],
+  };
+}
+
+/** The synthetic component set the exemplar is extracted from. Exported so a
+ *  test can prove the exemplar's names are real. */
+export function exemplarNode(): SerializedNode {
+  return {
+    id: 'x:0', name: 'Text field', type: 'COMPONENT_SET', visible: true, key: 'exemplar-text-field',
+    description: 'A single-line field where people type short, free-form text.',
+    propertyDefinitions: {
+      Size: { type: 'VARIANT', defaultValue: 'Medium', variantOptions: ['Small', 'Medium'] },
+      Style: { type: 'VARIANT', defaultValue: 'Filled', variantOptions: ['Filled', 'Outlined'] },
+      State: { type: 'VARIANT', defaultValue: 'Enabled', variantOptions: ['Enabled', 'Hover', 'Focused', 'Error', 'Disabled'] },
+      'Show leading icon': { type: 'BOOLEAN', defaultValue: false },
+      'Show helper text': { type: 'BOOLEAN', defaultValue: true },
+      Label: { type: 'TEXT', defaultValue: 'Label' },
+      Placeholder: { type: 'TEXT', defaultValue: 'Placeholder' },
+    },
+    children: ['Enabled', 'Hover', 'Focused', 'Error', 'Disabled'].map(exemplarVariant),
+  };
+}
+
+export function exemplarSpec(): IntermediateSpec {
+  return extract(exemplarNode(), { figmaFile: 'exemplar' });
+}
+
+/** The exemplar's user turn: the real builder over the real extraction. */
+export const EXEMPLAR_PROMPT = buildProsePrompt(exemplarSpec());
+
+/** The exemplar's answer, in the house voice. Complete on purpose: it is the
+ *  one demonstration of every key, and it is billed on every call, so every
+ *  sentence has to earn its place. `promptV2.test.ts` validates it against the
+ *  exemplar spec with zero drops and scans it for the banned phrases. */
+export const EXEMPLAR_RESPONSE: ProseV2 = {
+  v: 2,
+  overview: {
+    lede: 'A text field takes a short, single-line answer such as a name, an email address, or a search term.',
+    body: [
+      'Use it inside forms, dialogs, and filters wherever people type a value the product stores or acts on. The label says what to enter, the placeholder shows the expected shape, and the helper text explains a rule first.',
+      'Keep every field in a form the same size, and let the state colours do the talking: the border changes on focus and on error, nothing else moves.',
+    ],
+  },
+  whenToUse: [
+    'Collect one short value that fits on a line, such as a name, a code, or a quantity.',
+    'Let people search or filter a list by typing, with results updating live.',
+    'Ask for a value you validate on the spot, so the Error state points at what to fix.',
+  ],
+  whenNotToUse: [
+    'Do not use it for long or multi-line answers; a single line hides most of the text.',
+    'Do not use it when the valid answers are a fixed set; a list prevents typos.',
+    'Do not use it to show a fixed value; a read-only field invites typing that goes nowhere.',
+  ],
+  variantsIntro: 'Size sets the row height for dense or relaxed layouts, and Style sets how the field meets its background.',
+  variantsGuide: [
+    { name: 'Filled', guidance: 'The default on light surfaces, where the fill marks the typing area.' },
+    { name: 'Outlined', guidance: 'On tinted or busy surfaces, where a border reads more clearly than a fill.' },
+    { name: 'Small', guidance: 'Dense forms, tables, and toolbars where vertical space is scarce.' },
+    { name: 'Medium', guidance: 'Standard forms and dialogs; the comfortable default.' },
+  ],
+  anatomySummary: 'A label sits above an input row, and helper text sits below it. The input holds the placeholder and an optional leading icon.',
+  anatomyParts: [
+    { name: 'Label', role: 'Names the value people enter and stays visible while they type.' },
+    { name: 'Input', role: 'The typing area; its fill and border carry the state colours.' },
+    { name: 'Leading icon', role: 'An optional glyph, such as a magnifier for search, that hints at the value and is never the only cue.' },
+    { name: 'Placeholder', role: 'Shows an example value and disappears once someone types.' },
+    { name: 'Helper text', role: 'Explains a format rule, and carries the error message in the Error state.' },
+  ],
+  properties: [
+    { name: 'Size', description: 'Row height: Small for dense layouts, Medium for standard forms.' },
+    { name: 'Style', description: 'How the field meets its surface: a fill or an outline.' },
+    { name: 'State', description: 'The interaction state the variant shows; the product sets it at runtime.' },
+    { name: 'Show leading icon', description: 'Adds a glyph at the start of the input row.' },
+    { name: 'Show helper text', description: 'Shows the helper text line under the field.' },
+    { name: 'Label', description: 'The label text; write it as a short noun phrase.' },
+    { name: 'Placeholder', description: 'An example value; never the only place the instruction lives.' },
+  ],
+  states: [
+    { name: 'Enabled', whenItApplies: 'The field is ready for input with nothing wrong.' },
+    { name: 'Hover', whenItApplies: 'The pointer is over the field, signalling it can be edited.' },
+    { name: 'Focused', whenItApplies: 'The field has keyboard focus and keystrokes go into it.' },
+    { name: 'Error', whenItApplies: 'Validation failed; the helper text carries the message.' },
+    { name: 'Disabled', whenItApplies: 'The value cannot be edited now, but the field stays visible.' },
+  ],
+  keyboard: [
+    { keys: ['Tab'], action: 'Moves focus into the field, then to the next control.' },
+    { keys: ['Shift+Tab'], action: 'Moves focus back to the previous control.' },
+    { keys: ['Enter'], action: 'Submits the form when the field is the last one.' },
+    { keys: ['Escape'], action: 'Clears an in-progress search.' },
+  ],
+  pointer: [
+    'Clicking or tapping the input row places the caret and focuses the field.',
+    'Clicking the label also focuses the field, so it counts toward the tap target.',
+    'Keep the input row at least 44 points tall on touch screens.',
+  ],
+  semantics: [
+    'Render as a native input with the label associated to it, so screen readers announce it on focus.',
+    'Announce the error message with the field, for example through aria-describedby.',
+    'Keep the placeholder out of the accessible name; many screen readers skip it.',
+    'The design file does not encode the input type or autocomplete hints; set those in code.',
+  ],
+  content: [
+    'Write the label as a short noun phrase ("Email address"), not a question.',
+    'Use the placeholder for an example format ("name@example.com"), never the instruction.',
+    'Write the error message as what to do next, not what went wrong in system terms.',
+    'Allow for labels that run longer in translation, and for mirroring of the leading icon.',
+  ],
+  guidelines: [
+    {
+      do: { rule: 'Keep the label visible while people type.', reason: 'A label that becomes a placeholder disappears when needed most.' },
+      dont: { rule: 'Do not rely on the placeholder as the only label.', reason: 'It vanishes on the first keystroke, and screen readers often skip it.' },
+    },
+    {
+      do: { rule: 'Validate on blur or on submit, in the helper text line.', reason: 'The message appears where people already look, and layout does not jump.' },
+      dont: { rule: 'Do not flag an error while someone is still typing.', reason: 'Early errors read as scolding before the format is even finished.' },
+    },
+    {
+      do: { rule: 'Use one Size across a single form.', reason: 'Mixed heights break the vertical rhythm of the layout.' },
+      dont: { rule: 'Do not disable a field to show an unchangeable value.', reason: 'Disabled text fails contrast and cannot be selected or copied.' },
+    },
+  ],
+};
+
+export type ProseContentBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
+export interface ProseRequestMessage { role: 'user' | 'assistant'; content: string | ProseContentBlock[] }
+
+/**
+ * The two prior turns every request carries. The assistant turn is a content
+ * block array so it can hold the one prompt-cache breakpoint: everything up to
+ * and including it (system prompt, exemplar prompt, exemplar answer) is the
+ * stable prefix, and the component's own message follows it uncached. Sonnet 5
+ * caches prefixes from 1,024 tokens; Haiku 4.5 needs 4,096 and this prefix is
+ * about 2,200, so free requests simply do not cache. That costs nothing.
+ */
+export function proseFewShot(): [ProseRequestMessage, ProseRequestMessage] {
+  return [
+    { role: 'user', content: EXEMPLAR_PROMPT },
+    {
+      role: 'assistant',
+      content: [{ type: 'text', text: JSON.stringify(EXEMPLAR_RESPONSE), cache_control: { type: 'ephemeral' } }],
+    },
+  ];
 }

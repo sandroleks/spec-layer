@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { extract } from '../src/extract';
 import {
   buildProsePrompt, partKind, PROSE_KEY_INSTRUCTIONS, PROMPT_RETURN_ANCHOR, parseProseResponse,
+  PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, BANNED_PHRASES, exemplarSpec, EXEMPLAR_PROMPT, EXEMPLAR_RESPONSE,
+  proseFewShot,
 } from '../src/prose/promptV2';
-import { PROSE_V2_KEYS } from '../src/prose/v2';
+import { PROSE_V2_KEYS, validateProseV2, KEYBOARD_KEYS } from '../src/prose/v2';
 import type { SerializedNode } from '../src/tree';
 import type { AnatomyPart } from '../src/anatomy';
 import button from './fixtures/button.json';
@@ -193,5 +195,105 @@ describe('parseProseResponse (v2)', () => {
   it('keeps an object field for the keyed lists without validating names (validation does that)', () => {
     const out = parseProseResponse(JSON.stringify({ anatomyParts: [{ name: 'Ghost', role: 'Boo.' }] }));
     expect(out.anatomyParts).toEqual([{ name: 'Ghost', role: 'Boo.' }]);
+  });
+});
+
+describe('PROSE_SYSTEM_PROMPT (v9)', () => {
+  it('states the voice rules the spec lists', () => {
+    for (const rule of [
+      'Second person, verb first, one idea per sentence.',
+      'Every rule carries its reason.',
+      'Name only what the prompt lists',
+      "The designer's description, when given, is authoritative",
+      'States are not variants.',
+      'Return only the JSON object',
+    ]) expect(PROSE_SYSTEM_PROMPT).toContain(rule);
+  });
+
+  it('lists every banned phrase in quotes and uses none of them as prose', () => {
+    for (const phrase of BANNED_PHRASES) expect(PROSE_SYSTEM_PROMPT).toContain(`"${phrase}"`);
+    const withoutQuotes = PROSE_SYSTEM_PROMPT.replace(/"[^"]*"/g, '');
+    for (const phrase of BANNED_PHRASES) expect(withoutQuotes.toLowerCase()).not.toContain(phrase);
+  });
+
+  it('forbids em dashes and headings and uses neither', () => {
+    expect(PROSE_SYSTEM_PROMPT).toContain('No em dashes and no spaced en dashes.');
+    expect(PROSE_SYSTEM_PROMPT).not.toMatch(/[—–]/);
+    expect(PROSE_SYSTEM_PROMPT).not.toMatch(/^#{1,2}\s/m);
+  });
+
+  it('lists the keyboard vocabulary exactly', () => {
+    expect(PROSE_SYSTEM_PROMPT).toContain(KEYBOARD_KEYS.join(', '));
+  });
+});
+
+describe('the Text field exemplar', () => {
+  const spec = exemplarSpec();
+
+  it('is a real extraction with text parts, a hidden nested icon, two option axes and a state axis', () => {
+    expect(spec.name).toBe('Text field');
+    expect(spec.anatomy.map((p) => p.name)).toEqual(['Label', 'Input', 'Leading icon', 'Placeholder', 'Helper text']);
+    expect(spec.anatomy.find((p) => p.name === 'Leading icon')).toMatchObject({ nested: true, component: 'Icon', shownBy: 'Show leading icon' });
+    expect(spec.variants.map((v) => v.prop)).toEqual(['Size', 'Style', 'State']);
+    // detectStateMatrix orders states by the lifecycle vocabulary: disabled sorts before error.
+    expect(spec.states).toEqual(['Enabled', 'Hover', 'Focused', 'Disabled', 'Error']);
+    expect(spec.description).toBe('A single-line field where people type short, free-form text.');
+  });
+
+  it('prompt is exactly what the real builder produces for the exemplar spec', () => {
+    expect(EXEMPLAR_PROMPT).toBe(buildProsePrompt(spec));
+    expect(EXEMPLAR_PROMPT.startsWith('Component: Text field\n')).toBe(true);
+    expect(EXEMPLAR_PROMPT).toContain("Designer's description");
+  });
+
+  it('response fills every contract key and validates with nothing dropped', () => {
+    for (const key of PROSE_V2_KEYS) expect(EXEMPLAR_RESPONSE[key], key).toBeDefined();
+    const { prose, dropped } = validateProseV2(spec, EXEMPLAR_RESPONSE);
+    expect(dropped).toEqual({});
+    expect(prose).toEqual(EXEMPLAR_RESPONSE);
+  });
+
+  it('names only real parts, properties, option values and states', () => {
+    const parts = new Set(spec.anatomy.map((p) => p.name));
+    for (const p of EXEMPLAR_RESPONSE.anatomyParts!) expect(parts.has(p.name), p.name).toBe(true);
+    const props = new Set(spec.props.map((p) => p.name));
+    for (const p of EXEMPLAR_RESPONSE.properties!) expect(props.has(p.name), p.name).toBe(true);
+    const options = new Set(spec.variants.filter((v) => v.prop !== 'State').flatMap((v) => v.values));
+    for (const g of EXEMPLAR_RESPONSE.variantsGuide!) expect(options.has(g.name), g.name).toBe(true);
+    const states = new Set(spec.states);
+    for (const s of EXEMPLAR_RESPONSE.states!) expect(states.has(s.name), s.name).toBe(true);
+  });
+
+  it('is in the house voice: no banned phrase, no dash, no heading, reasons on every card', () => {
+    const text = JSON.stringify(EXEMPLAR_RESPONSE).toLowerCase();
+    for (const phrase of BANNED_PHRASES) expect(text).not.toContain(phrase);
+    expect(text).not.toMatch(/[—–]/);
+    expect(text).not.toContain('\\n#');
+    for (const pair of EXEMPLAR_RESPONSE.guidelines!) {
+      expect(pair.do!.reason.length).toBeGreaterThan(20);
+      expect(pair.dont!.reason.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('names no component as an alternative, since the exemplar has no related components', () => {
+    expect(spec.related).toEqual([]);
+    for (const bullet of EXEMPLAR_RESPONSE.whenNotToUse!) expect(bullet).not.toMatch(/\b[A-Z][a-z]+ (field|picker|area)\b/);
+  });
+
+  it('fits the output cap with room for a richer component and for thinking tokens', () => {
+    const chars = JSON.stringify(EXEMPLAR_RESPONSE).length;
+    expect(chars).toBeLessThan(6000);
+    // 3.5 characters per token is a conservative estimate for English JSON.
+    expect(Math.ceil(chars / 3.5) * 3).toBeLessThan(PROSE_MAX_TOKENS);
+  });
+
+  it('few-shot turns carry the exemplar with exactly one cache breakpoint on the assistant text', () => {
+    const [user, assistant] = proseFewShot();
+    expect(user).toEqual({ role: 'user', content: EXEMPLAR_PROMPT });
+    expect(assistant).toEqual({
+      role: 'assistant',
+      content: [{ type: 'text', text: JSON.stringify(EXEMPLAR_RESPONSE), cache_control: { type: 'ephemeral' } }],
+    });
+    expect(JSON.stringify(proseFewShot()).match(/cache_control/g)).toHaveLength(1);
   });
 });
