@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { extract } from '../src/extract';
-import { buildProsePrompt, partKind, PROSE_KEY_INSTRUCTIONS, PROMPT_RETURN_ANCHOR } from '../src/prose/promptV2';
+import {
+  buildProsePrompt, partKind, PROSE_KEY_INSTRUCTIONS, PROMPT_RETURN_ANCHOR, parseProseResponse,
+} from '../src/prose/promptV2';
 import { PROSE_V2_KEYS } from '../src/prose/v2';
 import type { SerializedNode } from '../src/tree';
 import type { AnatomyPart } from '../src/anatomy';
@@ -151,5 +153,45 @@ describe('buildProsePrompt (v9)', () => {
 
   it('never writes the state axis into the variants guide instruction', () => {
     expect(PROSE_KEY_INSTRUCTIONS.variantsGuide).toContain('omit state values');
+  });
+});
+
+describe('parseProseResponse (v2)', () => {
+  it('reads a plain JSON object and adds the v marker', () => {
+    const out = parseProseResponse(JSON.stringify({ overview: { lede: 'L.', body: ['B.'] }, pointer: ['P.'] }));
+    expect(out).toEqual({ v: 2, overview: { lede: 'L.', body: ['B.'] }, pointer: ['P.'] });
+  });
+
+  it('strips a code fence and any preamble before it', () => {
+    const out = parseProseResponse('Here you go:\n```json\n{"pointer":["P."]}\n```');
+    expect(out.pointer).toEqual(['P.']);
+  });
+
+  it('throws on malformed JSON and on a non-object', () => {
+    expect(() => parseProseResponse('{not json')).toThrow(/Failed to parse prose response/);
+    expect(() => parseProseResponse('[1,2]')).toThrow(/must be a JSON object/);
+  });
+
+  it('drops keys it does not know and fields of the wrong shape, keeping the rest', () => {
+    // whenToUse is 42 (a number), not a string: asStringList requires a string
+    // or a string[], so this must be dropped rather than coerced. A string
+    // value here (even one reading "not an array") would instead be wrapped
+    // into a one-item list per the lone-string coercion the next test pins,
+    // so it would not demonstrate a wrong-shape drop.
+    const out = parseProseResponse(JSON.stringify({
+      definition: 'v1 leftover', overview: 'not an object', whenToUse: 42,
+      keyboard: [{ keys: ['Tab'], action: 'Moves focus.' }], semantics: ['S.'],
+    }));
+    expect(out).toEqual({ v: 2, keyboard: [{ keys: ['Tab'], action: 'Moves focus.' }], semantics: ['S.'] });
+  });
+
+  it('coerces a lone string into a one-item list for list keys, as the v1 parser did', () => {
+    const out = parseProseResponse(JSON.stringify({ whenToUse: 'One situation.' }));
+    expect(out.whenToUse).toEqual(['One situation.']);
+  });
+
+  it('keeps an object field for the keyed lists without validating names (validation does that)', () => {
+    const out = parseProseResponse(JSON.stringify({ anatomyParts: [{ name: 'Ghost', role: 'Boo.' }] }));
+    expect(out.anatomyParts).toEqual([{ name: 'Ghost', role: 'Boo.' }]);
   });
 });

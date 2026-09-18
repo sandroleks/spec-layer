@@ -351,14 +351,57 @@ export function hasProseContent(p: ProseV2 | null | undefined): boolean {
 }
 
 /** Em dashes and spaced en dashes become commas; same rule as prompt.ts, and
- *  the same shared, redos-tested `replaceAround` implementation. */
-function normalizeDashes(value: string): string {
+ *  the same shared, redos-tested `replaceAround` implementation. Exported so
+ *  `redos.test.ts` can pin it against the regexes it replaced. */
+export function normalizeDashes(value: string): string {
   return replaceAround(replaceAround(value, '—', ', ', false), '–', ', ', true);
+}
+
+/** True when any line of `value` opens with a level-one or level-two markdown
+ *  heading. Level three and below are allowed; `#` inside a sentence is not a
+ *  heading. Tested one character class at a time, so no run can backtrack. */
+export function hasHeading(value: string): boolean {
+  for (const line of value.split('\n')) {
+    if (line.startsWith('# ') || line === '#' || line.startsWith('## ') || line === '##') return true;
+  }
+  return false;
+}
+
+export interface ValidateProseOptions {
+  /** Every component name in the Figma file, when the caller has it. Lets the
+   *  `whenNotToUse` rule drop a bullet naming a component that exists but is
+   *  not related. Absent: the bullet is left alone (spec 5.3). */
+  fileComponents?: readonly string[];
 }
 
 export interface ProseValidation {
   prose: ProseV2;
   dropped: Partial<Record<ProseV2Key, number>>;
+}
+
+/** The one string cleaner: dashes to commas, trimmed, and empty when it carries
+ *  a level-one or level-two heading (rejected, per spec 5.3). */
+const clean = (value: unknown): string => {
+  const text = normalizeDashes(asStr(value)).trim();
+  return hasHeading(text) ? '' : text;
+};
+
+/** True when `sentence` contains `name` as whole words, case-insensitively.
+ *  Built with indexOf and boundary checks rather than a regex over `name`,
+ *  which would need escaping and could backtrack on a long name. */
+function namesComponent(sentence: string, name: string): boolean {
+  const hay = sentence.toLowerCase();
+  const needle = name.toLowerCase();
+  let from = 0;
+  for (;;) {
+    const at = hay.indexOf(needle, from);
+    if (at === -1) return false;
+    const before = at === 0 ? ' ' : hay[at - 1];
+    const afterIndex = at + needle.length;
+    const after = afterIndex >= hay.length ? ' ' : hay[afterIndex];
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
+    from = at + 1;
+  }
 }
 
 /**
@@ -373,7 +416,9 @@ export interface ProseValidation {
  * with no `keys`, an `overview` with no `body`) is treated as empty and
  * dropped like any other empty value, instead of throwing.
  */
-export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseValidation {
+export function validateProseV2(
+  spec: IntermediateSpec, prose: ProseV2, opts: ValidateProseOptions = {},
+): ProseValidation {
   const dropped: Partial<Record<ProseV2Key, number>> = {};
   const out: ProseV2 = { v: 2 };
   const drop = (key: ProseV2Key, n = 1): void => { if (n > 0) dropped[key] = (dropped[key] ?? 0) + n; };
@@ -389,20 +434,29 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
   const strings = (key: 'whenToUse' | 'whenNotToUse' | 'pointer' | 'semantics' | 'content'): void => {
     const list = asArray<unknown>(prose[key]);
     if (!list.length) return;
-    const kept = list.map((s) => normalizeDashes(asStr(s)).trim()).filter(Boolean);
+    const kept = list.map((s) => clean(s)).filter(Boolean);
     drop(key, list.length - kept.length);
     if (kept.length) out[key] = kept;
   };
 
   if (prose.overview) {
-    const lede = normalizeDashes(asStr(prose.overview.lede)).trim();
-    const body = asArray<unknown>(prose.overview.body).map((s) => normalizeDashes(asStr(s)).trim()).filter(Boolean);
+    const lede = clean(prose.overview.lede);
+    const body = asArray<unknown>(prose.overview.body).map(clean).filter(Boolean);
+    if (asStr(prose.overview.lede).trim() && !lede) drop('overview');
     if (lede || body.length) out.overview = { lede, body };
     else drop('overview');
   }
   strings('whenToUse');
   strings('whenNotToUse');
-  if (asStr(prose.variantsIntro).trim()) out.variantsIntro = normalizeDashes(asStr(prose.variantsIntro)).trim();
+  if (out.whenNotToUse && opts.fileComponents && opts.fileComponents.length) {
+    const related = nameSet(spec.related);
+    const others = opts.fileComponents.map((n) => n.trim()).filter((n) => n && !related.has(fold(n)));
+    const kept = out.whenNotToUse.filter((bullet) => !others.some((name) => namesComponent(bullet, name)));
+    drop('whenNotToUse', out.whenNotToUse.length - kept.length);
+    if (kept.length) out.whenNotToUse = kept; else delete out.whenNotToUse;
+  }
+  const variantsIntro = clean(prose.variantsIntro);
+  if (variantsIntro) out.variantsIntro = variantsIntro;
 
   const named = <T extends { name: string }>(
     key: ProseV2Key, list: T[] | undefined, names: Set<string>, textOf: (t: T) => string,
@@ -412,7 +466,7 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
     if (!items.length) return;
     const kept: T[] = [];
     for (const item of items) {
-      const text = normalizeDashes(asStr(textOf(item))).trim();
+      const text = clean(textOf(item));
       const name = asStr((item as { name?: unknown } | null | undefined)?.name);
       if (names.has(fold(name)) && text) kept.push(rebuild(item, text));
     }
@@ -424,14 +478,15 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
   named('properties', prose.properties, propNames, (p) => p?.description, (p, t) => ({ ...p, description: t }));
   named('states', prose.states, stateNames, (s) => s?.whenItApplies, (s, t) => ({ ...s, whenItApplies: t }));
 
-  if (asStr(prose.anatomySummary).trim()) out.anatomySummary = normalizeDashes(asStr(prose.anatomySummary)).trim();
+  const anatomySummary = clean(prose.anatomySummary);
+  if (anatomySummary) out.anatomySummary = anatomySummary;
 
   const keyboardRows = asArray<{ keys?: unknown; action?: unknown } | null | undefined>(prose.keyboard);
   if (keyboardRows.length) {
     const kept: { keys: string[]; action: string }[] = [];
     for (const row of keyboardRows) {
       const keys = asArray<unknown>(row?.keys).flatMap((k) => normalizeKey(asStr(k)) ?? [asStr(k)]);
-      const action = normalizeDashes(asStr(row?.action)).trim();
+      const action = clean(row?.action);
       if (keys.length && keys.every((k) => keyNames.has(k)) && action) kept.push({ keys: [...new Set(keys)], action });
     }
     drop('keyboard', keyboardRows.length - kept.length);
@@ -445,8 +500,8 @@ export function validateProseV2(spec: IntermediateSpec, prose: ProseV2): ProseVa
   if (guidelineRows.length) {
     const card = (c: unknown): GuidelineCard | null => {
       if (!c || typeof c !== 'object') return null;
-      const rule = normalizeDashes(asStr((c as { rule?: unknown }).rule)).trim();
-      return rule ? { rule, reason: normalizeDashes(asStr((c as { reason?: unknown }).reason)).trim() } : null;
+      const rule = clean((c as { rule?: unknown }).rule);
+      return rule ? { rule, reason: clean((c as { reason?: unknown }).reason) } : null;
     };
     const kept: GuidelinePair[] = [];
     for (const pair of guidelineRows) {

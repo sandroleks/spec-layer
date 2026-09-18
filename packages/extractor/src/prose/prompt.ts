@@ -464,7 +464,7 @@ const REQUIREDABLE_KEYS: ProseKey[] = [
  * where the first one loses: the first one only loses when no fence follows it
  * at all, and `json` and whitespace contain no backticks to hide one behind.
  */
-function fencedBlock(text: string): string | null {
+export function fencedBlock(text: string): string | null {
   const open = text.indexOf('```');
   if (open === -1) return null;
   let start = open + 3;

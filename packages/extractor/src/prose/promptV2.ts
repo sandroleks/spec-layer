@@ -15,7 +15,8 @@ import type { AnatomyPart } from '../anatomy';
 import { detectStateMatrix } from '../statesMatrix';
 import { formatConditions } from '../tokens';
 import { displayComponentName } from '../displayNames';
-import { PROSE_V2_KEYS, type ProseV2Key } from './v2';
+import { PROSE_V2_KEYS, type ProseV2Key, type ProseV2 } from './v2';
+import { fencedBlock } from './prompt';
 
 /** The proxy anchors its final-message check on this exact string. */
 export const PROMPT_RETURN_ANCHOR = '\nReturn ONLY a JSON object with these keys: ';
@@ -173,4 +174,70 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: ReadonlySet
       'No em dashes; keep sentences short. Return only the JSON object.',
   );
   return lines.join('\n');
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+/** A string, or a string[] with every item a string; a lone string becomes a
+ *  one-item list. Anything else is null (the field is dropped). */
+function asStringList(value: unknown): string[] | null {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value) && value.every((x) => typeof x === 'string')) return value as string[];
+  return null;
+}
+
+/** An array of plain objects; anything else is null. Item shapes are left to
+ *  `validateProseV2`, which checks names against the spec and drops the rest. */
+function asRecordList(value: unknown): Record<string, unknown>[] | null {
+  if (!Array.isArray(value) || !value.every(isRecord)) return null;
+  return value as Record<string, unknown>[];
+}
+
+/**
+ * Parse the model's text into a `ProseV2` shaped object. Strips a code fence
+ * and preamble, requires a JSON object, keeps only the fourteen contract keys
+ * with their declared shapes, and adds `v: 2`. Names, vocabulary, dashes,
+ * headings and empties are `validateProseV2`'s job; this only decides what is
+ * a string, a list or a keyed list.
+ */
+export function parseProseResponse(text: string): ProseV2 {
+  const fenced = fencedBlock(text);
+  const cleaned = fenced !== null ? fenced.trim() : text.trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    throw new Error(`Failed to parse prose response as JSON: ${(err as Error).message}`);
+  }
+  if (!isRecord(parsed)) throw new Error('Prose response must be a JSON object');
+
+  const out: ProseV2 = { v: 2 };
+  const o = parsed;
+
+  if (isRecord(o.overview)) {
+    const lede = typeof o.overview.lede === 'string' ? o.overview.lede : '';
+    const body = asStringList(o.overview.body) ?? [];
+    out.overview = { lede, body };
+  }
+  for (const key of ['whenToUse', 'whenNotToUse', 'pointer', 'semantics', 'content'] as const) {
+    const list = asStringList(o[key]);
+    if (list) out[key] = list;
+  }
+  for (const key of ['variantsIntro', 'anatomySummary'] as const) {
+    if (typeof o[key] === 'string') out[key] = o[key] as string;
+  }
+  const variantsGuide = asRecordList(o.variantsGuide);
+  if (variantsGuide) out.variantsGuide = variantsGuide as unknown as ProseV2['variantsGuide'];
+  const anatomyParts = asRecordList(o.anatomyParts);
+  if (anatomyParts) out.anatomyParts = anatomyParts as unknown as ProseV2['anatomyParts'];
+  const properties = asRecordList(o.properties);
+  if (properties) out.properties = properties as unknown as ProseV2['properties'];
+  const states = asRecordList(o.states);
+  if (states) out.states = states as unknown as ProseV2['states'];
+  const keyboard = asRecordList(o.keyboard);
+  if (keyboard) out.keyboard = keyboard as unknown as ProseV2['keyboard'];
+  const guidelines = asRecordList(o.guidelines);
+  if (guidelines) out.guidelines = guidelines as unknown as ProseV2['guidelines'];
+  return out;
 }

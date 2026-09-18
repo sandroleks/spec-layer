@@ -3,6 +3,7 @@ import type { IntermediateSpec, ProseDrafts } from '../src/index';
 import {
   upgradeProseV1, proseToLegacy, validateProseV2, normalizeKey, parseKeyboardBullet,
   splitRuleReason, firstSentence, isProseV2, hasProseContent, KEYBOARD_KEYS, type ProseV2,
+  normalizeDashes, hasHeading,
 } from '../src/prose/v2';
 
 const spec = {
@@ -229,5 +230,63 @@ describe('hasProseContent tolerates a partially shaped ProseV2', () => {
   it('does not throw on an overview missing its lede', () => {
     expect(() => hasProseContent(overviewMissingLede)).not.toThrow();
     expect(hasProseContent(overviewMissingLede)).toBe(true);
+  });
+});
+
+describe('validateProseV2 rejects headings and enforces the alternatives rule', () => {
+  it('drops a string carrying a level-one or level-two heading and counts it', () => {
+    const { prose, dropped } = validateProseV2(spec, {
+      v: 2, pointer: ['# Heading', 'Fine.', '## Sub', 'Also fine.'],
+      overview: { lede: '# Not a lede', body: ['Body.'] },
+    });
+    expect(prose.pointer).toEqual(['Fine.', 'Also fine.']);
+    expect(dropped.pointer).toBe(2);
+    expect(prose.overview).toEqual({ lede: '', body: ['Body.'] });
+    expect(dropped.overview).toBe(1);
+  });
+
+  it('keeps a level-three heading and a hash inside a sentence', () => {
+    const { prose } = validateProseV2(spec, { v: 2, pointer: ['### Fine', 'Issue #12 is fine.'] });
+    expect(prose.pointer).toEqual(['### Fine', 'Issue #12 is fine.']);
+  });
+
+  it('drops a whenNotToUse bullet naming a file component that is not related, when the list is given', () => {
+    const { prose, dropped } = validateProseV2(
+      { ...spec, related: ['Toggle'] },
+      { v: 2, whenNotToUse: ['Use a Toggle for on and off.', 'Use a Slider for a range.', 'Not for navigation.'] },
+      { fileComponents: ['Button', 'Toggle', 'Slider', 'Checkbox'] },
+    );
+    expect(prose.whenNotToUse).toEqual(['Use a Toggle for on and off.', 'Not for navigation.']);
+    expect(dropped.whenNotToUse).toBe(1);
+  });
+
+  it('leaves every whenNotToUse bullet alone when no file list is given', () => {
+    const { prose, dropped } = validateProseV2(
+      { ...spec, related: [] },
+      { v: 2, whenNotToUse: ['Use a Slider for a range.'] },
+    );
+    expect(prose.whenNotToUse).toEqual(['Use a Slider for a range.']);
+    expect(dropped.whenNotToUse).toBeUndefined();
+  });
+
+  it('matches component names case-insensitively and as whole words only', () => {
+    const { prose } = validateProseV2(
+      { ...spec, related: [] },
+      { v: 2, whenNotToUse: ['Use a slider for a range.', 'Sliders of bread are fine.', 'Use a Date picker for a date.'] },
+      { fileComponents: ['Slider', 'Date picker'] },
+    );
+    expect(prose.whenNotToUse).toEqual(['Sliders of bread are fine.']);
+  });
+});
+
+describe('normalizeDashes and hasHeading', () => {
+  it('turns em dashes and spaced en dashes into commas and leaves ranges alone', () => {
+    expect(normalizeDashes('a — b – c 3-5 3–5')).toBe('a, b, c 3-5 3–5');
+  });
+  it('detects level-one and level-two headings at a line start only', () => {
+    expect(hasHeading('# H')).toBe(true);
+    expect(hasHeading('text\n## H')).toBe(true);
+    expect(hasHeading('### H')).toBe(false);
+    expect(hasHeading('Issue #1')).toBe(false);
   });
 });
