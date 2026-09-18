@@ -121,7 +121,7 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
     kind: 'success',
     componentName: 'buttonPrimary',
     replaced: false,
-    message: "Docs created. AI didn't run this time, so the AI sections were left out.",
+    message: "Created 1 frame. AI didn't run this time, so the AI sections were left out.",
     warning: true,
   },
   error: {

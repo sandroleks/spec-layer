@@ -24,10 +24,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { cleanPartName } from '../src/naming';
-import { parseProseResponse } from '../src/prose/prompt';
+import { fencedBlock } from '../src/prose/prompt';
 import { stateBaseName } from '../src/statesMatrix';
 import { slugify } from '../src/componentSlugs';
-import { headingText, variantBullet } from '../src/prose/v2';
+import { headingText, normalizeDashes, variantBullet } from '../src/prose/v2';
+import { collapseLineBreaks } from '../src/prose/promptV2';
+import { collapseDashes } from '../src/prose/foundationPrompt';
 
 // --- The regexes as they were, before the rewrites -------------------------
 
@@ -100,14 +102,8 @@ describe('cleanPartName is exactly the regex it replaced', () => {
 });
 
 describe('prose dash normalization is exactly the regexes it replaced', () => {
-  /** Push a string through the shipped path: `dos` entries are mapped straight
-   *  through `normalizeProseText` with nothing else applied. */
-  const normalized = (value: string): string => {
-    const out = parseProseResponse(JSON.stringify({
-      definition: 'D', accessibility: 'A', dos: [value], donts: [],
-    }));
-    return out.dos[0];
-  };
+  /** The shipped cleaner itself: every v2 string field runs through it. */
+  const normalized = (value: string): string => normalizeDashes(value);
 
   const CASES = [
     '', 'a—b', 'a — b', 'a  —  b', '—', ' — ', 'a—', '—b', 'a—​—b', 'a — — b',
@@ -143,31 +139,12 @@ describe('prose dash normalization is exactly the regexes it replaced', () => {
 });
 
 describe('fence extraction is exactly the regex it replaced', () => {
-  const BODY = '{"definition":"D","accessibility":"A","dos":[],"donts":[]}';
+  const BODY = '{"overview":{"lede":"D","body":[]}}';
 
-  /**
-   * `fencedBlock` is private, so this reads it through the only thing that
-   * observes it: whether the text parses, and to what. The oracle says what the
-   * old regex would have handed `JSON.parse`, and the two must agree on both
-   * the success and the failure cases.
-   */
-  const parses = (text: string): string | 'threw' => {
-    try {
-      return parseProseResponse(text).definition;
-    } catch {
-      return 'threw';
-    }
-  };
-
-  const oracle = (text: string): string | 'threw' => {
-    const extracted = oldFencedBlock(text);
-    const cleaned = extracted !== null ? extracted.trim() : text.trim();
-    try {
-      return (JSON.parse(cleaned) as { definition: string }).definition;
-    } catch {
-      return 'threw';
-    }
-  };
+  /** `fencedBlock` is exported now, so the equivalence is pinned directly on
+   *  the extracted span rather than through whatever the JSON parse made of
+   *  it: what the old regex captured, position for position. */
+  const oracle = oldFencedBlock;
 
   const CASES = [
     BODY,
@@ -186,7 +163,7 @@ describe('fence extraction is exactly the regex it replaced', () => {
     '```json```',
     '``````' + BODY + '```',
     // Two fences: the first closed one wins, lazily.
-    '```json\n' + BODY + '\n```\n```json\n{"definition":"OTHER"}\n```',
+    '```json\n' + BODY + '\n```\n```json\n{"overview":{"lede":"OTHER","body":[]}}\n```',
     // "json" that is not the language tag.
     '```jsonx\n' + BODY + '\n```',
     '```\njson ' + BODY + '\n```',
@@ -196,7 +173,7 @@ describe('fence extraction is exactly the regex it replaced', () => {
 
   it('agrees on every hand-picked shape, success and failure alike', () => {
     for (const input of CASES) {
-      expect(parses(input), JSON.stringify(input)).toBe(oracle(input));
+      expect(fencedBlock(input), JSON.stringify(input)).toBe(oracle(input));
     }
   });
 
@@ -205,7 +182,7 @@ describe('fence extraction is exactly the regex it replaced', () => {
     for (let seed = 1; seed <= 2000; seed++) {
       const noise = fuzz(seed, alphabet, 14);
       for (const input of [noise, noise + BODY + '```', '```' + noise + BODY + '```']) {
-        expect(parses(input), `seed ${seed}: ${JSON.stringify(input)}`).toBe(oracle(input));
+        expect(fencedBlock(input), `seed ${seed}: ${JSON.stringify(input)}`).toBe(oracle(input));
       }
     }
   });
@@ -215,7 +192,7 @@ describe('fence extraction is exactly the regex it replaced', () => {
     // the remainder for a closing fence on each step.
     const input = '```' + ' '.repeat(200000);
     const started = performance.now();
-    expect(parses(input)).toBe('threw');
+    expect(fencedBlock(input)).toBeNull();
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });
@@ -406,6 +383,82 @@ describe('headingText is exactly the regex it replaced', () => {
     const input = '#' + ' '.repeat(200000) + 'x\ry';
     const started = performance.now();
     expect(headingText(input)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+// --- The two Plan 2 prompt-builder regexes (CodeQL alert 67 and its twin) ---
+
+/** The v9 builder's description collapse as it was. Both `\s*` overlap the
+ *  `\n` they surround, so a run of spaces with no line break retries the whole
+ *  run from every position inside it. Runs over the designer's description. */
+const oldCollapseLineBreaks = (text: string): string => text.replace(/\s*\n\s*/g, ' ');
+
+/** The foundation group parser's dash rule as it was. Same shape with a dash
+ *  in the middle; runs over model output. */
+const oldCollapseDashes = (value: string): string => value.replace(/\s*[—–]\s*/g, ', ');
+
+describe('collapseLineBreaks is exactly the regex it replaced', () => {
+  // Runs with and without a line break, runs that mix every `\s` character,
+  // several breaks in one run, breaks at either end, and no whitespace at all.
+  const CASES = [
+    '', 'a', ' ', '\n', 'a b', 'a\nb', 'a \n b', 'a  \n\n  b', 'a\n\nb', 'a \t\n\t b',
+    'a\r\nb', 'a \r\n b', 'a\rb', 'a \r b', '\na', 'a\n', ' \n a \n ', 'a b', 'a  \n b',
+    'a   b', 'a\t\tb', 'a\n b\n c', 'a\n\n\n', '\n\n\na', 'a \n b   c \n d',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(collapseLineBreaks(input), JSON.stringify(input)).toBe(oldCollapseLineBreaks(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = [' ', ' ', '\t', '\n', '\n', '\r', 'a', 'b'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 24);
+      expect(collapseLineBreaks(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldCollapseLineBreaks(input));
+    }
+  });
+
+  it('is linear on a long run of spaces that never reaches a line break', () => {
+    const input = 'a' + ' '.repeat(200000) + 'b';
+    const started = performance.now();
+    expect(collapseLineBreaks(input)).toBe(input);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('collapseDashes is exactly the regex it replaced', () => {
+  // Both dashes, whitespace of every kind on either side or neither, adjacent
+  // dashes (the second one starts where the first match ended), a dash at
+  // either end, and a hyphen, which is not a dash.
+  const CASES = [
+    '', 'a', '—', '–', 'a—b', 'a — b', 'a  —  b', 'a–b', 'a – b', 'a\n—\nb', 'a \t– \t b',
+    'a — — b', 'a——b', 'a –— b', '—a', 'a—', ' — ', 'a - b', '3-5', 'a — b – c',
+    'a — b', 'a\r\n—\r\nb', 'one—two–three',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(collapseDashes(input), JSON.stringify(input)).toBe(oldCollapseDashes(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = [' ', ' ', '\t', '\n', '—', '–', 'a', 'b', '-'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 20);
+      expect(collapseDashes(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldCollapseDashes(input));
+    }
+  });
+
+  it('is linear on a long run of spaces that never reaches a dash', () => {
+    const input = 'a' + ' '.repeat(200000) + 'b';
+    const started = performance.now();
+    expect(collapseDashes(input)).toBe(input);
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });

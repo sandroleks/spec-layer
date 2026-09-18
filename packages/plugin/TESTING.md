@@ -262,10 +262,46 @@ were added the same day, after the review that found the callouts reading
 24. **Description drift.** Edit the component description in Figma. The
     Library row reads "Update available" and the change list names the
     description; Update refreshes the Overview and subtitle.
+25. **AI writing on, free plan.** Select a checkbox component set that has a
+    Figma description, tick every section, and generate with AI writing on
+    while signed in with no Pro key. Expected: the Usage frame shows the
+    description's first sentence as the subtitle and an Overview, When to
+    use and When not to use columns, a variants guide naming only real option
+    values, and DO and DON'T cards with a reason on every card; the
+    Specifications frame fills the Properties description column and the
+    States "When it applies" column; the Accessibility frame shows a Keyboard
+    table with key chips, Pointer, Semantics and Content. No part, property,
+    option or state name appears that the component does not have (compare
+    against the Figma layers and properties). The quota meter shows
+    `X-Tier: free` usage moved by one.
+26. **AI writing on, Pro plan.** Repeat row 25 with an active Pro key.
+    Expected: the same sections fill, the quota meter reads unlimited, and a
+    second generation of the same unchanged component completes without the
+    meter moving (the proxy replays the stored answer). The prose is written
+    by Claude Sonnet 5; the canvas cannot show which model wrote it, so the
+    proxy log (`wrangler tail`) is the evidence: the forwarded request names
+    `claude-sonnet-5` with `output_config.effort` `low`.
+27. **Rebuild with AI writing on.** Open a Library that holds a document
+    built by 5.1.0 whose Keyboard section has hand-edited bullets, turn AI
+    writing on, and press Rebuild on the row marked "Rebuild needed".
+    Expected: the row's note reads "Frames are rebuilt in the new layout.
+    Your written sections are kept. Keyboard is rewritten when AI writing is
+    on."; after the rebuild, Overview, Semantics and the DO and DON'T cards
+    keep the old text word for word, When to use and the Properties
+    descriptions appear for the first time, and the Keyboard table is
+    rewritten as chips. With AI writing off, the same rebuild keeps every
+    old section and adds nothing.
+28. **Foundation overview is stored.** Build a colour collection with AI
+    writing on. Expected: the group lines render as before, and the
+    document's stored link carries a `collectionOverview` paragraph under
+    400 characters (read it from the Section's plugin data with the Desktop
+    Bridge, or through Copy for AI once the foundation frame work draws it).
+    A build covering two collections stores no overview.
 
-Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1 and have not been
-run. Before running them, open Plugins, Development, Figma Desktop Bridge so
-the before and after screenshots can be captured for the review record.
+Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, and rows 25 to 28
+on 2026-09-18 for Plan 2. None of rows 16 to 28 have been run. Before running
+them, open Plugins, Development, Figma Desktop Bridge so the before and after
+screenshots can be captured for the review record.
 
 ## Library
 

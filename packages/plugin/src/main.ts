@@ -981,6 +981,8 @@ figma.ui.onmessage = async (raw: unknown) => {
             selfHash: '',   // set below, once the section's text exists
             config: msg.config,
             ...(descriptions ? { groupDescriptions: descriptions } : {}),
+            ...(msg.collectionOverview && unit.scope.target === 'collection'
+              ? { collectionOverview: msg.collectionOverview } : {}),
             generatedAt: Date.now(),
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };
@@ -1161,6 +1163,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           selfHash: '',
           config: link.config,
           ...(link.groupDescriptions ? { groupDescriptions: link.groupDescriptions } : {}),
+          ...(link.collectionOverview ? { collectionOverview: link.collectionOverview } : {}),
           generatedAt: Date.now(),
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
         };

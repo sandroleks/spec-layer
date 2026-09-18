@@ -1,5 +1,19 @@
-import type { IntermediateSpec } from '../extract';
-import { formatConditions } from '../tokens';
+/**
+ * prompt.ts: the frozen v8 contract bytes, plus the text helpers the v9 path
+ * shares.
+ *
+ * Everything named `LEGACY_*` here is the request the shipped 5.1.0 plugin
+ * still sends. The proxy validates those bytes so that build keeps working
+ * until 6.0.0 is live; nothing in the plugin imports them any more. Delete
+ * them together with the proxy's legacy branch after the release.
+ *
+ * What is not legacy is shared: `replaceAround` (dash normalisation, behind
+ * `v2.ts`'s `normalizeDashes`), `fencedBlock` (code-fence extraction, behind
+ * `promptV2.ts`'s parser), and the `ProseDrafts` shape, which the brief, the
+ * v5 component context, and stored documents still read.
+ *
+ * Pure: no Figma, no DOM.
+ */
 
 /** One anatomy part's AI-supplied role description, keyed by the part name the
  *  model was shown (matched back to the extracted part by name, case-insensitive). */
@@ -18,51 +32,14 @@ export interface ProseDrafts {
   contentConsiderations?: string;
 }
 
-/** A single JSON key the prose pass can be asked to produce. Callers pass a
- *  subset (see `buildProsePrompt`/`parseProseResponse`) so unchecked doc
- *  sections cost zero output tokens. */
-export type ProseKey =
-  | 'definition' | 'variantsSummary' | 'anatomySummary' | 'anatomyParts'
-  | 'accessibility' | 'interactions' | 'designConsiderations'
-  | 'contentConsiderations' | 'dos' | 'donts';
-
-/** Canonical emission order for prose keys (prompt + cache-key signature). */
-export const PROSE_KEY_ORDER: ProseKey[] = [
-  'definition', 'variantsSummary', 'anatomySummary', 'anatomyParts',
-  'accessibility', 'interactions', 'designConsiderations',
-  'contentConsiderations', 'dos', 'donts',
-];
-
-/** Per-key output-contract fragment. `buildProsePrompt` emits only the fragments
- *  for the requested keys, so the model returns exactly the sections in play. */
-const KEY_INSTRUCTIONS: Record<ProseKey, string> = {
-  definition:
-    'definition (specific to this component, with no generic filler; one sentence defining what it is, then a short benefit-led overview: where it is used, the value it gives people, its role, and a guiding principle; do NOT name specific variants/styles or give a when-to-use guide)',
-  variantsSummary:
-    'variantsSummary (1-2 sentences on what varies across the options, the axes and their values, then a bulleted "when to use which type" guide with bold type names when it has several meaningful types)',
-  anatomySummary:
-    'anatomySummary (1-2 sentences describing the overall structure and the role of the key parts; omit when there is no Anatomy above)',
-  anatomyParts:
-    "anatomyParts (array of { name, description } where each name EXACTLY matches one of the Anatomy part names listed above and description is one concise sentence naming that part's role; omit parts you cannot meaningfully describe, and omit the key entirely when there is no Anatomy above)",
-  accessibility:
-    'accessibility (a bulleted list; give each bullet a short bold lead-in then the guidance; include one bullet flagging what cannot be known from the design file)',
-  interactions:
-    'interactions (Markdown grouped under "### Mouse", "### Keyboard", and "### Other" subheadings, 2-3 bullets each; anchor to the States listed above: Hover/Pressed states drive Mouse, a Focused state drives Keyboard (Tab reachability, Enter/Space or arrow activation as fits the component); Other covers screen readers, voice control, and touch-target size; if there is no state axis, write 1-2 bullets total and never invent states)',
-  designConsiderations:
-    'designConsiderations (3-4 bullets, designer-facing; anchor to the real color tokens and variant axes above: contrast obligations on the actual color tokens, visual distinguishability across the actual variants, and an explicit bullet when an expected state such as Focused is absent from the design)',
-  contentConsiderations:
-    'contentConsiderations (3-4 bullets; anchor to the text parts in Anatomy: label writing rules for the actual text parts, truncation/overflow behavior, and one internationalization bullet covering text expansion of roughly 30-40% and RTL)',
-  dos: 'dos (string[], 3 to 5 items, each starting with a bold rule summary then the reason)',
-  donts: 'donts (string[], 3 to 5 items, same shape)',
-};
-
 /**
- * House-style system prompt for the prose pass — the distilled voice from
- * `docs/prose-style-guide.md`. Sent on every request as the `system` field, so
- * it is kept lean (this is the billed-every-call artifact). The per-component
- * schema/output contract stays in `buildProsePrompt`; this governs voice only.
+ * The v8 system prompt, frozen. The shipped 5.1.0 plugin sends these exact
+ * bytes and the proxy compares them byte for byte, so this is a wire contract
+ * rather than a style document: editing one character stops that build
+ * generating. Nothing in the plugin imports it. Delete it, the exemplar below,
+ * the two caps, and the proxy's legacy branch once 6.0.0 is live.
  */
-export const PROSE_SYSTEM_PROMPT = [
+export const LEGACY_PROSE_SYSTEM_PROMPT = [
   'You write component guideline prose for a design-system specification tool.',
   "Your output fills three spec sections: Definition, Accessibility, and Do's & Don'ts,",
   'in the voice of best-in-class design systems (Atlassian, Material, Polaris, Carbon).',
@@ -112,13 +89,9 @@ export const PROSE_SYSTEM_PROMPT = [
   'JSON.',
 ].join('\n');
 
-/**
- * A single, hand-curated few-shot exemplar (one input→output pair) that anchors
- * length, specificity, and voice. Kept to one example to bound token cost; the
- * exemplar prompt mirrors `buildProsePrompt`'s shape and the response is a
- * house-voice `ProseDrafts` payload. Returned as prior conversation turns.
- */
-const FEW_SHOT_PROMPT = [
+/** The v8 exemplar turns, frozen for the same reason as the system prompt
+ *  above: the proxy compares them byte for byte against what 5.1.0 sends. */
+const LEGACY_FEW_SHOT_PROMPT = [
   'Component: Button',
   '',
   'Anatomy: Container, Label, Leading icon (component)',
@@ -150,7 +123,7 @@ const FEW_SHOT_PROMPT = [
     'headings. Do not use em dashes. Do not include any prose outside the JSON.',
 ].join('\n');
 
-const FEW_SHOT_RESPONSE: ProseDrafts = {
+const LEGACY_FEW_SHOT_RESPONSE: ProseDrafts = {
   definition:
     'A Button triggers an action when activated. Used across products to perform common actions, ' +
     'it gives people a familiar, accessible way to engage with the interface and keeps frequent ' +
@@ -212,126 +185,51 @@ const FEW_SHOT_RESPONSE: ProseDrafts = {
   ],
 };
 
-/** Prior conversation turns that demonstrate the target input→output mapping. */
-export function proseFewShot(): Array<{ role: 'user' | 'assistant'; content: string }> {
+/** The v8 prior turns, as 5.1.0 sends them. */
+export function legacyProseFewShot(): Array<{ role: 'user' | 'assistant'; content: string }> {
   return [
-    { role: 'user', content: FEW_SHOT_PROMPT },
-    { role: 'assistant', content: JSON.stringify(FEW_SHOT_RESPONSE) },
+    { role: 'user', content: LEGACY_FEW_SHOT_PROMPT },
+    { role: 'assistant', content: JSON.stringify(LEGACY_FEW_SHOT_RESPONSE) },
   ];
 }
 
-/**
- * Build a compact human-readable summary of the spec for the LLM prompt.
- * Never embeds raw serialized-node JSON — only parsed, derived fields.
- */
-export function buildProsePrompt(spec: IntermediateSpec, requested?: Set<ProseKey>): string {
-  const lines: string[] = [];
-
-  lines.push(`Component: ${spec.name}`);
-  lines.push('');
-
-  // Anatomy
-  if (spec.anatomy.length) {
-    const parts = spec.anatomy.map((a) => (a.nested ? `${a.name} (component)` : a.name)).join(', ');
-    lines.push(`Anatomy: ${parts}`);
-  }
-
-  // Props (non-variant)
-  const nonVariantProps = spec.props.filter((p) => p.kind !== 'variant');
-  if (nonVariantProps.length) {
-    lines.push('');
-    lines.push('Props:');
-    for (const p of nonVariantProps) {
-      const def = p.default !== undefined ? ` (default: ${p.default})` : '';
-      lines.push(`  ${p.name} [${p.kind}]${def}`);
-    }
-  }
-
-  // Variant axes — format EXACTLY as "Style: Filled · Outlined"
-  if (spec.variants.length) {
-    lines.push('');
-    lines.push('Variants:');
-    for (const v of spec.variants) {
-      lines.push(`  ${v.prop}: ${v.values.join(' · ')}`);
-    }
-  }
-
-  // States
-  if (spec.states.length) {
-    lines.push('');
-    lines.push(`States: ${spec.states.join(', ')}`);
-  }
-
-  // Tokens
-  if (spec.tokens.length) {
-    lines.push('');
-    lines.push('Design tokens:');
-    for (const t of spec.tokens) {
-      const condition = formatConditions(t.conditions);
-      const qualifier = condition === '—' ? '' : ` [${condition}]`;
-      lines.push(`  ${t.part}.${t.property}${qualifier} → ${t.name}`);
-    }
-    if (spec.tokens.some((t) => Object.keys(t.conditions).length)) {
-      lines.push(
-        '  Note: a bracketed condition like [State=Hover] means the token applies only to variants matching those axis values; unbracketed lines apply to all variants.',
-      );
-    }
-  }
-
-  // Layout
-  if (spec.layout.length) {
-    lines.push('');
-    lines.push('Layout (default variant):');
-    for (const l of spec.layout) {
-      lines.push(`  ${l.part}: ${l.summary}`);
-    }
-  }
-
-  // Related
-  if (spec.related.length) {
-    lines.push('');
-    lines.push(`Related: ${spec.related.join(', ')}`);
-  }
-
-  // Instruction — emit only the requested keys (default: all keys, in canonical
-  // order) so unchecked sections cost no output tokens.
-  const keys = requested
-    ? PROSE_KEY_ORDER.filter((k) => requested.has(k))
-    : PROSE_KEY_ORDER;
-  lines.push('');
-  lines.push(
-    'Return ONLY a JSON object with these keys: ' +
-      keys.map((k) => KEY_INSTRUCTIONS[k]).join('; ') + '. ' +
-      'Use Markdown for structure (bold lead-ins, lists, at most "###" subheadings); never use "#" or "##" headings. ' +
-      'Do not include any prose outside the JSON. Do not use em dashes; keep sentences short.',
-  );
-  // When both Accessibility and Interactions are in play, keep them from
-  // duplicating each other: mechanics go to Interactions, semantics stay in
-  // Accessibility.
-  if (keys.includes('accessibility') && keys.includes('interactions')) {
-    lines.push(
-      'Note: keyboard and mouse mechanics belong to Interactions; keep accessibility to semantics, ARIA naming, and the "not in the design file" flag.',
-    );
-  }
-
-  return lines.join('\n');
-}
+/** The v8 output caps, frozen alongside the bytes above. */
+export const LEGACY_PROSE_MAX_TOKENS = 3000;
+export const LEGACY_GROUP_MAX_TOKENS = 1200;
 
 /**
- * Normalise punctuation the house style forbids. Em dashes (and spaced en
- * dashes) used as sentence punctuation are replaced with a comma, which reads
- * naturally for the appositive cases models tend to produce. Only horizontal
- * whitespace is matched, so line breaks between Accessibility bullets survive;
- * hyphens and unspaced en dashes (number ranges like 3-5) are left untouched.
- * This is a safety net — the prompt already forbids em dashes — that guarantees
- * the rule even when the model slips.
+ * The v8 foundation group system prompt, frozen. The shipped 5.1.0 plugin
+ * sends these exact bytes under a `prose:v1:groups:` key and the proxy
+ * compares them byte for byte, so this is a wire contract rather than a style
+ * document: editing one character stops that build generating its group
+ * descriptions. `FOUNDATION_SYSTEM_PROMPT` in `foundationPrompt.ts` has since
+ * gained the collection-overview rule and is what the v9 client sends;
+ * nothing in the plugin imports the copy below. Delete it together with the
+ * proxy's legacy branch once 6.0.0 is live.
  */
-function normalizeProseText(value: string): string {
-  return replaceAround(
-    replaceAround(value, '—', ', ', false),
-    '–', ', ', true,
-  );
-}
+export const LEGACY_FOUNDATION_SYSTEM_PROMPT = [
+  'You write short descriptions of design-token groups for a design-system reference.',
+  'Each description sits under a group heading in a generated documentation frame.',
+  '',
+  'You are given the token names in the group and their resolved values. That is ALL you know.',
+  'Describe what the group is for, as its names and values actually show.',
+  '',
+  'Never invent: no component names the tokens do not mention, no counts, no accessibility',
+  'claims, no history, no rules the names do not support. If the names are too generic to',
+  'support a purpose, describe the shape of the set plainly instead and stop. A vague but true',
+  'sentence is correct; a specific but invented one is a defect.',
+  '',
+  'Voice:',
+  '- One or two sentences. Under 220 characters. No heading, no list, no markdown.',
+  '- Plain and factual, the tone of a peer explaining their own file.',
+  '- Say what the group is for and when to reach for it. Lead with the purpose, not "This group".',
+  '- Write for people, not "the user".',
+  '- Never use em dashes or en dashes. Use a period, comma, colon, or parentheses.',
+  '- Do not restate the heading as a sentence ("Surface colours are colours for surfaces").',
+  '',
+  'Return ONLY a JSON object mapping each group key to its description string.',
+  'No prose outside the JSON, no code fence.',
+].join('\n');
 
 /** One character's worth of `[ \t]`. Horizontal only, so a line break between
  *  bullets survives, which is the whole reason the classes are not `\s`. */
@@ -354,8 +252,8 @@ const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
  *
  * Exported so `prose/v2.ts`'s `normalizeDashes` can call this implementation
  * instead of keeping its own copy: one algorithm, and `redos.test.ts`'s
- * fuzz and timing coverage (pinned through `parseProseResponse`) backs both
- * callers instead of only this one.
+ * fuzz and timing coverage (pinned on `normalizeDashes`) backs both callers
+ * instead of only this one.
  */
 export function replaceAround(
   value: string, separator: string, replacement: string, requireSpace: boolean,
@@ -385,68 +283,6 @@ export function replaceAround(
 }
 
 /**
- * Coerce a field that should be prose text but which the model sometimes emits
- * as a JSON array of lines (common for "bulleted list" fields like
- * accessibility). Arrays are joined with `joiner`; a plain string passes
- * through; anything else yields null (caller throws).
- */
-function asProseText(value: unknown, joiner: (items: string[]) => string): string | null {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value) && value.every((x) => typeof x === 'string')) {
-    return joiner(value as string[]);
-  }
-  return null;
-}
-
-/** Join free-text paragraphs (definition). */
-function joinParagraphs(items: string[]): string {
-  return items.join('\n\n');
-}
-
-/** Join bullet lines, adding a "- " marker to any line that lacks one. */
-function joinBullets(items: string[]): string {
-  return items
-    .map((s) => (/^\s*(?:[-*]\s|#{1,6}\s)/.test(s) ? s : `- ${s}`))
-    .join('\n');
-}
-
-/**
- * Validate the optional `anatomyParts` field: an array of { name, description }
- * where both are non-empty strings. Malformed entries are dropped (not fatal);
- * a non-array, or an array with no usable entries, yields undefined. Descriptions
- * are punctuation-normalised like every other prose field.
- */
-function parseAnatomyParts(value: unknown): AnatomyPartProse[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out: AnatomyPartProse[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const rec = item as Record<string, unknown>;
-    const name = typeof rec.name === 'string' ? rec.name.trim() : '';
-    const description = typeof rec.description === 'string' ? rec.description.trim() : '';
-    if (!name || !description) continue;
-    out.push({ name, description: normalizeProseText(description) });
-  }
-  return out.length ? out : undefined;
-}
-
-/** Accept a string[] or a lone string (wrapped); otherwise null. */
-function asStringArray(value: unknown): string[] | null {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value) && value.every((x) => typeof x === 'string')) {
-    return value as string[];
-  }
-  return null;
-}
-
-/** Keys that must be present AND well-typed when requested. The three summary
- *  keys are never hard-required (a missing/wrong-typed value yields undefined). */
-const REQUIREDABLE_KEYS: ProseKey[] = [
-  'definition', 'accessibility', 'interactions',
-  'designConsiderations', 'contentConsiderations', 'dos', 'donts',
-];
-
-/**
  * The contents of the first ```json … ``` fence, or null when the text carries
  * no closed fence.
  *
@@ -464,7 +300,7 @@ const REQUIREDABLE_KEYS: ProseKey[] = [
  * where the first one loses: the first one only loses when no fence follows it
  * at all, and `json` and whitespace contain no backticks to hide one behind.
  */
-function fencedBlock(text: string): string | null {
+export function fencedBlock(text: string): string | null {
   const open = text.indexOf('```');
   if (open === -1) return null;
   let start = open + 3;
@@ -477,102 +313,3 @@ function fencedBlock(text: string): string | null {
 /** One character's worth of `\s`, for the same reason `cleanPartName` keeps
  *  its own: a per-character test cannot be made to backtrack. */
 const FENCE_WHITESPACE = /\s/;
-
-/**
- * Strip optional ```json … ``` fences, trim, parse, and validate the shape.
- *
- * `requested` makes parsing selection-aware: only requested keys are required,
- * and any key the model emits beyond the request is still parsed if valid.
- * When `requested` is omitted, the historical contract holds (definition,
- * accessibility, dos, donts required) so existing callers are unaffected.
- */
-export function parseProseResponse(text: string, requested?: Set<ProseKey>): ProseDrafts {
-  // Strip code fences — also handles preamble prose before the fence block
-  const fenced = fencedBlock(text);
-  const cleaned = fenced !== null ? fenced.trim() : text.trim();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    throw new Error(`Failed to parse prose response as JSON: ${(err as Error).message}`);
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Prose response must be a JSON object');
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  const required = new Set<ProseKey>(
-    requested
-      ? REQUIREDABLE_KEYS.filter((k) => requested.has(k))
-      : ['definition', 'accessibility', 'dos', 'donts'],
-  );
-
-  // Tolerate the model emitting prose fields as JSON arrays of lines (it often
-  // does for "bulleted list" fields). A field is fatal only when it is required
-  // and missing/wrong-typed; otherwise it degrades to undefined.
-  const wantString = (key: ProseKey, joiner: (items: string[]) => string): string | undefined => {
-    const v = asProseText(obj[key], joiner);
-    if (v === null) {
-      if (required.has(key)) throw new Error(`Prose response missing or invalid field: ${key}`);
-      return undefined;
-    }
-    return v;
-  };
-  const wantArray = (key: ProseKey): string[] | undefined => {
-    const v = asStringArray(obj[key]);
-    if (v === null) {
-      if (required.has(key)) throw new Error(`Prose response field "${key}" must be a string[]`);
-      return undefined;
-    }
-    return v;
-  };
-
-  const definition = wantString('definition', joinParagraphs);
-  const accessibility = wantString('accessibility', joinBullets);
-  const interactions = wantString('interactions', joinBullets);
-  const designConsiderations = wantString('designConsiderations', joinBullets);
-  const contentConsiderations = wantString('contentConsiderations', joinBullets);
-  const dos = wantArray('dos');
-  const donts = wantArray('donts');
-
-  // variantsSummary / anatomySummary / anatomyParts are optional and non-critical:
-  // missing or wrong-typed simply yields undefined rather than a thrown error.
-  const rawVariantsSummary = asProseText(obj.variantsSummary, joinParagraphs);
-  const variantsSummary = rawVariantsSummary === null ? undefined : rawVariantsSummary;
-  const rawAnatomySummary = asProseText(obj.anatomySummary, joinParagraphs);
-  const anatomySummary = rawAnatomySummary === null ? undefined : rawAnatomySummary;
-  const anatomyParts = parseAnatomyParts(obj.anatomyParts);
-
-  const generatedStrings = [
-    definition, accessibility, interactions, designConsiderations, contentConsiderations,
-    variantsSummary, anatomySummary,
-    ...(dos ?? []), ...(donts ?? []),
-    ...(anatomyParts?.map((p) => p.description) ?? []),
-  ].filter((s): s is string => typeof s === 'string');
-  // Level-1/2 headings are reserved for the canonical spec sections; the model
-  // may use level-3 ("###") and below for sub-structure. Reject only `#`/`##`.
-  if (generatedStrings.some((value) => /^#{1,2}(?:\s|$)/m.test(value))) {
-    throw new Error('Prose response must not contain level-one or level-two markdown headings (use level-three at most)');
-  }
-
-  const norm = (s: string | undefined): string | undefined =>
-    s === undefined ? undefined : normalizeProseText(s);
-
-  return {
-    // The historical four stay non-optional on the shape (default to empty) so
-    // existing consumers keep working; they are only non-fatal when unrequested.
-    definition: normalizeProseText(definition ?? ''),
-    accessibility: normalizeProseText(accessibility ?? ''),
-    dos: (dos ?? []).map(normalizeProseText),
-    donts: (donts ?? []).map(normalizeProseText),
-    ...(variantsSummary !== undefined ? { variantsSummary: normalizeProseText(variantsSummary) } : {}),
-    ...(anatomySummary !== undefined ? { anatomySummary: normalizeProseText(anatomySummary) } : {}),
-    ...(anatomyParts ? { anatomyParts } : {}),
-    ...(norm(interactions) !== undefined ? { interactions: norm(interactions)! } : {}),
-    ...(norm(designConsiderations) !== undefined ? { designConsiderations: norm(designConsiderations)! } : {}),
-    ...(norm(contentConsiderations) !== undefined ? { contentConsiderations: norm(contentConsiderations)! } : {}),
-  };
-}

@@ -16,22 +16,35 @@ caller proves.
 
 ### `POST /v1/prose`
 
-Body: `{ "cacheKey": "prose:v8:<hash>...", "request": <shipped prose request> }`
+Body: `{ "cacheKey": "prose:v9:<tier>:<hash>...", "request": <shipped prose request> }`
 
 The proxy accepts only the two request contracts built by the extractor:
-component prose and Foundation group descriptions. It requires the shipped
-model, exact system prompt and few-shot messages, fixed output limit, bounded
-generated prompt shape, and supported base64 image blocks. Caller-defined
-Anthropic options, remote image URLs, extra fields, and bodies above 7 MB are
-rejected. The `cacheKey` doubles as the idempotency key: a retry replays the
-stored response without a second upstream call or quota decrement.
+component prose (`prose:v9:`) and Foundation group descriptions
+(`prose:v2:groups:`). Each carries the exact system prompt and few-shot
+messages the extractor ships, the fixed output limit, a bounded generated
+prompt, one `cache_control` breakpoint on the exemplar answer, and supported
+base64 image blocks. The request names no model: the proxy assigns
+`claude-sonnet-5` with `output_config.effort: low` to a proved Pro license and
+`claude-haiku-4-5` to a Figma identity, and rejects a body that names one. The
+cache key names the tier the client believes it has (`pro` or `free`); a key
+whose tier disagrees with the proof is rejected with `400 tier mismatch` before
+any quota is reserved, so a Haiku draft is never replayed to a Pro user.
+
+The shipped 5.1.0 plugin's contract (`prose:v8:` and `prose:v1:groups:` keys
+naming `claude-haiku-4-5`, the v8 prompt bytes) stays accepted until the 6.0.0
+plugin is live. Remove that branch afterwards.
+
+Caller-defined Anthropic options, remote image URLs, extra fields, and bodies
+above 7 MB are rejected. The `cacheKey` doubles as the idempotency key: a retry
+replays the stored response without a second upstream call or quota decrement.
 
 Success: the Anthropic response JSON plus headers `X-Tier`,
 `X-Quota-Used`, `X-Quota-Limit` (`unlimited` for pro), `X-Quota-Remaining`,
 `X-Quota-Resets-At`.
 
-Errors: `400` bad request/allowlist, `401` unauthenticated or license not
-active, `402 {"error":"quota_exhausted","resetsAt":…}`,
+Errors: `400` bad request/allowlist, `400 {"error":"tier mismatch"}`, `401`
+unauthenticated or license not active,
+`402 {"error":"quota_exhausted","resetsAt":…}`,
 `409 {"error":"generation_pending"}` (another window is generating the same
 component), `429 {"error":"rate_limited","retryAfterMs":…}`, `502` upstream
 failure (quota not decremented).

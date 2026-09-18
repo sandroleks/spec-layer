@@ -127,7 +127,7 @@ describe('library screen presentation', () => {
   it('explains a rebuild under the status', () => {
     const html = libraryRowMarkup(row('buttonRebuild', 'rebuildNeeded'), null, false);
     expect(html).toContain('Rebuild needed');
-    expect(html).toContain('Frames are rebuilt in the new layout. Your written sections are kept.');
+    expect(html).toContain('Frames are rebuilt in the new layout. Your written sections are kept. Keyboard is rewritten when AI writing is on.');
   });
 
   it('leaves every other status without a rebuild note', () => {

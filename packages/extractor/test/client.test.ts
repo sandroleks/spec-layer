@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { draftProse, proseCacheKey, ProseProxyError } from '../src/prose/client';
+import {
+  draftProse, proseCacheKey, ProseProxyError,
+  groupProseRequest, groupCacheKey, GROUP_MAX_TOKENS, draftGroupDescriptions,
+} from '../src/prose/client';
 import type { IntermediateSpec } from '../src/extract';
 import type { RefIdentity } from '../src/tree';
 
@@ -10,11 +13,11 @@ const ident = (name: string): RefIdentity => (
   { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const spec = {
-  name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1',
+  name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1', description: '',
   anatomy: [], props: [], variants: [], states: [], tokens: [], related: [], gaps: [], layout: [],
 } as unknown as IntermediateSpec;
 
-const PROSE = JSON.stringify({ definition: 'd', accessibility: 'a', dos: ['x'], donts: ['y'] });
+const PROSE = JSON.stringify({ overview: { lede: 'd', body: [] } });
 
 function memStore() {
   const m = new Map<string, string>();
@@ -48,35 +51,35 @@ describe('draftProse base64 image', () => {
   });
 
   it('keys a base64 vision draft separately from a text-only draft', () => {
-    const textKey = proseCacheKey(spec, {});
-    const visionKey = proseCacheKey(spec, { image: true });
+    const textKey = proseCacheKey(spec, { tier: 'free' });
+    const visionKey = proseCacheKey(spec, { tier: 'free', image: true });
     expect(visionKey).not.toEqual(textKey);
     // base64 must produce the vision-marked key, not the text-only one:
-    expect(proseCacheKey(spec, { image: true })).toContain(':img');
+    expect(proseCacheKey(spec, { tier: 'free', image: true })).toContain(':img');
   });
 
   it('folds the requested key set into the cache key', () => {
-    const a = proseCacheKey(spec, { keys: ['definition', 'interactions'] });
-    const b = proseCacheKey(spec, { keys: ['definition'] });
+    const a = proseCacheKey(spec, { tier: 'free', keys: ['overview', 'keyboard'] });
+    const b = proseCacheKey(spec, { tier: 'free', keys: ['overview'] });
     expect(a).not.toEqual(b);
-    expect(a).toContain('v8');
+    expect(a).toContain('v9');
   });
 
   it('key is order-independent for the same requested set', () => {
-    expect(proseCacheKey(spec, { keys: ['interactions', 'definition'] }))
-      .toEqual(proseCacheKey(spec, { keys: ['definition', 'interactions'] }));
+    expect(proseCacheKey(spec, { tier: 'free', keys: ['keyboard', 'overview'] }))
+      .toEqual(proseCacheKey(spec, { tier: 'free', keys: ['overview', 'keyboard'] }));
   });
 
   // rawValues is presentation-only and never reaches the prompt. Keying on it
   // would mean that a value now rendered differently orphans every cached
   // draft and re-bills a metered generation for identical prose.
   it('ignores rawValues, which the prompt never sees', () => {
-    const base = proseCacheKey(spec);
+    const base = proseCacheKey(spec, { tier: 'free' });
     const withRaw = {
       ...spec,
       rawValues: [{ part: 'label', property: 'color', value: '#bbbbbb' }],
     } as unknown as IntermediateSpec;
-    expect(proseCacheKey(withRaw)).toEqual(base);
+    expect(proseCacheKey(withRaw, { tier: 'free' })).toEqual(base);
   });
 
   // Same rule as rawValues, and the same cost if it is broken. The Figma file
@@ -86,11 +89,11 @@ describe('draftProse base64 image', () => {
   // a new name) orphans every cached draft for every component and re-bills a
   // metered generation for byte-identical prose.
   it('ignores the Figma file name, which the prompt never sees', () => {
-    const base = proseCacheKey(spec);
+    const base = proseCacheKey(spec, { tier: 'free' });
     const named = { ...spec, figmaFileName: 'Design System' } as unknown as IntermediateSpec;
     const renamed = { ...spec, figmaFileName: 'Design System (2026)' } as unknown as IntermediateSpec;
-    expect(proseCacheKey(named)).toEqual(base);
-    expect(proseCacheKey(renamed)).toEqual(base);
+    expect(proseCacheKey(named, { tier: 'free' })).toEqual(base);
+    expect(proseCacheKey(renamed, { tier: 'free' })).toEqual(base);
   });
 
   // The key must be sensitive to EXACTLY what the model sees, no more and no
@@ -104,7 +107,7 @@ describe('draftProse base64 image', () => {
   describe('ignores every field the prompt never reads', () => {
     const unchanged = (mutated: Partial<Record<string, unknown>>) => {
       const next = { ...spec, ...mutated } as unknown as IntermediateSpec;
-      expect(proseCacheKey(next)).toEqual(proseCacheKey(spec));
+      expect(proseCacheKey(next, { tier: 'free' })).toEqual(proseCacheKey(spec, { tier: 'free' }));
     };
 
     it('ignores the Figma file key, so a duplicate or a branch reuses the cache', () => {
@@ -142,19 +145,43 @@ describe('draftProse base64 image', () => {
         tokens: [{ ...(base.tokens[0]), path: 'Somewhere/Else' }],
         layout: [{ ...(base.layout[0]), path: 'Somewhere/Else', values: { gap: 99 } }],
       } as unknown as IntermediateSpec;
-      expect(proseCacheKey(moved)).toEqual(proseCacheKey(base));
+      expect(proseCacheKey(moved, { tier: 'free' })).toEqual(proseCacheKey(base, { tier: 'free' }));
     });
 
-    it('ignores anatomy fields outside name and nested', () => {
+    // The v9 prompt lists a part's kind and its nesting depth, so `type`,
+    // `component`, `shownBy` and `depth` DO reach it and must move the key.
+    // The node id and the layer path still do not.
+    it('ignores the anatomy node id and path', () => {
       const base = {
         ...spec,
         anatomy: [{ id: '1:2', name: 'Label', type: 'TEXT', nested: false, depth: 0, path: 'Container/Label' }],
       } as unknown as IntermediateSpec;
       const moved = {
         ...base,
-        anatomy: [{ ...(base.anatomy[0]), id: '9:9', depth: 3, path: 'Elsewhere/Label' }],
+        anatomy: [{ ...(base.anatomy[0]), id: '9:9', path: 'Elsewhere/Label' }],
       } as unknown as IntermediateSpec;
-      expect(proseCacheKey(moved)).toEqual(proseCacheKey(base));
+      expect(proseCacheKey(moved, { tier: 'free' })).toEqual(proseCacheKey(base, { tier: 'free' }));
+    });
+
+    it('does NOT ignore an anatomy part depth, type, shownBy or nested component', () => {
+      // The inverse of the test above, one field at a time. The v9 prompt draws
+      // each part as `<indent><name>: <partKind>[; shown by X]`, so depth, type
+      // and shownBy all reach it and each has to be a fresh generation rather
+      // than a stale draft served from the old key.
+      const key = (part: Record<string, unknown>): string => proseCacheKey(
+        { ...spec, anatomy: [{ id: '1:2', path: 'Container/Label', ...part }] } as unknown as IntermediateSpec,
+        { tier: 'free' },
+      );
+      const plain = { name: 'Label', type: 'TEXT', nested: false, depth: 0, shownBy: 'Show label' };
+      const plainKey = key(plain);
+      expect(key({ ...plain, depth: 1 })).not.toEqual(plainKey);
+      expect(key({ ...plain, type: 'RECTANGLE' })).not.toEqual(plainKey);
+      expect(key({ ...plain, shownBy: 'Has label' })).not.toEqual(plainKey);
+
+      // `component` reaches the prompt only through a nested part, where
+      // `partKind` reads it in place of the Figma type.
+      const nested = { name: 'Icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' };
+      expect(key({ ...nested, component: 'Glyph' })).not.toEqual(key(nested));
     });
   });
 
@@ -168,19 +195,50 @@ describe('draftProse base64 image', () => {
       ...base,
       tokens: [{ ...(base.tokens[0]), ...ident('color/surface/brand') }],
     } as unknown as IntermediateSpec;
-    expect(proseCacheKey(moved)).not.toEqual(proseCacheKey(base));
+    expect(proseCacheKey(moved, { tier: 'free' })).not.toEqual(proseCacheKey(base, { tier: 'free' }));
   });
 
   it('still changes when something the prompt reads changes', () => {
     const renamed = { ...spec, name: 'Chip' } as unknown as IntermediateSpec;
-    expect(proseCacheKey(renamed)).not.toEqual(proseCacheKey(spec));
+    expect(proseCacheKey(renamed, { tier: 'free' })).not.toEqual(proseCacheKey(spec, { tier: 'free' }));
+  });
+});
+
+describe('group request (v2)', () => {
+  const input = { collectionName: 'Semantic', modeNames: ['Light', 'Dark'], aliasCounts: [], groups: [
+    { folder: 'c1|color/surface', title: 'Surface', resolvedType: 'COLOR' as const, tokenNames: ['color/surface/primary'], sampleValues: ['#722ED1'] },
+  ] };
+  it('keys by version, groups marker and tier, and sends no model', () => {
+    const { cacheKey, request } = groupProseRequest(input, 'pro');
+    expect(cacheKey).toMatch(/^prose:v2:groups:pro:[0-9a-f]{16,}$/);
+    expect('model' in request).toBe(false);
+    expect(request.max_tokens).toBe(GROUP_MAX_TOKENS);
+  });
+  it('gives the two tiers different keys over the same hash', () => {
+    const pro = groupCacheKey(input, 'pro');
+    const free = groupCacheKey(input, 'free');
+    expect(pro.replace(':pro:', ':')).toBe(free.replace(':free:', ':'));
+  });
+  it('draftGroupDescriptions returns descriptions and the overview, caching the raw answer', async () => {
+    const raw = '{"overview":"Semantic colours.","c1|color/surface":"Surfaces."}';
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ content: [{ type: 'text', text: raw }] }), { status: 200 }));
+    const { get, set } = memStore();
+    const out = await draftGroupDescriptions(input, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set }, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
+    expect(out).toEqual({ overview: 'Semantic colours.', descriptions: { 'c1|color/surface': 'Surfaces.' } });
+    // What is stored is the model's own text, not the parsed draft, so a later
+    // parser fix reaches the entry. Asserting the return value alone would
+    // pass just as happily if the parsed object were cached instead.
+    expect(await get(groupCacheKey(input, 'free'))).toBe(raw);
+  });
+  it('returns an empty draft with no groups or no identity', async () => {
+    expect(await draftGroupDescriptions({ ...input, groups: [] }, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: memStore() })).toEqual({ overview: null, descriptions: {} });
   });
 });
 
 // --- Task 2: proxy mode ------------------------------------------------------
 
 const PROSE_OK = JSON.stringify({
-  content: [{ type: 'text', text: '{"definition":"D","accessibility":"A","dos":[],"donts":[]}' }],
+  content: [{ type: 'text', text: '{"overview":{"lede":"D","body":[]}}' }],
 });
 
 describe('draftProse proxy mode', () => {
@@ -198,13 +256,13 @@ describe('draftProse proxy mode', () => {
       apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set },
       proxy: { url: 'https://proxy.test', figmaUserId: 'u1', onQuota },
     });
-    expect(out?.definition).toBe('D');
+    expect(out?.prose.overview?.lede).toBe('D');
     const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://proxy.test/v1/prose');
     expect((init.headers as Record<string, string>)['X-Figma-User']).toBe('u1');
-    const body = JSON.parse(String(init.body)) as { cacheKey: string; request: { model: string } };
+    const body = JSON.parse(String(init.body)) as { cacheKey: string; request: Record<string, unknown> };
     expect(body.cacheKey).toMatch(/^prose:v\d+:/);
-    expect(body.request.model).toBe('claude-haiku-4-5');
+    expect('model' in body.request).toBe(false);
     expect(onQuota).toHaveBeenCalledWith({
       tier: 'free', used: 1, limit: 20, remaining: 19, resetsAt: '2026-08-10T00:00:00.000Z',
     });
@@ -272,8 +330,32 @@ describe('draftProse proxy mode', () => {
     await draftProse(spec, { apiKey: null, fetcher: ok as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
     const second = vi.fn();
     const out = await draftProse(spec, { apiKey: null, fetcher: second as unknown as typeof fetch, cacheStore: store, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
-    expect(out?.definition).toBe('D');
+    expect(out?.prose.overview?.lede).toBe('D');
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it('caches the raw answer once it has parsed, and never caches one that has not', async () => {
+    // A truncation at the token cap arrives as unparseable JSON. Cached, it
+    // would make every retry in the session re-throw from the cache instead of
+    // asking again, so the parse has to come first.
+    const truncated = '{"overview":{"lede":"D","body":[';
+    const store = memStore();
+    const bad = vi.fn(async () => new Response(
+      JSON.stringify({ content: [{ type: 'text', text: truncated }] }), { status: 200 },
+    ));
+    const proxy = { url: 'https://proxy.test', figmaUserId: 'u1' };
+    await expect(draftProse(spec, {
+      apiKey: null, fetcher: bad as unknown as typeof fetch, cacheStore: store, proxy,
+    })).rejects.toThrow(/parse prose response/i);
+    expect(store.store.size).toBe(0);
+
+    // The same key, answered properly this time, is asked again and stored raw.
+    const good = vi.fn(async () => new Response(PROSE_OK, { status: 200 }));
+    const out = await draftProse(spec, {
+      apiKey: null, fetcher: good as unknown as typeof fetch, cacheStore: store, proxy,
+    });
+    expect(out?.prose.overview?.lede).toBe('D');
+    expect([...store.store.values()]).toEqual(['{"overview":{"lede":"D","body":[]}}']);
   });
 
   it('sends key:instanceId in the bearer when the proxy auth has an instance', async () => {

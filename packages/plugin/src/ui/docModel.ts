@@ -1,4 +1,4 @@
-import type { IntermediateSpec, ProseKey, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
+import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
   detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence, foldName,
@@ -73,25 +73,28 @@ export const AI_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
 ]);
 
 /**
- * Which v1 prose keys each section needs from the v8 prompt. Plan 2 replaces
- * this table with the v2 contract; until then a section whose content the v8
- * prompt cannot produce (whenToUse, properties, states meanings) requests
- * nothing and is omitted when its v2 field is empty.
+ * Which v2 prose keys each section needs. A section whose key is absent from
+ * the draft is omitted (with reason `aiOff` or `nothingToShow`, see
+ * `AI_ONLY_SECTIONS`), never padded. Overview and Variants also render
+ * without prose, so requesting their keys only adds the AI text.
  */
-const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseKey[]>> = {
-  definition: ['definition'],
-  variants: ['variantsSummary'],
+const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseV2Key[]>> = {
+  definition: ['overview'],
+  whenToUse: ['whenToUse', 'whenNotToUse'],
+  variants: ['variantsIntro', 'variantsGuide'],
   anatomy: ['anatomySummary', 'anatomyParts'],
-  accessibility: ['accessibility'],
-  keyboard: ['interactions'],
-  pointer: ['interactions'],
-  contentConsiderations: ['contentConsiderations'],
-  dosDonts: ['dos', 'donts'],
+  properties: ['properties'],
+  states: ['states'],
+  keyboard: ['keyboard'],
+  pointer: ['pointer'],
+  accessibility: ['semantics'],
+  contentConsiderations: ['content'],
+  dosDonts: ['guidelines'],
 };
 
-/** Union of the prose keys needed by the given (checked) sections. */
-export function proseKeysForSections(ids: Iterable<SectionId>): Set<ProseKey> {
-  const out = new Set<ProseKey>();
+/** Union of the prose keys the given (checked) sections need. */
+export function proseKeysForSections(ids: Iterable<SectionId>): Set<ProseV2Key> {
+  const out = new Set<ProseV2Key>();
   for (const id of ids) for (const k of PROSE_KEYS_BY_SECTION[id] ?? []) out.add(k);
   return out;
 }
@@ -245,6 +248,16 @@ export function groupSections(sections: SectionBlock[]): DocGroup[] {
       sections: sections.filter((s) => groupOf.get(s.id) === id),
     }))
     .filter((g) => g.sections.length > 0);
+}
+
+/** How many frames a model draws: one per group that has at least one section. */
+export function frameCountFor(model: DocFrameModel): number {
+  const groups = new Set<string>();
+  for (const section of model.sections) {
+    const group = ALL_SECTIONS.find((s) => s.id === section.id)?.group;
+    if (group) groups.add(group);
+  }
+  return groups.size;
 }
 
 /** Human label for a variant instance as axis=value pairs, e.g.

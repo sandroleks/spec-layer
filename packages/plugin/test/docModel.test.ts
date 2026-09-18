@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS,
+  buildDocModel, calloutLabels, measureKey, groupSections, frameCountFor, GROUPS, ALL_SECTIONS,
+  KNOWN_SECTION_IDS,
   LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
   stateChanges, type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
+import { PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
 
 /** A TokenRule carries the full identity Figma stated for the reference. These
@@ -75,20 +77,32 @@ describe('section map', () => {
     expect(LEGACY_SECTION_IDS.configuration).toEqual(['properties']);
   });
 
-  it('requests the v1 prose keys the v8 prompt can still fill', () => {
-    expect([...proseKeysForSections(['definition', 'keyboard', 'pointer', 'dosDonts', 'properties'])].sort())
-      .toEqual(['definition', 'donts', 'dos', 'interactions']);
-  });
-
-  it('maps checked sections to prose keys', () => {
-    expect([...proseKeysForSections(['anatomy'])].sort()).toEqual(['anatomyParts', 'anatomySummary']);
-    expect([...proseKeysForSections(['related'])]).toEqual([]);
-    expect([...proseKeysForSections(['dosDonts'])].sort()).toEqual(['donts', 'dos']);
-  });
-
   it('groups the a11y sections Keyboard -> Pointer -> Semantics -> Content', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
     expect(a11y).toEqual(['keyboard', 'pointer', 'accessibility', 'contentConsiderations']);
+  });
+});
+
+describe('proseKeysForSections asks the v9 prompt for v2 keys', () => {
+  it('maps every prose-bearing section to its v2 keys', () => {
+    expect([...proseKeysForSections(['definition', 'whenToUse', 'dosDonts'])].sort())
+      .toEqual(['guidelines', 'overview', 'whenNotToUse', 'whenToUse']);
+    expect([...proseKeysForSections(['keyboard', 'pointer', 'accessibility', 'contentConsiderations'])].sort())
+      .toEqual(['content', 'keyboard', 'pointer', 'semantics']);
+    expect([...proseKeysForSections(['variants', 'anatomy', 'properties', 'states'])].sort())
+      .toEqual(['anatomyParts', 'anatomySummary', 'properties', 'states', 'variantsGuide', 'variantsIntro']);
+  });
+  it('asks nothing for the deterministic sections', () => {
+    expect(proseKeysForSections(['measurements', 'tokens', 'related'])).toEqual(new Set());
+  });
+
+  it('covers every v2 key, so a new one cannot be added with no section asking for it', () => {
+    // A key nothing requests is never generated and never rendered, but the
+    // prompt, the validator and the stored blob all carry it. This is the
+    // check that says so at the moment the key is added rather than at the
+    // moment someone wonders why a section is always empty.
+    const requested = [...proseKeysForSections(ALL_SECTIONS.map((s) => s.id))].sort();
+    expect(requested).toEqual([...PROSE_V2_KEYS].sort());
   });
 });
 
@@ -1120,6 +1134,22 @@ describe('groupSections', () => {
   it('labels the accessibility section "Semantics and focus" so it does not duplicate the group heading', () => {
     const section = ALL_SECTIONS.find((s) => s.id === 'accessibility');
     expect(section?.label).toBe('Semantics and focus');
+  });
+});
+
+describe('frameCountFor', () => {
+  it('counts the distinct frames the selected sections land in', () => {
+    const usageOnly = buildDocModel(spec, null, new Set(['definition', 'related']), new Set(), { aiEnabled: false });
+    expect(frameCountFor(usageOnly)).toBe(1);
+    // Every a11y-group section is AI-only (see AI_ONLY_SECTIONS), so none of
+    // them render off `prose: null` no matter what `aiEnabled` says. The
+    // module's own `prose` fixture (used above with AI on) supplies real
+    // `semantics` content here too, so Accessibility renders and this proves
+    // a genuine three-frame count instead of one that can never occur.
+    const three = buildDocModel(spec, prose, new Set(['definition', 'anatomy', 'accessibility']), new Set(), { aiEnabled: false });
+    expect(frameCountFor(three)).toBe(3);
+    const none = buildDocModel(spec, null, new Set(), new Set(), { aiEnabled: false });
+    expect(frameCountFor(none)).toBe(0);
   });
 });
 

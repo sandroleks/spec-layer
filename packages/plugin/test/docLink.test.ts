@@ -250,6 +250,15 @@ describe('docLink foundation variant', () => {
     });
     expect((parseDocLink(blob) as FoundationDocLink).config.includeContrast).toBe(true);
   });
+
+  it('round-trips a foundation collection overview and omits it when absent', () => {
+    const withOverview: FoundationDocLink = {
+      ...FOUNDATION, collectionOverview: 'Semantic colours for surfaces and text.',
+    };
+    expect(parseDocLink(serializeDocLink(withOverview))).toEqual(withOverview);
+    const parsed = parseDocLink(serializeDocLink(FOUNDATION));
+    expect(parsed && 'collectionOverview' in parsed).toBe(false);
+  });
 });
 
 describe('mergeFoundationGroupDescriptions', () => {

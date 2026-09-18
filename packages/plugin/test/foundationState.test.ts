@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildFoundation, SPLIT_THRESHOLD, type SerializedFoundation,
+  buildFoundation, SPLIT_THRESHOLD, type SerializedFoundation, type FoundationSpec,
+  type FoundationSelection,
 } from '@spec-layer/extractor';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   emptyStateLines, canGenerate,
   frameCount, framesPerSource, selectAll, clearAll, allSelected,
   fileSummary, collectionMeta, textStyleMeta, FOUNDATION_CREATE_LABEL,
-  collectionIconKind,
+  collectionIconKind, groupBriefs,
 } from '../src/ui/foundationState';
 
 function dump(over: Partial<SerializedFoundation> = {}): SerializedFoundation {
@@ -418,5 +419,63 @@ describe('panel copy', () => {
       FOUNDATION_CREATE_LABEL,
     ];
     for (const s of strings) expect(s).not.toContain('—');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// groupBriefs carrying the collection overview facts (Task 5).
+//
+// A dedicated fixture rather than the local dump()-based one above: the alias
+// needs a real cross-collection FoundationValue, which is what
+// collectionAliasCounts reads, not the raw-dump alias shape buildFoundation
+// resolves from.
+// ---------------------------------------------------------------------------
+
+const overviewSpec: FoundationSpec = {
+  fileKey: 'f', extractedAt: '', textStyles: [], effectStyles: [],
+  collections: [
+    {
+      id: 'sem', name: 'Semantic', defaultModeId: 's1',
+      modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
+      variables: [
+        {
+          name: 'accent', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: {
+            s1: { kind: 'alias', targetName: 'p', targetCollection: 'Primitives', external: false, resolved: null },
+            s2: { kind: 'color', hex: '#000000', alpha: 1 },
+          },
+          provenance: { id: 'accent', scopes: [], valuesByMode: {}, staleModeIds: [] },
+        },
+      ],
+    },
+    {
+      id: 'prim', name: 'Primitives', defaultModeId: 'p1',
+      modes: [{ modeId: 'p1', name: 'Value' }],
+      variables: [],
+    },
+  ],
+};
+
+function selectionOf(...ids: string[]): FoundationSelection {
+  return {
+    collections: ids.map((id) => {
+      const collection = overviewSpec.collections.find((c) => c.id === id)!;
+      return { collectionId: id, modeIds: [collection.defaultModeId] };
+    }),
+    textStyles: false,
+  };
+}
+
+describe('groupBriefs carries the collection facts the overview needs', () => {
+  it('names the modes and counts aliases for the chosen collection', () => {
+    const briefs = groupBriefs(overviewSpec, selectionOf('sem'));
+    expect(briefs.collectionName).toBe('Semantic');
+    expect(briefs.modeNames).toEqual(['Light', 'Dark']);
+    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
+  });
+  it('merges modes and alias counts when several collections are chosen', () => {
+    const briefs = groupBriefs(overviewSpec, selectionOf('sem', 'prim'));
+    expect(briefs.modeNames).toEqual(['Light', 'Dark', 'Value']);
+    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
   });
 });

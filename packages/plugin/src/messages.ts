@@ -8,10 +8,10 @@ import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
 
-/** Why the UI asked for a doc's source: to rebuild the frame in place (Update)
- *  or to save the spec as a bare .md (Download). The main thread echoes it back
- *  on `docSource` so the UI dispatches to the right handler. */
-export type DocSourceIntent = 'update';
+/** Why the UI wants a doc's source. `update` refreshes the generated lane;
+ *  `rebuild` is a stale-version rebuild, where the UI may first ask the model
+ *  for the sections the stored prose leaves empty. Echoed back on `docSource`. */
+export type DocSourceIntent = 'update' | 'rebuild';
 
 export interface LibraryEntry {
   docId: string;
@@ -234,7 +234,11 @@ export type UiToMain =
    *  in one build can hold a folder of the same name. The main thread filters
    *  each unit's own keys out of it and stores them on that doc. */
   | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
-      groupDescriptions?: Record<string, string> }
+      groupDescriptions?: Record<string, string>;
+      /** One paragraph about the collection, present only when the build covers
+       *  exactly one collection. Stored on that doc's link; the foundation
+       *  frame draws it (Plan 3). */
+      collectionOverview?: string }
   | { type: 'updateFoundationDoc'; docId: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }

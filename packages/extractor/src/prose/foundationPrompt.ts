@@ -13,6 +13,14 @@
  * less than nothing if they confidently state a usage rule nobody chose.
  */
 import type { FoundationVariableType } from '../foundation';
+import type { AliasCount } from '../foundationOverview';
+
+/** What the model is told about the collection as a whole. */
+export interface FoundationCollectionBrief {
+  collectionName: string;
+  modeNames: string[];
+  aliasCounts: AliasCount[];
+}
 
 /** What the model is told about one group. */
 export interface FoundationGroupBrief {
@@ -48,6 +56,10 @@ export const FOUNDATION_SYSTEM_PROMPT = [
   '- Never use em dashes or en dashes. Use a period, comma, colon, or parentheses.',
   '- Do not restate the heading as a sentence ("Surface colours are colours for surfaces").',
   '',
+  'The "overview" entry describes the whole collection in one paragraph: what it holds, how its modes',
+  'differ, and which collections it draws from, exactly as the names, modes and alias counts show.',
+  'Under 400 characters, no markdown, no invented usage. Leave it out if the names support nothing.',
+  '',
   'Return ONLY a JSON object mapping each group key to its description string.',
   'No prose outside the JSON, no code fence.',
 ].join('\n');
@@ -56,15 +68,18 @@ export const FOUNDATION_SYSTEM_PROMPT = [
 export const GROUP_SAMPLE_LIMIT = 12;
 /** Cap on an accepted description, past which it is dropped rather than trimmed. */
 const MAX_DESCRIPTION = 400;
+/** Cap on an accepted overview, past which it is dropped rather than trimmed. */
+export const MAX_OVERVIEW = 400;
 
 export function buildGroupPrompt(
-  collectionName: string, groups: FoundationGroupBrief[],
+  collection: FoundationCollectionBrief, groups: FoundationGroupBrief[],
 ): string {
-  const lines: string[] = [
-    `Collection: ${collectionName}`,
-    '',
-    'Groups to describe:',
-  ];
+  const lines: string[] = [`Collection: ${collection.collectionName}`];
+  if (collection.modeNames.length) lines.push(`Modes: ${collection.modeNames.join(', ')}`);
+  if (collection.aliasCounts.length) {
+    lines.push(`Aliases into other collections: ${collection.aliasCounts.map((a) => `${a.collection} (${a.count})`).join(', ')}`);
+  }
+  lines.push('', 'Groups to describe:');
   for (const group of groups) {
     lines.push('');
     lines.push(`key: ${group.folder}`);
@@ -80,24 +95,64 @@ export function buildGroupPrompt(
     }
   }
   lines.push('');
-  lines.push('Return JSON: { "<key>": "<description>", ... } with one entry per key above.');
+  lines.push('Return JSON: { "overview": "<one paragraph about the whole collection>", "<key>": "<description>", ... } with one entry per key above.');
   return lines.join('\n');
 }
 
+export interface GroupDraft { descriptions: Record<string, string>; overview: string | null }
+
+/** One character's worth of `\s`. A per-character test cannot backtrack. */
+const WHITESPACE = /\s/;
+
 /**
- * Parse the model's JSON into folder → description.
- *
- * Keeps only the folders that were asked for. The model's output is untrusted
- * input: an unexpected key would otherwise be rendered into the user's document,
- * and a key it invented has no block to sit under anyway. Entries that are not
- * usable strings are dropped rather than defaulted, so a bad response costs the
- * descriptions and not the frame.
+ * Replace every em or en dash, together with any whitespace hugging it, with
+ * `, `. This is exactly what a global replace of `\s*[—–]\s*` with `, ` did: the
+ * greedy `\s*` on each side always took the whole whitespace run, and a match
+ * never reached back past the end of the previous one. That regex is quadratic
+ * on a run of whitespace that never reaches a dash, because every position in
+ * the run retries the whole run, and it runs over model output, whose length
+ * nobody in this repository controls. `MAX_DESCRIPTION` and `MAX_OVERVIEW`
+ * bound what is kept, not what is scanned. One pass, pinned against the regex
+ * in `redos.test.ts`. Different from `normalizeDashes` in `v2.ts` on purpose:
+ * that rule keeps line breaks and demands spaces around an en dash; this one
+ * never did.
  */
-export function parseGroupResponse(
-  text: string, folders: string[],
-): Record<string, string> {
-  const wanted = new Set(folders);
-  const out: Record<string, string> = {};
+export function collapseDashes(value: string): string {
+  let out = '';
+  let from = 0;
+  let cursor = 0;
+  for (;;) {
+    const em = value.indexOf('—', cursor);
+    const en = value.indexOf('–', cursor);
+    const at = em === -1 ? en : en === -1 ? em : Math.min(em, en);
+    if (at === -1) break;
+    let left = at;
+    while (left > from && WHITESPACE.test(value[left - 1])) left--;
+    let right = at + 1;
+    while (right < value.length && WHITESPACE.test(value[right])) right++;
+    out += value.slice(from, left) + ', ';
+    from = right;
+    cursor = right;
+  }
+  return out + value.slice(from);
+}
+
+const normalise = (s: string): string => collapseDashes(s.trim());
+
+/**
+ * Parse the model's JSON into the group descriptions and the collection
+ * overview. `overview` is reserved: it is never a folder key, and it is kept
+ * only as a non-empty string under `MAX_OVERVIEW` characters.
+ *
+ * Only the folders that were asked for survive. The model's output is
+ * untrusted input: an unexpected key would otherwise be rendered into the
+ * user's document, and a key it invented has no block to sit under anyway.
+ * Entries that are not usable strings are dropped rather than defaulted, so
+ * unusable output costs the prose, never the frame.
+ */
+export function parseGroupDraft(text: string, folders: string[]): GroupDraft {
+  const wanted = new Set(folders.filter((f) => f !== 'overview'));
+  const out: GroupDraft = { descriptions: {}, overview: null };
 
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -112,13 +167,17 @@ export function parseGroupResponse(
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
 
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (!wanted.has(key)) continue;
     if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
+    const trimmed = normalise(value);
+    if (key === 'overview') {
+      if (trimmed && trimmed.length <= MAX_OVERVIEW) out.overview = trimmed;
+      continue;
+    }
+    if (!wanted.has(key)) continue;
     if (!trimmed || trimmed.length > MAX_DESCRIPTION) continue;
     // The voice rule is enforced here as well as asked for in the prompt: a
     // model slip should not put an em dash into the user's document.
-    out[key] = trimmed.replace(/\s*[—–]\s*/g, ', ');
+    out.descriptions[key] = trimmed;
   }
   return out;
 }

@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extract, specHashProjection, specContentHash, contentHash } from '@spec-layer/extractor';
+import {
+  extract, specHashProjection, specContentHash, contentHash, ProseProxyError,
+} from '@spec-layer/extractor';
 import type { ProseV2, SerializedNode } from '@spec-layer/extractor';
 import chipHidden from '../../extractor/test/fixtures/chip-hidden.json';
 
 // Prove Update never reaches the AI: the module is mocked and asserted unused.
-vi.mock('../src/ui/ai', () => ({
-  generateProse: vi.fn(async () => { throw new Error('updateFromSource must not call the AI'); }),
-}));
+// Individual describe blocks below (missingProseKeys, mergeTopUp are pure and
+// need no mock; topUpProseForRebuild sets the resolved value per case) rely on
+// the default throwing so a path that must not call the AI is caught outright.
+vi.mock('../src/ui/ai', () => ({ generateProse: vi.fn(async () => { throw new Error('the AI must not run here'); }) }));
 
 import { generateProse } from '../src/ui/ai';
 import {
@@ -14,6 +17,11 @@ import {
   createDocFrame,
   createState,
   updateFromSource,
+  missingProseKeys,
+  mergeTopUp,
+  topUpProseForRebuild,
+  takeTopUpNote,
+  QUOTA_EXHAUSTED_REBUILD_NOTE,
   type BuildPresenter,
   type DocSource,
 } from '../src/ui/actions';
@@ -219,6 +227,142 @@ describe('updateFromSource', () => {
     const spec = extract(source.node, { figmaFile: source.fileKey });
     expect(msg.contentHash).toBe(specContentHash(spec, { includeHidden: true }));
     expect(msg.contentHash).not.toBe(specContentHash(spec));
+  });
+});
+
+describe('missingProseKeys', () => {
+  const stored: ProseV2 = { v: 2, overview: { lede: 'L.', body: [] }, semantics: ['S.'], keyboard: [{ keys: ['Tab'], action: 'Moves focus.' }] };
+  it('asks only for the requested keys with no content, and always for keyboard', () => {
+    const missing = missingProseKeys(stored, new Set(['overview', 'semantics', 'whenToUse', 'guidelines', 'keyboard']));
+    expect([...missing].sort()).toEqual(['guidelines', 'keyboard', 'whenToUse']);
+  });
+  it('treats a blank lede with no body, and an empty list, as missing', () => {
+    const blank: ProseV2 = { v: 2, overview: { lede: '  ', body: [] }, pointer: [] };
+    expect([...missingProseKeys(blank, new Set(['overview', 'pointer']))].sort()).toEqual(['overview', 'pointer']);
+  });
+  it('asks for everything requested when there is no stored prose', () => {
+    expect([...missingProseKeys(null, new Set(['overview', 'content']))].sort()).toEqual(['content', 'overview']);
+  });
+});
+
+describe('mergeTopUp', () => {
+  const stored: ProseV2 = { v: 2, overview: { lede: 'Kept.', body: [] }, keyboard: [{ keys: ['Tab'], action: 'Old.' }] };
+  it('keeps every stored key, fills the empty ones, and lets the fresh keyboard win', () => {
+    const fresh: ProseV2 = { v: 2, overview: { lede: 'New.', body: ['N.'] }, whenToUse: ['W.'], keyboard: [{ keys: ['Enter'], action: 'New.' }] };
+    expect(mergeTopUp(stored, fresh)).toEqual({
+      v: 2, overview: { lede: 'Kept.', body: [] }, whenToUse: ['W.'], keyboard: [{ keys: ['Enter'], action: 'New.' }],
+    });
+  });
+  it('returns the stored prose when nothing was generated, and null when both are empty', () => {
+    expect(mergeTopUp(stored, null)).toEqual(stored);
+    expect(mergeTopUp(null, { v: 2 })).toBeNull();
+  });
+});
+
+describe('topUpProseForRebuild', () => {
+  const src: DocSource = {
+    docId: 'd1', node: buttonNode(), fileKey: 'F',
+    config: { sections: ['definition', 'whenToUse', 'keyboard'], variantIds: [], measureViews: [], includeHidden: false, aiEnabled: true, anatomyView: 'diagram' },
+    prose: { v: 2, overview: { lede: 'Kept.', body: [] } },
+  };
+  const aiState = () => Object.assign(createState(), { aiEnabled: true, figmaUserId: 'u1' });
+
+  beforeEach(() => { vi.mocked(generateProse).mockReset(); });
+
+  it('asks the model only for the missing keys and keyboard, and merges the answer', async () => {
+    vi.mocked(generateProse).mockResolvedValueOnce({
+      prose: { v: 2, overview: { lede: 'Ignored.', body: [] }, whenToUse: ['W.'], keyboard: [{ keys: ['Space'], action: 'Activates.' }] },
+      dropped: {},
+    });
+    const out = await topUpProseForRebuild(aiState(), src);
+    const requested = vi.mocked(generateProse).mock.calls[0][3] as Set<string>;
+    expect([...requested].sort()).toEqual(['keyboard', 'whenNotToUse', 'whenToUse']);
+    expect(out).toEqual({ v: 2, overview: { lede: 'Kept.', body: [] }, whenToUse: ['W.'], keyboard: [{ keys: ['Space'], action: 'Activates.' }] });
+  });
+
+  it('does not call the model when AI writing is off or nothing is missing', async () => {
+    const off = Object.assign(createState(), { aiEnabled: false, figmaUserId: 'u1' });
+    expect(await topUpProseForRebuild(off, src)).toEqual(src.prose);
+    const full: DocSource = { ...src, config: { ...src.config, sections: ['definition'] } };
+    expect(await topUpProseForRebuild(aiState(), full)).toEqual(src.prose);
+    expect(generateProse).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored prose and records the note when the model fails', async () => {
+    vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('rate_limited'));
+    const state = aiState();
+    expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
+    expect(state.pendingAiNote).toBe('Too many requests just now. Give it a minute.');
+  });
+
+  it('says so when the AI allowance runs out, which Create answers with the upgrade fork', async () => {
+    // noteGenerationError sets state.quotaExhausted and no note; the Create
+    // screen renders that as the fork, the rebuild path has nothing to render
+    // it with, so silence here would attribute the empty sections to "nothing
+    // to show".
+    vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('quota_exhausted'));
+    const state = aiState();
+    expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
+    expect(state.quotaExhausted).toBe(true);
+    expect(state.pendingAiNote).toBe(QUOTA_EXHAUSTED_REBUILD_NOTE);
+    expect(state.pendingAiNote).not.toBe('');
+    expect(state.pendingAiNote).not.toContain('—');
+  });
+
+  it('does not top up a document that was built with AI writing off', async () => {
+    // The panel toggle is on; the document's own config is not. Topping it up
+    // would write AI text into a doc whose stored config still reads
+    // aiEnabled: false, and a later empty AI section on it would be reported
+    // as "AI writing is off" although AI had just written into it.
+    const builtWithoutAi: DocSource = { ...src, config: { ...src.config, aiEnabled: false } };
+    expect(await topUpProseForRebuild(aiState(), builtWithoutAi)).toEqual(src.prose);
+    expect(generateProse).not.toHaveBeenCalled();
+  });
+});
+
+describe('takeTopUpNote', () => {
+  it('returns the note and clears the slot', () => {
+    const state = createState();
+    state.pendingAiNote = 'Too many requests just now. Give it a minute.';
+    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    expect(state.pendingAiNote).toBe('');
+  });
+
+  it('returns null when there is nothing to report', () => {
+    expect(takeTopUpNote(createState())).toBeNull();
+  });
+
+  it('pins the fix: draining the note for one failed rebuild leaves nothing for a later, unrelated document to inherit', async () => {
+    // A stale-version doc whose top-up fails leaves a note on the shared slot.
+    const failing: DocSource = {
+      docId: 'a', node: buttonNode(), fileKey: 'F',
+      config: { sections: ['whenToUse', 'keyboard'], variantIds: [], measureViews: [], includeHidden: false, aiEnabled: true, anatomyView: 'diagram' },
+      prose: null,
+    };
+    const state = Object.assign(createState(), { aiEnabled: true, figmaUserId: 'u1' });
+    vi.mocked(generateProse).mockReset();
+    vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('rate_limited'));
+    await topUpProseForRebuild(state, failing);
+    expect(state.pendingAiNote).not.toBe('');
+
+    // The UI drains the note the instant this document's own top-up finishes
+    // (this is the fix: ui-vnext.ts no longer waits for a later, unrelated
+    // completion to read the shared slot).
+    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    expect(state.pendingAiNote).toBe('');
+    vi.mocked(generateProse).mockClear();
+
+    // A later document whose stored prose already covers everything its
+    // config requests never calls the model at all, and must not inherit the
+    // earlier document's failure note.
+    const complete: DocSource = {
+      docId: 'c', node: buttonNode(), fileKey: 'F',
+      config: { sections: ['accessibility'], variantIds: [], measureViews: [], includeHidden: false, aiEnabled: true, anatomyView: 'diagram' },
+      prose: { v: 2, semantics: ['Focusable.'] },
+    };
+    expect(await topUpProseForRebuild(state, complete)).toEqual(complete.prose);
+    expect(generateProse).not.toHaveBeenCalled();
+    expect(state.pendingAiNote).toBe('');
   });
 });
 

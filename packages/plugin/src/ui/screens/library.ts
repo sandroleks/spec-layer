@@ -84,8 +84,9 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
 
 /** What "Rebuild needed" costs the reader, said once, under the status. A
  *  rebuild redraws the frames in the current layout; the two-lane doc model
- *  keeps whatever was written into the editorial slots. */
-export const REBUILD_NOTE = 'Frames are rebuilt in the new layout. Your written sections are kept.';
+ *  keeps whatever was written into the editorial slots, and Keyboard is
+ *  rewritten because the old prompt's bullets upgrade to the table lossily. */
+export const REBUILD_NOTE = 'Frames are rebuilt in the new layout. Your written sections are kept. Keyboard is rewritten when AI writing is on.';
 
 function statusMarkup(status: LibraryRowStatus): string {
   return (

@@ -1,7 +1,9 @@
 import {
   FOUNDATION_SYSTEM_PROMPT,
-  PROSE_SYSTEM_PROMPT,
-  proseFewShot,
+  PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot,
+  LEGACY_PROSE_SYSTEM_PROMPT, LEGACY_PROSE_MAX_TOKENS, LEGACY_GROUP_MAX_TOKENS, legacyProseFewShot,
+  LEGACY_FOUNDATION_SYSTEM_PROMPT,
+  GROUP_MAX_TOKENS,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
 import { handlePublish, handlePull, handleRotate, handleVersions } from './libraries';
@@ -57,6 +59,38 @@ const MAX_PROMPT_CHARS = 100_000;
 const BODY_FIELDS = new Set(['cacheKey', 'request']);
 const REQUEST_FIELDS = new Set(['model', 'max_tokens', 'system', 'messages']);
 
+/** The model each proved tier writes with. The plugin never names one. */
+export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5', free: 'claude-haiku-4-5' };
+/** Sonnet 5 runs adaptive thinking when the field is omitted and bills it as
+ *  output; low effort keeps that small for a formatting-heavy JSON task. Haiku
+ *  4.5 rejects `output_config.effort`, so free gets nothing extra. */
+export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
+
+export interface ProseKeyInfo { version: number; kind: 'component' | 'groups'; tier: Tier | null }
+
+/**
+ * `prose:v9:pro:<hash>...`, `prose:v2:groups:free:<hash>...`, or the shipped
+ * v8 / groups v1 shapes with no tier. Null for anything else.
+ */
+export function parseProseCacheKey(key: string): ProseKeyInfo | null {
+  const m = /^prose:v(\d+):(groups:)?(?:(pro|free):)?[^:]/.exec(key);
+  if (!m) return null;
+  const version = Number(m[1]);
+  const kind = m[2] ? 'groups' : 'component';
+  const tier = (m[3] as Tier | undefined) ?? null;
+  const legacy = (kind === 'component' && version <= 8) || (kind === 'groups' && version <= 1);
+  if (legacy && tier !== null) return null;
+  if (!legacy && tier === null) return null;
+  return { version, kind, tier };
+}
+
+/** The body forwarded to Anthropic: the client's request plus what only the
+ *  server may decide. A legacy request already names its model. */
+export function upstreamRequest(request: Record<string, unknown>, tier: Tier, legacy: boolean): Record<string, unknown> {
+  if (legacy) return request;
+  return { ...request, model: MODEL_BY_TIER[tier], ...(tier === 'pro' ? { output_config: PRO_OUTPUT_CONFIG } : {}) };
+}
+
 function hasOnlyFields(value: Record<string, unknown>, fields: Set<string>): boolean {
   return Object.keys(value).every((key) => fields.has(key));
 }
@@ -104,69 +138,77 @@ export function validateProseBody(body: unknown): string | null {
   const record = body as Record<string, unknown>;
   if (!hasOnlyFields(record, BODY_FIELDS)) return 'unexpected body field';
   const typed = body as ProseBody;
-  if (typeof typed.cacheKey !== 'string' || !/^prose:v\d+:/.test(typed.cacheKey)) return 'bad cacheKey';
+  if (typeof typed.cacheKey !== 'string') return 'bad cacheKey';
+  const info = parseProseCacheKey(typed.cacheKey);
+  if (!info) return 'bad cacheKey';
   const r = typed.request;
   if (!r || typeof r !== 'object' || Array.isArray(r)) return 'missing request';
   if (!hasOnlyFields(r as Record<string, unknown>, REQUEST_FIELDS)) return 'unexpected request field';
-  if (r.model !== 'claude-haiku-4-5') return 'model not allowed';
-  if (!Number.isInteger(r.max_tokens) || (r.max_tokens as number) <= 0 || (r.max_tokens as number) > 3000) {
-    return 'invalid max_tokens';
+  const legacy = info.tier === null;
+  if (legacy) {
+    if (r.model !== 'claude-haiku-4-5') return 'model not allowed';
+  } else if ('model' in (r as Record<string, unknown>)) {
+    return 'model not allowed';
   }
+  if (!Number.isInteger(r.max_tokens) || (r.max_tokens as number) <= 0) return 'invalid max_tokens';
   if (!Array.isArray(r.messages)) return 'missing messages';
 
-  const isGroups = typed.cacheKey.includes(':groups:');
-  if (isGroups) {
-    if (r.system !== FOUNDATION_SYSTEM_PROMPT) return 'system not allowed';
-    if (r.max_tokens !== 1200) return 'max_tokens not allowed';
+  if (info.kind === 'groups') {
+    // The v8 group prompt and the v9 one are different bytes: Task 5 added the
+    // collection-overview rule in place. A 5.1.0 client keeps sending the old
+    // ones, so the legacy branch has to compare against the frozen copy or
+    // every shipped foundation build loses its AI descriptions on deploy.
+    if (r.system !== (legacy ? LEGACY_FOUNDATION_SYSTEM_PROMPT : FOUNDATION_SYSTEM_PROMPT)) return 'system not allowed';
+    if (r.max_tokens !== (legacy ? LEGACY_GROUP_MAX_TOKENS : GROUP_MAX_TOKENS)) return 'max_tokens not allowed';
     if (r.messages.length !== 1) return 'invalid messages';
     const message = r.messages[0] as Record<string, unknown> | null;
     if (
-      !message ||
-      typeof message !== 'object' ||
-      Array.isArray(message) ||
+      !message || typeof message !== 'object' || Array.isArray(message) ||
       !hasOnlyFields(message, new Set(['role', 'content'])) ||
-      message.role !== 'user' ||
-      typeof message.content !== 'string' ||
+      message.role !== 'user' || typeof message.content !== 'string' ||
       message.content.length > MAX_PROMPT_CHARS ||
       !message.content.startsWith('Collection: ') ||
       !message.content.includes('\nGroups to describe:\n') ||
       !message.content.includes('\nReturn JSON: ')
-    ) {
-      return 'invalid messages';
-    }
+    ) return 'invalid messages';
     return null;
   }
 
-  if (r.system !== PROSE_SYSTEM_PROMPT) return 'system not allowed';
-  if (r.max_tokens !== 3000) return 'max_tokens not allowed';
+  if (r.system !== (legacy ? LEGACY_PROSE_SYSTEM_PROMPT : PROSE_SYSTEM_PROMPT)) return 'system not allowed';
+  if (r.max_tokens !== (legacy ? LEGACY_PROSE_MAX_TOKENS : PROSE_MAX_TOKENS)) return 'max_tokens not allowed';
   if (r.messages.length !== 3) return 'invalid messages';
-  const [expectedUser, expectedAssistant] = proseFewShot();
+  const [expectedUser, expectedAssistant] = legacy ? legacyProseFewShot() : proseFewShot();
   const [user, assistant, final] = r.messages as Array<Record<string, unknown> | null>;
   if (
-    !user ||
-    !assistant ||
-    !final ||
+    !user || !assistant || !final ||
     !hasOnlyFields(user, new Set(['role', 'content'])) ||
     !hasOnlyFields(assistant, new Set(['role', 'content'])) ||
     !hasOnlyFields(final, new Set(['role', 'content'])) ||
     user.role !== expectedUser.role ||
-    user.content !== expectedUser.content ||
+    !sameContent(user.content, expectedUser.content) ||
     assistant.role !== expectedAssistant.role ||
-    assistant.content !== expectedAssistant.content ||
+    !sameContent(assistant.content, expectedAssistant.content) ||
     final.role !== 'user'
-  ) {
-    return 'invalid messages';
-  }
+  ) return 'invalid messages';
   const prompt = componentPrompt(final.content);
   if (
-    !prompt ||
-    prompt.length > MAX_PROMPT_CHARS ||
+    !prompt || prompt.length > MAX_PROMPT_CHARS ||
     !prompt.startsWith('Component: ') ||
     !prompt.includes('\nReturn ONLY a JSON object with these keys: ')
-  ) {
-    return 'invalid messages';
-  }
+  ) return 'invalid messages';
   return null;
+}
+
+/**
+ * Byte-for-byte equality of a message's content with the shipped one, whether
+ * it is a string or a block array. JSON.stringify is stable for the shapes the
+ * extractor builds (a fixed key order in a literal), and the expected side is
+ * built by the same code, so a serialized comparison is exact here. It is also
+ * how the one allowed `cache_control` is pinned to its position: any other
+ * placement changes the bytes and fails.
+ */
+function sameContent(actual: unknown, expected: unknown): boolean {
+  return JSON.stringify(actual) === JSON.stringify(expected);
 }
 
 export async function handleProse(req: Request, deps: HandlerDeps): Promise<Response> {
@@ -198,6 +240,13 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   } else {
     identityId = `free:${identity.id}`;
   }
+
+  // The key names the tier the client believes it has, and the generated answer
+  // is cached under it. A key that disagrees with the proof would let a Pro user
+  // be served a Haiku draft (or the reverse), so it is refused before any quota
+  // is reserved rather than quietly answered from the wrong bucket.
+  const keyInfo = parseProseCacheKey(cacheKey)!; // validated above
+  if (keyInfo.tier !== null && keyInfo.tier !== tier) return json(400, { error: 'tier mismatch' });
 
   const quota = deps.quotaFor(identityId);
   const reserved = await quota.reserve(tier, cacheKey);
@@ -233,7 +282,7 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
         'x-api-key': deps.anthropicKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify(body.request),
+      body: JSON.stringify(upstreamRequest(body.request as Record<string, unknown>, tier, keyInfo.tier === null)),
     });
   } catch {
     await quota.release(cacheKey);

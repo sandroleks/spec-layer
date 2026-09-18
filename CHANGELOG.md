@@ -19,6 +19,13 @@ none of the reasoning above.
 
 ### Added
 
+- **Foundation group descriptions come with a collection overview.** The one
+  AI call that writes a line per colour group now also writes one paragraph
+  about the whole collection, from its name, its mode names, and how many of
+  its variables alias into each other collection, and nothing else. It is
+  stored on the document beside the group lines and kept across Update; the
+  foundation frame work shipping alongside draws it.
+
 - **The component description and documentation links reach the document.**
   Extraction now carries the root component's Figma description and its
   documentation link URLs, the one human-authored signal a file has, and both
@@ -89,6 +96,19 @@ none of the reasoning above.
 
 ### Changed
 
+- **AI writing is one structured call per component, written by the model
+  your plan proves.** The prompt is rewritten around the Docs 2.0 sections:
+  the model sees the display name, the designer's description as an
+  authoritative statement, the anatomy with part kinds, option axes apart
+  from the state axis, and returns one JSON object whose every name is
+  checked against the component before anything is drawn. A Pro license
+  writes with Claude Sonnet 5; the free plan writes with Claude Haiku 4.5.
+  The proxy assigns the model from the tier it proves, so the plugin never
+  asks for one, and a draft written for one tier is never served to the
+  other. The system prompt and the one exemplar sit behind a prompt-cache
+  breakpoint. Deploy the proxy before this plugin build; the proxy keeps
+  serving the previous plugin until then.
+
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
   gains a facts strip, a When to use and When not to use pair, and Do and
@@ -113,14 +133,25 @@ none of the reasoning above.
 - **Empty sections are left out, and the result says so.** A section with
   nothing to show, or an AI section when AI writing is off, is not drawn. No
   "To be written." or "None." appears on canvas. The result message reads,
-  for example, "Docs created. Left out Keyboard: nothing to show." Updating a
-  document from the Library reports left-out sections the same way. A Library
-  row that needs a rebuild now says that frames are rebuilt in the new layout
-  and written sections are kept. Stored prose moves to a structured shape;
+  for example, "Created 3 frames. Left out Keyboard: nothing to show. Left
+  out When to use: AI writing is off." The message counts the frames it
+  created or replaced. Updating a document from the Library reports left-out
+  sections the same way. A Library row that needs a rebuild now says that
+  frames are rebuilt in the new layout and written sections are kept. Stored
+  prose moves to a structured shape;
   a document written by an earlier build upgrades on read, and its keyboard
   bullets that open with a key become table rows. That upgrade retires the v1
   `designConsiderations` field, which no section ever rendered, so the copied
   YAML brief no longer carries its optional `design_considerations` key.
+
+- **Rebuilding a document written by an earlier version fills in what the
+  old prompt could not.** When AI writing is on and the document itself was
+  built with it on, a Library rebuild asks the model only for the sections the
+  stored prose leaves empty, and rewrites Keyboard, whose old bullet form does
+  not carry over cleanly. A document built without AI writing is rebuilt
+  without it. Your written sections are kept. The Library row says so, and if
+  your AI allowance runs out part-way it says that too rather than reporting a
+  clean rebuild.
 
 ### Fixed
 

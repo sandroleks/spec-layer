@@ -8,12 +8,14 @@ export * from './layout';
 export * from './rawValues';
 export * from './extract';
 export * from './foundation';
+export * from './foundationOverview';
 export * from './hash';
 export * from './diff';
 export * from './version';
 export * from './resolve';
 export * from './statesMatrix';
 export * from './contrast';
+export * from './displayNames';
 export {
   colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP,
   // The classifier's vocabulary, so a consumer telling a user how to name their
@@ -25,6 +27,7 @@ export {
   type ContrastFailure, type ColorContrastReport,
 } from './colorContrast';
 export * from './prose/prompt';
+export * from './prose/promptV2';
 export * from './prose/foundationPrompt';
 export * from './prose/client';
 export * from './prose/v2';

@@ -100,12 +100,15 @@ import {
   omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
+  resultOutcome,
   send,
   setAiEnabled,
   setBrandTheme,
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
+  takeTopUpNote,
+  topUpProseForRebuild,
   updateFromSource,
   type BuildPresenter,
 } from './actions';
@@ -234,6 +237,10 @@ type LibraryUpdateOperation = {
    *  per document as each one finishes, because `state.lastOmitted` only ever
    *  holds the newest. */
   omitted: OmittedSection[];
+  /** Failed-generation notes from any stale-version rebuild in this run,
+   *  deduplicated by text, the way `omitted` is. Collected per document for
+   *  the same reason: `state.pendingAiNote` only ever holds the newest. */
+  aiNotes: string[];
 };
 /**
  * Copy for AI. Unlike an update, this never writes anything, so it carries no
@@ -704,14 +711,14 @@ async function buildFoundations(): Promise<void> {
   foundationAiNote = '';
   setFoundationGenerating(true);
   let groupDescriptions: Record<string, string> | undefined;
+  let collectionOverview: string | undefined;
   const briefs = currentGroupBriefs();
   const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
 
   if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.groups.length) {
     try {
-      groupDescriptions = await generateGroupDescriptions(
-        briefs.collectionName,
-        briefs.groups,
+      const draft = await generateGroupDescriptions(
+        briefs,
         effectiveAuth(
           state.licenseKey,
           state.licenseInstanceId,
@@ -724,6 +731,8 @@ async function buildFoundations(): Promise<void> {
           paintAllowance();
         },
       );
+      groupDescriptions = draft.descriptions;
+      collectionOverview = foundationSelection.collections.length === 1 ? draft.overview ?? undefined : undefined;
       if (Object.keys(groupDescriptions).length === 0) {
         foundationAiNote = 'AI descriptions came back empty.';
       }
@@ -754,6 +763,7 @@ async function buildFoundations(): Promise<void> {
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions }
       : {}),
+    ...(collectionOverview ? { collectionOverview } : {}),
   });
 }
 
@@ -942,6 +952,7 @@ function finishLibraryOperation(error = ''): void {
   if (!active) return;
   let message = '';
   let omitted: OmittedSection[] = [];
+  let aiNotes: string[] = [];
   if (active.kind === 'update') {
     message = error
       ? active.completed > 0
@@ -956,11 +967,28 @@ function finishLibraryOperation(error = ''): void {
       omitted = active.omitted;
       message = omissionsMessage(message, omitted);
     }
+    // A failed rebuild top-up, reported the way Create reports its own
+    // pendingAiNote: appended after the outcome (and any omissions).
+    if (!error && active.aiNotes.length) {
+      aiNotes = active.aiNotes;
+      message = `${message} ${aiNotes.join(' ')}`;
+    }
   } else if (error) {
     message = error;
   }
   state.lastOmitted = [];
-  if (message) nativeNotify(message, error ? { error: true, timeout: 5000 } : omitted.length ? { timeout: 5500 } : {});
+  // Mirrors lastOmitted: whatever a rebuild's top-up left here belongs to
+  // this operation and no other, so it must not survive to be misread by a
+  // later, unrelated Library action. The normal path already drains this
+  // slot per document (see the docSource handler below); this is the
+  // backstop for an operation that aborts before that drain runs.
+  state.pendingAiNote = '';
+  if (message) {
+    nativeNotify(
+      message,
+      error ? { error: true, timeout: 5000 } : (omitted.length || aiNotes.length) ? { timeout: 5500 } : {},
+    );
+  }
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
@@ -984,7 +1012,11 @@ function dispatchNextLibraryUpdate(): void {
   if (entry.kind === 'foundation') {
     send({ type: 'updateFoundationDoc', docId });
   } else {
-    send({ type: 'requestDocSource', docId, intent: 'update' });
+    // A stale-version row asks the docSource handler to top up the AI
+    // sections the old prompt could not write before it rebuilds; every
+    // other row is a plain refresh of the generated lane.
+    const intent = libraryDrift.get(docId) === 'staleVersion' ? 'rebuild' : 'update';
+    send({ type: 'requestDocSource', docId, intent });
   }
   if (view === 'library') paint();
 }
@@ -1007,9 +1039,11 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     if (!ok) return;
   }
   if (!beginOperation(operation)) return;
-  // Start from nothing: a Create earlier in this session may have left a
-  // record behind, and it says nothing about these documents.
+  // Start from nothing: a Create earlier in this session (or an aborted
+  // Library run) may have left a record behind, and it says nothing about
+  // these documents.
   state.lastOmitted = [];
+  state.pendingAiNote = '';
   libraryOperation = {
     kind: 'update',
     queue: [...docIds],
@@ -1019,6 +1053,7 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     batch,
     confirmedOverwrite: new Set(edited),
     omitted: [],
+    aiNotes: [],
   };
   dispatchNextLibraryUpdate();
 }
@@ -1036,6 +1071,11 @@ function completeCurrentLibraryUpdate(): void {
     if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
   }
   state.lastOmitted = [];
+  // A stale-version rebuild's aiNotes entry, if any, was already taken from
+  // state.pendingAiNote (and the slot cleared) at the docSource handler's
+  // topUpProseForRebuild call site below, for exactly this document — not
+  // read here, where any document's docFrameDone (rebuild or not) would
+  // otherwise risk folding in a note left over from a different one.
   dispatchNextLibraryUpdate();
 }
 
@@ -2348,7 +2388,7 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = omissionsMessage(msg.replaced ? 'Docs replaced.' : 'Docs created.', state.lastOmitted);
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), state.lastOmitted);
         screen = {
           kind: 'success',
           componentName: currentName(),
@@ -2642,9 +2682,26 @@ window.onmessage = (event: MessageEvent): void => {
       }
       const runUpdate = (): void => {
         let preparationError = '';
-        void updateFromSource(state, src, libraryPresenter((message) => {
-          preparationError = message;
-        })).then((dispatched) => {
+        // A stale-version rebuild tops up the sections the old prompt could
+        // not write before the frame rebuilds; a plain update sends the
+        // source's prose through untouched, exactly as before.
+        void (async () => {
+          let prose = src.prose;
+          if (msg.intent === 'rebuild') {
+            prose = await topUpProseForRebuild(state, src);
+            // Take the note (if any) right here, for exactly the document
+            // whose top-up just finished, and clear the shared slot in the
+            // same step. Waiting until this document's own completion (or
+            // reading it from any other document's) would risk reporting a
+            // failure against the wrong document, or losing it if this whole
+            // operation aborts before that later point ever runs.
+            const note = takeTopUpNote(state);
+            if (note && !active.aiNotes.includes(note)) active.aiNotes.push(note);
+          }
+          return updateFromSource(state, { ...src, prose }, libraryPresenter((message) => {
+            preparationError = message;
+          }));
+        })().then((dispatched) => {
           if (!dispatched) {
             finishLibraryOperation(
               preparationError ||

@@ -6,7 +6,7 @@
  * without.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { SerializedNode } from '@spec-layer/extractor';
+import type { ProseV2, SerializedNode } from '@spec-layer/extractor';
 
 // --- mocks (must be declared before importing the module under test) -------
 
@@ -15,13 +15,16 @@ vi.mock('../src/ui/ai', () => ({
 }));
 
 import {
+  createDocFrame,
   createState,
   ensureExtracted,
   renderOne,
   setAiEnabled,
   setBrandTheme,
+  type BuildPresenter,
   type UiState,
 } from '../src/ui/actions';
+import { generateProse } from '../src/ui/ai';
 
 // --- fixtures --------------------------------------------------------------
 
@@ -128,6 +131,53 @@ describe('ensureExtracted', () => {
 
   it('reports failure when nothing is selected', () => {
     expect(ensureExtracted(createState())).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The prose seam: what generateProse returns is already validated
+// ---------------------------------------------------------------------------
+
+describe('createDocFrame stores the validated v2 draft', () => {
+  const presenter = (): BuildPresenter => ({
+    clear: vi.fn(), error: vi.fn(), info: vi.fn(),
+    setBusy: vi.fn(), startProgress: vi.fn(), stopProgress: vi.fn(),
+  });
+
+  /** A state that will actually generate: AI on, a free identity, a selection. */
+  function aiState(): UiState {
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'FILE1';
+    state.aiEnabled = true;
+    state.figmaUserId = 'u1';
+    return state;
+  }
+
+  const selection = { sections: new Set(['definition' as const]), variantIds: new Set<string>() };
+
+  it('keeps the prose as returned and records the requested v2 key set', async () => {
+    const prose: ProseV2 = { v: 2, overview: { lede: 'A Button triggers an action.', body: [] } };
+    vi.mocked(generateProse).mockResolvedValue({ prose, dropped: {} });
+    const state = aiState();
+    await createDocFrame(state, selection, presenter());
+    // No upgrade, no second validation: the extractor already did both.
+    expect(state.generatedProse).toEqual(prose);
+    expect(state.generatedProseKeys).toEqual(new Set(['overview']));
+    // The requested set is exactly what the checked section needs.
+    expect(vi.mocked(generateProse).mock.calls[0][3]).toEqual(new Set(['overview']));
+  });
+
+  it('leaves the draft null when validation dropped everything', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(generateProse).mockResolvedValue({ prose: { v: 2 }, dropped: { keyboard: 2 } });
+    const state = aiState();
+    await createDocFrame(state, selection, presenter());
+    expect(state.generatedProse).toBeNull();
+    expect(state.generatedProseKeys).toBeNull();
+    // The drop count is logged, so a prompt regression is visible.
+    expect(warn).toHaveBeenCalledWith('[Spec Layer] prose items dropped by validation', { keyboard: 2 });
+    warn.mockRestore();
   });
 });
 

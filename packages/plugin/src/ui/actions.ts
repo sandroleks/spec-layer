@@ -10,21 +10,21 @@ import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml,
-  upgradeProseV1, validateProseV2, proseToLegacy, hasProseContent,
+  proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
-  SerializedNode, IntermediateSpec, ProseKey, ProseV2, ProxyQuota,
-  SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
-  FoundationScope, FoundationGuidelinesV5, YamlValue,
+  SerializedNode, IntermediateSpec, ProseV2Key, ProseV2, ProxyQuota,
+  SerializedFoundation, FoundationSpec, FoundationSelection,
+  FoundationScope, FoundationGuidelinesV5, YamlValue, GroupDraftInput,
 } from '@spec-layer/extractor';
-import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import {
-  buildDocModel, proseKeysForSections,
+  buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
@@ -70,10 +70,12 @@ export interface UiState {
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
-  generatedProseKeys: Set<ProseKey> | null;
+  generatedProseKeys: Set<ProseV2Key> | null;
   // What the last build left out, and why, so the result message can say so.
   // Set by every assembled build and cleared once it has been reported.
   lastOmitted: OmittedSection[];
+  // Frames the last assembled build draws, for the result message.
+  lastFrameCount: number;
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("the AI sections were left out") instead of aborting the whole frame.
   pendingAiNote: string;
@@ -106,6 +108,7 @@ export function createState(): UiState {
     generatedProse: null,
     generatedProseKeys: null,
     lastOmitted: [],
+    lastFrameCount: 0,
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -196,7 +199,7 @@ export function autoExtract(
 /** The prose keys the currently-checked sections need. */
 /** True when a fresh draft is needed: no draft yet, or the cached draft was
  *  generated for a key set that does not cover everything now requested. */
-export function proseNeedsRegen(state: UiState, requested: Set<ProseKey>): boolean {
+export function proseNeedsRegen(state: UiState, requested: Set<ProseV2Key>): boolean {
   if (!state.generatedProse || !state.generatedProseKeys) return true;
   for (const k of requested) if (!state.generatedProseKeys.has(k)) return true;
   return false;
@@ -228,6 +231,27 @@ export function licenseFailureNote(reason: string | undefined): { note: string; 
   };
 }
 
+/**
+ * Turn a failed generation into state: the quota fork, a lapsed license, a
+ * typed proxy code, or a plain error message. Shared by the Create path and
+ * the rebuild top-up so the two never explain the same failure differently.
+ */
+export function noteGenerationError(state: UiState, err: unknown): void {
+  if (err instanceof ProseProxyError) {
+    if (err.code === 'quota_exhausted') { state.quotaExhausted = true; return; }
+    if (err.code === 'license_not_active') {
+      const { note, markInactive } = licenseFailureNote(err.reason);
+      if (markInactive) state.licenseActive = false;
+      state.pendingAiNote = note;
+      return;
+    }
+    state.pendingAiNote = generationErrorCopy(err.code);
+    return;
+  }
+  const detail = err instanceof Error ? err.message : String(err);
+  state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
+}
+
 async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise<void> {
   state.pendingAiNote = '';
   if (!willGenerateProseFor(state, sections)) return;
@@ -249,9 +273,10 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       (q) => { state.quota = q; },
     );
     if (draft) {
-      // The v8 prompt writes v1; the canvas renders v2. Upgrade, then validate
-      // every name against the spec so nothing the model invented is drawn.
-      const { prose, dropped } = validateProseV2(state.currentSpec!, upgradeProseV1(draft));
+      // The extractor already validated every name against the spec; what is
+      // left is exactly what the canvas may draw. `dropped` is the count of
+      // what the model invented, logged so a prompt regression is visible.
+      const { prose, dropped } = draft;
       const droppedCount = Object.values(dropped).reduce((a, b) => a + (b ?? 0), 0);
       if (droppedCount > 0) console.warn('[Spec Layer] prose items dropped by validation', dropped);
       state.generatedProse = hasProseContent(prose) ? prose : null;
@@ -264,26 +289,7 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
   } catch (err) {
     state.generatedProse = null;
     state.generatedProseKeys = null;
-    if (err instanceof ProseProxyError) {
-      if (err.code === 'quota_exhausted') {
-        state.quotaExhausted = true;
-        return; // callers proceed without AI; the UI renders the upgrade fork
-      }
-      if (err.code === 'license_not_active') {
-        // Key lapsed mid-session (or the license server was unreachable): drop to
-        // the free identity ONLY on a definite lapse, never on a mere outage, and
-        // explain it. This frame builds without the AI sections; the next
-        // generation re-probes. Settings reflects the lapse on its next refresh.
-        const { note, markInactive } = licenseFailureNote(err.reason);
-        if (markInactive) state.licenseActive = false;
-        state.pendingAiNote = note;
-        return;
-      }
-      state.pendingAiNote = generationErrorCopy(err.code);
-      return;
-    }
-    const detail = err instanceof Error ? err.message : String(err);
-    state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
+    noteGenerationError(state, err);
   }
 }
 
@@ -399,6 +405,7 @@ async function assembleDocFor(
     measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
   });
   state.lastOmitted = model.omitted;
+  state.lastFrameCount = frameCountFor(model);
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
@@ -419,6 +426,11 @@ const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
   nothingToShow: 'nothing to show',
   aiOff: 'AI writing is off',
 };
+
+/** The first sentence of the result message, spec 9.3: `Created 3 frames.` */
+export function resultOutcome(replaced: boolean, frames: number): string {
+  return `${replaced ? 'Replaced' : 'Created'} ${frames} frame${frames === 1 ? '' : 's'}.`;
+}
 
 /** The result line: the outcome, then one sentence per omitted section. */
 export function omissionsMessage(outcome: string, omitted: OmittedSection[]): string {
@@ -514,6 +526,7 @@ export async function updateFromSource(
     // Same record the Create path keeps, so the Library's completion message
     // can name the sections it left out instead of staying silent about them.
     state.lastOmitted = model.omitted;
+    state.lastFrameCount = frameCountFor(model);
     send({
       type: 'renderDocFrame',
       model,
@@ -532,6 +545,123 @@ export async function updateFromSource(
     ui.error(`Update failed: ${msg}`);
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stale-version rebuild top-up — a document built by an earlier extractor
+// version upgrades losslessly where v1 has a source, but several v2 keys have
+// none and land empty. When AI writing is on, a rebuild asks the model only
+// for those empty keys (plus keyboard, upgraded lossily from v1 bullets) and
+// merges the answer under the stored prose. Stored prose always wins except
+// keyboard, which the rebuild note promises to rewrite.
+// ---------------------------------------------------------------------------
+
+/** True when the stored prose has something to show for `key`. */
+function hasKeyContent(prose: ProseV2 | null, key: ProseV2Key): boolean {
+  const value = prose?.[key];
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  const overview = value as { lede?: string; body?: string[] };
+  return Boolean(overview.lede?.trim()) || (overview.body?.length ?? 0) > 0;
+}
+
+/**
+ * The keys a stale-version rebuild asks the model for: every requested key the
+ * upgraded prose left empty, plus `keyboard` whenever it is requested, because
+ * the v1 keyboard bullets upgrade lossily (a bullet that did not open with a
+ * key was dropped). This is what the rebuild note promises.
+ */
+export function missingProseKeys(prose: ProseV2 | null, requested: ReadonlySet<ProseV2Key>): Set<ProseV2Key> {
+  const out = new Set<ProseV2Key>();
+  for (const key of requested) {
+    if (key === 'keyboard' || !hasKeyContent(prose, key)) out.add(key);
+  }
+  return out;
+}
+
+/** Stored prose wins wherever it has content; the fresh draft fills the rest
+ *  and always replaces keyboard. Null when the result has nothing to show. */
+export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): ProseV2 | null {
+  if (!generated) return stored;
+  const out: ProseV2 = { ...(stored ?? {}), v: 2 };
+  for (const key of PROSE_V2_KEYS) {
+    const fresh = generated[key];
+    if (fresh === undefined) continue;
+    if (key === 'keyboard' || !hasKeyContent(stored, key)) {
+      (out as unknown as Record<string, unknown>)[key] = fresh;
+    }
+  }
+  return hasProseContent(out) ? out : null;
+}
+
+/**
+ * What a rebuild says when the AI allowance ran out part-way through.
+ *
+ * `noteGenerationError` answers `quota_exhausted` by setting
+ * `state.quotaExhausted`, which the Create screen renders as the upgrade
+ * fork. A rebuild has no such fork, so without a note of its own the batch
+ * would report plain success and the sections AI never wrote would be
+ * attributed to "nothing to show". The wording reuses `groupErrorCopy`'s
+ * quota sentence, so neither a period nor a number is invented here.
+ */
+export const QUOTA_EXHAUSTED_REBUILD_NOTE =
+  'Your monthly AI allowance is used up, so the sections that needed it were left empty.';
+
+/**
+ * The AI half of a stale-version rebuild (spec 8.3): when AI writing is on,
+ * ask for the selected keys the stored prose leaves empty (and keyboard), and
+ * merge the answer under the stored prose. A failure keeps the stored prose
+ * and records the same note Create would; the rebuild goes ahead either way.
+ *
+ * Gated on the document's own `aiEnabled` as well as the panel toggle. A doc
+ * built without AI writing is rebuilt without it: topping it up because the
+ * toggle happens to be on now would put AI text into a document whose stored
+ * config still reads `aiEnabled: false`, and a later empty AI section on it
+ * would then be reported as "AI writing is off" when AI had just written into
+ * it.
+ */
+export async function topUpProseForRebuild(state: UiState, src: DocSource): Promise<ProseV2 | null> {
+  if (!src.config.aiEnabled || !canGenerate(state)) return src.prose;
+  const requested = proseKeysForSections(new Set<SectionId>(src.config.sections));
+  const missing = missingProseKeys(src.prose, requested);
+  if (missing.size === 0) return src.prose;
+  try {
+    const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
+    const draft = await generateProse(
+      spec,
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      src.node.id,
+      missing,
+      (q) => { state.quota = q; },
+    );
+    return mergeTopUp(src.prose, draft?.prose ?? null);
+  } catch (err) {
+    noteGenerationError(state, err);
+    // The one failure it answers with state instead of a note, said out loud
+    // here because this path has no upgrade fork to render it.
+    if (!state.pendingAiNote && err instanceof ProseProxyError && err.code === 'quota_exhausted') {
+      state.pendingAiNote = QUOTA_EXHAUSTED_REBUILD_NOTE;
+    }
+    return src.prose;
+  }
+}
+
+/**
+ * Drain whatever note a `topUpProseForRebuild` call just left on
+ * `state.pendingAiNote`, clearing the slot in the same step.
+ *
+ * The slot is shared, mutable UI state, so it must be read exactly once,
+ * right where the caller knows which document's top-up just finished, and
+ * cleared immediately, never left for some later, unrelated completion to
+ * read. A caller that awaits `topUpProseForRebuild` should call this before
+ * doing anything else, so a failure can never survive to be misattributed to
+ * a document whose dispatch never ran the top-up at all.
+ */
+export function takeTopUpNote(state: UiState): string | null {
+  const note = state.pendingAiNote;
+  state.pendingAiNote = '';
+  return note || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -986,7 +1116,7 @@ export function currentFoundationSelection(): FoundationSelection {
  * Lives here because the spec and selection do, and it keys the briefs the same
  * way the renderer keys its lookups.
  */
-export function currentGroupBriefs(): { collectionName: string; groups: FoundationGroupBrief[] } | null {
+export function currentGroupBriefs(): GroupDraftInput | null {
   if (!foundationSpec) return null;
   return groupBriefs(foundationSpec, foundationSelection);
 }
