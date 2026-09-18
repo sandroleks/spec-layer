@@ -146,6 +146,23 @@ describe('serializeNode', () => {
     const nullRefs = { ...mockRect, componentPropertyReferences: null };
     expect('visibleProperty' in await serializeNode(nullRefs as never, resolver)).toBe(false);
   });
+
+  it('reads the description and documentation links off a component root', async () => {
+    const root = {
+      ...mockRect, id: '3:1', name: 'Checkbox', type: 'COMPONENT_SET',
+      description: 'Selects one or more options.',
+      documentationLinks: [{ uri: 'https://example.com/checkbox' }, { uri: '' }],
+    };
+    const out = await serializeNode(root as never, resolver);
+    expect(out.description).toBe('Selects one or more options.');
+    expect(out.documentationLinks).toEqual(['https://example.com/checkbox']);
+  });
+
+  it('omits both fields on a node without them', async () => {
+    const out = await serializeNode(mockRect as never, resolver);
+    expect('description' in out).toBe(false);
+    expect('documentationLinks' in out).toBe(false);
+  });
 });
 
 describe('unbound paint detection', () => {

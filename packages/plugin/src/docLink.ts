@@ -8,10 +8,10 @@
  * extractor-purity boundary).
  */
 import {
-  contentHash,
-  type FoundationScope, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
+  contentHash, upgradeProseV1, isProseV2, hasProseContent,
+  type FoundationScope, type ProseV2, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
 } from '@spec-layer/extractor';
-import { KNOWN_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
+import { KNOWN_SECTION_IDS, LEGACY_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
 
 /** pluginData key on each generated Section. */
 export const DOC_LINK_KEY = 'specLayerDoc';
@@ -74,11 +74,6 @@ export interface FoundationDocBaseline {
 
 export type DocBaseline = ComponentDocBaseline | FoundationDocBaseline;
 
-const PROSE_STRING_KEYS = [
-  'definition', 'accessibility', 'interactions',
-  'variantsSummary', 'anatomySummary', 'designConsiderations', 'contentConsiderations',
-] as const;
-
 /**
  * UTF-8 byte length of a string, computed without `TextEncoder`.
  *
@@ -118,46 +113,79 @@ function utf8ByteLength(s: string): number {
   return bytes;
 }
 
-export function serializeProse(p: ProseDrafts): string {
+export function serializeProse(p: ProseV2): string {
   const out = JSON.stringify(p);
   // Figma stores plugin data as UTF-8; measure encoded length, not UTF-16 units.
   const bytes = utf8ByteLength(out);
   if (bytes > PROSE_BUDGET_BYTES) {
     // Dropped whole, not truncated: half a guideline set presented as complete
-    // is worse than none. But a silent drop makes a later Copy claim "made
-    // before guidelines were saved", which is false — they existed and were
-    // generated. Logging is the only record that this happened.
+    // is worse than none. Logging is the only record that this happened.
     console.warn(`[Spec Layer] prose dropped: ${bytes} bytes exceeds the ${PROSE_BUDGET_BYTES}-byte budget`);
     return '';
   }
   return out;
 }
 
-export function parseProse(raw: string): ProseDrafts | null {
-  if (!raw) return null;
-  let j: unknown;
-  try { j = JSON.parse(raw); } catch { return null; }
-  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
-  const o = j as Record<string, unknown>;
-  if (typeof o.definition !== 'string' || typeof o.accessibility !== 'string') return null;
+const V2_ARRAY_KEYS = [
+  'whenToUse', 'whenNotToUse', 'variantsGuide', 'anatomyParts', 'properties', 'states',
+  'keyboard', 'pointer', 'semantics', 'content', 'guidelines',
+] as const;
+const V2_STRING_KEYS = ['variantsIntro', 'anatomySummary'] as const;
 
+/** A stored v2 blob, field by field, with anything mistyped dropped. */
+function readProseV2(o: Record<string, unknown>): ProseV2 | null {
+  const out: ProseV2 = { v: 2 };
+  const ov = o.overview as { lede?: unknown; body?: unknown } | undefined;
+  if (ov && typeof ov === 'object' && typeof ov.lede === 'string') {
+    out.overview = {
+      lede: ov.lede,
+      body: Array.isArray(ov.body) ? ov.body.filter((x): x is string => typeof x === 'string') : [],
+    };
+  }
+  for (const k of V2_STRING_KEYS) if (typeof o[k] === 'string') out[k] = o[k] as string;
+  for (const k of V2_ARRAY_KEYS) {
+    if (Array.isArray(o[k])) (out as unknown as Record<string, unknown>)[k] = o[k];
+  }
+  return hasProseContent(out) ? out : null;
+}
+
+/** A stored v1 blob (no `v`), upgraded. Null when it is not a v1 shape either. */
+function readProseV1(o: Record<string, unknown>): ProseV2 | null {
+  if (typeof o.definition !== 'string' || typeof o.accessibility !== 'string') return null;
   const strings = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-
-  const out: ProseDrafts = {
+  const v1: ProseDrafts = {
     definition: o.definition,
     accessibility: o.accessibility,
     dos: strings(o.dos),
     donts: strings(o.donts),
   };
-  for (const k of PROSE_STRING_KEYS) {
-    if (k === 'definition' || k === 'accessibility') continue;
-    if (typeof o[k] === 'string') (out as unknown as Record<string, unknown>)[k] = o[k];
+  // `designConsiderations` is deliberately absent here: no section ever
+  // rendered it, and Docs 2.0 retires it, so a stored v1 blob carrying it
+  // reads as prose with everything else intact and that field gone.
+  for (const k of ['interactions', 'variantsSummary', 'anatomySummary', 'contentConsiderations'] as const) {
+    if (typeof o[k] === 'string') v1[k] = o[k] as string;
   }
-  if (Array.isArray(o.anatomyParts)) {
-    (out as unknown as Record<string, unknown>).anatomyParts = o.anatomyParts;
-  }
-  return out;
+  if (Array.isArray(o.anatomyParts)) v1.anatomyParts = o.anatomyParts as ProseDrafts['anatomyParts'];
+  const upgraded = upgradeProseV1(v1);
+  return hasProseContent(upgraded) ? upgraded : null;
+}
+
+/**
+ * Parse stored prose. A v2 blob reads as is; a v1 blob (written by any build
+ * before Docs 2.0) is upgraded on read, so the canvas always holds v2 and no
+ * consumer branches on the version. Null for nothing, garbage, an unknown
+ * version, or a shape with no content at all.
+ */
+export function parseProse(raw: string): ProseV2 | null {
+  if (!raw) return null;
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return null; }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  const o = j as Record<string, unknown>;
+  if (isProseV2(o)) return readProseV2(o);
+  if (o.v !== undefined) return null;
+  return readProseV1(o);
 }
 
 export function serializeBaseline(baseline: DocBaseline): string {
@@ -402,6 +430,23 @@ function commonValid(j: { contentHash?: unknown; selfHash?: unknown; generatedAt
     && typeof j.pluginVersion === 'string';
 }
 
+/** Legacy ids expand to their successors first: a stored legacy id must always
+ *  converge on the new vocabulary rather than surviving unmapped. Every
+ *  successor (`properties`, `pointer`, `keyboard`) is itself in ALL_SECTIONS,
+ *  so `KNOWN_SECTION_IDS` alone covers the pass-through case. Anything else
+ *  known passes through; anything unrecognized drops. Order is preserved and
+ *  no id appears twice. */
+function migrateSectionIds(raw: unknown[]): SectionId[] {
+  const out: SectionId[] = [];
+  for (const x of raw) {
+    if (typeof x !== 'string') continue;
+    const legacy = LEGACY_SECTION_IDS[x];
+    const mapped: SectionId[] = legacy ?? (KNOWN_SECTION_IDS.has(x) ? [x as SectionId] : []);
+    for (const id of mapped) if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | null {
   if (
     typeof j.sourceNodeId !== 'string' || !commonValid(j)
@@ -410,8 +455,7 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
 
   const c = j.config as Partial<DocConfig>;
   const config: DocConfig = {
-    sections: (c.sections ?? []).filter((x): x is SectionId =>
-      typeof x === 'string' && KNOWN_SECTION_IDS.has(x)),
+    sections: migrateSectionIds(c.sections ?? []),
     variantIds: Array.isArray(c.variantIds) ? c.variantIds.filter((x): x is string => typeof x === 'string') : [],
     aiEnabled: c.aiEnabled === true,
     // Anatomy is intentionally diagram-only. Normalize old table/both links so

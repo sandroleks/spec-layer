@@ -875,3 +875,28 @@ describe('tokensFor', () => {
     expect(tokensFor(plain, { includeHidden: false })).toEqual(plain);
   });
 });
+
+describe('extractGaps radius binding', () => {
+  const ident = (name: string): RefIdentity => (
+    { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+  const node = (bindings: TokenRef[]): SerializedNode => ({
+    id: '1:1', name: 'Card', type: 'COMPONENT', visible: true,
+    children: [{
+      id: '1:2', name: 'Surface', type: 'FRAME', visible: true,
+      layout: { mode: 'VERTICAL', cornerRadius: 8 },
+      bindings,
+    }],
+  } as unknown as SerializedNode);
+
+  it('reports a hardcoded radius when no corner is bound', () => {
+    const gaps = extractGaps(node([]));
+    expect(gaps.some((g) => g.property === 'border-radius' && g.issue === 'hardcoded-value')).toBe(true);
+  });
+
+  it('reports nothing when any single corner carries the binding', () => {
+    for (const corner of ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius', 'cornerRadius']) {
+      const gaps = extractGaps(node([{ property: corner, ...ident('radius/md') }]));
+      expect(gaps.filter((g) => g.property === 'border-radius')).toEqual([]);
+    }
+  });
+});

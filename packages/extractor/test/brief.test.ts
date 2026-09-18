@@ -146,7 +146,7 @@ interface BriefShape {
     file_key?: string; file_name?: string;
     node_id: string; node_name: string; component_key?: string;
   };
-  component?: { name: string; related?: string[] };
+  component?: { name: string; description?: string; related?: string[] };
   api: {
     variants: Record<string, { options: string[]; default?: string | boolean }>;
     states?: string[];
@@ -192,7 +192,7 @@ describe('foundationBrief', () => {
     const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
     expect(b.spec_layer.kind).toBe('foundation');
     expect(b.spec_layer.version).toBe(4);
-    expect(b.spec_layer.extractor).toBe('2');
+    expect(b.spec_layer.extractor).toBe('3');
   });
 
   it('names the file key as file_key, and omits the source block entirely when unavailable', () => {
@@ -400,6 +400,7 @@ interface ParsedComponentBrief {
 
 const SPEC: IntermediateSpec = {
   name: 'Button', figmaKey: 'm3-button', figmaFile: 'abc123', figmaNode: '1:100',
+  description: '', documentationLinks: [],
   anatomyComponentId: '1:101',
   anatomy: [
     { id: 'p0', name: 'container', path: 'Container/container', type: 'FRAME', nested: false, depth: 0 },
@@ -439,6 +440,14 @@ describe('componentBrief', () => {
     expect(y.spec_layer.kind).toBe('component');
     expect(y.source).toEqual(
       { file_key: 'abc123', node_id: '1:100', node_name: 'Button', component_key: 'm3-button' });
+  });
+
+  it('carries the component description under component when one exists', () => {
+    const described: IntermediateSpec = { ...baseSpec(), description: 'Primary action.' };
+    const withDescription = componentBrief(described, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect(withDescription.component?.description).toBe('Primary action.');
+    const plain = componentBrief(baseSpec(), { generatedAt: 'T' }) as unknown as BriefShape;
+    expect('description' in (plain.component ?? {})).toBe(false);
   });
 
   // The pre-YAML object, not the parsed brief: only here can a test tell an

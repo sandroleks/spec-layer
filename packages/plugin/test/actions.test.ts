@@ -3,6 +3,7 @@ import {
   proseNeedsRegen,
   canGenerate,
   createState,
+  omissionsMessage,
   setLicenseKey,
   licenseFailureNote,
   type UiState,
@@ -11,7 +12,7 @@ import type { ProseKey } from '@spec-layer/extractor';
 
 describe('proseNeedsRegen', () => {
   const withDraft = (keys: ProseKey[]): UiState => ({
-    generatedProse: { definition: 'd', accessibility: '', dos: [], donts: [] },
+    generatedProse: { v: 2, overview: { lede: 'd', body: [] } },
     generatedProseKeys: new Set(keys),
   } as unknown as UiState);
 
@@ -82,5 +83,17 @@ describe('licenseFailureNote', () => {
   it('a definite lapse drops to the free tier', () => {
     expect(licenseFailureNote('expired').markInactive).toBe(true);
     expect(licenseFailureNote(undefined).markInactive).toBe(true);
+  });
+});
+
+describe('omissionsMessage', () => {
+  it('states the outcome alone when nothing was left out', () => {
+    expect(omissionsMessage('Created 3 frames.', [])).toBe('Created 3 frames.');
+  });
+  it('names every omitted section with its reason, in order', () => {
+    expect(omissionsMessage('Created 3 frames.', [
+      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
+      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+    ])).toBe('Created 3 frames. Left out Keyboard: nothing to show. Left out When to use: AI writing is off.');
   });
 });

@@ -1,5 +1,5 @@
 import type {
-  SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseDrafts,
+  SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseV2,
   SpecHashProjection, FoundationUnitContent,
 } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
@@ -70,7 +70,7 @@ export interface PublishComponentSource {
   docId: string;
   name: string;
   node: SerializedNode;
-  prose: ProseDrafts | null;
+  prose: ProseV2 | null;
 }
 
 export type MainToUi =
@@ -115,7 +115,7 @@ export type MainToUi =
    *  canvas read back through its editorial tags, falling back to the stored
    *  DOC_PROSE_KEY blob for anything the canvas does not show. Update builds
    *  from this and never regenerates. */
-  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; prose: ProseDrafts | null; intent: DocSourceIntent }
+  | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; prose: ProseV2 | null; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
   /** `groupDescriptions` merges every foundation doc link's stored group
    *  descriptions found on canvas, keyed by collection name then folder path.
@@ -141,7 +141,7 @@ export type MainToUi =
   | { type: 'foundationDone'; created: number; replaced: number; docId?: string;
       groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'foundationFrameError'; message: string; created: number }
-  | { type: 'docProse'; docId: string; prose: ProseDrafts | null }
+  | { type: 'docProse'; docId: string; prose: ProseV2 | null }
   /** Reply for `requestDocBaseline`. `baseline` is null when the Section is
    *  gone, unlinked, has no baseline, the baseline fails to parse, or its
    *  contentHash no longer equals the link's. For a foundation link, `live` is
@@ -218,7 +218,7 @@ export type UiToMain =
    *  the Section under DOC_BASELINE_KEY so the Library can later diff it
    *  against the live projection. Same object, same function: main wraps it
    *  with `kind` and `contentHash` and never recomputes it. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseDrafts; baseline: SpecHashProjection }
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseV2; baseline: SpecHashProjection }
   | { type: 'requestDocProse'; docId: string }
   /** Lazy: sent only when a drifted row is expanded. Nothing new rides the
    *  `library` message, which is the hot path. */

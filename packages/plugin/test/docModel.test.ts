@@ -1,27 +1,304 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocModel, calloutLabels, measureKey, type SectionId, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS, type SectionBlock, firstSentence, proseKeysForSections, headingLine } from '../src/ui/docModel';
-import type { IntermediateSpec, RefIdentity } from '@spec-layer/extractor';
+import {
+  buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS, KNOWN_SECTION_IDS,
+  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
+  stateChanges, type SectionId, type SectionBlock,
+} from '../src/ui/docModel';
+import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
 
-/** A TokenRule now carries the full identity Figma stated for the reference.
- *  These tests are about the doc model, not resolution, so one identity is
- *  minted per token NAME -- what a name meant before the identity fields
- *  existed. The view model's own `token` field is untouched. */
-const ident = (name: string): RefIdentity => (
-  { id: `VariableID:${name}`, name, kind: 'variable', remote: false });
+/** A TokenRule carries the full identity Figma stated for the reference. These
+ *  tests are about the doc model, not resolution, so one identity is minted per
+ *  token NAME -- what a name meant before the identity fields existed. */
+const ident = (name: string): RefIdentity => ({ id: `VariableID:${name}`, name, kind: 'variable', remote: false });
 
 const spec = {
-  name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1',
-  anatomy: [{ name: 'Label', nested: false }],
-  props: [{ name: 'Size', kind: 'variant', default: 'M', options: ['S','M'] }],
-  variants: [{ prop: 'Style', values: ['Filled','Text'] }],
-  states: ['Enabled','Hovered'],
-  tokens: [{ part: 'Container', property: 'fill', ...ident('color/bg'), conditions: {} }],
-  rawValues: [],
-  related: ['Icon'], gaps: [],
-  layout: [], variantInstances: [],
+  name: 'checkbox', figmaKey: '', figmaFile: 'f', figmaFileName: 'Design System', figmaNode: '1:1',
+  description: 'Selects one or more options. Pairs a box with a label.',
+  documentationLinks: ['https://example.com/checkbox'],
+  anatomy: [
+    { id: '1:2', name: 'checkboxItem', type: 'FRAME', nested: false, depth: 0, path: 'Container/checkboxItem' },
+    { id: '1:3', name: 'Label', type: 'TEXT', nested: false, depth: 0, path: 'Container/Label' },
+  ],
+  anatomyComponentId: '1:10',
+  props: [
+    { name: 'Style', kind: 'variant', default: 'Filled', options: ['Filled', 'Outlined'] },
+    { name: 'showLabel', kind: 'boolean', default: true },
+    { name: 'label', kind: 'text', default: 'Label' },
+  ],
+  variants: [{ prop: 'Style', values: ['Filled', 'Outlined'] }, { prop: 'State', values: ['Default', 'Hover'] }],
+  variantInstances: [
+    { nodeId: '1:10', name: 'Style=Filled, State=Default', values: { Style: 'Filled', State: 'Default' } },
+    { nodeId: '1:11', name: 'Style=Filled, State=Hover', values: { Style: 'Filled', State: 'Hover' } },
+    { nodeId: '1:12', name: 'Style=Outlined, State=Default', values: { Style: 'Outlined', State: 'Default' } },
+    { nodeId: '1:13', name: 'Style=Outlined, State=Hover', values: { Style: 'Outlined', State: 'Hover' } },
+  ],
+  states: ['Default', 'Hover'],
+  tokens: [
+    { part: 'checkboxItem', path: 'Container/checkboxItem', property: 'fill', ...ident('color/bg'), conditions: {} },
+    { part: 'checkboxItem', path: 'Container/checkboxItem', property: 'border', ...ident('color/border'), conditions: { State: ['Default'] } },
+    { part: 'checkboxItem', path: 'Container/checkboxItem', property: 'border', ...ident('color/border-hover'), conditions: { State: ['Hover'] } },
+  ],
+  rawValues: [], related: ['Radio'], gaps: [], layout: [], nodeEffects: [],
 } as unknown as IntermediateSpec;
 
-const prose = { definition: 'A button.', accessibility: '- **Keyboard:** focusable', dos: ['Do A'], donts: ["Don't B"] };
+const prose: ProseV2 = {
+  v: 2,
+  overview: { lede: 'A checkbox selects one or more options.', body: ['Use it in forms.'] },
+  whenToUse: ['Several options can be chosen.'],
+  whenNotToUse: ['Only one option is allowed. Use a Radio instead.'],
+  variantsIntro: 'Style sets the weight.',
+  variantsGuide: [{ name: 'Filled', guidance: 'the default.' }],
+  anatomySummary: 'A box and a label.',
+  anatomyParts: [{ name: 'Label', role: 'Names the option.' }],
+  properties: [{ name: 'showLabel', description: 'Hides the label for icon-only use.' }],
+  states: [{ name: 'Hover', whenItApplies: 'The pointer is over the box.' }],
+  keyboard: [{ keys: ['Space'], action: 'Toggles the box.' }],
+  pointer: ['Clicking the label toggles the box.'],
+  semantics: ['Render a native `<input type="checkbox">`.'],
+  content: ['Write labels as statements.'],
+  guidelines: [{ do: { rule: 'Pair the box with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not use it for one choice.', reason: 'Use a Radio.' } }],
+};
+
+const ALL = new Set<SectionId>(ALL_SECTIONS.map((s) => s.id));
+const find = (model: { sections: SectionBlock[] }, id: SectionId): SectionBlock | undefined =>
+  model.sections.find((s) => s.id === id);
+
+describe('section map', () => {
+  it('lists the fourteen sections in frame order', () => {
+    expect(ALL_SECTIONS.map((s) => s.id)).toEqual([
+      'definition', 'whenToUse', 'variants', 'dosDonts', 'related',
+      'anatomy', 'properties', 'states', 'measurements', 'tokens',
+      'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
+    ]);
+    expect(GROUPS.map((g) => g.label)).toEqual(['Usage', 'Specifications', 'Accessibility']);
+    expect(KNOWN_SECTION_IDS.has('configuration')).toBe(false);
+    expect(LEGACY_SECTION_IDS.configuration).toEqual(['properties']);
+  });
+
+  it('requests the v1 prose keys the v8 prompt can still fill', () => {
+    expect([...proseKeysForSections(['definition', 'keyboard', 'pointer', 'dosDonts', 'properties'])].sort())
+      .toEqual(['definition', 'donts', 'dos', 'interactions']);
+  });
+
+  it('maps checked sections to prose keys', () => {
+    expect([...proseKeysForSections(['anatomy'])].sort()).toEqual(['anatomyParts', 'anatomySummary']);
+    expect([...proseKeysForSections(['related'])]).toEqual([]);
+    expect([...proseKeysForSections(['dosDonts'])].sort()).toEqual(['donts', 'dos']);
+  });
+
+  it('groups the a11y sections Keyboard -> Pointer -> Semantics -> Content', () => {
+    const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
+    expect(a11y).toEqual(['keyboard', 'pointer', 'accessibility', 'contentConsiderations']);
+  });
+});
+
+describe('buildDocModel with prose', () => {
+  const model = buildDocModel(spec, prose, ALL, new Set(['1:10']), { aiEnabled: true });
+
+  it('names the component for people and keeps the raw name', () => {
+    expect(model.componentName).toBe('checkbox');
+    expect(model.displayName).toBe('Checkbox');
+  });
+
+  it('builds the facts strip from counts and the source file', () => {
+    expect(model.facts).toEqual({
+      items: [
+        { label: 'Properties', value: '3' }, { label: 'Variants', value: '4' }, { label: 'States', value: '2' },
+        { label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' },
+      ],
+      sourceFile: 'Design System',
+      links: ['https://example.com/checkbox'],
+    });
+  });
+
+  it('renders the AI overview as tagged prose, led by the designer description', () => {
+    expect(find(model, 'definition')).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: 'A checkbox selects one or more options.',
+      text: 'Use it in forms.',
+    });
+  });
+
+  it('builds when to use as two columns', () => {
+    const block = find(model, 'whenToUse');
+    expect(block?.kind).toBe('twoColumns');
+    if (block?.kind !== 'twoColumns') return;
+    expect(block.left.heading).toBe('When to use');
+    expect(block.left.items.map((b) => b.text)).toEqual(['Several options can be chosen.']);
+    expect(block.right.slot).toBe('whenNotToUse');
+  });
+
+  it('builds the variants matrix with intro and guide, option axes only', () => {
+    const block = find(model, 'variants');
+    if (block?.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.intro).toBe('Style sets the weight.');
+    expect(block.guide).toEqual([{ name: 'Filled', guidance: 'the default.' }]);
+    expect(block.columns).toEqual(['Filled', 'Outlined']);
+  });
+
+  it('builds do and don\'t as pairs', () => {
+    expect(find(model, 'dosDonts')).toMatchObject({ kind: 'guidelinePairs', pairs: prose.guidelines });
+  });
+
+  it('builds the properties table with every property and plain-word types', () => {
+    const block = find(model, 'properties');
+    if (block?.kind !== 'propertiesTable') throw new Error('expected propertiesTable');
+    expect(block.hasDescriptions).toBe(true);
+    expect(block.rows).toEqual([
+      { name: 'Style', type: 'Variant', values: 'Filled · Outlined', defaultValue: 'Filled', description: null },
+      { name: 'showLabel', type: 'Boolean', values: 'true / false', defaultValue: 'true', description: 'Hides the label for icon-only use.' },
+      { name: 'label', type: 'Text', values: '', defaultValue: 'Label', description: null },
+    ]);
+  });
+
+  it('builds the states table from token deltas against the default variant', () => {
+    const block = find(model, 'states');
+    if (block?.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.table).toEqual([
+      { name: 'Default', changes: [], whenItApplies: null },
+      { name: 'Hover', changes: [{ part: 'checkboxItem', property: 'border', from: 'color/border', to: 'color/border-hover' }], whenItApplies: 'The pointer is over the box.' },
+    ]);
+  });
+
+  it('builds the keyboard table and the three bullet sections with their slots', () => {
+    expect(find(model, 'keyboard')).toMatchObject({ kind: 'keyboardTable', rows: [{ keys: ['Space'], action: 'Toggles the box.' }] });
+    expect(find(model, 'pointer')).toMatchObject({ kind: 'bullets', slot: 'pointer' });
+    expect(find(model, 'accessibility')).toMatchObject({ kind: 'bullets', slot: 'semantics', heading: 'Semantics and focus' });
+    expect(find(model, 'contentConsiderations')).toMatchObject({ kind: 'bullets', slot: 'content', heading: 'Content' });
+  });
+
+  it('carries anatomy roles under the new field and the measurements table rows', () => {
+    const anatomy = find(model, 'anatomy');
+    if (anatomy?.kind !== 'anatomy') throw new Error('expected anatomy');
+    expect(anatomy.parts.find((p) => p.name === 'Label')?.role).toBe('Names the option.');
+    const measure = find(model, 'measurements');
+    if (measure?.kind !== 'measure') throw new Error('expected measure');
+    expect(measure.tableRows).toEqual([['checkboxItem', 'fill', 'color/bg'], ['checkboxItem', 'border', 'color/border']]);
+  });
+
+  it('lists related components as a bullet list with no slot', () => {
+    expect(find(model, 'related')).toMatchObject({ kind: 'bullets', slot: null });
+  });
+
+  it('omits nothing when every section has content', () => {
+    expect(model.omitted).toEqual([]);
+  });
+});
+
+describe('buildDocModel without prose', () => {
+  it('renders the description verbatim as the overview and omits the AI-only sections with reasons', () => {
+    const model = buildDocModel(spec, null, ALL, new Set(), { aiEnabled: false });
+    expect(find(model, 'definition')).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'description',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: null,
+      text: 'Pairs a box with a label.',
+    });
+    // No variant is ticked, so Tokens falls back to the conditioned table.
+    expect(model.sections.map((s) => s.id)).toEqual([
+      'definition', 'variants', 'related', 'anatomy', 'properties', 'states', 'measurements', 'tokens',
+    ]);
+    expect(find(model, 'tokens')).toMatchObject({ kind: 'table', columns: ['Part', 'Property', 'Token', 'Condition'] });
+    expect(model.omitted).toEqual([
+      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+      { id: 'dosDonts', label: "Do and don't", reason: 'aiOff' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
+      { id: 'pointer', label: 'Pointer and touch', reason: 'aiOff' },
+      { id: 'accessibility', label: 'Semantics and focus', reason: 'aiOff' },
+      { id: 'contentConsiderations', label: 'Content', reason: 'aiOff' },
+    ]);
+  });
+
+  it('omits the overview when there is no description either, and reports nothingToShow when AI was on but silent', () => {
+    const bare = { ...spec, description: '', related: [] } as IntermediateSpec;
+    const model = buildDocModel(bare, { v: 2 }, new Set<SectionId>(['definition', 'related', 'keyboard']), new Set(), { aiEnabled: true });
+    expect(model.sections).toEqual([]);
+    expect(model.omitted).toEqual([
+      { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
+      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
+    ]);
+  });
+
+  it('reports aiOff only for the sections AI writing would have filled', () => {
+    // A plain component: no variant axes, so Variants is empty whatever AI
+    // does. Saying 'aiOff' there would promise a section that turning AI on
+    // could not produce.
+    const plain = {
+      ...spec, variants: [], variantInstances: [], states: [],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      plain, null, new Set<SectionId>(['variants', 'whenToUse']), new Set(), { aiEnabled: false },
+    );
+    expect(model.omitted).toEqual([
+      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+      { id: 'variants', label: 'Variants', reason: 'nothingToShow' },
+    ]);
+  });
+
+  it('names exactly the prose-fed sections as AI-only', () => {
+    expect([...AI_ONLY_SECTIONS].sort()).toEqual(
+      ['accessibility', 'contentConsiderations', 'dosDonts', 'keyboard', 'pointer', 'whenToUse'],
+    );
+    // Overview falls back to the Figma description, and these four are built
+    // from the spec, so none of them is AI-only.
+    for (const id of ['definition', 'variants', 'anatomy', 'properties', 'states'] as SectionId[]) {
+      expect(AI_ONLY_SECTIONS.has(id)).toBe(false);
+    }
+  });
+
+  it('drops a properties description column when no row has one', () => {
+    const model = buildDocModel(spec, { v: 2 }, new Set<SectionId>(['properties']), new Set(), { aiEnabled: true });
+    expect(find(model, 'properties')).toMatchObject({ kind: 'propertiesTable', hasDescriptions: false });
+  });
+
+  it('emits only selected sections, in canonical order', () => {
+    const model = buildDocModel(spec, prose, new Set<SectionId>(['variants', 'definition']));
+    expect(model.sections.map((s) => s.id)).toEqual(['definition', 'variants']);
+    expect(model.componentName).toBe('checkbox');
+  });
+
+  it('labels the definition section "Overview"', () => {
+    const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
+    expect(model.sections[0].heading).toBe('Overview');
+  });
+});
+
+describe('factsFor', () => {
+  it('drops a count that is zero rather than claiming a zero', () => {
+    const plain = {
+      ...spec, props: [], variants: [], variantInstances: [], states: [], documentationLinks: [],
+      figmaFileName: undefined,
+    } as unknown as IntermediateSpec;
+    expect(factsFor(plain, false)).toEqual({
+      items: [{ label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' }],
+      sourceFile: null,
+      links: [],
+    });
+  });
+});
+
+describe('stateChanges', () => {
+  it('lists a token present on one side as from or to null', () => {
+    const only = {
+      ...spec,
+      tokens: [{ part: 'checkboxItem', path: 'Container/checkboxItem', property: 'shadow', ...ident('shadow/hover'), conditions: { State: ['Hover'] } }],
+    } as IntermediateSpec;
+    expect(stateChanges(only, false)).toEqual([
+      { name: 'Default', changes: [], whenItApplies: null },
+      { name: 'Hover', changes: [{ part: 'checkboxItem', property: 'shadow', from: null, to: 'shadow/hover' }], whenItApplies: null },
+    ]);
+  });
+
+  it('has nothing to say about a component with no state axis', () => {
+    const noStates = {
+      ...spec,
+      variants: [{ prop: 'Style', values: ['Filled', 'Outlined'] }],
+    } as IntermediateSpec;
+    expect(stateChanges(noStates, false)).toEqual([]);
+  });
+});
 
 describe('firstSentence', () => {
   it('splits off the first sentence and keeps the remainder', () => {
@@ -46,51 +323,7 @@ describe('firstSentence', () => {
   });
 });
 
-describe('buildDocModel', () => {
-  it('emits only selected sections, in canonical order', () => {
-    const model = buildDocModel(spec, prose, new Set<SectionId>(['definition','variants']));
-    expect(model.sections.map(s => s.id)).toEqual(['definition','variants']);
-    expect(model.componentName).toBe('Button');
-  });
-
-  it('labels the definition section "Overview"', () => {
-    const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
-    expect(model.sections[0].heading).toBe('Overview');
-  });
-
-  it('renders the guidelines prose sections with placeholder fallback', () => {
-    const ids = new Set<SectionId>(['interactions', 'contentConsiderations']);
-    const noProse = buildDocModel(spec, null, ids);
-    for (const id of ids) {
-      const block = noProse.sections.find((s) => s.id === id);
-      expect(block?.kind).toBe('prose');
-      if (block?.kind === 'prose') expect(block.text).toBe('_To be written._');
-    }
-    const withProse = buildDocModel(spec, {
-      ...prose, interactions: '### Mouse\n- x', contentConsiderations: '- z',
-    }, ids);
-    const inter = withProse.sections.find((s) => s.id === 'interactions');
-    if (inter?.kind === 'prose') expect(inter.text).toContain('### Mouse');
-  });
-
-  it('orders the a11y group Interactions -> Content -> Accessibility (no Design Considerations)', () => {
-    const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
-    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
-  });
-
-  it('maps checked sections to prose keys', () => {
-    expect([...proseKeysForSections(['anatomy'])].sort()).toEqual(['anatomyParts', 'anatomySummary']);
-    expect([...proseKeysForSections(['interactions', 'related'])]).toEqual(['interactions']);
-    expect([...proseKeysForSections(['dosDonts'])].sort()).toEqual(['donts', 'dos']);
-  });
-
-  it('uses placeholder text for AI sections when prose is null', () => {
-    const model = buildDocModel(spec, null, new Set<SectionId>(['definition']));
-    const def = model.sections[0];
-    expect(def.kind).toBe('prose');
-    if (def.kind === 'prose') expect(def.text).toMatch(/To be written/);
-  });
-
+describe('tokens section', () => {
   it('shapes tokens as a table block', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['tokens']));
     const tok = model.sections[0];
@@ -98,9 +331,17 @@ describe('buildDocModel', () => {
     if (tok.kind === 'table') expect(tok.rows.length).toBeGreaterThan(0);
   });
 
+  it('omits the section when there are no token rules at all', () => {
+    const bare = { ...spec, tokens: [] } as IntermediateSpec;
+    const model = buildDocModel(bare, prose, new Set<SectionId>(['tokens']));
+    expect(model.sections).toEqual([]);
+    expect(model.omitted).toEqual([{ id: 'tokens', label: 'Tokens', reason: 'nothingToShow' }]);
+  });
+
   it('builds per-variant token blocks when variants are selected', () => {
     const specV = {
       ...spec,
+      variants: [{ prop: 'Style', values: ['Filled', 'Text'] }],
       variantInstances: [
         { nodeId: 'n1', name: 'Filled', values: { Style: 'Filled' } },
         { nodeId: 'n2', name: 'Text', values: { Style: 'Text' } },
@@ -122,7 +363,9 @@ describe('buildDocModel', () => {
       expect(tokenNames).toContain('color/text'); // unconditioned, applies to all
     }
   });
+});
 
+describe('anatomy section', () => {
   it('shapes anatomy as a numbered diagram block carrying part + component ids', () => {
     const specA = {
       ...spec,
@@ -131,6 +374,7 @@ describe('buildDocModel', () => {
         { id: 'p:1', name: 'Container', type: 'FRAME', nested: false, depth: 0 },
         { id: 'p:2', name: 'Icon', type: 'INSTANCE', nested: true, depth: 1, component: 'Icon' },
       ],
+      tokens: [{ part: 'Container', property: 'fill', ...ident('color/bg'), conditions: {} }],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']));
     const block = model.sections[0];
@@ -139,13 +383,13 @@ describe('buildDocModel', () => {
       expect(block.componentId).toBe('c:1');
       expect(block.view).toBe('diagram');
       expect(block.parts).toEqual([
-        { label: '1', name: 'Container', nested: false, id: 'p:1', depth: 0, component: undefined, tokens: ['color/bg'], type: 'FRAME' },
-        { label: '1.1', name: 'Icon', nested: true, id: 'p:2', depth: 1, component: 'Icon', tokens: [], type: 'INSTANCE' },
+        { label: '1', name: 'Container', nested: false, id: 'p:1', depth: 0, component: undefined, tokens: ['color/bg'], type: 'FRAME', role: undefined, shownBy: undefined },
+        { label: '1.1', name: 'Icon', nested: true, id: 'p:2', depth: 1, component: 'Icon', tokens: [], type: 'INSTANCE', role: undefined, shownBy: undefined },
       ]);
     }
   });
 
-  it('anatomy block carries depth and tokens and always uses the diagram view', () => {
+  it('honours the requested anatomy view', () => {
     const specA = {
       ...spec,
       anatomyComponentId: 'c:1',
@@ -155,15 +399,16 @@ describe('buildDocModel', () => {
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'both' });
     const block = model.sections[0];
     if (block.kind !== 'anatomy') throw new Error('expected anatomy');
-    expect(block.view).toBe('diagram');
+    expect(block.view).toBe('both');
     expect(block.parts[0].depth).toBe(0);
     expect(block.parts[0].tokens).toContain('color/label');
   });
 
-  it('falls back to a bullet list when anatomy has no component to screenshot', () => {
+  it('omits the section when there is no component to screenshot', () => {
     const specA = { ...spec, anatomyComponentId: '', anatomy: [] } as unknown as IntermediateSpec;
     const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']));
-    expect(model.sections[0].kind).toBe('bullets');
+    expect(model.sections).toEqual([]);
+    expect(model.omitted).toEqual([{ id: 'anatomy', label: 'Anatomy', reason: 'nothingToShow' }]);
   });
 
   it('drops parts hidden by default from the anatomy block unless includeHidden is on', () => {
@@ -257,14 +502,32 @@ describe('buildDocModel', () => {
       .toEqual(['Role/Text/Accent']);
   });
 
-  it("renders dos and donts with check/cross markers", () => {
-    const model = buildDocModel(spec, prose, new Set<SectionId>(['dosDonts']));
+  it('drops an empty anatomy summary rather than rendering a blank line', () => {
+    const anatomySpec = {
+      ...spec,
+      anatomyComponentId: '1:2',
+      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      anatomySpec, { v: 2, anatomySummary: '' }, new Set<SectionId>(['anatomy']), new Set(),
+    );
     const block = model.sections[0];
-    expect(block.kind).toBe('bullets');
-    if (block.kind === 'bullets') {
-      expect(block.items.some((i) => i.text.startsWith('✅'))).toBe(true);
-      expect(block.items.some((i) => i.text.startsWith('❌'))).toBe(true);
-    }
+    expect(block.kind).toBe('anatomy');
+    if (block.kind === 'anatomy') expect(block.summary).toBeNull();
+  });
+
+  it('preserves a non-empty anatomy summary', () => {
+    const anatomySpec = {
+      ...spec,
+      anatomyComponentId: '1:2',
+      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      anatomySpec, { v: 2, anatomySummary: 'Two parts.' }, new Set<SectionId>(['anatomy']), new Set(),
+    );
+    const block = model.sections[0];
+    expect(block.kind).toBe('anatomy');
+    if (block.kind === 'anatomy') expect(block.summary).toBe('Two parts.');
   });
 });
 
@@ -284,7 +547,7 @@ describe('measurements section', () => {
       { part: 'Container', property: 'gap', conditions: {}, ...ident('spacing/sm') },
       { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
-    related: [], gaps: [], layout: [],
+    documentationLinks: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
 
   it('builds a measure block keyed by part+property for the default variant', () => {
@@ -298,6 +561,9 @@ describe('measurements section', () => {
     expect(block.tokens[measureKey('Container', 'gap')]).toBe('spacing/sm');
     // Hover-only rule must NOT leak into the default-variant lookup.
     expect(block.tokens[measureKey('Container', 'fill')]).toBeUndefined();
+    expect(block.tableRows).toEqual([
+      ['Container', 'padding', 'spacing/md'], ['Container', 'gap', 'spacing/sm'],
+    ]);
   });
 
   it('defaults measure views to all three when none are passed', () => {
@@ -365,7 +631,7 @@ describe('states matrix section', () => {
       { part: 'Container', property: 'fill', conditions: { State: ['Default'] }, ...ident('color/rest') },
       { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
-    rawValues: [], related: [], gaps: [], layout: [],
+    rawValues: [], documentationLinks: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
 
   it('builds a grid of nodeIds keyed by rowAxis x state', () => {
@@ -375,6 +641,19 @@ describe('states matrix section', () => {
     expect(block.states).toEqual(['Default', 'Hover']);
     expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Secondary']);
     expect(block.rows[0].cells).toEqual(['1:2', '1:3']); // Primary Default/Hover ids
+  });
+
+  it('carries the deterministic change table beside the matrix', () => {
+    const model = buildDocModel(spec, null, new Set(['states']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
+    expect(block.table).toEqual([
+      { name: 'Default', changes: [], whenItApplies: null },
+      {
+        name: 'Hover', whenItApplies: null,
+        changes: [{ part: 'Container', property: 'fill', from: 'color/rest', to: 'color/hover' }],
+      },
+    ]);
   });
 
   it('drops the section entirely when no state axis exists', () => {
@@ -390,6 +669,7 @@ describe('states matrix section', () => {
     } as unknown as IntermediateSpec;
     const model = buildDocModel(noStates, null, new Set(['states']), undefined);
     expect(model.sections.find((s) => s.id === 'states')).toBeUndefined();
+    expect(model.omitted).toEqual([{ id: 'states', label: 'States', reason: 'nothingToShow' }]);
   });
 
   it('caps rows at 4 and flags it', () => {
@@ -414,7 +694,7 @@ describe('states matrix section', () => {
 
   it('puts the default row-axis value first even when the cap would otherwise drop it', () => {
     // 5 row-axis values with the default ('E') sitting at raw index 4 (the 5th
-    // value) — naive slice(0, 4) would silently drop it. Default-first ordering
+    // value) -- naive slice(0, 4) would silently drop it. Default-first ordering
     // must promote it to row 0 before the cap is applied.
     const many = {
       ...spec,
@@ -469,7 +749,7 @@ describe('states matrix section: flags encoding', () => {
       { part: 'Container', property: 'fill', conditions: { Hover: ['True'] }, ...ident('color/hover') },
       { part: 'Container', property: 'opacity', conditions: { Disabled: ['True'] }, ...ident('opacity/disabled') },
     ],
-    rawValues: [], related: [], gaps: [], layout: [],
+    rawValues: [], documentationLinks: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
 
   it('builds a flags matrix with Default + each-flag-on columns', () => {
@@ -493,7 +773,7 @@ describe('states matrix section: flags encoding', () => {
 });
 
 describe('variants matrix section', () => {
-  // axes type[Primary,Outline] × size[Large,Small]; instances for all 4 combos.
+  // axes type[Primary,Outline] x size[Large,Small]; instances for all 4 combos.
   const spec: IntermediateSpec = {
     name: 'Button', figmaKey: 'k', figmaFile: 'f', figmaNode: '1:1',
     anatomy: [], anatomyComponentId: '1:2',
@@ -513,7 +793,7 @@ describe('variants matrix section', () => {
     ],
     states: [],
     tokens: [],
-    rawValues: [], related: [], gaps: [], layout: [],
+    rawValues: [], documentationLinks: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
 
   it('builds a 2-axis matrix with columns=size, one row per type, a nodeId per cell', () => {
@@ -566,27 +846,77 @@ describe('variants matrix section', () => {
     const model = buildDocModel(withFlag, null, new Set<SectionId>(['variants']));
     const block = model.sections[0];
     if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
-    // 1 axis (size) survives; Hover is excluded → single row labeled with the component name.
+    // 1 axis (size) survives; Hover is excluded, so a single row labeled with
+    // the component name.
     expect(block.columns).toEqual(['Large', 'Small']);
     expect(block.rows).toEqual([{ label: 'Button', cells: ['1:2', '1:4'] }]);
   });
 
-  it('sets summary from prose.variantsSummary when present', () => {
+  it('sets intro and guide from the v2 prose when present', () => {
     const model = buildDocModel(
       spec,
-      { definition: 'd', accessibility: 'a', dos: [], donts: [], variantsSummary: 'Type and size vary independently.' },
+      {
+        v: 2,
+        variantsIntro: 'Type and size vary independently.',
+        variantsGuide: [{ name: 'Primary', guidance: 'the default.' }],
+      },
       new Set<SectionId>(['variants']),
     );
     const block = model.sections[0];
     if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
-    expect(block.summary).toBe('Type and size vary independently.');
+    expect(block.intro).toBe('Type and size vary independently.');
+    expect(block.guide).toEqual([{ name: 'Primary', guidance: 'the default.' }]);
   });
 
-  it('sets summary to null when prose is null', () => {
+  it('drops a guide entry naming an option the spec no longer has, and keeps a matching one whatever its case', () => {
+    const model = buildDocModel(
+      spec,
+      {
+        v: 2,
+        variantsGuide: [
+          { name: 'Ghost', guidance: 'renamed away since this was written.' },
+          { name: 'outLINE', guidance: 'for secondary actions.' },
+        ],
+      },
+      new Set<SectionId>(['variants']),
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.guide).toEqual([{ name: 'outLINE', guidance: 'for secondary actions.' }]);
+  });
+
+  it('drops a guide entry that names a state-axis value, because the matrix never draws that column', () => {
+    const withFlag = {
+      ...spec,
+      props: [
+        { name: 'Hover', kind: 'variant', options: ['True', 'False'], default: 'False' },
+        { name: 'size', kind: 'variant', options: ['Large', 'Small'], default: 'Large' },
+      ],
+      variants: [
+        { prop: 'Hover', values: ['True', 'False'] },
+        { prop: 'size', values: ['Large', 'Small'] },
+      ],
+      variantInstances: [
+        { nodeId: '1:2', name: 'Large/Default', values: { Hover: 'False', size: 'Large' } },
+        { nodeId: '1:4', name: 'Small/Default', values: { Hover: 'False', size: 'Small' } },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(
+      withFlag,
+      { v: 2, variantsGuide: [{ name: 'True', guidance: 'on hover.' }, { name: 'Large', guidance: 'the default.' }] },
+      new Set<SectionId>(['variants']),
+    );
+    const block = model.sections[0];
+    if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
+    expect(block.guide).toEqual([{ name: 'Large', guidance: 'the default.' }]);
+  });
+
+  it('sets intro to null and guide to empty when prose is null', () => {
     const model = buildDocModel(spec, null, new Set<SectionId>(['variants']));
     const block = model.sections[0];
     if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
-    expect(block.summary).toBeNull();
+    expect(block.intro).toBeNull();
+    expect(block.guide).toEqual([]);
   });
 
   it('adds a held-axis note for 3+ axes, grid on the first two', () => {
@@ -644,7 +974,7 @@ describe('variants matrix section', () => {
     expect(block.rows[0].cells).toEqual(['1:2', '1:3']);
   });
 
-  it('emits a bullets block "No variants." when there are 0 non-state axes', () => {
+  it('omits the section when there are 0 non-state axes', () => {
     const noVariants = {
       ...spec,
       props: [],
@@ -652,12 +982,8 @@ describe('variants matrix section', () => {
       variantInstances: [{ nodeId: '1:2', name: 'Button', values: {} }],
     } as unknown as IntermediateSpec;
     const model = buildDocModel(noVariants, null, new Set<SectionId>(['variants']));
-    const block = model.sections[0];
-    expect(block.kind).toBe('bullets');
-    if (block.kind === 'bullets') {
-      expect(block.items).toHaveLength(1);
-      expect(block.items[0].text).toBe('No variants.');
-    }
+    expect(model.sections).toEqual([]);
+    expect(model.omitted).toEqual([{ id: 'variants', label: 'Variants', reason: 'nothingToShow' }]);
   });
 });
 
@@ -678,7 +1004,7 @@ describe('variant token cards: diff vs default', () => {
       { part: 'Container', property: 'fill', conditions: { State: ['Hover'] }, ...ident('color/hover') },
     ],
     rawValues: [{ part: 'label', property: 'gap', value: '4' }],
-    related: [], gaps: [], layout: [],
+    documentationLinks: [], related: [], gaps: [], layout: [],
   } as unknown as IntermediateSpec;
 
   it('default card carries all rows plus raw rows, nothing collapsed', () => {
@@ -704,7 +1030,7 @@ describe('variant token cards: diff vs default', () => {
     if (block.kind !== 'variantTokens') throw new Error('expected variantTokens');
     const def = block.variants.find((v) => v.isDefault)!;
     // The raw Container/gap row sits after the last existing Container row, not
-    // appended after a part boundary — so all Container rows stay contiguous.
+    // appended after a part boundary, so all Container rows stay contiguous.
     expect(def.rows).toEqual([
       { part: 'Container', property: 'padding', token: 'spacing/md', unbound: false, diff: false },
       { part: 'Container', property: 'fill', token: 'color/rest', unbound: false, diff: false },
@@ -724,9 +1050,47 @@ describe('variant token cards: diff vs default', () => {
   });
 });
 
+describe('the Overview header subtitle', () => {
+  const only = new Set<SectionId>(['definition']);
+  const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
+  const overview = (s: IntermediateSpec, p: ProseV2 | null): SectionBlock | undefined =>
+    find(buildDocModel(s, p, only, new Set(), { aiEnabled: p !== null }), 'definition');
+
+  it('leads with the designer description whenever there is one, even beside AI prose', () => {
+    expect(overview(spec, prose)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: 'A checkbox selects one or more options.',
+      text: 'Use it in forms.',
+    });
+  });
+
+  it('falls back to the AI lede when the component carries no description', () => {
+    expect(overview(undescribed, prose)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'ai',
+      subtitle: { text: 'A checkbox selects one or more options.', source: 'ai' },
+      lede: null,
+      text: 'Use it in forms.',
+    });
+  });
+
+  it('has no subtitle, and no Overview at all, when there is neither', () => {
+    expect(overview(undescribed, null)).toBeUndefined();
+  });
+
+  it('keeps the rest of the description as the body when the AI wrote nothing', () => {
+    expect(overview(spec, null)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'prose', source: 'description',
+      subtitle: { text: 'Selects one or more options.', source: 'description' },
+      lede: null,
+      text: 'Pairs a box with a label.',
+    });
+  });
+});
+
 describe('groupSections', () => {
   const mk = (id: SectionBlock['id']): SectionBlock =>
-    ({ id, heading: id, kind: 'prose', text: 'x' });
+    ({ id, heading: id, kind: 'prose', text: 'x', source: 'ai', subtitle: null, lede: null });
 
   it('every section id has a group', () => {
     for (const s of ALL_SECTIONS) {
@@ -749,13 +1113,13 @@ describe('groupSections', () => {
     expect(groups.map((g) => g.id)).toEqual(['usage']);
   });
 
-  it('GROUPS is Usage → Specifications → Accessibility', () => {
+  it('GROUPS is Usage -> Specifications -> Accessibility', () => {
     expect(GROUPS.map((g) => g.label)).toEqual(['Usage', 'Specifications', 'Accessibility']);
   });
 
-  it('labels the accessibility section "Semantics & Focus" so it does not duplicate the group heading', () => {
+  it('labels the accessibility section "Semantics and focus" so it does not duplicate the group heading', () => {
     const section = ALL_SECTIONS.find((s) => s.id === 'accessibility');
-    expect(section?.label).toBe('Semantics & Focus');
+    expect(section?.label).toBe('Semantics and focus');
   });
 });
 
@@ -766,9 +1130,9 @@ describe('contrast is not a component section', () => {
   it('is absent from the known id set', () => {
     expect(KNOWN_SECTION_IDS.has('contrast')).toBe(false);
   });
-  it('still offers the other three a11y sections', () => {
+  it('still offers the four a11y sections', () => {
     const a11y = ALL_SECTIONS.filter((s) => s.group === 'a11y').map((s) => s.id);
-    expect(a11y).toEqual(['interactions', 'contentConsiderations', 'accessibility']);
+    expect(a11y).toEqual(['keyboard', 'pointer', 'accessibility', 'contentConsiderations']);
   });
 });
 
@@ -791,59 +1155,6 @@ describe('headingLine', () => {
     expect(headingLine('- bullet line')).toBeNull();
     expect(headingLine('#hashtag-not-a-heading')).toBeNull();
     expect(headingLine('')).toBeNull();
-  });
-});
-
-describe('buildDocModel placeholders for merged prose', () => {
-  const empty = { definition: '', accessibility: '', dos: [], donts: [] };
-
-  it('renders the placeholder when a required prose field is an empty string', () => {
-    const model = buildDocModel(spec, empty, new Set<SectionId>(['definition', 'accessibility']), new Set());
-    const texts = model.sections.map((s) => (s.kind === 'prose' ? s.text : ''));
-    expect(texts).toEqual(['_To be written._', '_To be written._']);
-  });
-
-  it('renders the placeholder when both dos and donts are empty', () => {
-    const model = buildDocModel(spec, empty, new Set<SectionId>(['dosDonts']), new Set());
-    const block = model.sections[0];
-    expect(block.kind).toBe('bullets');
-    if (block.kind === 'bullets') expect(block.items.map((b) => b.text)).toEqual(['_To be written._']);
-  });
-
-  it('renders the placeholder for an empty optional prose field', () => {
-    const model = buildDocModel(
-      spec, { ...empty, interactions: '' }, new Set<SectionId>(['interactions']), new Set(),
-    );
-    const block = model.sections[0];
-    if (block.kind === 'prose') expect(block.text).toBe('_To be written._');
-  });
-
-  it('drops an empty anatomy summary rather than rendering a blank line', () => {
-    const anatomySpec = {
-      ...spec,
-      anatomyComponentId: '1:2',
-      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
-    } as unknown as IntermediateSpec;
-    const model = buildDocModel(
-      anatomySpec, { ...empty, anatomySummary: '' }, new Set<SectionId>(['anatomy']), new Set(),
-    );
-    const block = model.sections[0];
-    expect(block.kind).toBe('anatomy');
-    if (block.kind === 'anatomy') expect(block.summary).toBeNull();
-  });
-
-  it('preserves non-empty anatomy summary', () => {
-    const anatomySpec = {
-      ...spec,
-      anatomyComponentId: '1:2',
-      anatomy: [{ name: 'Label', nested: false, id: '1:3', depth: 0, type: 'TEXT' }],
-    } as unknown as IntermediateSpec;
-    const model = buildDocModel(
-      anatomySpec, { ...empty, anatomySummary: 'Two parts.' }, new Set<SectionId>(['anatomy']), new Set(),
-    );
-    const block = model.sections[0];
-    expect(block.kind).toBe('anatomy');
-    if (block.kind === 'anatomy') expect(block.summary).toBe('Two parts.');
   });
 });
 

@@ -19,6 +19,17 @@ none of the reasoning above.
 
 ### Added
 
+- **The component description and documentation links reach the document.**
+  Extraction now carries the root component's Figma description and its
+  documentation link URLs, the one human-authored signal a file has, and both
+  are rendered, so both enter the canvas drift hash. Renaming the Figma file
+  now counts as drift, because the facts strip shows the file name. This is
+  the sanctioned
+  `EXTRACTOR_VERSION` bump to `'3'`: every component doc built by `'2'` reads
+  "Rebuild needed" once. The same bump makes canonical hashing order keys by
+  code unit rather than locale, so a hash no longer depends on the machine
+  that computed it.
+
 - **Published libraries have a semantic version.** Every changed publish
   assigns one. The proxy diffs the stored bundle against the new one over
   Figma facts only (component properties, variant axes and options, states,
@@ -76,7 +87,48 @@ none of the reasoning above.
   line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
   `version`. Pinned pulls are not yet available.
 
+### Changed
+
+- **Component documents read as authored pages.** The three frames carry a
+  reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
+  gains a facts strip, a When to use and When not to use pair, and Do and
+  Don't as paired cards. The header subtitle is the component's own Figma
+  description when it has one and the AI opening line otherwise, so the
+  designer's words lead the page and the AI lede stays in the Overview.
+  Specifications gains a Properties table (replacing
+  Configuration) and a States table of token changes per state. Accessibility
+  gains a Keyboard table and a Pointer and touch section. Titles capitalise a
+  lowercase component name, anatomy parts read as words, and user-authored
+  matrix labels render as typed. Instances render at true size everywhere;
+  anatomy pins fan out with elbow leaders, and a component wider than the
+  column says "Shown at N%". Prose is capped at a readable measure and code
+  spans render without backticks. A section with nothing to show is omitted,
+  and the result message says which and why.
+
+- Measurements render the component at true size. A component wider than the
+  column is scaled down to fit and the diagram says by how much. Dimension
+  rails nudge overlapping labels apart instead of stacking them, and the
+  token bindings the diagram draws are listed in a table under it.
+
+- **Empty sections are left out, and the result says so.** A section with
+  nothing to show, or an AI section when AI writing is off, is not drawn. No
+  "To be written." or "None." appears on canvas. The result message reads,
+  for example, "Docs created. Left out Keyboard: nothing to show." Updating a
+  document from the Library reports left-out sections the same way. A Library
+  row that needs a rebuild now says that frames are rebuilt in the new layout
+  and written sections are kept. Stored prose moves to a structured shape;
+  a document written by an earlier build upgrades on read, and its keyboard
+  bullets that open with a key become table rows. That upgrade retires the v1
+  `designConsiderations` field, which no section ever rendered, so the copied
+  YAML brief no longer carries its optional `design_considerations` key.
+
 ### Fixed
+
+- **A radius bound on any corner no longer reads as a hardcoded gap.** The gap
+  check looked only at `cornerRadius` and `topLeftRadius`, so a radius bound
+  on another corner was reported as unbound while the raw-value table
+  correctly showed no raw value. Both now share one binding set. Gaps are in
+  the canvas hash, so this rides the version 3 rebuild.
 
 - **A dimension token that aliases a number token no longer projects an
   invalid CSS value.** DTCG requires a referencing token's `$type` to equal
@@ -163,6 +215,15 @@ none of the reasoning above.
   component artifact's own (already schema-declared, unhashed) `validation`
   field: no canonical schema change, no content hash moved, `EXTRACTOR_VERSION`
   (`'2'`) untouched.
+- **Two more prose regexes are linear.** The v1 to v2 prose upgrade read a
+  variants-guide bullet and a markdown heading with regexes whose tails
+  (`\s*:?\s*(.*)$` and `\s+(.+)$`) could share one run of spaces several
+  ways, so a long enough line of model output ran them in polynomial time.
+  Both are now a prefix match and a slice, `variantBullet` and `headingText`
+  in `packages/extractor/src/prose/v2.ts`, with the old regexes kept as
+  executable oracles in `redos.test.ts`. Output is unchanged for every line
+  the upgrade can pass them. Closes CodeQL alerts 65 and 66
+  (`js/polynomial-redos`).
 
 ### Added
 

@@ -13,7 +13,7 @@ import {
   foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
-  type ProseDrafts,
+  type ProseV2,
 } from '@spec-layer/extractor';
 import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
@@ -314,11 +314,9 @@ function collectGeneratedLane(node: BaseNode): string[] {
  * The guidelines a doc currently carries: what its canvas says, with the
  * stored blob filling any slot the canvas does not render.
  */
-function mergedProse(section: SectionNode): ProseDrafts | null {
-  return mergeProse(
-    parseProse(section.getPluginData(DOC_PROSE_KEY)),
-    readCanvasProse(section as unknown as ProseNodeLike),
-  );
+function mergedProse(section: SectionNode): ProseV2 | null {
+  const prose = parseProse(section.getPluginData(DOC_PROSE_KEY));
+  return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
 // The PageNode a node lives on, or null. Walks parents until a PAGE.

@@ -10,9 +10,10 @@ import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml,
+  upgradeProseV1, validateProseV2, proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
-  SerializedNode, IntermediateSpec, ProseDrafts, ProseKey, ProxyQuota,
+  SerializedNode, IntermediateSpec, ProseKey, ProseV2, ProxyQuota,
   SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
   FoundationScope, FoundationGuidelinesV5, YamlValue,
 } from '@spec-layer/extractor';
@@ -22,7 +23,10 @@ import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { buildDocModel, proseKeysForSections, type SectionId, type MeasureView, type DocFrameModel } from './docModel';
+import {
+  buildDocModel, proseKeysForSections,
+  type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
+} from './docModel';
 import {
   defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
@@ -62,13 +66,16 @@ export interface UiState {
   quota: ProxyQuota | null;
   quotaExhausted: boolean;
   aiEnabled: boolean;
-  generatedProse: ProseDrafts | null;
+  generatedProse: ProseV2 | null;
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
   generatedProseKeys: Set<ProseKey> | null;
+  // What the last build left out, and why, so the result message can say so.
+  // Set by every assembled build and cleared once it has been reported.
+  lastOmitted: OmittedSection[];
   // Set when an AI generation attempt fails so the next frame-build can note it
-  // ("built with placeholders") instead of aborting the whole frame.
+  // ("the AI sections were left out") instead of aborting the whole frame.
   pendingAiNote: string;
   // User-customized brand theme for the generated frame (null fields = default).
   brandTheme: BrandTheme;
@@ -98,6 +105,7 @@ export function createState(): UiState {
     aiEnabled: false,
     generatedProse: null,
     generatedProseKeys: null,
+    lastOmitted: [],
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -227,18 +235,29 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
 
   // The generating loader (started by runCreateDocFrame) surfaces progress; this
   // path is best-effort. AI is an enhancement, never a blocker. If generation fails
-  // (rate limit, network, unexpected response), fall back to placeholders and
-  // let the frame build anyway — the note surfaces on the success banner.
+  // (rate limit, network, unexpected response), leave the sections AI would have
+  // written out and let the frame build anyway — the note surfaces on the
+  // success banner.
   try {
     // willGenerateProse guarantees a non-null identity, spec, and node. A key
     // known-inactive drops to the free identity (effectiveAuth) rather than 401ing.
-    state.generatedProse = await generateProse(
+    const draft = await generateProse(
       state.currentSpec!,
       effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
       state.currentNode!.id,
       requested,
       (q) => { state.quota = q; },
     );
+    if (draft) {
+      // The v8 prompt writes v1; the canvas renders v2. Upgrade, then validate
+      // every name against the spec so nothing the model invented is drawn.
+      const { prose, dropped } = validateProseV2(state.currentSpec!, upgradeProseV1(draft));
+      const droppedCount = Object.values(dropped).reduce((a, b) => a + (b ?? 0), 0);
+      if (droppedCount > 0) console.warn('[Spec Layer] prose items dropped by validation', dropped);
+      state.generatedProse = hasProseContent(prose) ? prose : null;
+    } else {
+      state.generatedProse = null;
+    }
     // Record the covered key set only when a draft actually came back, so a
     // null result (degraded mode) leaves the reuse guard forcing a retry.
     state.generatedProseKeys = state.generatedProse ? requested : null;
@@ -253,8 +272,8 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       if (err.code === 'license_not_active') {
         // Key lapsed mid-session (or the license server was unreachable): drop to
         // the free identity ONLY on a definite lapse, never on a mere outage, and
-        // explain it. This frame builds with placeholders; the next generation
-        // re-probes. Settings reflects the lapse on its next refresh.
+        // explain it. This frame builds without the AI sections; the next
+        // generation re-probes. Settings reflects the lapse on its next refresh.
         const { note, markInactive } = licenseFailureNote(err.reason);
         if (markInactive) state.licenseActive = false;
         state.pendingAiNote = note;
@@ -264,7 +283,7 @@ async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise
       return;
     }
     const detail = err instanceof Error ? err.message : String(err);
-    state.pendingAiNote = `AI didn't run (${detail}), so placeholders were used`;
+    state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
   }
 }
 
@@ -376,22 +395,35 @@ async function assembleDocFor(
   // because the two UIs put that message in different places.
   if (selected.size === 0) return null;
 
-  const model = buildDocModel(
-    state.currentSpec!,
-    state.generatedProse,
-    selected,
-    variantIds,
-    { measureViews: state.measureViews, includeHidden: state.includeHidden },
-  );
+  const model = buildDocModel(state.currentSpec!, state.generatedProse, selected, variantIds, {
+    measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
+  });
+  state.lastOmitted = model.omitted;
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
-    aiEnabled: state.aiEnabled,
+    // The SAME flag the model was built with, not the raw checkbox. Update
+    // feeds this back into buildDocModel, and that is what decides whether an
+    // empty AI section reads "AI writing is off" or "nothing to show"; storing
+    // `state.aiEnabled` here let a user with the box ticked but no licence or
+    // Figma identity get one classification on Create and the other on Update.
+    aiEnabled: canGenerate(state),
     anatomyView: 'diagram',
     measureViews: state.measureViews,
     includeHidden: state.includeHidden,
   };
   return { model, config };
+}
+
+const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
+  nothingToShow: 'nothing to show',
+  aiOff: 'AI writing is off',
+};
+
+/** The result line: the outcome, then one sentence per omitted section. */
+export function omissionsMessage(outcome: string, omitted: OmittedSection[]): string {
+  const parts = [outcome, ...omitted.map((o) => `Left out ${o.label}: ${OMISSION_REASON[o.reason]}.`)];
+  return parts.join(' ');
 }
 
 /** Status lines for the generating loader. The AI path narrates the slow
@@ -456,11 +488,11 @@ export type DocSource = {
   /** What the doc's writing sections currently say, read off the canvas by the
    *  main thread with the stored blob filling anything the canvas does not
    *  show. Null when the doc has never had guidelines. */
-  prose: ProseDrafts | null;
+  prose: ProseV2 | null;
 };
 
 export async function updateFromSource(
-  _state: UiState,
+  state: UiState,
   src: DocSource,
   ui: BuildPresenter,
 ): Promise<boolean> {
@@ -477,7 +509,11 @@ export async function updateFromSource(
     const model = buildDocModel(spec, src.prose, selected, variantIds, {
       measureViews: src.config.measureViews,
       includeHidden: src.config.includeHidden,
+      aiEnabled: src.config.aiEnabled,
     });
+    // Same record the Create path keeps, so the Library's completion message
+    // can name the sections it left out instead of staying silent about them.
+    state.lastOmitted = model.omitted;
     send({
       type: 'renderDocFrame',
       model,
@@ -539,7 +575,7 @@ export function sizeCaveat(text: string): string {
 export async function copyBriefFromSource(
   state: UiState,
   src: CopySource,
-  prose: ProseDrafts | null,
+  prose: ProseV2 | null,
   ui: BuildPresenter,
   options: CopyBriefOptions = {},
 ): Promise<void> {
@@ -561,7 +597,9 @@ export async function copyBriefFromSource(
       generatedAt,
       build: pluginBuild(),
       ...(foundation ? { foundation } : {}),
-      prose,
+      // The v5 artifact still reads the v1 shape, so the structured prose is
+      // flattened at the extractor call rather than carried as v1 anywhere.
+      prose: prose ? proseToLegacy(prose) : null,
     });
     const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
     const size = sizeCaveat(yaml);

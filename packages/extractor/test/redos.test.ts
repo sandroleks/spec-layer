@@ -1,6 +1,7 @@
 /**
- * redos.test.ts — the four regexes CodeQL flagged as `js/polynomial-redos`,
- * replaced by linear scans and pinned against the regexes they replaced.
+ * redos.test.ts — the regexes CodeQL flagged as `js/polynomial-redos` (four in
+ * PR #56, two more in the v1 prose upgrade), replaced by linear scans and
+ * pinned against the regexes they replaced.
  *
  * Each rewrite has to return the SAME string the regex returned, for every
  * input, not merely for the happy path. Two of them are identity in this
@@ -26,6 +27,7 @@ import { cleanPartName } from '../src/naming';
 import { parseProseResponse } from '../src/prose/prompt';
 import { stateBaseName } from '../src/statesMatrix';
 import { slugify } from '../src/componentSlugs';
+import { headingText, variantBullet } from '../src/prose/v2';
 
 // --- The regexes as they were, before the rewrites -------------------------
 
@@ -68,7 +70,7 @@ describe('cleanPartName is exactly the regex it replaced', () => {
     '', '#', '##', '###', 'a', 'a#', 'a##', '#a', '#a#', 'a#b#',
     ' ', '   ', '#  ', '  #  ', 'a#  ', 'a #', 'a # ', 'a## ##  ', 'a#  #',
     'icon-primary#', 'icon#2', 'icon#2#', '#icon', 'a\t#\t', 'a#\n', 'a#\n\n',
-    '  a  ', ' # ', 'a# ', '# a #', 'a#b', '#'.repeat(20),
+    '  a  ', ' # ', 'a#\u2028', '# a #', 'a#b', '#'.repeat(20),
     'a' + '#'.repeat(20), '#'.repeat(20) + 'a', 'a' + '#'.repeat(20) + '  ',
   ];
 
@@ -311,3 +313,99 @@ function oldSlugify(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return slug || 'component';
 }
+
+// --- The two v1-upgrade line matchers (CodeQL alerts 65 and 66) -------------
+
+/** The variants-guide bullet regex as `upgradeProseV1` ran it, on a trimmed
+ *  line. `\s*:?\s*(.*)` could split one run of spaces three ways, so a failed
+ *  `$` retried every split: 66ms at 500 spaces, 511ms at 1000, 4163ms at
+ *  2000, eight times per doubling. */
+const oldVariantBullet = (line: string): { name: string; guidance: string } | null => {
+  const m = /^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.*)$/.exec(line);
+  return m ? { name: m[1].trim(), guidance: m[2].trim() } : null;
+};
+
+/** The heading regex as `upgradeProseV1` ran it, on a trimmed line. `\s+` and
+ *  `.+` both take a space, so a failed `$` retried every split of the run:
+ *  38ms at 5k spaces, 150ms at 10k, 671ms at 20k. */
+const oldHeadingText = (line: string): string | null => {
+  const m = /^#{1,6}\s+(.+)$/.exec(line);
+  return m ? m[1] : null;
+};
+
+describe('variantBullet is exactly the regex it replaced', () => {
+  // The shapes that decide the answer: where the bold run ends, whether a
+  // colon follows, how much whitespace sits on either side of it, and the
+  // characters `.` refuses (`\r`, `\n`, U+2028) placed before and after the
+  // first non-space character of the guidance, which is what turns a match
+  // into a failure for the old pattern.
+  const CASES = [
+    '', '-', '- ', '- **', '- **a', '- **a*', '- **a**', '* **a**', '-**a**',
+    '- **a**:', '- **a** :', '- **a**: b', '- **a** : b', '- **a**:b',
+    '- **a**  :  b c', '- **a**::b', '- **a**: : b', '- **a** b', '- **a**\tb',
+    '- **a b**: c d', '- ****: b', '- **a**b**c**', '- **a** **b**',
+    '- **a**\r', '- **a** \r', '- **a**\rb', '- **a** \r b', '- **a**: \r b',
+    '- **a** b\rc', '- **a**: b\rc', '- **a**\nb', '- **a** b\nc',
+    '- **a**\u2028b', '- **a** b\u2028c', '- **a**:\u2029b',
+    '+ **a**: b', 'a - **b**: c', ' - **a**: b', '- **a**: b ',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(variantBullet(input), JSON.stringify(input)).toEqual(oldVariantBullet(input));
+    }
+  });
+
+  it('agrees on 4000 random strings over the alphabet that matters', () => {
+    const alphabet = ['-', '*', '*', ' ', ' ', '\t', ':', 'a', 'b', '\r', '\u2028'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 24);
+      expect(variantBullet(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toEqual(oldVariantBullet(input));
+    }
+  });
+
+  it('is linear on a long run of spaces before a line terminator', () => {
+    // The old pattern cannot run on this (that is the bug); the expected
+    // answer is stated directly: `\r` after `x` is where `(.*)$` fails, so the
+    // line is not a bullet.
+    const input = '* **)**' + ' '.repeat(200000) + 'x\ry';
+    const started = performance.now();
+    expect(variantBullet(input)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('headingText is exactly the regex it replaced', () => {
+  // `upgradeProseV1` trims each line before either pattern sees it, so trimmed
+  // lines are the whole input space, and the fuzz trims for the same reason.
+  // On an untrimmed `#` followed only by whitespace the old regex backtracked
+  // into capturing one space; no caller can reach that.
+  const CASES = [
+    '', '#', '##', '######', '#######', '#x', '# x', '#\tx', '## x y', '###### x',
+    '####### x', '#  x', '# #', '# x\ry', '#  \r  x', '#\u2028x', '# x\u2028y',
+    '# x\ny', '# Keyboard', '# keyboard shortcuts', 'x # y', '#'.repeat(20) + ' x',
+  ];
+
+  it('agrees on every hand-picked shape', () => {
+    for (const input of CASES) {
+      expect(headingText(input), JSON.stringify(input)).toBe(oldHeadingText(input));
+    }
+  });
+
+  it('agrees on 4000 random trimmed strings over the alphabet that matters', () => {
+    const alphabet = ['#', '#', ' ', ' ', '\t', '\r', '\u2028', 'a', 'x'] as const;
+    for (let seed = 1; seed <= 4000; seed++) {
+      const input = fuzz(seed, alphabet, 20).trim();
+      expect(headingText(input), `seed ${seed}: ${JSON.stringify(input)}`)
+        .toBe(oldHeadingText(input));
+    }
+  });
+
+  it('is linear on a long run of spaces before a line terminator', () => {
+    const input = '#' + ' '.repeat(200000) + 'x\ry';
+    const started = performance.now();
+    expect(headingText(input)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

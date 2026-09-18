@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { ProseDrafts } from '@spec-layer/extractor';
+import type { ProseV2 } from '@spec-layer/extractor';
 import {
-  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_TEXT,
+  SLOT_KEY, SLOT_PART_KEY, LINE_KEY,
   readCanvasProse, mergeProse, collectGeneratedText, textToMarkdown,
   type ProseNodeLike,
 } from '../src/canvasProse';
@@ -67,275 +67,177 @@ describe('textToMarkdown', () => {
   });
 });
 
-// --- readCanvasProse --------------------------------------------------------
+const MEDIUM: Font = { family: 'Inter', style: 'Medium' };
+
+describe('textToMarkdown code runs', () => {
+  it('reads a Medium segment back as a code span', () => {
+    const node = text('Set aria-checked now', {
+      segments: [
+        { characters: 'Set ', fontName: REGULAR },
+        { characters: 'aria-checked', fontName: MEDIUM },
+        { characters: ' now', fontName: REGULAR },
+      ],
+    });
+    expect(textToMarkdown(node)).toBe('Set `aria-checked` now');
+  });
+});
+
+/** A container of tagged lines, as buildProseSlot renders one. */
+const block = (slotName: string, lines: ProseNodeLike[]) => frame(lines, slot(slotName));
+const keyed = (slotName: string, key: string, children: ProseNodeLike[]) =>
+  frame(children, { ...slot(slotName), [SLOT_PART_KEY]: key });
 
 describe('readCanvasProse', () => {
-  it('reads nothing from an untagged section', () => {
-    const section = frame([frame([text('Usage'), text('Some table cell')])], {}, 'SECTION');
-    expect(readCanvasProse(section)).toEqual({});
-  });
-
-  it('reads a prose block back as markdown lines', () => {
-    const block = frame([
-      text('First paragraph.', { data: line('paragraph') }),
-      frame([text('Mouse')], line('heading')),
-      bulletRow('Click to activate', [
-        { characters: 'Click', fontName: BOLD },
-        { characters: ' to activate', fontName: REGULAR },
+  it('reads every slot of a v2 document', () => {
+    const doc = frame([
+      text('A box.', { data: slot('definitionLead') }),
+      block('definition', [text('Use it in forms.', { data: line('paragraph') })]),
+      block('whenToUse', [bulletRow('Several options.')]),
+      block('whenNotToUse', [bulletRow('One option. Use a Radio.')]),
+      block('variantsIntro', [text('Style sets weight.', { data: line('paragraph') })]),
+      keyed('variantsGuide', 'Filled', [text('Filled: the default.')]),
+      text('A box and a label.', { data: slot('anatomySummary') }),
+      keyed('anatomyPart', 'Label', [text('Label: Names the option.')]),
+      keyed('propertyDescription', 'showLabel', [text('Hides the label.')]),
+      keyed('stateMeaning', 'Hover', [text('Pointer over the box.')]),
+      keyed('keyboardRow', 'Enter + Space', [text('Enter'), text('Space'), text('Toggles it.')]),
+      block('pointer', [bulletRow('Clicking toggles.')]),
+      block('semantics', [bulletRow('Name: the label.', [{ characters: 'Name:', fontName: BOLD }, { characters: ' the label.', fontName: REGULAR }])]),
+      block('content', [bulletRow('Write statements.')]),
+      keyed('guidelinePair', '0', [
+        frame([text('Pair it with a label.'), text('It widens the target.')], slot('guidelineDo')),
+        frame([text('Do not use it for one choice.'), text('')], slot('guidelineDont')),
       ]),
-      text('Second paragraph.', { data: line('paragraph') }),
-    ], slot('accessibility'));
-    expect(readCanvasProse(frame([block]))).toEqual({
-      accessibility: 'First paragraph.\n### Mouse\n- **Click** to activate\nSecond paragraph.',
-    });
-  });
-
-  it('skips the untouched placeholder so the slot reads as absent', () => {
-    const block = frame([text(PLACEHOLDER_TEXT, { data: line('placeholder') })], slot('interactions'));
-    expect(readCanvasProse(frame([block]))).toEqual({});
-  });
-
-  it('reads a placeholder that was typed over as a paragraph', () => {
-    const block = frame([text('Tap once to open.', { data: line('placeholder') })], slot('interactions'));
-    expect(readCanvasProse(frame([block]))).toEqual({ interactions: 'Tap once to open.' });
-  });
-
-  it('reads an untagged text node added inside a slot as a paragraph', () => {
-    const block = frame([
-      text('Generated line.', { data: line('paragraph') }),
-      text('Added by the designer.'),
-    ], slot('contentConsiderations'));
-    expect(readCanvasProse(frame([block]))).toEqual({
-      contentConsiderations: 'Generated line.\nAdded by the designer.',
-    });
-  });
-
-  it('joins the header lead and the definition body, lead first', () => {
-    const lead = text('A button.', { data: slot('definitionLead') });
-    const body = frame([text('Use it for the main action.', { data: line('paragraph') })], slot('definition'));
-    // Header sits in a different frame from the body, as on canvas.
-    const section = frame([frame([lead]), frame([body])], {}, 'SECTION');
-    expect(readCanvasProse(section)).toEqual({ definition: 'A button.\nUse it for the main action.' });
-  });
-
-  it('reads a lead with no body and a body with no lead', () => {
-    const lead = text('A button.', { data: slot('definitionLead') });
-    expect(readCanvasProse(frame([lead]))).toEqual({ definition: 'A button.' });
-    const body = frame([text('Body only.', { data: line('paragraph') })], slot('definition'));
-    expect(readCanvasProse(frame([body]))).toEqual({ definition: 'Body only.' });
-  });
-
-  it('reads dos and donts one row each, in order, including a duplicated row', () => {
-    const dos = frame([bulletRow('Do A'), bulletRow('Do B'), bulletRow('Do B')], slot('dos'));
-    const donts = frame([bulletRow("Don't C")], slot('donts'));
-    expect(readCanvasProse(frame([dos, donts]))).toEqual({ dos: ['Do A', 'Do B', 'Do B'], donts: ["Don't C"] });
-  });
-
-  it('reads an emptied bullet container as an empty list, not as absent', () => {
-    const donts = frame([], slot('donts'));
-    expect(readCanvasProse(frame([donts]))).toEqual({ donts: [] });
-  });
-
-  it('reads a placeholder-only bullet container as absent', () => {
-    const dos = frame([frame([text(PLACEHOLDER_TEXT)])], slot('dos'));
-    expect(readCanvasProse(frame([dos]))).toEqual({});
-  });
-
-  it('reads a plain text node dropped into a bullet container as an item', () => {
-    const dos = frame([bulletRow('Do A'), text('Do Z')], slot('dos'));
-    expect(readCanvasProse(frame([dos]))).toEqual({ dos: ['Do A', 'Do Z'] });
-  });
-
-  it('reads the anatomy summary and variants summary', () => {
-    const summary = text('Three parts.', { data: slot('anatomySummary') });
-    const variants = frame([
-      text('Two styles.', { data: line('paragraph') }),
-      bulletRow('Filled for the main action', [
-        { characters: 'Filled', fontName: BOLD },
-        { characters: ' for the main action', fontName: REGULAR },
+      keyed('guidelinePair', '1', [
+        frame([text('Keep labels short.'), text('')], slot('guidelineDo')),
       ]),
-    ], slot('variantsSummary'));
-    expect(readCanvasProse(frame([summary, variants]))).toEqual({
-      anatomySummary: 'Three parts.',
-      variantsSummary: 'Two styles.\n- **Filled** for the main action',
-    });
-  });
-
-  it('reads anatomy part descriptions by tag name, splitting at the first colon', () => {
-    const rows = frame([
-      frame([text('1'), text('Label: The visible text.')], slot('anatomyPart', { [SLOT_PART_KEY]: 'Label' })),
-      frame([text('2'), text('Icon  ·  component')], slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon' })),
-      frame([text('3'), text('Badge: Count: unread items')], slot('anatomyPart', { [SLOT_PART_KEY]: 'Badge' })),
     ]);
-    expect(readCanvasProse(frame([rows]))).toEqual({
-      anatomyParts: [
-        { name: 'Label', description: 'The visible text.' },
-        { name: 'Badge', description: 'Count: unread items' },
+    expect(readCanvasProse(doc)).toEqual({
+      overview: { lede: 'A box.', body: ['Use it in forms.'] },
+      whenToUse: ['Several options.'],
+      whenNotToUse: ['One option. Use a Radio.'],
+      variantsIntro: 'Style sets weight.',
+      variantsGuide: [{ name: 'Filled', guidance: 'the default.' }],
+      anatomySummary: 'A box and a label.',
+      anatomyParts: [{ name: 'Label', role: 'Names the option.' }],
+      properties: [{ name: 'showLabel', description: 'Hides the label.' }],
+      states: [{ name: 'Hover', whenItApplies: 'Pointer over the box.' }],
+      keyboard: [{ keys: ['Enter', 'Space'], action: 'Toggles it.' }],
+      pointer: ['Clicking toggles.'],
+      semantics: ['**Name:** the label.'],
+      content: ['Write statements.'],
+      guidelines: [
+        { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not use it for one choice.', reason: '' } },
+        { do: { rule: 'Keep labels short.', reason: '' }, dont: null },
       ],
     });
   });
 
-  it('reads anatomy rows with every description removed as an empty list', () => {
-    const rows = frame([
-      frame([text('1'), text('Label')], slot('anatomyPart', { [SLOT_PART_KEY]: 'Label' })),
+  it('reads an undescribed anatomy row as no role and an edited description by the tagged name', () => {
+    const doc = frame([
+      keyed('anatomyPart', 'Icon: Left', [text('Icon: Left  ·  Icon')]),
+      keyed('anatomyPart', 'Label', [text('Label: Names it.')]),
     ]);
-    expect(readCanvasProse(frame([rows]))).toEqual({ anatomyParts: [] });
+    expect(readCanvasProse(doc).anatomyParts).toEqual([{ name: 'Label', role: 'Names it.' }]);
   });
 
-  it('splits an anatomy part by the tagged name, not by the first colon in the row text', () => {
-    // The part name itself contains ": " (e.g. "Icon: Left"), so splitting on
-    // the first colon in the row text would fabricate a description out of
-    // the name's own second half.
-    const described = frame([text('1'), text('Icon: Left: Points left.')],
-      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
-    expect(readCanvasProse(frame([described]))).toEqual({
-      anatomyParts: [{ name: 'Icon: Left', description: 'Points left.' }],
-    });
+  it('reads a revealed part\'s role without the "Shown when" note the legend appends', () => {
+    const doc = frame([
+      keyed('anatomyPart', 'Required', [text('Required: Marks the field as mandatory.  ·  Shown when isRequired is true')]),
+      // No note, and a role that merely ends in "is true": nothing to strip.
+      keyed('anatomyPart', 'Label', [text('Label: Reads back when the statement is true')]),
+    ]);
+    expect(readCanvasProse(doc).anatomyParts).toEqual([
+      { name: 'Required', role: 'Marks the field as mandatory.' },
+      { name: 'Label', role: 'Reads back when the statement is true' },
+    ]);
   });
 
-  it('reads an undescribed anatomy part whose name contains a colon as absent', () => {
-    const undescribed = frame([text('1'), text('Icon: Left')],
-      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
-    expect(readCanvasProse(frame([undescribed]))).toEqual({ anatomyParts: [] });
+  it('does not invent a role from a nested part whose component name contains a colon', () => {
+    // The legend prints the DISPLAY name ("Icon leading") while the tag keeps
+    // the raw key ("iconLeading"); the nested note here ("Icon: 24") itself
+    // contains ": ", which used to fool the loose fallback into reading "24"
+    // as an authored role.
+    const doc = frame([
+      keyed('anatomyPart', 'iconLeading', [text('Icon leading  ·  Icon: 24')]),
+    ]);
+    expect(readCanvasProse(doc).anatomyParts).toEqual([]);
   });
 
-  it('reads a nested undescribed anatomy part whose name contains a colon as absent', () => {
-    const nested = frame([text('1'), text('Icon: Left  ·  Icon')],
-      slot('anatomyPart', { [SLOT_PART_KEY]: 'Icon: Left' }));
-    expect(readCanvasProse(frame([nested]))).toEqual({ anatomyParts: [] });
+  it('skips instance subtrees and leaves an unknown slot alone', () => {
+    const doc = frame([
+      frame([text('Label', { data: slot('definitionLead') })], {}, 'INSTANCE'),
+      frame([text('future')], slot('somethingNew')),
+    ]);
+    expect(readCanvasProse(doc)).toEqual({});
   });
 
-  it('falls back to the first colon split when the row text does not start with the tagged name', () => {
-    // A typo in the row text (name text reads "Lable", tag still says
-    // "Label") means the name-based prefixes never match; the description
-    // must still be found rather than lost entirely.
-    const typo = frame([text('1'), text('Lable: The text.')],
-      slot('anatomyPart', { [SLOT_PART_KEY]: 'Label' }));
-    expect(readCanvasProse(frame([typo]))).toEqual({
-      anatomyParts: [{ name: 'Label', description: 'The text.' }],
-    });
+  it('accumulates a repeated block rather than overwriting it', () => {
+    const doc = frame([
+      block('pointer', [bulletRow('One.')]),
+      block('pointer', [bulletRow('Two.')]),
+    ]);
+    expect(readCanvasProse(doc).pointer).toEqual(['One.', 'Two.']);
   });
 
-  it('never descends into component instances', () => {
-    const inst = frame([frame([text('Mirror')], slot('definition'))], {}, 'INSTANCE');
-    expect(readCanvasProse(frame([inst]))).toEqual({});
+  it('orders guideline pairs by their index key whatever the canvas order', () => {
+    const doc = frame([
+      keyed('guidelinePair', '1', [frame([text('B'), text('')], slot('guidelineDo'))]),
+      keyed('guidelinePair', '0', [frame([text('A'), text('')], slot('guidelineDo'))]),
+    ]);
+    expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B']);
   });
 
-  it('ignores a slot name it does not know', () => {
-    const block = frame([text('x')], slot('somethingNew'));
-    expect(readCanvasProse(frame([block]))).toEqual({});
-  });
-
-  it('concatenates two prose containers for the same slot, in document order', () => {
-    const first = frame([text('First block.', { data: line('paragraph') })], slot('accessibility'));
-    const second = frame([text('Second block.', { data: line('paragraph') })], slot('accessibility'));
-    expect(readCanvasProse(frame([first, second]))).toEqual({
-      accessibility: 'First block.\nSecond block.',
-    });
-  });
-
-  it('concatenates two dos containers for the same slot, in document order', () => {
-    const first = frame([bulletRow('Do A')], slot('dos'));
-    const second = frame([bulletRow('Do B')], slot('dos'));
-    expect(readCanvasProse(frame([first, second]))).toEqual({ dos: ['Do A', 'Do B'] });
-  });
-
-  it('keeps the first dos container when a repeat is placeholder-only', () => {
-    const first = frame([bulletRow('Do A')], slot('dos'));
-    const placeholderOnly = frame([frame([text(PLACEHOLDER_TEXT)])], slot('dos'));
-    expect(readCanvasProse(frame([first, placeholderOnly]))).toEqual({ dos: ['Do A'] });
+  it('reads a three-node guideline card as plain text, ignoring the leading DO/DONT label', () => {
+    const doc = frame([
+      keyed('guidelinePair', '0', [
+        frame([
+          text('DO', { segments: [{ characters: 'DO', fontName: MEDIUM }] }),
+          text('Pair it with a label.', { segments: [{ characters: 'Pair it with a label.', fontName: BOLD }] }),
+          text('It widens the target.'),
+        ], slot('guidelineDo')),
+      ]),
+    ]);
+    expect(readCanvasProse(doc).guidelines).toEqual([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: null },
+    ]);
   });
 });
-
-// --- mergeProse -------------------------------------------------------------
 
 describe('mergeProse', () => {
-  const stored: ProseDrafts = {
-    definition: 'Stored definition.', accessibility: 'Stored a11y.',
-    dos: ['Stored do'], donts: ['Stored dont'],
-    interactions: 'Stored interactions.', designConsiderations: 'Stored design.',
-    anatomyParts: [{ name: 'Label', description: 'Stored label.' }],
-  };
-
-  it('returns null when neither side has anything', () => {
+  const stored: ProseV2 = { v: 2, overview: { lede: 'Stored.', body: [] }, pointer: ['stored pointer'] };
+  it('lets the canvas win per field and fills the rest from storage', () => {
+    expect(mergeProse(stored, { pointer: ['canvas pointer'] })).toEqual({
+      v: 2, overview: { lede: 'Stored.', body: [] }, pointer: ['canvas pointer'],
+    });
+  });
+  it('is null when neither side has content', () => {
     expect(mergeProse(null, {})).toBeNull();
+    expect(mergeProse({ v: 2 }, { anatomyParts: [] })).toBeNull();
   });
 
-  it('returns the stored prose unchanged when the canvas shows nothing', () => {
-    expect(mergeProse(stored, {})).toEqual(stored);
-  });
-
-  it('lets the canvas win per field and keeps stored fields the canvas does not show', () => {
-    const merged = mergeProse(stored, { definition: 'Canvas definition.', dos: [], anatomyParts: [] });
-    expect(merged).toEqual({
-      ...stored,
-      definition: 'Canvas definition.',
-      dos: [],
-      anatomyParts: [],
+  const storedOverview: ProseV2 = { v: 2, overview: { lede: 'Stored lede.', body: ['Stored body.'] } };
+  it('keeps the stored body when only the header lead is tagged on canvas', () => {
+    expect(mergeProse(storedOverview, { overview: { lede: 'Canvas lede.' } })).toEqual({
+      v: 2, overview: { lede: 'Canvas lede.', body: ['Stored body.'] },
     });
   });
-
-  it('fills required fields with empty values when only the canvas has content', () => {
-    expect(mergeProse(null, { interactions: 'Tap.' })).toEqual({
-      definition: '', accessibility: '', dos: [], donts: [], interactions: 'Tap.',
+  it('keeps the stored lede when only the Overview body is tagged on canvas', () => {
+    expect(mergeProse(storedOverview, { overview: { body: ['Canvas body.'] } })).toEqual({
+      v: 2, overview: { lede: 'Stored lede.', body: ['Canvas body.'] },
     });
-  });
-
-  it('does not add optional keys that neither side has', () => {
-    const merged = mergeProse(null, { definition: 'Only this.' });
-    expect(merged).toEqual({ definition: 'Only this.', accessibility: '', dos: [], donts: [] });
-    expect(merged && 'variantsSummary' in merged).toBe(false);
-  });
-
-  it('returns null when the only content is an empty anatomyParts array', () => {
-    expect(mergeProse(null, { anatomyParts: [] })).toBeNull();
-  });
-
-  it('returns null when the only content is an empty dos array', () => {
-    expect(mergeProse(null, { dos: [] })).toBeNull();
-  });
-
-  it('returns null when the only content is a blank definition', () => {
-    expect(mergeProse(null, { definition: '  ' })).toBeNull();
-  });
-
-  it('is not null once an array field actually has an item', () => {
-    expect(mergeProse(null, { dos: ['x'] })).not.toBeNull();
   });
 });
 
-// --- collectGeneratedText ---------------------------------------------------
-
 describe('collectGeneratedText', () => {
-  it('collects every text outside slots and skips instances', () => {
-    const section = frame([
+  it('returns text outside slots, instances and the publish pill only', () => {
+    const doc = frame([
       text('Heading'),
-      frame([text('Cell A'), text('Cell B')]),
-      frame([text('Mirror')], {}, 'INSTANCE'),
-    ], {}, 'SECTION');
-    expect(collectGeneratedText(section)).toEqual(['Heading', 'Cell A', 'Cell B']);
-  });
-
-  it('skips a slot container and everything under it', () => {
-    const section = frame([
-      text('Heading'),
-      frame([text('Editorial line')], slot('accessibility')),
-      text('Lead', { data: slot('definitionLead') }),
-      text('Footer'),
-    ], {}, 'SECTION');
-    expect(collectGeneratedText(section)).toEqual(['Heading', 'Footer']);
-  });
-
-  it('collects all text from an untagged legacy section', () => {
-    const section = frame([text('A'), frame([text('B')])], {}, 'SECTION');
-    expect(collectGeneratedText(section)).toEqual(['A', 'B']);
-  });
-
-  it('skips any node carrying the pill key, and its subtree', () => {
-    const section = frame([
-      text('Heading'),
-      frame([text('v1.0.0 · Published')], { specLayerPill: '1' }),
-    ], {}, 'SECTION');
-    expect(collectGeneratedText(section)).toEqual(['Heading']);
+      frame([text('editorial')], slot('semantics')),
+      frame([text('instance text')], {}, 'INSTANCE'),
+      text('v1.0.0 · Published', { data: { specLayerPill: '1' } }),
+      text('Cell'),
+    ]);
+    expect(collectGeneratedText(doc)).toEqual(['Heading', 'Cell']);
   });
 });

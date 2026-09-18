@@ -10,7 +10,7 @@ import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
-  compareBump, isSemver, nextVersion, specContentHash,
+  compareBump, isSemver, nextVersion, specContentHash, proseToLegacy,
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
@@ -105,7 +105,8 @@ export function buildPublishArtifacts(
         generatedAt,
         build,
         ...(foundationArtifact ? { foundation: foundationArtifact } : {}),
-        prose,
+        // The v5 artifact still reads the v1 shape; the doc stores v2.
+        prose: prose ? proseToLegacy(prose) : null,
       });
       return {
         name,

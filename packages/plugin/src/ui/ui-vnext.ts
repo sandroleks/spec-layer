@@ -9,7 +9,7 @@ import {
   extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
   type SpecHashProjection, type Bump,
 } from '@spec-layer/extractor';
-import type { ProseDrafts } from '@spec-layer/extractor';
+import type { ProseV2 } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -17,7 +17,7 @@ import {
   type BrandTheme,
 } from '../brandColors';
 import type { LibraryEntry, MainToUi } from '../messages';
-import type { GroupId, SectionId } from './docModel';
+import type { GroupId, OmittedSection, SectionId } from './docModel';
 import type {
   ComponentScreenState,
   FoundationScreenState,
@@ -97,6 +97,7 @@ import {
   onFoundationMessage,
   setFoundationGroupDescriptions,
   onSelectionFoundation,
+  omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
   send,
@@ -228,6 +229,11 @@ type LibraryUpdateOperation = {
   total: number;
   batch: boolean;
   confirmedOverwrite: Set<string>;
+  /** Sections left out across this run, deduplicated by id and reason, so the
+   *  completion message says which and why the way Create's does. Collected
+   *  per document as each one finishes, because `state.lastOmitted` only ever
+   *  holds the newest. */
+  omitted: OmittedSection[];
 };
 /**
  * Copy for AI. Unlike an update, this never writes anything, so it carries no
@@ -238,7 +244,7 @@ type LibraryUpdateOperation = {
 type LibraryCopyOperation = {
   kind: 'copy';
   currentDocId: string;
-  prose?: ProseDrafts | null;
+  prose?: ProseV2 | null;
 };
 let libraryOperation: LibraryUpdateOperation | LibraryCopyOperation | null = null;
 let searchOpen = false;
@@ -935,6 +941,7 @@ function finishLibraryOperation(error = ''): void {
   const active = libraryOperation;
   if (!active) return;
   let message = '';
+  let omitted: OmittedSection[] = [];
   if (active.kind === 'update') {
     message = error
       ? active.completed > 0
@@ -943,10 +950,17 @@ function finishLibraryOperation(error = ''): void {
       : active.batch
         ? `Updated ${active.completed} ${active.completed === 1 ? 'document' : 'documents'}.`
         : 'Document updated.';
+    // Same sentences the Create path appends, so a section the Library left
+    // out is reported rather than silently missing from the frame.
+    if (!error && active.omitted.length) {
+      omitted = active.omitted;
+      message = omissionsMessage(message, omitted);
+    }
   } else if (error) {
     message = error;
   }
-  if (message) nativeNotify(message, error ? { error: true, timeout: 5000 } : {});
+  state.lastOmitted = [];
+  if (message) nativeNotify(message, error ? { error: true, timeout: 5000 } : omitted.length ? { timeout: 5500 } : {});
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
@@ -993,6 +1007,9 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     if (!ok) return;
   }
   if (!beginOperation(operation)) return;
+  // Start from nothing: a Create earlier in this session may have left a
+  // record behind, and it says nothing about these documents.
+  state.lastOmitted = [];
   libraryOperation = {
     kind: 'update',
     queue: [...docIds],
@@ -1001,6 +1018,7 @@ async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<vo
     total: docIds.length,
     batch,
     confirmedOverwrite: new Set(edited),
+    omitted: [],
   };
   dispatchNextLibraryUpdate();
 }
@@ -1010,6 +1028,14 @@ function completeCurrentLibraryUpdate(): void {
   if (!active || active.kind !== 'update' || !active.currentDocId) return;
   active.completed += 1;
   active.currentDocId = null;
+  // Fold in what this document left out and clear the slot, so the next
+  // document in the queue (a foundation, which never sets it) cannot inherit
+  // it. Deduplicated: a batch that leaves Keyboard out of every document says
+  // so once.
+  for (const o of state.lastOmitted) {
+    if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
+  }
+  state.lastOmitted = [];
   dispatchNextLibraryUpdate();
 }
 
@@ -2322,16 +2348,17 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = msg.replaced ? 'Docs replaced' : 'Docs created';
+        const outcome = omissionsMessage(msg.replaced ? 'Docs replaced.' : 'Docs created.', state.lastOmitted);
         screen = {
           kind: 'success',
           componentName: currentName(),
           replaced: msg.replaced,
         };
         nativeNotify(
-          note ? `${outcome}. ${note}` : outcome,
-          note ? { timeout: 5500 } : {},
+          note ? `${outcome} ${note}` : outcome,
+          (note || state.lastOmitted.length) ? { timeout: 5500 } : {},
         );
+        state.lastOmitted = [];
         state.pendingAiNote = '';
       }
       paint();

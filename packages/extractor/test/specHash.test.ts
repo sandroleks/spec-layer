@@ -30,15 +30,16 @@ describe('specContentHash', () => {
   });
 });
 
-/** Re-cut on 2026-08-19 by Task 8: gap issue strings became stable ids (fixing
- *  `unbound` contradicting `tokens`) and gap properties were aligned with the
- *  token path's own vocabulary. Real content changes, so this supersedes the
- *  pre-v2-brief value `d445791b...` once: every existing component doc
- *  legitimately reports "update available" a single time, and must settle
- *  after a single Update. Every component doc on canvas stores a baseline
- *  computed this way, so a change to this constant means every one of them
- *  reports drift. Only a task that says it re-cuts the baseline may change it. */
-const BUTTON_HASH = 'adcffcb7d2eec911d960bb883794cf1e387d8b8d729064670b708abce8490516';
+/** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1: `description` and
+ *  `documentationLinks` entered the projection and canonical key order moved
+ *  from localeCompare to code units. Both are real content changes gated by
+ *  EXTRACTOR_VERSION '3', so every doc stamped '2' reads rebuild-required
+ *  once and settles after one rebuild. Held unchanged through the later fix
+ *  that let `figmaFileName` into the projection: this fixture is extracted
+ *  without a file name, and the field is absent-when-absent, so the hashed
+ *  object is byte-identical. Only a task that says it re-cuts the baseline
+ *  may change this constant. */
+const BUTTON_HASH ='d88b0870cfdfffb0c82f86079181b74886f844b2d7a9e978126d2f128aec7e92';
 
 it('is unchanged by removing the contrast field', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
@@ -53,23 +54,34 @@ it('is unchanged by adding paths to tokens and gaps', () => {
   expect(specContentHash(spec)).toBe(BUTTON_HASH);  // and does not enter the hash
 });
 
-it('is unchanged by the Figma file name', () => {
+it('hashes the Figma file name the facts strip renders', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
+  const unnamed = extract(node, { figmaFile: 'FILE1' });
   const named = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
   const renamed = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System (2026)' });
-  expect(named.figmaFileName).toBe('Design System');      // the field exists
-  expect(specContentHash(named)).toBe(BUTTON_HASH);       // and does not enter the hash
-  expect(specContentHash(renamed)).toBe(BUTTON_HASH);     // so a rename is not drift
+  expect(named.figmaFileName).toBe('Design System');
+  // Absent when absent: a spec with no file name hashes exactly as it did
+  // before the field entered the projection, which is why BUTTON_HASH holds.
+  expect(specContentHash(unnamed)).toBe(BUTTON_HASH);
+  // Present when present, and a rename is drift, because the facts strip
+  // prints it.
+  expect(specContentHash(named)).not.toBe(BUTTON_HASH);
+  expect(specContentHash(renamed)).not.toBe(specContentHash(named));
 });
 
 /** Cut on 2026-08-25 before Phase A of the brief-resolution-fidelity plan, from
- *  the tree as it stood at BRIEF_VERSION 3. Its whole job is to fail loudly if
- *  the `token` to `name` rename, the ref-keyed minimization, or the composite-key
- *  change moves the drift baseline. Same rule as BUTTON_HASH above: only a task
- *  that says it re-cuts the baseline may change it, and no task in this plan does.
- *  Re-derived from cf299fb, the merge base of the hidden-elements branch, and
- *  unchanged, so it also serves as the pre-feature value for that branch. */
-const CHIP_HASH = 'f2f7e6432f44b8405f31a9094a7494bdf89f68483a52dedd222a0d48e006d12b';
+ *  the tree as it stood at BRIEF_VERSION 3. Re-derived from cf299fb, the merge
+ *  base of the hidden-elements branch: held from cf299fb through
+ *  EXTRACTOR_VERSION '2', so until this re-cut it also served as the
+ *  pre-feature value for that branch. Re-cut at '3' by Docs 2.0 Plan 1 Task 1,
+ *  same reason as BUTTON_HASH above: `description` and `documentationLinks`
+ *  entered the projection (both empty on this fixture, but the keys now
+ *  exist) and canonical key order moved from localeCompare to code units.
+ *  Held unchanged through the later fix that let `figmaFileName` into the
+ *  projection, for the same reason as BUTTON_HASH: this fixture is extracted
+ *  without a file name, and the field is absent-when-absent. Only a task that
+ *  says it re-cuts the baseline may change this constant. */
+const CHIP_HASH ='3d98da0c9d7bce55f8a8e394577cb170944f3b22a76ff35e8f92f3fa9b43c27a';
 
 it('is unchanged across the whole of Phase A, on both fixtures', () => {
   for (const [file, expected] of [
@@ -103,14 +115,17 @@ describe('specHashProjection', () => {
       .toBe(specContentHash(extract(NODE, { figmaFile: 'FILEKEY' })));
   });
 
-  it('keeps the legacy token key and leaves rawValues, nodeEffects and the file name out', () => {
+  it('keeps the legacy token key, carries the file name, and leaves rawValues and nodeEffects out', () => {
     const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
     const spec = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
     const projection = specHashProjection(spec);
     const keys = Object.keys(projection);
     expect(keys).not.toContain('rawValues');
     expect(keys).not.toContain('nodeEffects');
-    expect(keys).not.toContain('figmaFileName');
+    // Rendered in the facts strip, so hashed; absent when the caller knew no
+    // name, rather than defaulted to one.
+    expect(projection.figmaFileName).toBe('Design System');
+    expect(Object.keys(specHashProjection(extract(node, { figmaFile: 'FILE1' })))).not.toContain('figmaFileName');
     expect(projection.tokens.length).toBeGreaterThan(0);
     for (const rule of projection.tokens) {
       expect(Object.keys(rule).sort()).toEqual(['conditions', 'part', 'property', 'token']);
@@ -182,14 +197,24 @@ describe('specContentHash and parts hidden by default', () => {
 /** Pre-feature canvas hash of chip-hidden.json, computed at cf299fb (the merge
  *  base of the hidden-elements branch) with this fixture copied into a
  *  throwaway worktree, so the pre-feature extractor simply ignored
- *  `visibleProperty`. Together with CHIP_HASH above, which was computed the
- *  same way and matched, it proves the toggle-off path is byte-identical to
- *  what shipped: one fixture that carries hidden bound layers and one that
- *  carries none. A change here means every committed component doc reports an
- *  update it did not earn. */
-const CHIP_HIDDEN_OFF_HASH = '5929fb9a46b5c4258933b2068efc89d3c4eb5c0b072eae334ba2b75ebca441ff';
+ *  `visibleProperty`. Together with CHIP_HASH above, computed the same way and
+ *  matching, it proved the toggle-off path was byte-identical to what shipped:
+ *  one fixture that carries hidden bound layers and one that carries none.
+ *  Held from cf299fb through EXTRACTOR_VERSION '2'; re-cut at '3' by Docs 2.0
+ *  Plan 1 Task 1, same reason as BUTTON_HASH and CHIP_HASH above:
+ *  `description` and `documentationLinks` entered the projection and
+ *  canonical key order moved from localeCompare to code units. The cf299fb
+ *  anchor no longer holds past this re-cut — see the describe block below,
+ *  which no longer claims parity with the pre-feature extractor — but a
+ *  change here still means every committed component doc reports an update it
+ *  did not earn. Held unchanged through the later fix that let
+ *  `figmaFileName` into the projection, for the same reason as BUTTON_HASH
+ *  and CHIP_HASH: this fixture is extracted without a file name, and the
+ *  field is absent-when-absent. Only a task that says it re-cuts the baseline
+ *  may change this constant. */
+const CHIP_HIDDEN_OFF_HASH ='2e3d7b3a4709e6f59fc53cd54bbec8f7a3f72a5fde44a150d6bfba0d02e74697';
 
-describe('the toggle-off canvas hash matches the pre-feature extractor', () => {
+describe('the toggle-off canvas hash is pinned', () => {
   it('is unchanged on a fixture with no hidden bound layers', () => {
     const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/chip.json', 'utf8'));
     expect(specContentHash(extract(node, { figmaFile: 'FILE1' }))).toBe(CHIP_HASH);

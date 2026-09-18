@@ -42,6 +42,13 @@ export interface SerializedNode {
   mainComponent?: { name: string; key: string };
   /** Stable component key (COMPONENT/COMPONENT_SET only). */
   key?: string;
+  /** The component's Figma description (COMPONENT or COMPONENT_SET root
+   *  only). Written by a designer, so it is the one human-authored signal in
+   *  the file; rendered on canvas and therefore hashed. Absent when empty. */
+  description?: string;
+  /** The documentation link URLs a designer attached in Figma. Absent when
+   *  there are none. */
+  documentationLinks?: string[];
   /** Auto-layout/shape values for this node, when present. */
   layout?: LayoutInfo;
   /** TEXT nodes only: font size/weight, kept for a future WCAG contrast

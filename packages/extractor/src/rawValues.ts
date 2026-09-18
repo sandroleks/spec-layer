@@ -1,15 +1,13 @@
 import type { SerializedNode } from './tree';
 import { defaultVariant } from './anatomy';
 import { cleanPartName, walkParts } from './naming';
+import { RADIUS_BINDINGS } from './tokens';
 
 export interface RawValue { part: string; property: string; value: string }
 
 /** Bound-variable property names that cover each measure property. */
 const PADDING_BINDINGS = new Set([
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'verticalPadding', 'horizontalPadding',
-]);
-const RADIUS_BINDINGS = new Set([
-  'cornerRadius', 'topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius',
 ]);
 
 /**

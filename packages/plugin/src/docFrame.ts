@@ -1,28 +1,45 @@
 /// <reference types="@figma/plugin-typings" />
-import { parseRuns, groupSections, firstSentence, headingLine } from './ui/docModel';
+/**
+ * docFrame.ts — the component document: three frames, in reading order.
+ *
+ * This module is the dispatch: it owns the frame chrome (card, header band,
+ * facts strip, content column) and routes every block kind the doc model
+ * emits to the module that draws it. The blocks themselves live in
+ * docBlocks.ts, anatomySection.ts, measureSection.ts and statesSection.ts;
+ * the text and table primitives live in docText.ts. What stays here is the
+ * per-variant token card, which nothing else needs.
+ *
+ * Runs on the main thread, in Figma's bare sandbox: ECMAScript built-ins and
+ * the `figma` API only.
+ */
+import { parseRuns, groupSections } from './ui/docModel';
 import type {
-  AnatomyPartBlock,
-  Bullet,
   DocFrameModel,
   DocGroup,
+  FactsStrip,
   SectionBlock,
-  TextRun,
   VariantRow,
 } from './ui/docModel';
-import type { SectionId } from './ui/docModel';
 import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, matchVariableModes, radius, applyThemeToKit,
-  revealBooleanParts,
-  type FontStyle,
+  headingFont, radius, applyThemeToKit, PROSE_MEASURE,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
 import { buildMatrixSection } from './statesSection';
 import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
-import { SLOT_KEY, SLOT_PART_KEY, LINE_KEY, type ProseSlot, type LineKind } from './canvasProse';
+import {
+  tagSlot, applyRuns, accentRule, makeBulletRow, buildProse, makeCell, buildTable,
+} from './docText';
+import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
+import {
+  buildFactsStrip, buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
+  buildPropertiesTable, buildStatesTable, measuredParagraph,
+} from './docBlocks';
+import { displayPartName } from './ui/displayNames';
+import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
 
 // ---------------------------------------------------------------------------
 // Design tokens for the generated doc frame
@@ -35,10 +52,12 @@ const PAD_X = HEADER_PAD_X;
 const VAR_LEFT_W = 240; // per-variant card: left pane (preview + properties)
 const VAR_PANE_PAD = 20; // per-variant card: pane padding
 const TOKEN_KEY_COL_W = 120; // token tables: fixed width of the non-Token columns
+const CARD_PAD = 24; // diagram card padding (anatomySection's own ANATOMY_PAD)
+const CALLOUT_ZONE = 60; // room beside a diagram for its pins and leaders
 
 // The frame width is normally CARD_WIDTH_MIN, but token names can be long
-// slash-paths and their chips hug their text, so the frame widens on build to
-// give the Token column enough room (computed in fitFrameWidthToTokens()). These
+// slash-paths and their chips hug their text, and a component can be wider than
+// the column, so the frame widens on build (computed in fitFrameWidth()). These
 // are `let` because they're recomputed per build; CONTENT_WIDTH derives from it.
 const CARD_WIDTH_MIN = 880;
 const CARD_WIDTH_MAX = 1440; // safety cap so a pathological token can't run away
@@ -46,324 +65,35 @@ let CARD_WIDTH = CARD_WIDTH_MIN;
 let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
 // ---------------------------------------------------------------------------
-// Editorial tags — see canvasProse.ts. Anything tagged with a slot is text
-// the designer owns; an Update reads it back instead of regenerating it.
+// Prose — see canvasProse.ts. Anything tagged with a slot is text the designer
+// owns; an Update reads it back instead of regenerating it.
 // ---------------------------------------------------------------------------
 
-function tagSlot(node: SceneNode, slot: ProseSlot): void {
-  node.setPluginData(SLOT_KEY, slot);
-}
-
-function tagLine(node: SceneNode, kind: LineKind): void {
-  node.setPluginData(LINE_KEY, kind);
-}
-
-/** Which prose sections are editorial slots. Every `kind: 'prose'` section
- *  today is one; a future generated prose section would simply be absent. */
-const PROSE_SLOT_BY_SECTION: Partial<Record<SectionId, ProseSlot>> = {
-  definition: 'definition',
-  accessibility: 'accessibility',
-  interactions: 'interactions',
-  contentConsiderations: 'contentConsiderations',
-};
-
-/** Render markdown into a tagged slot container. */
-function buildProseSlot(text: string, slot: ProseSlot, spacing: number): FrameNode {
+/** Render markdown into a tagged slot container at the prose measure. The
+ *  first paragraph of an Overview is the lede and sets one step larger. */
+function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, lede = false): FrameNode {
   const holder = vstack(spacing);
-  tagSlot(holder, slot);
-  for (const node of buildProse(text)) {
+  if (slot) tagSlot(holder, slot);
+  holder.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+  holder.primaryAxisSizingMode = 'AUTO';
+  buildProse(text).forEach((node, i) => {
     holder.appendChild(node);
     (node as TextNode).layoutSizingHorizontal = 'FILL';
-  }
+    if (lede && i === 0 && node.type === 'TEXT') (node as TextNode).fontSize = 17;
+  });
   return holder;
 }
 
-// ---------------------------------------------------------------------------
-// Text construction
-// ---------------------------------------------------------------------------
-
-/**
- * Apply the Inter Bold face over the character ranges that correspond to bold
- * runs. `prefix` accounts for any leading characters prepended ahead of the
- * runs in the node's `characters`.
- */
-function applyBoldRuns(node: TextNode, runs: TextRun[], prefix = 0): void {
-  let cursor = prefix;
-  for (const run of runs) {
-    const start = cursor;
-    const end = cursor + run.text.length;
-    if (run.bold && run.text.length > 0) {
-      node.setRangeFontName(start, end, font('Bold'));
-    }
-    cursor = end;
-  }
+/** One paragraph at the prose measure, with the slot tag on the TEXT node
+ *  itself. A single-string slot (anatomySummary, definitionLead) is read
+ *  straight off the node it is tagged on, so tagging a container would read
+ *  back as nothing. */
+function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNode {
+  const box = measuredParagraph(text, CONTENT_WIDTH, size);
+  const node = box.children[0];
+  if (node) tagSlot(node, slot);
+  return box;
 }
-
-/** Detect "_italic placeholder_" lines (e.g. "_To be written._", "_None._"). */
-function emphasisOnly(line: string): string | null {
-  const m = /^_(.+)_$/.exec(line.trim());
-  return m ? m[1] : null;
-}
-
-/**
- * Split a markdown block into its lead paragraph (first non-empty line) and the
- * remainder. The lead becomes the header subtitle; the rest renders as a body
- * section. Prevents multi-line markdown (headings, bullets) from leaking raw
- * `**`/`- ` markers into the single-line header subtitle.
- */
-function splitLead(md: string): { lead: string; rest: string } {
-  const lines = md.split('\n');
-  let i = 0;
-  while (i < lines.length && lines[i].trim() === '') i++;
-  const firstLine = i < lines.length ? lines[i].trim() : '';
-  const following = lines.slice(i + 1).join('\n').trim();
-  // The header takes only the first sentence; the rest of the paragraph plus any
-  // following lines drop into the Definition body, so the header stays a one-liner.
-  const { sentence, remainder } = firstSentence(firstLine);
-  const rest = [remainder, following].filter(Boolean).join('\n\n').trim();
-  return { lead: sentence, rest };
-}
-
-// ---------------------------------------------------------------------------
-// Layout helpers
-// ---------------------------------------------------------------------------
-
-/** A small teal accent bar used as a section eyebrow rule. */
-function accentRule(): FrameNode {
-  const rule = figma.createFrame();
-  rule.resize(28, 3);
-  rule.cornerRadius = radius(2);
-  rule.fills = solidFill(palette.accent);
-  return rule;
-}
-
-// ---------------------------------------------------------------------------
-// Bullets — hanging-indent rows (marker column + wrapping content)
-// ---------------------------------------------------------------------------
-
-/** Pull a leading emoji/marker (✅ ❌ •) off the text so it can sit in the
- *  marker column; default to a bullet dot otherwise. */
-function splitMarker(text: string): { marker: string; rest: string } {
-  const m = /^([✅❌•▪◦–-])\s+(.*)$/u.exec(text);
-  if (m) return { marker: m[1], rest: m[2] };
-  return { marker: '•', rest: text };
-}
-
-/** Drop `count` leading characters from a run list, discarding runs it fully
- *  consumes and slicing the first run it only partly consumes. Used to carry
- *  a bullet's parsed runs past the marker split without re-parsing already
- *  plain text. */
-function dropLeading(runs: TextRun[], count: number): TextRun[] {
-  const out: TextRun[] = [];
-  let remaining = count;
-  for (const run of runs) {
-    if (remaining >= run.text.length) {
-      remaining -= run.text.length;
-      continue;
-    }
-    out.push(remaining > 0 ? { ...run, text: run.text.slice(remaining) } : run);
-    remaining = 0;
-  }
-  return out;
-}
-
-/** Render a single bullet as marker-column + wrapping content row. */
-function makeBulletRow(bullet: Bullet): FrameNode {
-  const placeholder = emphasisOnly(bullet.text);
-  const row = hstack(10);
-  row.counterAxisAlignItems = 'MIN'; // top-align marker with first text line
-
-  if (placeholder) {
-    // Muted, marker-less placeholder line ("None.", "To be written.")
-    const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
-    row.appendChild(node);
-    node.layoutSizingHorizontal = 'FILL';
-    node.textAutoResize = 'HEIGHT';
-    return row;
-  }
-
-  const { marker, rest } = splitMarker(bullet.text);
-  const markerColor = marker === '✅' ? palette.accent : marker === '❌' ? palette.muted : palette.accent;
-  const markerNode = makeText(marker, 'Medium', 15, markerColor, 155);
-  row.appendChild(markerNode);
-  markerNode.textAutoResize = 'WIDTH_AND_HEIGHT';
-
-  // bullet.runs already carries any bold lead-ins parsed from the source
-  // markdown, and its concatenated text matches bullet.text for every
-  // current caller (docModel's makeBullet and buildProse both derive text
-  // from runs). Drop the same number of leading characters the marker split
-  // consumed so those runs line up with `rest`, rather than re-parsing
-  // already-plain text and losing the bold. Fall back to a fresh parse if a
-  // future caller ever breaks that invariant.
-  const runsMatchText = bullet.runs.map((r) => r.text).join('') === bullet.text;
-  const runs = runsMatchText ? dropLeading(bullet.runs, bullet.text.length - rest.length) : parseRuns(rest);
-  const plain = runs.map((r) => r.text).join('');
-  const content = makeText(plain, 'Regular', 15, palette.body, 155);
-  row.appendChild(content);
-  content.layoutSizingHorizontal = 'FILL';
-  content.textAutoResize = 'HEIGHT';
-  applyBoldRuns(content, runs, 0);
-  return row;
-}
-
-// ---------------------------------------------------------------------------
-// Prose — paragraphs and inline bullet lines
-// ---------------------------------------------------------------------------
-
-function buildProse(text: string): SceneNode[] {
-  const out: SceneNode[] = [];
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trimEnd();
-    if (line.trim() === '') continue;
-
-    const placeholder = emphasisOnly(line);
-    if (placeholder) {
-      const node = makeText(placeholder, 'Regular', 15, palette.muted, 155);
-      tagLine(node, 'placeholder');
-      out.push(node);
-      continue;
-    }
-
-    const subheading = headingLine(line);
-    if (subheading !== null) {
-      // "### Mouse" → a small subheading. Wrapped in a padded frame so it gets
-      // extra separation from the bullet group above (body spacing is a flat 10).
-      const wrap = vstack(0);
-      wrap.paddingTop = 8;
-      const node = makeText(subheading, 'Bold', 17, palette.heading, 130);
-      node.fontName = headingFont('Bold');
-      wrap.appendChild(node);
-      node.layoutSizingHorizontal = 'FILL';
-      node.textAutoResize = 'HEIGHT';
-      tagLine(wrap, 'heading');
-      out.push(wrap);
-      continue;
-    }
-
-    const bulletMatch = /^[-*]\s+(.*)$/.exec(line);
-    if (bulletMatch) {
-      const runs = parseRuns(bulletMatch[1]);
-      const plain = runs.map((r) => r.text).join('');
-      const row = makeBulletRow({ runs, text: plain });
-      tagLine(row, 'bullet');
-      out.push(row);
-    } else {
-      const runs = parseRuns(line);
-      const plain = runs.map((r) => r.text).join('');
-      const node = makeText(plain, 'Regular', 15, palette.body, 155);
-      applyBoldRuns(node, runs, 0);
-      tagLine(node, 'paragraph');
-      out.push(node);
-    }
-  }
-  if (out.length === 0) {
-    const empty = makeText('', 'Regular', 15, palette.body, 155);
-    tagLine(empty, 'paragraph');
-    out.push(empty);
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Tables — rounded bordered container, tinted header, per-column widths
-// ---------------------------------------------------------------------------
-
-/** Per-column sizing: a fixed pixel width, or 'grow' to fill remaining space. */
-type ColWidth = number | 'grow';
-
-/** Heuristic column widths so the longest/free-text column grows. */
-function columnWidths(columns: string[]): ColWidth[] {
-  const n = columns.length;
-  // Last column is typically the descriptive one → let it grow.
-  return columns.map((_, i) => (i === n - 1 ? ('grow' as const) : Math.floor((CONTENT_WIDTH * 0.7) / Math.max(n - 1, 1))));
-}
-
-function makeCell(text: string, style: FontStyle, size: number, color: RGB, trackingPct?: number): FrameNode {
-  const cell = vstack(0);
-  cell.paddingTop = 12;
-  cell.paddingBottom = 12;
-  cell.paddingLeft = 16;
-  cell.paddingRight = 16;
-  const node = makeText(text, style, size, color, 145, trackingPct);
-  cell.appendChild(node);
-  node.layoutSizingHorizontal = 'FILL';
-  node.textAutoResize = 'HEIGHT';
-  return cell;
-}
-
-function applyColWidth(cell: FrameNode, width: ColWidth): void {
-  if (width === 'grow') {
-    cell.layoutSizingHorizontal = 'FILL';
-  } else {
-    cell.layoutSizingHorizontal = 'FIXED';
-    cell.resize(width, cell.height);
-  }
-}
-
-function buildTable(columns: string[], rows: string[][]): FrameNode {
-  const widths = columnWidths(columns);
-  const table = vstack(0);
-  table.cornerRadius = radius(8);
-  table.clipsContent = true;
-  table.strokes = solidFill(palette.border);
-  table.strokeWeight = 1;
-
-  const colCount = Math.max(columns.length, 1);
-
-  // Header row
-  const head = hstack(0);
-  head.fills = solidFill(palette.tableHeadBg);
-  table.appendChild(head);
-  head.layoutSizingHorizontal = 'FILL';
-  head.counterAxisAlignItems = 'MIN';
-  for (let i = 0; i < colCount; i++) {
-    const cell = makeCell((columns[i] ?? '').toUpperCase(), 'Medium', 11, palette.muted);
-    head.appendChild(cell);
-    applyColWidth(cell, widths[i]);
-  }
-
-  // Data rows
-  if (rows.length === 0) {
-    const empty = hstack(0);
-    table.appendChild(empty);
-    empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(palette.divider);
-    empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, palette.muted);
-    empty.appendChild(cell);
-    applyColWidth(cell, 'grow');
-  }
-
-  for (const r of rows) {
-    const row = hstack(0);
-    table.appendChild(row);
-    row.layoutSizingHorizontal = 'FILL';
-    row.counterAxisAlignItems = 'MIN';
-    row.strokes = solidFill(palette.divider);
-    row.strokeTopWeight = 1;
-    row.strokeBottomWeight = 0;
-    row.strokeLeftWeight = 0;
-    row.strokeRightWeight = 0;
-    for (let i = 0; i < colCount; i++) {
-      // First column reads as the row's "key" → slightly stronger ink + weight.
-      const isKey = i === 0;
-      const cell = makeCell(
-        r[i] ?? '',
-        isKey ? 'Medium' : 'Regular',
-        14,
-        isKey ? palette.heading : palette.body,
-      );
-      row.appendChild(cell);
-      applyColWidth(cell, widths[i]);
-    }
-  }
-
-  return table;
-}
-
-// ---------------------------------------------------------------------------
-// Sections
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Per-variant tokens — live instance slot + a token table with color swatches
@@ -416,8 +146,8 @@ async function makeTokenCell(token: string, unbound = false): Promise<FrameNode>
   }
 
   // Chip and text both hug their content (single-line pill). The Token column is
-  // sized wide enough to hold the longest token (see fitFrameWidthToTokens), so
-  // the pill never overflows and gets clipped.
+  // sized wide enough to hold the longest token (see fitFrameWidth), so the pill
+  // never overflows and gets clipped.
   const text = makeText(token, 'Medium', 13, unbound ? palette.muted : palette.heading, 140);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
@@ -486,17 +216,11 @@ async function buildTokenTable(
     sizeCol(cell, i);
   }
 
-  if (rows.length === 0) {
-    const empty = hstack(0);
-    table.appendChild(empty);
-    empty.layoutSizingHorizontal = 'FILL';
-    empty.strokes = solidFill(palette.divider);
-    empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, palette.muted);
-    empty.appendChild(cell);
-    cell.layoutSizingHorizontal = 'FILL';
-    return table;
-  }
+  // No "None." row. A variant card with no rows is a non-default variant
+  // whose tokens all match the default, and the "Identical to default (N
+  // tokens)" note the caller appends already says so; printing "None." under
+  // it would read as "this variant binds no tokens", which is the opposite.
+  if (rows.length === 0) return table;
 
   let currentPart: string | null = null;
   for (const r of rows) {
@@ -579,280 +303,16 @@ function buildPropertyList(props: { name: string; value: string }[]): FrameNode 
   return wrap;
 }
 
+/** A quiet uppercase label in place of a property list. */
+function labelBlock(text: string): FrameNode {
+  const wrap = vstack(0);
+  wrap.appendChild(makeText(text, 'Medium', 10, palette.muted, 130, 6));
+  return wrap;
+}
+
 // ---------------------------------------------------------------------------
-// Anatomy — numbered callout diagram (component screenshot + numbered pins)
+// Sections
 // ---------------------------------------------------------------------------
-
-const PIN_SIZE = 18; // on-image numbered pin diameter
-const LEGEND_BADGE = 20; // legend number badge diameter
-const ANATOMY_PAD = 24; // diagram card padding
-const ANATOMY_MAX_H = 360; // cap on the rendered screenshot height
-
-function clamp01(n: number): number {
-  return n < 0 ? 0 : n > 1 ? 1 : n;
-}
-
-/** A teal circle with a centered white number — shared by pins and legend. */
-function numberBadge(n: string, size: number): FrameNode {
-  const badge = figma.createFrame();
-  badge.layoutMode = 'HORIZONTAL';
-  badge.primaryAxisSizingMode = 'FIXED';
-  badge.counterAxisSizingMode = 'FIXED';
-  badge.primaryAxisAlignItems = 'CENTER';
-  badge.counterAxisAlignItems = 'CENTER';
-  badge.resize(size, size);
-  // A pill, not a circle: a hierarchical callout ("2.1") is wider than one
-  // digit and would otherwise be clipped by the fixed square. Hugging with a
-  // floor of `size` means a single digit still draws the exact circle it
-  // always did, and only a longer label grows sideways.
-  badge.paddingLeft = badge.paddingRight = 4;
-  badge.primaryAxisSizingMode = 'AUTO';
-  badge.minWidth = size;
-  badge.cornerRadius = size / 2;
-  badge.fills = solidFill(palette.accent);
-  const label = makeText(n, 'Bold', size <= 18 ? 10 : 11, palette.onHeader);
-  badge.appendChild(label);
-  return badge;
-}
-
-/** On-image pin: a number badge with a white ring + soft shadow so it reads on
- *  top of the screenshot. */
-function anatomyPin(n: string): FrameNode {
-  const pin = numberBadge(n, PIN_SIZE);
-  pin.strokes = solidFill(palette.bg);
-  pin.strokeWeight = 2;
-  pin.effects = [
-    {
-      type: 'DROP_SHADOW',
-      color: { r: 0, g: 0, b: 0, a: 0.28 },
-      offset: { x: 0, y: 1 },
-      radius: 4,
-      spread: 0,
-      visible: true,
-      blendMode: 'NORMAL',
-    },
-  ];
-  return pin;
-}
-
-/** Legend row: number badge + bold part name, then either the AI role
- *  description ("name: description") or, when undescribed, the nested-component
- *  note ("name  ·  component"). Indented per nesting depth so sub-parts read as
- *  children of their parent; the badge top-aligns so multi-line descriptions
- *  hang cleanly beside it. */
-function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
-  const row = hstack(12);
-  // The description is editorial; the tag carries the part name so a rebuilt
-  // legend can find each description again even if the row text was edited.
-  tagSlot(row, 'anatomyPart');
-  row.setPluginData(SLOT_PART_KEY, part.name);
-  row.counterAxisAlignItems = 'MIN';
-  row.paddingTop = row.paddingBottom = 12;
-  row.paddingLeft = part.depth * 18;
-  row.appendChild(numberBadge(part.label, LEGEND_BADGE));
-
-  const desc = part.description?.trim();
-  const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
-  // A revealed part says which property shows it, after the description or the
-  // nested note, so the reader knows it is not on by default.
-  const shownNote = part.shownBy ? `  ·  Shown when ${part.shownBy} is true` : '';
-  const chars = desc ? `${part.name}: ${desc}${shownNote}` : `${part.name}${nestedNote}${shownNote}`;
-  const text = makeText(chars, 'Regular', 15, palette.body, 150);
-  row.appendChild(text);
-  text.layoutSizingHorizontal = 'FILL';
-  text.textAutoResize = 'HEIGHT';
-  // Bold the part name only (the leading run before the colon / nested note).
-  text.setRangeFontName(0, part.name.length, font('Bold'));
-  return row;
-}
-
-/** The numbered part list: legend rows separated by hairline dividers, so each
- *  part reads as its own spec entry. Shared by the diagram card and the
- *  no-screenshot fallback. */
-function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
-  const legend = vstack(0);
-  legend.counterAxisAlignItems = 'MIN';
-  parts.forEach((part, i) => {
-    if (i > 0) {
-      const divider = figma.createFrame();
-      divider.resize(100, 1);
-      divider.fills = solidFill(palette.divider);
-      legend.appendChild(divider);
-      divider.layoutSizingHorizontal = 'FILL';
-    }
-    const row = anatomyLegendRow(part);
-    legend.appendChild(row);
-    row.layoutSizingHorizontal = 'FILL';
-  });
-  return legend;
-}
-
-/**
- * Build the numbered-callout anatomy diagram: a screenshot of the default
- * variant with a numbered pin over each part, above a numbered legend.
- *
- * Returns null when the diagram can't be built (component missing, not
- * exportable, or no bounding box) so the caller can fall back to a list.
- */
-async function buildAnatomyDiagram(
-  componentId: string,
-  parts: AnatomyPartBlock[],
-  includeHidden: boolean,
-): Promise<FrameNode | null> {
-  let node: BaseNode | null;
-  try {
-    node = await figma.getNodeByIdAsync(componentId);
-  } catch {
-    return null;
-  }
-  if (!node || node.type !== 'COMPONENT') return null;
-  const component = node;
-  const componentBox = component.absoluteBoundingBox;
-  if (!componentBox || componentBox.width <= 0 || componentBox.height <= 0) return null;
-
-  // A live instance keeps the preview crisp at any size (vector, not a bitmap).
-  let inst: InstanceNode;
-  try {
-    inst = component.createInstance();
-    // Match the component's variable modes so the instance resolves the same
-    // token values (else a differing density mode shrinks it, misaligning pins).
-    await matchVariableModes(inst, component);
-    if (includeHidden) await revealBooleanParts(inst, component);
-  } catch {
-    return null;
-  }
-
-  // Pin geometry is measured on the PLACED INSTANCE, not the source component:
-  // a part a boolean property reveals has no reliable box on the source, where
-  // it is hidden inside an auto-layout parent. Measured before the rescale
-  // below so the normalized coordinates hold at any rendered size. Figma
-  // addresses an instance's layers as `I<instanceId>;<sourceLayerId>`. A part
-  // that cannot be resolved gets no pin and stays in the legend, as before.
-  const ib = inst.absoluteBoundingBox;
-  if (!ib || ib.width <= 0 || ib.height <= 0) {
-    try { inst.remove(); } catch { /* already gone */ }
-    return null;
-  }
-  const pins: { n: string; nx: number; ny: number; rx: number; ty: number }[] = [];
-  for (const part of parts) {
-    if (part.depth !== 0) continue;
-    let p: BaseNode | null;
-    try {
-      p = await figma.getNodeByIdAsync(`I${inst.id};${part.id}`);
-    } catch {
-      continue;
-    }
-    if (!p || !('absoluteBoundingBox' in p)) continue;
-    const pb = (p as SceneNode).absoluteBoundingBox;
-    // Only the null guard, exactly as before this feature: a zero-size part
-    // still gets the pin it always got, so the option off draws what it drew.
-    if (!pb) continue;
-    pins.push({
-      n: part.label,
-      nx: clamp01((pb.x + pb.width / 2 - ib.x) / ib.width),
-      ny: clamp01((pb.y + pb.height / 2 - ib.y) / ib.height),
-      rx: clamp01((pb.x + pb.width - ib.x) / ib.width), // part's right edge
-      ty: clamp01((pb.y - ib.y) / ib.height), // part's top edge
-    });
-  }
-
-  // Fit to the content width / height cap. Cap at 1× so a small component sits at
-  // its natural size (centered) rather than stretched to fill the column.
-  const maxW = CONTENT_WIDTH - ANATOMY_PAD * 2;
-  const scale = Math.min(maxW / inst.width, ANATOMY_MAX_H / inst.height, 1);
-  if (scale !== 1) inst.rescale(scale);
-  const renderedW = inst.width;
-  const renderedH = inst.height;
-
-  // Diagram card: padded, bordered, tinted — same language as the instance slot.
-  const card = vstack(20);
-  card.paddingTop = card.paddingBottom = ANATOMY_PAD;
-  card.paddingLeft = card.paddingRight = ANATOMY_PAD;
-  card.fills = solidFill(palette.paneBg);
-  card.cornerRadius = radius(8);
-  card.strokes = solidFill(palette.border);
-  card.strokeWeight = 1;
-  card.counterAxisAlignItems = 'CENTER';
-
-  // Pin orientation: place callouts on the side the parts are LEAST spread
-  // along, so they line up without piling. A horizontal row of parts shares a
-  // vertical range near zero -> pins go ABOVE (spread by x); a vertical stack
-  // shares an x range near zero -> pins go to the RIGHT (spread by y).
-  const xs = pins.map((p) => p.nx);
-  const ys = pins.map((p) => p.ny);
-  const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
-  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
-  const sideCallouts = yRange > xRange; // vertical stack -> right-side pins
-  const CALLOUT_ZONE = pins.length ? 48 : 0;
-
-  // Image box: a plain (non-auto-layout) frame holding the instance plus the
-  // callout zone. Pins sit in the zone (beside each part); a leader anchored at
-  // the part's own edge (a small dot marks the connection) runs to the pin.
-  const box = figma.createFrame();
-  box.name = 'Anatomy diagram';
-  box.resize(
-    renderedW + (sideCallouts ? CALLOUT_ZONE : 0),
-    renderedH + (sideCallouts ? 0 : CALLOUT_ZONE),
-  );
-  box.fills = [];
-  box.clipsContent = false; // edge pins/leaders may overhang slightly
-  card.appendChild(box);
-  box.appendChild(inst);
-  inst.x = 0;
-  inst.y = sideCallouts ? 0 : CALLOUT_ZONE;
-
-  // Leaders share the pin hue (at low opacity) so they read as connections; a
-  // solid accent dot marks where each leader meets its part.
-  const leaderPaint = [{ type: 'SOLID', color: palette.accent, opacity: 0.45 }] as Paint[];
-  const connectDot = (x: number, y: number): void => {
-    const dot = figma.createFrame();
-    dot.resize(6, 6);
-    dot.cornerRadius = radius(3);
-    dot.fills = solidFill(palette.accent);
-    dot.x = Math.round(x - 3);
-    dot.y = Math.round(y - 3);
-    box.appendChild(dot);
-  };
-
-  for (const pin of pins) {
-    const node = anatomyPin(pin.n);
-    if (sideCallouts) {
-      const cy = Math.round(pin.ny * renderedH);
-      const anchorX = Math.round(pin.rx * renderedW); // the part's right edge
-      const pinX = renderedW + CALLOUT_ZONE - PIN_SIZE;
-      const leader = figma.createFrame();
-      leader.resize(Math.max(pinX - anchorX, 1), 1);
-      leader.x = anchorX;
-      leader.y = cy;
-      leader.fills = leaderPaint;
-      box.appendChild(leader);
-      connectDot(anchorX, cy);
-      box.appendChild(node);
-      node.x = pinX;
-      node.y = Math.round(cy - PIN_SIZE / 2);
-    } else {
-      const cx = Math.round(pin.nx * renderedW);
-      const anchorY = Math.round(CALLOUT_ZONE + pin.ty * renderedH); // part's top edge
-      const leader = figma.createFrame();
-      leader.resize(1, Math.max(anchorY - PIN_SIZE, 1));
-      leader.x = cx;
-      leader.y = PIN_SIZE;
-      leader.fills = leaderPaint;
-      box.appendChild(leader);
-      connectDot(cx, anchorY);
-      box.appendChild(node);
-      node.x = Math.round(cx - PIN_SIZE / 2);
-      node.y = 0;
-    }
-  }
-
-  // Numbered legend below the screenshot.
-  const legend = buildAnatomyLegend(parts);
-  card.appendChild(legend);
-  legend.layoutSizingHorizontal = 'FILL';
-
-  return card;
-}
 
 /** Build one section: teal accent rule + heading + body. */
 async function buildSection(section: SectionBlock, includeHidden: boolean): Promise<FrameNode> {
@@ -870,222 +330,197 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
   head.appendChild(heading);
   heading.layoutSizingHorizontal = 'FILL';
 
-  // Body
-  const bodySpacing = section.kind === 'table' ? 0 : section.kind === 'variantTokens' ? 20 : 10;
+  const bodySpacing = section.kind === 'variantTokens' ? 20 : 10;
   const body = vstack(bodySpacing);
   group.appendChild(body);
   body.layoutSizingHorizontal = 'FILL';
+  const fill = (node: SceneNode): void => { body.appendChild(node); (node as FrameNode).layoutSizingHorizontal = 'FILL'; };
 
-  if (section.kind === 'prose') {
-    const slot = PROSE_SLOT_BY_SECTION[section.id];
-    if (slot) {
-      const holder = buildProseSlot(section.text, slot, bodySpacing);
-      body.appendChild(holder);
-      holder.layoutSizingHorizontal = 'FILL';
-    } else {
-      for (const node of buildProse(section.text)) {
-        body.appendChild(node);
-        (node as TextNode).layoutSizingHorizontal = 'FILL';
+  switch (section.kind) {
+    case 'prose': {
+      // An AI lede the description outranked opens the Overview as its own
+      // tagged paragraph, a SIBLING of the definition container: readCanvasProse
+      // stops at the first tagged node, so a definitionLead nested inside the
+      // definition slot would never be read back.
+      if (section.lede) body.appendChild(buildTaggedParagraph(section.lede, 'definitionLead', 17));
+      // The description is generated-lane: it comes from the component, is
+      // hashed, and an Update re-reads it from Figma, so it is NOT tagged. An
+      // AI overview is editorial and is.
+      const slot = section.source === 'ai' ? 'definition' : null;
+      if (section.text) {
+        body.appendChild(buildProseSlot(section.text, slot, bodySpacing, section.id === 'definition' && !section.lede));
       }
+      break;
     }
-  } else if (section.kind === 'bullets' && section.id === 'dosDonts') {
-    // Dos and don'ts are two slots sharing one section. Rows are routed by
-    // their marker; the placeholder (no marker) lands in `dos`, where the
-    // read-back recognises it and reports the slot as absent.
-    const dos = vstack(bodySpacing);
-    const donts = vstack(bodySpacing);
-    for (const b of section.items) {
-      const row = makeBulletRow(b);
-      const holder = b.text.startsWith('❌') ? donts : dos;
-      holder.appendChild(row);
-      row.layoutSizingHorizontal = 'FILL';
-    }
-    for (const [holder, slot] of [[dos, 'dos'], [donts, 'donts']] as const) {
-      if (holder.children.length === 0) {
-        holder.remove();
-        continue;
+    case 'bullets': {
+      const list = vstack(bodySpacing);
+      if (section.slot) tagSlot(list, section.slot);
+      list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+      list.primaryAxisSizingMode = 'AUTO';
+      for (const b of section.items) {
+        const row = makeBulletRow(b);
+        list.appendChild(row);
+        row.layoutSizingHorizontal = 'FILL';
       }
-      tagSlot(holder, slot);
-      body.appendChild(holder);
-      holder.layoutSizingHorizontal = 'FILL';
+      body.appendChild(list);
+      break;
     }
-  } else if (section.kind === 'bullets') {
-    for (const b of section.items) {
-      const row = makeBulletRow(b);
-      body.appendChild(row);
-      row.layoutSizingHorizontal = 'FILL';
-    }
-  } else if (section.kind === 'anatomy') {
-    // AI orientation to the component's structure, above the diagram.
-    if (section.summary) {
-      const summary = makeText(section.summary, 'Regular', 15, palette.body, 155);
-      tagSlot(summary, 'anatomySummary');
-      body.appendChild(summary);
-      summary.layoutSizingHorizontal = 'FILL';
-      summary.textAutoResize = 'HEIGHT';
-    }
-    // 'table' skips the diagram build entirely — no point spending an instance +
-    // screenshot render when only the tabular list will be shown.
-    if (section.view !== 'table') {
-      const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden);
-      if (diagram) {
-        body.appendChild(diagram);
-        diagram.layoutSizingHorizontal = 'FILL';
-      } else {
-        // Fallback: the numbered legend on its own when the screenshot can't render.
-        const legend = buildAnatomyLegend(section.parts);
-        body.appendChild(legend);
-        legend.layoutSizingHorizontal = 'FILL';
+    case 'twoColumns': fill(buildTwoColumns(section.left, section.right, CONTENT_WIDTH)); break;
+    case 'guidelinePairs': fill(buildGuidelinePairs(section.pairs, CONTENT_WIDTH)); break;
+    case 'keyboardTable': fill(buildKeyboardTable(section.rows, CONTENT_WIDTH)); break;
+    case 'propertiesTable': fill(buildPropertiesTable(section.rows, section.hasDescriptions, CONTENT_WIDTH)); break;
+    case 'table': fill(buildTable(section.columns, section.rows, CONTENT_WIDTH)); break;
+    case 'anatomy': {
+      if (section.summary) body.appendChild(buildTaggedParagraph(section.summary, 'anatomySummary'));
+      if (section.view !== 'table') {
+        const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden, CONTENT_WIDTH);
+        if (diagram) {
+          // Hug and centre: a small component sits in a card its own size, not
+          // in a column-wide field of white.
+          const holder = vstack(8);
+          holder.counterAxisAlignItems = 'CENTER';
+          holder.appendChild(diagram.card);
+          const note = scaleNote(diagram.scale);
+          if (note) holder.appendChild(note);
+          fill(holder);
+        } else {
+          fill(buildAnatomyLegend(section.parts));
+        }
       }
-    }
-    if (section.view === 'table' || section.view === 'both') {
-      const rows = section.parts.map((p) => [
-        p.label,
-        `${'    '.repeat(p.depth)}${p.name}`,
-        p.type.toLowerCase(),
-        p.component ?? '—',
-        p.tokens.length <= 3
-          ? p.tokens.join(' · ')
-          : `${p.tokens.slice(0, 3).join(' · ')} +${p.tokens.length - 3}`,
-      ]);
-      const table = buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows);
-      body.appendChild(table);
-      table.layoutSizingHorizontal = 'FILL';
-    }
-  } else if (section.kind === 'variantTokens') {
-    for (const variant of section.variants) {
-      // A bordered card split into a left pane (preview + PROPERTIES) and a
-      // right pane (token table), like the docs inspector.
-      const card = hstack(0);
-      card.cornerRadius = radius(12);
-      card.clipsContent = true;
-      card.strokes = solidFill(palette.border);
-      card.strokeWeight = 1;
-      body.appendChild(card);
-      card.layoutSizingHorizontal = 'FILL';
-
-      // Left pane
-      const left = vstack(16);
-      left.fills = solidFill(palette.paneBg);
-      left.paddingTop = left.paddingBottom = left.paddingLeft = left.paddingRight = VAR_PANE_PAD;
-      left.strokes = solidFill(palette.border);
-      left.strokeRightWeight = 1;
-      left.strokeTopWeight = 0;
-      left.strokeBottomWeight = 0;
-      left.strokeLeftWeight = 0;
-      card.appendChild(left);
-      left.layoutSizingHorizontal = 'FIXED';
-      left.resize(VAR_LEFT_W, left.height);
-      left.layoutSizingVertical = 'FILL'; // match the taller (token) pane
-
-      const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2, 160, includeHidden);
-      left.appendChild(slot);
-      slot.layoutSizingHorizontal = 'FILL';
-
-      const propList = buildPropertyList(variant.props);
-      left.appendChild(propList);
-      propList.layoutSizingHorizontal = 'FILL';
-
-      // Right pane — no padding so the token table sits flush with the divider
-      // and card edges; cell padding provides the text inset.
-      const right = vstack(0);
-      card.appendChild(right);
-      right.layoutSizingHorizontal = 'FILL';
-      right.layoutSizingVertical = 'FILL';
-
-      const table = await buildTokenTable(section.columns, variant.rows, false);
-      right.appendChild(table);
-      table.layoutSizingHorizontal = 'FILL';
-
-      // Non-default cards suppress rows identical to the default; a summary line
-      // accounts for them so the card doesn't read as if those tokens are absent.
-      if (!variant.isDefault && variant.sameAsDefault > 0) {
-        const note = hstack(0);
-        note.paddingTop = 10;
-        note.paddingBottom = 12;
-        note.paddingLeft = 16;
-        note.paddingRight = 16;
-        const label = variant.rows.length === 0
-          ? `Identical to default (${variant.sameAsDefault} tokens)`
-          : `Same as default · ${variant.sameAsDefault} more token${variant.sameAsDefault === 1 ? '' : 's'}`;
-        const t = makeText(label, 'Regular', 12, palette.muted, 140);
-        note.appendChild(t);
-        right.appendChild(note);
-        note.layoutSizingHorizontal = 'FILL';
+      if (section.view === 'table' || section.view === 'both') {
+        const rows = section.parts.map((p) => [
+          p.label, `${'    '.repeat(p.depth)}${displayPartName(p.name)}`, p.type.toLowerCase(), p.component ?? '',
+          p.tokens.length <= 3 ? p.tokens.join(' · ') : `${p.tokens.slice(0, 3).join(' · ')} +${p.tokens.length - 3}`,
+        ]);
+        fill(buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows, CONTENT_WIDTH));
       }
+      break;
     }
-  } else if (section.kind === 'measure') {
-    const diagram = await buildMeasureSection(section, includeHidden);
-    if (diagram) {
-      body.appendChild(diagram);
-      diagram.layoutSizingHorizontal = 'FILL';
-    } else {
-      // Fallback: measurement rules as a plain table (same data, no diagram).
-      // Keys are `${part} ${property}`; the property never contains a space, so
-      // split on the last space to recover the part even when it has spaces.
-      const rows = Object.entries(section.tokens)
-        .map(([key, token]) => {
-          const at = key.lastIndexOf(' ');
-          const part = at === -1 ? key : key.slice(0, at);
-          const property = at === -1 ? '' : key.slice(at + 1);
-          return [part, property, token] as string[];
-        })
-        .filter((r) => !['fill', 'border', 'typography'].includes(r[1]));
-      const table = buildTable(['Part', 'Property', 'Token'], rows);
-      body.appendChild(table);
-      table.layoutSizingHorizontal = 'FILL';
+    case 'variantTokens': {
+      const defaultCard = section.variants.find((v) => v.isDefault);
+      const defaultValues = new Map((defaultCard?.props ?? []).map((p) => [p.name, p.value]));
+      for (const variant of section.variants) {
+        // A bordered card split into a left pane (preview + properties) and a
+        // right pane (token table), like the docs inspector.
+        const card = hstack(0);
+        card.cornerRadius = radius(12);
+        card.clipsContent = true;
+        card.strokes = solidFill(palette.border);
+        card.strokeWeight = 1;
+        body.appendChild(card);
+        card.layoutSizingHorizontal = 'FILL';
+
+        const left = vstack(16);
+        left.fills = solidFill(palette.paneBg);
+        left.paddingTop = left.paddingBottom = left.paddingLeft = left.paddingRight = VAR_PANE_PAD;
+        left.strokes = solidFill(palette.border);
+        left.strokeRightWeight = 1;
+        left.strokeTopWeight = 0;
+        left.strokeBottomWeight = 0;
+        left.strokeLeftWeight = 0;
+        card.appendChild(left);
+        left.layoutSizingHorizontal = 'FIXED';
+        left.resize(VAR_LEFT_W, left.height);
+        left.layoutSizingVertical = 'FILL'; // match the taller (token) pane
+
+        const slot = await buildSlot(variant.nodeId, VAR_LEFT_W - VAR_PANE_PAD * 2, 160, includeHidden);
+        left.appendChild(slot);
+        slot.layoutSizingHorizontal = 'FILL';
+
+        // The default card says so; every other card lists only the axes
+        // whose value differs from the default, so seven rows of "False"
+        // never appear again.
+        const differing = variant.props.filter((p) => defaultValues.get(p.name) !== p.value);
+        const propList = variant.isDefault || differing.length === 0
+          ? labelBlock(variant.isDefault ? 'Default variant' : 'Same axes as default')
+          : buildPropertyList(differing);
+        left.appendChild(propList);
+        propList.layoutSizingHorizontal = 'FILL';
+
+        // Right pane — no padding so the token table sits flush with the divider
+        // and card edges; cell padding provides the text inset.
+        const right = vstack(0);
+        card.appendChild(right);
+        right.layoutSizingHorizontal = 'FILL';
+        right.layoutSizingVertical = 'FILL';
+
+        const table = await buildTokenTable(section.columns, variant.rows, false);
+        right.appendChild(table);
+        table.layoutSizingHorizontal = 'FILL';
+
+        // Non-default cards suppress rows identical to the default; a summary
+        // line accounts for them so the card doesn't read as if those tokens
+        // are absent.
+        if (!variant.isDefault && variant.sameAsDefault > 0) {
+          const note = hstack(0);
+          note.paddingTop = 10;
+          note.paddingBottom = 12;
+          note.paddingLeft = 16;
+          note.paddingRight = 16;
+          const text = variant.rows.length === 0
+            ? `Identical to default (${variant.sameAsDefault} tokens)`
+            : `Same as default · ${variant.sameAsDefault} more token${variant.sameAsDefault === 1 ? '' : 's'}`;
+          note.appendChild(makeText(text, 'Regular', 12, palette.muted, 140));
+          right.appendChild(note);
+          note.layoutSizingHorizontal = 'FILL';
+        }
+      }
+      break;
     }
-  } else if (section.kind === 'statesMatrix') {
-    const grid = await buildMatrixSection(
-      {
-        axisName: section.axisName,
-        columns: section.states,
-        rows: section.rows,
-        note: section.capped
-          ? 'Showing the first 4 values — other rows share the same state behavior.'
-          : null,
-      },
-      CONTENT_WIDTH,
-      includeHidden,
-    );
-    body.appendChild(grid);
-    grid.layoutSizingHorizontal = 'FILL';
-  } else if (section.kind === 'variantsMatrix') {
-    // The variants guide (orientation + bulleted "when to use which type") renders
-    // as prose above the matrix so bold type names and bullet lines format
-    // correctly, rather than as a single flat line of raw markdown.
-    if (section.summary) {
-      const holder = buildProseSlot(section.summary, 'variantsSummary', bodySpacing);
-      body.appendChild(holder);
-      holder.layoutSizingHorizontal = 'FILL';
+    case 'measure': {
+      const result = await buildMeasureSection(section, includeHidden, CONTENT_WIDTH);
+      if (result) {
+        const holder = vstack(8);
+        holder.counterAxisAlignItems = 'CENTER';
+        holder.appendChild(result.card);
+        const note = scaleNote(result.scale);
+        if (note) holder.appendChild(note);
+        fill(holder);
+      }
+      // The table always follows: it is the guaranteed-legible source.
+      if (section.tableRows.length) fill(buildTable(['Part', 'Property', 'Token'], section.tableRows, CONTENT_WIDTH));
+      break;
     }
-    // Combine the row-cap disclosure (when the first axis had >4 values) with any
-    // held-axis note, so a capped Variants matrix explains its truncation the same
-    // way the States matrix does.
-    const capNote = section.capped
-      ? 'Showing the first 4 values — other variants share the same structure.'
-      : null;
-    const note = [capNote, section.note].filter(Boolean).join(' ') || null;
-    const grid = await buildMatrixSection(
-      {
-        columns: section.columns,
-        rows: section.rows,
-        note,
-      },
-      CONTENT_WIDTH,
-      includeHidden,
-    );
-    body.appendChild(grid);
-    grid.layoutSizingHorizontal = 'FILL';
-    // Extra breathing room between the guide/bullets and the preview matrix; the
-    // body's default 10px spacing reads as cramped against the prose above.
-    if (section.summary) grid.paddingTop = 24;
-  } else {
-    const table = buildTable(section.columns, section.rows);
-    body.appendChild(table);
-    table.layoutSizingHorizontal = 'FILL';
+    case 'statesMatrix': {
+      const grid = await buildMatrixSection({
+        axisName: section.axisName, columns: section.states, rows: section.rows,
+        note: section.capped ? 'Showing the first 4 values. Other rows share the same state behaviour.' : null,
+      }, CONTENT_WIDTH, includeHidden);
+      fill(grid);
+      if (section.table.length) fill(buildStatesTable(section.table, CONTENT_WIDTH));
+      break;
+    }
+    case 'variantsMatrix': {
+      if (section.intro) body.appendChild(buildProseSlot(section.intro, 'variantsIntro', bodySpacing));
+      if (section.guide.length) {
+        const list = vstack(bodySpacing);
+        list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+        list.primaryAxisSizingMode = 'AUTO';
+        for (const g of section.guide) {
+          // One tagged row per option, keyed by the option value: the guide is
+          // editorial per option, not one blob, so an edit to one line survives
+          // an Update without the others duplicating.
+          const row = makeBulletRow({ runs: parseRuns(`**${g.name}**: ${g.guidance}`), text: `${g.name}: ${g.guidance}` });
+          tagSlot(row, 'variantsGuide');
+          row.setPluginData(SLOT_PART_KEY, g.name);
+          list.appendChild(row);
+          row.layoutSizingHorizontal = 'FILL';
+        }
+        body.appendChild(list);
+      }
+      // Combine the row-cap disclosure (when the first axis had >4 values) with
+      // any held-axis note, so a capped Variants matrix explains its truncation
+      // the same way the States matrix does.
+      const capNote = section.capped ? 'Showing the first 4 values. Other variants share the same structure.' : null;
+      const note = [capNote, section.note].filter(Boolean).join(' ') || null;
+      const grid = await buildMatrixSection({ columns: section.columns, rows: section.rows, note }, CONTENT_WIDTH, includeHidden);
+      fill(grid);
+      // Extra breathing room between the guide and the preview matrix; the
+      // body's default spacing reads as cramped against the prose above.
+      if (section.intro || section.guide.length) grid.paddingTop = 24;
+      break;
+    }
   }
-
   return group;
 }
 
@@ -1096,30 +531,29 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
 /**
  * The component doc header. The band itself is shared with foundation docs (see
  * brandHeader.ts); what stays here is the one component-specific part: the
- * subtitle is markdown lifted from the Definition, so its **bold** runs are
- * parsed out and re-applied to the text node.
+ * subtitle is markdown lifted from the Overview, so its **bold** and `code`
+ * runs are parsed out and re-applied to the text node.
+ *
+ * The `definitionLead` tag says "a person owns these words". An AI lede is
+ * theirs to keep; a lede lifted from the component's own Figma description is
+ * generated, re-read from the component on every Update, so it stays untagged.
  */
 async function buildHeader(
-  componentName: string,
-  subtitleMd: string | null,
-  eyebrow: string,
-  logoBase64?: string | null,
-  pill: PillState | null = null,
+  title: string, subtitleMd: string | null, subtitleSource: 'ai' | 'description' | null,
+  eyebrow: string, logoBase64?: string | null, pill: PillState | null = null,
 ): Promise<FrameNode> {
-  // Parse the lead for **bold** runs and drop any leading list marker so no
-  // raw markdown shows in the subtitle.
+  // Parse the lead for **bold** / `code` runs and drop any leading list marker
+  // so no raw markdown shows in the subtitle.
   const runs = subtitleMd ? parseRuns(subtitleMd.replace(/^[-*]\s+/, '')) : null;
   return buildBrandHeader({
-    eyebrow,
-    title: componentName,
-    subtitle: runs ? runs.map((r) => r.text).join('') : null,
-    logoBase64,
-    pill,
+    eyebrow, title, subtitle: runs ? runs.map((r) => r.text).join('') : null, logoBase64, pill,
     styleSubtitle: runs
       ? (node) => {
-          applyBoldRuns(node, runs, 0);
-          // The lead is the first sentence of the Definition, lifted here.
-          tagSlot(node, 'definitionLead');
+          // The subtitle sits on the header band, not the page background, so
+          // a code span needs the on-header ink, not the default heading ink
+          // (which is the same colour as the band on the default theme).
+          applyRuns(node, runs, 0, palette.onHeader);
+          if (subtitleSource === 'ai') tagSlot(node, 'definitionLead');
         }
       : undefined,
   });
@@ -1141,14 +575,18 @@ function measureTokenText(s: string): number {
 }
 
 /**
+ * The shared frame width for this build.
+ *
  * Token chips hug their text, so a long token can overflow the Token column and
  * get clipped. Rather than wrap or shrink the chip, we widen the whole frame:
  * find the longest token across any per-variant token table, measure its chip,
- * and grow CARD_WIDTH so the (FILL) Token column is at least that wide. Stays at
- * CARD_WIDTH_MIN when there are no variant tokens or they're short, and is capped
- * at CARD_WIDTH_MAX. Must run after fonts load (it measures text).
+ * and grow CARD_WIDTH so the (FILL) Token column is at least that wide. A
+ * component wider than the resulting column widens the frame again, because
+ * instances render at true size and scaling one down is the last resort. Stays
+ * at CARD_WIDTH_MIN when neither applies, and is capped at CARD_WIDTH_MAX. Must
+ * run after fonts load (it measures text).
  */
-function fitFrameWidthToTokens(model: DocFrameModel): void {
+async function fitFrameWidth(model: DocFrameModel): Promise<void> {
   CARD_WIDTH = CARD_WIDTH_MIN;
   CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
@@ -1169,30 +607,42 @@ function fitFrameWidthToTokens(model: DocFrameModel): void {
       }
     }
   }
-  if (!longest) return;
+  if (longest) {
+    // Token chip: swatch (12) + gap (6) + chip padding (8+8); the cell adds its
+    // own padding (16+16). Assume a swatch is present (the wider case) plus slack.
+    const chipW = measureTokenText(longest) + 12 + 6 + 16;
+    const tokenColW = chipW + 32 + 8;
+    // right pane = CONTENT_WIDTH - VAR_LEFT_W; Token col = right pane - key columns.
+    // Solve for the CONTENT_WIDTH (hence CARD_WIDTH) that fits tokenColW.
+    const needed = tokenColW + keyCols * TOKEN_KEY_COL_W + VAR_LEFT_W + PAD_X * 2;
+    CARD_WIDTH = Math.max(CARD_WIDTH_MIN, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+    CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+  }
 
-  // Token chip: swatch (12) + gap (6) + chip padding (8+8); the cell adds its own
-  // padding (16+16). Assume a swatch is present (the wider case) plus slack.
-  const chipW = measureTokenText(longest) + 12 + 6 + 16;
-  const tokenColW = chipW + 32 + 8;
-  // right pane = CONTENT_WIDTH - VAR_LEFT_W; Token col = right pane - key columns.
-  // Solve for the CONTENT_WIDTH (hence CARD_WIDTH) that fits tokenColW.
-  const needed = tokenColW + keyCols * TOKEN_KEY_COL_W + VAR_LEFT_W + PAD_X * 2;
-  CARD_WIDTH = Math.max(CARD_WIDTH_MIN, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
-  CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+  // A component wider than the column widens the frame before anything is scaled.
+  const drawn = model.sections.find(
+    (s): s is Extract<SectionBlock, { kind: 'anatomy' | 'measure' }> => s.kind === 'anatomy' || s.kind === 'measure',
+  );
+  if (!drawn) return;
+  try {
+    const comp = await figma.getNodeByIdAsync(drawn.componentId);
+    if (comp && 'width' in comp) {
+      const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
+      CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+      CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+    }
+  } catch { /* keep the token-fitted width */ }
 }
 
-/** Build one group's frame: root card + header band + content column. */
+/** Build one group's frame: root card, header band, facts strip (Usage only),
+ *  content column. Layer names carry the reading order. */
 async function buildGroupFrame(
-  group: DocGroup,
-  componentName: string,
-  subtitle: string | null,
-  logoBase64: string | null,
-  includeHidden: boolean,
-  pill: PillState | null = null,
+  group: DocGroup, index: number, title: string, subtitle: string | null,
+  subtitleSource: 'ai' | 'description' | null, logoBase64: string | null,
+  includeHidden: boolean, pill: PillState | null, facts: FactsStrip | null,
 ): Promise<FrameNode> {
   const frame = figma.createFrame();
-  frame.name = group.label; // "Usage" | "Specifications" | "Accessibility"
+  frame.name = `${index + 1} ${group.label}`;
   frame.layoutMode = 'VERTICAL';
   frame.primaryAxisSizingMode = 'AUTO';
   frame.counterAxisSizingMode = 'FIXED';
@@ -1203,22 +653,25 @@ async function buildGroupFrame(
   frame.strokes = solidFill(palette.border);
   frame.strokeWeight = 1;
   frame.resize(CARD_WIDTH, frame.height);
-  frame.effects = [
-    {
-      type: 'DROP_SHADOW',
-      color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
-      offset: { x: 0, y: 12 },
-      radius: 32,
-      spread: 0,
-      visible: true,
-      blendMode: 'NORMAL',
-    },
-  ];
-
+  frame.effects = [{
+    type: 'DROP_SHADOW', color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
+    offset: { x: 0, y: 12 }, radius: 32, spread: 0, visible: true, blendMode: 'NORMAL',
+  }];
   try {
-    const header = await buildHeader(componentName, subtitle, group.label, logoBase64, pill);
+    const header = await buildHeader(title, subtitle, subtitleSource, group.label, logoBase64, pill);
     frame.appendChild(header);
     header.layoutSizingHorizontal = 'FILL';
+
+    if (facts) {
+      const strip = buildFactsStrip(facts, CONTENT_WIDTH);
+      if (strip) {
+        const wrap = vstack(0);
+        wrap.paddingLeft = wrap.paddingRight = PAD_X;
+        wrap.appendChild(strip);
+        frame.appendChild(wrap);
+        wrap.layoutSizingHorizontal = 'FILL';
+      }
+    }
 
     const content = vstack(40);
     content.paddingTop = 48;
@@ -1227,7 +680,6 @@ async function buildGroupFrame(
     content.paddingRight = PAD_X;
     frame.appendChild(content);
     content.layoutSizingHorizontal = 'FILL';
-
     for (const section of group.sections) {
       const built = await buildSection(section, includeHidden);
       content.appendChild(built);
@@ -1237,28 +689,30 @@ async function buildGroupFrame(
     frame.remove();
     throw err;
   }
-
   return frame;
 }
 
-/** Lift the definition's lead sentence into a header subtitle. Returns the
- *  subtitle plus the section list with the definition block rewritten to its
- *  remainder (or dropped if fully lifted). Mirrors the pre-split behavior. */
-function liftDefinitionLead(
+/** The Usage header subtitle, and the sections that still have a body to draw.
+ *  The model decided whose words lead (see HeaderSubtitle); the source travels
+ *  with them, so buildHeader tags an AI lede editorial and leaves a
+ *  description untagged. An Overview whose whole text went into the header
+ *  draws no empty heading. */
+function liftHeaderSubtitle(
   sections: SectionBlock[],
-): { subtitle: string | null; sections: SectionBlock[] } {
-  const def = sections.find(
-    (s) => s.id === 'definition' && s.kind === 'prose',
-  ) as Extract<SectionBlock, { kind: 'prose' }> | undefined;
-  if (!def) return { subtitle: null, sections };
-  if (emphasisOnly(def.text) !== null) return { subtitle: null, sections }; // placeholder
-  const { lead, rest } = splitLead(def.text);
-  const rebuilt = sections.flatMap((s) =>
-    s === def
-      ? (rest ? [{ ...def, kind: 'prose' as const, text: rest }] : [])
-      : [s],
-  );
-  return { subtitle: lead || null, sections: rebuilt };
+): { subtitle: string | null; subtitleSource: 'ai' | 'description' | null; sections: SectionBlock[] } {
+  const def = sections.find((s) => s.id === 'definition' && s.kind === 'prose') as
+    Extract<SectionBlock, { kind: 'prose' }> | undefined;
+  if (!def) return { subtitle: null, subtitleSource: null, sections };
+  const rebuilt = sections.filter((s) => s !== def || Boolean(def.text) || def.lede !== null);
+  return { subtitle: def.subtitle?.text ?? null, subtitleSource: def.subtitle?.source ?? null, sections: rebuilt };
+}
+
+/** Put a lifted lead back at the top of the Overview body, for the one case
+ *  where no header will be drawn to carry it. */
+function inlineSubtitle(sections: SectionBlock[], lead: string): SectionBlock[] {
+  return sections.map((s) => (s.id === 'definition' && s.kind === 'prose'
+    ? { ...s, subtitle: null, text: [lead, s.text].filter(Boolean).join('\n\n') }
+    : s));
 }
 
 /**
@@ -1267,10 +721,8 @@ function liftDefinitionLead(
  * positions it and appends it to the page.
  */
 export async function buildDocFrames(
-  model: DocFrameModel,
-  theme: ReturnType<typeof resolveTheme>,
-  logoBase64?: string | null,
-  pill: PillState | null = null,
+  model: DocFrameModel, theme: ReturnType<typeof resolveTheme>,
+  logoBase64?: string | null, pill: PillState | null = null,
 ): Promise<SectionNode> {
   // Resolved-value caches (color/float variables, text styles) are module
   // state in tokenResolve — reset them per build so a rebuild after the user
@@ -1284,20 +736,21 @@ export async function buildDocFrames(
   await applyThemeToKit(theme);
 
   // Shared width across all frames — measured over the full (flat) model.
-  fitFrameWidthToTokens(model);
+  await fitFrameWidth(model);
 
-  const componentName = model.componentName;
   const includeHidden = model.includeHidden === true;
-
-  // Definition lead → Usage subtitle. Fall back to keeping the definition as a
-  // body section if lifting would leave nothing to render.
-  const lifted = liftDefinitionLead(model.sections);
+  const lifted = liftHeaderSubtitle(model.sections);
   let subtitle = lifted.subtitle;
-  const sections = lifted.sections;
-  let groups = groupSections(sections);
-  if (groups.length === 0 && model.sections.length > 0) {
+  let subtitleSource = lifted.subtitleSource;
+  let groups = groupSections(lifted.sections);
+  // The subtitle rides the Usage header, so lifting the lead must never be
+  // what removes that header: when the lift empties the Usage group (or the
+  // whole document), put those words back into the Overview body rather than
+  // losing the only line the component carries.
+  if (subtitle !== null && !groups.some((g) => g.id === 'usage')) {
+    groups = groupSections(inlineSubtitle(model.sections, subtitle));
     subtitle = null;
-    groups = groupSections(model.sections);
+    subtitleSource = null;
   }
   if (groups.length === 0) throw new Error('No sections selected.');
 
@@ -1307,9 +760,12 @@ export async function buildDocFrames(
   const frames: FrameNode[] = [];
   let section: SectionNode | null = null;
   try {
-    for (const group of groups) {
-      const sub = group.sections.some((s) => s.id === 'definition') ? subtitle : null;
-      frames.push(await buildGroupFrame(group, componentName, sub, logoBase64 ?? null, includeHidden, pill));
+    for (const [i, group] of groups.entries()) {
+      const isUsage = group.id === 'usage';
+      frames.push(await buildGroupFrame(
+        group, i, model.displayName, isUsage ? subtitle : null, isUsage ? subtitleSource : null,
+        logoBase64 ?? null, includeHidden, pill, isUsage ? model.facts : null,
+      ));
     }
 
     // A freshly created Section keeps its default (small) size — it does NOT
@@ -1318,7 +774,8 @@ export async function buildDocFrames(
     // bounding box (+ padding) so it actually holds all three. Section children
     // use section-relative coordinates, so a later section.x/y move carries them.
     section = figma.createSection();
-    section.name = `${componentName}: Documentation`;
+    // The Section keeps the RAW name: the registry and findExistingDoc match on it.
+    section.name = `${model.componentName}: Documentation`;
     section.x = 0;
     section.y = 0;
 
@@ -1333,11 +790,7 @@ export async function buildDocFrames(
     }
 
     // cursorX overshot by one trailing GAP after the last frame; drop it.
-    const contentWidth = cursorX - GAP;
-    section.resizeWithoutConstraints(
-      Math.max(contentWidth + PAD, 1),
-      Math.max(maxH + PAD * 2, 1),
-    );
+    section.resizeWithoutConstraints(Math.max(cursorX - GAP + PAD, 1), Math.max(maxH + PAD * 2, 1));
     return section;
   } catch (err) {
     // Never litter the canvas on failure: remove the frames AND the Section

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EXTRACTOR_VERSION, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, type ProseV2, type SpecHashProjection, type FoundationUnitContent } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
@@ -85,6 +85,25 @@ describe('docLink data', () => {
     const parsed = parseDocLink(blob);
     expect(parsed).not.toBeNull();
     expect((parsed as ComponentDocLink).config.sections).toEqual(['definition', 'tokens']);
+  });
+});
+
+describe('parseDocLink legacy section ids', () => {
+  const link = (sections: string[]): string => JSON.stringify({
+    v: 1, sourceNodeId: '1:1', contentHash: 'h', selfHash: 's', generatedAt: 1, pluginVersion: '5.1.0',
+    extractorVersion: '2',
+    config: { sections, variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: ['size'], includeHidden: false },
+  });
+
+  it('maps configuration to properties and interactions to pointer plus keyboard', () => {
+    const parsed = parseDocLink(link(['definition', 'configuration', 'interactions', 'tokens']));
+    expect(parsed && !isFoundationLink(parsed) ? parsed.config.sections : null)
+      .toEqual(['definition', 'properties', 'pointer', 'keyboard', 'tokens']);
+  });
+
+  it('drops an id nobody knows and never duplicates a mapped one', () => {
+    const parsed = parseDocLink(link(['contrast', 'properties', 'configuration']));
+    expect(parsed && !isFoundationLink(parsed) ? parsed.config.sections : null).toEqual(['properties']);
   });
 });
 
@@ -366,12 +385,13 @@ describe('retargetScope', () => {
   });
 });
 
-const PROSE: ProseDrafts = {
-  definition: 'A button triggers an action.',
-  accessibility: 'Always give it an accessible name.',
-  dos: ['Use sentence case.'],
-  donts: ['Do not nest buttons.'],
-  interactions: 'Hover raises the surface.',
+const PROSE: ProseV2 = {
+  v: 2,
+  overview: { lede: 'A button triggers an action.', body: ['Use it for the main action.'] },
+  semantics: ['Always give it an accessible name.'],
+  guidelines: [{ do: { rule: 'Use sentence case.', reason: 'It reads faster.' }, dont: { rule: 'Do not nest buttons.', reason: '' } }],
+  pointer: ['Hover raises the surface.'],
+  keyboard: [{ keys: ['Enter', 'Space'], action: 'Activates the button.' }],
 };
 
 describe('prose storage', () => {
@@ -379,25 +399,59 @@ describe('prose storage', () => {
     expect(DOC_PROSE_KEY).not.toBe('specLayerDoc');
   });
 
-  it('round-trips every populated field', () => {
+  it('round-trips every populated v2 field', () => {
     expect(parseProse(serializeProse(PROSE))).toEqual(PROSE);
   });
 
-  it('returns null for absent or unparseable data rather than throwing', () => {
+  it('upgrades a stored v1 blob on read', () => {
+    const v1 = JSON.stringify({
+      definition: 'A button triggers an action. Use it for the main action.',
+      accessibility: '- Always give it an accessible name.',
+      dos: ['**Use sentence case.** It reads faster.'],
+      donts: ['Do not nest buttons.'],
+      interactions: '### Keyboard\n- Enter or Space activates the button.\n### Mouse\n- Hover raises the surface.',
+    });
+    expect(parseProse(v1)).toEqual({
+      v: 2,
+      overview: { lede: 'A button triggers an action.', body: ['Use it for the main action.'] },
+      semantics: ['Always give it an accessible name.'],
+      guidelines: [{ do: { rule: 'Use sentence case.', reason: 'It reads faster.' }, dont: { rule: 'Do not nest buttons.', reason: '' } }],
+      keyboard: [{ keys: ['Enter', 'Space'], action: 'Activates the button.' }],
+      pointer: ['Hover raises the surface.'],
+    });
+  });
+
+  it('drops a v1 designConsiderations field: Docs 2.0 retires it because no section ever rendered it', () => {
+    const v1 = JSON.stringify({
+      definition: 'A button triggers an action.',
+      accessibility: 'Always give it an accessible name.',
+      dos: [],
+      donts: [],
+      designConsiderations: 'Keep the label short.',
+    });
+    const parsed = parseProse(v1);
+    expect(parsed).not.toBeNull();
+    expect(parsed && 'designConsiderations' in parsed).toBe(false);
+    expect(parsed?.overview?.lede).toBe('A button triggers an action.');
+  });
+
+  it('returns null for absent, unparseable, empty, or unknown-shape data', () => {
     expect(parseProse('')).toBeNull();
     expect(parseProse('not json')).toBeNull();
     expect(parseProse('[]')).toBeNull();
+    expect(parseProse('{"v":2}')).toBeNull();
+    expect(parseProse('{"v":3,"overview":{"lede":"x","body":[]}}')).toBeNull();
   });
 
   it('drops a payload over budget rather than writing a truncated document', () => {
-    const huge: ProseDrafts = { ...PROSE, definition: 'x'.repeat(PROSE_BUDGET_BYTES + 1) };
+    const huge: ProseV2 = { ...PROSE, overview: { lede: 'x'.repeat(PROSE_BUDGET_BYTES + 1), body: [] } };
     expect(serializeProse(huge)).toBe('');
   });
 
   it('logs the drop instead of dropping silently, naming the size and the budget', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const huge: ProseDrafts = { ...PROSE, definition: 'x'.repeat(PROSE_BUDGET_BYTES + 1) };
+      const huge: ProseV2 = { ...PROSE, overview: { lede: 'x'.repeat(PROSE_BUDGET_BYTES + 1), body: [] } };
       serializeProse(huge);
       expect(warn).toHaveBeenCalledTimes(1);
       const [message] = warn.mock.calls[0];
@@ -436,10 +490,10 @@ describe('prose storage', () => {
       // Each rocket is 4 UTF-8 bytes but only 2 UTF-16 units, so a string of
       // them sized to just clear the budget in bytes must be dropped.
       const rockets = '\u{1F680}'.repeat(Math.ceil(PROSE_BUDGET_BYTES / 4) + 10);
-      expect(serializeProse({ ...PROSE, definition: rockets })).toBe('');
+      expect(serializeProse({ ...PROSE, overview: { lede: rockets, body: [] } })).toBe('');
       // A 3-byte-per-char CJK string just under budget must survive.
-      const cjk = '\u4e2d'.repeat(Math.floor(PROSE_BUDGET_BYTES / 3) - 200);
-      expect(serializeProse({ ...PROSE, definition: cjk })).not.toBe('');
+      const cjk = '中'.repeat(Math.floor(PROSE_BUDGET_BYTES / 3) - 200);
+      expect(serializeProse({ ...PROSE, overview: { lede: cjk, body: [] } })).not.toBe('');
     } finally {
       g.TextEncoder = saved;
     }
@@ -455,17 +509,23 @@ describe('prose storage', () => {
     }
   });
 
-  it('omits absent optional keys instead of writing empty strings', () => {
-    const minimal: ProseDrafts = { definition: 'D', accessibility: 'A', dos: [], donts: [] };
-    const parsed = parseProse(serializeProse(minimal));
+  it('omits absent optional keys instead of writing empty strings or arrays', () => {
+    const minimal: ProseV2 = { v: 2, overview: { lede: 'D', body: [] } };
+    const raw = serializeProse(minimal);
+    expect(raw).not.toContain('semantics');
+    expect(raw).not.toContain('guidelines');
+    const parsed = parseProse(raw);
     expect(parsed).toEqual(minimal);
-    expect(parsed && 'interactions' in parsed).toBe(false);
+    expect(parsed && 'semantics' in parsed).toBe(false);
+    expect(parsed && 'guidelines' in parsed).toBe(false);
   });
 });
 
 describe('baseline storage', () => {
   const PROJECTION: SpecHashProjection = {
-    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1', anatomyComponentId: '1:2',
+    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1',
+    description: '', documentationLinks: [],
+    anatomyComponentId: '1:2',
     anatomy: [{ id: '1:3', name: 'Label', type: 'TEXT', nested: false }],
     props: [], variants: [], variantInstances: [], states: [],
     tokens: [{ part: 'Label', property: 'fill', conditions: {}, token: 'color.primary' }],

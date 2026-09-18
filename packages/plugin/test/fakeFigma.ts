@@ -190,6 +190,7 @@ interface FakeFont { family: string; style: string }
 export class FakeText {
   type = 'TEXT';
   height = TEXT_H;
+  width = 0;
   characters = '';
   fontName: FakeFont = { family: 'Inter', style: 'Regular' };
   pluginData: Record<string, string> = {};
@@ -204,8 +205,39 @@ export class FakeText {
     return this.pluginData[key] ?? '';
   }
 
+  /** A text node can be sized like any other: the matrix grid pins its column
+   *  headers to a fixed box so they baseline-align. Both axes are taken as
+   *  given, the way Figma does with textAutoResize 'NONE'. */
+  resize(w: number, h: number): void {
+    this.width = w;
+    this.height = h;
+  }
+
   setRangeFontName(start: number, end: number, font: FakeFont): void {
     this.ranges.push({ start, end, font });
+  }
+
+  private fillRanges: { start: number; end: number; fills: unknown }[] = [];
+
+  setRangeFills(start: number, end: number, fills: unknown): void {
+    this.fillRanges.push({ start, end, fills });
+  }
+
+  /** Ranges given a distinct fill, for tests that check code-run styling. */
+  filledRanges(): { start: number; end: number }[] {
+    return this.fillRanges.map(({ start, end }) => ({ start, end }));
+  }
+
+  /** The fill last recorded for the range covering character `index` (last
+   *  write wins, matching real Figma's range semantics), or undefined if that
+   *  character was never given its own fill. Lets a test check WHICH ink a
+   *  range got, not just that it got one. */
+  getRangeFill(index: number): unknown {
+    let result: unknown;
+    for (const r of this.fillRanges) {
+      if (index >= r.start && index < r.end) result = r.fills;
+    }
+    return result;
   }
 
   getStyledTextSegments(_fields: ['fontName']): { characters: string; fontName: FakeFont; start: number; end: number }[] {

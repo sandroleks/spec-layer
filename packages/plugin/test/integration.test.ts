@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { serializeNode, type NodeResolver } from '../src/serialize';
 import { extract } from '@spec-layer/extractor';
 import { serializeProse, parseProse } from '../src/docLink';
-import type { ProseDrafts } from '@spec-layer/extractor';
+import type { ProseV2 } from '@spec-layer/extractor';
 
 // A mock Figma COMPONENT_SET node (button) with one variant child containing
 // a container (bound fill), a label, and an instance (nested component).
@@ -101,15 +101,15 @@ describe('full pipeline: serialize → extract → render → parse', () => {
 });
 
 describe('prose survives the storage round trip the frame build performs', () => {
-  it('recovers the drafts a build would have written', () => {
-    const drafts: ProseDrafts = {
-      definition: 'A button triggers an action.',
-      accessibility: 'Give every button an accessible name.',
-      dos: ['Use sentence case.'],
-      donts: ['Do not nest buttons.'],
+  it('recovers the prose a build would have written', () => {
+    const prose: ProseV2 = {
+      v: 2,
+      overview: { lede: 'A button triggers an action.', body: [] },
+      semantics: ['Give every button an accessible name.'],
+      guidelines: [{ do: { rule: 'Use sentence case.', reason: '' }, dont: { rule: 'Do not nest buttons.', reason: '' } }],
     };
     // Mirrors main.ts: serialize on build, parse when Copy asks for it.
-    expect(parseProse(serializeProse(drafts))).toEqual(drafts);
+    expect(parseProse(serializeProse(prose))).toEqual(prose);
   });
 
   it('treats a document written before prose storage as having none', () => {

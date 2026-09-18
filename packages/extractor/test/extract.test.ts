@@ -55,6 +55,19 @@ describe('extract', () => {
     ]);
   });
 
+  it('carries the root description and documentation links, empty when absent', () => {
+    const bare = extract(root, meta);
+    expect(bare.description).toBe('');
+    expect(bare.documentationLinks).toEqual([]);
+
+    const described = extract(
+      { ...root, description: 'Toggles one option.', documentationLinks: ['https://example.com/checkbox'] },
+      meta,
+    );
+    expect(described.description).toBe('Toggles one option.');
+    expect(described.documentationLinks).toEqual(['https://example.com/checkbox']);
+  });
+
   it('hash is stable across key order and changes when content changes', () => {
     const a = extract(root, meta);
     expect(contentHash(a)).toBe(contentHash(JSON.parse(JSON.stringify(a))));

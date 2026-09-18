@@ -127,9 +127,12 @@ describe('effectiveAuth', () => {
 describe('generationErrorCopy', () => {
   it('rate_limited', () => expect(generationErrorCopy('rate_limited')).toMatch(/a minute/));
   it('generation_pending', () => expect(generationErrorCopy('generation_pending')).toMatch(/already generating/));
-  it('other codes fall back to placeholders copy without leaking the code', () => {
-    expect(generationErrorCopy('upstream')).toBe("AI didn't run this time, so placeholders were used.");
+  it('other codes name the real consequence without leaking the code', () => {
+    // Docs 2.0 draws no placeholder text: a section AI would have filled is
+    // omitted instead, so the copy has to say that and not promise a stand-in.
+    expect(generationErrorCopy('upstream')).toBe("AI didn't run this time, so the AI sections were left out.");
     expect(generationErrorCopy('bad_request')).not.toContain('bad_request');
+    expect(generationErrorCopy('upstream')).not.toContain('placeholder');
   });
 });
 

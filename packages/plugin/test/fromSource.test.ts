@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { extract, specHashProjection, specContentHash, contentHash } from '@spec-layer/extractor';
-import type { ProseDrafts, SerializedNode } from '@spec-layer/extractor';
+import type { ProseV2, SerializedNode } from '@spec-layer/extractor';
 import chipHidden from '../../extractor/test/fixtures/chip-hidden.json';
 
 // Prove Update never reaches the AI: the module is mocked and asserted unused.
@@ -10,6 +10,7 @@ vi.mock('../src/ui/ai', () => ({
 
 import { generateProse } from '../src/ui/ai';
 import {
+  canGenerate,
   createDocFrame,
   createState,
   updateFromSource,
@@ -60,11 +61,13 @@ function buttonNode(): SerializedNode {
   };
 }
 
-const prose: ProseDrafts = {
-  definition: 'Edited by hand on the canvas.',
-  accessibility: 'Focusable.',
-  dos: ['Do this'],
-  donts: [],
+const prose: ProseV2 = {
+  v: 2,
+  overview: { lede: 'Edited by hand on the canvas.', body: [] },
+  whenToUse: ['Edited on the canvas: use it for the primary action.'],
+  whenNotToUse: ['Edited on the canvas: not for navigation.'],
+  semantics: ['Focusable.'],
+  guidelines: [{ do: { rule: 'Do this', reason: '' }, dont: null }],
 };
 
 const badSource: DocSource = {
@@ -83,7 +86,7 @@ const goodSource: DocSource = {
   node: buttonNode(),
   fileKey: 'f1',
   // aiEnabled is on, and Update still must not call the model.
-  config: { sections: ['definition', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [], includeHidden: false },
+  config: { sections: ['definition', 'whenToUse', 'dosDonts', 'tokens'], variantIds: [], aiEnabled: true, anatomyView: 'diagram', measureViews: [], includeHidden: false },
   prose,
 };
 
@@ -126,12 +129,34 @@ describe('updateFromSource', () => {
     expect(generateProse).not.toHaveBeenCalled();
 
     const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
-      prose?: ProseDrafts; model: { sections: { id: string; kind: string; text?: string }[] };
+      prose?: ProseV2;
+      model: { sections: { id: string; kind: string; text?: string; subtitle?: { text: string } | null }[] };
     };
     expect(msg).toBeDefined();
     expect(msg.prose).toEqual(prose);
+    // The component has no Figma description, so the hand-edited lead sentence
+    // is what the model lifts into the Usage header subtitle.
     const definition = msg.model.sections.find((s) => s.id === 'definition');
-    expect(definition?.kind === 'prose' && definition.text).toBe('Edited by hand on the canvas.');
+    expect(definition?.kind === 'prose' && definition.subtitle?.text).toBe('Edited by hand on the canvas.');
+  });
+
+  it('keeps a canvas edit to When to use and When not to use', async () => {
+    // Both columns are read off the canvas by the main thread and ride the
+    // docSource message. An adapter that flattened the doc's prose to the v1
+    // shape on the way in dropped them, because v1 has no field for either:
+    // the edit reached the UI and then vanished from the rebuilt frame.
+    const ui = fakePresenter();
+    await expect(updateFromSource(createState(), goodSource, ui)).resolves.toBe(true);
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      prose?: ProseV2;
+      model: { sections: { id: string; kind: string; left?: { items: unknown[] }; right?: { items: unknown[] } }[] };
+    };
+    expect(msg.prose?.whenToUse).toEqual(['Edited on the canvas: use it for the primary action.']);
+    expect(msg.prose?.whenNotToUse).toEqual(['Edited on the canvas: not for navigation.']);
+    const whenToUse = msg.model.sections.find((s) => s.id === 'whenToUse');
+    expect(whenToUse?.kind).toBe('twoColumns');
+    expect(whenToUse?.left?.items).toHaveLength(1);
+    expect(whenToUse?.right?.items).toHaveLength(1);
   });
 
   it('omits prose from the render request when the doc has none', async () => {
@@ -139,6 +164,32 @@ describe('updateFromSource', () => {
     await updateFromSource(createState(), { ...goodSource, prose: null }, ui);
     const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as { prose?: unknown };
     expect('prose' in msg).toBe(false);
+  });
+
+  it('records what it left out, so the Library can report it the way Create does', async () => {
+    const ui = fakePresenter();
+    const state = createState();
+    // AI is off for this doc, so its AI-only sections are left out with that
+    // reason rather than silently missing.
+    const source: DocSource = {
+      ...goodSource,
+      config: { ...goodSource.config, sections: ['definition', 'whenToUse', 'dosDonts'], aiEnabled: false },
+      prose: null,
+    };
+    await expect(updateFromSource(state, source, ui)).resolves.toBe(true);
+    expect(state.lastOmitted.map((o) => [o.id, o.reason])).toEqual([
+      ['definition', 'nothingToShow'],
+      ['whenToUse', 'aiOff'],
+      ['dosDonts', 'aiOff'],
+    ]);
+  });
+
+  it('clears the record when a rebuild leaves nothing out', async () => {
+    const ui = fakePresenter();
+    const state = createState();
+    state.lastOmitted = [{ id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' }];
+    await expect(updateFromSource(state, goodSource, ui)).resolves.toBe(true);
+    expect(state.lastOmitted).toEqual([]);
   });
 
   it('sends the hash projection as the baseline, and its hash is the message contentHash', async () => {
@@ -195,5 +246,61 @@ describe('createDocFrame', () => {
     };
     expect(msg).toBeDefined();
     expect(contentHash(msg.baseline)).toBe(msg.contentHash);
+  });
+
+  it('records what the build left out, and blames AI only when AI was off', async () => {
+    // The reason is what the result message prints, so it has to come from the
+    // build that actually ran: a section AI writing would have filled reads
+    // 'aiOff' only while AI is off, and a deterministic section with nothing
+    // in the spec always reads 'nothingToShow'.
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    expect(state.lastOmitted).toEqual([]);
+
+    await createDocFrame(state, {
+      sections: new Set(['keyboard', 'related']),
+      variantIds: new Set(),
+    }, fakePresenter());
+    expect(state.lastOmitted).toEqual([
+      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
+    ]);
+  });
+
+  it('persists the flag the model was built with, so Update classifies omissions the same way', async () => {
+    // The checkbox is on but there is no licence and no Figma identity, so
+    // canGenerate is false and the build ran without AI. Update reads this
+    // stored flag back; persisting the raw checkbox instead made the same doc
+    // read 'nothing to show' on Create and 'AI writing is off' on Update.
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    state.aiEnabled = true;
+    state.licenseKey = null;
+    state.figmaUserId = null;
+    expect(canGenerate(state)).toBe(false);
+
+    await createDocFrame(state, { sections: new Set(['definition']), variantIds: new Set() }, fakePresenter());
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      config: { aiEnabled: boolean };
+    };
+    expect(msg.config.aiEnabled).toBe(canGenerate(state));
+    expect(msg.config.aiEnabled).toBe(false);
+  });
+
+  it('persists a true flag when the build really could generate', async () => {
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'f1';
+    state.aiEnabled = true;
+    state.figmaUserId = 'u1';
+    expect(canGenerate(state)).toBe(true);
+
+    await createDocFrame(state, { sections: new Set(['definition']), variantIds: new Set() }, fakePresenter());
+    const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as {
+      config: { aiEnabled: boolean };
+    };
+    expect(msg.config.aiEnabled).toBe(true);
   });
 });

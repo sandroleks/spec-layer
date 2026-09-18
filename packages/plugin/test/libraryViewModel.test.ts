@@ -456,7 +456,9 @@ describe('change states', () => {
 
 describe('resolveLibraryChanges', () => {
   const projection: SpecHashProjection = {
-    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1', anatomyComponentId: '1:2',
+    name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1',
+    description: '', documentationLinks: [],
+    anatomyComponentId: '1:2',
     anatomy: [], props: [], variants: [], variantInstances: [], states: ['default'],
     tokens: [], related: [], gaps: [], layout: [],
   };

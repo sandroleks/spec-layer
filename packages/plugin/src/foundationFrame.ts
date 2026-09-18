@@ -25,7 +25,7 @@ import type {
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
-  headingFont,
+  headingFont, PROSE_MEASURE,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
@@ -388,9 +388,6 @@ const GROUP_HEAD_GAP = 14;  // a group's heading to its own rows
 // GROUP_GAP, which is reserved for the bigger, structural gap between one titled
 // group and the next.
 const HEADER_GAP = 12;
-// A measure, not the full row width: a description is prose, and prose set to
-// 900px runs too wide to read comfortably.
-const GROUP_NOTE_W = 560;
 
 /** True for the rows the swatch list owns. */
 export function isColorRow(row: FoundationRow): boolean {
@@ -604,7 +601,7 @@ function buildSwatchList(
     if (note) {
       const wrapNote = vstack(0);
       block.appendChild(wrapNote);
-      fixWidthHugHeight(wrapNote, GROUP_NOTE_W);
+      fixWidthHugHeight(wrapNote, PROSE_MEASURE);
       wrappingText(wrapNote, note, 'Regular', 11, palette.muted);
     }
 
@@ -647,7 +644,7 @@ const CONTRAST_GAP = 16;
 function contrastNote(parent: FrameNode, text: string): void {
   const box = vstack(0);
   parent.appendChild(box);
-  fixWidthHugHeight(box, GROUP_NOTE_W);
+  fixWidthHugHeight(box, PROSE_MEASURE);
   wrappingText(box, text, 'Regular', 11, palette.muted);
 }
 

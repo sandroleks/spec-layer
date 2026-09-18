@@ -862,6 +862,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
     },
     component: {
       name: spec.name,
+      ...(spec.description ? { description: spec.description } : {}),
       related: spec.related.length > 0 ? spec.related : undefined,
     },
     ...(api !== undefined ? { api } : {}),

@@ -4,6 +4,7 @@ import type { ComponentProp, VariantAxis } from './props';
 import { tokensFor, type GapIssue } from './tokens';
 import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
 import { anatomyFor } from './anatomy';
+import { compareCodeUnits } from './v5/diagnostics';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
@@ -13,7 +14,7 @@ function canonical(value: unknown): string {
     // canonical output consistent regardless of whether a caller passes them.
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => compareCodeUnits(a, b))
       .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`);
     return `{${entries.join(',')}}`;
   }
@@ -55,7 +56,13 @@ export interface SpecHashProjection {
   name: string;
   figmaKey: string;
   figmaFile: string;
+  /** Absent when the caller never knew the file's name, exactly as
+   *  `IntermediateSpec` carries it: absent-when-absent, never a default. The
+   *  facts strip draws it, so it is hashed (rendered implies hashed). */
+  figmaFileName?: string;
   figmaNode: string;
+  description: string;
+  documentationLinks: string[];
   anatomyComponentId: string;
   anatomy: { id: string; name: string; type: string; nested: boolean }[];
   props: ComponentProp[];
@@ -69,20 +76,23 @@ export interface SpecHashProjection {
 }
 
 /**
- * The drift baseline projection. Excludes rawValues, and reduces anatomy to the
- * legacy depth-0 {id,name,type,nested} shape, so canvas-only 2.0 additions
- * never flip the hash for existing committed specs. specContentHash hashes
- * exactly this object and the Library stores exactly this object as a doc's
- * baseline, so the two cannot drift apart.
+ * The drift baseline projection. Excludes rawValues and nodeEffects, and
+ * reduces anatomy to the depth-0 {id,name,type,nested} shape. `description`,
+ * `documentationLinks` and `figmaFileName` DO enter: all three are rendered
+ * (Overview, header subtitle, facts strip), so an edit to any of them is a
+ * visible change. Their arrival, together with the code-unit key ordering, is
+ * the EXTRACTOR_VERSION '3' rebuild: every doc stamped '2' reads
+ * rebuild-required rather than being compared against a projection it was
+ * never hashed over.
  */
 export function specHashProjection(spec: IntermediateSpec, options: SpecHashOptions = {}): SpecHashProjection {
-  // figmaFileName is destructured out alongside rawValues: renaming a Figma
-  // file is not component drift, and every committed doc's baseline was
-  // computed before the field existed, so including it would flip all of them
-  // to "update available" for a change that alters no rendered output.
+  // figmaFileName stays IN: the facts strip renders the source file name, so
+  // renaming the Figma file changes what the Usage frame prints and is drift
+  // like any other rendered change (rendered implies hashed). It is absent
+  // when the caller never knew the name, so a doc built without one hashes
+  // exactly as it did before the field entered.
   const {
     rawValues: _rawValues,
-    figmaFileName: _figmaFileName,
     // Same contract as rawValues: additive detail that alters no rendered
     // output, so including it would flip every committed document to "update
     // available" for a change nobody can see on canvas.

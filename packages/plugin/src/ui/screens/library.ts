@@ -82,6 +82,11 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
   unavailable: 'Check unavailable',
 };
 
+/** What "Rebuild needed" costs the reader, said once, under the status. A
+ *  rebuild redraws the frames in the current layout; the two-lane doc model
+ *  keeps whatever was written into the editorial slots. */
+export const REBUILD_NOTE = 'Frames are rebuilt in the new layout. Your written sections are kept.';
+
 function statusMarkup(status: LibraryRowStatus): string {
   return (
     `<span class="sl-library-status is-${status}" data-library-status="${status}">` +
@@ -304,7 +309,7 @@ function rowTitle(row: LibraryRowPresentation): string {
     : row.label;
 }
 
-function libraryRowMarkup(
+export function libraryRowMarkup(
   row: LibraryRowPresentation,
   menuDocId: string | null,
   busy: boolean,
@@ -323,6 +328,9 @@ function libraryRowMarkup(
       '</button>'
     )
     : statusMarkup(row.status);
+  const rebuildNote = row.status === 'rebuildNeeded'
+    ? `<small class="sl-library-note">${esc(REBUILD_NOTE)}</small>`
+    : '';
   const sourceIcon = icon(rowIcon(row), 17);
   const title = esc(rowTitle(row));
   const jump = row.canOpenFrame
@@ -349,6 +357,7 @@ function libraryRowMarkup(
     '<div class="sl-library-summary">' +
     jump +
     status +
+    rebuildNote +
     `<time>${esc(row.ageLabel)}</time>` +
     menuMarkup(row, menuDocId === row.docId, busy) +
     '</div>' +

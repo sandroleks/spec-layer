@@ -27,10 +27,17 @@ export interface IntermediateSpec {
   /** The Figma file's NAME, when a caller knows it. `figma.root.name` is
    *  main-thread only, so it reaches the UI on the message that already
    *  carries the file key; a caller without one omits it rather than
-   *  inventing a placeholder. Excluded from specContentHash: renaming a
-   *  Figma file is not component drift. */
+   *  inventing a placeholder. Rendered in the facts strip, so it enters
+   *  specContentHash: renaming the Figma file is drift. */
   figmaFileName?: string;
   figmaNode: string;
+  /** The root component's Figma description, verbatim. Empty string when the
+   *  designer wrote none. Rendered (Overview, header subtitle), so it enters
+   *  specHashProjection. */
+  description: string;
+  /** Documentation link URLs attached to the root component. Empty when none.
+   *  Rendered in the facts strip, so hashed. */
+  documentationLinks: string[];
   anatomy: AnatomyPart[];
   /** Node id of the default-variant COMPONENT — the coordinate space anatomy
    *  part ids map into, and the node the doc frame screenshots for its diagram. */
@@ -77,6 +84,8 @@ export function extract(
     // an absent key rather than a key holding undefined.
     ...(meta.figmaFileName ? { figmaFileName: meta.figmaFileName } : {}),
     figmaNode: root.id,
+    description: root.description ?? '',
+    documentationLinks: root.documentationLinks ?? [],
     anatomy: parts,
     anatomyComponentId: componentId,
     props: extractProps(root),
