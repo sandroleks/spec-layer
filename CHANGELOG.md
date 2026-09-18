@@ -120,8 +120,9 @@ none of the reasoning above.
   gains a Keyboard table and a Pointer and touch section. Titles capitalise a
   lowercase component name, anatomy parts read as words, and user-authored
   matrix labels render as typed. Instances render at true size everywhere;
-  anatomy pins fan out with elbow leaders, and a component wider than the
-  column says "Shown at N%". Prose spans the content column, like the tables
+  each anatomy part is outlined where it draws and its pin's leader ends on
+  that outline, pins fan out with elbow leaders when parts crowd, and a
+  component wider than the column says "Shown at N%". Prose spans the content column, like the tables
   beside it, and code spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 

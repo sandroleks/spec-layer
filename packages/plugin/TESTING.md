@@ -229,9 +229,13 @@ were added the same day, after the review that found the callouts reading
 2, 1, 4 and the Tokens section empty for a revealed icon.
 
 16. **True size, small component.** Generate a checkbox. The anatomy instance
-    and the measurement instance render at their real pixel size; anatomy pins
-    fan out with elbow leaders and no two overlap; measurement badges on the
-    right rail do not overlap; a measurements table follows the diagram.
+    and the measurement instance render at their real pixel size; every
+    anatomy part carries a thin outline around what it draws (the label's
+    outline hugs the word, not the layer's full width) and each pin's leader
+    ends on its outline; pins fan out with elbow leaders and no two overlap;
+    measurement badges on the right rail do not overlap; the measurements
+    table under the diagram lists gap, padding, radius and border-width
+    bindings only, never a fill or a text style.
 17. **Downscale note.** Generate a component wider than about 1300px. The
     frame widens first; if the instance still shrinks, "Shown at N%" appears
     under the anatomy and measurement diagrams, and a scaled matrix says

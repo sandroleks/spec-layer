@@ -2,10 +2,13 @@
 /**
  * anatomySection.ts: the numbered callout diagram and its legend.
  *
- * Instances render at true size. A small component therefore has parts closer
- * together than a pin is wide, so pins fan out along the callout zone and an
- * elbow leader connects each one to its part, the way a printed spec does.
- * A component wider than the column is scaled down and the caller draws the
+ * Every depth-0 part is outlined where it draws, and its numbered pin's leader
+ * ends on that outline, so a pin never points at empty space: a fill-width
+ * text layer is outlined around its glyphs, not its layout box. Instances
+ * render at true size. A small component therefore has parts closer together
+ * than a pin is wide, so pins fan out along the callout zone and an elbow
+ * leader connects each one to its outline, the way a printed spec does. A
+ * component wider than the column is scaled down and the caller draws the
  * scale note the returned factor describes.
  */
 import type { AnatomyPartBlock } from './ui/docModel';
@@ -19,6 +22,7 @@ const LEGEND_BADGE = 20;
 const ANATOMY_PAD = 24;
 const PIN_GAP = 6;
 const RAIL_GAP = 10; // from the pin's inner edge to the elbow rail
+const OUTLINE_OUTSET = 2; // how far a part's outline sits outside what it draws
 
 function clamp01(n: number): number { return n < 0 ? 0 : n > 1 ? 1 : n; }
 
@@ -149,10 +153,11 @@ export function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
 }
 
 /**
- * The diagram card: a live instance at true size, pins in a callout zone on
- * the side the parts are least spread along, elbow leaders, then the legend.
- * Null when the component cannot be instanced. `scale` is 1 unless the
- * instance was wider than `contentWidth` minus the card padding.
+ * The diagram card: a live instance at true size, an outline around each
+ * part, pins in a callout zone on the side the parts are least spread along,
+ * elbow leaders from pin to outline, then the legend. Null when the component
+ * cannot be instanced. `scale` is 1 unless the instance was wider than
+ * `contentWidth` minus the card padding.
  */
 export async function buildAnatomyDiagram(
   componentId: string, parts: AnatomyPartBlock[], includeHidden: boolean, contentWidth: number,
@@ -170,29 +175,40 @@ export async function buildAnatomyDiagram(
   const ib = inst.absoluteBoundingBox;
   if (!ib || ib.width <= 0 || ib.height <= 0) { try { inst.remove(); } catch { /* gone */ } return null; }
 
-  const pins: { n: string; nx: number; ny: number; rx: number; ty: number }[] = [];
+  // Each part as the box it DRAWS, normalized to the instance. Figma's render
+  // bounds are the glyphs of a text layer or the painted area of a frame; the
+  // layout box of a fill-width text layer spans its container while the word
+  // sits at one end, and the old anchor at that box's centre pointed at
+  // nothing. The layout box is the fallback for a layer Figma has not
+  // rendered (render bounds null) or a host that lacks the field.
+  const pins: { n: string; x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const part of parts) {
     if (part.depth !== 0) continue;
     let p: BaseNode | null;
     try { p = await figma.getNodeByIdAsync(`I${inst.id};${part.id}`); } catch { continue; }
     if (!p || !('absoluteBoundingBox' in p)) continue;
-    const pb = (p as SceneNode).absoluteBoundingBox;
-    if (!pb) continue;
+    const layout = (p as SceneNode).absoluteBoundingBox;
+    if (!layout) continue;
+    // Typed as optional: the typings declare it on the drawable mixins, not
+    // on every SceneNode, and a host without it takes the layout box.
+    const drawn = (p as SceneNode & { absoluteRenderBounds?: Rect | null }).absoluteRenderBounds ?? layout;
     pins.push({
       n: part.label,
-      nx: clamp01((pb.x + pb.width / 2 - ib.x) / ib.width),
-      ny: clamp01((pb.y + pb.height / 2 - ib.y) / ib.height),
-      rx: clamp01((pb.x + pb.width - ib.x) / ib.width),
-      ty: clamp01((pb.y - ib.y) / ib.height),
+      x0: clamp01((drawn.x - ib.x) / ib.width),
+      y0: clamp01((drawn.y - ib.y) / ib.height),
+      x1: clamp01((drawn.x + drawn.width - ib.x) / ib.width),
+      y1: clamp01((drawn.y + drawn.height - ib.y) / ib.height),
     });
   }
+  const cx = (p: { x0: number; x1: number }): number => (p.x0 + p.x1) / 2;
+  const cy = (p: { y0: number; y1: number }): number => (p.y0 + p.y1) / 2;
 
   // Which side the callouts sit on depends only on the parts' normalized
   // spread, never on the render size, so it can be settled before the scale
   // below: a side callout zone widens the box, and that width has to come out
   // of the same column budget the instance itself is fit to.
-  const xs = pins.map((p) => p.nx);
-  const ys = pins.map((p) => p.ny);
+  const xs = pins.map(cx);
+  const ys = pins.map(cy);
   const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
   const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
   const sideCallouts = yRange > xRange;
@@ -224,7 +240,7 @@ export async function buildAnatomyDiagram(
   card.primaryAxisSizingMode = 'AUTO';
 
   // Natural pin centres along the callout axis, then fanned so none overlap.
-  const natural = pins.map((p) => Math.round((sideCallouts ? p.ny * renderedH : p.nx * renderedW)));
+  const natural = pins.map((p) => Math.round(sideCallouts ? cy(p) * renderedH : cx(p) * renderedW));
   let fanned = fanOutPins(natural, PIN_SIZE, PIN_GAP);
   if (!sideCallouts) {
     // A crowded top row can fan past the instance's own left/right edges,
@@ -259,6 +275,7 @@ export async function buildAnatomyDiagram(
   }
 
   const leaderPaint = [{ type: 'SOLID', color: palette.accent, opacity: 0.45 }] as Paint[];
+  const outlinePaint = [{ type: 'SOLID', color: palette.accent, opacity: 0.6 }] as Paint[];
   const seg = (x: number, y: number, w: number, h: number): void => {
     const f = figma.createFrame();
     f.resize(Math.max(w, 1), Math.max(h, 1));
@@ -266,38 +283,51 @@ export async function buildAnatomyDiagram(
     f.fills = leaderPaint;
     box.appendChild(f);
   };
-  const dot = (x: number, y: number): void => {
-    const d = figma.createFrame();
-    d.resize(6, 6);
-    d.cornerRadius = radius(3);
-    d.fills = solidFill(palette.accent);
-    d.x = Math.round(x - 3); d.y = Math.round(y - 3);
-    box.appendChild(d);
-  };
+  // A part's drawn box in rendered pixels, relative to the instance.
+  const edges = (pin: { x0: number; y0: number; x1: number; y1: number }) => ({
+    left: Math.round(pin.x0 * renderedW), top: Math.round(pin.y0 * renderedH),
+    right: Math.round(pin.x1 * renderedW), bottom: Math.round(pin.y1 * renderedH),
+  });
+
+  // Outlines first, under the leaders and pins: a thin accent rectangle a
+  // little outside what each part draws. The outline is what a pin points at,
+  // so no connect dot is needed at the anchor.
+  for (const pin of pins) {
+    const e = edges(pin);
+    const outline = figma.createFrame();
+    outline.name = 'Part outline';
+    outline.fills = [];
+    outline.strokes = outlinePaint;
+    outline.strokeWeight = 1;
+    outline.cornerRadius = radius(3);
+    outline.resize(Math.max(e.right - e.left, 0) + OUTLINE_OUTSET * 2, Math.max(e.bottom - e.top, 0) + OUTLINE_OUTSET * 2);
+    outline.x = inst.x + e.left - OUTLINE_OUTSET;
+    outline.y = inst.y + e.top - OUTLINE_OUTSET;
+    box.appendChild(outline);
+  }
 
   pins.forEach((pin, i) => {
     const node = anatomyPin(pin.n);
+    const e = edges(pin);
     if (sideCallouts) {
-      const anchorY = Math.round(pin.ny * renderedH) + shift;
-      const anchorX = Math.round(pin.rx * renderedW);
+      const anchorY = Math.round(cy(pin) * renderedH) + shift;
+      const anchorX = e.right + OUTLINE_OUTSET; // the outline's right edge
       const railX = renderedW + RAIL_GAP;
       const pinX = renderedW + ZONE - PIN_SIZE;
       const pinY = fanned[i] + shift;
-      seg(anchorX, anchorY, railX - anchorX, 1);          // out from the part
+      seg(anchorX, anchorY, railX - anchorX, 1);          // out from the outline
       if (pinY !== anchorY) seg(railX, Math.min(anchorY, pinY), 1, Math.abs(pinY - anchorY)); // along the rail
       seg(railX, pinY, pinX - railX, 1);                   // in to the pin
-      dot(anchorX, anchorY);
       box.appendChild(node);
       node.x = pinX; node.y = Math.round(pinY - PIN_SIZE / 2);
     } else {
-      const anchorX = Math.round(pin.nx * renderedW) + shift;
-      const anchorY = ZONE + Math.round(pin.ty * renderedH);
+      const anchorX = Math.round(cx(pin) * renderedW) + shift;
+      const anchorY = ZONE + e.top - OUTLINE_OUTSET; // the outline's top edge
       const railY = ZONE - RAIL_GAP;
       const pinX = fanned[i] + shift;
       seg(anchorX, railY, 1, anchorY - railY);
       if (pinX !== anchorX) seg(Math.min(anchorX, pinX), railY, Math.abs(pinX - anchorX), 1);
       seg(pinX, PIN_SIZE, 1, railY - PIN_SIZE);
-      dot(anchorX, anchorY);
       box.appendChild(node);
       node.x = Math.round(pinX - PIN_SIZE / 2); node.y = 0;
     }
