@@ -96,6 +96,24 @@ none of the reasoning above.
 
 ### Changed
 
+- **When to use and Do and don't now answer different questions.** The first
+  live Button run wrote the same three rules under When not to use and again
+  as DON'T cards, because the prompt asked for both without saying how they
+  differ. The key instructions now say: When to use lists situations, never
+  rules; When not to use lists situations where another control fits better,
+  each phrased "For <situation>, use <alternative> instead" with the reason
+  after a semicolon and never opening with "Do not"; the guidelines are about
+  using the component once chosen, one topic per pair drawn from its options,
+  states or text parts, the don't mirroring the do, and nothing repeated from
+  When to use. The system prompt gains one rule, "Say each fact once", and
+  the Text field exemplar demonstrates all of it: its When not to use bullets
+  are situations with an alternative and its third guideline pair is a real
+  mirror on Size. The Overview asks for a lede and at most one short
+  paragraph that describes where the component appears, never one that
+  argues; the first Pill Action run wrote three paragraphs, the last of them
+  the model's own reasoning. The prompt bytes change, so the proxy must be
+  redeployed before a build with this change can generate; nothing shipped
+  is affected.
 - **AI writing is one structured call per component, written by the model
   your plan proves.** The prompt is rewritten around the Docs 2.0 sections:
   the model sees the display name, the designer's description as an

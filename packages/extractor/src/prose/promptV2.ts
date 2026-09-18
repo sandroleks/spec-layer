@@ -44,11 +44,11 @@ export function partKind(part: AnatomyPart): string {
  */
 export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
   overview:
-    'overview ({ lede, body }: lede is one sentence saying what the component is and what a person does with it; body is one to three short paragraphs on where it is used and what it gives people, with no option names)',
+    'overview ({ lede, body }: lede is one sentence saying what the component is and what a person does with it; body is at most one short paragraph, one or two sentences, on where it appears and what it holds; describe, never explain or justify; no option names)',
   whenToUse:
-    'whenToUse (string[], 2 to 4 concrete situations where this component is the right choice)',
+    'whenToUse (string[], 2 to 4 concrete situations where this component is the right choice; each names a task or context, never a rule about how to use it)',
   whenNotToUse:
-    'whenNotToUse (string[], 2 to 3 situations to avoid it, each saying what to do instead; name another component only if it is listed under Related above)',
+    'whenNotToUse (string[], 2 to 3 situations where another control fits better, each phrased "For <situation>, use <alternative> instead" with the reason after a semicolon; never start with "Do not"; name another component only if it is listed under Related above)',
   variantsIntro:
     'variantsIntro (one or two sentences on what the option axes change; never mention states)',
   variantsGuide:
@@ -74,7 +74,7 @@ export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
   content:
     'content (string[], 3 to 4 sentences on writing the text parts listed under Anatomy, on truncation, and on translation)',
   guidelines:
-    'guidelines ({ do: { rule, reason }, dont: { rule, reason } }[], 3 pairs; each rule one sentence, each reason one sentence)',
+    'guidelines ({ do: { rule, reason }, dont: { rule, reason } }[], 3 pairs about using this component once chosen; each pair covers one topic drawn from its options, states or text parts, the dont mirrors the do, and no pair repeats a When to use or When not to use bullet; each rule one sentence, each reason one sentence)',
 };
 
 /** Default value of a variant axis, from its component property. */
@@ -300,11 +300,13 @@ export const PROSE_SYSTEM_PROMPT = [
   '- Second person, verb first, one idea per sentence. Every rule carries its reason.',
   '- Anchor guidance in concrete situations: forms, dialogs, toolbars, lists, filters.',
   '- Write for people, not "the user".',
+  '- Describe, do not argue. No sentence explains why the component reads or feels a certain way, and nothing is "rather than" something else.',
   '',
   'Facts:',
   "- Name only what the prompt lists: this component's parts, properties, option values, states, and related components. Never invent an option, a part, a state, or a component.",
   "- The designer's description, when given, is authoritative. Build on it. Never contradict it and never restate it.",
   '- States are not variants. The variants guide covers option axes only; states go in the states list.',
+  '- Say each fact once. When to use and When not to use are about choosing this component over another; the guidelines are about using it well once chosen.',
   `- Keyboard rows use only these keys: ${KEYBOARD_KEYS.join(', ')}.`,
   '',
   'Words to avoid:',
@@ -384,18 +386,17 @@ export const EXEMPLAR_RESPONSE: ProseV2 = {
     lede: 'A text field takes a short, single-line answer such as a name, an email address, or a search term.',
     body: [
       'Use it inside forms, dialogs, and filters wherever people type a value the product stores or acts on. The label says what to enter, the placeholder shows the expected shape, and the helper text explains a rule first.',
-      'Keep every field in a form the same size, and let the state colours do the talking: the border changes on focus and on error, nothing else moves.',
     ],
   },
   whenToUse: [
     'Collect one short value that fits on a line, such as a name, a code, or a quantity.',
     'Let people search or filter a list by typing, with results updating live.',
-    'Ask for a value you validate on the spot, so the Error state points at what to fix.',
+    'Ask for a value that must match a format, such as an email address or a postcode.',
   ],
   whenNotToUse: [
-    'Do not use it for long or multi-line answers; a single line hides most of the text.',
-    'Do not use it when the valid answers are a fixed set; a list prevents typos.',
-    'Do not use it to show a fixed value; a read-only field invites typing that goes nowhere.',
+    'For long or multi-line answers, use a text area instead; a single line hides most of the text.',
+    'For a fixed set of valid answers, use a select or a set of options instead; a list prevents typos.',
+    'For a value people only read, use plain text instead; a field invites typing that goes nowhere.',
   ],
   variantsIntro: 'Size sets the row height for dense or relaxed layouts, and Style sets how the field meets its background.',
   variantsGuide: [
@@ -462,7 +463,7 @@ export const EXEMPLAR_RESPONSE: ProseV2 = {
     },
     {
       do: { rule: 'Use one Size across a single form.', reason: 'Mixed heights break the vertical rhythm of the layout.' },
-      dont: { rule: 'Do not disable a field to show an unchangeable value.', reason: 'Disabled text fails contrast and cannot be selected or copied.' },
+      dont: { rule: 'Do not mix Sizes within one form to make a field stand out.', reason: 'Emphasis by height reads as a mistake, not as a hierarchy.' },
     },
   ],
 };
