@@ -31,6 +31,16 @@ export const palette = {
   tableHeadBg: hex('#f8fafc'), // table header tint
   chipBg: hex('#eef1f5'), // token chip background
   paneBg: hex('#fbfcfd'), // variant card left-pane tint
+  // Semantic inks for the Do and Don't cards. Fixed, like the measurement
+  // diagram's size, padding and gap colours: they carry meaning, not brand,
+  // so applyThemeToKit never touches them. A faint tint, a light border, and
+  // a dark label ink that clears 5:1 on its tint.
+  doTint: hex('#f0fdf4'),
+  doBorder: hex('#bbf7d0'),
+  doInk: hex('#15803d'),
+  dontTint: hex('#fef2f2'),
+  dontBorder: hex('#fecaca'),
+  dontInk: hex('#b91c1c'),
 };
 
 export function solidFill(color: RGB): Paint[] {

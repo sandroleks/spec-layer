@@ -112,7 +112,7 @@ none of the reasoning above.
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
   gains a When to use and When not to use pair, and Do and Don't as paired
-  cards. The header subtitle is the component's own Figma
+  cards, the Do side on a faint green tint and the Don't side on red. The header subtitle is the component's own Figma
   description when it has one and the AI opening line otherwise, so the
   designer's words lead the page and the AI lede stays in the Overview.
   Specifications gains a Properties table (replacing

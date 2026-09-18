@@ -72,16 +72,20 @@ export function buildTwoColumns(left: ColumnBlock, right: ColumnBlock, contentWi
   return row;
 }
 
+/** A Do card sits on a faint green tint with a green border and label; a
+ *  Don't card the same in red. The tints say which half is which before the
+ *  label is read, and stay legible because the rule and reason keep the
+ *  document's own heading and body inks. */
 function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNode {
   const box = vstack(8);
   box.paddingTop = box.paddingBottom = box.paddingLeft = box.paddingRight = 16;
   box.cornerRadius = radius(8);
-  box.strokes = solidFill(palette.border);
   box.strokeWeight = 1;
-  box.fills = solidFill(palette.bg);
   if (!card) { box.fills = []; box.strokes = []; return box; } // an empty half keeps the grid
+  box.fills = solidFill(kind === 'do' ? palette.doTint : palette.dontTint);
+  box.strokes = solidFill(kind === 'do' ? palette.doBorder : palette.dontBorder);
   tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
-  const label = makeText(kind === 'do' ? 'DO' : "DON'T", 'Medium', 11, kind === 'do' ? palette.accent : palette.heading, 130, 6);
+  const label = makeText(kind === 'do' ? 'DO' : "DON'T", 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
   box.appendChild(label);
   const ruleRuns = parseRuns(card.rule);
   const rule = makeText(ruleRuns.map((r) => r.text).join(''), 'Bold', 15, palette.heading, 145);

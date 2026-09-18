@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
+import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
   buildPropertiesTable, buildStatesTable, columnParagraph,
 } from '../src/docBlocks';
-import { applyThemeToKit } from '../src/frameKit';
+import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { readCanvasProse, type ProseNodeLike } from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
@@ -72,6 +72,23 @@ describe('docBlocks', () => {
   it('omits the description column when no row has one', () => {
     const table = buildPropertiesTable([{ name: 'a', type: 'Text', values: '', defaultValue: '', description: null }], false, 768) as unknown as FakeFrame;
     expect(table.textChars()).toEqual(['PROPERTY', 'TYPE', 'VALUES', 'DEFAULT', 'a', 'Text', '', '']);
+  });
+
+  it("tints Do cards green and Don't cards red, with the label in the matching ink", () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: 'It confuses screen readers.' } },
+    ], 768) as unknown as FakeFrame;
+    const [doCard, dontCard] = (grid.children[0] as FakeFrame).children as FakeFrame[];
+    expect(doCard.fills).toEqual(solidFill(palette.doTint));
+    expect(doCard.strokes).toEqual(solidFill(palette.doBorder));
+    expect((doCard.children[0] as FakeText).fills).toEqual(solidFill(palette.doInk));
+    expect(dontCard.fills).toEqual(solidFill(palette.dontTint));
+    expect(dontCard.strokes).toEqual(solidFill(palette.dontBorder));
+    expect((dontCard.children[0] as FakeText).fills).toEqual(solidFill(palette.dontInk));
+    // Semantic, not brand: the inks are fixed and are neither the theme
+    // accent nor the heading ink the labels used before.
+    expect(palette.doInk).not.toEqual(palette.accent);
+    expect(palette.dontInk).not.toEqual(palette.heading);
   });
 
   it('lets the guideline grid hug its height instead of clipping to a 1px placeholder', () => {
