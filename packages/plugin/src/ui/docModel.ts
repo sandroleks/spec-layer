@@ -1,3 +1,4 @@
+import { categorize } from '@spec-layer/extractor';
 import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
@@ -569,7 +570,11 @@ function buildSection(
       const tableRows: string[][] = [];
       for (const t of resolveTokensForVariant(tokensFor(spec.tokens, { includeHidden }), defaultAxisValues(spec))) {
         tokens[measureKey(t.part, t.property)] = t.token;
-        tableRows.push([t.part, t.property, t.token]);
+        // The table lists what the section is named for: gap, padding, radius,
+        // border width, min and max size. Colour and typography bindings are
+        // the Tokens section's; a fill listed under Measurements read as a
+        // mistake on canvas.
+        if (categorize(t.property) === 'measurements') tableRows.push([t.part, t.property, t.token]);
       }
       const rootPart = spec.variants.length > 0 ? 'Container' : cleanPartName(spec.name);
       // Each selected lens renders as its own focused mini-diagram. Preserve the

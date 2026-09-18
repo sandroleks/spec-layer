@@ -129,7 +129,9 @@ none of the reasoning above.
 - Measurements render the component at true size. A component wider than the
   column is scaled down to fit and the diagram says by how much. Dimension
   rails nudge overlapping labels apart instead of stacking them, and the
-  token bindings the diagram draws are listed in a table under it.
+  dimensional token bindings (gap, padding, radius, border width) are listed
+  in a table under it; colour and typography bindings stay in the Tokens
+  section.
 
 - **Empty sections are left out, and the result says so.** A section with
   nothing to show, or an AI section when AI writing is off, is not drawn. No

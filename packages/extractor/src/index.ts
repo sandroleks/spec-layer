@@ -16,6 +16,9 @@ export * from './resolve';
 export * from './statesMatrix';
 export * from './contrast';
 export * from './displayNames';
+// The property categories the Tokens-used pivot and the Measurements table
+// share, so the two cannot disagree about what counts as a measurement.
+export { categorize, type PropertyCategory } from './pivot';
 export {
   colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP,
   // The classifier's vocabulary, so a consumer telling a user how to name their

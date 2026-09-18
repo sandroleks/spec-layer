@@ -177,7 +177,8 @@ describe('buildDocModel with prose', () => {
     expect(anatomy.parts.find((p) => p.name === 'Label')?.role).toBe('Names the option.');
     const measure = find(model, 'measurements');
     if (measure?.kind !== 'measure') throw new Error('expected measure');
-    expect(measure.tableRows).toEqual([['checkboxItem', 'fill', 'color/bg'], ['checkboxItem', 'border', 'color/border']]);
+    // Both bindings are colours, so the Measurements table lists neither.
+    expect(measure.tableRows).toEqual([]);
   });
 
   it('lists related components as a bullet list with no slot', () => {
@@ -553,6 +554,29 @@ describe('measurements section', () => {
     expect(block.tableRows).toEqual([
       ['Container', 'padding', 'spacing/md'], ['Container', 'gap', 'spacing/sm'],
     ]);
+  });
+
+  it('lists only dimensional bindings in the table: colour and typography stay in the Tokens section', () => {
+    const mixed = {
+      ...spec,
+      tokens: [
+        ...spec.tokens,
+        { part: 'Label', property: 'fill', conditions: {}, ...ident('color/text') },
+        { part: 'Label', property: 'typography', conditions: {}, ...ident('Body/M') },
+        { part: 'Container', property: 'border', conditions: {}, ...ident('color/border') },
+        { part: 'Container', property: 'border-radius', conditions: {}, ...ident('radius/sm') },
+        { part: 'Container', property: 'border-top-width', conditions: {}, ...ident('stroke/bold') },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(mixed, null, new Set(['measurements']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.tableRows).toEqual([
+      ['Container', 'padding', 'spacing/md'], ['Container', 'gap', 'spacing/sm'],
+      ['Container', 'border-radius', 'radius/sm'], ['Container', 'border-top-width', 'stroke/bold'],
+    ]);
+    // The diagram's own lookup is untouched: it never asks for a colour.
+    expect(block.tokens[measureKey('Container', 'border-radius')]).toBe('radius/sm');
   });
 
   it('defaults measure views to all three when none are passed', () => {
