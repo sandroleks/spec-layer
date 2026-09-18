@@ -596,13 +596,33 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
 }
 
 /**
+ * What a rebuild says when the AI allowance ran out part-way through.
+ *
+ * `noteGenerationError` answers `quota_exhausted` by setting
+ * `state.quotaExhausted`, which the Create screen renders as the upgrade
+ * fork. A rebuild has no such fork, so without a note of its own the batch
+ * would report plain success and the sections AI never wrote would be
+ * attributed to "nothing to show". The wording reuses `groupErrorCopy`'s
+ * quota sentence, so neither a period nor a number is invented here.
+ */
+export const QUOTA_EXHAUSTED_REBUILD_NOTE =
+  'Your monthly AI allowance is used up, so the sections that needed it were left empty.';
+
+/**
  * The AI half of a stale-version rebuild (spec 8.3): when AI writing is on,
  * ask for the selected keys the stored prose leaves empty (and keyboard), and
  * merge the answer under the stored prose. A failure keeps the stored prose
  * and records the same note Create would; the rebuild goes ahead either way.
+ *
+ * Gated on the document's own `aiEnabled` as well as the panel toggle. A doc
+ * built without AI writing is rebuilt without it: topping it up because the
+ * toggle happens to be on now would put AI text into a document whose stored
+ * config still reads `aiEnabled: false`, and a later empty AI section on it
+ * would then be reported as "AI writing is off" when AI had just written into
+ * it.
  */
 export async function topUpProseForRebuild(state: UiState, src: DocSource): Promise<ProseV2 | null> {
-  if (!canGenerate(state)) return src.prose;
+  if (!src.config.aiEnabled || !canGenerate(state)) return src.prose;
   const requested = proseKeysForSections(new Set<SectionId>(src.config.sections));
   const missing = missingProseKeys(src.prose, requested);
   if (missing.size === 0) return src.prose;
@@ -618,6 +638,11 @@ export async function topUpProseForRebuild(state: UiState, src: DocSource): Prom
     return mergeTopUp(src.prose, draft?.prose ?? null);
   } catch (err) {
     noteGenerationError(state, err);
+    // The one failure it answers with state instead of a note, said out loud
+    // here because this path has no upgrade fork to render it.
+    if (!state.pendingAiNote && err instanceof ProseProxyError && err.code === 'quota_exhausted') {
+      state.pendingAiNote = QUOTA_EXHAUSTED_REBUILD_NOTE;
+    }
     return src.prose;
   }
 }

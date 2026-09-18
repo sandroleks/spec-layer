@@ -21,6 +21,7 @@ import {
   mergeTopUp,
   topUpProseForRebuild,
   takeTopUpNote,
+  QUOTA_EXHAUSTED_REBUILD_NOTE,
   type BuildPresenter,
   type DocSource,
 } from '../src/ui/actions';
@@ -292,6 +293,30 @@ describe('topUpProseForRebuild', () => {
     const state = aiState();
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.pendingAiNote).toBe('Too many requests just now. Give it a minute.');
+  });
+
+  it('says so when the AI allowance runs out, which Create answers with the upgrade fork', async () => {
+    // noteGenerationError sets state.quotaExhausted and no note; the Create
+    // screen renders that as the fork, the rebuild path has nothing to render
+    // it with, so silence here would attribute the empty sections to "nothing
+    // to show".
+    vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('quota_exhausted'));
+    const state = aiState();
+    expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
+    expect(state.quotaExhausted).toBe(true);
+    expect(state.pendingAiNote).toBe(QUOTA_EXHAUSTED_REBUILD_NOTE);
+    expect(state.pendingAiNote).not.toBe('');
+    expect(state.pendingAiNote).not.toContain('—');
+  });
+
+  it('does not top up a document that was built with AI writing off', async () => {
+    // The panel toggle is on; the document's own config is not. Topping it up
+    // would write AI text into a doc whose stored config still reads
+    // aiEnabled: false, and a later empty AI section on it would be reported
+    // as "AI writing is off" although AI had just written into it.
+    const builtWithoutAi: DocSource = { ...src, config: { ...src.config, aiEnabled: false } };
+    expect(await topUpProseForRebuild(aiState(), builtWithoutAi)).toEqual(src.prose);
+    expect(generateProse).not.toHaveBeenCalled();
   });
 });
 

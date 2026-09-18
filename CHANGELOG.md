@@ -145,10 +145,13 @@ none of the reasoning above.
   YAML brief no longer carries its optional `design_considerations` key.
 
 - **Rebuilding a document written by an earlier version fills in what the
-  old prompt could not.** When AI writing is on, a Library rebuild asks the
-  model only for the sections the stored prose leaves empty, and rewrites
-  Keyboard, whose old bullet form does not carry over cleanly. Your written
-  sections are kept. The Library row says so.
+  old prompt could not.** When AI writing is on and the document itself was
+  built with it on, a Library rebuild asks the model only for the sections the
+  stored prose leaves empty, and rewrites Keyboard, whose old bullet form does
+  not carry over cleanly. A document built without AI writing is rebuilt
+  without it. Your written sections are kept. The Library row says so, and if
+  your AI allowance runs out part-way it says that too rather than reporting a
+  clean rebuild.
 
 ### Fixed
 
