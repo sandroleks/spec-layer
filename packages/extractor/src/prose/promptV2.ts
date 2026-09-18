@@ -397,7 +397,7 @@ export const EXEMPLAR_RESPONSE: ProseV2 = {
     { keys: ['Tab'], action: 'Moves focus into the field, then to the next control.' },
     { keys: ['Shift+Tab'], action: 'Moves focus back to the previous control.' },
     { keys: ['Enter'], action: 'Submits the form when the field is the last one.' },
-    { keys: ['Escape'], action: 'Clears an in-progress search.' },
+    { keys: ['Escape'], action: 'Clears an in-progress search when the field filters a list.' },
   ],
   pointer: [
     'Clicking or tapping the input row places the caret and focuses the field.',
