@@ -158,6 +158,23 @@ describe('buildProsePrompt (v9)', () => {
   });
 });
 
+describe('PROSE_KEY_INSTRUCTIONS for the usage sections', () => {
+  it('asks for situations, then alternatives in a fixed shape, then mirrored one-topic pairs', () => {
+    const p = buildProsePrompt(spec, new Set(['whenToUse', 'whenNotToUse', 'guidelines']));
+    // When to use: situations, never rules.
+    expect(p).toContain('each names a task or context, never a rule about how to use it');
+    // When not to use: a situation and the alternative, never a don't card.
+    expect(p).toContain('each phrased "For <situation>, use <alternative> instead"');
+    expect(p).toContain('never start with "Do not"');
+    // Guidelines: about using the component once chosen, one topic per pair,
+    // the don't mirrors the do, nothing repeated from When to use.
+    expect(p).toContain('about using this component once chosen');
+    expect(p).toContain('each pair covers one topic drawn from its options, states or text parts');
+    expect(p).toContain('the dont mirrors the do');
+    expect(p).toContain('no pair repeats a When to use or When not to use bullet');
+  });
+});
+
 describe('parseProseResponse (v2)', () => {
   it('reads a plain JSON object and adds the v marker', () => {
     const out = parseProseResponse(JSON.stringify({ overview: { lede: 'L.', body: ['B.'] }, pointer: ['P.'] }));
@@ -225,6 +242,16 @@ describe('PROSE_SYSTEM_PROMPT (v9)', () => {
   it('lists the keyboard vocabulary exactly', () => {
     expect(PROSE_SYSTEM_PROMPT).toContain(KEYBOARD_KEYS.join(', '));
   });
+
+  it('gives When to use and the guidelines different jobs and forbids saying a fact twice', () => {
+    // The first live Button run wrote the same three rules under When not to
+    // use and again as DON'T cards. The two sections answer different
+    // questions, and the prompt has to say which.
+    expect(PROSE_SYSTEM_PROMPT).toContain('Say each fact once.');
+    expect(PROSE_SYSTEM_PROMPT).toContain(
+      'When to use and When not to use are about choosing this component over another; the guidelines are about using it well once chosen.',
+    );
+  });
 });
 
 describe('the Text field exemplar', () => {
@@ -278,6 +305,25 @@ describe('the Text field exemplar', () => {
   it('names no component as an alternative, since the exemplar has no related components', () => {
     expect(spec.related).toEqual([]);
     for (const bullet of EXEMPLAR_RESPONSE.whenNotToUse!) expect(bullet).not.toMatch(/\b[A-Z][a-z]+ (field|picker|area)\b/);
+  });
+
+  it('phrases When not to use as a situation with an alternative, never as a rule', () => {
+    for (const bullet of EXEMPLAR_RESPONSE.whenNotToUse!) {
+      expect(bullet, bullet).toMatch(/^For .+, use .+ instead/);
+      expect(bullet, bullet).not.toMatch(/^Do not/);
+    }
+    for (const bullet of EXEMPLAR_RESPONSE.whenToUse!) expect(bullet, bullet).not.toMatch(/^Do not/);
+  });
+
+  it('makes every guideline pair a mirror on one topic', () => {
+    // One topic word per pair, present in both the do rule and the dont rule.
+    const topics = [/label/i, /validat|error/i, /size/i];
+    const pairs = EXEMPLAR_RESPONSE.guidelines!;
+    expect(pairs).toHaveLength(topics.length);
+    pairs.forEach((pair, i) => {
+      expect(pair.do!.rule, `do ${i}`).toMatch(topics[i]);
+      expect(pair.dont!.rule, `dont ${i}`).toMatch(topics[i]);
+    });
   });
 
   it('fits the output cap with room for a richer component and for thinking tokens', () => {
