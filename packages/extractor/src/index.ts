@@ -8,6 +8,7 @@ export * from './layout';
 export * from './rawValues';
 export * from './extract';
 export * from './foundation';
+export * from './foundationOverview';
 export * from './hash';
 export * from './diff';
 export * from './version';

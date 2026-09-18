@@ -1,6 +1,6 @@
 import { draftProse, draftGroupDescriptions } from '@spec-layer/extractor';
 import type {
-  IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, FoundationGroupBrief,
+  IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, GroupDraftInput, GroupDraft,
 } from '@spec-layer/extractor';
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
@@ -60,12 +60,11 @@ export async function generateProse(
  * cache store, so re-running an unchanged build is free.
  */
 export async function generateGroupDescriptions(
-  collectionName: string,
-  groups: FoundationGroupBrief[],
+  input: GroupDraftInput,
   auth: ProxyAuth,
   onQuota?: (q: ProxyQuota) => void,
-): Promise<Record<string, string>> {
-  return draftGroupDescriptions({ collectionName, groups }, {
+): Promise<GroupDraft> {
+  return draftGroupDescriptions(input, {
     apiKey: null,
     fetcher: window.fetch.bind(window),
     cacheStore,

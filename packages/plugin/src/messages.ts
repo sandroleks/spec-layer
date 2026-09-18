@@ -234,7 +234,11 @@ export type UiToMain =
    *  in one build can hold a folder of the same name. The main thread filters
    *  each unit's own keys out of it and stores them on that doc. */
   | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
-      groupDescriptions?: Record<string, string> }
+      groupDescriptions?: Record<string, string>;
+      /** One paragraph about the collection, present only when the build covers
+       *  exactly one collection. Stored on that doc's link; the foundation
+       *  frame draws it (Plan 3). */
+      collectionOverview?: string }
   | { type: 'updateFoundationDoc'; docId: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }

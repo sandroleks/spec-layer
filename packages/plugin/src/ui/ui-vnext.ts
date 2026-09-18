@@ -704,14 +704,14 @@ async function buildFoundations(): Promise<void> {
   foundationAiNote = '';
   setFoundationGenerating(true);
   let groupDescriptions: Record<string, string> | undefined;
+  let collectionOverview: string | undefined;
   const briefs = currentGroupBriefs();
   const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
 
   if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.groups.length) {
     try {
-      groupDescriptions = await generateGroupDescriptions(
-        briefs.collectionName,
-        briefs.groups,
+      const draft = await generateGroupDescriptions(
+        briefs,
         effectiveAuth(
           state.licenseKey,
           state.licenseInstanceId,
@@ -724,6 +724,8 @@ async function buildFoundations(): Promise<void> {
           paintAllowance();
         },
       );
+      groupDescriptions = draft.descriptions;
+      collectionOverview = foundationSelection.collections.length === 1 ? draft.overview ?? undefined : undefined;
       if (Object.keys(groupDescriptions).length === 0) {
         foundationAiNote = 'AI descriptions came back empty.';
       }
@@ -754,6 +756,7 @@ async function buildFoundations(): Promise<void> {
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions }
       : {}),
+    ...(collectionOverview ? { collectionOverview } : {}),
   });
 }
 

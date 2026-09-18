@@ -8,8 +8,9 @@
  */
 import {
   MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
+  collectionAliasCounts, collectionModeNames, compareCodeUnits,
   type FoundationSpec, type FoundationSelection, type FoundationMode,
-  type FoundationGroupBrief, type FoundationValue,
+  type FoundationGroupBrief, type FoundationValue, type GroupDraftInput,
 } from '@spec-layer/extractor';
 import { collectionIconKind, type FoundationIconKind } from '../foundationIcon';
 
@@ -308,14 +309,23 @@ export function hasColorGroups(spec: FoundationSpec, sel: FoundationSelection): 
  */
 export function groupBriefs(
   spec: FoundationSpec, sel: FoundationSelection,
-): { collectionName: string; groups: FoundationGroupBrief[] } {
+): GroupDraftInput {
   const groups: FoundationGroupBrief[] = [];
   const names: string[] = [];
+  const modeNames: string[] = [];
+  const aliasTotals = new Map<string, number>();
 
   for (const chosen of sel.collections) {
     const collection = spec.collections.find((c) => c.id === chosen.collectionId);
     if (!collection) continue;
     names.push(collection.name);
+
+    for (const modeName of collectionModeNames(spec, collection.id)) {
+      if (!modeNames.includes(modeName)) modeNames.push(modeName);
+    }
+    for (const { collection: target, count } of collectionAliasCounts(spec, collection.id)) {
+      aliasTotals.set(target, (aliasTotals.get(target) ?? 0) + count);
+    }
 
     const colors = collection.variables.filter((v) => v.resolvedType === 'COLOR');
     const byFolder = new Map<string, typeof colors>();
@@ -343,7 +353,11 @@ export function groupBriefs(
     });
   }
 
-  return { collectionName: names.join(', '), groups };
+  const aliasCounts = [...aliasTotals.entries()]
+    .map(([collection, count]) => ({ collection, count }))
+    .sort((a, b) => b.count - a.count || compareCodeUnits(a.collection, b.collection));
+
+  return { collectionName: names.join(', '), modeNames, aliasCounts, groups };
 }
 
 /** A short, honest rendering of one value for the prompt. */

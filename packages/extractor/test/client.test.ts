@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   draftProse, proseCacheKey, ProseProxyError,
-  groupProseRequest, groupCacheKey, GROUP_MAX_TOKENS,
+  groupProseRequest, groupCacheKey, GROUP_MAX_TOKENS, draftGroupDescriptions,
 } from '../src/prose/client';
 import type { IntermediateSpec } from '../src/extract';
 import type { RefIdentity } from '../src/tree';
@@ -197,6 +197,16 @@ describe('group request (v2)', () => {
     const pro = groupCacheKey(input, 'pro');
     const free = groupCacheKey(input, 'free');
     expect(pro.replace(':pro:', ':')).toBe(free.replace(':free:', ':'));
+  });
+  it('draftGroupDescriptions returns descriptions and the overview, caching the raw answer', async () => {
+    const raw = '{"overview":"Semantic colours.","c1|color/surface":"Surfaces."}';
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ content: [{ type: 'text', text: raw }] }), { status: 200 }));
+    const { get, set } = memStore();
+    const out = await draftGroupDescriptions(input, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set }, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
+    expect(out).toEqual({ overview: 'Semantic colours.', descriptions: { 'c1|color/surface': 'Surfaces.' } });
+  });
+  it('returns an empty draft with no groups or no identity', async () => {
+    expect(await draftGroupDescriptions({ ...input, groups: [] }, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: memStore() })).toEqual({ overview: null, descriptions: {} });
   });
 });
 

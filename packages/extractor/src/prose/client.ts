@@ -12,8 +12,10 @@ import { validateProseV2, type ProseV2Key, type ProseValidation } from './v2';
 import {
   FOUNDATION_SYSTEM_PROMPT,
   buildGroupPrompt,
-  parseGroupResponse,
+  parseGroupDraft,
   type FoundationGroupBrief,
+  type FoundationCollectionBrief,
+  type GroupDraft,
 } from './foundationPrompt';
 
 /**
@@ -310,12 +312,7 @@ export const GROUP_PROMPT_VERSION = 'v2';
 /** Cap on the group call. The proxy checks equality, not a ceiling. */
 export const GROUP_MAX_TOKENS = 1600;
 
-export interface GroupDraftInput {
-  collectionName: string;
-  /** Mode names of the collection; Task 5 sends them to the model. */
-  modeNames?: string[];
-  /** Variables aliasing into each other collection, by collection name. */
-  aliasCounts?: { collection: string; count: number }[];
+export interface GroupDraftInput extends FoundationCollectionBrief {
   groups: FoundationGroupBrief[];
 }
 
@@ -335,8 +332,8 @@ export interface GroupDraftInput {
 export function groupCacheKey(input: GroupDraftInput, tier: ProseTier): string {
   return `prose:${GROUP_PROMPT_VERSION}:groups:${tier}:${contentHash({
     collectionName: input.collectionName,
-    modeNames: input.modeNames ?? [],
-    aliasCounts: input.aliasCounts ?? [],
+    modeNames: input.modeNames,
+    aliasCounts: input.aliasCounts,
     groups: input.groups.map((g) => ({
       folder: g.folder,
       title: g.title,
@@ -365,7 +362,7 @@ export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
       system: FOUNDATION_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: buildGroupPrompt(input.collectionName, input.groups),
+        content: buildGroupPrompt(input, input.groups),
       }],
     },
   };
@@ -378,9 +375,9 @@ export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
 export async function draftGroupDescriptions(
   input: GroupDraftInput,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'bypassCache' | 'proxy'>,
-): Promise<Record<string, string>> {
-  if (!opts.apiKey && !opts.proxy) return {};
-  if (input.groups.length === 0) return {};
+): Promise<GroupDraft> {
+  if (!opts.apiKey && !opts.proxy) return { descriptions: {}, overview: null };
+  if (input.groups.length === 0) return { descriptions: {}, overview: null };
 
   const folders = input.groups.map((g) => g.folder);
   const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
@@ -390,12 +387,12 @@ export async function draftGroupDescriptions(
 
   if (!opts.bypassCache) {
     const hit = await opts.cacheStore.get(cacheKey);
-    if (hit) return parseGroupResponse(hit, folders);
+    if (hit) return parseGroupDraft(hit, folders);
   }
 
   const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
 
-  const parsed = parseGroupResponse(raw, folders);
+  const parsed = parseGroupDraft(raw, folders);
   // Cache the raw response, not the parsed map, so a later parser fix applies to
   // an existing entry instead of being stuck behind one.
   await opts.cacheStore.set(cacheKey, raw);

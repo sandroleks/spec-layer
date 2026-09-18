@@ -19,6 +19,13 @@ none of the reasoning above.
 
 ### Added
 
+- **Foundation group descriptions come with a collection overview.** The one
+  AI call that writes a line per colour group now also writes one paragraph
+  about the whole collection, from its name, its mode names, and how many of
+  its variables alias into each other collection, and nothing else. It is
+  stored on the document beside the group lines and kept across Update; the
+  foundation frame work shipping alongside draws it.
+
 - **The component description and documentation links reach the document.**
   Extraction now carries the root component's Figma description and its
   documentation link URLs, the one human-authored signal a file has, and both

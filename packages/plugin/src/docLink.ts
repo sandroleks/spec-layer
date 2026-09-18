@@ -315,6 +315,9 @@ export interface FoundationDocLink {
    * written before they existed.
    */
   groupDescriptions?: Record<string, string>;
+  /** AI-written paragraph about the whole collection. Stored for the same
+   *  reasons as `groupDescriptions`; absent on docs generated without it. */
+  collectionOverview?: string;
   generatedAt: number;
   pluginVersion: string;
 }
@@ -523,6 +526,8 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
     // Omitted rather than set to {} when there are none, so a doc written before
     // descriptions existed still serializes byte-identically.
     ...(descriptions ? { groupDescriptions: descriptions } : {}),
+    ...(typeof j.collectionOverview === 'string' && j.collectionOverview.trim()
+      ? { collectionOverview: j.collectionOverview } : {}),
     generatedAt: j.generatedAt as number,
     pluginVersion: j.pluginVersion as string,
   };

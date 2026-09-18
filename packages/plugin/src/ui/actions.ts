@@ -14,8 +14,8 @@ import {
 } from '@spec-layer/extractor';
 import type {
   SerializedNode, IntermediateSpec, ProseV2Key, ProseV2, ProxyQuota,
-  SerializedFoundation, FoundationSpec, FoundationSelection, FoundationGroupBrief,
-  FoundationScope, FoundationGuidelinesV5, YamlValue,
+  SerializedFoundation, FoundationSpec, FoundationSelection,
+  FoundationScope, FoundationGuidelinesV5, YamlValue, GroupDraftInput,
 } from '@spec-layer/extractor';
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
@@ -987,7 +987,7 @@ export function currentFoundationSelection(): FoundationSelection {
  * Lives here because the spec and selection do, and it keys the briefs the same
  * way the renderer keys its lookups.
  */
-export function currentGroupBriefs(): { collectionName: string; groups: FoundationGroupBrief[] } | null {
+export function currentGroupBriefs(): GroupDraftInput | null {
   if (!foundationSpec) return null;
   return groupBriefs(foundationSpec, foundationSelection);
 }
