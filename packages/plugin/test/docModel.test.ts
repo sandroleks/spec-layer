@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocModel, calloutLabels, measureKey, groupSections, frameCountFor, GROUPS, ALL_SECTIONS,
   KNOWN_SECTION_IDS,
-  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
-  stateChanges, type SectionId, type SectionBlock,
+  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine,
+  type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
 import { PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
@@ -90,19 +90,22 @@ describe('proseKeysForSections asks the v9 prompt for v2 keys', () => {
     expect([...proseKeysForSections(['keyboard', 'pointer', 'accessibility', 'contentConsiderations'])].sort())
       .toEqual(['content', 'keyboard', 'pointer', 'semantics']);
     expect([...proseKeysForSections(['variants', 'anatomy', 'properties', 'states'])].sort())
-      .toEqual(['anatomyParts', 'anatomySummary', 'properties', 'states', 'variantsGuide', 'variantsIntro']);
+      .toEqual(['anatomyParts', 'anatomySummary', 'properties', 'variantsGuide', 'variantsIntro']);
   });
   it('asks nothing for the deterministic sections', () => {
     expect(proseKeysForSections(['measurements', 'tokens', 'related'])).toEqual(new Set());
   });
 
-  it('covers every v2 key, so a new one cannot be added with no section asking for it', () => {
+  it('covers every v2 key but `states`, so a new one cannot be added with no section asking for it', () => {
     // A key nothing requests is never generated and never rendered, but the
     // prompt, the validator and the stored blob all carry it. This is the
     // check that says so at the moment the key is added rather than at the
-    // moment someone wonders why a section is always empty.
+    // moment someone wonders why a section is always empty. `states` is the
+    // one deliberate exception: the table that drew it was removed on
+    // 2026-09-19, and the key waits in the contract for 6.0.0 to retire it,
+    // because dropping it from the exemplar moves the prompt bytes.
     const requested = [...proseKeysForSections(ALL_SECTIONS.map((s) => s.id))].sort();
-    expect(requested).toEqual([...PROSE_V2_KEYS].sort());
+    expect(requested).toEqual([...PROSE_V2_KEYS].filter((k) => k !== 'states').sort());
   });
 });
 
@@ -112,17 +115,6 @@ describe('buildDocModel with prose', () => {
   it('names the component for people and keeps the raw name', () => {
     expect(model.componentName).toBe('checkbox');
     expect(model.displayName).toBe('Checkbox');
-  });
-
-  it('builds the facts strip from counts and the source file', () => {
-    expect(model.facts).toEqual({
-      items: [
-        { label: 'Properties', value: '3' }, { label: 'Variants', value: '4' }, { label: 'States', value: '2' },
-        { label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' },
-      ],
-      sourceFile: 'Design System',
-      links: ['https://example.com/checkbox'],
-    });
   });
 
   it('renders the AI overview as tagged prose, led by the designer description', () => {
@@ -166,13 +158,11 @@ describe('buildDocModel with prose', () => {
     ]);
   });
 
-  it('builds the states table from token deltas against the default variant', () => {
+  it('draws the states matrix with no table under it, and never asks for the states prose key', () => {
     const block = find(model, 'states');
     if (block?.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
-    expect(block.table).toEqual([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'checkboxItem', property: 'border', from: 'color/border', to: 'color/border-hover' }], whenItApplies: 'The pointer is over the box.' },
-    ]);
+    expect('table' in block).toBe(false);
+    expect(proseKeysForSections(['states'])).toEqual(new Set());
   });
 
   it('builds the keyboard table and the three bullet sections with their slots', () => {
@@ -188,7 +178,8 @@ describe('buildDocModel with prose', () => {
     expect(anatomy.parts.find((p) => p.name === 'Label')?.role).toBe('Names the option.');
     const measure = find(model, 'measurements');
     if (measure?.kind !== 'measure') throw new Error('expected measure');
-    expect(measure.tableRows).toEqual([['checkboxItem', 'fill', 'color/bg'], ['checkboxItem', 'border', 'color/border']]);
+    // Both bindings are colours, so the Measurements table lists neither.
+    expect(measure.tableRows).toEqual([]);
   });
 
   it('lists related components as a bullet list with no slot', () => {
@@ -276,41 +267,6 @@ describe('buildDocModel without prose', () => {
   it('labels the definition section "Overview"', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
     expect(model.sections[0].heading).toBe('Overview');
-  });
-});
-
-describe('factsFor', () => {
-  it('drops a count that is zero rather than claiming a zero', () => {
-    const plain = {
-      ...spec, props: [], variants: [], variantInstances: [], states: [], documentationLinks: [],
-      figmaFileName: undefined,
-    } as unknown as IntermediateSpec;
-    expect(factsFor(plain, false)).toEqual({
-      items: [{ label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' }],
-      sourceFile: null,
-      links: [],
-    });
-  });
-});
-
-describe('stateChanges', () => {
-  it('lists a token present on one side as from or to null', () => {
-    const only = {
-      ...spec,
-      tokens: [{ part: 'checkboxItem', path: 'Container/checkboxItem', property: 'shadow', ...ident('shadow/hover'), conditions: { State: ['Hover'] } }],
-    } as IntermediateSpec;
-    expect(stateChanges(only, false)).toEqual([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'checkboxItem', property: 'shadow', from: null, to: 'shadow/hover' }], whenItApplies: null },
-    ]);
-  });
-
-  it('has nothing to say about a component with no state axis', () => {
-    const noStates = {
-      ...spec,
-      variants: [{ prop: 'Style', values: ['Filled', 'Outlined'] }],
-    } as IntermediateSpec;
-    expect(stateChanges(noStates, false)).toEqual([]);
   });
 });
 
@@ -580,6 +536,29 @@ describe('measurements section', () => {
     ]);
   });
 
+  it('lists only dimensional bindings in the table: colour and typography stay in the Tokens section', () => {
+    const mixed = {
+      ...spec,
+      tokens: [
+        ...spec.tokens,
+        { part: 'Label', property: 'fill', conditions: {}, ...ident('color/text') },
+        { part: 'Label', property: 'typography', conditions: {}, ...ident('Body/M') },
+        { part: 'Container', property: 'border', conditions: {}, ...ident('color/border') },
+        { part: 'Container', property: 'border-radius', conditions: {}, ...ident('radius/sm') },
+        { part: 'Container', property: 'border-top-width', conditions: {}, ...ident('stroke/bold') },
+      ],
+    } as unknown as IntermediateSpec;
+    const model = buildDocModel(mixed, null, new Set(['measurements']), new Set(['1:2']));
+    const block = model.sections[0];
+    if (block.kind !== 'measure') throw new Error('expected measure block');
+    expect(block.tableRows).toEqual([
+      ['Container', 'padding', 'spacing/md'], ['Container', 'gap', 'spacing/sm'],
+      ['Container', 'border-radius', 'radius/sm'], ['Container', 'border-top-width', 'stroke/bold'],
+    ]);
+    // The diagram's own lookup is untouched: it never asks for a colour.
+    expect(block.tokens[measureKey('Container', 'border-radius')]).toBe('radius/sm');
+  });
+
   it('defaults measure views to all three when none are passed', () => {
     const model = buildDocModel(spec, null, new Set(['measurements']), new Set(['1:2']));
     const block = model.sections[0];
@@ -657,18 +636,6 @@ describe('states matrix section', () => {
     expect(block.rows[0].cells).toEqual(['1:2', '1:3']); // Primary Default/Hover ids
   });
 
-  it('carries the deterministic change table beside the matrix', () => {
-    const model = buildDocModel(spec, null, new Set(['states']), new Set(['1:2']));
-    const block = model.sections[0];
-    if (block.kind !== 'statesMatrix') throw new Error('expected statesMatrix');
-    expect(block.table).toEqual([
-      { name: 'Default', changes: [], whenItApplies: null },
-      {
-        name: 'Hover', whenItApplies: null,
-        changes: [{ part: 'Container', property: 'fill', from: 'color/rest', to: 'color/hover' }],
-      },
-    ]);
-  });
 
   it('drops the section entirely when no state axis exists', () => {
     const noStates = {

@@ -1,3 +1,4 @@
+import { categorize } from '@spec-layer/extractor';
 import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
@@ -25,7 +26,7 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'related',               label: 'Related components',   ai: false, group: 'usage' },
   { id: 'anatomy',               label: 'Anatomy',              ai: true,  group: 'specs' },
   { id: 'properties',            label: 'Properties',           ai: true,  group: 'specs' },
-  { id: 'states',                label: 'States',               ai: true,  group: 'specs' },
+  { id: 'states',                label: 'States',               ai: false, group: 'specs' },
   { id: 'measurements',          label: 'Measurements',         ai: false, group: 'specs' },
   { id: 'tokens',                label: 'Tokens',               ai: false, group: 'specs' },
   { id: 'keyboard',              label: 'Keyboard',             ai: true,  group: 'a11y'  },
@@ -84,7 +85,6 @@ const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseV2Key[]>> = {
   variants: ['variantsIntro', 'variantsGuide'],
   anatomy: ['anatomySummary', 'anatomyParts'],
   properties: ['properties'],
-  states: ['states'],
   keyboard: ['keyboard'],
   pointer: ['pointer'],
   accessibility: ['semantics'],
@@ -174,23 +174,12 @@ export interface DocModelOptions {
   aiEnabled?: boolean;
 }
 
-/** The counted facts a frame prints above its first section: what the spec
- *  holds, the file it came from, and any documentation links the component
- *  carries. Counts only, never adjectives. */
-export interface FactsStrip {
-  items: { label: string; value: string }[];
-  sourceFile: string | null;
-  links: string[];
-}
-
 /** A selected section that produced nothing, with why. `aiOff` means the
  *  writing lane was off; `nothingToShow` means the spec (or the AI) had
  *  nothing for it. Never a placeholder on canvas. */
 export interface OmittedSection { id: SectionId; label: string; reason: 'nothingToShow' | 'aiOff' }
 export interface PropertyRow { name: string; type: string; values: string; defaultValue: string; description: string | null }
 export interface KeyboardRow { keys: string[]; action: string }
-export interface StateChange { part: string; property: string; from: string | null; to: string | null }
-export interface StateTableRow { name: string; changes: StateChange[]; whenItApplies: string | null }
 export interface ColumnBlock { heading: string; items: Bullet[]; slot: 'whenToUse' | 'whenNotToUse' }
 
 /** The words the Usage header carries, and whose they are. The designer's own
@@ -219,7 +208,7 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
   | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both'; summary: string | null }
   | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[]; tableRows: string[][] }
-  | { id: SectionId; heading: string; kind: 'statesMatrix'; axisName: string; states: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean; table: StateTableRow[] }
+  | { id: SectionId; heading: string; kind: 'statesMatrix'; axisName: string; states: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean }
   | { id: SectionId; heading: string; kind: 'variantsMatrix'; intro: string | null; guide: { name: string; guidance: string }[]; columns: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean; note: string | null };
 
 export interface DocFrameModel {
@@ -227,7 +216,6 @@ export interface DocFrameModel {
   /** The component name as a reader sees it; `componentName` stays raw. */
   displayName: string;
   sections: SectionBlock[];
-  facts: FactsStrip;
   /** Selected sections that produced nothing, in section-map order. */
   omitted: OmittedSection[];
   /** Present and true only when the doc reveals hidden-by-default parts; the
@@ -296,52 +284,6 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
 const TYPE_WORDS: Record<string, string> = {
   variant: 'Variant', boolean: 'Boolean', text: 'Text', instanceSwap: 'Instance swap',
 };
-
-/** Counts only, never adjectives. The token count is of the rules the doc
- *  draws, so it matches the Tokens section. */
-export function factsFor(spec: IntermediateSpec, includeHidden: boolean): FactsStrip {
-  const parts = anatomyFor(spec.anatomy, { includeHidden }).filter((p) => p.depth === 0).length;
-  const tokens = tokensFor(spec.tokens, { includeHidden }).length;
-  const items = [
-    { label: 'Properties', value: String(spec.props.length) },
-    { label: 'Variants', value: String(spec.variantInstances.length) },
-    { label: 'States', value: String(spec.states.length) },
-    { label: 'Parts', value: String(parts) },
-    { label: 'Tokens', value: String(tokens) },
-  ].filter((i) => i.value !== '0');
-  return { items, sourceFile: spec.figmaFileName ?? null, links: [...spec.documentationLinks] };
-}
-
-/**
- * Per state column, the token bindings that differ from the default variant,
- * as part + property + from + to. Deterministic: this is the "What changes"
- * column of the States table. Returns [] when the component has no state axis.
- */
-export function stateChanges(spec: IntermediateSpec, includeHidden: boolean): StateTableRow[] {
-  const info = detectStateMatrix(spec.variants);
-  if (!info) return [];
-  const tokens = tokensFor(spec.tokens, { includeHidden });
-  const defaults = defaultAxisValues(spec);
-  const resolvedMap = (values: Record<string, string>): Map<string, { part: string; property: string; token: string }> => {
-    const m = new Map<string, { part: string; property: string; token: string }>();
-    for (const t of resolveTokensForVariant(tokens, values)) m.set(`${t.part} ${t.property}`, t);
-    return m;
-  };
-  const base = resolvedMap(defaults);
-  return info.columns.map((column) => {
-    const here = resolvedMap({ ...defaults, ...column.override });
-    const changes: StateChange[] = [];
-    const keys = new Set([...base.keys(), ...here.keys()]);
-    for (const key of keys) {
-      const from = base.get(key)?.token ?? null;
-      const to = here.get(key)?.token ?? null;
-      if (from === to) continue;
-      const src = here.get(key) ?? base.get(key)!;
-      changes.push({ part: src.part, property: src.property, from, to });
-    }
-    return { name: column.label, changes, whenItApplies: null };
-  });
-}
 
 /**
  * Hierarchical callout numbers for a depth-first anatomy list: "1", "2",
@@ -594,7 +536,11 @@ function buildSection(
       const tableRows: string[][] = [];
       for (const t of resolveTokensForVariant(tokensFor(spec.tokens, { includeHidden }), defaultAxisValues(spec))) {
         tokens[measureKey(t.part, t.property)] = t.token;
-        tableRows.push([t.part, t.property, t.token]);
+        // The table lists what the section is named for: gap, padding, radius,
+        // border width, min and max size. Colour and typography bindings are
+        // the Tokens section's; a fill listed under Measurements read as a
+        // mistake on canvas.
+        if (categorize(t.property) === 'measurements') tableRows.push([t.part, t.property, t.token]);
       }
       const rootPart = spec.variants.length > 0 ? 'Container' : cleanPartName(spec.name);
       // Each selected lens renders as its own focused mini-diagram. Preserve the
@@ -713,13 +659,12 @@ function buildSection(
       };
 
       const rows = rowValues.map((rv) => ({ label: rv ?? spec.name, cells: info.columns.map((c) => findCell(rv, c)) }));
-      // The deterministic table gets the AI "when it applies" line by state name.
-      const whenBy = new Map((prose?.states ?? []).map((s) => [s.name.trim().toLowerCase(), s.whenItApplies]));
-      const table = stateChanges(spec, includeHidden)
-        .map((r) => ({ ...r, whenItApplies: whenBy.get(r.name.trim().toLowerCase()) ?? null }));
+      // The matrix alone. A table of token deltas per state with an AI "when
+      // it applies" line sat under it until 2026-09-19; the `states` prose key
+      // it drew stays in the v2 contract, unrequested, until 6.0.0 retires it.
       return {
         id, heading: label, kind: 'statesMatrix',
-        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped, table,
+        axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped,
       };
     }
 
@@ -810,7 +755,6 @@ export function buildDocModel(
     componentName: spec.name,
     displayName: displayComponentName(spec.name),
     sections,
-    facts: factsFor(spec, options?.includeHidden === true),
     omitted,
     ...(options?.includeHidden ? { includeHidden: true as const } : {}),
   };

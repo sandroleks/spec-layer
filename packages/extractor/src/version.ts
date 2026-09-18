@@ -18,7 +18,10 @@
  * The value is an opaque identifier compared for equality. It is never ordered
  * with string comparison, so it does not need to look like semver.
  */
-// '3' (2026-09-17, Docs 2.0 Plan 1): description and documentationLinks
-// enter the canvas hash, canonical key order is by code unit rather than
-// locale, and the radius gap check honours every per-corner binding.
+// '3' (2026-09-17, Docs 2.0 Plan 1): the description enters the canvas hash,
+// canonical key order is by code unit rather than locale, and the radius gap
+// check honours every per-corner binding. Before this version shipped, the
+// facts strip was removed (2026-09-18), taking documentationLinks and the
+// file name back out of the projection; no second bump, since no '3' doc
+// exists outside development builds.
 export const EXTRACTOR_VERSION = '3';

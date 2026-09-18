@@ -26,12 +26,12 @@ none of the reasoning above.
   stored on the document beside the group lines and kept across Update; the
   foundation frame work shipping alongside draws it.
 
-- **The component description and documentation links reach the document.**
-  Extraction now carries the root component's Figma description and its
-  documentation link URLs, the one human-authored signal a file has, and both
-  are rendered, so both enter the canvas drift hash. Renaming the Figma file
-  now counts as drift, because the facts strip shows the file name. This is
-  the sanctioned
+- **The component description reaches the document.** Extraction now carries
+  the root component's Figma description and its documentation link URLs, the
+  one human-authored signal a file has. The description is drawn as the Usage
+  subtitle and the Overview body, so it enters the canvas drift hash. The
+  links and the Figma file name travel with the copied brief and the v5
+  context and are drawn nowhere, so they do not. This is the sanctioned
   `EXTRACTOR_VERSION` bump to `'3'`: every component doc built by `'2'` reads
   "Rebuild needed" once. The same bump makes canonical hashing order keys by
   code unit rather than locale, so a hash no longer depends on the machine
@@ -129,24 +129,32 @@ none of the reasoning above.
 
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
-  gains a facts strip, a When to use and When not to use pair, and Do and
-  Don't as paired cards. The header subtitle is the component's own Figma
+  gains a When to use and When not to use pair, and Do and Don't as paired
+  cards of equal height, the Do side on a faint green tint and the Don't side
+  on red. The header subtitle is the component's own Figma
   description when it has one and the AI opening line otherwise, so the
   designer's words lead the page and the AI lede stays in the Overview.
   Specifications gains a Properties table (replacing
-  Configuration) and a States table of token changes per state. Accessibility
+  Configuration). Accessibility
   gains a Keyboard table and a Pointer and touch section. Titles capitalise a
   lowercase component name, anatomy parts read as words, and user-authored
   matrix labels render as typed. Instances render at true size everywhere;
-  anatomy pins fan out with elbow leaders, and a component wider than the
-  column says "Shown at N%". Prose is capped at a readable measure and code
-  spans render without backticks. A section with nothing to show is omitted,
+  each anatomy part is outlined where it draws and its pin's leader ends on
+  that outline, pins fan out with elbow leaders when parts crowd, and a
+  component wider than the column says "Shown at N%". The Variants and
+  States matrices never shrink a preview: cells widen to the widest variant,
+  fewer sit per band, and a component too wide for any cell gets one axis
+  value per band with a slot spanning the column; the frame widens for the
+  widest variant first. Prose spans the content column, like the tables
+  beside it, and code spans render without backticks. A section with nothing to show is omitted,
   and the result message says which and why.
 
 - Measurements render the component at true size. A component wider than the
   column is scaled down to fit and the diagram says by how much. Dimension
   rails nudge overlapping labels apart instead of stacking them, and the
-  token bindings the diagram draws are listed in a table under it.
+  dimensional token bindings (gap, padding, radius, border width) are listed
+  in a table under it; colour and typography bindings stay in the Tokens
+  section.
 
 - **Empty sections are left out, and the result says so.** A section with
   nothing to show, or an AI section when AI writing is off, is not drawn. No

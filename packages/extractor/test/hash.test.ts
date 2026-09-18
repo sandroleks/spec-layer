@@ -17,10 +17,9 @@ describe('specHashProjection', () => {
     children: [{ id: '1:2', name: 'Label', type: 'TEXT', visible: true }],
   } as unknown as SerializedNode;
 
-  it('includes the description and documentation links because both are rendered', () => {
+  it('includes the description because the Overview and header render it', () => {
     const projection = specHashProjection(extract(node, { figmaFile: 'F' }));
     expect(projection.description).toBe('Primary action.');
-    expect(projection.documentationLinks).toEqual(['https://example.com/button']);
   });
 
   it('moves the hash when the description changes', () => {
@@ -29,18 +28,23 @@ describe('specHashProjection', () => {
     expect(a).not.toBe(b);
   });
 
-  it('includes the Figma file name, because the facts strip renders it', () => {
-    const projection = specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System' }));
-    expect(projection.figmaFileName).toBe('Design System');
-    // Absent rather than defaulted when the caller never knew the name.
-    expect('figmaFileName' in specHashProjection(extract(node, { figmaFile: 'F' }))).toBe(false);
+  it('leaves the Figma file name and documentation links out, because nothing on canvas draws them', () => {
+    // The facts strip that printed the file name and the links was removed
+    // on 2026-09-18. Hashed implies rendered: keeping either in the projection
+    // would flag a rename or a new link as drift the Update cannot show.
+    const named = specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System' }));
+    expect('figmaFileName' in named).toBe(false);
+    expect('documentationLinks' in named).toBe(false);
   });
 
-  it('moves the hash when the Figma file is renamed', () => {
+  it('keeps the hash still across a file rename and a documentation link change', () => {
     const named = contentHash(specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System' })));
     const renamed = contentHash(specHashProjection(extract(node, { figmaFile: 'F', figmaFileName: 'Design System (2026)' })));
     const unnamed = contentHash(specHashProjection(extract(node, { figmaFile: 'F' })));
-    expect(named).not.toBe(renamed);
-    expect(named).not.toBe(unnamed);
+    const unlinked = contentHash(specHashProjection(extract({ ...node, documentationLinks: [] } as unknown as SerializedNode, { figmaFile: 'F' })));
+    expect(renamed).toBe(named);
+    expect(unnamed).toBe(named);
+    expect(unlinked).toBe(named);
   });
+
 });

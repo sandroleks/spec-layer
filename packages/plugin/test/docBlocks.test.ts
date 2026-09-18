@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
+import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import {
-  buildFactsStrip, buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, measuredParagraph,
+  buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
+  buildPropertiesTable, columnParagraph,
 } from '../src/docBlocks';
-import { applyThemeToKit, PROSE_MEASURE } from '../src/frameKit';
+import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { readCanvasProse, type ProseNodeLike } from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
@@ -15,26 +15,16 @@ describe('docBlocks', () => {
   beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
   afterEach(() => uninstallFakeFigma());
 
-  it('draws the facts strip as label over value pairs plus the source file and links', () => {
-    const strip = buildFactsStrip({
-      items: [{ label: 'Properties', value: '4' }, { label: 'States', value: '2' }],
-      sourceFile: 'Design System', links: ['https://example.com/checkbox'],
-    }, 768) as unknown as FakeFrame;
-    expect(strip.textChars()).toEqual(['PROPERTIES', '4', 'STATES', '2', 'Design System', 'https://example.com/checkbox']);
-  });
-
-  it('draws nothing for an empty facts strip', () => {
-    expect(buildFactsStrip({ items: [], sourceFile: null, links: [] }, 768)).toBeNull();
-  });
-
-  it('caps a paragraph at the prose measure', () => {
-    const p = measuredParagraph('Some text.', 768) as unknown as FakeFrame;
-    expect(p.width).toBe(PROSE_MEASURE);
-    const narrow = measuredParagraph('Some text.', 500) as unknown as FakeFrame;
+  it('lets a paragraph fill the content column, whatever its width', () => {
+    // Decided 2026-09-18: prose spans the column like the tables under it. The
+    // old 640px readable measure left a visible empty margin on the right.
+    const p = columnParagraph('Some text.', 768) as unknown as FakeFrame;
+    expect(p.width).toBe(768);
+    const narrow = columnParagraph('Some text.', 500) as unknown as FakeFrame;
     expect(narrow.width).toBe(500);
   });
 
-  it('round-trips two columns, pairs, keyboard, properties and states through the canvas reader', () => {
+  it('round-trips two columns, pairs, keyboard and properties through the canvas reader', () => {
     const doc = new FakeFrame();
     doc.appendChild(buildTwoColumns(
       { heading: 'When to use', items: [{ runs: parseRuns('Many options.'), text: 'Many options.' }], slot: 'whenToUse' },
@@ -50,10 +40,6 @@ describe('docBlocks', () => {
       { name: 'showLabel', type: 'Boolean', values: 'true / false', defaultValue: 'true', description: 'Hides the label.' },
       { name: 'label', type: 'Text', values: '', defaultValue: 'Label', description: null },
     ], true, 768));
-    doc.appendChild(buildStatesTable([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'Box', property: 'border', from: 'color/a', to: 'color/b' }], whenItApplies: 'Pointer over it.' },
-    ], 768));
 
     expect(readCanvasProse(asNode(doc))).toEqual({
       whenToUse: ['Many options.'],
@@ -64,24 +50,54 @@ describe('docBlocks', () => {
       ],
       keyboard: [{ keys: ['Enter', 'Space'], action: 'Toggles it.' }, { keys: ['Shift+Tab'], action: 'Moves focus back.' }],
       properties: [{ name: 'showLabel', description: 'Hides the label.' }],
-      states: [{ name: 'Hover', whenItApplies: 'Pointer over it.' }],
     });
   });
 
-  it('writes the states table changes as chips and says when nothing changes', () => {
-    const table = buildStatesTable([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'Box', property: 'border', from: 'color/a', to: 'color/b' }, { part: 'Box', property: 'shadow', from: null, to: 'shadow/1' }], whenItApplies: null },
-    ], 768) as unknown as FakeFrame;
-    const chars = table.textChars();
-    expect(chars).toContain('No token changes');
-    expect(chars).toContain('Box border: color/a → color/b');
-    expect(chars).toContain('Box shadow: added shadow/1');
+  it('gives the properties table a Values column wide enough for a two-word option', () => {
+    const table = buildPropertiesTable([
+      { name: 'Style', type: 'Variant', values: 'Default · Color Background · Status', defaultValue: 'Default', description: 'Sets the treatment.' },
+    ], true, 768) as unknown as FakeFrame;
+    const cells = (table.children[0] as FakeFrame).children as FakeFrame[];
+    // Four equal fixed columns at 55% gave Values 105px, and "Color
+    // Background" broke mid-word. Values now gets the widest fixed share.
+    expect(cells[2].width).toBeGreaterThanOrEqual(160);
+    expect(cells[2].width).toBeGreaterThan(cells[0].width);
+    expect(cells[4].layoutSizingHorizontal).toBe('FILL');
   });
 
   it('omits the description column when no row has one', () => {
     const table = buildPropertiesTable([{ name: 'a', type: 'Text', values: '', defaultValue: '', description: null }], false, 768) as unknown as FakeFrame;
     expect(table.textChars()).toEqual(['PROPERTY', 'TYPE', 'VALUES', 'DEFAULT', 'a', 'Text', '', '']);
+  });
+
+  it("tints Do cards green and Don't cards red, with the label in the matching ink", () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: 'It confuses screen readers.' } },
+    ], 768) as unknown as FakeFrame;
+    const [doCard, dontCard] = (grid.children[0] as FakeFrame).children as FakeFrame[];
+    expect(doCard.fills).toEqual(solidFill(palette.doTint));
+    expect(doCard.strokes).toEqual(solidFill(palette.doBorder));
+    expect((doCard.children[0] as FakeText).fills).toEqual(solidFill(palette.doInk));
+    expect(dontCard.fills).toEqual(solidFill(palette.dontTint));
+    expect(dontCard.strokes).toEqual(solidFill(palette.dontBorder));
+    expect((dontCard.children[0] as FakeText).fills).toEqual(solidFill(palette.dontInk));
+    // Semantic, not brand: the inks are fixed and are neither the theme
+    // accent nor the heading ink the labels used before.
+    expect(palette.doInk).not.toEqual(palette.accent);
+    expect(palette.dontInk).not.toEqual(palette.heading);
+  });
+
+  it('stretches both cards of a pair to one height, however long each reason runs', () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'Short.' }, dont: { rule: 'Do not hide the label.', reason: 'A much longer reason that wraps onto several lines on canvas and makes this card taller.' } },
+    ], 768) as unknown as FakeFrame;
+    const row = grid.children[0] as FakeFrame;
+    const [doCard, dontCard] = row.children as FakeFrame[];
+    // The row hugs the taller card; each card fills the row's height, so the
+    // shorter card grows to match instead of ending where its text ends.
+    expect(row.counterAxisSizingMode).toBe('AUTO');
+    expect(doCard.layoutSizingVertical).toBe('FILL');
+    expect(dontCard.layoutSizingVertical).toBe('FILL');
   });
 
   it('lets the guideline grid hug its height instead of clipping to a 1px placeholder', () => {

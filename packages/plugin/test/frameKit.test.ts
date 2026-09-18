@@ -285,7 +285,10 @@ describe('buildSlot', () => {
 });
 
 describe('PROSE_MEASURE', () => {
-  it('is the one readable measure both frame families use', () => {
+  it('is the readable measure the foundation frame keeps for its notes', () => {
+    // Component prose fills its column since 2026-09-18; the foundation
+    // frame's group and contrast notes are 11px muted text on a card that
+    // can widen to 1440px, so they keep a measure.
     expect(PROSE_MEASURE).toBe(640);
   });
 });

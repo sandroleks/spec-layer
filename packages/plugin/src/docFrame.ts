@@ -3,7 +3,7 @@
  * docFrame.ts — the component document: three frames, in reading order.
  *
  * This module is the dispatch: it owns the frame chrome (card, header band,
- * facts strip, content column) and routes every block kind the doc model
+ * content column) and routes every block kind the doc model
  * emits to the module that draws it. The blocks themselves live in
  * docBlocks.ts, anatomySection.ts, measureSection.ts and statesSection.ts;
  * the text and table primitives live in docText.ts. What stays here is the
@@ -16,15 +16,14 @@ import { parseRuns, groupSections } from './ui/docModel';
 import type {
   DocFrameModel,
   DocGroup,
-  FactsStrip,
   SectionBlock,
   VariantRow,
 } from './ui/docModel';
 import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 import {
-  palette, solidFill, vstack, hstack, makeText, buildSlot, font,
-  headingFont, radius, applyThemeToKit, PROSE_MEASURE,
+  palette, solidFill, vstack, hstack, makeText, buildSlot, font, SLOT_PAD,
+  headingFont, radius, applyThemeToKit,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
@@ -35,8 +34,8 @@ import {
 } from './docText';
 import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
 import {
-  buildFactsStrip, buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, measuredParagraph,
+  buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
+  buildPropertiesTable, columnParagraph,
 } from './docBlocks';
 import { displayPartName } from './ui/displayNames';
 import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
@@ -69,12 +68,12 @@ let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 // owns; an Update reads it back instead of regenerating it.
 // ---------------------------------------------------------------------------
 
-/** Render markdown into a tagged slot container at the prose measure. The
- *  first paragraph of an Overview is the lede and sets one step larger. */
+/** Render markdown into a tagged slot container spanning the content column.
+ *  The first paragraph of an Overview is the lede and sets one step larger. */
 function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, lede = false): FrameNode {
   const holder = vstack(spacing);
   if (slot) tagSlot(holder, slot);
-  holder.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+  holder.resize(CONTENT_WIDTH, 1);
   holder.primaryAxisSizingMode = 'AUTO';
   buildProse(text).forEach((node, i) => {
     holder.appendChild(node);
@@ -84,12 +83,12 @@ function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, l
   return holder;
 }
 
-/** One paragraph at the prose measure, with the slot tag on the TEXT node
+/** One paragraph spanning the column, with the slot tag on the TEXT node
  *  itself. A single-string slot (anatomySummary, definitionLead) is read
  *  straight off the node it is tagged on, so tagging a container would read
  *  back as nothing. */
 function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNode {
-  const box = measuredParagraph(text, CONTENT_WIDTH, size);
+  const box = columnParagraph(text, CONTENT_WIDTH, size);
   const node = box.children[0];
   if (node) tagSlot(node, slot);
   return box;
@@ -355,7 +354,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'bullets': {
       const list = vstack(bodySpacing);
       if (section.slot) tagSlot(list, section.slot);
-      list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+      list.resize(CONTENT_WIDTH, 1);
       list.primaryAxisSizingMode = 'AUTO';
       for (const b of section.items) {
         const row = makeBulletRow(b);
@@ -487,14 +486,13 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         note: section.capped ? 'Showing the first 4 values. Other rows share the same state behaviour.' : null,
       }, CONTENT_WIDTH, includeHidden);
       fill(grid);
-      if (section.table.length) fill(buildStatesTable(section.table, CONTENT_WIDTH));
       break;
     }
     case 'variantsMatrix': {
       if (section.intro) body.appendChild(buildProseSlot(section.intro, 'variantsIntro', bodySpacing));
       if (section.guide.length) {
         const list = vstack(bodySpacing);
-        list.resize(Math.min(PROSE_MEASURE, CONTENT_WIDTH), 1);
+        list.resize(CONTENT_WIDTH, 1);
         list.primaryAxisSizingMode = 'AUTO';
         for (const g of section.guide) {
           // One tagged row per option, keyed by the option value: the guide is
@@ -623,23 +621,46 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
   const drawn = model.sections.find(
     (s): s is Extract<SectionBlock, { kind: 'anatomy' | 'measure' }> => s.kind === 'anatomy' || s.kind === 'measure',
   );
-  if (!drawn) return;
-  try {
-    const comp = await figma.getNodeByIdAsync(drawn.componentId);
-    if (comp && 'width' in comp) {
-      const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
-      CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
-      CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
-    }
-  } catch { /* keep the token-fitted width */ }
+  if (drawn) {
+    try {
+      const comp = await figma.getNodeByIdAsync(drawn.componentId);
+      if (comp && 'width' in comp) {
+        const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
+        CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+        CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+      }
+    } catch { /* keep the token-fitted width */ }
+  }
+
+  // The widest variant in a matrix widens the frame too. The matrices never
+  // scale a preview; their last resort is one slot spanning the column, so
+  // the column has to hold the widest variant plus the slot's padding. The
+  // default variant the anatomy fitted may be narrower than, say, Large.
+  const cellIds = new Set<string>();
+  for (const s of model.sections) {
+    if (s.kind !== 'statesMatrix' && s.kind !== 'variantsMatrix') continue;
+    for (const row of s.rows) for (const id of row.cells) if (id) cellIds.add(id);
+  }
+  let widestCell = 0;
+  for (const id of cellIds) {
+    try {
+      const node = await figma.getNodeByIdAsync(id);
+      if (node && 'width' in node) widestCell = Math.max(widestCell, (node as SceneNode).width);
+    } catch { /* an unknown width widens nothing */ }
+  }
+  if (widestCell > 0) {
+    const needed = widestCell + SLOT_PAD * 2 + PAD_X * 2;
+    CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+    CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+  }
 }
 
-/** Build one group's frame: root card, header band, facts strip (Usage only),
- *  content column. Layer names carry the reading order. */
+/** Build one group's frame: root card, header band, content column. Layer
+ *  names carry the reading order. */
 async function buildGroupFrame(
   group: DocGroup, index: number, title: string, subtitle: string | null,
   subtitleSource: 'ai' | 'description' | null, logoBase64: string | null,
-  includeHidden: boolean, pill: PillState | null, facts: FactsStrip | null,
+  includeHidden: boolean, pill: PillState | null,
 ): Promise<FrameNode> {
   const frame = figma.createFrame();
   frame.name = `${index + 1} ${group.label}`;
@@ -661,17 +682,6 @@ async function buildGroupFrame(
     const header = await buildHeader(title, subtitle, subtitleSource, group.label, logoBase64, pill);
     frame.appendChild(header);
     header.layoutSizingHorizontal = 'FILL';
-
-    if (facts) {
-      const strip = buildFactsStrip(facts, CONTENT_WIDTH);
-      if (strip) {
-        const wrap = vstack(0);
-        wrap.paddingLeft = wrap.paddingRight = PAD_X;
-        wrap.appendChild(strip);
-        frame.appendChild(wrap);
-        wrap.layoutSizingHorizontal = 'FILL';
-      }
-    }
 
     const content = vstack(40);
     content.paddingTop = 48;
@@ -764,7 +774,7 @@ export async function buildDocFrames(
       const isUsage = group.id === 'usage';
       frames.push(await buildGroupFrame(
         group, i, model.displayName, isUsage ? subtitle : null, isUsage ? subtitleSource : null,
-        logoBase64 ?? null, includeHidden, pill, isUsage ? model.facts : null,
+        logoBase64 ?? null, includeHidden, pill,
       ));
     }
 

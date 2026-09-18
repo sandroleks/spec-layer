@@ -6,19 +6,19 @@
  * slot and key contract). Deterministic text is left untagged so selfHash
  * covers it and an Update rebuilds it.
  */
-import type { FactsStrip, ColumnBlock, KeyboardRow, PropertyRow, StateTableRow } from './ui/docModel';
+import type { ColumnBlock, KeyboardRow, PropertyRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
-import { palette, solidFill, vstack, hstack, makeText, radius, headingFont, PROSE_MEASURE } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
 import { tagSlot, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
 import { SLOT_PART_KEY } from './canvasProse';
 
 const KEY_JOINER = ' + ';
 
-/** A paragraph capped at the readable measure. */
-export function measuredParagraph(text: string, contentWidth: number, size = 15): FrameNode {
+/** A paragraph spanning the content column, like the tables around it. */
+export function columnParagraph(text: string, contentWidth: number, size = 15): FrameNode {
   const box = vstack(0);
-  box.resize(Math.min(PROSE_MEASURE, contentWidth), 1);
+  box.resize(contentWidth, 1);
   box.primaryAxisSizingMode = 'AUTO';
   const runs = parseRuns(text);
   const node = makeText(runs.map((r) => r.text).join(''), 'Regular', size, palette.body, 155);
@@ -40,42 +40,6 @@ export function chip(text: string, tone: 'default' | 'muted' = 'default'): Frame
   t.textAutoResize = 'WIDTH_AND_HEIGHT';
   c.appendChild(t);
   return c;
-}
-
-/** Label-over-value pairs, the source file name right-aligned, links after it. */
-export function buildFactsStrip(facts: FactsStrip, contentWidth: number): FrameNode | null {
-  if (!facts.items.length && !facts.sourceFile && !facts.links.length) return null;
-  const strip = hstack(32);
-  strip.name = 'Facts';
-  strip.counterAxisAlignItems = 'MIN';
-  strip.paddingTop = 20;
-  strip.paddingBottom = 20;
-  strip.strokes = solidFill(palette.divider);
-  strip.strokeBottomWeight = 1;
-  strip.strokeTopWeight = 0;
-  strip.strokeLeftWeight = 0;
-  strip.strokeRightWeight = 0;
-  strip.resize(contentWidth, 1);
-  strip.counterAxisSizingMode = 'AUTO';
-  for (const item of facts.items) {
-    const pair = vstack(4);
-    pair.appendChild(makeText(item.label.toUpperCase(), 'Medium', 11, palette.muted, 130, 6));
-    pair.appendChild(makeText(item.value, 'Medium', 15, palette.heading, 130));
-    strip.appendChild(pair);
-  }
-  const spacer = vstack(0);
-  strip.appendChild(spacer);
-  spacer.layoutSizingHorizontal = 'FILL';
-  const source = vstack(4);
-  source.counterAxisAlignItems = 'MAX';
-  if (facts.sourceFile) source.appendChild(makeText(facts.sourceFile, 'Regular', 12, palette.muted, 140));
-  for (const url of facts.links) {
-    const link = makeText(url, 'Regular', 12, palette.accent, 140);
-    link.hyperlink = { type: 'URL', value: url };
-    source.appendChild(link);
-  }
-  if (source.children.length) strip.appendChild(source);
-  return strip;
 }
 
 function columnHeading(text: string): TextNode {
@@ -108,16 +72,20 @@ export function buildTwoColumns(left: ColumnBlock, right: ColumnBlock, contentWi
   return row;
 }
 
+/** A Do card sits on a faint green tint with a green border and label; a
+ *  Don't card the same in red. The tints say which half is which before the
+ *  label is read, and stay legible because the rule and reason keep the
+ *  document's own heading and body inks. */
 function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNode {
   const box = vstack(8);
   box.paddingTop = box.paddingBottom = box.paddingLeft = box.paddingRight = 16;
   box.cornerRadius = radius(8);
-  box.strokes = solidFill(palette.border);
   box.strokeWeight = 1;
-  box.fills = solidFill(palette.bg);
   if (!card) { box.fills = []; box.strokes = []; return box; } // an empty half keeps the grid
+  box.fills = solidFill(kind === 'do' ? palette.doTint : palette.dontTint);
+  box.strokes = solidFill(kind === 'do' ? palette.doBorder : palette.dontBorder);
   tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
-  const label = makeText(kind === 'do' ? 'DO' : "DON'T", 'Medium', 11, kind === 'do' ? palette.accent : palette.heading, 130, 6);
+  const label = makeText(kind === 'do' ? 'DO' : "DON'T", 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
   box.appendChild(label);
   const ruleRuns = parseRuns(card.rule);
   const rule = makeText(ruleRuns.map((r) => r.text).join(''), 'Bold', 15, palette.heading, 145);
@@ -133,7 +101,9 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
   return box;
 }
 
-/** Paired Do and Don't cards, one pair per row. The pair row carries its index. */
+/** Paired Do and Don't cards, one pair per row. The pair row carries its
+ *  index. The row hugs the taller card and both cards fill its height, so a
+ *  pair always reads as two equal blocks however long each reason runs. */
 export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number): FrameNode {
   const grid = vstack(16);
   grid.resize(contentWidth, 1);
@@ -149,6 +119,7 @@ export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number
       const c = guidelineCard(card, kind);
       row.appendChild(c);
       c.layoutSizingHorizontal = 'FILL';
+      c.layoutSizingVertical = 'FILL';
     }
   });
   return grid;
@@ -224,8 +195,11 @@ export function buildKeyboardTable(rows: KeyboardRow[], contentWidth: number): F
  *  Only the description cell is editorial; it carries the property name. */
 export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boolean, contentWidth: number): FrameNode {
   const labels = hasDescriptions ? ['Property', 'Type', 'Values', 'Default', 'Description'] : ['Property', 'Type', 'Values', 'Default'];
-  const fixed = Math.floor((contentWidth * (hasDescriptions ? 0.55 : 0.7)) / (labels.length - 1));
-  const widths: (number | 'grow')[] = labels.map((_, i) => (i === labels.length - 1 ? 'grow' : fixed));
+  // Shares of the column for the fixed cells; the last column grows. Values
+  // takes the widest fixed share: when four fixed columns split 55% evenly,
+  // Values had 105px and an option such as "Color Background" broke mid-word.
+  const shares = hasDescriptions ? [0.16, 0.12, 0.22, 0.13] : [0.22, 0.16, 0.32];
+  const widths: (number | 'grow')[] = [...shares.map((share) => Math.floor(contentWidth * share)), 'grow'];
   const table = tableShell();
   const head = headerRow(labels, widths);
   table.appendChild(head);
@@ -247,40 +221,6 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
       cells.push(desc);
     }
     cells.forEach((cell, i) => { row.appendChild(cell); applyColWidth(cell, widths[i]); });
-  }
-  return table;
-}
-
-function changeText(c: { part: string; property: string; from: string | null; to: string | null }): string {
-  if (c.from && c.to) return `${c.part} ${c.property}: ${c.from} → ${c.to}`;
-  if (c.to) return `${c.part} ${c.property}: added ${c.to}`;
-  return `${c.part} ${c.property}: removed ${c.from ?? ''}`;
-}
-
-/** State, What changes (chips from token deltas), When it applies (editorial). */
-export function buildStatesTable(rows: StateTableRow[], contentWidth: number): FrameNode {
-  const widths: (number | 'grow')[] = [Math.floor(contentWidth * 0.18), Math.floor(contentWidth * 0.47), 'grow'];
-  const table = tableShell();
-  const head = headerRow(['State', 'What changes', 'When it applies'], widths);
-  table.appendChild(head);
-  head.layoutSizingHorizontal = 'FILL';
-  for (const r of rows) {
-    const row = dataRow();
-    table.appendChild(row);
-    row.layoutSizingHorizontal = 'FILL';
-    const name = makeCell(r.name, 'Medium', 14, palette.heading);
-    row.appendChild(name);
-    applyColWidth(name, widths[0]);
-    const changes = r.changes.length
-      ? chipCell(r.changes.map((c) => chip(changeText(c))))
-      : makeCell('No token changes', 'Regular', 13, palette.muted);
-    row.appendChild(changes);
-    applyColWidth(changes, widths[1]);
-    const when = makeCell(r.whenItApplies ?? '', 'Regular', 14, palette.body);
-    tagSlot(when, 'stateMeaning');
-    when.setPluginData(SLOT_PART_KEY, r.name);
-    row.appendChild(when);
-    applyColWidth(when, 'grow');
   }
   return table;
 }

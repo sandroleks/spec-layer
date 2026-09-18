@@ -113,12 +113,19 @@ function fakeInstance(box: FakeBox, id = 'inst1') {
  *  a component that instances as `inst`, and resolves each `I<inst.id>;<partId>`
  *  address (exactly how the module builds a part's node id) to a node with the
  *  given absolute box. A part id with no entry resolves to null, as it would
- *  for a part the instance genuinely has no matching layer for. */
-function installAnatomyFigma(inst: ReturnType<typeof fakeInstance>, partBoxes: Record<string, FakeBox>): void {
+ *  for a part the instance genuinely has no matching layer for. A part listed
+ *  in `renderBoxes` also carries `absoluteRenderBounds` (null models a layer
+ *  Figma has not rendered); the others leave the field undefined. */
+function installAnatomyFigma(
+  inst: ReturnType<typeof fakeInstance>, partBoxes: Record<string, FakeBox>,
+  renderBoxes: Record<string, FakeBox | null> = {},
+): void {
   const component = { type: 'COMPONENT', createInstance: () => inst };
-  const partNodes: Record<string, { absoluteBoundingBox: FakeBox }> = {};
+  const partNodes: Record<string, { absoluteBoundingBox: FakeBox; absoluteRenderBounds?: FakeBox | null }> = {};
   for (const [partId, box] of Object.entries(partBoxes)) {
-    partNodes[`I${inst.id};${partId}`] = { absoluteBoundingBox: box };
+    partNodes[`I${inst.id};${partId}`] = partId in renderBoxes
+      ? { absoluteBoundingBox: box, absoluteRenderBounds: renderBoxes[partId] }
+      : { absoluteBoundingBox: box };
   }
   installFakeFigma({
     getNodeByIdAsync: async (id: string) => (id === COMPONENT_ID ? component : (partNodes[id] ?? null)),
@@ -182,14 +189,14 @@ describe('buildAnatomyDiagram', () => {
     expect(legend.layoutSizingHorizontal).toBe('FILL'); // ...but the legend can fill it
   });
 
-  it('fans crowded top-row pins apart and connects each to its part with a three-segment elbow leader', async () => {
+  it('outlines every part and fans crowded top-row pins apart, each leader ending on its outline', async () => {
     // Instance sits at an arbitrary canvas offset, to prove normalization
     // subtracts the instance's own x/y rather than assuming it starts at 0.
     const inst = fakeInstance({ x: 500, y: 300, width: 200, height: 100 });
     installAnatomyFigma(inst, {
-      p1: { x: 540, y: 340, width: 20, height: 20 }, // centre x=50, y=50 -> nx .25, ny .5, ty .4
-      p2: { x: 560, y: 340, width: 20, height: 20 }, // centre x=70, y=50 -> nx .35, ny .5, ty .4
-    });
+      p1: { x: 540, y: 340, width: 20, height: 20 }, // x .2-.3, y .4-.6 -> centre x 50
+      p2: { x: 560, y: 340, width: 20, height: 20 }, // x .3-.4, y .4-.6 -> centre x 70
+    }, { p2: null }); // a null render box falls back to the layout box
     await applyThemeToKit(resolveTheme(emptyBrandTheme()));
 
     const parts = [part('1', 'p1'), part('2', 'p2')];
@@ -200,7 +207,7 @@ describe('buildAnatomyDiagram', () => {
     expect(inst.rescale).not.toHaveBeenCalled();
 
     // Both parts share the same y (a horizontal row) -> pins go on top, spread
-    // along x. Natural centres [50, 70] (nx * 200) are 20px apart, closer than
+    // along x. Natural centres [50, 70] (cx * 200) are 20px apart, closer than
     // pinSize+gap (24), so both fan out: [48, 72] (see fanOutPins' own tests).
     const box = (result!.card as unknown as FakeFrame).children[0] as FakeFrame;
     expect(box.children[0]).toBe(inst);
@@ -216,20 +223,91 @@ describe('buildAnatomyDiagram', () => {
       return { x: f.x, y: f.y };
     };
 
-    // Pin '1': anchored at x=50 (its part's centre), fanned to pin centre 48 ->
-    // the elbow's three segments (out from the part, along the rail, in to the
-    // pin), then the connect dot, then the pin badge itself.
-    expect(rect(1)).toEqual({ x: 50, y: 42, width: 1, height: 50 }); // out, to the rail
-    expect(rect(2)).toEqual({ x: 48, y: 42, width: 2, height: 1 }); // along the rail
-    expect(rect(3)).toEqual({ x: 48, y: 18, width: 1, height: 24 }); // in, to the pin
-    expect(point(4)).toEqual({ x: 47, y: 89 }); // connect dot at the part anchor
-    expect(point(5)).toEqual({ x: 39, y: 0 }); // pin badge
+    // Outlines first, one per part, 2px outside the part's own box, drawn
+    // under the leaders and pins. The instance sits at y = ZONE (52).
+    expect((box.children[1] as FakeFrame).name).toBe('Part outline');
+    expect(rect(1)).toEqual({ x: 38, y: 90, width: 24, height: 24 });
+    expect(rect(2)).toEqual({ x: 58, y: 90, width: 24, height: 24 });
+    expect((box.children[1] as FakeFrame).fills).toEqual([]);
+
+    // Pin '1': the leader leaves the outline's top edge (y 90) at the part's
+    // centre (x 50), runs up to the rail, along it to the fanned pin centre
+    // 48, and up into the pin. No connect dot: the outline is the target.
+    expect(rect(3)).toEqual({ x: 50, y: 42, width: 1, height: 48 }); // out, to the rail
+    expect(rect(4)).toEqual({ x: 48, y: 42, width: 2, height: 1 }); // along the rail
+    expect(rect(5)).toEqual({ x: 48, y: 18, width: 1, height: 24 }); // in, to the pin
+    expect(point(6)).toEqual({ x: 39, y: 0 }); // pin badge
 
     // Pin '2': anchored at x=70, fanned to pin centre 72.
-    expect(rect(6)).toEqual({ x: 70, y: 42, width: 1, height: 50 });
-    expect(rect(7)).toEqual({ x: 70, y: 42, width: 2, height: 1 });
-    expect(rect(8)).toEqual({ x: 72, y: 18, width: 1, height: 24 });
-    expect(point(9)).toEqual({ x: 67, y: 89 });
+    expect(rect(7)).toEqual({ x: 70, y: 42, width: 1, height: 48 });
+    expect(rect(8)).toEqual({ x: 70, y: 42, width: 2, height: 1 });
+    expect(rect(9)).toEqual({ x: 72, y: 18, width: 1, height: 24 });
     expect(point(10)).toEqual({ x: 63, y: 0 });
+    expect(box.children).toHaveLength(11);
+  });
+
+  it('outlines and points at what a part draws, not its layout box, when Figma reports render bounds', async () => {
+    // A fill-width text layer: the layout box spans most of the instance, the
+    // glyphs sit in its left third. The old anchor (layout-box centre, x 100)
+    // landed on empty space to the right of the word.
+    const inst = fakeInstance({ x: 0, y: 0, width: 200, height: 100 });
+    installAnatomyFigma(inst, {
+      label: { x: 20, y: 40, width: 160, height: 20 },
+    }, { label: { x: 20, y: 44, width: 60, height: 12 } });
+    await applyThemeToKit(resolveTheme(emptyBrandTheme()));
+
+    const result = await buildAnatomyDiagram(COMPONENT_ID, [part('1', 'label', { type: 'TEXT' })], false, 768);
+
+    expect(result).not.toBeNull();
+    const box = (result!.card as unknown as FakeFrame).children[0] as FakeFrame;
+    const rect = (i: number) => {
+      const f = box.children[i] as FakeFrame;
+      return { x: f.x, y: f.y, width: f.width, height: f.height };
+    };
+    // Outline around the glyphs (x 20-80, y 44-56), 2px out, at y offset ZONE.
+    expect(rect(1)).toEqual({ x: 18, y: 94, width: 64, height: 16 });
+    // One pin, so no fanning: the leader is a straight drop from the pin at
+    // the glyph centre (x 50) to the outline's top edge (y 94).
+    expect(rect(2)).toEqual({ x: 50, y: 42, width: 1, height: 52 });
+    expect(rect(3)).toEqual({ x: 50, y: 18, width: 1, height: 24 });
+    const badge = box.children[4] as FakeFrame;
+    expect({ x: badge.x, y: badge.y }).toEqual({ x: 41, y: 0 });
+    expect(box.children).toHaveLength(5);
+  });
+
+  it('puts the pins beside a tall stack of parts and ends each leader on its outline\'s right edge', async () => {
+    const inst = fakeInstance({ x: 0, y: 0, width: 100, height: 200 });
+    installAnatomyFigma(inst, {
+      p1: { x: 40, y: 20, width: 20, height: 20 },  // y .1-.2  -> centre y 30
+      p2: { x: 40, y: 120, width: 20, height: 20 }, // y .6-.7  -> centre y 130
+    });
+    await applyThemeToKit(resolveTheme(emptyBrandTheme()));
+
+    const result = await buildAnatomyDiagram(COMPONENT_ID, [part('1', 'p1'), part('2', 'p2')], false, 768);
+
+    expect(result).not.toBeNull();
+    const box = (result!.card as unknown as FakeFrame).children[0] as FakeFrame;
+    const rect = (i: number) => {
+      const f = box.children[i] as FakeFrame;
+      return { x: f.x, y: f.y, width: f.width, height: f.height };
+    };
+    const point = (i: number) => {
+      const f = box.children[i] as FakeFrame;
+      return { x: f.x, y: f.y };
+    };
+    // Parts are spread along y, so the callout zone sits to the right.
+    expect(box.width).toBe(100 + PIN_SIZE + 10 + 24);
+    expect(box.height).toBe(200);
+    expect(rect(1)).toEqual({ x: 38, y: 18, width: 24, height: 24 });
+    expect(rect(2)).toEqual({ x: 38, y: 118, width: 24, height: 24 });
+    // Pin '1': out from the outline's right edge (x 62) at the part's centre
+    // (y 30) to the rail (x 110), then straight in to the pin (x 134).
+    expect(rect(3)).toEqual({ x: 62, y: 30, width: 48, height: 1 });
+    expect(rect(4)).toEqual({ x: 110, y: 30, width: 24, height: 1 });
+    expect(point(5)).toEqual({ x: 134, y: 21 });
+    expect(rect(6)).toEqual({ x: 62, y: 130, width: 48, height: 1 });
+    expect(rect(7)).toEqual({ x: 110, y: 130, width: 24, height: 1 });
+    expect(point(8)).toEqual({ x: 134, y: 121 });
+    expect(box.children).toHaveLength(9);
   });
 });

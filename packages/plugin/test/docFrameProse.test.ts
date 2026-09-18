@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { IntermediateSpec, ProseV2, RefIdentity } from '@spec-layer/extractor';
 import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeFrame, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
@@ -112,13 +112,28 @@ describe('docFrame', () => {
     expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
   });
 
-  it('draws the facts strip once, under the Usage header', async () => {
+  it('lets the Overview, bullet lists and two-column bullets fill the content column', async () => {
     const section = await build(prose);
     const usage = (section.children as FakeFrame[])[0];
-    expect(usage.findAllNamed('Facts')).toHaveLength(1);
-    expect(usage.findAllNamed('Facts')[0].textChars()).toEqual(['PROPERTIES', '1', 'PARTS', '2', 'TOKENS', '1', 'DS']);
-    const specs = (section.children as FakeFrame[])[1];
-    expect(specs.findAllNamed('Facts')).toHaveLength(0);
+    // The content column is the card width (880) less the header padding on
+    // both sides; every prose holder spans it, none stops at a 640px measure.
+    const content = usage.children[usage.children.length - 1] as FakeFrame;
+    const columnWidth = 880 - 2 * (content.paddingLeft as number);
+    expect(columnWidth).toBeGreaterThan(640);
+    const definition = findSlot(asNode(section), 'definition') as unknown as FakeFrame;
+    expect(definition.width).toBe(columnWidth);
+    // Each two-column list fills its column, which the columns split evenly.
+    const whenToUse = findSlot(asNode(section), 'whenToUse') as unknown as FakeFrame;
+    expect(whenToUse.layoutSizingHorizontal).toBe('FILL');
+    const pointer = findSlot(asNode(section), 'pointer') as unknown as FakeFrame;
+    expect(pointer.width).toBe(columnWidth);
+  });
+
+  it('draws no facts strip: the header band is followed by the content column', async () => {
+    const section = await build(prose);
+    for (const frame of section.children as FakeFrame[]) {
+      expect(frame.findAllNamed('Facts')).toHaveLength(0);
+    }
   });
 
   it('puts no placeholder text anywhere', async () => {
@@ -343,15 +358,16 @@ describe('docFrame measure section', () => {
 
 // ---------------------------------------------------------------------------
 // The keyed writing slots on a component that has both variant axes and a
-// state matrix. `variantsIntro` is one blob, `variantsGuide` is keyed by
-// option value and `stateMeaning` by state name, so each has to survive the
-// build -> read-back -> merge -> rebuild loop under its own key. This is the
-// seam where a guide entry naming an option the spec no longer has used to
-// live forever, so the fixture is worth holding onto.
+// state matrix. `variantsIntro` is one blob and `variantsGuide` is keyed by
+// option value, so each has to survive the build -> read-back -> merge ->
+// rebuild loop under its own key. This is the seam where a guide entry
+// naming an option the spec no longer has used to live forever, so the
+// fixture is worth holding onto. The `states` prose in the fixture is
+// carried but never drawn: the table that showed it went on 2026-09-19.
 // ---------------------------------------------------------------------------
 
 /** A component with a non-state axis (`type`) and a state axis (`State`), so
- *  the Variants matrix and the States table are both drawn. */
+ *  the Variants matrix and the States matrix are both drawn. */
 const variantSpec = {
   name: 'button', figmaKey: '', figmaFile: 'f', figmaFileName: 'DS', figmaNode: '3:1',
   description: '', documentationLinks: [],
@@ -400,15 +416,39 @@ async function buildVariantDoc(p: ProseV2 | null): Promise<FakeSection> {
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
 
+describe('docFrame matrices at true size', () => {
+  afterEach(() => uninstallFakeFigma());
+
+  it('widens the frame for the widest variant instance so no matrix preview is ever scaled', async () => {
+    const rescale = vi.fn();
+    installFakeFigma({
+      getNodeByIdAsync: async () => ({
+        type: 'COMPONENT', width: 900, height: 40,
+        createInstance: () => ({ width: 900, height: 40, rescale, setExplicitVariableModeForCollection: vi.fn() }),
+      }),
+    });
+    const section = await buildVariantDoc(null);
+    const frames = section.children as FakeFrame[];
+    // The stacked slot spans the content column: 900 for the instance, 12px
+    // of slot padding each side, and the header padding on both sides.
+    expect(frames[0].width).toBeGreaterThanOrEqual(900 + 24 + 2 * 56);
+    expect(frames[0].width).toBeLessThanOrEqual(1440);
+    expect(rescale).not.toHaveBeenCalled();
+  });
+});
+
 describe('docFrame variant and state writing slots', () => {
   beforeEach(() => installFakeFigma());
   afterEach(() => uninstallFakeFigma());
 
-  it('writes the intro, the per-option guide and the per-state meaning, and reads all three back', async () => {
-    const read = readCanvasProse(asNode(await buildVariantDoc(variantProse)));
+  it('writes the intro and the per-option guide and reads both back, and draws no state meaning', async () => {
+    const section = await buildVariantDoc(variantProse);
+    const read = readCanvasProse(asNode(section));
     expect(read.variantsIntro).toBe(variantProse.variantsIntro);
     expect(read.variantsGuide).toEqual(variantProse.variantsGuide);
-    expect(read.states).toEqual(variantProse.states);
+    expect(read.states).toBeUndefined();
+    expect(section.children.flatMap((f) => (f as FakeFrame).textChars()).join('\n'))
+      .not.toContain('A pointer is over the button.');
   });
 
   it('is a fixed point across merge and rebuild', async () => {

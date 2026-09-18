@@ -31,6 +31,16 @@ export const palette = {
   tableHeadBg: hex('#f8fafc'), // table header tint
   chipBg: hex('#eef1f5'), // token chip background
   paneBg: hex('#fbfcfd'), // variant card left-pane tint
+  // Semantic inks for the Do and Don't cards. Fixed, like the measurement
+  // diagram's size, padding and gap colours: they carry meaning, not brand,
+  // so applyThemeToKit never touches them. A faint tint, a light border, and
+  // a dark label ink that clears 5:1 on its tint.
+  doTint: hex('#f0fdf4'),
+  doBorder: hex('#bbf7d0'),
+  doInk: hex('#15803d'),
+  dontTint: hex('#fef2f2'),
+  dontBorder: hex('#fecaca'),
+  dontInk: hex('#b91c1c'),
 };
 
 export function solidFill(color: RGB): Paint[] {
@@ -182,30 +192,51 @@ export function hstack(spacing: number): FrameNode {
 }
 
 /**
- * The readable measure for prose on any generated frame: paragraphs, bullets,
- * card text. Tables, matrices and diagrams keep the full content column. One
- * constant so the component and foundation frames cannot drift apart.
+ * The readable measure for the foundation frame's notes: the group description
+ * lines and the two contrast sentences, 11px muted text on a card that can
+ * widen to 1440px. Component prose spans its content column instead (decided
+ * 2026-09-18: the 640px cap left a visible empty margin beside tables that
+ * spanned the column), so nothing in docFrame or docBlocks reads this.
  */
 export const PROSE_MEASURE = 640;
 
 /** Shortest a preview cell may be, so a tiny instance still reads as a cell. */
 export const SLOT_MIN_H = 72;
+/** Padding inside a preview slot, each side. */
+export const SLOT_PAD = 12;
 
 /**
- * Place a live instance of `nodeId` inside a slot of the given width. The
- * instance renders at true size; it is scaled DOWN only when it would not fit
- * the slot's inner width or `maxH`, and the factor is returned so the caller
- * can say so on canvas. Never scales up.
+ * A live instance of `nodeId`, matched to its component's variable modes so
+ * it resolves the same token values (padding, gap, size) the component does,
+ * with hidden boolean parts revealed when asked. Null when the id is not a
+ * component or instancing throws. Never scaled here: the caller decides.
  */
-export async function placeInstance(
-  nodeId: string, width: number, maxH = 160, includeHidden = false,
-): Promise<{ slot: FrameNode; scale: number }> {
+export async function createInstanceFor(nodeId: string, includeHidden = false): Promise<InstanceNode | null> {
+  let inst: InstanceNode | null = null;
+  try {
+    const node = await figma.getNodeByIdAsync(nodeId);
+    if (!node || node.type !== 'COMPONENT') return null;
+    inst = node.createInstance();
+    await matchVariableModes(inst, node);
+    if (includeHidden) await revealBooleanParts(inst, node);
+    return inst;
+  } catch {
+    try { inst?.remove(); } catch { /* already gone */ }
+    return null;
+  }
+}
+
+/**
+ * A slot of `width` holding `inst` exactly as it is, or the placeholder when
+ * there is none. The height hugs the instance with a floor of SLOT_MIN_H.
+ */
+export function slotAround(inst: InstanceNode | null, width: number): FrameNode {
   const slot = figma.createFrame();
   slot.name = 'Instance slot';
   slot.layoutMode = 'VERTICAL';
   slot.primaryAxisAlignItems = 'CENTER';
   slot.counterAxisAlignItems = 'CENTER';
-  slot.paddingTop = slot.paddingBottom = slot.paddingLeft = slot.paddingRight = 12;
+  slot.paddingTop = slot.paddingBottom = slot.paddingLeft = slot.paddingRight = SLOT_PAD;
   slot.fills = solidFill(palette.bg);
   slot.cornerRadius = radius(8);
   slot.clipsContent = true;
@@ -216,30 +247,29 @@ export async function placeInstance(
   slot.resize(width, SLOT_MIN_H);
   slot.primaryAxisSizingMode = 'AUTO';
   slot.minHeight = SLOT_MIN_H;
+  if (inst) slot.appendChild(inst);
+  else slot.appendChild(makeText('Drop instance', 'Regular', 11, palette.muted));
+  return slot;
+}
 
-  let placed = false;
+/**
+ * Place a live instance of `nodeId` inside a slot of the given width. The
+ * instance renders at true size; it is scaled DOWN only when it would not fit
+ * the slot's inner width or `maxH`, and the factor is returned so the caller
+ * can say so on canvas. Never scales up. The matrices do not use this: they
+ * size their cells to the instance instead (see statesSection.matrixLayout).
+ */
+export async function placeInstance(
+  nodeId: string, width: number, maxH = 160, includeHidden = false,
+): Promise<{ slot: FrameNode; scale: number }> {
+  const inst = await createInstanceFor(nodeId, includeHidden);
   let scale = 1;
-  try {
-    const node = await figma.getNodeByIdAsync(nodeId);
-    if (node && node.type === 'COMPONENT') {
-      const inst = node.createInstance();
-      // Match the component's variable modes so the preview resolves the same
-      // token values (padding/gap/size) it does — otherwise it renders smaller.
-      await matchVariableModes(inst, node);
-      if (includeHidden) await revealBooleanParts(inst, node);
-      slot.appendChild(inst);
-      const maxW = width - 24;
-      scale = Math.min(1, maxW / inst.width, maxH / inst.height);
-      if (scale < 1) inst.rescale(scale);
-      placed = true;
-    }
-  } catch {
-    /* fall through to placeholder */
+  if (inst) {
+    const maxW = width - SLOT_PAD * 2;
+    scale = Math.min(1, maxW / inst.width, maxH / inst.height);
+    if (scale < 1) inst.rescale(scale);
   }
-  if (!placed) {
-    slot.appendChild(makeText('Drop instance', 'Regular', 11, palette.muted));
-  }
-  return { slot, scale };
+  return { slot: slotAround(inst, width), scale };
 }
 
 /** A slot holding a live instance (or a placeholder). See placeInstance. */
