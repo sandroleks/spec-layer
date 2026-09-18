@@ -274,8 +274,8 @@ were added the same day, after the review that found the callouts reading
     description's first sentence as the subtitle and an Overview, When to
     use and When not to use columns, a variants guide naming only real option
     values, and DO and DON'T cards with a reason on every card; the
-    Specifications frame fills the Properties description column and the
-    States "When it applies" column; the Accessibility frame shows a Keyboard
+    Specifications frame fills the Properties description column and draws
+    the States matrix with no table under it; the Accessibility frame shows a Keyboard
     table with key chips, Pointer, Semantics and Content. No part, property,
     option or state name appears that the component does not have (compare
     against the Figma layers and properties). The quota meter shows

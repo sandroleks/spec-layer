@@ -35,7 +35,7 @@ import {
 import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, columnParagraph,
+  buildPropertiesTable, columnParagraph,
 } from './docBlocks';
 import { displayPartName } from './ui/displayNames';
 import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
@@ -486,7 +486,6 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         note: section.capped ? 'Showing the first 4 values. Other rows share the same state behaviour.' : null,
       }, CONTENT_WIDTH, includeHidden);
       fill(grid);
-      if (section.table.length) fill(buildStatesTable(section.table, CONTENT_WIDTH));
       break;
     }
     case 'variantsMatrix': {

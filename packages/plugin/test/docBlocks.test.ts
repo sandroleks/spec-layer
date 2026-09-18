@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, buildStatesTable, columnParagraph, chip, fitChip,
+  buildPropertiesTable, columnParagraph,
 } from '../src/docBlocks';
 import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
@@ -24,7 +24,7 @@ describe('docBlocks', () => {
     expect(narrow.width).toBe(500);
   });
 
-  it('round-trips two columns, pairs, keyboard, properties and states through the canvas reader', () => {
+  it('round-trips two columns, pairs, keyboard and properties through the canvas reader', () => {
     const doc = new FakeFrame();
     doc.appendChild(buildTwoColumns(
       { heading: 'When to use', items: [{ runs: parseRuns('Many options.'), text: 'Many options.' }], slot: 'whenToUse' },
@@ -40,10 +40,6 @@ describe('docBlocks', () => {
       { name: 'showLabel', type: 'Boolean', values: 'true / false', defaultValue: 'true', description: 'Hides the label.' },
       { name: 'label', type: 'Text', values: '', defaultValue: 'Label', description: null },
     ], true, 768));
-    doc.appendChild(buildStatesTable([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'Box', property: 'border', from: 'color/a', to: 'color/b' }], whenItApplies: 'Pointer over it.' },
-    ], 768));
 
     expect(readCanvasProse(asNode(doc))).toEqual({
       whenToUse: ['Many options.'],
@@ -54,41 +50,7 @@ describe('docBlocks', () => {
       ],
       keyboard: [{ keys: ['Enter', 'Space'], action: 'Toggles it.' }, { keys: ['Shift+Tab'], action: 'Moves focus back.' }],
       properties: [{ name: 'showLabel', description: 'Hides the label.' }],
-      states: [{ name: 'Hover', whenItApplies: 'Pointer over it.' }],
     });
-  });
-
-  it('writes each state change as a part and property line over from and to chips, and says when nothing changes', () => {
-    const table = buildStatesTable([
-      { name: 'Default', changes: [], whenItApplies: null },
-      { name: 'Hover', changes: [{ part: 'checkBox', property: 'border', from: 'color/a', to: 'color/b' }, { part: 'checkBox', property: 'shadow', from: null, to: 'shadow/1' }], whenItApplies: null },
-    ], 768) as unknown as FakeFrame;
-    const chars = table.textChars();
-    expect(chars).toContain('No token changes');
-    // One chip per token, never one chip holding "part property: a → b": a
-    // token path is long, and two of them in one chip overran the column.
-    expect(chars).toEqual(expect.arrayContaining(['Check box border', 'color/a', '→', 'color/b', 'Check box shadow', 'added', 'shadow/1']));
-    expect(chars.some((c) => c.includes('→ color'))).toBe(false);
-    // The changes column gets more than half the table; the sentence column
-    // grows into the rest.
-    const head = table.children[0] as FakeFrame;
-    const cells = head.children as FakeFrame[];
-    expect(cells[1].width).toBeGreaterThanOrEqual(Math.floor(768 * 0.5));
-    expect(cells[2].layoutSizingHorizontal).toBe('FILL');
-  });
-
-  it('lets a chip wider than its column wrap its text instead of overrunning it', () => {
-    const wide = chip('Background/Chip/Chip Neutral Hover Pressed Selected') as unknown as FakeFrame;
-    (wide.children[0] as FakeText).width = 400;
-    fitChip(wide as unknown as FrameNode, 300);
-    expect(wide.layoutSizingHorizontal).toBe('FILL');
-    expect((wide.children[0] as FakeText).textAutoResize).toBe('HEIGHT');
-
-    const narrow = chip('color/a') as unknown as FakeFrame;
-    (narrow.children[0] as FakeText).width = 60;
-    fitChip(narrow as unknown as FrameNode, 300);
-    expect(narrow.layoutSizingHorizontal).toBe('HUG');
-    expect((narrow.children[0] as FakeText).textAutoResize).toBe('WIDTH_AND_HEIGHT');
   });
 
   it('gives the properties table a Values column wide enough for a two-word option', () => {

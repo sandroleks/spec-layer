@@ -20,7 +20,7 @@ import { displayPartName } from './ui/displayNames';
 
 /** pluginData key naming which editorial slot a node (and its subtree) fills. */
 export const SLOT_KEY = 'specLayerSlot';
-/** pluginData key on a keyed row (anatomyPart, propertyDescription, stateMeaning,
+/** pluginData key on a keyed row (anatomyPart, propertyDescription,
  *  keyboardRow, variantsGuide, guidelinePair) holding the row's key. */
 export const SLOT_PART_KEY = 'specLayerSlotKey';
 /** pluginData key on a node inside a prose slot saying what kind of line it is. */
@@ -28,7 +28,7 @@ export const LINE_KEY = 'specLayerLine';
 
 export type ProseSlot =
   | 'definitionLead' | 'definition' | 'whenToUse' | 'whenNotToUse' | 'variantsIntro' | 'variantsGuide'
-  | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'stateMeaning' | 'keyboardRow'
+  | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'keyboardRow'
   | 'pointer' | 'semantics' | 'content' | 'guidelinePair' | 'guidelineDo' | 'guidelineDont';
 
 export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
@@ -149,7 +149,6 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   let guide: { name: string; guidance: string }[] | undefined;
   let parts: { name: string; role: string }[] | undefined;
   let properties: { name: string; description: string }[] | undefined;
-  let states: { name: string; whenItApplies: string }[] | undefined;
   let keyboard: { keys: string[]; action: string }[] | undefined;
   const pairs = new Map<number, GuidelinePair>();
 
@@ -219,7 +218,6 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         return;
       }
       case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
-      case 'stateMeaning': { if (!key) return; const w = lastText(node); if (w) states = push(states, { name: key, whenItApplies: w }); return; }
       case 'keyboardRow': {
         // Keys are joined with " + " (spaces included) by docBlocks, so that
         // "Shift+Tab" survives as one key.
@@ -261,7 +259,6 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   if (anatomySummary) out.anatomySummary = anatomySummary;
   if (parts) out.anatomyParts = parts;
   if (properties) out.properties = properties;
-  if (states) out.states = states;
   if (keyboard) out.keyboard = keyboard;
   if (pairs.size) out.guidelines = [...pairs.keys()].sort((a, b) => a - b).map((i) => pairs.get(i)!);
   return out;

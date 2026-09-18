@@ -117,8 +117,7 @@ none of the reasoning above.
   description when it has one and the AI opening line otherwise, so the
   designer's words lead the page and the AI lede stays in the Overview.
   Specifications gains a Properties table (replacing
-  Configuration) and a States table of token changes per state, each token
-  its own chip under the part and property it belongs to. Accessibility
+  Configuration). Accessibility
   gains a Keyboard table and a Pointer and touch section. Titles capitalise a
   lowercase component name, anatomy parts read as words, and user-authored
   matrix labels render as typed. Instances render at true size everywhere;

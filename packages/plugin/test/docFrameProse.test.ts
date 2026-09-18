@@ -358,15 +358,16 @@ describe('docFrame measure section', () => {
 
 // ---------------------------------------------------------------------------
 // The keyed writing slots on a component that has both variant axes and a
-// state matrix. `variantsIntro` is one blob, `variantsGuide` is keyed by
-// option value and `stateMeaning` by state name, so each has to survive the
-// build -> read-back -> merge -> rebuild loop under its own key. This is the
-// seam where a guide entry naming an option the spec no longer has used to
-// live forever, so the fixture is worth holding onto.
+// state matrix. `variantsIntro` is one blob and `variantsGuide` is keyed by
+// option value, so each has to survive the build -> read-back -> merge ->
+// rebuild loop under its own key. This is the seam where a guide entry
+// naming an option the spec no longer has used to live forever, so the
+// fixture is worth holding onto. The `states` prose in the fixture is
+// carried but never drawn: the table that showed it went on 2026-09-19.
 // ---------------------------------------------------------------------------
 
 /** A component with a non-state axis (`type`) and a state axis (`State`), so
- *  the Variants matrix and the States table are both drawn. */
+ *  the Variants matrix and the States matrix are both drawn. */
 const variantSpec = {
   name: 'button', figmaKey: '', figmaFile: 'f', figmaFileName: 'DS', figmaNode: '3:1',
   description: '', documentationLinks: [],
@@ -419,11 +420,14 @@ describe('docFrame variant and state writing slots', () => {
   beforeEach(() => installFakeFigma());
   afterEach(() => uninstallFakeFigma());
 
-  it('writes the intro, the per-option guide and the per-state meaning, and reads all three back', async () => {
-    const read = readCanvasProse(asNode(await buildVariantDoc(variantProse)));
+  it('writes the intro and the per-option guide and reads both back, and draws no state meaning', async () => {
+    const section = await buildVariantDoc(variantProse);
+    const read = readCanvasProse(asNode(section));
     expect(read.variantsIntro).toBe(variantProse.variantsIntro);
     expect(read.variantsGuide).toEqual(variantProse.variantsGuide);
-    expect(read.states).toEqual(variantProse.states);
+    expect(read.states).toBeUndefined();
+    expect(section.children.flatMap((f) => (f as FakeFrame).textChars()).join('\n'))
+      .not.toContain('A pointer is over the button.');
   });
 
   it('is a fixed point across merge and rebuild', async () => {
