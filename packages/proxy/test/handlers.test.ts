@@ -138,6 +138,22 @@ describe('handleProse', () => {
     expect(ok.headers.get('X-Quota-Used')).toBe('1');
   });
 
+  it('rejects a proved Pro posting a free key, before spending quota', async () => {
+    // The mirror of the case above. A pro identity answered from the free
+    // bucket would be served a Haiku draft under a key it will read back as
+    // its own, so the disagreement is refused from either side.
+    const d = deps();
+    await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
+    const res = await handleProse(proseReq(GOOD_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'tier mismatch' });
+    expect(d._anthropic).not.toHaveBeenCalled();
+    // Nothing was reserved: the next valid pro request is the identity's first.
+    const ok = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('X-Quota-Used')).toBe('1');
+  });
+
   it('still serves a shipped v8 client', async () => {
     const d = deps();
     const res = await handleProse(proseReq(LEGACY_BODY, { 'X-Figma-User': 'u1' }), d);

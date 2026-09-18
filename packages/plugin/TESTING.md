@@ -298,9 +298,10 @@ were added the same day, after the review that found the callouts reading
     Bridge, or through Copy for AI once the foundation frame work draws it).
     A build covering two collections stores no overview.
 
-Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1 and have not been
-run. Before running them, open Plugins, Development, Figma Desktop Bridge so
-the before and after screenshots can be captured for the review record.
+Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, and rows 25 to 28
+on 2026-09-18 for Plan 2. None of rows 16 to 28 have been run. Before running
+them, open Plugins, Development, Figma Desktop Bridge so the before and after
+screenshots can be captured for the review record.
 
 ## Library
 

@@ -109,8 +109,13 @@ const normalise = (s: string): string => s.trim().replace(/\s*[—–]\s*/g, ', 
 /**
  * Parse the model's JSON into the group descriptions and the collection
  * overview. `overview` is reserved: it is never a folder key, and it is kept
- * only as a non-empty string under `MAX_OVERVIEW` characters. Unusable output
- * costs the prose, never the frame.
+ * only as a non-empty string under `MAX_OVERVIEW` characters.
+ *
+ * Only the folders that were asked for survive. The model's output is
+ * untrusted input: an unexpected key would otherwise be rendered into the
+ * user's document, and a key it invented has no block to sit under anyway.
+ * Entries that are not usable strings are dropped rather than defaulted, so
+ * unusable output costs the prose, never the frame.
  */
 export function parseGroupDraft(text: string, folders: string[]): GroupDraft {
   const wanted = new Set(folders.filter((f) => f !== 'overview'));
@@ -142,21 +147,4 @@ export function parseGroupDraft(text: string, folders: string[]): GroupDraft {
     out.descriptions[key] = trimmed;
   }
   return out;
-}
-
-/**
- * Parse the model's JSON into folder → description.
- *
- * Keeps only the folders that were asked for. The model's output is untrusted
- * input: an unexpected key would otherwise be rendered into the user's document,
- * and a key it invented has no block to sit under anyway. Entries that are not
- * usable strings are dropped rather than defaulted, so a bad response costs the
- * descriptions and not the frame.
- *
- * The descriptions alone, for callers that predate the overview.
- */
-export function parseGroupResponse(
-  text: string, folders: string[],
-): Record<string, string> {
-  return parseGroupDraft(text, folders).descriptions;
 }

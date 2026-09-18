@@ -61,8 +61,12 @@ export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
     'properties ({ name, description }[] with name exactly as listed under Options, State axis or Properties above and description one sentence on what the property controls and when to change it)',
   states:
     'states ({ name, whenItApplies }[] with name exactly as listed under States above and whenItApplies one sentence on when the state applies)',
+  // The vocabulary is read from KEYBOARD_KEYS rather than written out again:
+  // `validateProseV2` drops a row whose key is not in that list, so a literal
+  // here could ask for a key the validator then throws away, or leave out one
+  // it would have accepted.
   keyboard:
-    'keyboard ({ keys: string[], action }[] with each key one of Tab, Shift+Tab, Enter, Space, Escape, Arrow Up, Arrow Down, Arrow Left, Arrow Right, Home, End, Page Up, Page Down, Delete, Backspace, and action one sentence; include only bindings this component really has, and leave the key out for a non-interactive component)',
+    `keyboard ({ keys: string[], action }[] with each key one of ${KEYBOARD_KEYS.join(', ')}, and action one sentence; include only bindings this component really has, and leave the key out for a non-interactive component)`,
   pointer:
     'pointer (string[], 2 to 3 sentences on mouse and touch behaviour, including target size)',
   semantics:

@@ -5,6 +5,7 @@ import {
   LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
   stateChanges, type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
+import { PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
 
 /** A TokenRule carries the full identity Figma stated for the reference. These
@@ -93,6 +94,15 @@ describe('proseKeysForSections asks the v9 prompt for v2 keys', () => {
   });
   it('asks nothing for the deterministic sections', () => {
     expect(proseKeysForSections(['measurements', 'tokens', 'related'])).toEqual(new Set());
+  });
+
+  it('covers every v2 key, so a new one cannot be added with no section asking for it', () => {
+    // A key nothing requests is never generated and never rendered, but the
+    // prompt, the validator and the stored blob all carry it. This is the
+    // check that says so at the moment the key is added rather than at the
+    // moment someone wonders why a section is always empty.
+    const requested = [...proseKeysForSections(ALL_SECTIONS.map((s) => s.id))].sort();
+    expect(requested).toEqual([...PROSE_V2_KEYS].sort());
   });
 });
 

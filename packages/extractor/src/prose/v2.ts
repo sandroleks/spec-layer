@@ -4,9 +4,10 @@
  * ProseDrafts (v1) is markdown blobs; ProseV2 is arrays and pairs, so a name
  * the model uses can be checked against the spec before it is drawn, and a
  * card, table row or bullet can be rebuilt from stored data without parsing
- * markdown again. Plan 1 stores and renders v2; the prompt still produces v1
- * until Plan 2, so `upgradeProseV1` is the seam, and `proseToLegacy` hands the
- * brief and the v5 artifact the v1 shape they still read.
+ * markdown again. The v9 prompt produces v2 directly, so `upgradeProseV1`
+ * now serves only the read-back of prose an earlier build stored, and
+ * `proseToLegacy` hands the brief and the v5 artifact the v1 shape they
+ * still read.
  *
  * No Figma, no DOM: this file is imported by the plugin's main thread.
  */
@@ -392,6 +393,10 @@ const clean = (value: unknown): string => {
 function namesComponent(sentence: string, name: string): boolean {
   const hay = sentence.toLowerCase();
   const needle = name.toLowerCase();
+  // An empty needle matches at every offset including the end, and the
+  // advance-by-one loop below never terminates on it. The caller filters
+  // blank names, so this is unreachable today and is here to keep it that way.
+  if (!needle) return false;
   let from = 0;
   for (;;) {
     const at = hay.indexOf(needle, from);
@@ -440,11 +445,21 @@ export function validateProseV2(
   };
 
   if (prose.overview) {
+    // One count per item actually removed: a rejected lede is one, each
+    // rejected body bullet is one. The lede used to be counted twice when the
+    // body was empty as well, and a rejected bullet was never counted at all.
+    const rawLede = asStr(prose.overview.lede).trim();
+    const rawBody = asArray<unknown>(prose.overview.body);
     const lede = clean(prose.overview.lede);
-    const body = asArray<unknown>(prose.overview.body).map(clean).filter(Boolean);
-    if (asStr(prose.overview.lede).trim() && !lede) drop('overview');
+    const body = rawBody.map(clean).filter(Boolean);
+    if (rawLede && !lede) drop('overview');
+    drop('overview', rawBody.length - body.length);
     if (lede || body.length) out.overview = { lede, body };
-    else drop('overview');
+    // An overview the model sent with nothing in it at all: no item was
+    // removed, but the key was asked for and produced none, so it still counts
+    // once. Without this a present-but-empty overview would be indistinguishable
+    // from one that was never requested.
+    else if (!rawLede && !rawBody.length) drop('overview');
   }
   strings('whenToUse');
   strings('whenNotToUse');

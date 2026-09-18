@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildGroupPrompt, parseGroupResponse, parseGroupDraft, FOUNDATION_SYSTEM_PROMPT,
+  buildGroupPrompt, parseGroupDraft, FOUNDATION_SYSTEM_PROMPT,
   GROUP_SAMPLE_LIMIT, MAX_OVERVIEW,
   type FoundationGroupBrief,
 } from '../src/prose/foundationPrompt';
@@ -124,12 +124,16 @@ describe('FOUNDATION_SYSTEM_PROMPT overview rule', () => {
   });
 });
 
-describe('parseGroupResponse', () => {
+describe('parseGroupDraft descriptions', () => {
   const folders = ['color/surface', 'color/text'];
+  /** The descriptions half, which is all these cases are about. They ran
+   *  through `parseGroupResponse` until that wrapper was deleted for having
+   *  no caller outside this block. */
+  const descriptions = (text: string, keys: string[]): Record<string, string> =>
+    parseGroupDraft(text, keys).descriptions;
 
   it('reads a plain JSON object', () => {
-    const out = parseGroupResponse(
-      '{"color/surface":"Backgrounds and large areas.","color/text":"Copy colours."}', folders);
+    const out = descriptions('{"color/surface":"Backgrounds and large areas.","color/text":"Copy colours."}', folders);
     expect(out).toEqual({
       'color/surface': 'Backgrounds and large areas.',
       'color/text': 'Copy colours.',
@@ -137,45 +141,40 @@ describe('parseGroupResponse', () => {
   });
 
   it('tolerates prose or a code fence around the JSON', () => {
-    const out = parseGroupResponse(
-      'Here you go:\n```json\n{"color/surface":"Backgrounds."}\n```\nDone.', folders);
+    const out = descriptions('Here you go:\n```json\n{"color/surface":"Backgrounds."}\n```\nDone.', folders);
     expect(out).toEqual({ 'color/surface': 'Backgrounds.' });
   });
 
   it('drops keys that were never asked for', () => {
     // Model output is untrusted: an invented key has no block to sit under, and
     // rendering it would put unrequested text into the document.
-    const out = parseGroupResponse(
-      '{"color/surface":"ok","color/invented":"nope"}', folders);
+    const out = descriptions('{"color/surface":"ok","color/invented":"nope"}', folders);
     expect(out).toEqual({ 'color/surface': 'ok' });
   });
 
   it('drops non-string and empty values rather than defaulting them', () => {
-    const out = parseGroupResponse(
-      '{"color/surface":42,"color/text":"   "}', folders);
+    const out = descriptions('{"color/surface":42,"color/text":"   "}', folders);
     expect(out).toEqual({});
   });
 
   it('drops a description that runs absurdly long', () => {
-    const out = parseGroupResponse(
-      JSON.stringify({ 'color/surface': 'x'.repeat(401) }), folders);
+    const out = descriptions(JSON.stringify({ 'color/surface': 'x'.repeat(401) }), folders);
     expect(out).toEqual({});
   });
 
   it('replaces an em dash the model slipped in', () => {
     // Belt and braces: the prompt asks, and the parser enforces, because the
     // house style rule is absolute and a slip would reach the canvas.
-    const out = parseGroupResponse(
-      '{"color/surface":"Backgrounds — and large areas."}', folders);
+    const out = descriptions('{"color/surface":"Backgrounds — and large areas."}', folders);
     expect(out['color/surface']).toBe('Backgrounds, and large areas.');
     expect(out['color/surface']).not.toContain('—');
   });
 
   it('returns nothing for unparseable output instead of throwing', () => {
     // A bad response must cost the descriptions, not the frames.
-    expect(parseGroupResponse('total nonsense', folders)).toEqual({});
-    expect(parseGroupResponse('{ broken', folders)).toEqual({});
-    expect(parseGroupResponse('', folders)).toEqual({});
-    expect(parseGroupResponse('["an","array"]', folders)).toEqual({});
+    expect(descriptions('total nonsense', folders)).toEqual({});
+    expect(descriptions('{ broken', folders)).toEqual({});
+    expect(descriptions('', folders)).toEqual({});
+    expect(descriptions('["an","array"]', folders)).toEqual({});
   });
 });

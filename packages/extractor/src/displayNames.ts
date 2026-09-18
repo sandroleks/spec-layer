@@ -5,7 +5,10 @@
  * editorial tags, hashes, prompt matching) keeps the raw name. These helpers
  * are applied at the last moment before text lands on canvas.
  *
- * No Figma, no DOM: imported by docFrame.ts, which runs on the main thread.
+ * No Figma, no DOM: imported by the prose prompt builder and by plugin
+ * renderers on both threads (docFrame.ts on the main thread, the UI's
+ * re-export in the iframe), so it has to stay free of browser and Figma
+ * globals.
  */
 
 /** A fully lowercase component name gets a capital; a leading atom marker

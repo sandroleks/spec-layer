@@ -245,6 +245,25 @@ describe('validateProseV2 rejects headings and enforces the alternatives rule', 
     expect(dropped.overview).toBe(1);
   });
 
+  it('counts each removed overview item exactly once', () => {
+    // A rejected lede with an empty body used to count twice: once for the
+    // lede, then again for the key surviving with nothing in it.
+    const bothGone = validateProseV2(spec, { v: 2, overview: { lede: '# Not a lede', body: [] } });
+    expect(bothGone.prose.overview).toBeUndefined();
+    expect(bothGone.dropped.overview).toBe(1);
+
+    // A rejected body bullet was never counted at all.
+    const bulletGone = validateProseV2(spec, {
+      v: 2, overview: { lede: 'A real lede.', body: ['## Heading', 'Kept.', '# Another'] },
+    });
+    expect(bulletGone.prose.overview).toEqual({ lede: 'A real lede.', body: ['Kept.'] });
+    expect(bulletGone.dropped.overview).toBe(2);
+
+    // An overview sent with nothing in it still counts once: the key was asked
+    // for and produced none.
+    expect(validateProseV2(spec, { v: 2, overview: { lede: '', body: [] } }).dropped.overview).toBe(1);
+  });
+
   it('keeps a level-three heading and a hash inside a sentence', () => {
     const { prose } = validateProseV2(spec, { v: 2, pointer: ['### Fine', 'Issue #12 is fine.'] });
     expect(prose.pointer).toEqual(['### Fine', 'Issue #12 is fine.']);
@@ -258,6 +277,20 @@ describe('validateProseV2 rejects headings and enforces the alternatives rule', 
     );
     expect(prose.whenNotToUse).toEqual(['Use a Toggle for on and off.', 'Not for navigation.']);
     expect(dropped.whenNotToUse).toBe(1);
+  });
+
+  it('terminates on a blank name in the file component list', () => {
+    // Two things stand between a blank name and a hang: the caller's own
+    // filter, and (since the whole-word search grew an empty-needle guard)
+    // the search itself. An empty needle matches at every offset, which the
+    // advance-by-one loop never got past. This case survives either one being
+    // removed, which is the point of pinning it.
+    const { prose } = validateProseV2(
+      { ...spec, related: [] },
+      { v: 2, whenNotToUse: ['Use a Slider for a range.'] },
+      { fileComponents: ['', '   ', 'Button'] },
+    );
+    expect(prose.whenNotToUse).toEqual(['Use a Slider for a range.']);
   });
 
   it('leaves every whenNotToUse bullet alone when no file list is given', () => {
