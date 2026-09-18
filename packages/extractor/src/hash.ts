@@ -56,13 +56,8 @@ export interface SpecHashProjection {
   name: string;
   figmaKey: string;
   figmaFile: string;
-  /** Absent when the caller never knew the file's name, exactly as
-   *  `IntermediateSpec` carries it: absent-when-absent, never a default. The
-   *  facts strip draws it, so it is hashed (rendered implies hashed). */
-  figmaFileName?: string;
   figmaNode: string;
   description: string;
-  documentationLinks: string[];
   anatomyComponentId: string;
   anatomy: { id: string; name: string; type: string; nested: boolean }[];
   props: ComponentProp[];
@@ -77,26 +72,26 @@ export interface SpecHashProjection {
 
 /**
  * The drift baseline projection. Excludes rawValues and nodeEffects, and
- * reduces anatomy to the depth-0 {id,name,type,nested} shape. `description`,
- * `documentationLinks` and `figmaFileName` DO enter: all three are rendered
- * (Overview, header subtitle, facts strip), so an edit to any of them is a
- * visible change. Their arrival, together with the code-unit key ordering, is
- * the EXTRACTOR_VERSION '3' rebuild: every doc stamped '2' reads
+ * reduces anatomy to the depth-0 {id,name,type,nested} shape. `description`
+ * DOES enter: the Overview and the header subtitle render it, so an edit to
+ * it is a visible change. Its arrival, together with the code-unit key
+ * ordering, is the EXTRACTOR_VERSION '3' rebuild: every doc stamped '2' reads
  * rebuild-required rather than being compared against a projection it was
  * never hashed over.
  */
 export function specHashProjection(spec: IntermediateSpec, options: SpecHashOptions = {}): SpecHashProjection {
-  // figmaFileName stays IN: the facts strip renders the source file name, so
-  // renaming the Figma file changes what the Usage frame prints and is drift
-  // like any other rendered change (rendered implies hashed). It is absent
-  // when the caller never knew the name, so a doc built without one hashes
-  // exactly as it did before the field entered.
   const {
     rawValues: _rawValues,
     // Same contract as rawValues: additive detail that alters no rendered
     // output, so including it would flip every committed document to "update
     // available" for a change nobody can see on canvas.
     nodeEffects: _nodeEffects,
+    // Extracted for the YAML brief and Component Context v5, and drawn
+    // nowhere on canvas since the facts strip went (2026-09-18). Hashed
+    // implies rendered: a file rename or a new documentation link must not
+    // read as drift the Update cannot show.
+    figmaFileName: _figmaFileName,
+    documentationLinks: _documentationLinks,
     ...rest
   } = spec;
   const hashable = {

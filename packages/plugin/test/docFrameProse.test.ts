@@ -112,13 +112,11 @@ describe('docFrame', () => {
     expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
   });
 
-  it('draws the facts strip once, under the Usage header', async () => {
+  it('draws no facts strip: the header band is followed by the content column', async () => {
     const section = await build(prose);
-    const usage = (section.children as FakeFrame[])[0];
-    expect(usage.findAllNamed('Facts')).toHaveLength(1);
-    expect(usage.findAllNamed('Facts')[0].textChars()).toEqual(['PROPERTIES', '1', 'PARTS', '2', 'TOKENS', '1', 'DS']);
-    const specs = (section.children as FakeFrame[])[1];
-    expect(specs.findAllNamed('Facts')).toHaveLength(0);
+    for (const frame of section.children as FakeFrame[]) {
+      expect(frame.findAllNamed('Facts')).toHaveLength(0);
+    }
   });
 
   it('puts no placeholder text anywhere', async () => {

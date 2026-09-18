@@ -243,7 +243,6 @@ function projection(overrides: Partial<SpecHashProjection> = {}): SpecHashProjec
     figmaFile: 'FILE1',
     figmaNode: '1:1',
     description: '',
-    documentationLinks: [],
     anatomyComponentId: '1:2',
     anatomy: [{ id: '1:3', name: 'Label', type: 'TEXT', nested: false }],
     props: [{ name: 'Size', kind: 'variant', options: ['Small', 'Medium'], default: 'Small' }],
@@ -284,36 +283,6 @@ describe('componentChangeGroups', () => {
     ]);
     expect(componentChangeGroups(projection({ description: 'Primary action.' }), projection())).toEqual([
       G('Name', 'Removed description Primary action.'),
-    ]);
-  });
-
-  it('itemizes a renamed source file under Name, because the facts strip prints it', () => {
-    expect(componentChangeGroups(
-      projection({ figmaFileName: 'Design System' }),
-      projection({ figmaFileName: 'Design System (2026)' }),
-    )).toEqual([
-      G('Name', 'Source file Design System changed to Design System (2026)'),
-    ]);
-    expect(componentChangeGroups(projection(), projection({ figmaFileName: 'Design System' }))).toEqual([
-      G('Name', 'Added source file Design System'),
-    ]);
-    expect(componentChangeGroups(projection({ figmaFileName: 'Design System' }), projection())).toEqual([
-      G('Name', 'Removed source file Design System'),
-    ]);
-  });
-
-  it('itemizes documentation links added and removed, under Name', () => {
-    expect(componentChangeGroups(
-      projection(),
-      projection({ documentationLinks: ['https://example.com/button'] }),
-    )).toEqual([
-      G('Name', 'Added documentation link https://example.com/button'),
-    ]);
-    expect(componentChangeGroups(
-      projection({ documentationLinks: ['https://example.com/button'] }),
-      projection(),
-    )).toEqual([
-      G('Name', 'Removed documentation link https://example.com/button'),
     ]);
   });
 
@@ -665,7 +634,7 @@ describe('the projection key sets the diff itemizes', () => {
 
   it('pins the top-level projection keys, so a new one has to be routed into the diff', () => {
     expect(sortedKeys(projection)).toEqual([
-      'anatomy', 'anatomyComponentId', 'description', 'documentationLinks', 'figmaFile', 'figmaKey',
+      'anatomy', 'anatomyComponentId', 'description', 'figmaFile', 'figmaKey',
       'figmaNode', 'gaps', 'layout', 'name', 'props', 'related', 'states', 'tokens', 'variantInstances', 'variants',
     ]);
   });

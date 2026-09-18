@@ -174,15 +174,6 @@ export interface DocModelOptions {
   aiEnabled?: boolean;
 }
 
-/** The counted facts a frame prints above its first section: what the spec
- *  holds, the file it came from, and any documentation links the component
- *  carries. Counts only, never adjectives. */
-export interface FactsStrip {
-  items: { label: string; value: string }[];
-  sourceFile: string | null;
-  links: string[];
-}
-
 /** A selected section that produced nothing, with why. `aiOff` means the
  *  writing lane was off; `nothingToShow` means the spec (or the AI) had
  *  nothing for it. Never a placeholder on canvas. */
@@ -227,7 +218,6 @@ export interface DocFrameModel {
   /** The component name as a reader sees it; `componentName` stays raw. */
   displayName: string;
   sections: SectionBlock[];
-  facts: FactsStrip;
   /** Selected sections that produced nothing, in section-map order. */
   omitted: OmittedSection[];
   /** Present and true only when the doc reveals hidden-by-default parts; the
@@ -296,21 +286,6 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
 const TYPE_WORDS: Record<string, string> = {
   variant: 'Variant', boolean: 'Boolean', text: 'Text', instanceSwap: 'Instance swap',
 };
-
-/** Counts only, never adjectives. The token count is of the rules the doc
- *  draws, so it matches the Tokens section. */
-export function factsFor(spec: IntermediateSpec, includeHidden: boolean): FactsStrip {
-  const parts = anatomyFor(spec.anatomy, { includeHidden }).filter((p) => p.depth === 0).length;
-  const tokens = tokensFor(spec.tokens, { includeHidden }).length;
-  const items = [
-    { label: 'Properties', value: String(spec.props.length) },
-    { label: 'Variants', value: String(spec.variantInstances.length) },
-    { label: 'States', value: String(spec.states.length) },
-    { label: 'Parts', value: String(parts) },
-    { label: 'Tokens', value: String(tokens) },
-  ].filter((i) => i.value !== '0');
-  return { items, sourceFile: spec.figmaFileName ?? null, links: [...spec.documentationLinks] };
-}
 
 /**
  * Per state column, the token bindings that differ from the default variant,
@@ -810,7 +785,6 @@ export function buildDocModel(
     componentName: spec.name,
     displayName: displayComponentName(spec.name),
     sections,
-    facts: factsFor(spec, options?.includeHidden === true),
     omitted,
     ...(options?.includeHidden ? { includeHidden: true as const } : {}),
   };

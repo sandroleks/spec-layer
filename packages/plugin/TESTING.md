@@ -255,8 +255,10 @@ were added the same day, after the review that found the callouts reading
     layer named `checkboxItem` reads "Checkbox item" in the legend; the
     Section and layer names keep the raw name; boolean matrix headers read
     as typed ("isInvalid: true"), not uppercased.
-22. **Facts strip.** The Usage frame shows counts and the file name under the
-    header, with documentation links clickable; the other frames do not.
+22. **Do and Don't colours.** The DO cards carry a faint green fill, a green
+    border and a green DO label; the DON'T cards the same in red. The rule
+    and reason text read as before, and both labels are legible at 100% zoom
+    on a light and a dark header theme.
 23. **Code spans.** A Semantics bullet with a code span renders it in Medium
     weight with no backticks; after Update the bullet still reads the same.
 24. **Description drift.** Edit the component description in Figma. The

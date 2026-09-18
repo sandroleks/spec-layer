@@ -26,12 +26,12 @@ none of the reasoning above.
   stored on the document beside the group lines and kept across Update; the
   foundation frame work shipping alongside draws it.
 
-- **The component description and documentation links reach the document.**
-  Extraction now carries the root component's Figma description and its
-  documentation link URLs, the one human-authored signal a file has, and both
-  are rendered, so both enter the canvas drift hash. Renaming the Figma file
-  now counts as drift, because the facts strip shows the file name. This is
-  the sanctioned
+- **The component description reaches the document.** Extraction now carries
+  the root component's Figma description and its documentation link URLs, the
+  one human-authored signal a file has. The description is drawn as the Usage
+  subtitle and the Overview body, so it enters the canvas drift hash. The
+  links and the Figma file name travel with the copied brief and the v5
+  context and are drawn nowhere, so they do not. This is the sanctioned
   `EXTRACTOR_VERSION` bump to `'3'`: every component doc built by `'2'` reads
   "Rebuild needed" once. The same bump makes canonical hashing order keys by
   code unit rather than locale, so a hash no longer depends on the machine
@@ -111,8 +111,8 @@ none of the reasoning above.
 
 - **Component documents read as authored pages.** The three frames carry a
   reading order (Usage, Specifications, Accessibility) and unequal roles. Usage
-  gains a facts strip, a When to use and When not to use pair, and Do and
-  Don't as paired cards. The header subtitle is the component's own Figma
+  gains a When to use and When not to use pair, and Do and Don't as paired
+  cards. The header subtitle is the component's own Figma
   description when it has one and the AI opening line otherwise, so the
   designer's words lead the page and the AI lede stays in the Overview.
   Specifications gains a Properties table (replacing

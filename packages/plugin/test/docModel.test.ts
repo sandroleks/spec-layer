@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocModel, calloutLabels, measureKey, groupSections, frameCountFor, GROUPS, ALL_SECTIONS,
   KNOWN_SECTION_IDS,
-  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine, factsFor,
+  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine,
   stateChanges, type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
 import { PROSE_V2_KEYS } from '@spec-layer/extractor';
@@ -112,17 +112,6 @@ describe('buildDocModel with prose', () => {
   it('names the component for people and keeps the raw name', () => {
     expect(model.componentName).toBe('checkbox');
     expect(model.displayName).toBe('Checkbox');
-  });
-
-  it('builds the facts strip from counts and the source file', () => {
-    expect(model.facts).toEqual({
-      items: [
-        { label: 'Properties', value: '3' }, { label: 'Variants', value: '4' }, { label: 'States', value: '2' },
-        { label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' },
-      ],
-      sourceFile: 'Design System',
-      links: ['https://example.com/checkbox'],
-    });
   });
 
   it('renders the AI overview as tagged prose, led by the designer description', () => {
@@ -276,20 +265,6 @@ describe('buildDocModel without prose', () => {
   it('labels the definition section "Overview"', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['definition']));
     expect(model.sections[0].heading).toBe('Overview');
-  });
-});
-
-describe('factsFor', () => {
-  it('drops a count that is zero rather than claiming a zero', () => {
-    const plain = {
-      ...spec, props: [], variants: [], variantInstances: [], states: [], documentationLinks: [],
-      figmaFileName: undefined,
-    } as unknown as IntermediateSpec;
-    expect(factsFor(plain, false)).toEqual({
-      items: [{ label: 'Parts', value: '2' }, { label: 'Tokens', value: '3' }],
-      sourceFile: null,
-      links: [],
-    });
   });
 });
 

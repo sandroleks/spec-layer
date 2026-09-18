@@ -533,7 +533,7 @@ describe('prose storage', () => {
 describe('baseline storage', () => {
   const PROJECTION: SpecHashProjection = {
     name: 'Button', figmaKey: 'k', figmaFile: 'F', figmaNode: '1:1',
-    description: '', documentationLinks: [],
+    description: '',
     anatomyComponentId: '1:2',
     anatomy: [{ id: '1:3', name: 'Label', type: 'TEXT', nested: false }],
     props: [], variants: [], variantInstances: [], states: [],

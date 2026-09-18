@@ -32,14 +32,13 @@ describe('specContentHash', () => {
 
 /** Re-cut on 2026-09-17 by Docs 2.0 Plan 1 Task 1: `description` and
  *  `documentationLinks` entered the projection and canonical key order moved
- *  from localeCompare to code units. Both are real content changes gated by
- *  EXTRACTOR_VERSION '3', so every doc stamped '2' reads rebuild-required
- *  once and settles after one rebuild. Held unchanged through the later fix
- *  that let `figmaFileName` into the projection: this fixture is extracted
- *  without a file name, and the field is absent-when-absent, so the hashed
- *  object is byte-identical. Only a task that says it re-cuts the baseline
- *  may change this constant. */
-const BUTTON_HASH ='d88b0870cfdfffb0c82f86079181b74886f844b2d7a9e978126d2f128aec7e92';
+ *  from localeCompare to code units, gated by EXTRACTOR_VERSION '3'. Re-cut
+ *  again on 2026-09-18, before '3' shipped, when the facts strip was removed
+ *  and `documentationLinks` left the projection with it (the key is always
+ *  present on a spec, so its exit moves every hash). Development builds that
+ *  wrote a '3' doc read "Update available" once. Only a task that says it
+ *  re-cuts the baseline may change this constant. */
+const BUTTON_HASH ='e365b742fe62d84bef37d3d3b6d442d67bedc7e00372c17d57620e629ad7cdb1';
 
 it('is unchanged by removing the contrast field', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
@@ -54,19 +53,19 @@ it('is unchanged by adding paths to tokens and gaps', () => {
   expect(specContentHash(spec)).toBe(BUTTON_HASH);  // and does not enter the hash
 });
 
-it('hashes the Figma file name the facts strip renders', () => {
+it('ignores the Figma file name and documentation links, which nothing on canvas draws', () => {
   const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
   const unnamed = extract(node, { figmaFile: 'FILE1' });
   const named = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
-  const renamed = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System (2026)' });
+  const linked = extract({ ...node, documentationLinks: ['https://example.com/button'] }, { figmaFile: 'FILE1' });
+  // Both are still extracted: the YAML brief and Component Context v5 carry
+  // them. Neither is drawn since the facts strip went (2026-09-18), so
+  // neither may move the canvas hash (hashed implies rendered).
   expect(named.figmaFileName).toBe('Design System');
-  // Absent when absent: a spec with no file name hashes exactly as it did
-  // before the field entered the projection, which is why BUTTON_HASH holds.
+  expect(linked.documentationLinks).toEqual(['https://example.com/button']);
   expect(specContentHash(unnamed)).toBe(BUTTON_HASH);
-  // Present when present, and a rename is drift, because the facts strip
-  // prints it.
-  expect(specContentHash(named)).not.toBe(BUTTON_HASH);
-  expect(specContentHash(renamed)).not.toBe(specContentHash(named));
+  expect(specContentHash(named)).toBe(BUTTON_HASH);
+  expect(specContentHash(linked)).toBe(BUTTON_HASH);
 });
 
 /** Cut on 2026-08-25 before Phase A of the brief-resolution-fidelity plan, from
@@ -77,11 +76,10 @@ it('hashes the Figma file name the facts strip renders', () => {
  *  same reason as BUTTON_HASH above: `description` and `documentationLinks`
  *  entered the projection (both empty on this fixture, but the keys now
  *  exist) and canonical key order moved from localeCompare to code units.
- *  Held unchanged through the later fix that let `figmaFileName` into the
- *  projection, for the same reason as BUTTON_HASH: this fixture is extracted
- *  without a file name, and the field is absent-when-absent. Only a task that
- *  says it re-cuts the baseline may change this constant. */
-const CHIP_HASH ='3d98da0c9d7bce55f8a8e394577cb170944f3b22a76ff35e8f92f3fa9b43c27a';
+ *  Re-cut again on 2026-09-18 with BUTTON_HASH, when `documentationLinks`
+ *  left the projection. Only a task that says it re-cuts the baseline may
+ *  change this constant. */
+const CHIP_HASH ='0a4966dba05210c95cb5549da0c17d5ce3fa52b7ead0ea4b5bd69c0f7d324399';
 
 it('is unchanged across the whole of Phase A, on both fixtures', () => {
   for (const [file, expected] of [
@@ -115,17 +113,16 @@ describe('specHashProjection', () => {
       .toBe(specContentHash(extract(NODE, { figmaFile: 'FILEKEY' })));
   });
 
-  it('keeps the legacy token key, carries the file name, and leaves rawValues and nodeEffects out', () => {
+  it('keeps the legacy token key, and leaves rawValues, nodeEffects, the file name and the links out', () => {
     const node = JSON.parse(readFileSync('packages/extractor/test/fixtures/button.json', 'utf8'));
     const spec = extract(node, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
     const projection = specHashProjection(spec);
     const keys = Object.keys(projection);
     expect(keys).not.toContain('rawValues');
     expect(keys).not.toContain('nodeEffects');
-    // Rendered in the facts strip, so hashed; absent when the caller knew no
-    // name, rather than defaulted to one.
-    expect(projection.figmaFileName).toBe('Design System');
-    expect(Object.keys(specHashProjection(extract(node, { figmaFile: 'FILE1' })))).not.toContain('figmaFileName');
+    // Extracted but drawn nowhere, so not hashed (hashed implies rendered).
+    expect(keys).not.toContain('figmaFileName');
+    expect(keys).not.toContain('documentationLinks');
     expect(projection.tokens.length).toBeGreaterThan(0);
     for (const rule of projection.tokens) {
       expect(Object.keys(rule).sort()).toEqual(['conditions', 'part', 'property', 'token']);
@@ -207,12 +204,10 @@ describe('specContentHash and parts hidden by default', () => {
  *  anchor no longer holds past this re-cut — see the describe block below,
  *  which no longer claims parity with the pre-feature extractor — but a
  *  change here still means every committed component doc reports an update it
- *  did not earn. Held unchanged through the later fix that let
- *  `figmaFileName` into the projection, for the same reason as BUTTON_HASH
- *  and CHIP_HASH: this fixture is extracted without a file name, and the
- *  field is absent-when-absent. Only a task that says it re-cuts the baseline
- *  may change this constant. */
-const CHIP_HIDDEN_OFF_HASH ='2e3d7b3a4709e6f59fc53cd54bbec8f7a3f72a5fde44a150d6bfba0d02e74697';
+ *  did not earn. Re-cut again on 2026-09-18 with BUTTON_HASH and CHIP_HASH,
+ *  when `documentationLinks` left the projection. Only a task that says it
+ *  re-cuts the baseline may change this constant. */
+const CHIP_HIDDEN_OFF_HASH ='b937a0d4c10e69d456b51725cf0b83b9d3531627adce3be67399dbf26d7d0779';
 
 describe('the toggle-off canvas hash is pinned', () => {
   it('is unchanged on a fixture with no hidden bound layers', () => {

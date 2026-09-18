@@ -574,11 +574,12 @@ function formatValues(values: Record<string, string>): string {
 
 /**
  * Groups, in order: Name, Properties, Variants, Anatomy, States, Tokens,
- * Unbound values, Layout, Related. `description` and `documentationLinks`
- * are content, not identity, and land under Name alongside the component's
- * own name. `figmaKey`, `figmaFile`, `figmaNode` and `anatomyComponentId` are
- * hashed identity, not content, so a change in any of them is one "Source
- * identity changed" line under Name.
+ * Unbound values, Layout, Related. `description` is content, not identity,
+ * and lands under Name alongside the component's own name. `figmaKey`,
+ * `figmaFile`, `figmaNode` and `anatomyComponentId` are hashed identity, not
+ * content, so a change in any of them is one "Source identity changed" line
+ * under Name. The file name and the documentation links are not in the
+ * projection, so they are not itemized: the diff input is the hash input.
  */
 export function componentChangeGroups(
   before: SpecHashProjection,
@@ -588,13 +589,6 @@ export function componentChangeGroups(
   if (before.name !== after.name) name.push(`Name ${before.name} changed to ${after.name}`);
   if (before.description !== after.description) {
     name.push(scalarItem('Description', before.description || undefined, after.description || undefined));
-  }
-  name.push(...stringSetItems(before.documentationLinks, after.documentationLinks,
-    (link) => `Added documentation link ${link}`, (link) => `Removed documentation link ${link}`));
-  // The facts strip prints the source file name, so a rename is a rendered
-  // change and belongs in the list beside the identity line.
-  if (before.figmaFileName !== after.figmaFileName) {
-    name.push(scalarItem('Source file', before.figmaFileName, after.figmaFileName));
   }
   if (
     before.figmaKey !== after.figmaKey

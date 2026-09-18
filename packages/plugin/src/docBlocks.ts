@@ -6,7 +6,7 @@
  * slot and key contract). Deterministic text is left untagged so selfHash
  * covers it and an Update rebuilds it.
  */
-import type { FactsStrip, ColumnBlock, KeyboardRow, PropertyRow, StateTableRow } from './ui/docModel';
+import type { ColumnBlock, KeyboardRow, PropertyRow, StateTableRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
 import { palette, solidFill, vstack, hstack, makeText, radius, headingFont, PROSE_MEASURE } from './frameKit';
@@ -40,42 +40,6 @@ export function chip(text: string, tone: 'default' | 'muted' = 'default'): Frame
   t.textAutoResize = 'WIDTH_AND_HEIGHT';
   c.appendChild(t);
   return c;
-}
-
-/** Label-over-value pairs, the source file name right-aligned, links after it. */
-export function buildFactsStrip(facts: FactsStrip, contentWidth: number): FrameNode | null {
-  if (!facts.items.length && !facts.sourceFile && !facts.links.length) return null;
-  const strip = hstack(32);
-  strip.name = 'Facts';
-  strip.counterAxisAlignItems = 'MIN';
-  strip.paddingTop = 20;
-  strip.paddingBottom = 20;
-  strip.strokes = solidFill(palette.divider);
-  strip.strokeBottomWeight = 1;
-  strip.strokeTopWeight = 0;
-  strip.strokeLeftWeight = 0;
-  strip.strokeRightWeight = 0;
-  strip.resize(contentWidth, 1);
-  strip.counterAxisSizingMode = 'AUTO';
-  for (const item of facts.items) {
-    const pair = vstack(4);
-    pair.appendChild(makeText(item.label.toUpperCase(), 'Medium', 11, palette.muted, 130, 6));
-    pair.appendChild(makeText(item.value, 'Medium', 15, palette.heading, 130));
-    strip.appendChild(pair);
-  }
-  const spacer = vstack(0);
-  strip.appendChild(spacer);
-  spacer.layoutSizingHorizontal = 'FILL';
-  const source = vstack(4);
-  source.counterAxisAlignItems = 'MAX';
-  if (facts.sourceFile) source.appendChild(makeText(facts.sourceFile, 'Regular', 12, palette.muted, 140));
-  for (const url of facts.links) {
-    const link = makeText(url, 'Regular', 12, palette.accent, 140);
-    link.hyperlink = { type: 'URL', value: url };
-    source.appendChild(link);
-  }
-  if (source.children.length) strip.appendChild(source);
-  return strip;
 }
 
 function columnHeading(text: string): TextNode {

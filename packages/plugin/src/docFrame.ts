@@ -3,7 +3,7 @@
  * docFrame.ts — the component document: three frames, in reading order.
  *
  * This module is the dispatch: it owns the frame chrome (card, header band,
- * facts strip, content column) and routes every block kind the doc model
+ * content column) and routes every block kind the doc model
  * emits to the module that draws it. The blocks themselves live in
  * docBlocks.ts, anatomySection.ts, measureSection.ts and statesSection.ts;
  * the text and table primitives live in docText.ts. What stays here is the
@@ -16,7 +16,6 @@ import { parseRuns, groupSections } from './ui/docModel';
 import type {
   DocFrameModel,
   DocGroup,
-  FactsStrip,
   SectionBlock,
   VariantRow,
 } from './ui/docModel';
@@ -35,7 +34,7 @@ import {
 } from './docText';
 import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
 import {
-  buildFactsStrip, buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
+  buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
   buildPropertiesTable, buildStatesTable, measuredParagraph,
 } from './docBlocks';
 import { displayPartName } from './ui/displayNames';
@@ -634,12 +633,12 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
   } catch { /* keep the token-fitted width */ }
 }
 
-/** Build one group's frame: root card, header band, facts strip (Usage only),
- *  content column. Layer names carry the reading order. */
+/** Build one group's frame: root card, header band, content column. Layer
+ *  names carry the reading order. */
 async function buildGroupFrame(
   group: DocGroup, index: number, title: string, subtitle: string | null,
   subtitleSource: 'ai' | 'description' | null, logoBase64: string | null,
-  includeHidden: boolean, pill: PillState | null, facts: FactsStrip | null,
+  includeHidden: boolean, pill: PillState | null,
 ): Promise<FrameNode> {
   const frame = figma.createFrame();
   frame.name = `${index + 1} ${group.label}`;
@@ -661,17 +660,6 @@ async function buildGroupFrame(
     const header = await buildHeader(title, subtitle, subtitleSource, group.label, logoBase64, pill);
     frame.appendChild(header);
     header.layoutSizingHorizontal = 'FILL';
-
-    if (facts) {
-      const strip = buildFactsStrip(facts, CONTENT_WIDTH);
-      if (strip) {
-        const wrap = vstack(0);
-        wrap.paddingLeft = wrap.paddingRight = PAD_X;
-        wrap.appendChild(strip);
-        frame.appendChild(wrap);
-        wrap.layoutSizingHorizontal = 'FILL';
-      }
-    }
 
     const content = vstack(40);
     content.paddingTop = 48;
@@ -764,7 +752,7 @@ export async function buildDocFrames(
       const isUsage = group.id === 'usage';
       frames.push(await buildGroupFrame(
         group, i, model.displayName, isUsage ? subtitle : null, isUsage ? subtitleSource : null,
-        logoBase64 ?? null, includeHidden, pill, isUsage ? model.facts : null,
+        logoBase64 ?? null, includeHidden, pill,
       ));
     }
 

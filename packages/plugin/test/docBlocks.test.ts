@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
 import {
-  buildFactsStrip, buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
+  buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
   buildPropertiesTable, buildStatesTable, measuredParagraph,
 } from '../src/docBlocks';
 import { applyThemeToKit, PROSE_MEASURE } from '../src/frameKit';
@@ -14,18 +14,6 @@ const asNode = (f: FakeFrame): ProseNodeLike => f as unknown as ProseNodeLike;
 describe('docBlocks', () => {
   beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
   afterEach(() => uninstallFakeFigma());
-
-  it('draws the facts strip as label over value pairs plus the source file and links', () => {
-    const strip = buildFactsStrip({
-      items: [{ label: 'Properties', value: '4' }, { label: 'States', value: '2' }],
-      sourceFile: 'Design System', links: ['https://example.com/checkbox'],
-    }, 768) as unknown as FakeFrame;
-    expect(strip.textChars()).toEqual(['PROPERTIES', '4', 'STATES', '2', 'Design System', 'https://example.com/checkbox']);
-  });
-
-  it('draws nothing for an empty facts strip', () => {
-    expect(buildFactsStrip({ items: [], sourceFile: null, links: [] }, 768)).toBeNull();
-  });
 
   it('caps a paragraph at the prose measure', () => {
     const p = measuredParagraph('Some text.', 768) as unknown as FakeFrame;
