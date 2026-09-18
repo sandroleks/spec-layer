@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { displayComponentName, displayPartName } from '../src/ui/displayNames';
+import { displayComponentName, displayPartName } from '../src/displayNames';
 
 describe('displayComponentName', () => {
   it('capitalises a fully lowercase name', () => {

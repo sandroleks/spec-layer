@@ -14,6 +14,7 @@ export * from './version';
 export * from './resolve';
 export * from './statesMatrix';
 export * from './contrast';
+export * from './displayNames';
 export {
   colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP,
   // The classifier's vocabulary, so a consumer telling a user how to name their
