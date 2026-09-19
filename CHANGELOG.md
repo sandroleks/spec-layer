@@ -19,6 +19,13 @@ none of the reasoning above.
 
 ### Added
 
+- **Foundation rows carry what the new frames draw.** A variable row now
+  projects the code syntax Figma's variable settings define and the scale
+  drawing its scopes call for; a text-style row projects letter spacing,
+  paragraph spacing, case, decoration, and the token bound to each metric the
+  specimen line names. Every existing variable and text-style document reads
+  "Update available" once, and its change list names the new fields.
+
 - **Foundation group descriptions come with a collection overview.** The one
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of

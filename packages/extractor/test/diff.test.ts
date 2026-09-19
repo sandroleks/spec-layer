@@ -92,7 +92,7 @@ const BLUE_2: FoundationValue = { kind: 'color', hex: '#0044EE', alpha: 1 };
 
 function colorRow(name: string, light: FoundationValue, dark: FoundationValue, description = ''): FoundationVariableRow {
   return {
-    kind: 'variable', name, description, resolvedType: 'COLOR',
+    kind: 'variable', name, description, resolvedType: 'COLOR', codeSyntax: {}, glyph: null,
     cells: [{ modeName: 'Light', value: light }, { modeName: 'Dark', value: dark }],
   };
 }
@@ -119,14 +119,19 @@ describe('formatFoundationValue', () => {
 });
 
 describe('formatTextMetrics', () => {
+  const baseMetrics = {
+    letterSpacing: { unit: 'PIXELS', value: 0 } as const, paragraphSpacing: 0,
+    textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+  };
+
   it('renders family, style, size and line height, and says auto or unknown honestly', () => {
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 } }))
+    expect(formatTextMetrics({ ...baseMetrics, fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 } }))
       .toBe('Inter Bold 32/40');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PERCENT', value: 125 } }))
+    expect(formatTextMetrics({ ...baseMetrics, fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PERCENT', value: 125 } }))
       .toBe('Inter Bold 32/125%');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } }))
+    expect(formatTextMetrics({ ...baseMetrics, fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } }))
       .toBe('Inter Bold 32/auto');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' } }))
+    expect(formatTextMetrics({ ...baseMetrics, fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' } }))
       .toBe('Inter Bold 32/unknown');
   });
 });
@@ -156,7 +161,7 @@ describe('foundationChangeGroups', () => {
   it('reports a changed type as one item and does not itemize its cells', () => {
     const before = unit([colorRow('size/base', BLUE, BLUE)]);
     const afterRow: FoundationVariableRow = {
-      kind: 'variable', name: 'size/base', description: '', resolvedType: 'FLOAT',
+      kind: 'variable', name: 'size/base', description: '', resolvedType: 'FLOAT', codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'number', value: 4 } }, { modeName: 'Dark', value: { kind: 'number', value: 4 } }],
     };
     expect(foundationChangeGroups(before, unit([afterRow]))).toEqual([
@@ -168,7 +173,11 @@ describe('foundationChangeGroups', () => {
     const before = unit([colorRow('heading/lg', BLUE, BLUE)]);
     const text: FoundationTextRow = {
       kind: 'textStyle', name: 'heading/lg', description: '',
-      metrics: { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 } },
+      metrics: {
+        fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 },
+        letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+        textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+      },
     };
     expect(foundationChangeGroups(before, unit([text]))).toEqual([
       G('Tokens', 'heading/lg: type COLOR changed to text style'),
@@ -176,7 +185,11 @@ describe('foundationChangeGroups', () => {
   });
 
   it('reports changed text metrics as one item', () => {
-    const metrics = { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' as const, value: 40 } };
+    const metrics = {
+      fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' as const, value: 40 },
+      letterSpacing: { unit: 'PIXELS' as const, value: 0 }, paragraphSpacing: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+    };
     const before = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics }], { collectionName: '', modeNames: [] });
     const after = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics: { ...metrics, fontSize: 36 } }], { collectionName: '', modeNames: [] });
     expect(foundationChangeGroups(before, after)).toEqual([

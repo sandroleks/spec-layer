@@ -465,6 +465,7 @@ describe('resolveLibraryChanges', () => {
   const unit: FoundationUnitContent = {
     collectionName: 'Semantic', modeNames: ['Light'], omittedModeNames: [],
     rows: [{ kind: 'variable', name: 'bg/brand', description: '', resolvedType: 'COLOR',
+      codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'color', hex: '#0055FF', alpha: 1 } }] }],
   };
   const component: ComponentDocBaseline = { v: 1, kind: 'component', contentHash: 'a', projection };

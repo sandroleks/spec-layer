@@ -734,7 +734,7 @@ describe('headerSubtitle', () => {
   const rows = (n: number): FoundationUnitContent['rows'] =>
     Array.from({ length: n }, (_, i) => ({
       kind: 'variable' as const, name: `v${i}`, description: '',
-      resolvedType: 'FLOAT' as const, cells: [],
+      resolvedType: 'FLOAT' as const, codeSyntax: {}, glyph: null, cells: [],
     }));
 
   it('counts variables and the modes they are shown in', () => {
@@ -946,7 +946,8 @@ describe('swatchValueLines', () => {
 
 describe('isColorRow', () => {
   const row = (resolvedType: 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN') => ({
-    kind: 'variable' as const, name: 'n', description: '', resolvedType, cells: [],
+    kind: 'variable' as const, name: 'n', description: '', resolvedType,
+    codeSyntax: {}, glyph: null, cells: [],
   });
 
   it('claims colour variables', () => {
@@ -962,7 +963,11 @@ describe('isColorRow', () => {
   it('leaves text styles to the table', () => {
     expect(isColorRow({
       kind: 'textStyle', name: 'H1', description: '',
-      metrics: { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } },
+      metrics: {
+        fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' },
+        letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+        textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+      },
     })).toBe(false);
   });
 
@@ -971,6 +976,7 @@ describe('isColorRow', () => {
     // value would drop a whole semantic collection into the numbers table.
     expect(isColorRow({
       kind: 'variable', name: 'bg', description: '', resolvedType: 'COLOR',
+      codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'unresolved', reason: 'external' } }],
     })).toBe(true);
   });

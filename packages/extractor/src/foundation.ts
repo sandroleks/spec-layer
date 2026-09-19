@@ -949,6 +949,40 @@ export function planFoundationUnits(
 export interface FoundationRowCell { modeName: string; value: FoundationValue }
 
 /**
+ * What a number cell draws beside its value, derived from the variable's Figma
+ * scopes. First matching row of this table wins; the raw scope list stays off
+ * the row so a scope change that would draw nothing different moves no hash.
+ */
+export type FoundationGlyph =
+  | 'bar' | 'radius' | 'stroke' | 'opacity' | 'fontSize' | 'lineHeight' | 'letterSpacing';
+
+const GLYPH_BY_SCOPE: ReadonlyArray<[readonly string[], FoundationGlyph]> = [
+  [['GAP', 'WIDTH_HEIGHT', 'PARAGRAPH_SPACING', 'PARAGRAPH_INDENT'], 'bar'],
+  [['CORNER_RADIUS'], 'radius'],
+  [['STROKE_FLOAT'], 'stroke'],
+  [['OPACITY'], 'opacity'],
+  [['FONT_SIZE'], 'fontSize'],
+  [['LINE_HEIGHT'], 'lineHeight'],
+  [['LETTER_SPACING'], 'letterSpacing'],
+];
+
+export function glyphForScopes(
+  scopes: readonly string[], resolvedType: FoundationVariableType,
+): FoundationGlyph | null {
+  if (resolvedType !== 'FLOAT') return null;
+  if (scopes.length === 0 || scopes.includes('ALL_SCOPES')) return null;
+  for (const [members, glyph] of GLYPH_BY_SCOPE) {
+    if (members.some((s) => scopes.includes(s))) return glyph;
+  }
+  return null;
+}
+
+/** The text-style metrics the specimen list names, and so the only bindings it shows. */
+export const TEXT_METRIC_FIELDS = [
+  'fontFamily', 'fontStyle', 'fontSize', 'lineHeight', 'letterSpacing', 'paragraphSpacing',
+] as const;
+
+/**
  * ONLY what a frame actually draws for a variable: the name, the optional
  * description column, one cell per rendered mode, and the declared type.
  *
@@ -970,26 +1004,36 @@ export interface FoundationVariableRow {
   name: string;
   description: string;
   resolvedType: FoundationVariableType;
+  /**
+   * The code syntax Figma's variable settings define, per platform, exactly as
+   * stored (`WEB`, `ANDROID`, `iOS`). Empty when none is defined. Every entry is
+   * drawn as a chip under the name, so all of it is hashed; nothing is derived.
+   */
+  codeSyntax: Record<string, string>;
+  /** The scale drawing a number cell shows above its value; null draws nothing. */
+  glyph: FoundationGlyph | null;
   cells: FoundationRowCell[];
 }
 
 /**
- * ONLY the metrics a frame actually draws: the specimen is set in
- * family/style at fontSize, and the metrics line reads
- * "family style size/lineHeight". Nothing else belongs here.
- *
- * letterSpacing, paragraphSpacing, paragraphIndent, textCase, and
- * textDecoration are deliberately absent even though extraction captures all
- * of them on FoundationTextStyle. They reach no pixel, so including them here
- * would make the drift hash fire on changes whose Update produces a
- * byte-identical frame. When a later phase renders them, move them back here
- * and the hash picks them up with no other change.
+ * The metrics the text-style specimen list draws: the specimen is set in
+ * family/style at fontSize with the style's line height, letter spacing, case
+ * and decoration applied, and the metrics line names each of them plus the
+ * paragraph spacing. `boundTokens` names the variable bound to each metric the
+ * line shows, keyed by `TEXT_METRIC_FIELDS`, because the line draws that name
+ * as a chip. `paragraphIndent` and any other binding reach no pixel and stay
+ * out, so a change to them moves no hash.
  */
 export interface FoundationTextMetrics {
   fontFamily: string;
   fontStyle: string;
   fontSize: number;
   lineHeight: RawTextStyle['lineHeight'];
+  letterSpacing: RawTextStyle['letterSpacing'];
+  paragraphSpacing: number;
+  textCase: string;
+  textDecoration: string;
+  boundTokens: Record<string, string>;
 }
 
 export interface FoundationTextRow {
@@ -1044,6 +1088,26 @@ function partOf(groups: string[], group: string): { index: number; total: number
   return index < 0 ? undefined : { index, total: groups.length };
 }
 
+/** Only platforms with a non-empty declared syntax, in code-unit key order so the hash is stable. */
+function definedCodeSyntax(codeSyntax: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(codeSyntax).sort(compareCodeUnits)) {
+    const value = codeSyntax[key];
+    if (typeof value === 'string' && value.trim() !== '') out[key] = value;
+  }
+  return out;
+}
+
+/** The bound variable names for the metrics the specimen line draws, nothing else. */
+function boundMetricTokens(bound: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of TEXT_METRIC_FIELDS) {
+    const name = bound[field];
+    if (typeof name === 'string' && name !== '') out[field] = name;
+  }
+  return out;
+}
+
 /**
  * The rows and mode columns for one output unit. Every renderer AND the drift
  * hash consume this, which is what mechanically guarantees "the hash covers
@@ -1080,6 +1144,9 @@ export function unitContent(
         metrics: {
           fontFamily: s.fontFamily, fontStyle: s.fontStyle,
           fontSize: s.fontSize, lineHeight: s.lineHeight,
+          letterSpacing: s.letterSpacing, paragraphSpacing: s.paragraphSpacing,
+          textCase: s.textCase, textDecoration: s.textDecoration,
+          boundTokens: boundMetricTokens(s.boundVariables),
         },
       })),
     };
@@ -1123,6 +1190,8 @@ export function unitContent(
       name: v.name,
       description: v.description,
       resolvedType: v.resolvedType,
+      codeSyntax: definedCodeSyntax(v.codeSyntax),
+      glyph: glyphForScopes(v.provenance.scopes, v.resolvedType),
       cells: modes.map((m) => ({
         modeName: m.name,
         value: v.valuesByMode[m.modeId] ?? { kind: 'unresolved', reason: 'missing' },
