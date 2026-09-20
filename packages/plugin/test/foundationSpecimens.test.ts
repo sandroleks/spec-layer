@@ -4,8 +4,10 @@ import {
   layerLines, figmaEffectsFor, buildEffectSpecimenList,
 } from '../src/foundationSpecimens';
 import { setFontFamilies } from '../src/frameKit';
+import { serializeFoundation } from '../src/serializeFoundation';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
-import type { FoundationTextRow } from '@spec-layer/extractor';
+import { buildFoundation, unitContent } from '@spec-layer/extractor';
+import type { FoundationEffectRow, FoundationTextRow } from '@spec-layer/extractor';
 
 const BASE = {
   fontFamily: 'Inter', fontStyle: 'Semi Bold', fontSize: 24, lineHeight: { unit: 'PIXELS' as const, value: 32 },
@@ -86,7 +88,7 @@ describe('layerLines', () => {
       { type: 'glass', visible: true, radius: 12, lightIntensity: 0.5, lightAngle: 45,
         refraction: 0.2, depth: 4, dispersion: 0.1 },
       { type: 'unknown', figma_type: 'HOLOGRAM' },
-    ], { 'effects[0].radius': 'shadow/blur', 'effects[0].color': 'shadow/ink' });
+    ], { 'effects[0].blur': 'shadow/blur', 'effects[0].color': 'shadow/ink' });
     expect(lines.map((parts) => parts.map((p) => p.label).join(' · '))).toEqual([
       'Drop shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16%',
       'Inner shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16% · hidden',
@@ -95,11 +97,64 @@ describe('layerLines', () => {
       'Noise · monotone · size 1 · density 0.5 · #000000',
       'Texture · size 2 · radius 4',
       'Glass · radius 12 · light 0.5 at 45° · refraction 0.2 · depth 4 · dispersion 0.1',
-      'Unsupported effect',
+      'Unsupported effect (HOLOGRAM)',
     ]);
     expect(lines[0][2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
     expect(lines[0][4]).toEqual({ label: '#0F172A 16%', tokens: ['shadow/ink'] });
     expect(lines[1].every((p) => p.tokens.length === 0)).toBe(true);
+  });
+
+  it('keeps the alpha precision the extractor kept, rather than rounding to whole percent', () => {
+    // effects.ts rounds alpha to four decimals because Figma's percent field
+    // can express 0.125; printing "13%" for it would state a value nobody set.
+    const alpha = (a: number): string =>
+      layerLines([{ ...SHADOW, color: { hex: '#0f172a', alpha: a } }], {})[0][4].label;
+    expect(alpha(0.125)).toBe('#0F172A 12.5%');
+    expect(alpha(0.13)).toBe('#0F172A 13%');
+    expect(alpha(1)).toBe('#0F172A 100%');
+  });
+});
+
+describe('effect binding vocabulary', () => {
+  // The Critical this task's review caught: layerLines looked chips up under
+  // Figma's own field names, but serializeFoundation renames them on the way
+  // out. Driven end to end through the real serializer so the two vocabularies
+  // cannot drift apart again without a test failing.
+  const alias = (id: string) => ({ type: 'VARIABLE_ALIAS' as const, id });
+
+  const reader = {
+    collections: async () => [{
+      id: 'c1', name: 'Primitives', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Mode' }], variableIds: ['v1', 'v2'],
+    }],
+    variable: async (id: string) => ({
+      id,
+      name: id === 'v1' ? 'shadow/blur' : 'shadow/offset-y',
+      resolvedType: 'FLOAT' as const,
+      description: '', variableCollectionId: 'c1', codeSyntax: {},
+      valuesByMode: { m1: id === 'v1' ? 12 : 4 }, scopes: [], remote: false,
+    }),
+    textStyles: async () => [],
+    effectStyles: async () => [{
+      id: 'e1', name: 'Elevation/Low', description: '',
+      effects: [{
+        type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
+        color: { r: 0, g: 0, b: 0, a: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        boundVariables: { radius: alias('v1'), offsetY: alias('v2') },
+      }],
+    }],
+  };
+
+  it('draws a chip for a bound blur radius and a bound offset, through the real serializer', async () => {
+    const dump = await serializeFoundation(reader, 'FILE1', '2026-09-20T00:00:00.000Z');
+    const content = unitContent(buildFoundation(dump), { target: 'effectStyles' })!;
+    const row = content.rows[0] as FoundationEffectRow;
+    // The serializer's own vocabulary, which is what layerLines has to read.
+    expect(Object.keys(row.boundTokens).sort())
+      .toEqual(['effects[0].blur', 'effects[0].offset_y']);
+    const parts = layerLines(row.layers, row.boundTokens)[0];
+    expect(parts[1]).toEqual({ label: '0, 4', tokens: ['shadow/offset-y'] });
+    expect(parts[2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
   });
 });
 
@@ -117,6 +172,20 @@ describe('figmaEffectsFor', () => {
       { type: 'LAYER_BLUR', blurType: 'NORMAL', visible: true, radius: 8 },
     ]);
   });
+
+  it('passes through the shadow and texture fields the content hash covers', () => {
+    // Both are hashed by foundationContentHash, so a card that dropped them
+    // would be hashed-but-undrawn, and a non-square texture would draw at the
+    // wrong size besides.
+    expect(figmaEffectsFor([{ ...SHADOW, showShadowBehindNode: true }])[0])
+      .toMatchObject({ showShadowBehindNode: true });
+    expect(figmaEffectsFor([{
+      type: 'texture', visible: true, noiseSize: 2, noiseSizeVector: { x: 2, y: 5 },
+      radius: 4, clipToShape: true,
+    }])[0]).toMatchObject({ noiseSizeVector: { x: 2, y: 5 } });
+    // Absent stays absent: no fabricated default reaches the card.
+    expect(figmaEffectsFor([SHADOW])[0]).not.toHaveProperty('showShadowBehindNode');
+  });
 });
 
 describe('buildEffectSpecimenList', () => {
@@ -126,7 +195,7 @@ describe('buildEffectSpecimenList', () => {
   it('draws a card per style with its layers applied, and the layer lines under the name', () => {
     const list = buildEffectSpecimenList([{
       kind: 'effectStyle', name: 'Elevation/Low', description: 'Cards at rest.',
-      layers: [SHADOW], boundTokens: { 'effects[0].radius': 'shadow/blur' },
+      layers: [SHADOW], boundTokens: { 'effects[0].blur': 'shadow/blur' },
     }], 768, true) as unknown as FakeFrame;
     const chars = list.textChars();
     expect(chars).toContain('Elevation/Low');
@@ -150,5 +219,42 @@ describe('buildEffectSpecimenList', () => {
       kind: 'effectStyle', name: 'Shadow', description: '', layers: [SHADOW], boundTokens: {},
     }], 768, true) as unknown as FakeFrame;
     expect(plain.findByName('Backdrop')).toBeNull();
+  });
+
+  it('keeps the layers a Figma build accepts when it rejects one of them', () => {
+    // The never-fabricate safeguard: effects are applied one at a time so a
+    // shape this build will not take costs only itself. Here GLASS is refused.
+    installFakeFigma({
+      createRectangle: () => {
+        const applied: { type: string }[] = [];
+        const r: Record<string, unknown> = {
+          type: 'RECTANGLE', name: '', width: 0, height: 0,
+          resize(w: number, h: number) { r.width = w; r.height = h; },
+        };
+        Object.defineProperty(r, 'effects', {
+          get: () => applied,
+          set: (next: { type: string }[]) => {
+            if (next.some((e) => e.type === 'GLASS')) throw new Error('unsupported effect');
+            applied.length = 0;
+            applied.push(...next);
+          },
+        });
+        return r;
+      },
+    });
+    const list = buildEffectSpecimenList([{
+      kind: 'effectStyle', name: 'Mixed', description: '', boundTokens: {},
+      layers: [
+        SHADOW,
+        { type: 'glass', visible: true, radius: 12, lightIntensity: 0.5, lightAngle: 45,
+          refraction: 0.2, depth: 4, dispersion: 0.1 },
+        { ...SHADOW, type: 'inner-shadow' },
+      ],
+    }], 768, true) as unknown as FakeFrame;
+    const card = list.findByName('Specimen') as FakeFrame;
+    expect((card.effects as { type: string }[]).map((e) => e.type))
+      .toEqual(['DROP_SHADOW', 'INNER_SHADOW']);
+    // Refused on the card, still named in the text: never silently dropped.
+    expect(list.textChars()).toContain('Glass');
   });
 });

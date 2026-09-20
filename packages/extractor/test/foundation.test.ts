@@ -1106,7 +1106,7 @@ function effectDump(): SerializedFoundation {
         color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
         bindings: { radius: { kind: 'variable', id: 'v6' } as never },
       }],
-      bindings: [{ property: 'effects[0].radius', tokenId: 'v6' }, { property: 'effects[0].color', tokenId: 'gone' }],
+      bindings: [{ property: 'effects[0].blur', tokenId: 'v6' }, { property: 'effects[0].color', tokenId: 'gone' }],
     },
     {
       id: 'e2', name: 'Glass/Frosted', description: '',
@@ -1139,7 +1139,7 @@ describe('effect styles unit', () => {
           color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
         }],
         // 'gone' resolves to no local variable, so it is omitted rather than guessed.
-        boundTokens: { 'effects[0].radius': 'shadow/blur' },
+        boundTokens: { 'effects[0].blur': 'shadow/blur' },
       },
       {
         kind: 'effectStyle', name: 'Glass/Frosted', description: '',

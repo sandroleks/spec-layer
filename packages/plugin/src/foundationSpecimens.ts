@@ -56,11 +56,28 @@ export function metricsLine(m: FoundationTextMetrics): LinePart[] {
   return parts;
 }
 
-const pct = (alpha: number): string => `${Math.round(alpha * 100)}%`;
+/**
+ * Alpha as a percentage, to whatever precision the extractor kept.
+ *
+ * Not `Math.round(alpha * 100)`: effects.ts rounds alpha to FOUR decimals
+ * precisely because Figma's own percent field can express 0.125, and whole
+ * percent would print that and 0.13 identically. Scaling by 10000 and dividing
+ * by 100 trims the binary-float tail without inventing or losing a digit, and
+ * String() drops trailing zeros on its own.
+ */
+const pct = (alpha: number): string => `${Math.round(alpha * 10000) / 100}%`;
 const colorLabel = (c: { hex: string; alpha: number }): string => `${c.hex.toUpperCase()} ${pct(c.alpha)}`;
 const num = (n: number): string => String(n);
 
-/** One line per layer, in layer order, as parts with a chip for every bound field. */
+/**
+ * One line per layer, in layer order, as parts with a chip for every bound field.
+ *
+ * The field names below are the SERIALIZER's vocabulary, not Figma's:
+ * serializeFoundation.ts renames `radius` to `blur` and `offsetX`/`offsetY` to
+ * `offset_x`/`offset_y` on the way out (EFFECT_BINDING_FIELDS), and unitContent
+ * copies that key verbatim into `boundTokens`. Looking a chip up under Figma's
+ * own name finds nothing, which is a token that is hashed but never drawn.
+ */
 export function layerLines(layers: EffectLayer[], boundTokens: Record<string, string>): LinePart[][] {
   return layers.map((layer, i) => {
     const tok = (field: string): string[] => {
@@ -74,8 +91,8 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
       case 'inner-shadow':
         parts = [
           part(layer.type === 'drop-shadow' ? 'Drop shadow' : 'Inner shadow'),
-          { label: `${num(layer.offset.x)}, ${num(layer.offset.y)}`, tokens: [...tok('offsetX'), ...tok('offsetY')] },
-          part(`blur ${num(layer.radius)}`, 'radius'),
+          { label: `${num(layer.offset.x)}, ${num(layer.offset.y)}`, tokens: [...tok('offset_x'), ...tok('offset_y')] },
+          part(`blur ${num(layer.radius)}`, 'blur'),
           ...(layer.spread !== undefined ? [part(`spread ${num(layer.spread)}`, 'spread')] : []),
           part(colorLabel(layer.color), 'color'),
         ];
@@ -84,7 +101,7 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
       case 'background-blur':
         parts = [
           part(layer.type === 'layer-blur' ? 'Layer blur' : 'Background blur'),
-          part(num(layer.radius), 'radius'),
+          part(num(layer.radius), 'blur'),
           ...(layer.blurType === 'progressive' ? [part(`progressive from ${num(layer.startRadius)}`)] : []),
         ];
         break;
@@ -103,8 +120,10 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
         break;
       case 'unknown':
         // Listed, never guessed at: a shape this build of the plugin has no
-        // model for has no numbers to report and nothing to apply.
-        return [part('Unsupported effect')];
+        // model for has no numbers to report and nothing to apply. The Figma
+        // type name is the one fact the extractor DID keep, and it is hashed,
+        // so it is named here rather than dropped.
+        return [part(`Unsupported effect (${layer.figma_type})`)];
     }
     if ('visible' in layer && !layer.visible) parts.push(part('hidden'));
     return parts;
@@ -134,6 +153,11 @@ export function figmaEffectsFor(layers: EffectLayer[]): Effect[] {
           visible: true, blendMode: layer.blendMode as BlendMode,
           color: rgba(layer.color), offset: layer.offset, radius: layer.radius,
           ...(layer.spread !== undefined ? { spread: layer.spread } : {}),
+          // Hashed by the foundation content hash, so it has to reach the card:
+          // a shadow drawn behind translucent pixels looks different from one
+          // that is not. Conditional, so a style that never set it sends nothing.
+          ...(layer.showShadowBehindNode !== undefined
+            ? { showShadowBehindNode: layer.showShadowBehindNode } : {}),
         } as Effect);
         break;
       case 'layer-blur':
@@ -157,8 +181,11 @@ export function figmaEffectsFor(layers: EffectLayer[]): Effect[] {
         break;
       }
       case 'texture':
+        // noiseSizeVector is hashed too, and a non-square texture draws at the
+        // wrong size without it: the typings say noiseSize only equals its x.
         out.push({ type: 'TEXTURE', visible: true, noiseSize: layer.noiseSize, radius: layer.radius,
-          clipToShape: layer.clipToShape } as Effect);
+          clipToShape: layer.clipToShape,
+          ...(layer.noiseSizeVector ? { noiseSizeVector: layer.noiseSizeVector } : {}) } as Effect);
         break;
       case 'glass':
         out.push({ type: 'GLASS', visible: true, radius: layer.radius, lightIntensity: layer.lightIntensity,

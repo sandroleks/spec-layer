@@ -308,7 +308,7 @@ describe('buildFoundationArtifactV5 — alias graph and scope', () => {
         type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
         color: { hex: '#000000', alpha: 0.2 }, offset: { x: 0, y: 2 }, radius: 4, spread: 0,
       }],
-      bindings: [{ property: 'effects[0].radius', tokenId: 'terminal' }],
+      bindings: [{ property: 'effects[0].blur', tokenId: 'terminal' }],
     }];
     const artifact = artifactOf(source, { ...META, scope: { target: 'effectStyles' } });
     expect(artifact.styles.effects.map((s) => s.name)).toEqual(['Elevation/Low']);
