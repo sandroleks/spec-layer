@@ -300,6 +300,30 @@ describe('buildFoundationArtifactV5 — alias graph and scope', () => {
       finding.code === 'SOURCE_PARTIALLY_UNAVAILABLE')).toBe(false);
   });
 
+  it('scopes to effect styles: only effects, and only their bound-token dependency collections', () => {
+    const source = aliasSource();
+    source.effectStyles = [{
+      id: 'e1', name: 'Elevation/Low', description: '',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 0.2 }, offset: { x: 0, y: 2 }, radius: 4, spread: 0,
+      }],
+      bindings: [{ property: 'effects[0].radius', tokenId: 'terminal' }],
+    }];
+    const artifact = artifactOf(source, { ...META, scope: { target: 'effectStyles' } });
+    expect(artifact.styles.effects.map((s) => s.name)).toEqual(['Elevation/Low']);
+    expect(artifact.styles.typography).toEqual([]);
+    // 'terminal' lives in prim; the closure of prim is prim alone.
+    expect(artifact.collections.map((c) => c.id)).toEqual(['prim']);
+    expect(artifact.completeness).toMatchObject({ collections: 'partial', styles: 'partial' });
+    expect(artifact.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({
+      code: 'EXPORT_SCOPED',
+      message: 'This artifact is scoped to effect styles and their bound-token dependency collections.',
+      details: { target: 'effectStyles', included_collection_ids: ['prim'] },
+    })]));
+    expect(validateLevel1(artifact)).toEqual([]);
+  });
+
   it('throws before construction when a scoped collection no longer exists', () => {
     expect(() => artifactOf(aliasSource(), {
       ...META, scope: { target: 'collection', collectionId: 'gone' },

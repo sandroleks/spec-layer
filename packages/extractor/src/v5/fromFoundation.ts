@@ -41,7 +41,8 @@ export interface FoundationExportV5Meta {
   libraryEnabled?: boolean | null;
   scope?:
     | { target: 'collection'; collectionId: string }
-    | { target: 'textStyles' };
+    | { target: 'textStyles' }
+    | { target: 'effectStyles' };
 }
 
 export interface FoundationExportV5Result {
@@ -407,6 +408,18 @@ function textStyleDependencyCollections(foundation: FoundationSpec): FoundationC
   return foundation.collections.filter((collection) => wanted.has(collection.id));
 }
 
+function effectStyleDependencyCollections(foundation: FoundationSpec): FoundationCollection[] {
+  const boundIds = new Set(foundation.effectStyles.flatMap((style) =>
+    (style.bindings ?? []).map((binding) => binding.tokenId)));
+  const seedIds = foundation.collections.flatMap((collection) =>
+    collection.variables.some((variable) => boundIds.has(variable.provenance.id))
+      ? [collection.id]
+      : []);
+  const wanted = new Set(seedIds.flatMap((id) =>
+    collectionClosure(foundation, id).map((collection) => collection.id)));
+  return foundation.collections.filter((collection) => wanted.has(collection.id));
+}
+
 function tokenTypeOf(variable: FoundationVariable): TokenType {
   if (variable.resolvedType === 'COLOR') return 'color';
   if (variable.resolvedType === 'BOOLEAN') return 'boolean';
@@ -725,6 +738,8 @@ function completenessOf(
   foundation: FoundationSpec,
   includedCollections: FoundationCollection[],
   scope: FoundationExportV5Meta['scope'],
+  includesTypography: boolean,
+  includesEffects: boolean,
   staleIssueCount: number,
   externalSourceCount: number,
   collectionMetadataUnavailable: boolean,
@@ -738,19 +753,24 @@ function completenessOf(
     collections = 'partial';
     styles = scope.target === 'collection'
       ? 'unavailable'
-      : unavailable.has('textStyles') ? 'unavailable' : 'partial';
+      : scope.target === 'textStyles'
+        ? (unavailable.has('textStyles') ? 'unavailable' : 'partial')
+        : (unavailable.has('effectStyles') ? 'unavailable' : 'partial');
+    const scopedMessage = scope.target === 'collection'
+      ? 'This artifact is scoped to one collection and its complete local dependency closure.'
+      : scope.target === 'textStyles'
+        ? 'This artifact is scoped to typography styles and their bound-token dependency collections.'
+        : 'This artifact is scoped to effect styles and their bound-token dependency collections.';
     diagnostics.push(diagnostic('EXPORT_SCOPED', {
       entity_id: scope.target === 'collection' ? scope.collectionId : ROOT,
-      message: scope.target === 'collection'
-        ? 'This artifact is scoped to one collection and its complete local dependency closure.'
-        : 'This artifact is scoped to typography styles and their bound-token dependency collections.',
+      message: scopedMessage,
       details: scope.target === 'collection'
         ? {
             requested_collection_id: scope.collectionId,
             included_collection_ids: includedCollections.map((collection) => collection.id),
           }
         : {
-            target: 'textStyles',
+            target: scope.target,
             included_collection_ids: includedCollections.map((collection) => collection.id),
           },
     }));
@@ -777,25 +797,24 @@ function completenessOf(
       details: { source: 'figma:variables' },
     }));
   }
-  if (scope?.target !== 'collection'
-    && (foundation.textStyles.length > 0 || foundation.effectStyles.length > 0)) {
+  const typographyCount = includesTypography ? foundation.textStyles.length : 0;
+  const effectCount = includesEffects ? foundation.effectStyles.length : 0;
+  if (typographyCount > 0 || effectCount > 0) {
     diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
       entity_id: ROOT,
       message: 'Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.',
       details: {
-        typography: foundation.textStyles.length,
-        effects: scope?.target === 'textStyles' ? 0 : foundation.effectStyles.length,
+        typography: typographyCount,
+        effects: effectCount,
         hidden_from_publishing_unavailable: true,
         lifecycle_unavailable: true,
-        consuming_mode_unavailable: scope?.target !== 'textStyles'
-          && foundation.effectStyles.length > 0,
+        consuming_mode_unavailable: effectCount > 0,
       },
     }));
   }
-  const textStylesUnavailable = unavailable.has('textStyles');
-  const effectStylesUnavailable = scope === undefined && unavailable.has('effectStyles');
-  if (scope?.target !== 'collection'
-    && (textStylesUnavailable || effectStylesUnavailable)) {
+  const textStylesUnavailable = includesTypography && unavailable.has('textStyles');
+  const effectStylesUnavailable = includesEffects && unavailable.has('effectStyles');
+  if (textStylesUnavailable || effectStylesUnavailable) {
     diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
       entity_id: ROOT,
       message: 'One or more composite-style source reads were unavailable.',
@@ -820,15 +839,21 @@ export function buildFoundationArtifactV5(
   const requestedCollectionId = meta.scope?.target === 'collection'
     ? meta.scope.collectionId
     : undefined;
+  // Which style families this artifact emits. A scoped copy emits one family
+  // or none; the whole-file copy emits both.
+  const includesTypography = meta.scope === undefined || meta.scope.target === 'textStyles';
+  const includesEffects = meta.scope === undefined || meta.scope.target === 'effectStyles';
   const includedCollections = meta.scope?.target === 'textStyles'
     ? textStyleDependencyCollections(foundation)
-    : collectionClosure(foundation, requestedCollectionId);
+    : meta.scope?.target === 'effectStyles'
+      ? effectStyleDependencyCollections(foundation)
+      : collectionClosure(foundation, requestedCollectionId);
   const includedCollectionIds = new Set(includedCollections.map((collection) => collection.id));
   const diagnostics: Diagnostic[] = confusableDiagnostics(includedCollections);
-  if (meta.scope?.target !== 'collection') {
+  if (includesTypography) {
     diagnostics.push(...confusableStyleDiagnostics(foundation.textStyles, 'typography'));
   }
-  if (meta.scope === undefined) {
+  if (includesEffects) {
     diagnostics.push(...confusableStyleDiagnostics(foundation.effectStyles, 'effect'));
   }
 
@@ -849,14 +874,14 @@ export function buildFoundationArtifactV5(
       }
     }
   }
-  if (meta.scope?.target !== 'collection') {
+  if (includesTypography) {
     for (const style of foundation.textStyles) {
       for (const tokenId of Object.values(style.bindingIds ?? {})) {
         if (!normalizedPaths.has(tokenId)) externalSources.push(tokenId);
       }
     }
   }
-  if (meta.scope === undefined) {
+  if (includesEffects) {
     for (const style of foundation.effectStyles) {
       for (const binding of style.bindings ?? []) {
         if (!normalizedPaths.has(binding.tokenId)) externalSources.push(binding.tokenId);
@@ -890,6 +915,7 @@ export function buildFoundationArtifactV5(
 
   const completeness = completenessOf(
     foundation, includedCollections, meta.scope,
+    includesTypography, includesEffects,
     sourceIssues.issues.length, externalSources.length,
     collectionMetadataUnavailable, diagnostics,
   );
@@ -957,7 +983,7 @@ export function buildFoundationArtifactV5(
   }
 
   const tokensById = new Map(tokens.map((token) => [token.id, token]));
-  const typography = meta.scope?.target !== 'collection'
+  const typography = includesTypography
     ? foundation.textStyles.flatMap((style) => {
         const projected = typographyStyleOf(
           style, normalizedPaths, tokensById, diagnostics,
@@ -965,7 +991,7 @@ export function buildFoundationArtifactV5(
         return projected === null ? [] : [projected];
       })
     : [];
-  const effects = meta.scope === undefined
+  const effects = includesEffects
     ? foundation.effectStyles.flatMap((style) => {
         const projected = effectStyleOf(style, tokensById, diagnostics);
         return projected === null ? [] : [projected];
