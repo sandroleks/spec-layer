@@ -57,12 +57,11 @@ export function scopeIconKind(
   scope: FoundationScope,
 ): FoundationIconKind {
   if (scope.target === 'textStyles') return 'typography';
-
   // An effect-styles scope has no collection to look up. Task 5 gives it its
-  // own icon kind; for now it falls through to the collection lookup below,
-  // which finds nothing and yields 'mixed'.
-  const collectionId = scope.target === 'collection' ? scope.collectionId : undefined;
-  const collection = spec?.collections.find((c) => c.id === collectionId);
+  // own icon kind; for now it falls through to 'mixed'.
+  if (scope.target !== 'collection') return 'mixed';
+
+  const collection = spec?.collections.find((c) => c.id === scope.collectionId);
   if (!collection) return 'mixed';
 
   return variablesIconKind(

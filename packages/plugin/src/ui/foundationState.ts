@@ -65,7 +65,11 @@ export function defaultSelection(spec: FoundationSpec): FoundationSelection {
       modeIds: c.modes.slice(0, MAX_MODE_COLUMNS).map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
-    effectStyles: spec.effectStyles.length > 0,
+    // Deferred to Task 6: the picker has no effect-styles row yet, and
+    // selecting a source the user cannot see or untick would build a Section
+    // they never asked for. Task 6 restores `spec.effectStyles.length > 0`
+    // alongside the row that makes it visible.
+    effectStyles: false,
   };
 }
 
