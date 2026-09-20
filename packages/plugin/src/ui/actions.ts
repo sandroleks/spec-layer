@@ -28,7 +28,7 @@ import {
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
-  defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
+  defaultSelection, toggleCollection, toggleMode, toggleTextStyles, toggleEffectStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
@@ -875,7 +875,8 @@ function foundationDtcgJson(
   descriptions: Record<string, Record<string, string>>,
   scope?:
     | { target: 'collection'; collectionId: string }
-    | { target: 'textStyles' },
+    | { target: 'textStyles' }
+    | { target: 'effectStyles' },
 ): string {
   const { artifact } = buildFoundationArtifactV5(spec, {
     exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
@@ -972,12 +973,24 @@ export async function copyFoundationBriefForScope(
     return;
   }
 
-  if (spec.textStyles.length === 0) {
-    ui.error('This file has no text styles left. Nothing was copied.');
+  if (scope.target === 'textStyles') {
+    if (spec.textStyles.length === 0) {
+      ui.error('This file has no text styles left. Nothing was copied.');
+      return;
+    }
+    await deliverBrief(
+      () => foundationDtcgJson(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+      ui,
+    );
+    return;
+  }
+
+  if (spec.effectStyles.length === 0) {
+    ui.error('This file has no effect styles left. Nothing was copied.');
     return;
   }
   await deliverBrief(
-    () => foundationDtcgJson(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+    () => foundationDtcgJson(spec, generatedAt, {}, { target: 'effectStyles' }),
     ui,
   );
 }
@@ -1076,7 +1089,8 @@ export function onFoundationToggleAll(): void {
 export type FoundationChange =
   | { kind: 'collection'; collectionId: string; checked: boolean }
   | { kind: 'mode'; collectionId: string; modeId: string; checked: boolean }
-  | { kind: 'textStyles'; checked: boolean };
+  | { kind: 'textStyles'; checked: boolean }
+  | { kind: 'effectStyles'; checked: boolean };
 
 export function onFoundationChange(change: FoundationChange): void {
   if (!foundationSpec) return;
@@ -1092,6 +1106,9 @@ export function onFoundationChange(change: FoundationChange): void {
       break;
     case 'textStyles':
       foundationSelection = toggleTextStyles(foundationSelection, change.checked);
+      break;
+    case 'effectStyles':
+      foundationSelection = toggleEffectStyles(foundationSelection, change.checked);
       break;
     default: {
       const exhaustive: never = change;

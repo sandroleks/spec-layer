@@ -926,14 +926,18 @@ function copyPresenter(): BuildPresenter {
 }
 
 /**
- * Copy one Foundations row: a collection with all of its modes, or the text
- * styles. Reuses the Library row's scoped copy, which widens a collection to
- * every mode and its local dependency closure. modeIds is a frame-only limit
- * the copy ignores, so it is passed empty.
+ * Copy one Foundations row: a collection with all of its modes, the text
+ * styles, or the effect styles. Reuses the Library row's scoped copy, which
+ * widens a collection to every mode and its local dependency closure. modeIds
+ * is a frame-only limit the copy ignores, so it is passed empty.
  */
-function copyFoundationRow(id: string, textStyles: boolean): void {
-  if (textStyles) {
+function copyFoundationRow(id: string, kind: 'collection' | 'textStyles' | 'effectStyles'): void {
+  if (kind === 'textStyles') {
     void copyFoundationBriefForScope({ target: 'textStyles' }, copyPresenter());
+    return;
+  }
+  if (kind === 'effectStyles') {
+    void copyFoundationBriefForScope({ target: 'effectStyles' }, copyPresenter());
     return;
   }
   const collection = currentFoundationSpec()?.collections.find((c) => c.id === id);
@@ -1909,7 +1913,12 @@ document.addEventListener('click', (event) => {
 
   const foundationCopy = target.closest<HTMLButtonElement>('[data-foundation-copy]');
   if (foundationCopy?.dataset.foundationCopy) {
-    copyFoundationRow(foundationCopy.dataset.foundationCopy, foundationCopy.dataset.textStyles === 'true');
+    const copyKind = foundationCopy.dataset.textStyles === 'true'
+      ? 'textStyles'
+      : foundationCopy.dataset.effectStyles === 'true'
+        ? 'effectStyles'
+        : 'collection';
+    copyFoundationRow(foundationCopy.dataset.foundationCopy, copyKind);
     return;
   }
 
@@ -1918,6 +1927,8 @@ document.addEventListener('click', (event) => {
     const checked = foundationSource.getAttribute('aria-pressed') !== 'true';
     if (foundationSource.dataset.textStyles === 'true') {
       onFoundationChange({ kind: 'textStyles', checked });
+    } else if (foundationSource.dataset.effectStyles === 'true') {
+      onFoundationChange({ kind: 'effectStyles', checked });
     } else {
       onFoundationChange({
         kind: 'collection',

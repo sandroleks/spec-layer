@@ -18,6 +18,13 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** Joins prose parts the way a sentence does: "a", "a and b", "a, b and c". */
+function joinAnd(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('');
+  if (parts.length === 2) return parts.join(' and ');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 /**
  * Which row icon a collection gets. Derived in foundationIcon.ts because My
  * Library's foundation rows must answer this the same way from a stored scope
@@ -39,6 +46,7 @@ export interface FoundationSummary {
   maxModeCount: number;
   variableCount: number;
   textStyleCount: number;
+  effectStyleCount: number;
   collections: FoundationSummaryCollection[];
 }
 
@@ -48,6 +56,7 @@ export function summarize(spec: FoundationSpec): FoundationSummary {
     maxModeCount: spec.collections.reduce((n, c) => Math.max(n, c.modes.length), 0),
     variableCount: spec.collections.reduce((n, c) => n + c.variables.length, 0),
     textStyleCount: spec.textStyles.length,
+    effectStyleCount: spec.effectStyles.length,
     collections: spec.collections.map((c) => ({
       id: c.id,
       name: c.name,
@@ -65,11 +74,7 @@ export function defaultSelection(spec: FoundationSpec): FoundationSelection {
       modeIds: c.modes.slice(0, MAX_MODE_COLUMNS).map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
-    // Deferred to Task 6: the picker has no effect-styles row yet, and
-    // selecting a source the user cannot see or untick would build a Section
-    // they never asked for. Task 6 restores `spec.effectStyles.length > 0`
-    // alongside the row that makes it visible.
-    effectStyles: false,
+    effectStyles: spec.effectStyles.length > 0,
   };
 }
 
@@ -151,8 +156,12 @@ export function toggleTextStyles(sel: FoundationSelection, on: boolean): Foundat
   return { ...sel, textStyles: on };
 }
 
+export function toggleEffectStyles(sel: FoundationSelection, on: boolean): FoundationSelection {
+  return { ...sel, effectStyles: on };
+}
+
 export function canGenerate(sel: FoundationSelection): boolean {
-  return sel.collections.length > 0 || sel.textStyles;
+  return sel.collections.length > 0 || sel.textStyles || sel.effectStyles;
 }
 
 /**
@@ -162,9 +171,10 @@ export function canGenerate(sel: FoundationSelection): boolean {
 export function emptyStateLines(spec: FoundationSpec): string[] {
   const hasCollections = spec.collections.length > 0;
   const hasTextStyles = spec.textStyles.length > 0;
+  const hasEffectStyles = spec.effectStyles.length > 0;
 
-  if (!hasCollections && !hasTextStyles) {
-    return ['This file has no local variable collections or text styles.'];
+  if (!hasCollections && !hasTextStyles && !hasEffectStyles) {
+    return ['This file has no local variable collections, text styles, or effect styles.'];
   }
   if (!hasCollections) return ['This file has no local variable collections.'];
   if (!hasTextStyles) return ['This file has no local text styles.'];
@@ -199,7 +209,7 @@ export function frameCount(spec: FoundationSpec, sel: FoundationSelection): numb
  */
 export function framesPerSource(
   spec: FoundationSpec,
-): { collections: Record<string, number>; textStyles: number } {
+): { collections: Record<string, number>; textStyles: number; effectStyles: number } {
   const units = planFoundationUnits(spec, {
     collections: spec.collections.map((c) => ({
       collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
@@ -210,13 +220,15 @@ export function framesPerSource(
 
   const collections: Record<string, number> = {};
   let textStyles = 0;
+  let effectStyles = 0;
   for (const unit of units) {
     if (unit.scope.target === 'textStyles') textStyles += 1;
+    else if (unit.scope.target === 'effectStyles') effectStyles += 1;
     else if (unit.scope.target === 'collection') {
       collections[unit.scope.collectionId] = (collections[unit.scope.collectionId] ?? 0) + 1;
     }
   }
-  return { collections, textStyles };
+  return { collections, textStyles, effectStyles };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +254,8 @@ export function allSelected(spec: FoundationSpec, sel: FoundationSelection): boo
   const everyCollection = spec.collections.every((c) =>
     sel.collections.some((s) => s.collectionId === c.id));
   const stylesSettled = spec.textStyles.length === 0 || sel.textStyles;
-  return everyCollection && stylesSettled;
+  const effectsSettled = spec.effectStyles.length === 0 || sel.effectStyles;
+  return everyCollection && stylesSettled && effectsSettled;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,8 +271,11 @@ export function fileSummary(summary: FoundationSummary): string {
   if (summary.textStyleCount > 0) {
     parts.push(plural(summary.textStyleCount, 'text style', 'text styles'));
   }
+  if (summary.effectStyleCount > 0) {
+    parts.push(plural(summary.effectStyleCount, 'effect style', 'effect styles'));
+  }
   if (parts.length === 0) return 'Nothing to document in this file yet.';
-  return `This file has ${parts.join(' and ')}.`;
+  return `This file has ${joinAnd(parts)}.`;
 }
 
 /** A collection row's second line. */
@@ -278,6 +294,12 @@ export function textStyleMeta(count: number, frames: number): string {
   const parts = [plural(count, 'style', 'styles')];
   if (frames > 1) parts.push(`+ ${frames} frames`);
   return parts.join(' · ');
+}
+
+/** The effect-styles row's second line. Counts the same way text styles do:
+ *  a plain style count, plus a frame count only when the row splits. */
+export function effectStyleMeta(count: number, frames: number): string {
+  return textStyleMeta(count, frames);
 }
 
 /**

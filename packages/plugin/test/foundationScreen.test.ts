@@ -36,7 +36,7 @@ const SPEC = {
     },
   ],
   textStyles: [{ id: 's1', name: 'Body' }, { id: 's2', name: 'Heading' }],
-  effectStyles: [],
+  effectStyles: [{ id: 'e1', name: 'Elevation/Low' }],
 } as unknown as FoundationSpec;
 
 const ALL: FoundationSelection = {
@@ -45,7 +45,7 @@ const ALL: FoundationSelection = {
     { collectionId: 'density', modeIds: ['comfortable'] },
   ],
   textStyles: true,
-  effectStyles: false,
+  effectStyles: true,
 };
 
 describe('foundation screen', () => {
@@ -56,7 +56,7 @@ describe('foundation screen', () => {
 
   it('renders a flat row for every source and the shared bulk control', () => {
     const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL);
-    expect(markup).toContain('3 of 3 included');
+    expect(markup).toContain('4 of 4 included');
     expect(markup).toContain('Clear all');
     expect(markup).toContain('Mapped Colors');
     expect(markup).toContain('Mapped Density');
@@ -64,10 +64,19 @@ describe('foundation screen', () => {
     expect(markup).not.toContain('data-mode');
   });
 
+  it('renders an effect styles row with its own copy action', () => {
+    const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, ALL);
+    expect(markup).toContain('4 of 4 included');
+    expect(markup).toContain('Effect styles');
+    expect(markup).toContain('data-foundation-source="effect-styles"');
+    expect(markup).toContain('data-effect-styles="true"');
+    expect(markup).toContain('aria-label="Copy Effect styles for AI"');
+  });
+
   it('renders a mixed bulk state for a partial selection', () => {
     const partial = { collections: ALL.collections.slice(0, 1), textStyles: false, effectStyles: false };
     const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, partial);
-    expect(markup).toContain('1 of 3 included');
+    expect(markup).toContain('1 of 4 included');
     expect(markup).toContain('data-mixed="true"');
     expect(markup).toContain('Select all');
   });

@@ -11,6 +11,7 @@ import {
   allSelected,
   canGenerate,
   collectionMeta,
+  effectStyleMeta,
   FOUNDATION_CREATE_LABEL,
   frameCount,
   framesPerSource,
@@ -69,13 +70,15 @@ function sourceRow(options: {
   checked: boolean;
   iconName: IconName;
   textStyles?: boolean;
+  effectStyles?: boolean;
   busy: boolean;
 }): string {
   const action = options.checked ? 'Remove' : 'Include';
   return (
     '<article class="sl-foundation-row">' +
     `<button class="sl-foundation-summary" type="button" data-foundation-source="${esc(options.id)}"` +
-    `${options.textStyles ? ' data-text-styles="true"' : ''} aria-pressed="${options.checked}" ` +
+    `${options.textStyles ? ' data-text-styles="true"' : ''}` +
+    `${options.effectStyles ? ' data-effect-styles="true"' : ''} aria-pressed="${options.checked}" ` +
     `aria-label="${action} ${esc(options.name)} ${options.checked ? 'from' : 'in'} docs">` +
     checkbox(options.checked) +
     `<span class="sl-foundation-source-icon">${icon(options.iconName, 17)}</span>` +
@@ -87,6 +90,7 @@ function sourceRow(options: {
     // it stays well under the size the whole-file copy reaches.
     `<button class="sl-icon-button sl-foundation-copy" type="button" data-foundation-copy="${esc(options.id)}"` +
     `${options.textStyles ? ' data-text-styles="true"' : ''}` +
+    `${options.effectStyles ? ' data-effect-styles="true"' : ''}` +
     ` aria-label="Copy ${esc(options.name)} for AI" title="Copy for AI"${options.busy ? ' disabled' : ''}>` +
     `${icon('copy', 17)}</button>` +
     '</article>'
@@ -114,7 +118,7 @@ export function foundationScrollMarkup(
     if (state.kind === 'error') return resultMarkup(state);
     return (
       '<div class="sl-empty-state"><strong>No foundation sources</strong>' +
-      '<p>This file has no local variable collections or text styles.</p></div>'
+      '<p>This file has no local variable collections, text styles, or effect styles.</p></div>'
     );
   }
 
@@ -124,8 +128,10 @@ export function foundationScrollMarkup(
   const busy = state.kind === 'generating' || refreshing;
   const frames = framesPerSource(spec);
   const selectedCount = selection.collections.length +
-    (selection.textStyles && summary.textStyleCount > 0 ? 1 : 0);
-  const total = summary.collectionCount + (summary.textStyleCount > 0 ? 1 : 0);
+    (selection.textStyles && summary.textStyleCount > 0 ? 1 : 0) +
+    (selection.effectStyles && summary.effectStyleCount > 0 ? 1 : 0);
+  const total = summary.collectionCount + (summary.textStyleCount > 0 ? 1 : 0) +
+    (summary.effectStyleCount > 0 ? 1 : 0);
   const every = total > 0 && allSelected(spec, selection);
   const mixed = selectedCount > 0 && !every;
 
@@ -148,6 +154,17 @@ export function foundationScrollMarkup(
       checked: selection.textStyles,
       iconName: FOUNDATION_ICON.typography,
       textStyles: true,
+      busy,
+    }));
+  }
+  if (summary.effectStyleCount > 0) {
+    rows.push(sourceRow({
+      id: 'effect-styles',
+      name: 'Effect styles',
+      meta: effectStyleMeta(summary.effectStyleCount, frames.effectStyles),
+      checked: selection.effectStyles,
+      iconName: FOUNDATION_ICON.effect,
+      effectStyles: true,
       busy,
     }));
   }

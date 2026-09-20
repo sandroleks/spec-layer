@@ -32,6 +32,11 @@ none of the reasoning above.
   plus the token bound to each listed field. A scoped Copy for AI target
   covers effect styles alone.
 
+- **An Effect styles row on the Foundations screen.** It selects, copies and
+  creates like the Text styles row, with its own glyph in the picker and in
+  My Library. Its Copy for AI carries the `Effect styles` set and the
+  collections its bound tokens need, and nothing else.
+
 - **Foundation group descriptions come with a collection overview.** The one
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of
