@@ -732,9 +732,14 @@ async function buildFoundations(): Promise<void> {
         },
       );
       groupDescriptions = draft.descriptions;
-      // Minimal adapter onto the per-collection overviews; Task 13 threads one
-      // overview per document instead of only the first collection's.
-      collectionOverview = draft.overviews[foundationSelection.collections[0]?.collectionId ?? ''];
+      // Minimal adapter onto the per-collection overviews. The single-collection
+      // guard stays: `groupBriefs` still merges every selected collection into
+      // one block, so with two selected the one paragraph describes the union
+      // and belongs to neither document. Task 13 splits the briefs and then
+      // this guard goes.
+      collectionOverview = foundationSelection.collections.length === 1
+        ? draft.overviews[foundationSelection.collections[0]?.collectionId ?? '']
+        : undefined;
       if (Object.keys(groupDescriptions).length === 0) {
         foundationAiNote = 'AI descriptions came back empty.';
       }

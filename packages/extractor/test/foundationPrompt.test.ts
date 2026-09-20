@@ -129,6 +129,14 @@ describe('parseGroupDraft overviews', () => {
   it('collapses dashes in an overview like it does in a description', () => {
     expect(parseGroupDraft('{"c1|overview":"Light — and dark."}', [], ['c1']).overviews.c1).toBe('Light, and dark.');
   });
+  it('lets a real group key win the `<id>|overview` collision', () => {
+    // A colour variable named `overview/...` in collection c1 folders to
+    // `overview`, so its group key IS `c1|overview`. The group has a block on
+    // the canvas waiting for text; the overview is a nice-to-have, so the group
+    // takes the answer and the collection goes without.
+    const out = parseGroupDraft('{"c1|overview":"Overview swatches."}', ['c1|overview'], ['c1']);
+    expect(out).toEqual({ descriptions: { 'c1|overview': 'Overview swatches.' }, overviews: {} });
+  });
 });
 
 describe('FOUNDATION_SYSTEM_PROMPT overview rule', () => {

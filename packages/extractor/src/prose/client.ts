@@ -13,8 +13,8 @@ import {
   FOUNDATION_SYSTEM_PROMPT,
   buildGroupPrompt,
   parseGroupDraft,
-  type FoundationCollectionBrief,
   type GroupDraft,
+  type GroupDraftInput,
 } from './foundationPrompt';
 
 /**
@@ -326,10 +326,21 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
  */
 export const GROUP_PROMPT_VERSION = 'v3';
 
-/** Cap on the group call. The proxy checks equality, not a ceiling. */
-export const GROUP_MAX_TOKENS = 1600;
-
-export interface GroupDraftInput { collections: FoundationCollectionBrief[] }
+/**
+ * Cap on the group call. The proxy checks equality, not a ceiling, so this and
+ * the proxy's copy move together and a deploy has to follow a change here.
+ *
+ * Raised from 1600 with the v3 prompt, because truncation here is all or
+ * nothing rather than a short last description: a cut-off answer has no closing
+ * brace, `parseGroupDraft` finds no JSON object and returns an empty draft, and
+ * the whole build loses every description AND every overview at once, reported
+ * only as "AI descriptions came back empty". The worst case this prompt can ask
+ * for is around 3,300 tokens (four collections of twelve groups: 48
+ * descriptions under 220 characters plus four overviews under 400), so 4000
+ * clears it. `max_tokens` is a ceiling, not a charge, so an ordinary build that
+ * answers in 600 tokens costs exactly what it did before.
+ */
+export const GROUP_MAX_TOKENS = 4000;
 
 /**
  * The cache key for a group-description request.

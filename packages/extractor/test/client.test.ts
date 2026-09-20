@@ -3,6 +3,7 @@ import {
   draftProse, proseCacheKey, ProseProxyError,
   groupProseRequest, groupCacheKey, GROUP_MAX_TOKENS, draftGroupDescriptions,
 } from '../src/prose/client';
+import { MAX_OVERVIEW } from '../src/prose/foundationPrompt';
 import type { IntermediateSpec } from '../src/extract';
 import type { RefIdentity } from '../src/tree';
 
@@ -215,6 +216,16 @@ describe('group request (v3)', () => {
     expect(cacheKey).toMatch(/^prose:v3:groups:pro:[0-9a-f]{16,}$/);
     expect('model' in request).toBe(false);
     expect(request.max_tokens).toBe(GROUP_MAX_TOKENS);
+  });
+  it('caps the answer above the largest one this prompt can ask for', () => {
+    // Truncation here is all or nothing: a cut-off answer has no closing brace,
+    // so parseGroupDraft finds no JSON object and the build loses every
+    // description AND every overview at once. The worst case the prompt can ask
+    // for is four collections of twelve groups: 48 descriptions under 220
+    // characters and four overviews under MAX_OVERVIEW, each with its key.
+    const worstCaseChars = 4 * (MAX_OVERVIEW + 20) + 48 * (220 + 25);
+    // English JSON runs about four characters to the token.
+    expect(GROUP_MAX_TOKENS).toBeGreaterThan(worstCaseChars / 4);
   });
   it('gives the two tiers different keys over the same hash', () => {
     const pro = groupCacheKey(input, 'pro');

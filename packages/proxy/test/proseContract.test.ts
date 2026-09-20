@@ -4,7 +4,7 @@ import {
   groupProseRequest, groupCacheKey, proseCacheKey, proseRequest, contentHash,
   PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot, FOUNDATION_SYSTEM_PROMPT,
   LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
-  LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS,
+  LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS, GROUP_MAX_TOKENS,
   type FoundationGroupBrief, type IntermediateSpec,
 } from '@spec-layer/extractor';
 
@@ -154,6 +154,21 @@ describe('/v1/prose accepts what the v9 client sends', () => {
     expect(validateProseBody(LEGACY_GROUP_BODY)).toBeNull();
     const v2 = groupProseRequest(groupInput, 'free');
     expect(validateProseBody({ ...v2, cacheKey: v2.cacheKey.replace(':v3:', ':v2:') })).toBe('bad cacheKey');
+  });
+
+  it('holds the two token caps apart, so raising the v3 one leaves 5.1.0 alone', () => {
+    // v3 raised GROUP_MAX_TOKENS and LEGACY_GROUP_MAX_TOKENS stayed where the
+    // shipped client left it. Each branch must demand its own number: the
+    // shipped 1200 under a v3 key is a client sending the wrong bytes, and the
+    // new cap under the frozen key is the same mistake the other way.
+    expect(GROUP_MAX_TOKENS).not.toBe(LEGACY_GROUP_MAX_TOKENS);
+    const v3 = groupProseRequest(groupInput, 'free');
+    expect(v3.request.max_tokens).toBe(GROUP_MAX_TOKENS);
+    expect(validateProseBody({ ...v3, request: { ...v3.request, max_tokens: LEGACY_GROUP_MAX_TOKENS } })).toBe('max_tokens not allowed');
+    expect(validateProseBody({
+      ...LEGACY_GROUP_BODY,
+      request: { ...LEGACY_GROUP_BODY.request, max_tokens: GROUP_MAX_TOKENS },
+    })).toBe('max_tokens not allowed');
   });
 
   it('still accepts the shipped v8 payload until the 6.0.0 plugin is live', () => {

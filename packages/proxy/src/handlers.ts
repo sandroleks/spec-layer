@@ -158,11 +158,13 @@ export function validateProseBody(body: unknown): string | null {
   if (!Array.isArray(r.messages)) return 'missing messages';
 
   if (info.kind === 'groups') {
-    // The v8 group prompt and the v9 one were different bytes, and the v3
-    // groups prompt (one block per collection) differs again; the legacy branch
-    // compares against the frozen copy so a 5.1.0 client keeps generating.
-    // Without that copy every shipped foundation build loses its AI
-    // descriptions the moment this deploys.
+    // The foundation prompt has its own counter, GROUP_PROMPT_VERSION, which is
+    // not the component prose one: its v2 added the collection-overview rule and
+    // its v3 rewrote the prompt as one block per collection and raised the cap.
+    // Every one of those is different bytes from what shipped, and a 5.1.0
+    // client keeps sending the shipped ones under a groups v1 key, so the legacy
+    // branch compares against the frozen copies. Without them every shipped
+    // foundation build loses its AI descriptions the moment this deploys.
     if (r.system !== (legacy ? LEGACY_FOUNDATION_SYSTEM_PROMPT : FOUNDATION_SYSTEM_PROMPT)) return 'system not allowed';
     if (r.max_tokens !== (legacy ? LEGACY_GROUP_MAX_TOKENS : GROUP_MAX_TOKENS)) return 'max_tokens not allowed';
     if (r.messages.length !== 1) return 'invalid messages';

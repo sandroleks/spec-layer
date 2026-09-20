@@ -24,7 +24,20 @@ export interface FoundationCollectionBrief {
   groups: FoundationGroupBrief[];
 }
 
-/** The JSON key an overview is returned under. Never a folder key: folders carry a `|` after the id too, but never end in `overview`. */
+/** Every collection in one build, which is one prompt and one generation. */
+export interface GroupDraftInput { collections: FoundationCollectionBrief[] }
+
+/**
+ * The JSON key an overview is returned under.
+ *
+ * This CAN collide with a real folder key. A group key is `<collection id>|<folder>`,
+ * and a colour variable named `overview/something` in collection `c1` gives the folder
+ * `overview` and therefore the group key `c1|overview`. `parseGroupDraft` resolves the
+ * collision in the group's favour: a key that was asked for as a group is a group, and
+ * the collection simply gets no overview from that answer. That way a rare token name
+ * costs a paragraph nobody asked for, instead of silently eating a description out of
+ * the user's document.
+ */
 export function overviewKey(collectionId: string): string {
   return `${collectionId}|overview`;
 }
@@ -68,7 +81,8 @@ export const FOUNDATION_SYSTEM_PROMPT = [
   'counts show. Under 400 characters, no markdown, no invented usage. Leave it out if the names',
   'support nothing.',
   '',
-  'Return ONLY a JSON object mapping each group key to its description string.',
+  'Return ONLY a JSON object: each group key mapped to its description, and each',
+  'collection overview key mapped to its overview.',
   'No prose outside the JSON, no code fence.',
 ].join('\n');
 
@@ -88,7 +102,7 @@ export const MAX_OVERVIEW = 400;
  * alias counts are all an overview needs, and leaving it out would be the only
  * reason a spacing-only document has no paragraph.
  */
-export function buildGroupPrompt(input: { collections: FoundationCollectionBrief[] }): string {
+export function buildGroupPrompt(input: GroupDraftInput): string {
   const blocks = input.collections.map((collection) => {
     const lines: string[] = [`Collection: ${collection.collectionName} (key: ${collection.collectionId})`];
     if (collection.modeNames.length) lines.push(`Modes: ${collection.modeNames.join(', ')}`);
@@ -166,6 +180,10 @@ const normalise = (s: string): string => collapseDashes(s.trim());
  * any more: it belongs to no collection, so it is ignored like any other key
  * that was never requested.
  *
+ * A requested folder is tested FIRST, because `<id>|overview` is a reachable
+ * group key (see `overviewKey`). Reading it as an overview would drop a block's
+ * description from the rendered document, which is the worse of the two losses.
+ *
  * Only the folders that were asked for survive. The model's output is
  * untrusted input: an unexpected key would otherwise be rendered into the
  * user's document, and a key it invented has no block to sit under anyway.
@@ -192,12 +210,12 @@ export function parseGroupDraft(text: string, folders: string[], collectionIds: 
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof value !== 'string') continue;
     const trimmed = normalise(value);
-    const collectionId = wantedOverviews.get(key);
-    if (collectionId !== undefined) {
+    if (!wantedFolders.has(key)) {
+      const collectionId = wantedOverviews.get(key);
+      if (collectionId === undefined) continue;
       if (trimmed && trimmed.length <= MAX_OVERVIEW) out.overviews[collectionId] = trimmed;
       continue;
     }
-    if (!wantedFolders.has(key)) continue;
     if (!trimmed || trimmed.length > MAX_DESCRIPTION) continue;
     // The voice rule is enforced here as well as asked for in the prompt: a
     // model slip should not put an em dash into the user's document.
