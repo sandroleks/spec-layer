@@ -26,6 +26,14 @@ none of the reasoning above.
   specimen line names. Every existing variable and text-style document reads
   "Update available" once, and its change list names the new fields.
 
+- **Number tokens are drawn to scale.** A spacing token shows a bar of its
+  length, a radius token a rounded square, a stroke token a rule of its
+  thickness, an opacity token a swatch at that opacity over a checker, and
+  type tokens an `Ag` sample at that size, line height or letter spacing,
+  each above the value it already showed. Which drawing a token gets comes
+  from its Figma scopes; a token with no scope, every scope, or a scope the
+  plugin cannot draw keeps the plain value.
+
 - **Effect styles are a foundation source.** Extraction plans an
   `Effect styles` unit beside `Text styles`, splitting by group past the same
   threshold, and projects each style as the layers its specimen card applies

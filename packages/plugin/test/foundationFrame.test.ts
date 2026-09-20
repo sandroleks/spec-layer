@@ -327,11 +327,11 @@ describe('table cell sizing (row-clipping regression)', () => {
   const builders: [string, 'HORIZONTAL' | 'VERTICAL', (w: number) => FakeFrame][] = [
     ['cellText', 'VERTICAL', (w) => cellText('spacing/md', w) as unknown as FakeFrame],
     ['cellText (muted)', 'VERTICAL', (w) => cellText('a description', w, true) as unknown as FakeFrame],
-    ['swatchCell (color, with chip)', 'HORIZONTAL', (w) =>
+    ['swatchCell (color, with chip)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'color', hex: '#2563eb', alpha: 1 }, w) as unknown as FakeFrame],
-    ['swatchCell (number, no chip)', 'HORIZONTAL', (w) =>
+    ['swatchCell (number, no chip)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'number', value: 16 }, w) as unknown as FakeFrame],
-    ['swatchCell (unresolved)', 'HORIZONTAL', (w) =>
+    ['swatchCell (unresolved)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'unresolved', reason: 'cycle' }, w) as unknown as FakeFrame],
     ['headerCell', 'VERTICAL', (w) => headerCell('Name', w) as unknown as FakeFrame],
   ];
@@ -399,8 +399,9 @@ describe('table cell sizing (row-clipping regression)', () => {
       kind: 'alias', targetName: 'colors/blue/500', targetCollection: 'P',
       external: false, resolved: { kind: 'color', hex: '#722ed1', alpha: 1 },
     }, 160) as unknown as FakeFrame;
-    // chip + the two-line stack
-    expect(cell.children).toHaveLength(2);
+    // chip + the two-line stack, one level down inside the value line
+    const line = cell.children[0] as FakeFrame;
+    expect(line.children).toHaveLength(2);
     expect(cell.textChars()).toEqual(['→ colors/blue/500', '#722ED1']);
   });
 
@@ -411,7 +412,8 @@ describe('table cell sizing (row-clipping regression)', () => {
 
   it('top-aligns the swatch against the first line, not the midpoint', () => {
     const cell = swatchCell({ kind: 'color', hex: '#000000', alpha: 1 }, 160) as unknown as FakeFrame;
-    expect(cell.counterAxisAlignItems).toBe('MIN');
+    const line = cell.children[0] as FakeFrame;
+    expect(line.counterAxisAlignItems).toBe('MIN');
   });
 
   it('sets the resolved value smaller than the name above it', () => {
@@ -419,9 +421,20 @@ describe('table cell sizing (row-clipping regression)', () => {
       kind: 'alias', targetName: 'a', targetCollection: 'P',
       external: false, resolved: { kind: 'color', hex: '#000000', alpha: 1 },
     }, 160) as unknown as FakeFrame;
-    const stack = cell.children.find((c) => c instanceof FakeFrame) as FakeFrame;
+    const line = cell.children[0] as FakeFrame;
+    const stack = line.children.find((c) => c instanceof FakeFrame) as FakeFrame;
     const [primary, secondary] = stack.children as Record<string, unknown>[];
     expect(Number(secondary.fontSize)).toBeLessThan(Number(primary.fontSize));
+  });
+
+  it('draws the glyph above the value when the row has one, and only then', () => {
+    const plain = swatchCell({ kind: 'number', value: 16 }, 160);
+    expect(plain.children).toHaveLength(1);
+    const withBar = swatchCell({ kind: 'number', value: 16 }, 160, 'bar');
+    expect(withBar.children).toHaveLength(2);
+    expect((withBar.children[0] as unknown as FakeFrame).name).toBe('Glyph bar');
+    const outOfRange = swatchCell({ kind: 'number', value: 50 }, 160, 'opacity');
+    expect(outOfRange.children).toHaveLength(1);
   });
 });
 

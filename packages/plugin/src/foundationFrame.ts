@@ -20,13 +20,14 @@
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
-  FoundationRow, FoundationVariableRow, ColorContrastReport,
+  FoundationRow, FoundationVariableRow, ColorContrastReport, FoundationGlyph,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
   headingFont, PROSE_MEASURE,
 } from './frameKit';
+import { buildGlyph, glyphSpec, glyphValue } from './foundationScales';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
   contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
@@ -321,13 +322,25 @@ export function cellText(label: string, width: number, muted = false): FrameNode
   return cell;
 }
 
-export function swatchCell(value: FoundationValue, width: number): FrameNode {
-  const cell = hstack(8);
+export function swatchCell(value: FoundationValue, width: number, glyph: FoundationGlyph | null = null): FrameNode {
+  const cell = vstack(6);
+  cell.counterAxisAlignItems = 'MIN';
+  fixWidthHugHeight(cell, width);
+
+  // The scale drawing, if this row's glyph and value earn one: a value that
+  // fails to resolve to a number, or that glyphSpec refuses (negative,
+  // non-finite, out-of-range opacity), leaves the cell exactly as before.
+  const n = glyph ? glyphValue(value) : null;
+  const spec = glyph && n !== null ? glyphSpec(glyph, n, width) : null;
+  if (spec) cell.appendChild(buildGlyph(spec, width));
+
+  const line = hstack(8);
   // Top-aligned, not centred: a wrapped two-line cell beside a one-line cell
   // reads as a table when their first lines align and as a mess when their
   // midpoints do.
-  cell.counterAxisAlignItems = 'MIN';
-  fixWidthHugHeight(cell, width);
+  line.counterAxisAlignItems = 'MIN';
+  cell.appendChild(line);
+  line.layoutSizingHorizontal = 'FILL';
 
   const color = swatchColorOf(value);
   if (color) {
@@ -337,11 +350,11 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
     chip.fills = solidFill(color);
     chip.strokes = solidFill(palette.border);
     chip.strokeWeight = 1;
-    cell.appendChild(chip);
+    line.appendChild(chip);
   }
 
   const lines = vstack(2);
-  cell.appendChild(lines);
+  line.appendChild(lines);
   lines.layoutSizingHorizontal = 'FILL';
 
   const unresolved = value.kind === 'unresolved'
@@ -904,7 +917,7 @@ export async function buildFoundationFrame(
     if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
 
     if (row.kind === 'variable') {
-      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf()));
+      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
     } else if (row.kind === 'effectStyle') {
       // Effect-style specimen rendering is Task 9's job; a blank cell keeps
       // this table type-safe without inventing a layout no plan has specified.
