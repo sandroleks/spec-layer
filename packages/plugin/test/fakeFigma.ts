@@ -154,6 +154,19 @@ export class FakeFrame {
     }
     return out;
   }
+
+  /** Depth-first search for the first text node whose characters match exactly. */
+  findText(chars: string): FakeText | undefined {
+    for (const child of this.children) {
+      if (child instanceof FakeText) {
+        if (child.characters === chars) return child;
+      } else if (child instanceof FakeFrame) {
+        const found = child.findText(chars);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
 }
 
 export class FakeSection {

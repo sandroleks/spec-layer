@@ -7,6 +7,7 @@ import {
   type TableColumn,
 } from '../src/foundationFrame';
 import { hstack, vstack, solidFill, palette } from '../src/frameKit';
+import { SPECIMEN_TEXT } from '../src/foundationSpecimens';
 import {
   installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
 } from './fakeFigma';
@@ -558,6 +559,13 @@ describe('buildFoundationFrame', () => {
     expect(card.name).toBe('Text styles');
   });
 
+  it('sets a text style in the pangram specimen, not the old two-letter sample', async () => {
+    const card = cardOf(await build({ textStyles: true }));
+    const texts = card.textChars();
+    expect(texts).toContain(SPECIMEN_TEXT);
+    expect(texts).not.toContain('Ag');
+  });
+
   it('counts what the document covers in the subtitle', async () => {
     const card = cardOf(await build());
     expect(card.textChars()).toContain('3 variables across 2 modes');
@@ -822,11 +830,8 @@ describe('tableColumns', () => {
       .toEqual(['Name', 'Description', 'Light', 'Dark']);
   });
 
-  it('replaces the mode columns with one wide Specimen column for text styles', () => {
-    const cols = tableColumns(content, true, false);
-    expect(cols.map((c) => c.label)).toEqual(['Name', 'Specimen']);
-    // The specimen needs the room two mode columns would have taken.
-    expect(cols[1].width).toBe(320);
+  it('drops the mode columns for text styles, which render a specimen list instead of a table', () => {
+    expect(tableColumns(content, true, false).map((c) => c.label)).toEqual(['Name']);
   });
 
   it('gives every column a positive width', () => {

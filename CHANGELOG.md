@@ -126,6 +126,11 @@ none of the reasoning above.
 
 ### Changed
 
+- **Text styles are shown, not tabulated.** Each style sets "The quick brown
+  fox jumps over the lazy dog" in itself at its true size, wrapping to the
+  column, with a line under it naming family, style, size over line height,
+  letter spacing, paragraph spacing, and any case or decoration, and a chip
+  for every metric bound to a token. The old three-column table is gone.
 - **When to use and Do and don't now answer different questions.** The first
   live Button run wrote the same three rules under When not to use and again
   as DON'T cards, because the prompt asked for both without saying how they

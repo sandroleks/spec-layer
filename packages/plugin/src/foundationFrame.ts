@@ -20,7 +20,7 @@
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue,
-  FoundationRow, FoundationVariableRow, ColorContrastReport, FoundationGlyph,
+  FoundationRow, FoundationVariableRow, FoundationTextRow, ColorContrastReport, FoundationGlyph,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
@@ -28,6 +28,7 @@ import {
   headingFont, PROSE_MEASURE,
 } from './frameKit';
 import { buildGlyph, glyphSpec, glyphValue } from './foundationScales';
+import { buildTextSpecimenList } from './foundationSpecimens';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
   contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
@@ -220,6 +221,9 @@ const CELL_GAP = 12;
 /** Narrowest card, matching the component doc frame so the two sit level. */
 const CARD_WIDTH_MIN = 880;
 
+/** Inner width the card's body offers a full-width block, once its own padding is subtracted. */
+const CONTENT_WIDTH = CARD_WIDTH_MIN - HEADER_PAD_X * 2;
+
 export interface TableColumn { label: string; width: number }
 
 /**
@@ -233,8 +237,11 @@ export function tableColumns(
 ): TableColumn[] {
   const columns: TableColumn[] = [{ label: 'Name', width: COL_NAME }];
   if (hasDescriptions) columns.push({ label: 'Description', width: COL_DESC });
-  if (isText) columns.push({ label: 'Specimen', width: COL_MODE * 2 });
-  else for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
+  // A text-styles unit never reaches this table: buildFoundationFrame renders
+  // buildTextSpecimenList for it instead and returns before tableColumns is
+  // even called for that unit. `isText` is kept as a parameter regardless,
+  // since it also gates the description-column decision above at the caller.
+  if (!isText) for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
   return columns;
 }
 
@@ -869,7 +876,10 @@ export async function buildFoundationFrame(
   // with the title the batch and a later single-doc Update compute, which is why
   // one function in the extractor derives all three.
   const title = foundationUnitTitle(unit.scope, content);
-  const columns = tableColumns(content, isText, hasDescriptions);
+  // A text-styles unit never draws this table (buildTextSpecimenList replaces
+  // it below), so it has no columns to derive; an empty list still leaves
+  // cardWidth at its floor, which is exactly the width the specimen list gets.
+  const columns = isText ? [] : tableColumns(content, isText, hasDescriptions);
   // The card has to fit whichever layouts it holds, since it clips its contents.
   const width = Math.max(
     tableRows.length > 0 ? cardWidth(columns) : CARD_WIDTH_MIN,
@@ -939,6 +949,17 @@ export async function buildFoundationFrame(
   // ahead of the early return below so a colours-only frame gets it too.
   if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
 
+  // --- text-style specimens (in place of a table for this unit) ---
+  // A text-styles unit holds nothing but textStyle rows, so it never reaches
+  // the generic table below: the specimen list IS its body.
+  if (unit.scope.target === 'textStyles') {
+    const textRows = content.rows.filter((r): r is FoundationTextRow => r.kind === 'textStyle');
+    body.appendChild(buildTextSpecimenList(textRows, CONTENT_WIDTH, includeDescriptions, failedFamilies));
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+    return finishCard(card, title);
+  }
+
   // --- table (everything else) ---
   if (tableRows.length === 0) {
     const notes = footerNotes(content);
@@ -972,34 +993,14 @@ export async function buildFoundationFrame(
     if (row.kind === 'variable') {
       for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
     } else if (row.kind === 'effectStyle') {
-      // Effect-style specimen rendering is Task 9's job; a blank cell keeps
+      // Effect-style specimen rendering is Task 10's job; a blank cell keeps
       // this table type-safe without inventing a layout no plan has specified.
       const pane = vstack(0);
       fixWidthHugHeight(pane, widthOf());
       cells.push(pane);
-    } else {
-      const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
-      const failed = failedFamilies.has(key);
-      const pane = vstack(4);
-      fixWidthHugHeight(pane, widthOf());
-      const specimen = makeText('Ag', 'Regular', Math.min(row.metrics.fontSize, 40), palette.heading);
-      if (!failed) {
-        specimen.fontName = { family: row.metrics.fontFamily, style: row.metrics.fontStyle };
-      }
-      pane.appendChild(specimen);
-      const lh = row.metrics.lineHeight.unit === 'AUTO'
-        ? 'auto' : `${row.metrics.lineHeight.value}${row.metrics.lineHeight.unit === 'PERCENT' ? '%' : ''}`;
-      // Wrapped, like every other cell: a family name plus style and metrics is
-      // routinely longer than the column.
-      wrappingText(pane,
-        `${row.metrics.fontFamily} ${row.metrics.fontStyle} ${row.metrics.fontSize}/${lh}`,
-        'Regular', 10, palette.muted);
-      if (failed) {
-        wrappingText(pane, 'Font not available, showing the default font.',
-          'Regular', 10, palette.muted);
-      }
-      cells.push(pane);
     }
+    // A textStyle row never reaches this table: buildFoundationFrame renders
+    // buildTextSpecimenList for that unit and returns before this loop runs.
 
     // Every row after the header carries the hairline above it, so the table's
     // own border is never doubled at the last row.
