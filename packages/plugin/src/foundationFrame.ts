@@ -322,6 +322,55 @@ export function cellText(label: string, width: number, muted = false): FrameNode
   return cell;
 }
 
+// ---------------------------------------------------------------------------
+// Reference chips — the developer-facing name Figma's variable settings
+// define, shown exactly as stored. Only what Figma's code syntax carries is
+// ever drawn here: no chip is ever derived from the token's own name or path.
+// ---------------------------------------------------------------------------
+
+/** Figma's code-syntax platform keys as people read them; an unknown key is shown as stored. */
+export const PLATFORM_LABEL: Record<string, string> = { WEB: 'Web', iOS: 'iOS', ANDROID: 'Android' };
+
+function referenceChip(platform: string, identifier: string): FrameNode {
+  const c = hstack(4);
+  c.paddingTop = c.paddingBottom = 2;
+  c.paddingLeft = c.paddingRight = 6;
+  c.cornerRadius = radius(6);
+  c.fills = solidFill(palette.chipBg);
+  c.counterAxisAlignItems = 'CENTER';
+  const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
+  label.textAutoResize = 'WIDTH_AND_HEIGHT';
+  c.appendChild(label);
+  const id = makeText(identifier, 'Medium', 11, palette.heading);
+  id.textAutoResize = 'WIDTH_AND_HEIGHT';
+  c.appendChild(id);
+  return c;
+}
+
+/**
+ * The developer-facing names Figma's variable settings define, one chip per
+ * platform, in code-unit key order (the projection already sorted them). Null
+ * when the variable defines none: no chip is ever derived from the token name.
+ */
+export function referenceChips(codeSyntax: Record<string, string>): FrameNode | null {
+  const entries = Object.entries(codeSyntax);
+  if (entries.length === 0) return null;
+  const row = hstack(6);
+  row.name = 'References';
+  row.layoutWrap = 'WRAP';
+  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier));
+  return row;
+}
+
+/** The table's Name cell: the token name, then its reference chips when it has any. */
+export function nameCell(row: FoundationVariableRow, width: number): FrameNode {
+  const cell = cellText(row.name, width);
+  cell.itemSpacing = 6;
+  const chips = referenceChips(row.codeSyntax);
+  if (chips) { cell.appendChild(chips); chips.layoutSizingHorizontal = 'FILL'; }
+  return cell;
+}
+
 export function swatchCell(value: FoundationValue, width: number, glyph: FoundationGlyph | null = null): FrameNode {
   const cell = vstack(6);
   cell.counterAxisAlignItems = 'MIN';
@@ -449,6 +498,8 @@ function nameBlock(
     const desc = makeText(row.description, 'Regular', 11, palette.muted);
     block.appendChild(desc);
   }
+  const chips = referenceChips(row.codeSyntax);
+  if (chips) block.appendChild(chips);
   return block;
 }
 
@@ -913,7 +964,9 @@ export async function buildFoundationFrame(
     let next = 0;
     const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
 
-    const cells: FrameNode[] = [cellText(row.name, widthOf())];
+    const cells: FrameNode[] = [
+      row.kind === 'variable' ? nameCell(row, widthOf()) : cellText(row.name, widthOf()),
+    ];
     if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
 
     if (row.kind === 'variable') {

@@ -119,6 +119,10 @@ none of the reasoning above.
   Run spec-layer pull.` when it does not; `list` names it in its own header
   line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
   `version`. Pinned pulls are not yet available.
+- **Reference names on foundation rows.** A variable whose Figma settings
+  define a code syntax shows it as a chip under its name, one per platform,
+  in the swatch list and in the table. Nothing is derived: a variable with no
+  code syntax shows no chip.
 
 ### Changed
 

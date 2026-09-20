@@ -3,6 +3,7 @@ import {
   valueLines, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
   buildFoundationFrame, headerSubtitle, tableColumns, cardWidth, rowWidth,
   rgbLabel, hslLabel, swatchValueLines, isColorRow, swatchRowWidth,
+  referenceChips, nameCell, PLATFORM_LABEL,
   type TableColumn,
 } from '../src/foundationFrame';
 import { hstack, vstack, solidFill, palette } from '../src/frameKit';
@@ -438,6 +439,28 @@ describe('table cell sizing (row-clipping regression)', () => {
   });
 });
 
+describe('referenceChips', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('draws one chip per defined platform with a readable label, and nothing when none is defined', () => {
+    expect(referenceChips({})).toBeNull();
+    const row = referenceChips({ WEB: '--brand-primary', iOS: 'brandPrimary' }) as unknown as FakeFrame;
+    expect(row.children).toHaveLength(2);
+    expect(row.textChars()).toEqual(['Web', '--brand-primary', 'iOS', 'brandPrimary']);
+  });
+  it('shows an unknown platform key as stored rather than guessing a name', () => {
+    const row = referenceChips({ FLUTTER: 'brandPrimary' }) as unknown as FakeFrame;
+    expect(row.textChars()).toEqual(['FLUTTER', 'brandPrimary']);
+    expect(PLATFORM_LABEL.ANDROID).toBe('Android');
+  });
+  it('puts the chips under the name in the table cell', () => {
+    const cell = nameCell({ kind: 'variable', name: 'space/4', description: '', resolvedType: 'FLOAT',
+      codeSyntax: { WEB: '--space-4' }, glyph: null, cells: [] }, 240) as unknown as FakeFrame;
+    expect(cell.textChars()).toEqual(['space/4', 'Web', '--space-4']);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The whole card. Foundation frames are meant to read as the same family of
 // document as component frames: the brand header band, the captured logo, the
@@ -484,9 +507,13 @@ describe('buildFoundationFrame', () => {
 
   function build(opts: {
     textStyles?: boolean; descriptions?: boolean; logo?: string | null;
-    singleMode?: boolean;
+    singleMode?: boolean; codeSyntax?: Record<string, string>;
   } = {}) {
-    const spec = buildFoundation(dump());
+    const d = dump();
+    // The first colour variable of the dump, for the one test that needs a
+    // code syntax to render a chip; every other test leaves it {} as dump() did.
+    if (opts.codeSyntax) d.collections[0].variables[0].codeSyntax = opts.codeSyntax;
+    const spec = buildFoundation(d);
     const units = planFoundationUnits(spec, {
       collections: opts.textStyles
         ? []
@@ -534,6 +561,12 @@ describe('buildFoundationFrame', () => {
   it('counts what the document covers in the subtitle', async () => {
     const card = cardOf(await build());
     expect(card.textChars()).toContain('3 variables across 2 modes');
+  });
+
+  it('draws a reference chip under a colour token that defines a code syntax', async () => {
+    const card = cardOf(await build({ codeSyntax: { WEB: '--bg-brand' } }));
+    expect(card.textChars()).toContain('--bg-brand');
+    expect(card.textChars()).toContain('Web');
   });
 
   it('stamps the captured logo into the header', async () => {
