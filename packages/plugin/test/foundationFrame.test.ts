@@ -206,7 +206,7 @@ describe('footerNotes — end to end over a split batch', () => {
       collections: dump.collections.map((c) => ({
         collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
       })),
-      textStyles: false,
+      textStyles: false, effectStyles: false,
     });
     // Numbering the batch would read "Part 4 of 5" / "Part 5 of 5" for Semantic.
     expect(units.map((u) => footerNotes(unitContent(spec, u.scope)!)[0])).toEqual([
@@ -478,7 +478,7 @@ describe('buildFoundationFrame', () => {
       collections: opts.textStyles
         ? []
         : [{ collectionId: 'c1', modeIds: opts.singleMode ? ['light'] : ['light', 'dark'] }],
-      textStyles: opts.textStyles ?? false,
+      textStyles: opts.textStyles ?? false, effectStyles: false,
     });
     const unit = units[0];
     const content = unitContent(spec, unit.scope)!;
@@ -1034,7 +1034,7 @@ describe('buildFoundationFrame — colour groups', () => {
   async function listFor(names: string[]): Promise<FakeFrame> {
     const spec = buildFoundation(grouped(names));
     const units = planFoundationUnits(spec, {
-      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false, effectStyles: false,
     });
     const content = unitContent(spec, units[0].scope)!;
     const section = await buildFoundationFrame(
@@ -1133,7 +1133,7 @@ describe('buildFoundationFrame — AI group descriptions', () => {
     };
     const spec = buildFoundation(dump);
     const units = planFoundationUnits(spec, {
-      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false, effectStyles: false,
     });
     const content = unitContent(spec, units[0].scope)!;
     const section = await buildFoundationFrame(

@@ -125,6 +125,22 @@ describe('narrowFoundation — text styles target', () => {
   });
 });
 
+describe('narrowFoundation — effect styles', () => {
+  it('keeps only the effect styles for the effect target', () => {
+    const dump = dumpTwoCollections();
+    dump.effectStyles = [{ id: 'e1', name: 'Elevation/Low', description: '', effects: [] }];
+    const spec = buildFoundation(dump);
+    const narrowed = narrowFoundation(spec, { target: 'effectStyles' });
+    expect(narrowed!.collections).toEqual([]);
+    expect(narrowed!.textStyles).toEqual([]);
+    expect(narrowed!.effectStyles.map((s) => s.name)).toEqual(['Elevation/Low']);
+    expect(narrowed!.narrowedTo).toEqual({ target: 'effectStyles' });
+  });
+  it('returns null when the file has no effect styles', () => {
+    expect(narrowFoundation(buildFoundation(dumpTwoCollections()), { target: 'effectStyles' })).toBeNull();
+  });
+});
+
 describe('narrowFoundation — purity', () => {
   it('does not mutate the spec it was given', () => {
     const spec = buildFoundation(dumpTwoCollections());

@@ -208,7 +208,9 @@ function isPrePlan3(before: FoundationUnitContent): boolean {
 }
 
 function rowTypeLabel(row: FoundationRow): string {
-  return row.kind === 'textStyle' ? 'text style' : row.resolvedType;
+  return row.kind === 'textStyle' ? 'text style'
+    : row.kind === 'effectStyle' ? 'effect style'
+    : row.resolvedType;
 }
 
 function formatPart(part: FoundationUnitContent['part']): string | undefined {
@@ -279,6 +281,9 @@ export function foundationChangeGroups(
       }
     } else if (b.kind === 'textStyle' && a.kind === 'textStyle' && !prePlan3 && !canonicalEqual(b.metrics, a.metrics)) {
       tokens.push(`${a.name}: ${formatTextMetrics(b.metrics)} changed to ${formatTextMetrics(a.metrics)}`);
+    } else if (b.kind === 'effectStyle' && a.kind === 'effectStyle'
+      && (!canonicalEqual(b.layers, a.layers) || !canonicalEqual(b.boundTokens, a.boundTokens))) {
+      tokens.push(`${a.name}: effect layers changed`);
     }
     if (b.description !== a.description) descriptions.push(`Description of ${a.name} changed`);
   }

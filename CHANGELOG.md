@@ -26,6 +26,12 @@ none of the reasoning above.
   specimen line names. Every existing variable and text-style document reads
   "Update available" once, and its change list names the new fields.
 
+- **Effect styles are a foundation source.** Extraction plans an
+  `Effect styles` unit beside `Text styles`, splitting by group past the same
+  threshold, and projects each style as the layers its specimen card applies
+  plus the token bound to each listed field. A scoped Copy for AI target
+  covers effect styles alone.
+
 - **Foundation group descriptions come with a collection overview.** The one
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of

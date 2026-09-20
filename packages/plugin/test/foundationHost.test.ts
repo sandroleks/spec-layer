@@ -115,7 +115,7 @@ describe('foundation host', () => {
     onFoundationMessage(dump());
     vi.mocked(host.repaint).mockClear();
     onFoundationToggleAll();
-    expect(currentFoundationSelection()).toEqual({ collections: [], textStyles: false });
+    expect(currentFoundationSelection()).toEqual({ collections: [], textStyles: false, effectStyles: false });
     expect(host.repaint).toHaveBeenCalledOnce();
   });
 });

@@ -65,6 +65,7 @@ export function defaultSelection(spec: FoundationSpec): FoundationSelection {
       modeIds: c.modes.slice(0, MAX_MODE_COLUMNS).map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
+    effectStyles: spec.effectStyles.length > 0,
   };
 }
 
@@ -200,13 +201,14 @@ export function framesPerSource(
       collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
+    effectStyles: spec.effectStyles.length > 0,
   });
 
   const collections: Record<string, number> = {};
   let textStyles = 0;
   for (const unit of units) {
     if (unit.scope.target === 'textStyles') textStyles += 1;
-    else {
+    else if (unit.scope.target === 'collection') {
       collections[unit.scope.collectionId] = (collections[unit.scope.collectionId] ?? 0) + 1;
     }
   }
@@ -223,7 +225,7 @@ export function selectAll(spec: FoundationSpec): FoundationSelection {
 }
 
 export function clearAll(): FoundationSelection {
-  return { collections: [], textStyles: false };
+  return { collections: [], textStyles: false, effectStyles: false };
 }
 
 /**

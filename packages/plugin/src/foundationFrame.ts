@@ -905,6 +905,12 @@ export async function buildFoundationFrame(
 
     if (row.kind === 'variable') {
       for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf()));
+    } else if (row.kind === 'effectStyle') {
+      // Effect-style specimen rendering is Task 9's job; a blank cell keeps
+      // this table type-safe without inventing a layout no plan has specified.
+      const pane = vstack(0);
+      fixWidthHugHeight(pane, widthOf());
+      cells.push(pane);
     } else {
       const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
       const failed = failedFamilies.has(key);

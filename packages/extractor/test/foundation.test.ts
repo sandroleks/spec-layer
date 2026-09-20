@@ -509,6 +509,7 @@ const allOf = (dump: SerializedFoundation): FoundationSelection => ({
     collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
   })),
   textStyles: dump.textStyles.length > 0,
+  effectStyles: dump.effectStyles.length > 0,
 });
 
 describe('planFoundationUnits', () => {
@@ -568,7 +569,7 @@ describe('planFoundationUnits', () => {
 
   it('omits unselected collections', () => {
     const dump = bigDump(3, ['color']);
-    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false });
+    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false, effectStyles: false });
     expect(units).toEqual([]);
   });
 
@@ -594,7 +595,7 @@ describe('planFoundationUnits', () => {
     dump.collections[0].modes = ['A', 'B', 'C'].map((name, i) => ({ modeId: `m${i}`, name }));
     dump.collections[0].defaultModeId = 'm0';
     const units = planFoundationUnits(buildFoundation(dump), {
-      collections: [{ collectionId: 'c1', modeIds: ['m2'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m2'] }], textStyles: false, effectStyles: false,
     });
     expect(units[0].scope).toMatchObject({ modeIds: ['m2'] });
     expect(units[0].omittedModeNames).toEqual(['A', 'B']);
@@ -1089,5 +1090,82 @@ describe('unitContent — reference names and glyphs', () => {
     });
     expect(a).toEqual(b);
     expect(JSON.stringify(a)).not.toContain('scopes');
+  });
+});
+
+function effectDump(): SerializedFoundation {
+  const dump = dumpOneOfEach();
+  dump.collections[0].variables.push({
+    id: 'v6', name: 'shadow/blur', resolvedType: 'FLOAT', description: '', codeSyntax: {}, valuesByMode: { m1: 12 },
+  });
+  dump.effectStyles = [
+    {
+      id: 'e1', name: 'Elevation/Low', description: 'Cards at rest.',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        bindings: { radius: { kind: 'variable', id: 'v6' } as never },
+      }],
+      bindings: [{ property: 'effects[0].radius', tokenId: 'v6' }, { property: 'effects[0].color', tokenId: 'gone' }],
+    },
+    {
+      id: 'e2', name: 'Glass/Frosted', description: '',
+      effects: [{ type: 'background-blur', blurType: 'normal', visible: true, radius: 20 }],
+    },
+  ];
+  return dump;
+}
+
+describe('effect styles unit', () => {
+  it('plans one unit when effect styles are selected and the file has any', () => {
+    const spec = buildFoundation(effectDump());
+    const units = planFoundationUnits(spec, { collections: [], textStyles: false, effectStyles: true });
+    expect(units).toEqual([{
+      scope: { target: 'effectStyles' }, title: 'Effect styles', rowCount: 2, omittedModeNames: [],
+    }]);
+    expect(planFoundationUnits(buildFoundation(dumpOneOfEach()), { collections: [], textStyles: false, effectStyles: true })).toEqual([]);
+    expect(planFoundationUnits(spec, { collections: [], textStyles: false, effectStyles: false })).toEqual([]);
+  });
+
+  it('projects each style as its layers, stripped of binding ids, plus the bound token names it can resolve', () => {
+    const content = unitContent(buildFoundation(effectDump()), { target: 'effectStyles' });
+    expect(content!.collectionName).toBe('');
+    expect(content!.modeNames).toEqual([]);
+    expect(content!.rows).toEqual([
+      {
+        kind: 'effectStyle', name: 'Elevation/Low', description: 'Cards at rest.',
+        layers: [{
+          type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        }],
+        // 'gone' resolves to no local variable, so it is omitted rather than guessed.
+        boundTokens: { 'effects[0].radius': 'shadow/blur' },
+      },
+      {
+        kind: 'effectStyle', name: 'Glass/Frosted', description: '',
+        layers: [{ type: 'background-blur', blurType: 'normal', visible: true, radius: 20 }],
+        boundTokens: {},
+      },
+    ]);
+    expect(JSON.stringify(content)).not.toContain('"bindings"');
+  });
+
+  it('titles the unit and its split parts like text styles', () => {
+    const spec = buildFoundation(effectDump());
+    const whole = unitContent(spec, { target: 'effectStyles' })!;
+    expect(foundationUnitTitle({ target: 'effectStyles' }, whole)).toBe('Effect styles');
+    const part = unitContent(spec, { target: 'effectStyles', group: 'Glass' })!;
+    expect(foundationUnitTitle({ target: 'effectStyles', group: 'Glass' }, part)).toBe('Effect styles · Glass');
+    expect(part.part).toEqual({ index: 1, total: 2 });
+    expect(unitContent(spec, { target: 'effectStyles', group: 'Nope' })).toBeNull();
+  });
+
+  it('splits a large effect set by group, like text styles', () => {
+    const dump = effectDump();
+    dump.effectStyles = Array.from({ length: SPLIT_THRESHOLD + 2 }, (_, i) => ({
+      id: `e${i}`, name: `${i % 2 ? 'Shadow' : 'Blur'}/S${i}`, description: '', effects: [],
+    }));
+    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false, effectStyles: true });
+    expect(units.map((u) => u.title)).toEqual(['Effect styles · Blur', 'Effect styles · Shadow']);
   });
 });

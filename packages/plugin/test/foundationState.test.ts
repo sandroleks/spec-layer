@@ -104,6 +104,7 @@ describe('defaultSelection', () => {
     expect(defaultSelection(spec)).toEqual({
       collections: [{ collectionId: 'c1', modeIds: ['s1', 's2'] }],
       textStyles: true,
+      effectStyles: false,
     });
   });
 
@@ -205,9 +206,9 @@ describe('toggles', () => {
 
 describe('canGenerate', () => {
   it('is false with nothing selected and true with anything selected', () => {
-    expect(canGenerate({ collections: [], textStyles: false })).toBe(false);
-    expect(canGenerate({ collections: [], textStyles: true })).toBe(true);
-    expect(canGenerate({ collections: [{ collectionId: 'c1', modeIds: ['s1'] }], textStyles: false }))
+    expect(canGenerate({ collections: [], textStyles: false, effectStyles: false })).toBe(false);
+    expect(canGenerate({ collections: [], textStyles: true, effectStyles: false })).toBe(true);
+    expect(canGenerate({ collections: [{ collectionId: 'c1', modeIds: ['s1'] }], textStyles: false, effectStyles: false }))
       .toBe(true);
   });
 });
@@ -463,6 +464,7 @@ function selectionOf(...ids: string[]): FoundationSelection {
       return { collectionId: id, modeIds: [collection.defaultModeId] };
     }),
     textStyles: false,
+    effectStyles: false,
   };
 }
 

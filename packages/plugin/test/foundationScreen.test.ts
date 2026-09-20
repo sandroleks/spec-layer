@@ -36,6 +36,7 @@ const SPEC = {
     },
   ],
   textStyles: [{ id: 's1', name: 'Body' }, { id: 's2', name: 'Heading' }],
+  effectStyles: [],
 } as unknown as FoundationSpec;
 
 const ALL: FoundationSelection = {
@@ -44,6 +45,7 @@ const ALL: FoundationSelection = {
     { collectionId: 'density', modeIds: ['comfortable'] },
   ],
   textStyles: true,
+  effectStyles: false,
 };
 
 describe('foundation screen', () => {
@@ -63,7 +65,7 @@ describe('foundation screen', () => {
   });
 
   it('renders a mixed bulk state for a partial selection', () => {
-    const partial = { collections: ALL.collections.slice(0, 1), textStyles: false };
+    const partial = { collections: ALL.collections.slice(0, 1), textStyles: false, effectStyles: false };
     const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, partial);
     expect(markup).toContain('1 of 3 included');
     expect(markup).toContain('data-mixed="true"');
@@ -71,7 +73,7 @@ describe('foundation screen', () => {
   });
 
   it('keeps create disabled until at least one source is selected', () => {
-    const empty = { collections: [], textStyles: false };
+    const empty = { collections: [], textStyles: false, effectStyles: false };
     expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, empty)).toContain('disabled');
     expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL)).not.toContain('disabled');
   });
@@ -100,13 +102,13 @@ describe('foundation screen', () => {
       foundationFooterMarkup({ kind: 'generating', done: 1, total: 3 }, SPEC, ALL),
     ).toContain('Creating docs…');
     // A blocked primary states why instead of naming an action it cannot offer.
-    const none: FoundationSelection = { collections: [], textStyles: false };
+    const none: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
     expect(foundationFooterMarkup({ kind: 'ready' }, SPEC, none))
       .toContain('Select sources to continue');
   });
 
   it('asks for a selection only where the user can act on the request', () => {
-    const none: FoundationSelection = { collections: [], textStyles: false };
+    const none: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
     const ask = 'Select sources to continue';
     const label = (m: string) =>
       /<span>(.*?)<\/span>/.exec(m.split('id="sl-foundation-create"')[1] ?? '')?.[1];
@@ -146,7 +148,7 @@ describe('foundation screen', () => {
     // button's old `layoutGrid` drew the frames rather than the making of them
     // and was also the sidebar's icon for this screen, which is why it needed
     // replacing rather than removing.
-    const none: FoundationSelection = { collections: [], textStyles: false };
+    const none: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
     for (const state of [
       foundationFooterMarkup({ kind: 'ready' }, SPEC, ALL),
       foundationFooterMarkup({ kind: 'ready' }, SPEC, none),

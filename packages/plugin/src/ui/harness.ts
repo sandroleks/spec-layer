@@ -383,6 +383,7 @@ const FOUNDATION_SELECTION: FoundationSelection = {
     modeIds: collection.modes.slice(0, 4).map((mode) => mode.modeId),
   })),
   textStyles: true,
+  effectStyles: false,
 };
 
 if (view === 'foundations') {
@@ -397,6 +398,7 @@ if (view === 'foundations') {
     ? {
         collections: FOUNDATION_SELECTION.collections.slice(0, 2),
         textStyles: false,
+        effectStyles: false,
       }
     : FOUNDATION_SELECTION;
   const refreshing = param('refreshing', '0') === '1';

@@ -241,7 +241,8 @@ export interface FoundationSpec {
 export type FoundationScope =
   | { target: 'collection'; collectionId: string; collectionName: string;
       group?: string; modeIds: string[] }
-  | { target: 'textStyles'; group?: string };
+  | { target: 'textStyles'; group?: string }
+  | { target: 'effectStyles'; group?: string };
 
 /**
  * What a single Copy-for-AI request covers.
@@ -255,7 +256,8 @@ export type FoundationScope =
  */
 export type FoundationCopyTarget =
   | { target: 'collection'; collectionId: string }
-  | { target: 'textStyles' };
+  | { target: 'textStyles' }
+  | { target: 'effectStyles' };
 
 /**
  * Reduce a whole-file spec to the part one Copy covers, so foundationBrief and
@@ -280,10 +282,11 @@ export function narrowFoundation(
 ): FoundationSpec | null {
   if (target.target === 'textStyles') {
     if (spec.textStyles.length === 0) return null;
-    // Effect styles are narrowed away here as well as on the collection branch:
-    // FoundationCopyTarget has no effect-styles target, so no scoped copy claims
-    // to cover them and the whole-file copy is where they appear.
     return { ...spec, collections: [], textStyles: spec.textStyles, effectStyles: [], narrowedTo: target };
+  }
+  if (target.target === 'effectStyles') {
+    if (spec.effectStyles.length === 0) return null;
+    return { ...spec, collections: [], textStyles: [], effectStyles: spec.effectStyles, narrowedTo: target };
   }
   const collection = spec.collections.find((c) => c.id === target.collectionId);
   if (!collection) return null;
@@ -377,10 +380,10 @@ export function groupTitles(folders: string[]): string[] {
 }
 
 /** One titled block of rows within a document. */
-export interface FoundationRowGroup {
+export interface FoundationRowGroup<T extends { name: string } = FoundationVariableRow> {
   /** The shared folder path, or '' for rows that sit at the root. */
   folder: string;
-  rows: FoundationVariableRow[];
+  rows: T[];
 }
 
 /**
@@ -392,8 +395,8 @@ export interface FoundationRowGroup {
  * by folder. If they grouped separately, a description could land on the wrong
  * block or on none.
  */
-export function groupRowsByFolder(rows: FoundationVariableRow[]): FoundationRowGroup[] {
-  const groups: FoundationRowGroup[] = [];
+export function groupRowsByFolder<T extends { name: string }>(rows: T[]): FoundationRowGroup<T>[] {
+  const groups: FoundationRowGroup<T>[] = [];
   for (const row of rows) {
     const folder = folderOf(row.name);
     const existing = groups.find((g) => g.folder === folder);
@@ -802,6 +805,8 @@ export interface FoundationSelection {
   /** Collections the user chose, with the mode ids they chose for each. */
   collections: { collectionId: string; modeIds: string[] }[];
   textStyles: boolean;
+  /** Whether the effect-styles unit is built. */
+  effectStyles: boolean;
 }
 
 export interface FoundationUnit {
@@ -820,6 +825,8 @@ function titleOf(base: string, group?: string): string {
 
 /** Title for the text-styles unit, which has no collection to name. */
 const TEXT_STYLES_TITLE = 'Text styles';
+/** Title for the effect-styles unit, which has no collection to name. */
+const EFFECT_STYLES_TITLE = 'Effect styles';
 
 /**
  * The document title for one unit, derived from its scope and rendered content.
@@ -834,7 +841,9 @@ const TEXT_STYLES_TITLE = 'Text styles';
 export function foundationUnitTitle(
   scope: FoundationScope, content: FoundationUnitContent,
 ): string {
-  const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE : content.collectionName;
+  const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE
+    : scope.target === 'effectStyles' ? EFFECT_STYLES_TITLE
+    : content.collectionName;
   return titleOf(base, content.group);
 }
 
@@ -899,35 +908,31 @@ export function planFoundationUnits(
     }
   }
 
-  if (selection.textStyles && spec.textStyles.length > 0) {
-    if (spec.textStyles.length <= SPLIT_THRESHOLD) {
-      units.push({
-        scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
-        rowCount: spec.textStyles.length, omittedModeNames: [],
-      });
-    } else {
-      const groups = groupsInOrder(spec.textStyles.map((s) => s.name));
-      if (groups.length <= 1) {
-        // Cannot split further. One tall frame is the faithful outcome, same
-        // as the collection path's identical case.
-        units.push({
-          scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
-          rowCount: spec.textStyles.length, omittedModeNames: [],
-        });
-      } else {
-        for (const group of groups) {
-          units.push({
-            scope: { target: 'textStyles', group },
-            title: titleOf(TEXT_STYLES_TITLE, group),
-            rowCount: spec.textStyles.filter((s) => s.group === group).length,
-            omittedModeNames: [],
-          });
-        }
-      }
-    }
+  if (selection.textStyles) {
+    units.push(...planStyleUnits('textStyles', TEXT_STYLES_TITLE, spec.textStyles.map((s) => s.name)));
   }
-
+  if (selection.effectStyles) {
+    units.push(...planStyleUnits('effectStyles', EFFECT_STYLES_TITLE, spec.effectStyles.map((s) => s.name)));
+  }
   return units;
+}
+
+/** Units for a style list: one, or one per top-level group past SPLIT_THRESHOLD. */
+function planStyleUnits(
+  target: 'textStyles' | 'effectStyles', title: string, names: string[],
+): FoundationUnit[] {
+  if (names.length === 0) return [];
+  const groups = groupsInOrder(names);
+  if (names.length <= SPLIT_THRESHOLD || groups.length <= 1) {
+    // A lone group cannot split further; one tall frame is the faithful outcome.
+    return [{ scope: { target }, title: titleOf(title), rowCount: names.length, omittedModeNames: [] }];
+  }
+  return groups.map((group) => ({
+    scope: { target, group },
+    title: titleOf(title, group),
+    rowCount: names.filter((n) => groupOf(n) === group).length,
+    omittedModeNames: [],
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1043,7 +1048,21 @@ export interface FoundationTextRow {
   metrics: FoundationTextMetrics;
 }
 
-export type FoundationRow = FoundationVariableRow | FoundationTextRow;
+/**
+ * ONLY what the effect frame draws: the specimen card applies `layers`, the
+ * text under it lists them, and `boundTokens` names the variable bound to each
+ * listed field as a chip. Layers are carried with any `bindings` key stripped,
+ * because a binding's id is not drawn and ids must never move the hash.
+ */
+export interface FoundationEffectRow {
+  kind: 'effectStyle';
+  name: string;
+  description: string;
+  layers: EffectLayer[];
+  boundTokens: Record<string, string>;
+}
+
+export type FoundationRow = FoundationVariableRow | FoundationTextRow | FoundationEffectRow;
 
 export interface FoundationUnitContent {
   collectionName: string;   // '' for the text-styles unit
@@ -1108,6 +1127,13 @@ function boundMetricTokens(bound: Record<string, string>): Record<string, string
   return out;
 }
 
+/** A layer without its `bindings` key. Ids are not drawn, so they must not be hashed. */
+function stripBindings(layer: EffectLayer): EffectLayer {
+  if (!('bindings' in layer)) return layer;
+  const { bindings: _bindings, ...rest } = layer as EffectLayer & { bindings?: unknown };
+  return rest as EffectLayer;
+}
+
 /**
  * The rows and mode columns for one output unit. Every renderer AND the drift
  * hash consume this, which is what mechanically guarantees "the hash covers
@@ -1149,6 +1175,39 @@ export function unitContent(
           boundTokens: boundMetricTokens(s.boundVariables),
         },
       })),
+    };
+  }
+
+  if (scope.target === 'effectStyles') {
+    const styles = scope.group
+      ? spec.effectStyles.filter((s) => s.group === scope.group)
+      : spec.effectStyles;
+    if (scope.group && styles.length === 0) return null;
+    const part = scope.group
+      ? partOf(groupsInOrder(spec.effectStyles.map((s) => s.name)), scope.group)
+      : undefined;
+    const nameById = new Map<string, string>();
+    for (const c of spec.collections) for (const v of c.variables) nameById.set(v.provenance.id, v.name);
+    return {
+      collectionName: '',
+      ...(scope.group ? { group: scope.group } : {}),
+      modeNames: [],
+      omittedModeNames: [],
+      ...(part ? { part } : {}),
+      rows: styles.map((s): FoundationEffectRow => {
+        const boundTokens: Record<string, string> = {};
+        for (const b of s.bindings ?? []) {
+          const name = nameById.get(b.tokenId);
+          if (name) boundTokens[b.property] = name;
+        }
+        return {
+          kind: 'effectStyle',
+          name: s.name,
+          description: s.description,
+          layers: s.effects.map(stripBindings),
+          boundTokens,
+        };
+      }),
     };
   }
 

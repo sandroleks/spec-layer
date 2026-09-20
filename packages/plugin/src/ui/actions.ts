@@ -756,7 +756,7 @@ export async function copyBriefFromSource(
 // ---------------------------------------------------------------------------
 
 let foundationSpec: FoundationSpec | null = null;
-let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
+let foundationSelection: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
 // AI-written group descriptions merged from every foundation doc link on
 // canvas, keyed by collection name then folder path. Read-only pass-through
 // for copyFoundationBrief; never generated here.

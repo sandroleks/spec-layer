@@ -474,10 +474,12 @@ describe('component vs foundation row differentiation', () => {
         variables: [{ id: 'v0', name: 'color/bg', resolvedType: 'COLOR', valuesByMode: {} }],
       }],
       textStyles: [{ id: 's1', name: 'Body' }],
+      effectStyles: [],
     } as unknown as FoundationSpec;
     const selection: FoundationSelection = {
       collections: [{ collectionId: 'colors', modeIds: ['light'] }],
       textStyles: true,
+      effectStyles: false,
     };
     const pickerIcons = [...foundationScrollMarkup({ kind: 'ready' }, spec, selection)
       .matchAll(/<span class="sl-foundation-source-icon">(.*?)<\/span>/gs)]

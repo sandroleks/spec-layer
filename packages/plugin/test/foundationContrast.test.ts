@@ -338,7 +338,7 @@ describe('buildFoundationFrame with contrast', () => {
   async function build(names: string[], includeContrast?: boolean): Promise<FakeFrame> {
     const spec = buildFoundation(dump(names));
     const units = planFoundationUnits(spec, {
-      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false, effectStyles: false,
     });
     const content = unitContent(spec, units[0].scope)!;
     const section = await buildFoundationFrame(

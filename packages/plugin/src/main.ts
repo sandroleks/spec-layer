@@ -466,7 +466,8 @@ function descriptionsForUnit(
   content: FoundationUnitContent,
 ): Record<string, string> | undefined {
   if (!all) return undefined;
-  const collectionId = unit.scope.target === 'textStyles' ? 'text' : unit.scope.collectionId;
+  const collectionId = unit.scope.target === 'collection' ? unit.scope.collectionId
+    : unit.scope.target === 'textStyles' ? 'text' : 'effect';
   const out: Record<string, string> = {};
   for (const group of groupRowsByFolder(content.rows.filter(isColorRow) as FoundationVariableRow[])) {
     const note = all[`${collectionId}|${group.folder}`];
@@ -783,7 +784,8 @@ figma.ui.onmessage = async (raw: unknown) => {
             pageName: page?.name ?? '',
             sourceLabel: data.scope.target === 'collection'
               ? data.scope.collectionName
-              : 'Text styles',
+              // Temporary: Task 5 gives effect styles their own docLink handling.
+              : data.scope.target === 'textStyles' ? 'Text styles' : 'Effect styles',
             generatedAt: data.generatedAt,
             sourceNodeId: '',
             sourceExists,
