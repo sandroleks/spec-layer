@@ -22,7 +22,7 @@ import type {
   FoundationVariable,
 } from '@spec-layer/extractor';
 
-export type FoundationIconKind = 'color' | 'dimension' | 'mixed' | 'typography';
+export type FoundationIconKind = 'color' | 'dimension' | 'mixed' | 'typography' | 'effect';
 
 export function variablesIconKind(
   variables: readonly FoundationVariable[],
@@ -57,8 +57,7 @@ export function scopeIconKind(
   scope: FoundationScope,
 ): FoundationIconKind {
   if (scope.target === 'textStyles') return 'typography';
-  // An effect-styles scope has no collection to look up. Task 5 gives it its
-  // own icon kind; for now it falls through to 'mixed'.
+  if (scope.target === 'effectStyles') return 'effect';
   if (scope.target !== 'collection') return 'mixed';
 
   const collection = spec?.collections.find((c) => c.id === scope.collectionId);

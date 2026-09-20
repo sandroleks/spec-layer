@@ -137,6 +137,9 @@ describe('buildLibraryRow capabilities', () => {
     // still render a glyph rather than nothing.
     expect(buildLibraryRow(entry({ kind: 'foundation', sourceNodeId: '' }), { now: NOW })
       .foundationIcon).toBe('mixed');
+    expect(buildLibraryRow(entry({
+      kind: 'foundation', foundationIcon: 'effect', sourceNodeId: '',
+    }), { now: NOW }).foundationIcon).toBe('effect');
   });
 
   it('keeps manual Update available for a proven in-sync connection', () => {

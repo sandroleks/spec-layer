@@ -174,6 +174,13 @@ describe('docLink foundation variant', () => {
     expect(parseDocLink(serializeDocLink(d))).toEqual(d);
   });
 
+  it('round-trips an effect-styles link and retargets it unchanged', () => {
+    const d: FoundationDocLink = { ...FOUNDATION, scope: { target: 'effectStyles', group: 'Elevation' } };
+    const parsed = parseDocLink(serializeDocLink(d));
+    expect(parsed).toEqual(d);
+    expect(retargetScope(d.scope, [{ id: 'x', name: 'Elevation' }])).toEqual(d.scope);
+  });
+
   it('parses a legacy blob with no kind exactly as a component link', () => {
     const legacy = parseDocLink(serializeDocLink(DATA));
     expect(legacy).toEqual(DATA);
@@ -344,6 +351,11 @@ describe('foundationScopeKey', () => {
   it('keys a text-styles scope by group alone, distinct from any collection key', () => {
     expect(foundationScopeKey({ target: 'textStyles' })).toBe('text:');
     expect(foundationScopeKey({ target: 'textStyles', group: 'Heading' })).toBe('text:Heading');
+  });
+
+  it('keys an effect-styles scope apart from text styles and collections', () => {
+    expect(foundationScopeKey({ target: 'effectStyles' })).toBe('effect:');
+    expect(foundationScopeKey({ target: 'effectStyles', group: 'Elevation' })).toBe('effect:Elevation');
   });
 
   it('treats two collection scopes with the same id but different groups as distinct', () => {

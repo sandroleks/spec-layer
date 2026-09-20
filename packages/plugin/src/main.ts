@@ -784,7 +784,6 @@ figma.ui.onmessage = async (raw: unknown) => {
             pageName: page?.name ?? '',
             sourceLabel: data.scope.target === 'collection'
               ? data.scope.collectionName
-              // Temporary: Task 5 gives effect styles their own docLink handling.
               : data.scope.target === 'textStyles' ? 'Text styles' : 'Effect styles',
             generatedAt: data.generatedAt,
             sourceNodeId: '',

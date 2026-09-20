@@ -27,6 +27,11 @@ describe('scopeIconKind', () => {
     expect(scopeIconKind(null, { target: 'textStyles' })).toBe('typography');
   });
 
+  it('is effect for an effect styles doc, without needing a spec at all', () => {
+    expect(scopeIconKind(null, { target: 'effectStyles' })).toBe('effect');
+    expect(scopeIconKind(SPEC, { target: 'effectStyles', group: 'Elevation' })).toBe('effect');
+  });
+
   it('reads a collection doc the same way the Foundations picker does', () => {
     const scope = {
       target: 'collection' as const,
