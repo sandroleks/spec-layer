@@ -715,7 +715,7 @@ async function buildFoundations(): Promise<void> {
   const briefs = currentGroupBriefs();
   const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
 
-  if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.groups.length) {
+  if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.collections.some((c) => c.groups.length)) {
     try {
       const draft = await generateGroupDescriptions(
         briefs,
@@ -732,7 +732,9 @@ async function buildFoundations(): Promise<void> {
         },
       );
       groupDescriptions = draft.descriptions;
-      collectionOverview = foundationSelection.collections.length === 1 ? draft.overview ?? undefined : undefined;
+      // Minimal adapter onto the per-collection overviews; Task 13 threads one
+      // overview per document instead of only the first collection's.
+      collectionOverview = draft.overviews[foundationSelection.collections[0]?.collectionId ?? ''];
       if (Object.keys(groupDescriptions).length === 0) {
         foundationAiNote = 'AI descriptions came back empty.';
       }

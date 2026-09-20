@@ -204,13 +204,15 @@ describe('draftProse base64 image', () => {
   });
 });
 
-describe('group request (v2)', () => {
-  const input = { collectionName: 'Semantic', modeNames: ['Light', 'Dark'], aliasCounts: [], groups: [
-    { folder: 'c1|color/surface', title: 'Surface', resolvedType: 'COLOR' as const, tokenNames: ['color/surface/primary'], sampleValues: ['#722ED1'] },
-  ] };
+describe('group request (v3)', () => {
+  const input = { collections: [{
+    collectionId: 'c1', collectionName: 'Semantic', modeNames: ['Light', 'Dark'], aliasCounts: [], groups: [
+      { folder: 'c1|color/surface', title: 'Surface', resolvedType: 'COLOR' as const, tokenNames: ['color/surface/primary'], sampleValues: ['#722ED1'] },
+    ],
+  }] };
   it('keys by version, groups marker and tier, and sends no model', () => {
     const { cacheKey, request } = groupProseRequest(input, 'pro');
-    expect(cacheKey).toMatch(/^prose:v2:groups:pro:[0-9a-f]{16,}$/);
+    expect(cacheKey).toMatch(/^prose:v3:groups:pro:[0-9a-f]{16,}$/);
     expect('model' in request).toBe(false);
     expect(request.max_tokens).toBe(GROUP_MAX_TOKENS);
   });
@@ -219,19 +221,41 @@ describe('group request (v2)', () => {
     const free = groupCacheKey(input, 'free');
     expect(pro.replace(':pro:', ':')).toBe(free.replace(':free:', ':'));
   });
-  it('draftGroupDescriptions returns descriptions and the overview, caching the raw answer', async () => {
-    const raw = '{"overview":"Semantic colours.","c1|color/surface":"Surfaces."}';
+  it('misses the cache when a collection or a token is renamed', () => {
+    const renamed = { collections: [{ ...input.collections[0], collectionName: 'Semantics' }] };
+    expect(groupCacheKey(renamed, 'free')).not.toBe(groupCacheKey(input, 'free'));
+  });
+  it('draftGroupDescriptions returns descriptions and the overviews, caching the raw answer', async () => {
+    const raw = '{"c1|overview":"Semantic colours.","c1|color/surface":"Surfaces."}';
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ content: [{ type: 'text', text: raw }] }), { status: 200 }));
     const { get, set } = memStore();
     const out = await draftGroupDescriptions(input, { apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: { get, set }, proxy: { url: 'https://proxy.test', figmaUserId: 'u1' } });
-    expect(out).toEqual({ overview: 'Semantic colours.', descriptions: { 'c1|color/surface': 'Surfaces.' } });
+    expect(out).toEqual({ overviews: { c1: 'Semantic colours.' }, descriptions: { 'c1|color/surface': 'Surfaces.' } });
     // What is stored is the model's own text, not the parsed draft, so a later
     // parser fix reaches the entry. Asserting the return value alone would
     // pass just as happily if the parsed object were cached instead.
     expect(await get(groupCacheKey(input, 'free'))).toBe(raw);
   });
-  it('returns an empty draft with no groups or no identity', async () => {
-    expect(await draftGroupDescriptions({ ...input, groups: [] }, { apiKey: null, fetcher: vi.fn() as unknown as typeof fetch, cacheStore: memStore() })).toEqual({ overview: null, descriptions: {} });
+  it('returns an empty draft with no collections or no identity, and asks nothing', async () => {
+    const never = vi.fn();
+    expect(await draftGroupDescriptions({ collections: [] }, {
+      apiKey: null, fetcher: never as unknown as typeof fetch, cacheStore: memStore(),
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1' },
+    })).toEqual({ overviews: {}, descriptions: {} });
+    expect(await draftGroupDescriptions(input, {
+      apiKey: null, fetcher: never as unknown as typeof fetch, cacheStore: memStore(),
+    })).toEqual({ overviews: {}, descriptions: {} });
+    expect(never).not.toHaveBeenCalled();
+  });
+  it('still asks about a collection with no groups, which is where an overview is all there is', async () => {
+    const raw = '{"c1|overview":"Spacing steps."}';
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ content: [{ type: 'text', text: raw }] }), { status: 200 }));
+    const out = await draftGroupDescriptions({ collections: [{ ...input.collections[0], groups: [] }] }, {
+      apiKey: null, fetcher: fetcher as unknown as typeof fetch, cacheStore: memStore(),
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1' },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({ overviews: { c1: 'Spacing steps.' }, descriptions: {} });
   });
 });
 

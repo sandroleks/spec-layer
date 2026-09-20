@@ -15,11 +15,18 @@
 import type { FoundationVariableType } from '../foundation';
 import type { AliasCount } from '../foundationOverview';
 
-/** What the model is told about the collection as a whole. */
+/** What the model is told about one collection: its facts and its colour groups. */
 export interface FoundationCollectionBrief {
+  collectionId: string;
   collectionName: string;
   modeNames: string[];
   aliasCounts: AliasCount[];
+  groups: FoundationGroupBrief[];
+}
+
+/** The JSON key an overview is returned under. Never a folder key: folders carry a `|` after the id too, but never end in `overview`. */
+export function overviewKey(collectionId: string): string {
+  return `${collectionId}|overview`;
 }
 
 /** What the model is told about one group. */
@@ -56,9 +63,10 @@ export const FOUNDATION_SYSTEM_PROMPT = [
   '- Never use em dashes or en dashes. Use a period, comma, colon, or parentheses.',
   '- Do not restate the heading as a sentence ("Surface colours are colours for surfaces").',
   '',
-  'The "overview" entry describes the whole collection in one paragraph: what it holds, how its modes',
-  'differ, and which collections it draws from, exactly as the names, modes and alias counts show.',
-  'Under 400 characters, no markdown, no invented usage. Leave it out if the names support nothing.',
+  'Each "<collection key>|overview" entry describes that collection in one paragraph: what it holds,',
+  'how its modes differ, and which collections it draws from, exactly as the names, modes and alias',
+  'counts show. Under 400 characters, no markdown, no invented usage. Leave it out if the names',
+  'support nothing.',
   '',
   'Return ONLY a JSON object mapping each group key to its description string.',
   'No prose outside the JSON, no code fence.',
@@ -71,35 +79,46 @@ const MAX_DESCRIPTION = 400;
 /** Cap on an accepted overview, past which it is dropped rather than trimmed. */
 export const MAX_OVERVIEW = 400;
 
-export function buildGroupPrompt(
-  collection: FoundationCollectionBrief, groups: FoundationGroupBrief[],
-): string {
-  const lines: string[] = [`Collection: ${collection.collectionName}`];
-  if (collection.modeNames.length) lines.push(`Modes: ${collection.modeNames.join(', ')}`);
-  if (collection.aliasCounts.length) {
-    lines.push(`Aliases into other collections: ${collection.aliasCounts.map((a) => `${a.collection} (${a.count})`).join(', ')}`);
-  }
-  lines.push('', 'Groups to describe:');
-  for (const group of groups) {
-    lines.push('');
-    lines.push(`key: ${group.folder}`);
-    lines.push(`heading: ${group.title}`);
-    lines.push(`type: ${group.resolvedType}`);
-    const shown = group.tokenNames.slice(0, GROUP_SAMPLE_LIMIT);
-    for (const [i, name] of shown.entries()) {
-      const value = group.sampleValues[i];
-      lines.push(value ? `  ${name} = ${value}` : `  ${name}`);
+/**
+ * One block per collection, so a build over several collections is still one
+ * call and each collection's overview is written against its own facts rather
+ * than a merged list nobody could attribute.
+ *
+ * A collection with no colour groups still gets a block: its names, modes and
+ * alias counts are all an overview needs, and leaving it out would be the only
+ * reason a spacing-only document has no paragraph.
+ */
+export function buildGroupPrompt(input: { collections: FoundationCollectionBrief[] }): string {
+  const blocks = input.collections.map((collection) => {
+    const lines: string[] = [`Collection: ${collection.collectionName} (key: ${collection.collectionId})`];
+    if (collection.modeNames.length) lines.push(`Modes: ${collection.modeNames.join(', ')}`);
+    if (collection.aliasCounts.length) {
+      lines.push(`Aliases into other collections: ${collection.aliasCounts.map((a) => `${a.collection} (${a.count})`).join(', ')}`);
     }
-    if (group.tokenNames.length > shown.length) {
-      lines.push(`  (and ${group.tokenNames.length - shown.length} more)`);
+    if (collection.groups.length === 0) {
+      lines.push('Groups to describe: none');
+      return lines.join('\n');
     }
-  }
-  lines.push('');
-  lines.push('Return JSON: { "overview": "<one paragraph about the whole collection>", "<key>": "<description>", ... } with one entry per key above.');
-  return lines.join('\n');
+    lines.push('Groups to describe:');
+    for (const group of collection.groups) {
+      lines.push(`  key: ${group.folder}`);
+      lines.push(`  heading: ${group.title}`);
+      lines.push(`  type: ${group.resolvedType}`);
+      const shown = group.tokenNames.slice(0, GROUP_SAMPLE_LIMIT);
+      for (const [i, name] of shown.entries()) {
+        const value = group.sampleValues[i];
+        lines.push(value ? `    ${name} = ${value}` : `    ${name}`);
+      }
+      if (group.tokenNames.length > shown.length) {
+        lines.push(`    (and ${group.tokenNames.length - shown.length} more)`);
+      }
+    }
+    return lines.join('\n');
+  });
+  return `${blocks.join('\n\n')}\n\nReturn JSON: { "<collection key>|overview": "<one paragraph about that collection>", "<group key>": "<description>", ... } with one overview per collection key and one entry per group key above.`;
 }
 
-export interface GroupDraft { descriptions: Record<string, string>; overview: string | null }
+export interface GroupDraft { descriptions: Record<string, string>; overviews: Record<string, string> }
 
 /** One character's worth of `\s`. A per-character test cannot backtrack. */
 const WHITESPACE = /\s/;
@@ -140,9 +159,12 @@ export function collapseDashes(value: string): string {
 const normalise = (s: string): string => collapseDashes(s.trim());
 
 /**
- * Parse the model's JSON into the group descriptions and the collection
- * overview. `overview` is reserved: it is never a folder key, and it is kept
- * only as a non-empty string under `MAX_OVERVIEW` characters.
+ * Parse the model's JSON into the group descriptions and the per-collection
+ * overviews. An overview is keyed by its collection id (`<id>|overview`) and is
+ * kept only for a collection that was actually asked about, as a non-empty
+ * string under `MAX_OVERVIEW` characters. A bare `overview` key is not special
+ * any more: it belongs to no collection, so it is ignored like any other key
+ * that was never requested.
  *
  * Only the folders that were asked for survive. The model's output is
  * untrusted input: an unexpected key would otherwise be rendered into the
@@ -150,9 +172,10 @@ const normalise = (s: string): string => collapseDashes(s.trim());
  * Entries that are not usable strings are dropped rather than defaulted, so
  * unusable output costs the prose, never the frame.
  */
-export function parseGroupDraft(text: string, folders: string[]): GroupDraft {
-  const wanted = new Set(folders.filter((f) => f !== 'overview'));
-  const out: GroupDraft = { descriptions: {}, overview: null };
+export function parseGroupDraft(text: string, folders: string[], collectionIds: string[]): GroupDraft {
+  const wantedFolders = new Set(folders);
+  const wantedOverviews = new Map(collectionIds.map((id) => [overviewKey(id), id]));
+  const out: GroupDraft = { descriptions: {}, overviews: {} };
 
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -169,11 +192,12 @@ export function parseGroupDraft(text: string, folders: string[]): GroupDraft {
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof value !== 'string') continue;
     const trimmed = normalise(value);
-    if (key === 'overview') {
-      if (trimmed && trimmed.length <= MAX_OVERVIEW) out.overview = trimmed;
+    const collectionId = wantedOverviews.get(key);
+    if (collectionId !== undefined) {
+      if (trimmed && trimmed.length <= MAX_OVERVIEW) out.overviews[collectionId] = trimmed;
       continue;
     }
-    if (!wanted.has(key)) continue;
+    if (!wantedFolders.has(key)) continue;
     if (!trimmed || trimmed.length > MAX_DESCRIPTION) continue;
     // The voice rule is enforced here as well as asked for in the prompt: a
     // model slip should not put an em dash into the user's document.

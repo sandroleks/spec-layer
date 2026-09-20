@@ -13,7 +13,6 @@ import {
   FOUNDATION_SYSTEM_PROMPT,
   buildGroupPrompt,
   parseGroupDraft,
-  type FoundationGroupBrief,
   type FoundationCollectionBrief,
   type GroupDraft,
 } from './foundationPrompt';
@@ -323,15 +322,14 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
 /**
  * Bumped when the foundation prompt or its system prompt changes the produced
  * voice, so old-voice descriptions are never served from cache afterwards.
+ * v3: one block and one overview per collection (Docs 2.0 Plan 3).
  */
-export const GROUP_PROMPT_VERSION = 'v2';
+export const GROUP_PROMPT_VERSION = 'v3';
 
 /** Cap on the group call. The proxy checks equality, not a ceiling. */
 export const GROUP_MAX_TOKENS = 1600;
 
-export interface GroupDraftInput extends FoundationCollectionBrief {
-  groups: FoundationGroupBrief[];
-}
+export interface GroupDraftInput { collections: FoundationCollectionBrief[] }
 
 /**
  * The cache key for a group-description request.
@@ -348,15 +346,18 @@ export interface GroupDraftInput extends FoundationCollectionBrief {
  */
 export function groupCacheKey(input: GroupDraftInput, tier: ProseTier): string {
   return `prose:${GROUP_PROMPT_VERSION}:groups:${tier}:${contentHash({
-    collectionName: input.collectionName,
-    modeNames: input.modeNames,
-    aliasCounts: input.aliasCounts,
-    groups: input.groups.map((g) => ({
-      folder: g.folder,
-      title: g.title,
-      resolvedType: g.resolvedType,
-      tokenNames: g.tokenNames,
-      sampleValues: g.sampleValues,
+    collections: input.collections.map((c) => ({
+      collectionId: c.collectionId,
+      collectionName: c.collectionName,
+      modeNames: c.modeNames,
+      aliasCounts: c.aliasCounts,
+      groups: c.groups.map((g) => ({
+        folder: g.folder,
+        title: g.title,
+        resolvedType: g.resolvedType,
+        tokenNames: g.tokenNames,
+        sampleValues: g.sampleValues,
+      })),
     })),
   })}`;
 }
@@ -379,31 +380,35 @@ export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
       system: FOUNDATION_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: buildGroupPrompt(input, input.groups),
+        content: buildGroupPrompt(input),
       }],
     },
   };
 }
 
 /**
- * One request covering every group in a build, so a document with six groups
- * costs one generation rather than six.
+ * One request covering every collection in a build, so a build over four
+ * collections with six groups each costs one generation rather than 24. A
+ * collection with no groups is still worth asking about: its overview is the
+ * only prose its document gets.
  */
 export async function draftGroupDescriptions(
   input: GroupDraftInput,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'proxy'>,
 ): Promise<GroupDraft> {
-  if (!opts.apiKey && !opts.proxy) return { descriptions: {}, overview: null };
-  if (input.groups.length === 0) return { descriptions: {}, overview: null };
+  const empty: GroupDraft = { descriptions: {}, overviews: {} };
+  if (!opts.apiKey && !opts.proxy) return empty;
+  if (input.collections.length === 0) return empty;
 
-  const folders = input.groups.map((g) => g.folder);
+  const folders = input.collections.flatMap((c) => c.groups.map((g) => g.folder));
+  const collectionIds = input.collections.map((c) => c.collectionId);
   const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
   // Keyed on everything the prompt is built from, so editing a token name or
   // adding a group is a fresh request rather than a stale hit.
   const { cacheKey, request } = groupProseRequest(input, tier);
 
   const hit = await opts.cacheStore.get(cacheKey);
-  if (hit) return parseGroupDraft(hit, folders);
+  if (hit) return parseGroupDraft(hit, folders, collectionIds);
 
   const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
 
@@ -412,7 +417,7 @@ export async function draftGroupDescriptions(
   // ordering costs nothing here; it is the same ordering so the two paths
   // cannot drift into explaining a bad answer differently. The raw text is
   // what is stored, so a later parser fix reaches an existing entry.
-  const parsed = parseGroupDraft(raw, folders);
+  const parsed = parseGroupDraft(raw, folders, collectionIds);
   await opts.cacheStore.set(cacheKey, raw);
   return parsed;
 }

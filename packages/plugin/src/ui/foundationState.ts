@@ -385,7 +385,18 @@ export function groupBriefs(
     .map(([collection, count]) => ({ collection, count }))
     .sort((a, b) => b.count - a.count || compareCodeUnits(a.collection, b.collection));
 
-  return { collectionName: names.join(', '), modeNames, aliasCounts, groups };
+  // Minimal adapter onto the v3 one-block-per-collection input: the merged
+  // facts still travel as a single block. Task 13 splits this into one brief
+  // per selected collection, which is what the new shape is for.
+  return {
+    collections: [{
+      collectionId: sel.collections[0]?.collectionId ?? '',
+      collectionName: names.join(', '),
+      modeNames,
+      aliasCounts,
+      groups,
+    }],
+  };
 }
 
 /** A short, honest rendering of one value for the prompt. */

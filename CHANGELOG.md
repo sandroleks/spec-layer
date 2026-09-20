@@ -134,6 +134,13 @@ none of the reasoning above.
 
 ### Changed
 
+- **One overview per collection.** The group-description call now sends one
+  block per selected collection and asks for one overview per collection,
+  so a build over several collections gives each document its own paragraph
+  and a collection with no colour groups still gets one. The prompt bytes
+  and the cache key version move (`prose:v3:groups:`), so the proxy has to
+  be redeployed before a plugin built from this change can generate. The
+  shipped 5.1.0 plugin's `prose:v1:groups:` request is unchanged.
 - **Text styles are shown, not tabulated.** Each style sets "The quick brown
   fox jumps over the lazy dog" in itself at its true size, wrapping to the
   column, with a line under it naming family, style, size over line height,

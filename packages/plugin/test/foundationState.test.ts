@@ -470,13 +470,13 @@ function selectionOf(...ids: string[]): FoundationSelection {
 
 describe('groupBriefs carries the collection facts the overview needs', () => {
   it('names the modes and counts aliases for the chosen collection', () => {
-    const briefs = groupBriefs(overviewSpec, selectionOf('sem'));
+    const [briefs] = groupBriefs(overviewSpec, selectionOf('sem')).collections;
     expect(briefs.collectionName).toBe('Semantic');
     expect(briefs.modeNames).toEqual(['Light', 'Dark']);
     expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
   });
   it('merges modes and alias counts when several collections are chosen', () => {
-    const briefs = groupBriefs(overviewSpec, selectionOf('sem', 'prim'));
+    const [briefs] = groupBriefs(overviewSpec, selectionOf('sem', 'prim')).collections;
     expect(briefs.modeNames).toEqual(['Light', 'Dark', 'Value']);
     expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
   });

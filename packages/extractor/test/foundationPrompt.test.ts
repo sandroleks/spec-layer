@@ -38,9 +38,14 @@ function collectionBrief(over: Partial<{ collectionName: string; modeNames: stri
   return { collectionName: 'Semantic', modeNames: [], aliasCounts: [], ...over };
 }
 
+/** One collection block, from the collection facts and its groups. */
+const oneCollection = (
+  collection: ReturnType<typeof collectionBrief>, groups: FoundationGroupBrief[],
+): string => buildGroupPrompt({ collections: [{ ...collection, collectionId: 'c1', groups }] });
+
 describe('buildGroupPrompt', () => {
   it('names each group by its key, heading and type', () => {
-    const prompt = buildGroupPrompt(collectionBrief(), [brief()]);
+    const prompt = oneCollection(collectionBrief(), [brief()]);
     expect(prompt).toContain('Collection: Semantic');
     expect(prompt).toContain('key: color/surface');
     expect(prompt).toContain('heading: Surface');
@@ -48,12 +53,12 @@ describe('buildGroupPrompt', () => {
   });
 
   it('shows each token beside its resolved value', () => {
-    const prompt = buildGroupPrompt(collectionBrief(), [brief()]);
+    const prompt = oneCollection(collectionBrief(), [brief()]);
     expect(prompt).toContain('color/surface/primary = #722ED1');
   });
 
   it('omits the value when there is none rather than printing an empty one', () => {
-    const prompt = buildGroupPrompt(collectionBrief({ collectionName: 'S' }), [brief({
+    const prompt = oneCollection(collectionBrief({ collectionName: 'S' }), [brief({
       tokenNames: ['a/b'], sampleValues: [''],
     })]);
     expect(prompt).toContain('a/b');
@@ -63,7 +68,7 @@ describe('buildGroupPrompt', () => {
   it('caps the sample and says how many were held back', () => {
     // An unbounded prompt on a 150-token group is both slow and expensive.
     const names = Array.from({ length: GROUP_SAMPLE_LIMIT + 5 }, (_, i) => `c/t${i}`);
-    const prompt = buildGroupPrompt(collectionBrief({ collectionName: 'S' }), [brief({
+    const prompt = oneCollection(collectionBrief({ collectionName: 'S' }), [brief({
       tokenNames: names, sampleValues: names.map(() => '#000000'),
     })]);
     expect(prompt).toContain(`c/t${GROUP_SAMPLE_LIMIT - 1}`);
@@ -72,54 +77,63 @@ describe('buildGroupPrompt', () => {
   });
 
   it('covers every group in one request', () => {
-    const prompt = buildGroupPrompt(collectionBrief({ collectionName: 'S' }), [
+    const prompt = oneCollection(collectionBrief({ collectionName: 'S' }), [
       brief(), brief({ folder: 'color/text', title: 'Text' }),
     ]);
     expect(prompt).toContain('key: color/surface');
     expect(prompt).toContain('key: color/text');
   });
-});
-
-describe('buildGroupPrompt overview facts', () => {
-  const collection = { collectionName: 'Semantic', modeNames: ['Light', 'Dark'], aliasCounts: [{ collection: 'Primitives', count: 42 }, { collection: 'Brand', count: 3 }] };
-  const groups = [{ folder: 'c|color/surface', title: 'Surface', resolvedType: 'COLOR' as const, tokenNames: ['color/surface/1'], sampleValues: ['#fff'] }];
-
-  it('names the modes and the alias counts before the groups', () => {
-    const prompt = buildGroupPrompt(collection, groups);
-    expect(prompt.startsWith('Collection: Semantic\nModes: Light, Dark\nAliases into other collections: Primitives (42), Brand (3)\n\nGroups to describe:\n')).toBe(true);
-  });
 
   it('omits the modes and aliases lines when there is nothing to say', () => {
-    const prompt = buildGroupPrompt({ collectionName: 'Solo', modeNames: [], aliasCounts: [] }, groups);
-    expect(prompt.startsWith('Collection: Solo\n\nGroups to describe:\n')).toBe(true);
+    const prompt = oneCollection(collectionBrief({ collectionName: 'Solo' }), [brief()]);
+    expect(prompt.startsWith('Collection: Solo (key: c1)\nGroups to describe:\n')).toBe(true);
     expect(prompt).not.toContain('Modes:');
     expect(prompt).not.toContain('Aliases into');
   });
+});
 
-  it('asks for the overview entry beside the group entries', () => {
-    expect(buildGroupPrompt(collection, groups)).toContain('\nReturn JSON: { "overview": "<one paragraph about the whole collection>", "<key>": "<description>", ... } with one entry per key above.');
+const SEMANTIC = {
+  collectionId: 'c1', collectionName: 'Semantic', modeNames: ['Light', 'Dark'],
+  aliasCounts: [{ collection: 'Primitives', count: 42 }],
+  groups: [{ folder: 'c1|surface', title: 'Surface', resolvedType: 'COLOR' as const,
+    tokenNames: ['surface/default'], sampleValues: ['#FFFFFF'] }],
+};
+const SPACING = { collectionId: 'c2', collectionName: 'Spacing', modeNames: [], aliasCounts: [], groups: [] };
+
+describe('buildGroupPrompt, one block per collection', () => {
+  const prompt = buildGroupPrompt({ collections: [SEMANTIC, SPACING] });
+  it('opens each block with the collection and its key, then modes and aliases', () => {
+    expect(prompt.startsWith('Collection: Semantic (key: c1)\nModes: Light, Dark\nAliases into other collections: Primitives (42)\nGroups to describe:\n')).toBe(true);
+    expect(prompt).toContain('\n\nCollection: Spacing (key: c2)\nGroups to describe: none\n');
+  });
+  it('asks for one overview per collection key beside the group keys', () => {
+    expect(prompt.endsWith('\nReturn JSON: { "<collection key>|overview": "<one paragraph about that collection>", "<group key>": "<description>", ... } with one overview per collection key and one entry per group key above.')).toBe(true);
+  });
+  it('still lists each group by key, heading and type', () => {
+    expect(prompt).toContain('  key: c1|surface\n  heading: Surface\n  type: COLOR\n    surface/default = #FFFFFF');
   });
 });
 
-describe('parseGroupDraft', () => {
-  it('returns the overview and the descriptions, trimmed and dash-normalised', () => {
-    const out = parseGroupDraft('{"overview":"  Semantic colours for surfaces — and text. ","c|x":"Backgrounds."}', ['c|x']);
-    expect(out).toEqual({ overview: 'Semantic colours for surfaces, and text.', descriptions: { 'c|x': 'Backgrounds.' } });
+describe('parseGroupDraft overviews', () => {
+  it('keeps one overview per requested collection and every requested group', () => {
+    const out = parseGroupDraft(
+      '{"c1|overview":"Semantic colours.","c2|overview":"Spacing steps.","c1|surface":"Surfaces.","c9|overview":"nope","overview":"bare"}',
+      ['c1|surface'], ['c1', 'c2'],
+    );
+    expect(out).toEqual({ descriptions: { 'c1|surface': 'Surfaces.' }, overviews: { c1: 'Semantic colours.', c2: 'Spacing steps.' } });
   });
-  it('drops an overview that is missing, not a string, empty, or too long', () => {
-    expect(parseGroupDraft('{"c|x":"B."}', ['c|x']).overview).toBeNull();
-    expect(parseGroupDraft('{"overview":3,"c|x":"B."}', ['c|x']).overview).toBeNull();
-    expect(parseGroupDraft('{"overview":"   ","c|x":"B."}', ['c|x']).overview).toBeNull();
-    expect(parseGroupDraft(JSON.stringify({ overview: 'x'.repeat(MAX_OVERVIEW + 1), 'c|x': 'B.' }), ['c|x']).overview).toBeNull();
+  it('drops an empty, non-string or over-long overview', () => {
+    const long = 'x'.repeat(MAX_OVERVIEW + 1);
+    expect(parseGroupDraft(`{"c1|overview":"","c2|overview":${JSON.stringify(long)},"c3|overview":3}`, [], ['c1', 'c2', 'c3']).overviews).toEqual({});
   });
-  it('never treats "overview" as a group key', () => {
-    expect(parseGroupDraft('{"overview":"O."}', ['overview']).descriptions).toEqual({});
+  it('collapses dashes in an overview like it does in a description', () => {
+    expect(parseGroupDraft('{"c1|overview":"Light — and dark."}', [], ['c1']).overviews.c1).toBe('Light, and dark.');
   });
 });
 
 describe('FOUNDATION_SYSTEM_PROMPT overview rule', () => {
-  it('tells the model what the overview may say and how long it is', () => {
-    expect(FOUNDATION_SYSTEM_PROMPT).toContain('"overview"');
+  it('tells the model to write one overview per collection key, under 400 characters', () => {
+    expect(FOUNDATION_SYSTEM_PROMPT).toContain('"<collection key>|overview"');
     expect(FOUNDATION_SYSTEM_PROMPT).toContain('Under 400 characters');
   });
 });
@@ -130,7 +144,7 @@ describe('parseGroupDraft descriptions', () => {
    *  through `parseGroupResponse` until that wrapper was deleted for having
    *  no caller outside this block. */
   const descriptions = (text: string, keys: string[]): Record<string, string> =>
-    parseGroupDraft(text, keys).descriptions;
+    parseGroupDraft(text, keys, []).descriptions;
 
   it('reads a plain JSON object', () => {
     const out = descriptions('{"color/surface":"Backgrounds and large areas.","color/text":"Copy colours."}', folders);
