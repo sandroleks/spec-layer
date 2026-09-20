@@ -147,19 +147,27 @@ export function figmaEffectsFor(layers: EffectLayer[]): Effect[] {
     if (layer.type === 'unknown' || !layer.visible) continue;
     switch (layer.type) {
       case 'drop-shadow':
-      case 'inner-shadow':
-        out.push({
-          type: layer.type === 'drop-shadow' ? 'DROP_SHADOW' : 'INNER_SHADOW',
+      case 'inner-shadow': {
+        const shared = {
           visible: true, blendMode: layer.blendMode as BlendMode,
           color: rgba(layer.color), offset: layer.offset, radius: layer.radius,
           ...(layer.spread !== undefined ? { spread: layer.spread } : {}),
-          // Hashed by the foundation content hash, so it has to reach the card:
-          // a shadow drawn behind translucent pixels looks different from one
-          // that is not. Conditional, so a style that never set it sends nothing.
-          ...(layer.showShadowBehindNode !== undefined
-            ? { showShadowBehindNode: layer.showShadowBehindNode } : {}),
-        } as Effect);
+        };
+        // showShadowBehindNode is hashed, and a shadow drawn behind translucent
+        // pixels looks different from one that is not, so it has to reach the
+        // card. DROP_SHADOW only, though: Figma's InnerShadowEffect declares no
+        // such field, and sending an undeclared key risks the layer being
+        // refused, which the per-layer guard would answer by dropping the whole
+        // shadow to carry one boolean. effectLayerOf can only put it on an inner
+        // shadow from a malformed or legacy dump, never from a real file, so the
+        // gap this leaves is unreachable. Do not widen it.
+        out.push(layer.type === 'drop-shadow'
+          ? { type: 'DROP_SHADOW', ...shared,
+            ...(layer.showShadowBehindNode !== undefined
+              ? { showShadowBehindNode: layer.showShadowBehindNode } : {}) } as Effect
+          : { type: 'INNER_SHADOW', ...shared } as Effect);
         break;
+      }
       case 'layer-blur':
       case 'background-blur': {
         const type = layer.type === 'layer-blur' ? 'LAYER_BLUR' : 'BACKGROUND_BLUR';

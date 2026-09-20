@@ -186,6 +186,16 @@ describe('figmaEffectsFor', () => {
     // Absent stays absent: no fabricated default reaches the card.
     expect(figmaEffectsFor([SHADOW])[0]).not.toHaveProperty('showShadowBehindNode');
   });
+
+  it('withholds showShadowBehindNode from an inner shadow, which Figma does not declare it on', () => {
+    // Sending an undeclared key risks the layer being refused outright, and the
+    // per-layer guard would then drop a whole shadow to carry one boolean.
+    const inner = figmaEffectsFor([
+      { ...SHADOW, type: 'inner-shadow', showShadowBehindNode: true },
+    ])[0];
+    expect(inner).toMatchObject({ type: 'INNER_SHADOW', radius: 12 });
+    expect(inner).not.toHaveProperty('showShadowBehindNode');
+  });
 });
 
 describe('buildEffectSpecimenList', () => {
