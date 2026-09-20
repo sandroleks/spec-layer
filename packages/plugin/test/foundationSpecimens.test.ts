@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { metricsLine, buildTextSpecimenList, SPECIMEN_TEXT } from '../src/foundationSpecimens';
+import {
+  metricsLine, buildTextSpecimenList, SPECIMEN_TEXT,
+  layerLines, figmaEffectsFor, buildEffectSpecimenList,
+} from '../src/foundationSpecimens';
 import { setFontFamilies } from '../src/frameKit';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import type { FoundationTextRow } from '@spec-layer/extractor';
@@ -61,5 +64,91 @@ describe('buildTextSpecimenList', () => {
   it('leaves the description out when descriptions are off', () => {
     const list = buildTextSpecimenList([row], 768, false, new Set()) as unknown as FakeFrame;
     expect(list.textChars()).not.toContain('Page titles.');
+  });
+});
+
+const SHADOW = {
+  type: 'drop-shadow' as const, visible: true, blendMode: 'NORMAL',
+  color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+};
+
+describe('layerLines', () => {
+  it('describes each layer type in words and numbers, with chips for bound fields', () => {
+    const lines = layerLines([
+      SHADOW,
+      { ...SHADOW, type: 'inner-shadow', visible: false },
+      { type: 'layer-blur', blurType: 'normal', visible: true, radius: 8 },
+      { type: 'background-blur', blurType: 'progressive', visible: true, radius: 20, startRadius: 2,
+        startOffset: { x: 0, y: 0 }, endOffset: { x: 0, y: 1 } },
+      { type: 'noise', noiseType: 'monotone', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#000000', alpha: 1 }, noiseSize: 1, density: 0.5 },
+      { type: 'texture', visible: true, noiseSize: 2, radius: 4, clipToShape: true },
+      { type: 'glass', visible: true, radius: 12, lightIntensity: 0.5, lightAngle: 45,
+        refraction: 0.2, depth: 4, dispersion: 0.1 },
+      { type: 'unknown', figma_type: 'HOLOGRAM' },
+    ], { 'effects[0].radius': 'shadow/blur', 'effects[0].color': 'shadow/ink' });
+    expect(lines.map((parts) => parts.map((p) => p.label).join(' · '))).toEqual([
+      'Drop shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16%',
+      'Inner shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16% · hidden',
+      'Layer blur · 8',
+      'Background blur · 20 · progressive from 2',
+      'Noise · monotone · size 1 · density 0.5 · #000000',
+      'Texture · size 2 · radius 4',
+      'Glass · radius 12 · light 0.5 at 45° · refraction 0.2 · depth 4 · dispersion 0.1',
+      'Unsupported effect',
+    ]);
+    expect(lines[0][2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
+    expect(lines[0][4]).toEqual({ label: '#0F172A 16%', tokens: ['shadow/ink'] });
+    expect(lines[1].every((p) => p.tokens.length === 0)).toBe(true);
+  });
+});
+
+describe('figmaEffectsFor', () => {
+  it('maps visible layers to Figma effects and skips hidden and unknown ones', () => {
+    const effects = figmaEffectsFor([
+      SHADOW, { ...SHADOW, visible: false },
+      { type: 'layer-blur', blurType: 'normal', visible: true, radius: 8 },
+      { type: 'unknown', figma_type: 'HOLOGRAM' },
+    ]);
+    expect(effects).toEqual([
+      { type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
+        color: { r: 15 / 255, g: 23 / 255, b: 42 / 255, a: 0.16 },
+        offset: { x: 0, y: 4 }, radius: 12, spread: 0 },
+      { type: 'LAYER_BLUR', blurType: 'NORMAL', visible: true, radius: 8 },
+    ]);
+  });
+});
+
+describe('buildEffectSpecimenList', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('draws a card per style with its layers applied, and the layer lines under the name', () => {
+    const list = buildEffectSpecimenList([{
+      kind: 'effectStyle', name: 'Elevation/Low', description: 'Cards at rest.',
+      layers: [SHADOW], boundTokens: { 'effects[0].radius': 'shadow/blur' },
+    }], 768, true) as unknown as FakeFrame;
+    const chars = list.textChars();
+    expect(chars).toContain('Elevation/Low');
+    expect(chars).toContain('Cards at rest.');
+    expect(chars).toContain('Drop shadow');
+    expect(chars).toContain('shadow/blur');
+    const card = list.findByName('Specimen') as FakeFrame;
+    expect(card.effects).toHaveLength(1);
+    expect(card.width).toBe(160);
+    expect(card.height).toBe(96);
+  });
+
+  it('draws a backdrop only for a background blur', () => {
+    const blurred = buildEffectSpecimenList([{
+      kind: 'effectStyle', name: 'Glass', description: '',
+      layers: [{ type: 'background-blur', blurType: 'normal', visible: true, radius: 20 }],
+      boundTokens: {},
+    }], 768, true) as unknown as FakeFrame;
+    expect(blurred.findByName('Backdrop')).not.toBeNull();
+    const plain = buildEffectSpecimenList([{
+      kind: 'effectStyle', name: 'Shadow', description: '', layers: [SHADOW], boundTokens: {},
+    }], 768, true) as unknown as FakeFrame;
+    expect(plain.findByName('Backdrop')).toBeNull();
   });
 });

@@ -19,8 +19,9 @@
  * pass, the same treatment docFrame.ts gets.
  */
 import type {
-  FoundationUnit, FoundationUnitContent, FoundationValue,
-  FoundationRow, FoundationVariableRow, FoundationTextRow, ColorContrastReport, FoundationGlyph,
+  FoundationUnit, FoundationUnitContent, FoundationValue, FoundationScope,
+  FoundationRow, FoundationVariableRow, FoundationTextRow, FoundationEffectRow,
+  ColorContrastReport, FoundationGlyph,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
@@ -28,7 +29,7 @@ import {
   headingFont, PROSE_MEASURE,
 } from './frameKit';
 import { buildGlyph, glyphSpec, glyphValue } from './foundationScales';
-import { buildTextSpecimenList } from './foundationSpecimens';
+import { buildTextSpecimenList, buildEffectSpecimenList } from './foundationSpecimens';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
   contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
@@ -185,8 +186,9 @@ function plural(n: number, one: string, many: string): string {
  * Reads only `content`, for the same reason footerNotes does: everything the
  * frame states has to come from what the drift hash reads.
  */
-export function headerSubtitle(content: FoundationUnitContent, isText: boolean): string {
-  if (isText) return plural(content.rows.length, 'text style', 'text styles');
+export function headerSubtitle(content: FoundationUnitContent, target: FoundationScope['target']): string {
+  if (target === 'textStyles') return plural(content.rows.length, 'text style', 'text styles');
+  if (target === 'effectStyles') return plural(content.rows.length, 'effect style', 'effect styles');
   return `${plural(content.rows.length, 'variable', 'variables')} across `
     + plural(content.modeNames.length, 'mode', 'modes');
 }
@@ -840,10 +842,10 @@ export async function buildFoundationFrame(
   // extractor's 24 column cap is wider than anything the table or the swatch
   // list asks for.
   //
-  // Skipped for the text-styles unit: it holds no colour variables at all, so a
+  // Skipped for a styles unit: it holds no colour variables at all, so a
   // "no colour pairs to measure" note there would state the obvious about a
   // document that never had any, and its collectionName is empty besides.
-  const contrastModel = includeContrast && contrast && !isText
+  const contrastModel = includeContrast && contrast && unit.scope.target === 'collection'
     ? contrastBlockModel(contrast, content.collectionName)
     : null;
 
@@ -917,7 +919,7 @@ export async function buildFoundationFrame(
   const header = await buildBrandHeader({
     eyebrow: 'Foundations',
     title,
-    subtitle: headerSubtitle(content, isText),
+    subtitle: headerSubtitle(content, unit.scope.target),
     logoBase64,
     pill,
   });
@@ -960,6 +962,17 @@ export async function buildFoundationFrame(
     return finishCard(card, title);
   }
 
+  // --- effect-style specimens (in place of a table for this unit) ---
+  // Same shape as the text-styles exit above, and for the same reason: an
+  // effect-styles unit holds nothing but effectStyle rows.
+  if (unit.scope.target === 'effectStyles') {
+    const effectRows = content.rows.filter((r): r is FoundationEffectRow => r.kind === 'effectStyle');
+    body.appendChild(buildEffectSpecimenList(effectRows, CONTENT_WIDTH, includeDescriptions));
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+    return finishCard(card, title);
+  }
+
   // --- table (everything else) ---
   if (tableRows.length === 0) {
     const notes = footerNotes(content);
@@ -992,15 +1005,9 @@ export async function buildFoundationFrame(
 
     if (row.kind === 'variable') {
       for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
-    } else if (row.kind === 'effectStyle') {
-      // Effect-style specimen rendering is Task 10's job; a blank cell keeps
-      // this table type-safe without inventing a layout no plan has specified.
-      const pane = vstack(0);
-      fixWidthHugHeight(pane, widthOf());
-      cells.push(pane);
     }
-    // A textStyle row never reaches this table: buildFoundationFrame renders
-    // buildTextSpecimenList for that unit and returns before this loop runs.
+    // A textStyle or effectStyle row never reaches this table: buildFoundationFrame
+    // renders the matching specimen list for that unit and returns before this loop runs.
 
     // Every row after the header carries the hairline above it, so the table's
     // own border is never doubled at the last row.

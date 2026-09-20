@@ -45,6 +45,14 @@ none of the reasoning above.
   My Library. Its Copy for AI carries the `Effect styles` set and the
   collections its bound tokens need, and nothing else.
 
+- **Effect styles get a document.** Each style casts its layers on a white
+  card over a tinted pane, with a checkered backdrop behind a background
+  blur so the blur is visible, and lists every layer under the name: type,
+  offset, blur, spread and colour for shadows, radius for blurs, and the
+  fields noise, texture and glass carry, with a chip for each value bound to
+  a token. Hidden layers are listed and not applied; a layer the plugin does
+  not know is listed as unsupported.
+
 - **Foundation group descriptions come with a collection overview.** The one
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of

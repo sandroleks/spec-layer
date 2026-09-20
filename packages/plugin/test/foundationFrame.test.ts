@@ -482,7 +482,16 @@ describe('buildFoundationFrame', () => {
   /** Two modes, three described variables, plus one text style. */
   function dump(): SerializedFoundation {
     return {
-      fileKey: 'FILE1', extractedAt: '2026-07-27T00:00:00.000Z', externals: [], effectStyles: [],
+      fileKey: 'FILE1',
+      extractedAt: '2026-07-27T00:00:00.000Z',
+      externals: [],
+      effectStyles: [{
+        id: 'e1', name: 'Elevation/Low', description: 'Cards at rest.',
+        effects: [{
+          type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        }],
+      }],
       collections: [{
         id: 'c1', name: 'Primitives', defaultModeId: 'light',
         modes: [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
@@ -507,7 +516,7 @@ describe('buildFoundationFrame', () => {
   }
 
   function build(opts: {
-    textStyles?: boolean; descriptions?: boolean; logo?: string | null;
+    textStyles?: boolean; effectStyles?: boolean; descriptions?: boolean; logo?: string | null;
     singleMode?: boolean; codeSyntax?: Record<string, string>;
   } = {}) {
     const d = dump();
@@ -516,10 +525,10 @@ describe('buildFoundationFrame', () => {
     if (opts.codeSyntax) d.collections[0].variables[0].codeSyntax = opts.codeSyntax;
     const spec = buildFoundation(d);
     const units = planFoundationUnits(spec, {
-      collections: opts.textStyles
+      collections: opts.textStyles || opts.effectStyles
         ? []
         : [{ collectionId: 'c1', modeIds: opts.singleMode ? ['light'] : ['light', 'dark'] }],
-      textStyles: opts.textStyles ?? false, effectStyles: false,
+      textStyles: opts.textStyles ?? false, effectStyles: opts.effectStyles ?? false,
     });
     const unit = units[0];
     const content = unitContent(spec, unit.scope)!;
@@ -557,6 +566,15 @@ describe('buildFoundationFrame', () => {
     const card = cardOf(await build({ textStyles: true }));
     expect(card.textChars()).toContain('Text styles');
     expect(card.name).toBe('Text styles');
+  });
+
+  it('draws the effect-styles document as specimens, not a table of blank cells', async () => {
+    const card = cardOf(await build({ effectStyles: true, descriptions: true }));
+    expect(card.name).toBe('Effect styles');
+    const texts = card.textChars();
+    expect(texts).toContain('Elevation/Low');
+    expect(texts).toContain('Drop shadow');
+    expect(texts).toContain('1 effect style');
   });
 
   it('sets a text style in the pangram specimen, not the old two-letter sample', async () => {
@@ -792,26 +810,34 @@ describe('headerSubtitle', () => {
     }));
 
   it('counts variables and the modes they are shown in', () => {
-    expect(headerSubtitle({ ...base, rows: rows(12), modeNames: ['L', 'D'] }, false))
+    expect(headerSubtitle({ ...base, rows: rows(12), modeNames: ['L', 'D'] }, 'collection'))
       .toBe('12 variables across 2 modes');
   });
 
   it('says one variable and one mode in the singular', () => {
-    expect(headerSubtitle({ ...base, rows: rows(1) }, false))
+    expect(headerSubtitle({ ...base, rows: rows(1) }, 'collection'))
       .toBe('1 variable across 1 mode');
   });
 
   it('counts text styles, which have no modes', () => {
-    expect(headerSubtitle({ ...base, rows: rows(8) }, true)).toBe('8 text styles');
-    expect(headerSubtitle({ ...base, rows: rows(1) }, true)).toBe('1 text style');
+    expect(headerSubtitle({ ...base, rows: rows(8) }, 'textStyles')).toBe('8 text styles');
+    expect(headerSubtitle({ ...base, rows: rows(1) }, 'textStyles')).toBe('1 text style');
+  });
+
+  it('counts effect styles in the subtitle', () => {
+    const content = { collectionName: '', modeNames: [], omittedModeNames: [], rows: [
+      { kind: 'effectStyle', name: 'a', description: '', layers: [], boundTokens: {} },
+      { kind: 'effectStyle', name: 'b', description: '', layers: [], boundTokens: {} },
+    ] } as FoundationUnitContent;
+    expect(headerSubtitle(content, 'effectStyles')).toBe('2 effect styles');
   });
 
   it('states an empty document plainly rather than leaving the line blank', () => {
-    expect(headerSubtitle(base, false)).toBe('0 variables across 1 mode');
+    expect(headerSubtitle(base, 'collection')).toBe('0 variables across 1 mode');
   });
 
   it('contains no em dash', () => {
-    expect(headerSubtitle({ ...base, rows: rows(3) }, false)).not.toContain('—');
+    expect(headerSubtitle({ ...base, rows: rows(3) }, 'collection')).not.toContain('—');
   });
 });
 
