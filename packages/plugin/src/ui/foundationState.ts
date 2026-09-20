@@ -8,9 +8,10 @@
  */
 import {
   MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
-  collectionAliasCounts, collectionModeNames, compareCodeUnits,
+  collectionAliasCounts, collectionModeNames,
   type FoundationSpec, type FoundationSelection, type FoundationMode,
-  type FoundationGroupBrief, type FoundationValue, type GroupDraftInput,
+  type FoundationGroupBrief, type FoundationCollectionBrief, type FoundationValue,
+  type GroupDraftInput,
 } from '@spec-layer/extractor';
 import { collectionIconKind, type FoundationIconKind } from '../foundationIcon';
 
@@ -315,46 +316,25 @@ export const FOUNDATION_CREATE_LABEL = 'Create docs';
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the current selection contains any colour variable at all.
+ * The per-collection briefs for one build: one block per selected collection,
+ * each carrying only that collection's own name, modes, alias counts and
+ * colour groups. Never merged across collections, so the model is never asked
+ * to describe a union that does not exist.
  *
- * Gates the AI opt-in: only colour rows render group headings, so a file of pure
- * spacing tokens has nothing for a description to sit under, and offering to
- * spend a generation on it would be offering to waste one.
- */
-export function hasColorGroups(spec: FoundationSpec, sel: FoundationSelection): boolean {
-  return sel.collections.some((chosen) => {
-    const collection = spec.collections.find((c) => c.id === chosen.collectionId);
-    return collection?.variables.some((v) => v.resolvedType === 'COLOR') ?? false;
-  });
-}
-
-/**
- * The per-group briefs for one build, keyed `collectionId|folder` to match the
- * message the main thread receives.
- *
- * Built from the same `folderOf`/`groupTitle` the renderer uses, so a description
- * cannot arrive keyed to a folder no block will look up.
+ * Group folders are keyed `collectionId|folder` to match the message the main
+ * thread receives. Built from the same `folderOf`/`groupTitle` the renderer
+ * uses, so a description cannot arrive keyed to a folder no block will look up.
  */
 export function groupBriefs(
   spec: FoundationSpec, sel: FoundationSelection,
 ): GroupDraftInput {
-  const groups: FoundationGroupBrief[] = [];
-  const names: string[] = [];
-  const modeNames: string[] = [];
-  const aliasTotals = new Map<string, number>();
+  const collections: FoundationCollectionBrief[] = [];
 
   for (const chosen of sel.collections) {
     const collection = spec.collections.find((c) => c.id === chosen.collectionId);
     if (!collection) continue;
-    names.push(collection.name);
 
-    for (const modeName of collectionModeNames(spec, collection.id)) {
-      if (!modeNames.includes(modeName)) modeNames.push(modeName);
-    }
-    for (const { collection: target, count } of collectionAliasCounts(spec, collection.id)) {
-      aliasTotals.set(target, (aliasTotals.get(target) ?? 0) + count);
-    }
-
+    const groups: FoundationGroupBrief[] = [];
     const colors = collection.variables.filter((v) => v.resolvedType === 'COLOR');
     const byFolder = new Map<string, typeof colors>();
     for (const variable of colors) {
@@ -379,24 +359,17 @@ export function groupBriefs(
         sampleValues: members.map((m) => describeValue(m.valuesByMode[modeId])),
       });
     });
+
+    collections.push({
+      collectionId: collection.id,
+      collectionName: collection.name,
+      modeNames: collectionModeNames(spec, collection.id),
+      aliasCounts: collectionAliasCounts(spec, collection.id),
+      groups,
+    });
   }
 
-  const aliasCounts = [...aliasTotals.entries()]
-    .map(([collection, count]) => ({ collection, count }))
-    .sort((a, b) => b.count - a.count || compareCodeUnits(a.collection, b.collection));
-
-  // Minimal adapter onto the v3 one-block-per-collection input: the merged
-  // facts still travel as a single block. Task 13 splits this into one brief
-  // per selected collection, which is what the new shape is for.
-  return {
-    collections: [{
-      collectionId: sel.collections[0]?.collectionId ?? '',
-      collectionName: names.join(', '),
-      modeNames,
-      aliasCounts,
-      groups,
-    }],
-  };
+  return { collections };
 }
 
 /** A short, honest rendering of one value for the prompt. */

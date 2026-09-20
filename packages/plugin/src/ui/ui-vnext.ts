@@ -113,7 +113,6 @@ import {
   type BuildPresenter,
 } from './actions';
 import { generateGroupDescriptions, resolveComponentImage } from './ai';
-import { hasColorGroups } from './foundationState';
 import {
   activateLicense as activateLicenseKey,
   deactivateLicense,
@@ -711,11 +710,14 @@ async function buildFoundations(): Promise<void> {
   foundationAiNote = '';
   setFoundationGenerating(true);
   let groupDescriptions: Record<string, string> | undefined;
-  let collectionOverview: string | undefined;
+  let collectionOverviews: Record<string, string> | undefined;
   const briefs = currentGroupBriefs();
   const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
 
-  if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.collections.some((c) => c.groups.length)) {
+  // One brief per selected collection (Task 13), so a collection of only
+  // spacing tokens still gets its own overview even though it has no colour
+  // groups to describe.
+  if (hasIdentity && briefs && briefs.collections.length > 0) {
     try {
       const draft = await generateGroupDescriptions(
         briefs,
@@ -732,15 +734,8 @@ async function buildFoundations(): Promise<void> {
         },
       );
       groupDescriptions = draft.descriptions;
-      // Minimal adapter onto the per-collection overviews. The single-collection
-      // guard stays: `groupBriefs` still merges every selected collection into
-      // one block, so with two selected the one paragraph describes the union
-      // and belongs to neither document. Task 13 splits the briefs and then
-      // this guard goes.
-      collectionOverview = foundationSelection.collections.length === 1
-        ? draft.overviews[foundationSelection.collections[0]?.collectionId ?? '']
-        : undefined;
-      if (Object.keys(groupDescriptions).length === 0) {
+      collectionOverviews = Object.keys(draft.overviews).length > 0 ? draft.overviews : undefined;
+      if (Object.keys(groupDescriptions).length === 0 && !collectionOverviews) {
         foundationAiNote = 'AI descriptions came back empty.';
       }
     } catch (error) {
@@ -770,7 +765,7 @@ async function buildFoundations(): Promise<void> {
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions }
       : {}),
-    ...(collectionOverview ? { collectionOverview } : {}),
+    ...(collectionOverviews ? { collectionOverviews } : {}),
   });
 }
 

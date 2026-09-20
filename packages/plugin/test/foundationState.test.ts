@@ -440,7 +440,7 @@ const overviewSpec: FoundationSpec = {
       modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
       variables: [
         {
-          name: 'accent', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          name: 'color/accent', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: {
             s1: { kind: 'alias', targetName: 'p', targetCollection: 'Primitives', external: false, resolved: null },
             s2: { kind: 'color', hex: '#000000', alpha: 1 },
@@ -468,17 +468,31 @@ function selectionOf(...ids: string[]): FoundationSelection {
   };
 }
 
-describe('groupBriefs carries the collection facts the overview needs', () => {
-  it('names the modes and counts aliases for the chosen collection', () => {
-    const [briefs] = groupBriefs(overviewSpec, selectionOf('sem')).collections;
-    expect(briefs.collectionName).toBe('Semantic');
-    expect(briefs.modeNames).toEqual(['Light', 'Dark']);
-    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
+describe('groupBriefs, one brief per collection', () => {
+  it('keeps each collection\'s own name, modes, alias counts and colour groups', () => {
+    const { collections } = groupBriefs(overviewSpec, selectionOf('sem', 'prim'));
+    expect(collections.map((c) => [c.collectionId, c.collectionName, c.modeNames, c.aliasCounts])).toEqual([
+      ['sem', 'Semantic', ['Light', 'Dark'], [{ collection: 'Primitives', count: 1 }]],
+      ['prim', 'Primitives', ['Value'], []],
+    ]);
+    expect(collections[0].groups.map((g) => g.folder)).toEqual(['sem|color']);
   });
-  it('merges modes and alias counts when several collections are chosen', () => {
-    const [briefs] = groupBriefs(overviewSpec, selectionOf('sem', 'prim')).collections;
-    expect(briefs.modeNames).toEqual(['Light', 'Dark', 'Value']);
-    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
+  it('includes a collection with no colour variables, with no groups', () => {
+    const spacingOnly = {
+      ...overviewSpec,
+      collections: [{
+        ...overviewSpec.collections[0], id: 'sp', name: 'Spacing',
+        variables: [{
+          name: 'space/4', group: 'space', resolvedType: 'FLOAT', description: '', codeSyntax: {},
+          valuesByMode: { l: { kind: 'number', value: 4 } },
+          provenance: { id: 'v', scopes: [], valuesByMode: {}, staleModeIds: [] },
+        }],
+      }],
+    } as unknown as FoundationSpec;
+    const { collections } = groupBriefs(spacingOnly, {
+      collections: [{ collectionId: 'sp', modeIds: ['l'] }], textStyles: false, effectStyles: false,
+    });
+    expect(collections).toEqual([expect.objectContaining({ collectionId: 'sp', groups: [] })]);
   });
 });
 

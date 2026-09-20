@@ -105,7 +105,8 @@ open: nothing should pop up on the canvas.
    its aliases need, that the "included" checkbox did not toggle, and that the
    copy is much smaller than the whole-file copy. Repeat for the **Text
    styles** row and confirm only `sets["Typography styles"]` and its
-   dependency collections appear.
+   dependency collections appear. Repeat for the **Effect styles** row and
+   confirm only `sets["Effect styles"]` and its dependency collections appear.
 6. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
@@ -304,11 +305,48 @@ were added the same day, after the review that found the callouts reading
     measure; the document's stored link carries the same text as
     `collectionOverview`. Editing the paragraph on canvas turns the Library
     row to "Edited".
+29. **One overview per collection.** Build two collections in one run with AI
+    writing on. Expected: each document carries its own paragraph under the
+    header, the two paragraphs differ, and each stored link's
+    `collectionOverview` matches its own frame.
+30. **Overview without colour groups.** Build a collection holding only
+    number variables with AI writing on. Expected: an overview paragraph is
+    drawn and there are no group lines, since there are no colour groups.
+31. **Reference chips.** In a collection where one variable defines a Web
+    code syntax and another defines Web and iOS, build the doc. Expected:
+    one chip per defined platform under those two names, with the exact
+    identifiers Figma shows in the variable's settings; every other variable
+    has no chip.
+32. **Scales drawn to scale.** Build a collection holding one number
+    variable per scope: gap, corner radius, stroke, opacity (a value between
+    0 and 1), font size, line height, letter spacing, plus one with a gap
+    value wider than its cell. Expected: each cell draws its glyph above the
+    value at the true size (measure the bar and the radius square against a
+    Figma ruler), the wide bar ends in a tick, and a variable scoped to all
+    scopes shows the plain value only.
+33. **Type specimens.** Build the Text styles doc for a file with a 48px
+    style and a style bound to a size token. Expected: "The quick brown fox
+    jumps over the lazy dog" set in each style at its true size, wrapping
+    to the column; the metrics line matches Figma's inspector for that
+    style; the bound size shows its token chip.
+34. **Effect specimens.** Build the Effect styles doc for a file with a drop
+    shadow style, an inner shadow style and a background blur style.
+    Expected: the shadows fall on the tinted pane, the blur has a checkered
+    backdrop behind its card, and each layer line matches the inspector.
+35. **Effect row copy and library.** Click the copy icon on the Effect styles
+    row and paste. Expected: a DTCG document with only `sets["Effect
+    styles"]` plus the collections its bound tokens need. In My Library the
+    row shows the effect glyph and reads "Effect styles".
+36. **Pre-6.0.0 foundation doc.** Open a file holding a foundation doc built
+    by 5.1.0. Expected: the row reads "Update available" and its change list
+    carries one "New layout" item; Update renders the new layout and keeps
+    the group lines and overview.
 
-Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, and rows 25 to 28
-on 2026-09-18 for Plan 2. None of rows 16 to 28 have been run. Before running
-them, open Plugins, Development, Figma Desktop Bridge so the before and after
-screenshots can be captured for the review record.
+Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, rows 25 to 28
+on 2026-09-18 for Plan 2, and rows 29 to 36 on 2026-09-19 for Plan 3. None
+of rows 16 to 36 have been run. Before running them, open Plugins,
+Development, Figma Desktop Bridge so the before and after screenshots can be
+captured for the review record.
 
 ## Library
 

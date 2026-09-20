@@ -968,11 +968,17 @@ figma.ui.onmessage = async (raw: unknown) => {
           // stores only its own, keyed by plain folder.
           const descriptions = descriptionsForUnit(msg.groupDescriptions, unit, content);
 
+          // Each collection-scoped unit looks up its own paragraph; a
+          // text/effect-styles unit has no collection id to key on.
+          const overview = unit.scope.target === 'collection'
+            ? msg.collectionOverviews?.[unit.scope.collectionId]
+            : undefined;
+
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, brandLogo, descriptions,
             msg.config.includeContrast, contrastReport, pill,
-            msg.collectionOverview,
+            overview,
           );
 
           const data: FoundationDocLink = {
@@ -983,8 +989,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             selfHash: '',   // set below, once the section's text exists
             config: msg.config,
             ...(descriptions ? { groupDescriptions: descriptions } : {}),
-            ...(msg.collectionOverview && unit.scope.target === 'collection'
-              ? { collectionOverview: msg.collectionOverview } : {}),
+            ...(overview ? { collectionOverview: overview } : {}),
             generatedAt: Date.now(),
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };

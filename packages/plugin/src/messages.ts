@@ -235,10 +235,9 @@ export type UiToMain =
    *  each unit's own keys out of it and stores them on that doc. */
   | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
       groupDescriptions?: Record<string, string>;
-      /** One paragraph about the collection, present only when the build covers
-       *  exactly one collection. Stored on that doc's link; the foundation
-       *  frame draws it (Plan 3). */
-      collectionOverview?: string }
+      /** One paragraph per collection in the build, keyed by collection id.
+       *  Each collection-scoped doc stores its own as `collectionOverview`. */
+      collectionOverviews?: Record<string, string> }
   | { type: 'updateFoundationDoc'; docId: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }
