@@ -57,8 +57,8 @@ none of the reasoning above.
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of
   its variables alias into each other collection, and nothing else. It is
-  stored on the document beside the group lines and kept across Update; the
-  foundation frame work shipping alongside draws it.
+  stored on the document beside the group lines, kept across Update, and
+  drawn as one paragraph under the header band.
 
 - **The component description reaches the document.** Extraction now carries
   the root component's Figma description and its documentation link URLs, the

@@ -972,6 +972,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, brandLogo, descriptions,
             msg.config.includeContrast, contrastReport, pill,
+            msg.collectionOverview,
           );
 
           const data: FoundationDocLink = {
@@ -1156,6 +1157,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           link.config.includeContrast,
           link.config.includeContrast ? colorContrast(spec) : undefined,
           pill,
+          link.collectionOverview,
         );
 
         const data: FoundationDocLink = {

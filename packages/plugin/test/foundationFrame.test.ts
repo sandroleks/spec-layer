@@ -517,7 +517,7 @@ describe('buildFoundationFrame', () => {
 
   function build(opts: {
     textStyles?: boolean; effectStyles?: boolean; descriptions?: boolean; logo?: string | null;
-    singleMode?: boolean; codeSyntax?: Record<string, string>;
+    singleMode?: boolean; codeSyntax?: Record<string, string>; overview?: string;
   } = {}) {
     const d = dump();
     // The first colour variable of the dump, for the one test that needs a
@@ -534,6 +534,7 @@ describe('buildFoundationFrame', () => {
     const content = unitContent(spec, unit.scope)!;
     return buildFoundationFrame(
       content, unit, theme, opts.descriptions ?? false, opts.logo,
+      undefined, false, undefined, null, opts.overview,
     ) as unknown as Promise<FakeSection>;
   }
 
@@ -723,6 +724,19 @@ describe('buildFoundationFrame', () => {
   it('leaves a colour description out entirely when descriptions are off', async () => {
     const off = cardOf(await build({ descriptions: false }));
     expect(off.textChars()).not.toContain('Page background');
+  });
+
+  it('draws the stored collection overview under the header, untagged so selfHash covers it', async () => {
+    const card = cardOf(await build({ overview: 'Semantic colours for surfaces and text, in Light and Dark.' }));
+    const body = card.children[1] as FakeFrame;
+    expect((body.children[0] as FakeFrame).name).toBe('Overview');
+    expect(body.textChars()[0]).toBe('Semantic colours for surfaces and text, in Light and Dark.');
+    expect((body.children[0] as FakeFrame).getPluginData('specLayerSlot')).toBe('');
+  });
+  it('draws no overview for a text-styles unit or when none is stored', async () => {
+    expect(cardOf(await build({ textStyles: true, overview: 'x' })).textChars()).not.toContain('x');
+    const body = cardOf(await build()).children[1] as FakeFrame;
+    expect((body.children[0] as FakeFrame).name).not.toBe('Overview');
   });
 
   it('names the Section for the document it holds', async () => {

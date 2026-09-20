@@ -825,6 +825,7 @@ export async function buildFoundationFrame(
   includeContrast = false,
   contrast?: ColorContrastReport,
   pill: PillState | null = null,
+  collectionOverview?: string,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -934,6 +935,18 @@ export async function buildFoundationFrame(
   body.paddingRight = HEADER_PAD_X;
   card.appendChild(body);
   body.layoutSizingHorizontal = 'FILL';
+
+  // The AI paragraph about the whole collection. Untagged on purpose: it is
+  // generated text, so selfHash covers it and a hand edit reads as Edited,
+  // exactly like the group lines. Never read back from canvas.
+  const overview = unit.scope.target === 'collection' ? collectionOverview?.trim() : undefined;
+  if (overview) {
+    const box = vstack(0);
+    box.name = 'Overview';
+    body.appendChild(box);
+    fixWidthHugHeight(box, PROSE_MEASURE);
+    wrappingText(box, overview, 'Regular', 13, palette.body);
+  }
 
   // A frame holding both layouts labels them, so the split reads as deliberate
   // rather than as two unrelated blocks. A frame with only one needs no label.

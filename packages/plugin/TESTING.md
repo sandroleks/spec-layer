@@ -298,12 +298,12 @@ were added the same day, after the review that found the callouts reading
     descriptions appear for the first time, and the Keyboard table is
     rewritten as chips. With AI writing off, the same rebuild keeps every
     old section and adds nothing.
-28. **Foundation overview is stored.** Build a colour collection with AI
-    writing on. Expected: the group lines render as before, and the
-    document's stored link carries a `collectionOverview` paragraph under
-    400 characters (read it from the Section's plugin data with the Desktop
-    Bridge, or through Copy for AI once the foundation frame work draws it).
-    A build covering two collections stores no overview.
+28. **Foundation overview is stored and drawn.** Build a colour collection
+    with AI writing on. Expected: the group lines render as before, and one
+    paragraph under 400 characters sits under the header band at the prose
+    measure; the document's stored link carries the same text as
+    `collectionOverview`. Editing the paragraph on canvas turns the Library
+    row to "Edited".
 
 Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, and rows 25 to 28
 on 2026-09-18 for Plan 2. None of rows 16 to 28 have been run. Before running
