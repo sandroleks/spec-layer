@@ -79,10 +79,13 @@ const num = (n: number): string => String(n);
  * own name finds nothing, which is a token that is hashed but never drawn.
  *
  * The extractor filters effect bindings to `DRAWN_EFFECT_FIELDS` in
- * packages/extractor/src/foundation.ts, which lists which layer types and fields
- * actually get chips. If a branch draws a new bound field here, add its layer
- * type and field name to that hand-kept list, or the chip will appear in the
- * plugin but silently disappear from exported documents.
+ * packages/extractor/src/foundation.ts, which lists exactly the layer types and
+ * fields drawn below. If a branch here starts drawing a new bound field, add its
+ * layer type and field name to that hand-kept list too: otherwise the binding
+ * never reaches `boundTokens`, `tok` finds nothing, and the chip simply never
+ * appears. Exported documents are unaffected either way, since Copy for AI and
+ * the DTCG projection read the style's bindings off the spec rather than through
+ * this projection.
  */
 export function layerLines(layers: EffectLayer[], boundTokens: Record<string, string>): LinePart[][] {
   return layers.map((layer, i) => {
