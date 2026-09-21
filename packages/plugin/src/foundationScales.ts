@@ -18,7 +18,6 @@ export const BAR_H = 4;
 export const BAR_INSET = 8;
 export const TICK_W = 2;
 export const RADIUS_MIN = 48;
-export const RADIUS_MAX = 96;
 export const STROKE_MAX = 24;
 export const OPACITY_SIZE = 24;
 export const CHECKER = 6;
@@ -27,7 +26,7 @@ export const SAMPLE_SIZE = 14;
 
 export type GlyphSpec =
   | { kind: 'bar'; length: number; clipped: boolean }
-  | { kind: 'radius'; side: number; radius: number }
+  | { kind: 'radius'; side: number; radius: number; clamped: boolean }
   | { kind: 'stroke'; thickness: number }
   | { kind: 'opacity'; opacity: number }
   | { kind: 'fontSize'; size: number }
@@ -56,8 +55,20 @@ export function glyphSpec(glyph: FoundationGlyph, value: number, cellWidth: numb
         ? { kind: 'bar', length: max, clipped: true }
         : { kind: 'bar', length: value, clipped: false };
     }
-    case 'radius':
-      return { kind: 'radius', side: Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, 2 * value)), radius: value };
+    case 'radius': {
+      // The square grows with the value, like the bar, and stops at the same
+      // edge of the cell the bar stops at. A fixed 96px cap made every radius
+      // from 48 up draw the identical circle, since Figma clamps a corner
+      // radius to half the side: a 48, a 64 and a 200 were indistinguishable
+      // and none of them matched its own number.
+      //
+      // `clamped` says the curve Figma will actually draw is smaller than the
+      // stated radius, which is exactly when the square is a circle. The
+      // renderer marks it the way the bar marks a clip, so a reader is never
+      // shown a drawing that quietly disagrees with the value beside it.
+      const side = Math.min(cellWidth - BAR_INSET, Math.max(RADIUS_MIN, 2 * value));
+      return { kind: 'radius', side, radius: value, clamped: value > side / 2 };
+    }
     case 'stroke':
       return { kind: 'stroke', thickness: Math.min(STROKE_MAX, value) };
     case 'opacity':
@@ -119,6 +130,9 @@ export function buildGlyph(spec: GlyphSpec, cellWidth: number): FrameNode {
       square.strokes = solidFill(palette.border);
       square.strokeWeight = 1;
       box.appendChild(square);
+      // Same tick the bar draws when it runs out of cell: the curve on screen
+      // is smaller than the number says, and saying so is the honest option.
+      if (spec.clamped) box.appendChild(rect(TICK_W, spec.side, palette.heading));
       return box;
     }
     case 'stroke':

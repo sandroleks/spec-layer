@@ -27,12 +27,14 @@ none of the reasoning above.
   "Update available" once, and its change list names the new fields.
 
 - **Number tokens are drawn to scale.** A spacing token shows a bar of its
-  length, a radius token a rounded square, a stroke token a rule of its
-  thickness, an opacity token a swatch at that opacity over a checker, and
-  type tokens an `Ag` sample at that size, line height or letter spacing,
-  each above the value it already showed. Which drawing a token gets comes
-  from its Figma scopes; a token with no scope, every scope, or a scope the
-  plugin cannot draw keeps the plain value.
+  length, a radius token a square with that corner on it, a stroke token a
+  rule of its thickness, an opacity token a swatch at that opacity over a
+  checker, and type tokens an `Ag` sample at that size, line height or letter
+  spacing, each above the value it already showed. A bar or a square too big
+  for its cell is drawn as large as the cell allows and marked with a tick, so
+  a drawing never quietly disagrees with the number beside it. Which drawing a
+  token gets comes from its Figma scopes; a token with no scope, every scope,
+  or a scope the plugin cannot draw keeps the plain value.
 
 - **Effect styles are a foundation source.** Extraction plans an
   `Effect styles` unit beside `Text styles`, splitting by group past the same
