@@ -988,6 +988,30 @@ export const TEXT_METRIC_FIELDS = [
 ] as const;
 
 /**
+ * The fields the effect specimen line names, per layer type, and so the only
+ * bindings an effect row carries. The same job TEXT_METRIC_FIELDS does for a
+ * text style.
+ *
+ * This is the renderer's vocabulary, in the renderer's spelling: the plugin's
+ * serializeFoundation.ts renames Figma's `radius`/`offsetX`/`offsetY` to
+ * `blur`/`offset_x`/`offset_y` for EVERY layer type, but `layerLines`
+ * (packages/plugin/src/foundationSpecimens.ts) only looks a chip up in its
+ * shadow and blur branches. A binding on any other layer type, or on a shadow
+ * field that branch does not print, would be hashed and never drawn, and then
+ * a source change would move foundationContentHash over a byte-identical
+ * frame. Change one side and this list has to move with it.
+ *
+ * A layer type absent from this map draws no chip at all: noise, texture,
+ * glass and unknown print their numbers with no bound field.
+ */
+const DRAWN_EFFECT_FIELDS: Record<string, readonly string[]> = {
+  'drop-shadow': ['offset_x', 'offset_y', 'blur', 'spread', 'color'],
+  'inner-shadow': ['offset_x', 'offset_y', 'blur', 'spread', 'color'],
+  'layer-blur': ['blur'],
+  'background-blur': ['blur'],
+};
+
+/**
  * ONLY what a frame actually draws for a variable: the name, the optional
  * description column, one cell per rendered mode, and the declared type.
  *
@@ -1051,8 +1075,11 @@ export interface FoundationTextRow {
 /**
  * ONLY what the effect frame draws: the specimen card applies `layers`, the
  * text under it lists them, and `boundTokens` names the variable bound to each
- * listed field as a chip. Layers are carried with any `bindings` key stripped,
- * because a binding's id is not drawn and ids must never move the hash.
+ * listed field as a chip, keyed by `effects[<index>].<field>` and filtered to
+ * DRAWN_EFFECT_FIELDS: a binding on a field that layer type's line does not
+ * print reaches no pixel and stays out, so a change to it moves no hash.
+ * Layers are carried with any `bindings` key stripped, because a binding's id
+ * is not drawn and ids must never move the hash.
  */
 export interface FoundationEffectRow {
   kind: 'effectStyle';
@@ -1127,6 +1154,28 @@ function boundMetricTokens(bound: Record<string, string>): Record<string, string
   return out;
 }
 
+/**
+ * The binding keys the effect specimen line can actually print, for these
+ * layers. Keys are `effects[<index>].<field>`, the shape serializeFoundation
+ * emits, so the layer index is the position in this same array.
+ *
+ * `spread` is conditional on purpose: layerLines omits the spread part
+ * entirely when the layer has no spread, so a bound spread on such a layer
+ * reaches no pixel.
+ */
+function drawnEffectBindingKeys(layers: EffectLayer[]): Set<string> {
+  const keys = new Set<string>();
+  layers.forEach((layer, index) => {
+    const fields = DRAWN_EFFECT_FIELDS[layer.type];
+    if (fields === undefined) return;
+    for (const field of fields) {
+      if (field === 'spread' && (layer as { spread?: number }).spread === undefined) continue;
+      keys.add(`effects[${index}].${field}`);
+    }
+  });
+  return keys;
+}
+
 /** A layer without its `bindings` key. Ids are not drawn, so they must not be hashed. */
 function stripBindings(layer: EffectLayer): EffectLayer {
   if (!('bindings' in layer)) return layer;
@@ -1196,7 +1245,10 @@ export function unitContent(
       ...(part ? { part } : {}),
       rows: styles.map((s): FoundationEffectRow => {
         const boundTokens: Record<string, string> = {};
+        // Only the bindings the specimen line draws: see DRAWN_EFFECT_FIELDS.
+        const drawn = drawnEffectBindingKeys(s.effects);
         for (const b of s.bindings ?? []) {
+          if (!drawn.has(b.property)) continue;
           const name = nameById.get(b.tokenId);
           if (name) boundTokens[b.property] = name;
         }

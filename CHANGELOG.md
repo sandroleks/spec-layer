@@ -37,8 +37,8 @@ none of the reasoning above.
 - **Effect styles are a foundation source.** Extraction plans an
   `Effect styles` unit beside `Text styles`, splitting by group past the same
   threshold, and projects each style as the layers its specimen card applies
-  plus the token bound to each listed field. A scoped Copy for AI target
-  covers effect styles alone.
+  plus the token bound to each field those layers' lines actually name. A
+  scoped Copy for AI target covers effect styles alone.
 
 - **An Effect styles row on the Foundations screen.** It selects, copies and
   creates like the Text styles row, with its own glyph in the picker and in

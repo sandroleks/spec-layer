@@ -122,39 +122,99 @@ describe('effect binding vocabulary', () => {
   // cannot drift apart again without a test failing.
   const alias = (id: string) => ({ type: 'VARIABLE_ALIAS' as const, id });
 
+  type Rgba = { r: number; g: number; b: number; a: number };
+  const vars: Record<string, { name: string; type: 'FLOAT' | 'COLOR'; value: number | Rgba }> = {
+    v1: { name: 'shadow/blur', type: 'FLOAT', value: 12 },
+    v2: { name: 'shadow/offset-y', type: 'FLOAT', value: 4 },
+    v3: { name: 'grain/tint', type: 'COLOR', value: { r: 0, g: 0, b: 0, a: 1 } },
+    v4: { name: 'glass/radius', type: 'FLOAT', value: 8 },
+  };
+
   const reader = {
     collections: async () => [{
       id: 'c1', name: 'Primitives', defaultModeId: 'm1',
-      modes: [{ modeId: 'm1', name: 'Mode' }], variableIds: ['v1', 'v2'],
+      modes: [{ modeId: 'm1', name: 'Mode' }], variableIds: Object.keys(vars),
     }],
     variable: async (id: string) => ({
       id,
-      name: id === 'v1' ? 'shadow/blur' : 'shadow/offset-y',
-      resolvedType: 'FLOAT' as const,
+      name: vars[id].name,
+      resolvedType: vars[id].type,
       description: '', variableCollectionId: 'c1', codeSyntax: {},
-      valuesByMode: { m1: id === 'v1' ? 12 : 4 }, scopes: [], remote: false,
+      valuesByMode: { m1: vars[id].value }, scopes: [], remote: false,
     }),
     textStyles: async () => [],
-    effectStyles: async () => [{
-      id: 'e1', name: 'Elevation/Low', description: '',
-      effects: [{
-        type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
-        color: { r: 0, g: 0, b: 0, a: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
-        boundVariables: { radius: alias('v1'), offsetY: alias('v2') },
-      }],
-    }],
+    effectStyles: async () => [
+      {
+        id: 'e1', name: 'Elevation/Low', description: '',
+        effects: [{
+          type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
+          color: { r: 0, g: 0, b: 0, a: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+          boundVariables: { radius: alias('v1'), offsetY: alias('v2') },
+        }],
+      },
+      {
+        // A shadow with no spread at all, carrying a bound spread anyway.
+        id: 'e2', name: 'Elevation/Flat', description: '',
+        effects: [{
+          type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
+          color: { r: 0, g: 0, b: 0, a: 0.16 }, offset: { x: 0, y: 1 }, radius: 2,
+          boundVariables: { spread: alias('v1') },
+        }],
+      },
+      {
+        // Two layer types whose lines name no bound field at all.
+        id: 'e3', name: 'Grain', description: '',
+        effects: [
+          {
+            type: 'NOISE', visible: true, blendMode: 'NORMAL', noiseType: 'MONOTONE',
+            color: { r: 0, g: 0, b: 0, a: 1 }, noiseSize: 2, density: 0.5,
+            boundVariables: { color: alias('v3') },
+          },
+          {
+            type: 'GLASS', visible: true, radius: 8, lightIntensity: 0.5, lightAngle: 45,
+            refraction: 0.2, depth: 4, dispersion: 0.1,
+            boundVariables: { radius: alias('v4') },
+          },
+        ],
+      },
+    ],
+  };
+
+  const rowsByName = async (): Promise<Record<string, FoundationEffectRow>> => {
+    const dump = await serializeFoundation(reader, 'FILE1', '2026-09-20T00:00:00.000Z');
+    const content = unitContent(buildFoundation(dump), { target: 'effectStyles' })!;
+    const out: Record<string, FoundationEffectRow> = {};
+    for (const row of content.rows as FoundationEffectRow[]) out[row.name] = row;
+    return out;
   };
 
   it('draws a chip for a bound blur radius and a bound offset, through the real serializer', async () => {
-    const dump = await serializeFoundation(reader, 'FILE1', '2026-09-20T00:00:00.000Z');
-    const content = unitContent(buildFoundation(dump), { target: 'effectStyles' })!;
-    const row = content.rows[0] as FoundationEffectRow;
+    const row = (await rowsByName())['Elevation/Low'];
     // The serializer's own vocabulary, which is what layerLines has to read.
     expect(Object.keys(row.boundTokens).sort())
       .toEqual(['effects[0].blur', 'effects[0].offset_y']);
     const parts = layerLines(row.layers, row.boundTokens)[0];
     expect(parts[1]).toEqual({ label: '0, 4', tokens: ['shadow/offset-y'] });
     expect(parts[2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
+  });
+
+  it('drops a binding on a field no layer line prints, so it is never hashed unrendered', async () => {
+    // The serializer maps color and radius for EVERY layer type, but the noise
+    // and glass branches of layerLines call no chip helper, so a binding there
+    // would be hashed and never drawn: a source change would then move
+    // foundationContentHash over a byte-identical frame.
+    const row = (await rowsByName())['Grain'];
+    expect(row.boundTokens).toEqual({});
+    const lines = layerLines(row.layers, row.boundTokens);
+    expect(lines[0].every((p) => p.tokens.length === 0)).toBe(true);
+    expect(lines[1].every((p) => p.tokens.length === 0)).toBe(true);
+  });
+
+  it('drops a bound spread on a shadow that has none, since the line omits that part', async () => {
+    const row = (await rowsByName())['Elevation/Flat'];
+    expect(row.boundTokens).toEqual({});
+    const labels = layerLines(row.layers, row.boundTokens)[0].map((p) => p.label);
+    expect(labels.some((l) => l.startsWith('spread'))).toBe(false);
   });
 });
 
