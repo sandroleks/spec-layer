@@ -77,6 +77,12 @@ const num = (n: number): string => String(n);
  * `offset_x`/`offset_y` on the way out (EFFECT_BINDING_FIELDS), and unitContent
  * copies that key verbatim into `boundTokens`. Looking a chip up under Figma's
  * own name finds nothing, which is a token that is hashed but never drawn.
+ *
+ * The extractor filters effect bindings to `DRAWN_EFFECT_FIELDS` in
+ * packages/extractor/src/foundation.ts, which lists which layer types and fields
+ * actually get chips. If a branch draws a new bound field here, add its layer
+ * type and field name to that hand-kept list, or the chip will appear in the
+ * plugin but silently disappear from exported documents.
  */
 export function layerLines(layers: EffectLayer[], boundTokens: Record<string, string>): LinePart[][] {
   return layers.map((layer, i) => {
