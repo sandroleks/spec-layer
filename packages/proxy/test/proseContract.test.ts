@@ -4,7 +4,7 @@ import {
   groupProseRequest, groupCacheKey, proseCacheKey, proseRequest, contentHash,
   PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot, FOUNDATION_SYSTEM_PROMPT,
   LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
-  LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS,
+  LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS, GROUP_MAX_TOKENS,
   type FoundationGroupBrief, type IntermediateSpec,
 } from '@spec-layer/extractor';
 
@@ -23,7 +23,9 @@ const briefs: FoundationGroupBrief[] = [{
   folder: 'c1|color/surface', title: 'Surface', resolvedType: 'COLOR',
   tokenNames: ['color/surface/primary'], sampleValues: ['#722ED1'],
 }];
-const groupInput = { collectionName: 'Semantic', modeNames: ['Light'], aliasCounts: [], groups: briefs };
+const groupInput = { collections: [{
+  collectionId: 'c1', collectionName: 'Semantic', modeNames: ['Light'], aliasCounts: [], groups: briefs,
+}] };
 
 const spec = {
   name: 'Button', figmaKey: '', figmaFile: 'f', figmaNode: '1:1', description: '', documentationLinks: [],
@@ -128,17 +130,45 @@ describe('/v1/prose accepts what the v9 client sends', () => {
     expect(validateProseBody(LEGACY_GROUP_BODY)).toBeNull();
   });
 
-  it('rejects v2 group bytes under a v1 key and v8 group bytes under a v2 key', () => {
-    const v2 = groupProseRequest(groupInput, 'free');
-    // v2 bytes under the old key: the legacy branch requires the model the
-    // shipped client named, and the v2 request names none.
-    expect(validateProseBody({ ...v2, cacheKey: LEGACY_GROUP_BODY.cacheKey })).toBe('model not allowed');
+  it('rejects v3 group bytes under a v1 key and v8 group bytes under a v3 key', () => {
+    const v3 = groupProseRequest(groupInput, 'free');
+    // v3 bytes under the old key: the legacy branch requires the model the
+    // shipped client named, and the v3 request names none.
+    expect(validateProseBody({ ...v3, cacheKey: LEGACY_GROUP_BODY.cacheKey })).toBe('model not allowed');
     // v8 bytes under a v9-era key: the model is refused first...
-    expect(validateProseBody({ ...LEGACY_GROUP_BODY, cacheKey: v2.cacheKey })).toBe('model not allowed');
+    expect(validateProseBody({ ...LEGACY_GROUP_BODY, cacheKey: v3.cacheKey })).toBe('model not allowed');
     // ...and the old system prompt right after it, which is the assertion that
     // pins the freeze to the legacy branch alone.
     const { model: _model, ...noModel } = LEGACY_GROUP_BODY.request;
-    expect(validateProseBody({ cacheKey: v2.cacheKey, request: noModel })).toBe('system not allowed');
+    expect(validateProseBody({ cacheKey: v3.cacheKey, request: noModel })).toBe('system not allowed');
+  });
+
+  it('accepts the v3 group request, including a collection with no groups', () => {
+    const noGroups = { collections: [{ collectionId: 'c2', collectionName: 'Spacing', modeNames: [], aliasCounts: [], groups: [] }] };
+    expect(validateProseBody(groupProseRequest(groupInput, 'free'))).toBeNull();
+    expect(validateProseBody(groupProseRequest(noGroups, 'pro'))).toBeNull();
+    expect(validateProseBody(groupProseRequest({ collections: [...groupInput.collections, ...noGroups.collections] }, 'free'))).toBeNull();
+  });
+
+  it('still accepts the frozen 5.1.0 group request and rejects the unshipped v2 key', () => {
+    expect(validateProseBody(LEGACY_GROUP_BODY)).toBeNull();
+    const v2 = groupProseRequest(groupInput, 'free');
+    expect(validateProseBody({ ...v2, cacheKey: v2.cacheKey.replace(':v3:', ':v2:') })).toBe('bad cacheKey');
+  });
+
+  it('holds the two token caps apart, so raising the v3 one leaves 5.1.0 alone', () => {
+    // v3 raised GROUP_MAX_TOKENS and LEGACY_GROUP_MAX_TOKENS stayed where the
+    // shipped client left it. Each branch must demand its own number: the
+    // shipped 1200 under a v3 key is a client sending the wrong bytes, and the
+    // new cap under the frozen key is the same mistake the other way.
+    expect(GROUP_MAX_TOKENS).not.toBe(LEGACY_GROUP_MAX_TOKENS);
+    const v3 = groupProseRequest(groupInput, 'free');
+    expect(v3.request.max_tokens).toBe(GROUP_MAX_TOKENS);
+    expect(validateProseBody({ ...v3, request: { ...v3.request, max_tokens: LEGACY_GROUP_MAX_TOKENS } })).toBe('max_tokens not allowed');
+    expect(validateProseBody({
+      ...LEGACY_GROUP_BODY,
+      request: { ...LEGACY_GROUP_BODY.request, max_tokens: GROUP_MAX_TOKENS },
+    })).toBe('max_tokens not allowed');
   });
 
   it('still accepts the shipped v8 payload until the 6.0.0 plugin is live', () => {
@@ -169,7 +199,9 @@ describe('/v1/prose accepts what the v9 client sends', () => {
 describe('parseProseCacheKey', () => {
   it('reads version, kind and tier', () => {
     expect(parseProseCacheKey('prose:v9:pro:abc')).toEqual({ version: 9, kind: 'component', tier: 'pro' });
-    expect(parseProseCacheKey('prose:v2:groups:free:abc')).toEqual({ version: 2, kind: 'groups', tier: 'free' });
+    expect(parseProseCacheKey('prose:v3:groups:free:abc')).toEqual({ version: 3, kind: 'groups', tier: 'free' });
+    // The v2 groups key never shipped, so nothing legitimate sends it.
+    expect(parseProseCacheKey('prose:v2:groups:free:abc')).toBeNull();
     expect(parseProseCacheKey('prose:v8:abc')).toEqual({ version: 8, kind: 'component', tier: null });
     expect(parseProseCacheKey('prose:v1:groups:abc')).toEqual({ version: 1, kind: 'groups', tier: null });
     expect(parseProseCacheKey('abc')).toBeNull();

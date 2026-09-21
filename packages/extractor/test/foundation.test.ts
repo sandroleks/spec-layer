@@ -3,6 +3,7 @@ import {
   buildFoundation, groupOf, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
   foundationUnitTitle, groupTitle, groupTitles, narrowFoundation,
+  glyphForScopes,
   type FoundationSelection,
 } from '../src/foundation';
 
@@ -508,6 +509,7 @@ const allOf = (dump: SerializedFoundation): FoundationSelection => ({
     collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
   })),
   textStyles: dump.textStyles.length > 0,
+  effectStyles: dump.effectStyles.length > 0,
 });
 
 describe('planFoundationUnits', () => {
@@ -567,7 +569,7 @@ describe('planFoundationUnits', () => {
 
   it('omits unselected collections', () => {
     const dump = bigDump(3, ['color']);
-    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false });
+    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false, effectStyles: false });
     expect(units).toEqual([]);
   });
 
@@ -593,7 +595,7 @@ describe('planFoundationUnits', () => {
     dump.collections[0].modes = ['A', 'B', 'C'].map((name, i) => ({ modeId: `m${i}`, name }));
     dump.collections[0].defaultModeId = 'm0';
     const units = planFoundationUnits(buildFoundation(dump), {
-      collections: [{ collectionId: 'c1', modeIds: ['m2'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m2'] }], textStyles: false, effectStyles: false,
     });
     expect(units[0].scope).toMatchObject({ modeIds: ['m2'] });
     expect(units[0].omittedModeNames).toEqual(['A', 'B']);
@@ -684,34 +686,29 @@ describe('unitContent', () => {
     expect(content!.omittedModeNames).toEqual([]);
   });
 
-  it('builds text style rows with exactly the metrics the frame draws', () => {
+  it('builds text style rows with every metric the specimen list draws, and the bound token names', () => {
     const dump = bigDump(1, ['color']);
     dump.textStyles = [{
       name: 'Body/M', description: 'Default body.', fontFamily: 'Inter', fontStyle: 'Regular',
       fontSize: 16, lineHeight: { unit: 'PIXELS', value: 24 },
       letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 8, paragraphIndent: 0,
-      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: { fontSize: 'type/md' },
+      textCase: 'UPPER', textDecoration: 'NONE',
+      boundVariables: { fontSize: 'type/md', paragraphIndent: 'type/indent', fills: 'color/ink' },
     }];
     const spec = buildFoundation(dump);
     const content = unitContent(spec, { target: 'textStyles' });
     expect(content!.modeNames).toEqual([]);
-    // The rendered projection carries only what reaches a pixel: the specimen
-    // font and the "family style size/lineHeight" line. Anything else here
-    // would be hashed without being drawn.
-    expect(content!.rows[0]).toEqual({
+    expect(content!.rows).toEqual([{
       kind: 'textStyle', name: 'Body/M', description: 'Default body.',
       metrics: {
         fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
         lineHeight: { unit: 'PIXELS', value: 24 },
+        letterSpacing: { unit: 'PERCENT', value: 0 },
+        paragraphSpacing: 8, textCase: 'UPPER', textDecoration: 'NONE',
+        // Only metrics the line draws: paragraphIndent and fills are drawn nowhere.
+        boundTokens: { fontSize: 'type/md' },
       },
-    });
-    // Extraction stays complete: the spec-level style keeps everything, so a
-    // later phase can render it without re-extracting.
-    expect(spec.textStyles[0].letterSpacing).toEqual({ unit: 'PERCENT', value: 0 });
-    expect(spec.textStyles[0].paragraphSpacing).toBe(8);
-    expect(spec.textStyles[0].textCase).toBe('ORIGINAL');
-    expect(spec.textStyles[0].textDecoration).toBe('NONE');
-    expect(spec.textStyles[0].boundVariables).toEqual({ fontSize: 'type/md' });
+    }]);
   });
 
   it('returns null for a group-scoped collection unit whose group has vanished', () => {
@@ -1037,5 +1034,138 @@ describe('effect styles', () => {
     // Carrying them along would make a scoped copy quietly wider than its scope.
     const narrowed = narrowFoundation(spec, { target: 'textStyles' });
     expect(narrowed?.effectStyles).toEqual([]);
+  });
+});
+
+describe('glyphForScopes', () => {
+  it('follows the priority table, first match wins', () => {
+    expect(glyphForScopes(['GAP'], 'FLOAT')).toBe('bar');
+    expect(glyphForScopes(['WIDTH_HEIGHT'], 'FLOAT')).toBe('bar');
+    expect(glyphForScopes(['PARAGRAPH_SPACING'], 'FLOAT')).toBe('bar');
+    expect(glyphForScopes(['PARAGRAPH_INDENT'], 'FLOAT')).toBe('bar');
+    expect(glyphForScopes(['CORNER_RADIUS'], 'FLOAT')).toBe('radius');
+    expect(glyphForScopes(['STROKE_FLOAT'], 'FLOAT')).toBe('stroke');
+    expect(glyphForScopes(['OPACITY'], 'FLOAT')).toBe('opacity');
+    expect(glyphForScopes(['FONT_SIZE'], 'FLOAT')).toBe('fontSize');
+    expect(glyphForScopes(['LINE_HEIGHT'], 'FLOAT')).toBe('lineHeight');
+    expect(glyphForScopes(['LETTER_SPACING'], 'FLOAT')).toBe('letterSpacing');
+    // Priority is the table's row order, not the scope list's order.
+    expect(glyphForScopes(['FONT_SIZE', 'CORNER_RADIUS'], 'FLOAT')).toBe('radius');
+    expect(glyphForScopes(['OPACITY', 'GAP'], 'FLOAT')).toBe('bar');
+  });
+
+  it('draws nothing for ALL_SCOPES, no scopes, unlisted scopes, or a non-number', () => {
+    expect(glyphForScopes(['ALL_SCOPES'], 'FLOAT')).toBeNull();
+    expect(glyphForScopes([], 'FLOAT')).toBeNull();
+    expect(glyphForScopes(['EFFECT_FLOAT'], 'FLOAT')).toBeNull();
+    expect(glyphForScopes(['GAP'], 'COLOR')).toBeNull();
+    expect(glyphForScopes(['GAP'], 'STRING')).toBeNull();
+  });
+});
+
+describe('unitContent — reference names and glyphs', () => {
+  it('projects only the code syntax Figma defined, and the derived glyph', () => {
+    const dump = dumpOneOfEach();
+    dump.collections[0].variables[1].scopes = ['GAP'];
+    dump.collections[0].variables[1].codeSyntax = { WEB: '--space-4', ANDROID: 'space_4' };
+    const content = unitContent(buildFoundation(dump), {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m1'],
+    });
+    if (!content) throw new Error('expected content');
+    const rows = content.rows as Array<Extract<typeof content.rows[number], { kind: 'variable' }>>;
+    expect(rows[0]).toMatchObject({ name: 'color/blue/500', codeSyntax: { WEB: '--blue-500' }, glyph: null });
+    expect(rows[1]).toMatchObject({ name: 'space/4', codeSyntax: { WEB: '--space-4', ANDROID: 'space_4' }, glyph: 'bar' });
+    expect(rows[2]).toMatchObject({ name: 'brand/name', codeSyntax: {}, glyph: null });
+  });
+
+  it('does not carry the raw scope list, so an unrelated scope change moves nothing', () => {
+    const dump = dumpOneOfEach();
+    dump.collections[0].variables[1].scopes = ['GAP'];
+    const a = unitContent(buildFoundation(dump), {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m1'],
+    });
+    dump.collections[0].variables[1].scopes = ['GAP', 'WIDTH_HEIGHT'];
+    const b = unitContent(buildFoundation(dump), {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', modeIds: ['m1'],
+    });
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).not.toContain('scopes');
+  });
+});
+
+function effectDump(): SerializedFoundation {
+  const dump = dumpOneOfEach();
+  dump.collections[0].variables.push({
+    id: 'v6', name: 'shadow/blur', resolvedType: 'FLOAT', description: '', codeSyntax: {}, valuesByMode: { m1: 12 },
+  });
+  dump.effectStyles = [
+    {
+      id: 'e1', name: 'Elevation/Low', description: 'Cards at rest.',
+      effects: [{
+        type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+        color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        bindings: { radius: { kind: 'variable', id: 'v6' } as never },
+      }],
+      bindings: [{ property: 'effects[0].blur', tokenId: 'v6' }, { property: 'effects[0].color', tokenId: 'gone' }],
+    },
+    {
+      id: 'e2', name: 'Glass/Frosted', description: '',
+      effects: [{ type: 'background-blur', blurType: 'normal', visible: true, radius: 20 }],
+    },
+  ];
+  return dump;
+}
+
+describe('effect styles unit', () => {
+  it('plans one unit when effect styles are selected and the file has any', () => {
+    const spec = buildFoundation(effectDump());
+    const units = planFoundationUnits(spec, { collections: [], textStyles: false, effectStyles: true });
+    expect(units).toEqual([{
+      scope: { target: 'effectStyles' }, title: 'Effect styles', rowCount: 2, omittedModeNames: [],
+    }]);
+    expect(planFoundationUnits(buildFoundation(dumpOneOfEach()), { collections: [], textStyles: false, effectStyles: true })).toEqual([]);
+    expect(planFoundationUnits(spec, { collections: [], textStyles: false, effectStyles: false })).toEqual([]);
+  });
+
+  it('projects each style as its layers, stripped of binding ids, plus the bound token names it can resolve', () => {
+    const content = unitContent(buildFoundation(effectDump()), { target: 'effectStyles' });
+    expect(content!.collectionName).toBe('');
+    expect(content!.modeNames).toEqual([]);
+    expect(content!.rows).toEqual([
+      {
+        kind: 'effectStyle', name: 'Elevation/Low', description: 'Cards at rest.',
+        layers: [{
+          type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        }],
+        // 'gone' resolves to no local variable, so it is omitted rather than guessed.
+        boundTokens: { 'effects[0].blur': 'shadow/blur' },
+      },
+      {
+        kind: 'effectStyle', name: 'Glass/Frosted', description: '',
+        layers: [{ type: 'background-blur', blurType: 'normal', visible: true, radius: 20 }],
+        boundTokens: {},
+      },
+    ]);
+    expect(JSON.stringify(content)).not.toContain('"bindings"');
+  });
+
+  it('titles the unit and its split parts like text styles', () => {
+    const spec = buildFoundation(effectDump());
+    const whole = unitContent(spec, { target: 'effectStyles' })!;
+    expect(foundationUnitTitle({ target: 'effectStyles' }, whole)).toBe('Effect styles');
+    const part = unitContent(spec, { target: 'effectStyles', group: 'Glass' })!;
+    expect(foundationUnitTitle({ target: 'effectStyles', group: 'Glass' }, part)).toBe('Effect styles · Glass');
+    expect(part.part).toEqual({ index: 1, total: 2 });
+    expect(unitContent(spec, { target: 'effectStyles', group: 'Nope' })).toBeNull();
+  });
+
+  it('splits a large effect set by group, like text styles', () => {
+    const dump = effectDump();
+    dump.effectStyles = Array.from({ length: SPLIT_THRESHOLD + 2 }, (_, i) => ({
+      id: `e${i}`, name: `${i % 2 ? 'Shadow' : 'Blur'}/S${i}`, description: '', effects: [],
+    }));
+    const units = planFoundationUnits(buildFoundation(dump), { collections: [], textStyles: false, effectStyles: true });
+    expect(units.map((u) => u.title)).toEqual(['Effect styles · Blur', 'Effect styles · Shadow']);
   });
 });

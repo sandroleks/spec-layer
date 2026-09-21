@@ -19,14 +19,17 @@
  * pass, the same treatment docFrame.ts gets.
  */
 import type {
-  FoundationUnit, FoundationUnitContent, FoundationValue,
-  FoundationRow, FoundationVariableRow, ColorContrastReport,
+  FoundationUnit, FoundationUnitContent, FoundationValue, FoundationScope,
+  FoundationRow, FoundationVariableRow, FoundationTextRow, FoundationEffectRow,
+  ColorContrastReport, FoundationGlyph,
 } from '@spec-layer/extractor';
 import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
   headingFont, PROSE_MEASURE,
 } from './frameKit';
+import { buildGlyph, glyphSpec, glyphValue } from './foundationScales';
+import { buildTextSpecimenList, buildEffectSpecimenList } from './foundationSpecimens';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
   contrastBlockModel, contrastBlockWidth, matrixFrame, type ContrastBlockModel,
@@ -183,8 +186,9 @@ function plural(n: number, one: string, many: string): string {
  * Reads only `content`, for the same reason footerNotes does: everything the
  * frame states has to come from what the drift hash reads.
  */
-export function headerSubtitle(content: FoundationUnitContent, isText: boolean): string {
-  if (isText) return plural(content.rows.length, 'text style', 'text styles');
+export function headerSubtitle(content: FoundationUnitContent, target: FoundationScope['target']): string {
+  if (target === 'textStyles') return plural(content.rows.length, 'text style', 'text styles');
+  if (target === 'effectStyles') return plural(content.rows.length, 'effect style', 'effect styles');
   return `${plural(content.rows.length, 'variable', 'variables')} across `
     + plural(content.modeNames.length, 'mode', 'modes');
 }
@@ -219,6 +223,9 @@ const CELL_GAP = 12;
 /** Narrowest card, matching the component doc frame so the two sit level. */
 const CARD_WIDTH_MIN = 880;
 
+/** Inner width the card's body offers a full-width block, once its own padding is subtracted. */
+const CONTENT_WIDTH = CARD_WIDTH_MIN - HEADER_PAD_X * 2;
+
 export interface TableColumn { label: string; width: number }
 
 /**
@@ -228,12 +235,15 @@ export interface TableColumn { label: string; width: number }
  * column cannot be labelled at one width and filled at another.
  */
 export function tableColumns(
-  content: FoundationUnitContent, isText: boolean, hasDescriptions: boolean,
+  content: FoundationUnitContent, hasDescriptions: boolean,
 ): TableColumn[] {
   const columns: TableColumn[] = [{ label: 'Name', width: COL_NAME }];
   if (hasDescriptions) columns.push({ label: 'Description', width: COL_DESC });
-  if (isText) columns.push({ label: 'Specimen', width: COL_MODE * 2 });
-  else for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
+  // Only a collection unit gets here. A text-styles or effect-styles unit
+  // renders its specimen list instead and returns before this is called, which
+  // is why there is no parameter for it: a flag whose other branch no live
+  // caller can reach is dead code that only its own test keeps alive.
+  for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
   return columns;
 }
 
@@ -321,13 +331,74 @@ export function cellText(label: string, width: number, muted = false): FrameNode
   return cell;
 }
 
-export function swatchCell(value: FoundationValue, width: number): FrameNode {
-  const cell = hstack(8);
+// ---------------------------------------------------------------------------
+// Reference chips — the developer-facing name Figma's variable settings
+// define, shown exactly as stored. Only what Figma's code syntax carries is
+// ever drawn here: no chip is ever derived from the token's own name or path.
+// ---------------------------------------------------------------------------
+
+/** Figma's code-syntax platform keys as people read them; an unknown key is shown as stored. */
+export const PLATFORM_LABEL: Record<string, string> = { WEB: 'Web', iOS: 'iOS', ANDROID: 'Android' };
+
+function referenceChip(platform: string, identifier: string): FrameNode {
+  const c = hstack(4);
+  c.paddingTop = c.paddingBottom = 2;
+  c.paddingLeft = c.paddingRight = 6;
+  c.cornerRadius = radius(6);
+  c.fills = solidFill(palette.chipBg);
+  c.counterAxisAlignItems = 'CENTER';
+  const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
+  label.textAutoResize = 'WIDTH_AND_HEIGHT';
+  c.appendChild(label);
+  const id = makeText(identifier, 'Medium', 11, palette.heading);
+  id.textAutoResize = 'WIDTH_AND_HEIGHT';
+  c.appendChild(id);
+  return c;
+}
+
+/**
+ * The developer-facing names Figma's variable settings define, one chip per
+ * platform, in code-unit key order (the projection already sorted them). Null
+ * when the variable defines none: no chip is ever derived from the token name.
+ */
+export function referenceChips(codeSyntax: Record<string, string>): FrameNode | null {
+  const entries = Object.entries(codeSyntax);
+  if (entries.length === 0) return null;
+  const row = hstack(6);
+  row.name = 'References';
+  row.layoutWrap = 'WRAP';
+  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier));
+  return row;
+}
+
+/** The table's Name cell: the token name, then its reference chips when it has any. */
+export function nameCell(row: FoundationVariableRow, width: number): FrameNode {
+  const cell = cellText(row.name, width);
+  cell.itemSpacing = 6;
+  const chips = referenceChips(row.codeSyntax);
+  if (chips) { cell.appendChild(chips); chips.layoutSizingHorizontal = 'FILL'; }
+  return cell;
+}
+
+export function swatchCell(value: FoundationValue, width: number, glyph: FoundationGlyph | null = null): FrameNode {
+  const cell = vstack(6);
+  cell.counterAxisAlignItems = 'MIN';
+  fixWidthHugHeight(cell, width);
+
+  // The scale drawing, if this row's glyph and value earn one: a value that
+  // fails to resolve to a number, or that glyphSpec refuses (negative,
+  // non-finite, out-of-range opacity), leaves the cell exactly as before.
+  const n = glyph ? glyphValue(value) : null;
+  const spec = glyph && n !== null ? glyphSpec(glyph, n, width) : null;
+  if (spec) cell.appendChild(buildGlyph(spec, width));
+
+  const line = hstack(8);
   // Top-aligned, not centred: a wrapped two-line cell beside a one-line cell
   // reads as a table when their first lines align and as a mess when their
   // midpoints do.
-  cell.counterAxisAlignItems = 'MIN';
-  fixWidthHugHeight(cell, width);
+  line.counterAxisAlignItems = 'MIN';
+  cell.appendChild(line);
+  line.layoutSizingHorizontal = 'FILL';
 
   const color = swatchColorOf(value);
   if (color) {
@@ -337,11 +408,11 @@ export function swatchCell(value: FoundationValue, width: number): FrameNode {
     chip.fills = solidFill(color);
     chip.strokes = solidFill(palette.border);
     chip.strokeWeight = 1;
-    cell.appendChild(chip);
+    line.appendChild(chip);
   }
 
   const lines = vstack(2);
-  cell.appendChild(lines);
+  line.appendChild(lines);
   lines.layoutSizingHorizontal = 'FILL';
 
   const unresolved = value.kind === 'unresolved'
@@ -436,6 +507,8 @@ function nameBlock(
     const desc = makeText(row.description, 'Regular', 11, palette.muted);
     block.appendChild(desc);
   }
+  const chips = referenceChips(row.codeSyntax);
+  if (chips) block.appendChild(chips);
   return block;
 }
 
@@ -752,6 +825,7 @@ export async function buildFoundationFrame(
   includeContrast = false,
   contrast?: ColorContrastReport,
   pill: PillState | null = null,
+  collectionOverview?: string,
 ): Promise<SectionNode> {
   // Reset and apply theme state BEFORE any layout reads palette or fonts.
   // Skipping this would inherit whatever the last component build left in
@@ -759,6 +833,10 @@ export async function buildFoundationFrame(
   await applyThemeToKit(theme);
 
   const isText = unit.scope.target === 'textStyles';
+  // The two specimen units render a list and return before the table is built,
+  // so neither has columns or a description column to decide. Deciding them
+  // anyway was work no frame drew, saved only by the early returns below.
+  const usesTable = unit.scope.target !== 'textStyles' && unit.scope.target !== 'effectStyles';
 
   // Colour variables render as a swatch list, everything else as a table. A
   // mixed collection (colour plus spacing plus radius) gets both, in that order.
@@ -769,10 +847,10 @@ export async function buildFoundationFrame(
   // extractor's 24 column cap is wider than anything the table or the swatch
   // list asks for.
   //
-  // Skipped for the text-styles unit: it holds no colour variables at all, so a
+  // Skipped for a styles unit: it holds no colour variables at all, so a
   // "no colour pairs to measure" note there would state the obvious about a
   // document that never had any, and its collectionName is empty besides.
-  const contrastModel = includeContrast && contrast && !isText
+  const contrastModel = includeContrast && contrast && unit.scope.target === 'collection'
     ? contrastBlockModel(contrast, content.collectionName)
     : null;
 
@@ -781,7 +859,7 @@ export async function buildFoundationFrame(
   // column of blanks. Judged on the TABLE's rows alone: a colour row carries its
   // description inline, so counting those would add an all-blank column whenever
   // only colours are described.
-  const hasDescriptions = includeDescriptions
+  const hasDescriptions = usesTable && includeDescriptions
     && tableRows.some((r) => r.description.length > 0);
 
   // Load every family a specimen needs. Track failures so a wrong-looking
@@ -805,7 +883,11 @@ export async function buildFoundationFrame(
   // with the title the batch and a later single-doc Update compute, which is why
   // one function in the extractor derives all three.
   const title = foundationUnitTitle(unit.scope, content);
-  const columns = tableColumns(content, isText, hasDescriptions);
+  // A specimen unit never draws this table (buildTextSpecimenList or
+  // buildEffectSpecimenList replaces it below), so it has no columns to derive;
+  // an empty list still leaves cardWidth at its floor, which is exactly the
+  // width the specimen list gets.
+  const columns = usesTable ? tableColumns(content, hasDescriptions) : [];
   // The card has to fit whichever layouts it holds, since it clips its contents.
   const width = Math.max(
     tableRows.length > 0 ? cardWidth(columns) : CARD_WIDTH_MIN,
@@ -843,7 +925,7 @@ export async function buildFoundationFrame(
   const header = await buildBrandHeader({
     eyebrow: 'Foundations',
     title,
-    subtitle: headerSubtitle(content, isText),
+    subtitle: headerSubtitle(content, unit.scope.target),
     logoBase64,
     pill,
   });
@@ -858,6 +940,18 @@ export async function buildFoundationFrame(
   body.paddingRight = HEADER_PAD_X;
   card.appendChild(body);
   body.layoutSizingHorizontal = 'FILL';
+
+  // The AI paragraph about the whole collection. Untagged on purpose: it is
+  // generated text, so selfHash covers it and a hand edit reads as Edited,
+  // exactly like the group lines. Never read back from canvas.
+  const overview = unit.scope.target === 'collection' ? collectionOverview?.trim() : undefined;
+  if (overview) {
+    const box = vstack(0);
+    box.name = 'Overview';
+    body.appendChild(box);
+    fixWidthHugHeight(box, PROSE_MEASURE);
+    wrappingText(box, overview, 'Regular', 13, palette.body);
+  }
 
   // A frame holding both layouts labels them, so the split reads as deliberate
   // rather than as two unrelated blocks. A frame with only one needs no label.
@@ -874,6 +968,28 @@ export async function buildFoundationFrame(
   // After the colours it measures and before the table of everything else, and
   // ahead of the early return below so a colours-only frame gets it too.
   if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
+
+  // --- text-style specimens (in place of a table for this unit) ---
+  // A text-styles unit holds nothing but textStyle rows, so it never reaches
+  // the generic table below: the specimen list IS its body.
+  if (unit.scope.target === 'textStyles') {
+    const textRows = content.rows.filter((r): r is FoundationTextRow => r.kind === 'textStyle');
+    body.appendChild(buildTextSpecimenList(textRows, CONTENT_WIDTH, includeDescriptions, failedFamilies));
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+    return finishCard(card, title);
+  }
+
+  // --- effect-style specimens (in place of a table for this unit) ---
+  // Same shape as the text-styles exit above, and for the same reason: an
+  // effect-styles unit holds nothing but effectStyle rows.
+  if (unit.scope.target === 'effectStyles') {
+    const effectRows = content.rows.filter((r): r is FoundationEffectRow => r.kind === 'effectStyle');
+    body.appendChild(buildEffectSpecimenList(effectRows, CONTENT_WIDTH, includeDescriptions));
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+    return finishCard(card, title);
+  }
 
   // --- table (everything else) ---
   if (tableRows.length === 0) {
@@ -900,34 +1016,16 @@ export async function buildFoundationFrame(
     let next = 0;
     const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
 
-    const cells: FrameNode[] = [cellText(row.name, widthOf())];
+    const cells: FrameNode[] = [
+      row.kind === 'variable' ? nameCell(row, widthOf()) : cellText(row.name, widthOf()),
+    ];
     if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
 
     if (row.kind === 'variable') {
-      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf()));
-    } else {
-      const key = `${row.metrics.fontFamily}|${row.metrics.fontStyle}`;
-      const failed = failedFamilies.has(key);
-      const pane = vstack(4);
-      fixWidthHugHeight(pane, widthOf());
-      const specimen = makeText('Ag', 'Regular', Math.min(row.metrics.fontSize, 40), palette.heading);
-      if (!failed) {
-        specimen.fontName = { family: row.metrics.fontFamily, style: row.metrics.fontStyle };
-      }
-      pane.appendChild(specimen);
-      const lh = row.metrics.lineHeight.unit === 'AUTO'
-        ? 'auto' : `${row.metrics.lineHeight.value}${row.metrics.lineHeight.unit === 'PERCENT' ? '%' : ''}`;
-      // Wrapped, like every other cell: a family name plus style and metrics is
-      // routinely longer than the column.
-      wrappingText(pane,
-        `${row.metrics.fontFamily} ${row.metrics.fontStyle} ${row.metrics.fontSize}/${lh}`,
-        'Regular', 10, palette.muted);
-      if (failed) {
-        wrappingText(pane, 'Font not available, showing the default font.',
-          'Regular', 10, palette.muted);
-      }
-      cells.push(pane);
+      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
     }
+    // A textStyle or effectStyle row never reaches this table: buildFoundationFrame
+    // renders the matching specimen list for that unit and returns before this loop runs.
 
     // Every row after the header carries the hairline above it, so the table's
     // own border is never doubled at the last row.

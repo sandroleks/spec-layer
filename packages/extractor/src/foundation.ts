@@ -241,7 +241,8 @@ export interface FoundationSpec {
 export type FoundationScope =
   | { target: 'collection'; collectionId: string; collectionName: string;
       group?: string; modeIds: string[] }
-  | { target: 'textStyles'; group?: string };
+  | { target: 'textStyles'; group?: string }
+  | { target: 'effectStyles'; group?: string };
 
 /**
  * What a single Copy-for-AI request covers.
@@ -255,7 +256,8 @@ export type FoundationScope =
  */
 export type FoundationCopyTarget =
   | { target: 'collection'; collectionId: string }
-  | { target: 'textStyles' };
+  | { target: 'textStyles' }
+  | { target: 'effectStyles' };
 
 /**
  * Reduce a whole-file spec to the part one Copy covers, so foundationBrief and
@@ -280,10 +282,11 @@ export function narrowFoundation(
 ): FoundationSpec | null {
   if (target.target === 'textStyles') {
     if (spec.textStyles.length === 0) return null;
-    // Effect styles are narrowed away here as well as on the collection branch:
-    // FoundationCopyTarget has no effect-styles target, so no scoped copy claims
-    // to cover them and the whole-file copy is where they appear.
     return { ...spec, collections: [], textStyles: spec.textStyles, effectStyles: [], narrowedTo: target };
+  }
+  if (target.target === 'effectStyles') {
+    if (spec.effectStyles.length === 0) return null;
+    return { ...spec, collections: [], textStyles: [], effectStyles: spec.effectStyles, narrowedTo: target };
   }
   const collection = spec.collections.find((c) => c.id === target.collectionId);
   if (!collection) return null;
@@ -377,10 +380,10 @@ export function groupTitles(folders: string[]): string[] {
 }
 
 /** One titled block of rows within a document. */
-export interface FoundationRowGroup {
+export interface FoundationRowGroup<T extends { name: string } = FoundationVariableRow> {
   /** The shared folder path, or '' for rows that sit at the root. */
   folder: string;
-  rows: FoundationVariableRow[];
+  rows: T[];
 }
 
 /**
@@ -392,8 +395,8 @@ export interface FoundationRowGroup {
  * by folder. If they grouped separately, a description could land on the wrong
  * block or on none.
  */
-export function groupRowsByFolder(rows: FoundationVariableRow[]): FoundationRowGroup[] {
-  const groups: FoundationRowGroup[] = [];
+export function groupRowsByFolder<T extends { name: string }>(rows: T[]): FoundationRowGroup<T>[] {
+  const groups: FoundationRowGroup<T>[] = [];
   for (const row of rows) {
     const folder = folderOf(row.name);
     const existing = groups.find((g) => g.folder === folder);
@@ -802,6 +805,8 @@ export interface FoundationSelection {
   /** Collections the user chose, with the mode ids they chose for each. */
   collections: { collectionId: string; modeIds: string[] }[];
   textStyles: boolean;
+  /** Whether the effect-styles unit is built. */
+  effectStyles: boolean;
 }
 
 export interface FoundationUnit {
@@ -820,6 +825,8 @@ function titleOf(base: string, group?: string): string {
 
 /** Title for the text-styles unit, which has no collection to name. */
 const TEXT_STYLES_TITLE = 'Text styles';
+/** Title for the effect-styles unit, which has no collection to name. */
+const EFFECT_STYLES_TITLE = 'Effect styles';
 
 /**
  * The document title for one unit, derived from its scope and rendered content.
@@ -834,7 +841,9 @@ const TEXT_STYLES_TITLE = 'Text styles';
 export function foundationUnitTitle(
   scope: FoundationScope, content: FoundationUnitContent,
 ): string {
-  const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE : content.collectionName;
+  const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE
+    : scope.target === 'effectStyles' ? EFFECT_STYLES_TITLE
+    : content.collectionName;
   return titleOf(base, content.group);
 }
 
@@ -899,35 +908,31 @@ export function planFoundationUnits(
     }
   }
 
-  if (selection.textStyles && spec.textStyles.length > 0) {
-    if (spec.textStyles.length <= SPLIT_THRESHOLD) {
-      units.push({
-        scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
-        rowCount: spec.textStyles.length, omittedModeNames: [],
-      });
-    } else {
-      const groups = groupsInOrder(spec.textStyles.map((s) => s.name));
-      if (groups.length <= 1) {
-        // Cannot split further. One tall frame is the faithful outcome, same
-        // as the collection path's identical case.
-        units.push({
-          scope: { target: 'textStyles' }, title: titleOf(TEXT_STYLES_TITLE),
-          rowCount: spec.textStyles.length, omittedModeNames: [],
-        });
-      } else {
-        for (const group of groups) {
-          units.push({
-            scope: { target: 'textStyles', group },
-            title: titleOf(TEXT_STYLES_TITLE, group),
-            rowCount: spec.textStyles.filter((s) => s.group === group).length,
-            omittedModeNames: [],
-          });
-        }
-      }
-    }
+  if (selection.textStyles) {
+    units.push(...planStyleUnits('textStyles', TEXT_STYLES_TITLE, spec.textStyles.map((s) => s.name)));
   }
-
+  if (selection.effectStyles) {
+    units.push(...planStyleUnits('effectStyles', EFFECT_STYLES_TITLE, spec.effectStyles.map((s) => s.name)));
+  }
   return units;
+}
+
+/** Units for a style list: one, or one per top-level group past SPLIT_THRESHOLD. */
+function planStyleUnits(
+  target: 'textStyles' | 'effectStyles', title: string, names: string[],
+): FoundationUnit[] {
+  if (names.length === 0) return [];
+  const groups = groupsInOrder(names);
+  if (names.length <= SPLIT_THRESHOLD || groups.length <= 1) {
+    // A lone group cannot split further; one tall frame is the faithful outcome.
+    return [{ scope: { target }, title: titleOf(title), rowCount: names.length, omittedModeNames: [] }];
+  }
+  return groups.map((group) => ({
+    scope: { target, group },
+    title: titleOf(title, group),
+    rowCount: names.filter((n) => groupOf(n) === group).length,
+    omittedModeNames: [],
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +952,64 @@ export function planFoundationUnits(
  * cell self-describing for any renderer that does not iterate positionally.
  */
 export interface FoundationRowCell { modeName: string; value: FoundationValue }
+
+/**
+ * What a number cell draws beside its value, derived from the variable's Figma
+ * scopes. First matching row of this table wins; the raw scope list stays off
+ * the row so a scope change that would draw nothing different moves no hash.
+ */
+export type FoundationGlyph =
+  | 'bar' | 'radius' | 'stroke' | 'opacity' | 'fontSize' | 'lineHeight' | 'letterSpacing';
+
+const GLYPH_BY_SCOPE: ReadonlyArray<[readonly string[], FoundationGlyph]> = [
+  [['GAP', 'WIDTH_HEIGHT', 'PARAGRAPH_SPACING', 'PARAGRAPH_INDENT'], 'bar'],
+  [['CORNER_RADIUS'], 'radius'],
+  [['STROKE_FLOAT'], 'stroke'],
+  [['OPACITY'], 'opacity'],
+  [['FONT_SIZE'], 'fontSize'],
+  [['LINE_HEIGHT'], 'lineHeight'],
+  [['LETTER_SPACING'], 'letterSpacing'],
+];
+
+export function glyphForScopes(
+  scopes: readonly string[], resolvedType: FoundationVariableType,
+): FoundationGlyph | null {
+  if (resolvedType !== 'FLOAT') return null;
+  if (scopes.length === 0 || scopes.includes('ALL_SCOPES')) return null;
+  for (const [members, glyph] of GLYPH_BY_SCOPE) {
+    if (members.some((s) => scopes.includes(s))) return glyph;
+  }
+  return null;
+}
+
+/** The text-style metrics the specimen list names, and so the only bindings it shows. */
+export const TEXT_METRIC_FIELDS = [
+  'fontFamily', 'fontStyle', 'fontSize', 'lineHeight', 'letterSpacing', 'paragraphSpacing',
+] as const;
+
+/**
+ * The fields the effect specimen line names, per layer type, and so the only
+ * bindings an effect row carries. The same job TEXT_METRIC_FIELDS does for a
+ * text style.
+ *
+ * This is the renderer's vocabulary, in the renderer's spelling: the plugin's
+ * serializeFoundation.ts renames Figma's `radius`/`offsetX`/`offsetY` to
+ * `blur`/`offset_x`/`offset_y` for EVERY layer type, but `layerLines`
+ * (packages/plugin/src/foundationSpecimens.ts) only looks a chip up in its
+ * shadow and blur branches. A binding on any other layer type, or on a shadow
+ * field that branch does not print, would be hashed and never drawn, and then
+ * a source change would move foundationContentHash over a byte-identical
+ * frame. Change one side and this list has to move with it.
+ *
+ * A layer type absent from this map draws no chip at all: noise, texture,
+ * glass and unknown print their numbers with no bound field.
+ */
+const DRAWN_EFFECT_FIELDS: Record<string, readonly string[]> = {
+  'drop-shadow': ['offset_x', 'offset_y', 'blur', 'spread', 'color'],
+  'inner-shadow': ['offset_x', 'offset_y', 'blur', 'spread', 'color'],
+  'layer-blur': ['blur'],
+  'background-blur': ['blur'],
+};
 
 /**
  * ONLY what a frame actually draws for a variable: the name, the optional
@@ -970,26 +1033,36 @@ export interface FoundationVariableRow {
   name: string;
   description: string;
   resolvedType: FoundationVariableType;
+  /**
+   * The code syntax Figma's variable settings define, per platform, exactly as
+   * stored (`WEB`, `ANDROID`, `iOS`). Empty when none is defined. Every entry is
+   * drawn as a chip under the name, so all of it is hashed; nothing is derived.
+   */
+  codeSyntax: Record<string, string>;
+  /** The scale drawing a number cell shows above its value; null draws nothing. */
+  glyph: FoundationGlyph | null;
   cells: FoundationRowCell[];
 }
 
 /**
- * ONLY the metrics a frame actually draws: the specimen is set in
- * family/style at fontSize, and the metrics line reads
- * "family style size/lineHeight". Nothing else belongs here.
- *
- * letterSpacing, paragraphSpacing, paragraphIndent, textCase, and
- * textDecoration are deliberately absent even though extraction captures all
- * of them on FoundationTextStyle. They reach no pixel, so including them here
- * would make the drift hash fire on changes whose Update produces a
- * byte-identical frame. When a later phase renders them, move them back here
- * and the hash picks them up with no other change.
+ * The metrics the text-style specimen list draws: the specimen is set in
+ * family/style at fontSize with the style's line height, letter spacing, case
+ * and decoration applied, and the metrics line names each of them plus the
+ * paragraph spacing. `boundTokens` names the variable bound to each metric the
+ * line shows, keyed by `TEXT_METRIC_FIELDS`, because the line draws that name
+ * as a chip. `paragraphIndent` and any other binding reach no pixel and stay
+ * out, so a change to them moves no hash.
  */
 export interface FoundationTextMetrics {
   fontFamily: string;
   fontStyle: string;
   fontSize: number;
   lineHeight: RawTextStyle['lineHeight'];
+  letterSpacing: RawTextStyle['letterSpacing'];
+  paragraphSpacing: number;
+  textCase: string;
+  textDecoration: string;
+  boundTokens: Record<string, string>;
 }
 
 export interface FoundationTextRow {
@@ -999,7 +1072,24 @@ export interface FoundationTextRow {
   metrics: FoundationTextMetrics;
 }
 
-export type FoundationRow = FoundationVariableRow | FoundationTextRow;
+/**
+ * ONLY what the effect frame draws: the specimen card applies `layers`, the
+ * text under it lists them, and `boundTokens` names the variable bound to each
+ * listed field as a chip, keyed by `effects[<index>].<field>` and filtered to
+ * DRAWN_EFFECT_FIELDS: a binding on a field that layer type's line does not
+ * print reaches no pixel and stays out, so a change to it moves no hash.
+ * Layers are carried with any `bindings` key stripped, because a binding's id
+ * is not drawn and ids must never move the hash.
+ */
+export interface FoundationEffectRow {
+  kind: 'effectStyle';
+  name: string;
+  description: string;
+  layers: EffectLayer[];
+  boundTokens: Record<string, string>;
+}
+
+export type FoundationRow = FoundationVariableRow | FoundationTextRow | FoundationEffectRow;
 
 export interface FoundationUnitContent {
   collectionName: string;   // '' for the text-styles unit
@@ -1044,6 +1134,55 @@ function partOf(groups: string[], group: string): { index: number; total: number
   return index < 0 ? undefined : { index, total: groups.length };
 }
 
+/** Only platforms with a non-empty declared syntax, in code-unit key order so the hash is stable. */
+function definedCodeSyntax(codeSyntax: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(codeSyntax).sort(compareCodeUnits)) {
+    const value = codeSyntax[key];
+    if (typeof value === 'string' && value.trim() !== '') out[key] = value;
+  }
+  return out;
+}
+
+/** The bound variable names for the metrics the specimen line draws, nothing else. */
+function boundMetricTokens(bound: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of TEXT_METRIC_FIELDS) {
+    const name = bound[field];
+    if (typeof name === 'string' && name !== '') out[field] = name;
+  }
+  return out;
+}
+
+/**
+ * The binding keys the effect specimen line can actually print, for these
+ * layers. Keys are `effects[<index>].<field>`, the shape serializeFoundation
+ * emits, so the layer index is the position in this same array.
+ *
+ * `spread` is conditional on purpose: layerLines omits the spread part
+ * entirely when the layer has no spread, so a bound spread on such a layer
+ * reaches no pixel.
+ */
+function drawnEffectBindingKeys(layers: EffectLayer[]): Set<string> {
+  const keys = new Set<string>();
+  layers.forEach((layer, index) => {
+    const fields = DRAWN_EFFECT_FIELDS[layer.type];
+    if (fields === undefined) return;
+    for (const field of fields) {
+      if (field === 'spread' && (layer as { spread?: number }).spread === undefined) continue;
+      keys.add(`effects[${index}].${field}`);
+    }
+  });
+  return keys;
+}
+
+/** A layer without its `bindings` key. Ids are not drawn, so they must not be hashed. */
+function stripBindings(layer: EffectLayer): EffectLayer {
+  if (!('bindings' in layer)) return layer;
+  const { bindings: _bindings, ...rest } = layer as EffectLayer & { bindings?: unknown };
+  return rest as EffectLayer;
+}
+
 /**
  * The rows and mode columns for one output unit. Every renderer AND the drift
  * hash consume this, which is what mechanically guarantees "the hash covers
@@ -1080,8 +1219,47 @@ export function unitContent(
         metrics: {
           fontFamily: s.fontFamily, fontStyle: s.fontStyle,
           fontSize: s.fontSize, lineHeight: s.lineHeight,
+          letterSpacing: s.letterSpacing, paragraphSpacing: s.paragraphSpacing,
+          textCase: s.textCase, textDecoration: s.textDecoration,
+          boundTokens: boundMetricTokens(s.boundVariables),
         },
       })),
+    };
+  }
+
+  if (scope.target === 'effectStyles') {
+    const styles = scope.group
+      ? spec.effectStyles.filter((s) => s.group === scope.group)
+      : spec.effectStyles;
+    if (scope.group && styles.length === 0) return null;
+    const part = scope.group
+      ? partOf(groupsInOrder(spec.effectStyles.map((s) => s.name)), scope.group)
+      : undefined;
+    const nameById = new Map<string, string>();
+    for (const c of spec.collections) for (const v of c.variables) nameById.set(v.provenance.id, v.name);
+    return {
+      collectionName: '',
+      ...(scope.group ? { group: scope.group } : {}),
+      modeNames: [],
+      omittedModeNames: [],
+      ...(part ? { part } : {}),
+      rows: styles.map((s): FoundationEffectRow => {
+        const boundTokens: Record<string, string> = {};
+        // Only the bindings the specimen line draws: see DRAWN_EFFECT_FIELDS.
+        const drawn = drawnEffectBindingKeys(s.effects);
+        for (const b of s.bindings ?? []) {
+          if (!drawn.has(b.property)) continue;
+          const name = nameById.get(b.tokenId);
+          if (name) boundTokens[b.property] = name;
+        }
+        return {
+          kind: 'effectStyle',
+          name: s.name,
+          description: s.description,
+          layers: s.effects.map(stripBindings),
+          boundTokens,
+        };
+      }),
     };
   }
 
@@ -1123,6 +1301,8 @@ export function unitContent(
       name: v.name,
       description: v.description,
       resolvedType: v.resolvedType,
+      codeSyntax: definedCodeSyntax(v.codeSyntax),
+      glyph: glyphForScopes(v.provenance.scopes, v.resolvedType),
       cells: modes.map((m) => ({
         modeName: m.name,
         value: v.valuesByMode[m.modeId] ?? { kind: 'unresolved', reason: 'missing' },

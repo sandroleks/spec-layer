@@ -88,6 +88,10 @@ export const ICON_PATHS = {
   /** Foundation row: the Text styles entry. */
   typography:
     '<path d="M4.5 20l7.5-15l7.5 15"/><path d="M8 14h8"/>',
+  /** Foundation row: the Effect styles entry. A card with its shadow offset below and right. */
+  effect:
+    '<rect x="4" y="4" width="12" height="12" rx="2"/>' +
+    '<path d="M8 20h10a2 2 0 0 0 2-2V8"/>',
   adjustments:
     '<path d="M4 8h4v4H4z"/><path d="M6 4v4"/><path d="M6 12v8"/>' +
     '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
@@ -150,6 +154,7 @@ export const FOUNDATION_ICON: Record<FoundationIconKind, IconName> = {
   dimension: 'ruler',
   mixed: 'box',
   typography: 'typography',
+  effect: 'effect',
 };
 
 /** A complete decorative svg. Icon-only controls carry their own aria-label. */

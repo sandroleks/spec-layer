@@ -52,6 +52,7 @@ const READ_WORD: Record<FoundationRead, string> = {
  *  from the target's ids, so the sentence reads the way the user's own file does. */
 function scopeWord(spec: FoundationSpec, target: FoundationCopyTarget): string {
   if (target.target === 'textStyles') return 'text styles only';
+  if (target.target === 'effectStyles') return 'effect styles only';
   const names = spec.collections.map((c) => c.name).filter(Boolean);
   return names.length > 0 ? `the ${names.join(' and ')} collection` : 'one variable collection';
 }
@@ -59,6 +60,7 @@ function scopeWord(spec: FoundationSpec, target: FoundationCopyTarget): string {
 /** Whether a narrowed copy's target covers this kind of reference at all. */
 function covers(target: FoundationCopyTarget, ref: RefIdentity): boolean {
   if (target.target === 'textStyles') return ref.kind === 'text-style';
+  if (target.target === 'effectStyles') return ref.kind === 'effect-style';
   return ref.kind === 'variable' && ref.collectionId === target.collectionId;
 }
 

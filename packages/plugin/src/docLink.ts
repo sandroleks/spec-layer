@@ -363,9 +363,9 @@ export function mergeFoundationGroupDescriptions(
  *  regenerate: two sections cover the same doc when they target the same
  *  collection and group, or both cover text styles with the same group. */
 export function foundationScopeKey(s: FoundationScope): string {
-  return s.target === 'textStyles'
-    ? `text:${s.group ?? ''}`
-    : `coll:${s.collectionId}:${s.group ?? ''}`;
+  if (s.target === 'textStyles') return `text:${s.group ?? ''}`;
+  if (s.target === 'effectStyles') return `effect:${s.group ?? ''}`;
+  return `coll:${s.collectionId}:${s.group ?? ''}`;
 }
 
 /**
@@ -489,6 +489,11 @@ function parseScope(raw: unknown): FoundationScope | null {
     return typeof s.group === 'string'
       ? { target: 'textStyles', group: s.group }
       : { target: 'textStyles' };
+  }
+  if (s.target === 'effectStyles') {
+    return typeof s.group === 'string'
+      ? { target: 'effectStyles', group: s.group }
+      : { target: 'effectStyles' };
   }
   if (s.target === 'collection') {
     if (typeof s.collectionId !== 'string' || typeof s.collectionName !== 'string') return null;

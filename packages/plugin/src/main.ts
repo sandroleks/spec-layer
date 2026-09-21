@@ -466,7 +466,8 @@ function descriptionsForUnit(
   content: FoundationUnitContent,
 ): Record<string, string> | undefined {
   if (!all) return undefined;
-  const collectionId = unit.scope.target === 'textStyles' ? 'text' : unit.scope.collectionId;
+  const collectionId = unit.scope.target === 'collection' ? unit.scope.collectionId
+    : unit.scope.target === 'textStyles' ? 'text' : 'effect';
   const out: Record<string, string> = {};
   for (const group of groupRowsByFolder(content.rows.filter(isColorRow) as FoundationVariableRow[])) {
     const note = all[`${collectionId}|${group.folder}`];
@@ -783,7 +784,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             pageName: page?.name ?? '',
             sourceLabel: data.scope.target === 'collection'
               ? data.scope.collectionName
-              : 'Text styles',
+              : data.scope.target === 'textStyles' ? 'Text styles' : 'Effect styles',
             generatedAt: data.generatedAt,
             sourceNodeId: '',
             sourceExists,
@@ -967,10 +968,17 @@ figma.ui.onmessage = async (raw: unknown) => {
           // stores only its own, keyed by plain folder.
           const descriptions = descriptionsForUnit(msg.groupDescriptions, unit, content);
 
+          // Each collection-scoped unit looks up its own paragraph; a
+          // text/effect-styles unit has no collection id to key on.
+          const overview = unit.scope.target === 'collection'
+            ? msg.collectionOverviews?.[unit.scope.collectionId]
+            : undefined;
+
           const section = await buildFoundationFrame(
             content, unit, resolveTheme(brandTheme),
             msg.config.includeDescriptions, brandLogo, descriptions,
             msg.config.includeContrast, contrastReport, pill,
+            overview,
           );
 
           const data: FoundationDocLink = {
@@ -981,8 +989,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             selfHash: '',   // set below, once the section's text exists
             config: msg.config,
             ...(descriptions ? { groupDescriptions: descriptions } : {}),
-            ...(msg.collectionOverview && unit.scope.target === 'collection'
-              ? { collectionOverview: msg.collectionOverview } : {}),
+            ...(overview ? { collectionOverview: overview } : {}),
             generatedAt: Date.now(),
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };
@@ -1155,6 +1162,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           link.config.includeContrast,
           link.config.includeContrast ? colorContrast(spec) : undefined,
           pill,
+          link.collectionOverview,
         );
 
         const data: FoundationDocLink = {

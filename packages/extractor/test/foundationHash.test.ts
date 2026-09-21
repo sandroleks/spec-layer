@@ -60,8 +60,11 @@ const hashOf = (d: SerializedFoundation, scope: FoundationScope = SEMANTIC) =>
  * config toggle cannot produce a second hash value for one doc. If this constant
  * moves after a change that only added a config field, that structural property
  * has been broken and the change is wrong.
+ *
+ * Re-cut on 2026-09-19 by Docs 2.0 Plan 3 Task 1, when the row gained
+ * codeSyntax, glyph and the full text metrics.
  */
-const SEMANTIC_HASH = '85ec3438ba5a2d1feff0e4c7048e9d370a2d920f5f91dadf81286b15d6f0e4bc';
+const SEMANTIC_HASH = 'b973fd3e60dc4abc0b76a7002d1434920b4b87993510a5c0f2bfc7137553d23d';
 
 describe('foundationContentHash', () => {
   it('is stable across re-extraction of identical data', () => {
@@ -141,6 +144,19 @@ describe('foundationContentHash', () => {
     d.collections[1].variables[0].valuesByMode.o1 = 999;
     expect(hashOf(d, SEMANTIC)).toBe(hashOf(dump(), SEMANTIC));
     expect(hashOf(d, OTHER)).not.toBe(hashOf(dump(), OTHER));
+  });
+
+  it('changes when a defined code syntax changes, and not when an unrelated scope is added', () => {
+    const withSyntax = dump();
+    withSyntax.collections[1].variables[0].codeSyntax = { WEB: '--x-y' };
+    expect(hashOf(withSyntax, OTHER)).not.toBe(hashOf(dump(), OTHER));
+
+    const gap = dump();
+    gap.collections[1].variables[0].scopes = ['GAP'];
+    const gapAndWidth = dump();
+    gapAndWidth.collections[1].variables[0].scopes = ['GAP', 'WIDTH_HEIGHT'];
+    expect(hashOf(gap, OTHER)).toBe(hashOf(gapAndWidth, OTHER));
+    expect(hashOf(gap, OTHER)).not.toBe(hashOf(dump(), OTHER));
   });
 
   it('differs between a group-scoped unit and the whole collection', () => {
@@ -231,34 +247,50 @@ const textHash = (d: SerializedFoundation) => foundationContentHash(buildFoundat
 
 describe('foundationContentHash — text styles cover exactly what is drawn', () => {
   // A frame draws the style name, the optional description, an "Ag" specimen
-  // in the style's own font, and a "family style size/lineHeight" line. A hash
-  // that moved on anything else would offer an Update that produced a
-  // byte-identical frame, which trains the user to ignore the badge.
+  // in the style's own font, and a metrics line naming family, style, size,
+  // line height, letter spacing, paragraph spacing, case, and decoration, plus
+  // the token bound to each of those metrics. A hash that moved on anything
+  // else would offer an Update that produced a byte-identical frame, which
+  // trains the user to ignore the badge.
 
-  it('does not move when letter spacing changes', () => {
+  it('moves when letter spacing changes, because the metrics line names it', () => {
     const d = textDump();
     d.textStyles[0].letterSpacing = { unit: 'PERCENT', value: -4 };
-    expect(textHash(d)).toBe(textHash(textDump()));
+    expect(textHash(d)).not.toBe(textHash(textDump()));
   });
 
-  it('does not move when text case changes', () => {
+  it('moves when text case changes, because the specimen is drawn in that case', () => {
     const d = textDump();
     d.textStyles[0].textCase = 'UPPER';
-    expect(textHash(d)).toBe(textHash(textDump()));
+    expect(textHash(d)).not.toBe(textHash(textDump()));
   });
 
-  it('does not move when a bound variable is rebound', () => {
+  it('does not move when a bound variable outside the metrics line is rebound', () => {
     const d = textDump();
     d.textStyles[0].boundVariables = { fills: 'color/text/muted' };
     expect(textHash(d)).toBe(textHash(textDump()));
   });
 
-  it('does not move when paragraph spacing, indent, or decoration change', () => {
+  it('moves when a bound metric token changes, since the line draws that name as a chip', () => {
     const d = textDump();
-    d.textStyles[0].paragraphSpacing = 99;
-    d.textStyles[0].paragraphIndent = 12;
-    d.textStyles[0].textDecoration = 'UNDERLINE';
-    expect(textHash(d)).toBe(textHash(textDump()));
+    d.textStyles[0].boundVariables = { ...d.textStyles[0].boundVariables, fontSize: 'type/md' };
+    expect(textHash(d)).not.toBe(textHash(textDump()));
+  });
+
+  it('moves when paragraph spacing or decoration change, but not when paragraph indent does', () => {
+    const base = textHash(textDump());
+
+    const spacing = textDump();
+    spacing.textStyles[0].paragraphSpacing = 99;
+    expect(textHash(spacing)).not.toBe(base);
+
+    const decoration = textDump();
+    decoration.textStyles[0].textDecoration = 'UNDERLINE';
+    expect(textHash(decoration)).not.toBe(base);
+
+    const indent = textDump();
+    indent.textStyles[0].paragraphIndent = 12;
+    expect(textHash(indent)).toBe(base);
   });
 
   it('moves when the family, style, size, or line height changes', () => {

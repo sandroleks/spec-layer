@@ -8,14 +8,22 @@
  */
 import {
   MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
-  collectionAliasCounts, collectionModeNames, compareCodeUnits,
+  collectionAliasCounts, collectionModeNames,
   type FoundationSpec, type FoundationSelection, type FoundationMode,
-  type FoundationGroupBrief, type FoundationValue, type GroupDraftInput,
+  type FoundationGroupBrief, type FoundationCollectionBrief, type FoundationValue,
+  type GroupDraftInput,
 } from '@spec-layer/extractor';
 import { collectionIconKind, type FoundationIconKind } from '../foundationIcon';
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** Joins prose parts the way a sentence does: "a", "a and b", "a, b and c". */
+function joinAnd(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('');
+  if (parts.length === 2) return parts.join(' and ');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
 /**
@@ -39,6 +47,7 @@ export interface FoundationSummary {
   maxModeCount: number;
   variableCount: number;
   textStyleCount: number;
+  effectStyleCount: number;
   collections: FoundationSummaryCollection[];
 }
 
@@ -48,6 +57,7 @@ export function summarize(spec: FoundationSpec): FoundationSummary {
     maxModeCount: spec.collections.reduce((n, c) => Math.max(n, c.modes.length), 0),
     variableCount: spec.collections.reduce((n, c) => n + c.variables.length, 0),
     textStyleCount: spec.textStyles.length,
+    effectStyleCount: spec.effectStyles.length,
     collections: spec.collections.map((c) => ({
       id: c.id,
       name: c.name,
@@ -65,6 +75,7 @@ export function defaultSelection(spec: FoundationSpec): FoundationSelection {
       modeIds: c.modes.slice(0, MAX_MODE_COLUMNS).map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
+    effectStyles: spec.effectStyles.length > 0,
   };
 }
 
@@ -146,8 +157,12 @@ export function toggleTextStyles(sel: FoundationSelection, on: boolean): Foundat
   return { ...sel, textStyles: on };
 }
 
+export function toggleEffectStyles(sel: FoundationSelection, on: boolean): FoundationSelection {
+  return { ...sel, effectStyles: on };
+}
+
 export function canGenerate(sel: FoundationSelection): boolean {
-  return sel.collections.length > 0 || sel.textStyles;
+  return sel.collections.length > 0 || sel.textStyles || sel.effectStyles;
 }
 
 /**
@@ -157,9 +172,10 @@ export function canGenerate(sel: FoundationSelection): boolean {
 export function emptyStateLines(spec: FoundationSpec): string[] {
   const hasCollections = spec.collections.length > 0;
   const hasTextStyles = spec.textStyles.length > 0;
+  const hasEffectStyles = spec.effectStyles.length > 0;
 
-  if (!hasCollections && !hasTextStyles) {
-    return ['This file has no local variable collections or text styles.'];
+  if (!hasCollections && !hasTextStyles && !hasEffectStyles) {
+    return ['This file has no local variable collections, text styles, or effect styles.'];
   }
   if (!hasCollections) return ['This file has no local variable collections.'];
   if (!hasTextStyles) return ['This file has no local text styles.'];
@@ -194,23 +210,26 @@ export function frameCount(spec: FoundationSpec, sel: FoundationSelection): numb
  */
 export function framesPerSource(
   spec: FoundationSpec,
-): { collections: Record<string, number>; textStyles: number } {
+): { collections: Record<string, number>; textStyles: number; effectStyles: number } {
   const units = planFoundationUnits(spec, {
     collections: spec.collections.map((c) => ({
       collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
     })),
     textStyles: spec.textStyles.length > 0,
+    effectStyles: spec.effectStyles.length > 0,
   });
 
   const collections: Record<string, number> = {};
   let textStyles = 0;
+  let effectStyles = 0;
   for (const unit of units) {
     if (unit.scope.target === 'textStyles') textStyles += 1;
-    else {
+    else if (unit.scope.target === 'effectStyles') effectStyles += 1;
+    else if (unit.scope.target === 'collection') {
       collections[unit.scope.collectionId] = (collections[unit.scope.collectionId] ?? 0) + 1;
     }
   }
-  return { collections, textStyles };
+  return { collections, textStyles, effectStyles };
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +242,7 @@ export function selectAll(spec: FoundationSpec): FoundationSelection {
 }
 
 export function clearAll(): FoundationSelection {
-  return { collections: [], textStyles: false };
+  return { collections: [], textStyles: false, effectStyles: false };
 }
 
 /**
@@ -236,7 +255,8 @@ export function allSelected(spec: FoundationSpec, sel: FoundationSelection): boo
   const everyCollection = spec.collections.every((c) =>
     sel.collections.some((s) => s.collectionId === c.id));
   const stylesSettled = spec.textStyles.length === 0 || sel.textStyles;
-  return everyCollection && stylesSettled;
+  const effectsSettled = spec.effectStyles.length === 0 || sel.effectStyles;
+  return everyCollection && stylesSettled && effectsSettled;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,8 +272,11 @@ export function fileSummary(summary: FoundationSummary): string {
   if (summary.textStyleCount > 0) {
     parts.push(plural(summary.textStyleCount, 'text style', 'text styles'));
   }
+  if (summary.effectStyleCount > 0) {
+    parts.push(plural(summary.effectStyleCount, 'effect style', 'effect styles'));
+  }
   if (parts.length === 0) return 'Nothing to document in this file yet.';
-  return `This file has ${parts.join(' and ')}.`;
+  return `This file has ${joinAnd(parts)}.`;
 }
 
 /** A collection row's second line. */
@@ -274,6 +297,12 @@ export function textStyleMeta(count: number, frames: number): string {
   return parts.join(' · ');
 }
 
+/** The effect-styles row's second line. Counts the same way text styles do:
+ *  a plain style count, plus a frame count only when the row splits. */
+export function effectStyleMeta(count: number, frames: number): string {
+  return textStyleMeta(count, frames);
+}
+
 /**
  * The create button's label. See docs/plugin-voice-and-copy.md ("Footer
  * actions") for why this names the action rather than counting frames:
@@ -287,46 +316,25 @@ export const FOUNDATION_CREATE_LABEL = 'Create docs';
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the current selection contains any colour variable at all.
+ * The per-collection briefs for one build: one block per selected collection,
+ * each carrying only that collection's own name, modes, alias counts and
+ * colour groups. Never merged across collections, so the model is never asked
+ * to describe a union that does not exist.
  *
- * Gates the AI opt-in: only colour rows render group headings, so a file of pure
- * spacing tokens has nothing for a description to sit under, and offering to
- * spend a generation on it would be offering to waste one.
- */
-export function hasColorGroups(spec: FoundationSpec, sel: FoundationSelection): boolean {
-  return sel.collections.some((chosen) => {
-    const collection = spec.collections.find((c) => c.id === chosen.collectionId);
-    return collection?.variables.some((v) => v.resolvedType === 'COLOR') ?? false;
-  });
-}
-
-/**
- * The per-group briefs for one build, keyed `collectionId|folder` to match the
- * message the main thread receives.
- *
- * Built from the same `folderOf`/`groupTitle` the renderer uses, so a description
- * cannot arrive keyed to a folder no block will look up.
+ * Group folders are keyed `collectionId|folder` to match the message the main
+ * thread receives. Built from the same `folderOf`/`groupTitle` the renderer
+ * uses, so a description cannot arrive keyed to a folder no block will look up.
  */
 export function groupBriefs(
   spec: FoundationSpec, sel: FoundationSelection,
 ): GroupDraftInput {
-  const groups: FoundationGroupBrief[] = [];
-  const names: string[] = [];
-  const modeNames: string[] = [];
-  const aliasTotals = new Map<string, number>();
+  const collections: FoundationCollectionBrief[] = [];
 
   for (const chosen of sel.collections) {
     const collection = spec.collections.find((c) => c.id === chosen.collectionId);
     if (!collection) continue;
-    names.push(collection.name);
 
-    for (const modeName of collectionModeNames(spec, collection.id)) {
-      if (!modeNames.includes(modeName)) modeNames.push(modeName);
-    }
-    for (const { collection: target, count } of collectionAliasCounts(spec, collection.id)) {
-      aliasTotals.set(target, (aliasTotals.get(target) ?? 0) + count);
-    }
-
+    const groups: FoundationGroupBrief[] = [];
     const colors = collection.variables.filter((v) => v.resolvedType === 'COLOR');
     const byFolder = new Map<string, typeof colors>();
     for (const variable of colors) {
@@ -351,13 +359,17 @@ export function groupBriefs(
         sampleValues: members.map((m) => describeValue(m.valuesByMode[modeId])),
       });
     });
+
+    collections.push({
+      collectionId: collection.id,
+      collectionName: collection.name,
+      modeNames: collectionModeNames(spec, collection.id),
+      aliasCounts: collectionAliasCounts(spec, collection.id),
+      groups,
+    });
   }
 
-  const aliasCounts = [...aliasTotals.entries()]
-    .map(([collection, count]) => ({ collection, count }))
-    .sort((a, b) => b.count - a.count || compareCodeUnits(a.collection, b.collection));
-
-  return { collectionName: names.join(', '), modeNames, aliasCounts, groups };
+  return { collections };
 }
 
 /** A short, honest rendering of one value for the prompt. */

@@ -5,9 +5,9 @@ import {
 } from '@spec-layer/extractor';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
-  emptyStateLines, canGenerate,
+  toggleEffectStyles, emptyStateLines, canGenerate,
   frameCount, framesPerSource, selectAll, clearAll, allSelected,
-  fileSummary, collectionMeta, textStyleMeta, FOUNDATION_CREATE_LABEL,
+  fileSummary, collectionMeta, textStyleMeta, effectStyleMeta, FOUNDATION_CREATE_LABEL,
   collectionIconKind, groupBriefs,
 } from '../src/ui/foundationState';
 
@@ -38,7 +38,7 @@ describe('summarize', () => {
   it('counts collections, distinct mode count, variables, and text styles', () => {
     const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
     expect(summarize(spec)).toEqual({
-      collectionCount: 1, maxModeCount: 2, variableCount: 1, textStyleCount: 1,
+      collectionCount: 1, maxModeCount: 2, variableCount: 1, textStyleCount: 1, effectStyleCount: 0,
       collections: [{
         id: 'c1', name: 'Semantic', variableCount: 1,
         modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
@@ -104,6 +104,7 @@ describe('defaultSelection', () => {
     expect(defaultSelection(spec)).toEqual({
       collections: [{ collectionId: 'c1', modeIds: ['s1', 's2'] }],
       textStyles: true,
+      effectStyles: false,
     });
   });
 
@@ -205,17 +206,17 @@ describe('toggles', () => {
 
 describe('canGenerate', () => {
   it('is false with nothing selected and true with anything selected', () => {
-    expect(canGenerate({ collections: [], textStyles: false })).toBe(false);
-    expect(canGenerate({ collections: [], textStyles: true })).toBe(true);
-    expect(canGenerate({ collections: [{ collectionId: 'c1', modeIds: ['s1'] }], textStyles: false }))
+    expect(canGenerate({ collections: [], textStyles: false, effectStyles: false })).toBe(false);
+    expect(canGenerate({ collections: [], textStyles: true, effectStyles: false })).toBe(true);
+    expect(canGenerate({ collections: [{ collectionId: 'c1', modeIds: ['s1'] }], textStyles: false, effectStyles: false }))
       .toBe(true);
   });
 });
 
 describe('emptyStateLines', () => {
-  it('reports a file with neither', () => {
+  it('reports a file with none of the three', () => {
     expect(emptyStateLines(buildFoundation(dump({ collections: [] }))))
-      .toEqual(['This file has no local variable collections or text styles.']);
+      .toEqual(['This file has no local variable collections, text styles, or effect styles.']);
   });
 
   it('reports text styles only', () => {
@@ -297,12 +298,12 @@ describe('frameCount', () => {
 describe('framesPerSource', () => {
   it('reports each source, whether or not it is selected', () => {
     const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 3, ['color', 'space', 'radius'], 2));
-    expect(framesPerSource(spec)).toEqual({ collections: { big: 3 }, textStyles: 1 });
+    expect(framesPerSource(spec)).toEqual({ collections: { big: 3 }, textStyles: 1, effectStyles: 0 });
   });
 
   it('reports one frame for an unsplit collection', () => {
     const spec = buildFoundation(dump());
-    expect(framesPerSource(spec)).toEqual({ collections: { c1: 1 }, textStyles: 0 });
+    expect(framesPerSource(spec)).toEqual({ collections: { c1: 1 }, textStyles: 0, effectStyles: 0 });
   });
 
   it('is independent of which modes are chosen', () => {
@@ -439,7 +440,7 @@ const overviewSpec: FoundationSpec = {
       modes: [{ modeId: 's1', name: 'Light' }, { modeId: 's2', name: 'Dark' }],
       variables: [
         {
-          name: 'accent', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          name: 'color/accent', group: '', resolvedType: 'COLOR', description: '', codeSyntax: {},
           valuesByMode: {
             s1: { kind: 'alias', targetName: 'p', targetCollection: 'Primitives', external: false, resolved: null },
             s2: { kind: 'color', hex: '#000000', alpha: 1 },
@@ -463,19 +464,69 @@ function selectionOf(...ids: string[]): FoundationSelection {
       return { collectionId: id, modeIds: [collection.defaultModeId] };
     }),
     textStyles: false,
+    effectStyles: false,
   };
 }
 
-describe('groupBriefs carries the collection facts the overview needs', () => {
-  it('names the modes and counts aliases for the chosen collection', () => {
-    const briefs = groupBriefs(overviewSpec, selectionOf('sem'));
-    expect(briefs.collectionName).toBe('Semantic');
-    expect(briefs.modeNames).toEqual(['Light', 'Dark']);
-    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
+describe('groupBriefs, one brief per collection', () => {
+  it('keeps each collection\'s own name, modes, alias counts and colour groups', () => {
+    const { collections } = groupBriefs(overviewSpec, selectionOf('sem', 'prim'));
+    expect(collections.map((c) => [c.collectionId, c.collectionName, c.modeNames, c.aliasCounts])).toEqual([
+      ['sem', 'Semantic', ['Light', 'Dark'], [{ collection: 'Primitives', count: 1 }]],
+      ['prim', 'Primitives', ['Value'], []],
+    ]);
+    expect(collections[0].groups.map((g) => g.folder)).toEqual(['sem|color']);
   });
-  it('merges modes and alias counts when several collections are chosen', () => {
-    const briefs = groupBriefs(overviewSpec, selectionOf('sem', 'prim'));
-    expect(briefs.modeNames).toEqual(['Light', 'Dark', 'Value']);
-    expect(briefs.aliasCounts).toEqual([{ collection: 'Primitives', count: 1 }]);
+  it('includes a collection with no colour variables, with no groups', () => {
+    const spacingOnly = {
+      ...overviewSpec,
+      collections: [{
+        ...overviewSpec.collections[0], id: 'sp', name: 'Spacing',
+        variables: [{
+          name: 'space/4', group: 'space', resolvedType: 'FLOAT', description: '', codeSyntax: {},
+          valuesByMode: { l: { kind: 'number', value: 4 } },
+          provenance: { id: 'v', scopes: [], valuesByMode: {}, staleModeIds: [] },
+        }],
+      }],
+    } as unknown as FoundationSpec;
+    const { collections } = groupBriefs(spacingOnly, {
+      collections: [{ collectionId: 'sp', modeIds: ['l'] }], textStyles: false, effectStyles: false,
+    });
+    expect(collections).toEqual([expect.objectContaining({ collectionId: 'sp', groups: [] })]);
+  });
+});
+
+describe('effect styles selection', () => {
+  const spec = {
+    collections: [], textStyles: [],
+    effectStyles: [{ id: 'e1', name: 'Elevation/Low', description: '', effects: [], group: 'Elevation' }],
+  } as unknown as FoundationSpec;
+
+  it('counts effect styles and selects them by default when present', () => {
+    expect(summarize(spec).effectStyleCount).toBe(1);
+    expect(defaultSelection(spec)).toEqual({ collections: [], textStyles: false, effectStyles: true });
+    expect(defaultSelection({ ...spec, effectStyles: [] } as unknown as FoundationSpec).effectStyles).toBe(false);
+  });
+
+  it('toggles, counts a frame, and gates the create button', () => {
+    const off = toggleEffectStyles(defaultSelection(spec), false);
+    expect(off.effectStyles).toBe(false);
+    expect(canGenerate(off)).toBe(false);
+    expect(canGenerate(toggleEffectStyles(off, true))).toBe(true);
+    expect(frameCount(spec, toggleEffectStyles(off, true))).toBe(1);
+    expect(framesPerSource(spec).effectStyles).toBe(1);
+    expect(allSelected(spec, off)).toBe(false);
+    expect(allSelected(spec, toggleEffectStyles(off, true))).toBe(true);
+    expect(clearAll()).toEqual({ collections: [], textStyles: false, effectStyles: false });
+  });
+
+  it('writes the row meta like text styles', () => {
+    expect(effectStyleMeta(1, 1)).toBe('1 style');
+    expect(effectStyleMeta(4, 2)).toBe('4 styles · + 2 frames');
+  });
+
+  it('names all three source kinds in the empty state', () => {
+    expect(emptyStateLines({ collections: [], textStyles: [], effectStyles: [] } as unknown as FoundationSpec))
+      .toEqual(['This file has no local variable collections, text styles, or effect styles.']);
   });
 });

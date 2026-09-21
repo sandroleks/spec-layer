@@ -154,6 +154,33 @@ export class FakeFrame {
     }
     return out;
   }
+
+  /** Depth-first search for the first descendant node carrying this name.
+   *  Unlike findAllNamed it also sees rectangles, which is how a specimen card
+   *  and its backdrop are found. */
+  findByName(name: string): FakeNode | null {
+    for (const child of this.children) {
+      if ((child as { name?: unknown }).name === name) return child;
+      if (child instanceof FakeFrame) {
+        const found = child.findByName(name);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  /** Depth-first search for the first text node whose characters match exactly. */
+  findText(chars: string): FakeText | undefined {
+    for (const child of this.children) {
+      if (child instanceof FakeText) {
+        if (child.characters === chars) return child;
+      } else if (child instanceof FakeFrame) {
+        const found = child.findText(chars);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
 }
 
 export class FakeSection {
@@ -273,8 +300,10 @@ function fakeText(): FakeText {
 function fakeRect(): Record<string, unknown> {
   const r: Record<string, unknown> = {
     type: 'RECTANGLE',
+    name: '',
     width: 0,
     height: 0,
+    effects: [],
     resize(w: number, h: number) { r.width = w; r.height = h; },
   };
   return r;

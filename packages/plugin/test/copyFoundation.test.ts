@@ -355,6 +355,27 @@ describe('copyFoundationBriefForScope', () => {
     });
   });
 
+  it('copies only the Effect styles set for the effect target', async () => {
+    const withEffect = structuredClone(TWO);
+    withEffect.effectStyles = [{
+      id: 'FX1', name: 'elevation/low', description: '', effects: [],
+    }];
+    onFoundationMessage(withEffect);
+    await copyFoundationBriefForScope({ target: 'effectStyles' }, presenter());
+    const doc = copied();
+    expect(Object.keys(doc.sets)).toEqual(['Effect styles']);
+  });
+
+  it('says when there are no effect styles left to copy', async () => {
+    onFoundationMessage(TWO);
+    const ui = presenter();
+    await copyFoundationBriefForScope({ target: 'effectStyles' }, ui);
+    expect(copyText).not.toHaveBeenCalled();
+    expect(ui.error).toHaveBeenCalledWith(
+      'This file has no effect styles left. Nothing was copied.',
+    );
+  });
+
   it('adds bound-token dependency collections to a text styles copy', async () => {
     const bound = structuredClone(TWO);
     bound.collections[1].variables[0].scopes = ['FONT_SIZE'];

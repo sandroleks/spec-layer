@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ICON_PATHS, icon } from '../src/ui/shell/icons';
+import { ICON_PATHS, icon, FOUNDATION_ICON } from '../src/ui/shell/icons';
 
 describe('ICON_PATHS', () => {
   it('covers every icon the shell renders', () => {
@@ -15,6 +15,13 @@ describe('ICON_PATHS', () => {
     for (const markup of Object.values(ICON_PATHS)) {
       expect(markup).not.toContain('<svg');
     }
+  });
+
+  it('maps every foundation icon kind to a drawn path', () => {
+    for (const name of Object.values(FOUNDATION_ICON)) {
+      expect(ICON_PATHS[name]).toMatch(/<path|<rect|<circle|<ellipse/);
+    }
+    expect(FOUNDATION_ICON.effect).toBe('effect');
   });
 });
 

@@ -5,7 +5,7 @@ import {
   axisModel, coverConditions, describeScope, comboKey,
 } from '../src/diff';
 import { extract, specHashProjection } from '../src/index';
-import type { FoundationUnitContent, FoundationValue, FoundationVariableRow, FoundationTextRow } from '../src/foundation';
+import type { FoundationGlyph, FoundationUnitContent, FoundationValue, FoundationVariableRow, FoundationTextRow } from '../src/foundation';
 import type { SpecHashProjection } from '../src/hash';
 import type { ChangeGroup, ChangeItem } from '../src/diff';
 
@@ -92,7 +92,7 @@ const BLUE_2: FoundationValue = { kind: 'color', hex: '#0044EE', alpha: 1 };
 
 function colorRow(name: string, light: FoundationValue, dark: FoundationValue, description = ''): FoundationVariableRow {
   return {
-    kind: 'variable', name, description, resolvedType: 'COLOR',
+    kind: 'variable', name, description, resolvedType: 'COLOR', codeSyntax: {}, glyph: null,
     cells: [{ modeName: 'Light', value: light }, { modeName: 'Dark', value: dark }],
   };
 }
@@ -118,16 +118,21 @@ describe('formatFoundationValue', () => {
   });
 });
 
+const TEXT_BASE = {
+  fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 },
+  letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+  textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+} as const;
+
 describe('formatTextMetrics', () => {
-  it('renders family, style, size and line height, and says auto or unknown honestly', () => {
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 } }))
-      .toBe('Inter Bold 32/40');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PERCENT', value: 125 } }))
-      .toBe('Inter Bold 32/125%');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } }))
-      .toBe('Inter Bold 32/auto');
-    expect(formatTextMetrics({ fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' } }))
-      .toBe('Inter Bold 32/unknown');
+  it('renders the whole metrics line, omitting default case and decoration', () => {
+    expect(formatTextMetrics({ ...TEXT_BASE })).toBe('Inter Bold 32/40, letter spacing 0, paragraph spacing 0');
+    expect(formatTextMetrics({ ...TEXT_BASE, lineHeight: { unit: 'PERCENT', value: 125 } }))
+      .toBe('Inter Bold 32/125%, letter spacing 0, paragraph spacing 0');
+    expect(formatTextMetrics({ ...TEXT_BASE, lineHeight: { unit: 'AUTO' } }))
+      .toBe('Inter Bold 32/auto, letter spacing 0, paragraph spacing 0');
+    expect(formatTextMetrics({ ...TEXT_BASE, letterSpacing: { unit: 'PERCENT', value: 2 }, paragraphSpacing: 16, textCase: 'UPPER', textDecoration: 'UNDERLINE' }))
+      .toBe('Inter Bold 32/40, letter spacing 2%, paragraph spacing 16, upper, underline');
   });
 });
 
@@ -156,7 +161,7 @@ describe('foundationChangeGroups', () => {
   it('reports a changed type as one item and does not itemize its cells', () => {
     const before = unit([colorRow('size/base', BLUE, BLUE)]);
     const afterRow: FoundationVariableRow = {
-      kind: 'variable', name: 'size/base', description: '', resolvedType: 'FLOAT',
+      kind: 'variable', name: 'size/base', description: '', resolvedType: 'FLOAT', codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'number', value: 4 } }, { modeName: 'Dark', value: { kind: 'number', value: 4 } }],
     };
     expect(foundationChangeGroups(before, unit([afterRow]))).toEqual([
@@ -168,7 +173,11 @@ describe('foundationChangeGroups', () => {
     const before = unit([colorRow('heading/lg', BLUE, BLUE)]);
     const text: FoundationTextRow = {
       kind: 'textStyle', name: 'heading/lg', description: '',
-      metrics: { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 } },
+      metrics: {
+        fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS', value: 40 },
+        letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+        textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+      },
     };
     expect(foundationChangeGroups(before, unit([text]))).toEqual([
       G('Tokens', 'heading/lg: type COLOR changed to text style'),
@@ -176,11 +185,15 @@ describe('foundationChangeGroups', () => {
   });
 
   it('reports changed text metrics as one item', () => {
-    const metrics = { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' as const, value: 40 } };
+    const metrics = {
+      fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'PIXELS' as const, value: 40 },
+      letterSpacing: { unit: 'PIXELS' as const, value: 0 }, paragraphSpacing: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+    };
     const before = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics }], { collectionName: '', modeNames: [] });
     const after = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics: { ...metrics, fontSize: 36 } }], { collectionName: '', modeNames: [] });
     expect(foundationChangeGroups(before, after)).toEqual([
-      G('Tokens', 'heading/lg: Inter Bold 32/40 changed to Inter Bold 36/40'),
+      G('Tokens', 'heading/lg: Inter Bold 32/40, letter spacing 0, paragraph spacing 0 changed to Inter Bold 36/40, letter spacing 0, paragraph spacing 0'),
     ]);
   });
 
@@ -233,6 +246,51 @@ describe('foundationChangeGroups', () => {
     const partial = { collectionName: 'Semantic', modeNames: ['Light'] } as unknown as FoundationUnitContent;
     expect(foundationChangeGroups(partial, unit([colorRow('a', BLUE, BLUE)], { modeNames: ['Light'] })))
       .toEqual([G('Tokens', 'Added a')]);
+  });
+});
+
+describe('foundationChangeGroups — Plan 3 fields', () => {
+  const base = {
+    kind: 'variable' as const, description: '', resolvedType: 'FLOAT' as const,
+    glyph: null as FoundationGlyph | null, codeSyntax: {} as Record<string, string>,
+  };
+  const number = (name: string, value: number, extra: Partial<typeof base> = {}) => ({
+    ...base, ...extra, name, cells: [{ modeName: 'Light', value: { kind: 'number' as const, value } }],
+  });
+
+  it('names a reference name that was added, changed or removed', () => {
+    const before = unit([number('space/4', 16)], { modeNames: ['Light'] });
+    const after = unit([number('space/4', 16, { codeSyntax: { WEB: '--space-4' } })], { modeNames: ['Light'] });
+    expect(foundationChangeGroups(before, after)).toEqual([
+      G('Tokens', 'space/4: WEB reference name added (--space-4)'),
+    ]);
+    const renamed = unit([number('space/4', 16, { codeSyntax: { WEB: '--gap-4' } })], { modeNames: ['Light'] });
+    expect(foundationChangeGroups(after, renamed)).toEqual([
+      G('Tokens', 'space/4: WEB reference name --space-4 changed to --gap-4'),
+    ]);
+    expect(foundationChangeGroups(after, before)).toEqual([
+      G('Tokens', 'space/4: WEB reference name removed (--space-4)'),
+    ]);
+  });
+
+  it('names a glyph change', () => {
+    const before = unit([number('space/4', 16)], { modeNames: ['Light'] });
+    const after = unit([number('space/4', 16, { glyph: 'bar' })], { modeNames: ['Light'] });
+    expect(foundationChangeGroups(before, after)).toEqual([
+      G('Tokens', 'space/4: now drawn as a bar'),
+    ]);
+    expect(foundationChangeGroups(after, before)).toEqual([
+      G('Tokens', 'space/4: no longer drawn to scale'),
+    ]);
+  });
+
+  it('reports a pre-Plan-3 baseline as one layout item, so the badge never has an empty list', () => {
+    const old = unit([{ kind: 'variable', name: 'space/4', description: '', resolvedType: 'FLOAT',
+      cells: [{ modeName: 'Light', value: { kind: 'number', value: 16 } }] } as never], { modeNames: ['Light'] });
+    const now = unit([number('space/4', 16)], { modeNames: ['Light'] });
+    expect(foundationChangeGroups(old, now)).toEqual([
+      G('Layout', 'New layout: reference names and scale drawings are now part of the document'),
+    ]);
   });
 });
 

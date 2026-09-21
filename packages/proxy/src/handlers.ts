@@ -69,7 +69,7 @@ export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
 export interface ProseKeyInfo { version: number; kind: 'component' | 'groups'; tier: Tier | null }
 
 /**
- * `prose:v9:pro:<hash>...`, `prose:v2:groups:free:<hash>...`, or the shipped
+ * `prose:v9:pro:<hash>...`, `prose:v3:groups:free:<hash>...`, or the shipped
  * v8 / groups v1 shapes with no tier. Null for anything else.
  */
 export function parseProseCacheKey(key: string): ProseKeyInfo | null {
@@ -78,6 +78,10 @@ export function parseProseCacheKey(key: string): ProseKeyInfo | null {
   const version = Number(m[1]);
   const kind = m[2] ? 'groups' : 'component';
   const tier = (m[3] as Tier | undefined) ?? null;
+  // The v2 groups key never shipped (Plan 2 merged and Plan 3 replaced it before
+  // a release), so nothing legitimate sends it; refusing it keeps its cache
+  // entries from ever answering a v3 request.
+  if (kind === 'groups' && version === 2) return null;
   const legacy = (kind === 'component' && version <= 8) || (kind === 'groups' && version <= 1);
   if (legacy && tier !== null) return null;
   if (!legacy && tier === null) return null;
@@ -154,10 +158,13 @@ export function validateProseBody(body: unknown): string | null {
   if (!Array.isArray(r.messages)) return 'missing messages';
 
   if (info.kind === 'groups') {
-    // The v8 group prompt and the v9 one are different bytes: Task 5 added the
-    // collection-overview rule in place. A 5.1.0 client keeps sending the old
-    // ones, so the legacy branch has to compare against the frozen copy or
-    // every shipped foundation build loses its AI descriptions on deploy.
+    // The foundation prompt has its own counter, GROUP_PROMPT_VERSION, which is
+    // not the component prose one: its v2 added the collection-overview rule and
+    // its v3 rewrote the prompt as one block per collection and raised the cap.
+    // Every one of those is different bytes from what shipped, and a 5.1.0
+    // client keeps sending the shipped ones under a groups v1 key, so the legacy
+    // branch compares against the frozen copies. Without them every shipped
+    // foundation build loses its AI descriptions the moment this deploys.
     if (r.system !== (legacy ? LEGACY_FOUNDATION_SYSTEM_PROMPT : FOUNDATION_SYSTEM_PROMPT)) return 'system not allowed';
     if (r.max_tokens !== (legacy ? LEGACY_GROUP_MAX_TOKENS : GROUP_MAX_TOKENS)) return 'max_tokens not allowed';
     if (r.messages.length !== 1) return 'invalid messages';
@@ -168,7 +175,9 @@ export function validateProseBody(body: unknown): string | null {
       message.role !== 'user' || typeof message.content !== 'string' ||
       message.content.length > MAX_PROMPT_CHARS ||
       !message.content.startsWith('Collection: ') ||
-      !message.content.includes('\nGroups to describe:\n') ||
+      // Not `:\n`: a collection with no groups writes `Groups to describe: none`
+      // on one line, and a build can be nothing but such collections.
+      !message.content.includes('\nGroups to describe:') ||
       !message.content.includes('\nReturn JSON: ')
     ) return 'invalid messages';
     return null;
