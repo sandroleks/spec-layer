@@ -630,7 +630,7 @@ describe('buildFoundationFrame', () => {
   it('widens past the minimum when the table needs the room', async () => {
     const wide = cardWidth(tableColumns(
       { collectionName: 'C', modeNames: ['a', 'b', 'c', 'd'], omittedModeNames: [], rows: [] },
-      false, true,
+      true,
     ));
     // Name 240 + Description 220 + 4 x 180 = 1180, plus gaps and padding.
     expect(wide).toBeGreaterThan(880);
@@ -861,21 +861,17 @@ describe('tableColumns', () => {
   };
 
   it('is Name plus one column per rendered mode', () => {
-    expect(tableColumns(content, false, false).map((c) => c.label))
+    expect(tableColumns(content, false).map((c) => c.label))
       .toEqual(['Name', 'Light', 'Dark']);
   });
 
   it('inserts Description between Name and the modes', () => {
-    expect(tableColumns(content, false, true).map((c) => c.label))
+    expect(tableColumns(content, true).map((c) => c.label))
       .toEqual(['Name', 'Description', 'Light', 'Dark']);
   });
 
-  it('drops the mode columns for text styles, which render a specimen list instead of a table', () => {
-    expect(tableColumns(content, true, false).map((c) => c.label)).toEqual(['Name']);
-  });
-
   it('gives every column a positive width', () => {
-    for (const col of tableColumns(content, false, true)) {
+    for (const col of tableColumns(content, true)) {
       expect(col.width).toBeGreaterThan(0);
     }
   });
@@ -888,12 +884,14 @@ describe('cardWidth', () => {
 
   /** Every shape a foundation table can take, widest last. */
   const shapes: [string, TableColumn[]][] = [
-    ['one mode', tableColumns(content(['Value']), false, false)],
-    ['one mode + descriptions', tableColumns(content(['Value']), false, true)],
-    ['text styles', tableColumns(content([]), true, false)],
-    ['text styles + descriptions', tableColumns(content([]), true, true)],
-    ['four modes', tableColumns(content(['a', 'b', 'c', 'd']), false, false)],
-    ['four modes + descriptions', tableColumns(content(['a', 'b', 'c', 'd']), false, true)],
+    // No modes is reachable: unitContent drops stale mode ids, so a collection
+    // whose every stored mode is gone renders a name-only table.
+    ['no modes', tableColumns(content([]), false)],
+    ['no modes + descriptions', tableColumns(content([]), true)],
+    ['one mode', tableColumns(content(['Value']), false)],
+    ['one mode + descriptions', tableColumns(content(['Value']), true)],
+    ['four modes', tableColumns(content(['a', 'b', 'c', 'd']), false)],
+    ['four modes + descriptions', tableColumns(content(['a', 'b', 'c', 'd']), true)],
   ];
 
   for (const [name, columns] of shapes) {
@@ -920,8 +918,8 @@ describe('cardWidth', () => {
   });
 
   it('counts the gaps between columns, not just the columns', () => {
-    const one = tableColumns(content(['Value']), false, false);
-    const two = tableColumns(content(['Value', 'Dark']), false, false);
+    const one = tableColumns(content(['Value']), false);
+    const two = tableColumns(content(['Value', 'Dark']), false);
     // Adding a 160px column costs 160 plus one 12px gap.
     expect(rowWidth(two) - rowWidth(one)).toBe(172);
   });

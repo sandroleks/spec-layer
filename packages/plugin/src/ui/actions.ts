@@ -928,8 +928,9 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
  * ignores the scope selection" reasoning is a doctrine for a file-wide screen,
  * and it should not acquire an escape hatch.
  *
- * Both row kinds use direct v5 and include the complete local token dependency
- * closure needed by the requested collection or typography styles.
+ * Every row kind, a collection as well as text styles and effect styles, uses
+ * direct v5 and includes the complete local token dependency closure the
+ * requested scope needs.
  */
 export async function copyFoundationBriefForScope(
   scope: FoundationScope,

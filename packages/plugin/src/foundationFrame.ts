@@ -235,15 +235,15 @@ export interface TableColumn { label: string; width: number }
  * column cannot be labelled at one width and filled at another.
  */
 export function tableColumns(
-  content: FoundationUnitContent, isText: boolean, hasDescriptions: boolean,
+  content: FoundationUnitContent, hasDescriptions: boolean,
 ): TableColumn[] {
   const columns: TableColumn[] = [{ label: 'Name', width: COL_NAME }];
   if (hasDescriptions) columns.push({ label: 'Description', width: COL_DESC });
-  // A text-styles unit never reaches this table: buildFoundationFrame renders
-  // buildTextSpecimenList for it instead and returns before tableColumns is
-  // even called for that unit. `isText` is kept as a parameter regardless,
-  // since it also gates the description-column decision above at the caller.
-  if (!isText) for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
+  // Only a collection unit gets here. A text-styles or effect-styles unit
+  // renders its specimen list instead and returns before this is called, which
+  // is why there is no parameter for it: a flag whose other branch no live
+  // caller can reach is dead code that only its own test keeps alive.
+  for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
   return columns;
 }
 
@@ -833,6 +833,10 @@ export async function buildFoundationFrame(
   await applyThemeToKit(theme);
 
   const isText = unit.scope.target === 'textStyles';
+  // The two specimen units render a list and return before the table is built,
+  // so neither has columns or a description column to decide. Deciding them
+  // anyway was work no frame drew, saved only by the early returns below.
+  const usesTable = unit.scope.target !== 'textStyles' && unit.scope.target !== 'effectStyles';
 
   // Colour variables render as a swatch list, everything else as a table. A
   // mixed collection (colour plus spacing plus radius) gets both, in that order.
@@ -855,7 +859,7 @@ export async function buildFoundationFrame(
   // column of blanks. Judged on the TABLE's rows alone: a colour row carries its
   // description inline, so counting those would add an all-blank column whenever
   // only colours are described.
-  const hasDescriptions = includeDescriptions
+  const hasDescriptions = usesTable && includeDescriptions
     && tableRows.some((r) => r.description.length > 0);
 
   // Load every family a specimen needs. Track failures so a wrong-looking
@@ -879,10 +883,11 @@ export async function buildFoundationFrame(
   // with the title the batch and a later single-doc Update compute, which is why
   // one function in the extractor derives all three.
   const title = foundationUnitTitle(unit.scope, content);
-  // A text-styles unit never draws this table (buildTextSpecimenList replaces
-  // it below), so it has no columns to derive; an empty list still leaves
-  // cardWidth at its floor, which is exactly the width the specimen list gets.
-  const columns = isText ? [] : tableColumns(content, isText, hasDescriptions);
+  // A specimen unit never draws this table (buildTextSpecimenList or
+  // buildEffectSpecimenList replaces it below), so it has no columns to derive;
+  // an empty list still leaves cardWidth at its floor, which is exactly the
+  // width the specimen list gets.
+  const columns = usesTable ? tableColumns(content, hasDescriptions) : [];
   // The card has to fit whichever layouts it holds, since it clips its contents.
   const width = Math.max(
     tableRows.length > 0 ? cardWidth(columns) : CARD_WIDTH_MIN,
