@@ -19,12 +19,56 @@ none of the reasoning above.
 
 ### Added
 
+- **A component artifact can be rendered as Markdown.** `componentMarkdown` in
+  `packages/extractor/src/v5/markdown.ts` projects a validated Component
+  Context v5 artifact to a readable page: properties, anatomy, layout, token
+  bindings, the Foundation dependency slice, unbound values and issues, with
+  any AI-written prose marked as AI written. It is a projection like DTCG. It
+  never feeds a hash, is never stored in a bundle, and nothing parses it back.
+  No surface produces it yet; the CLI and the plugin follow.
+
+- **Foundation rows carry what the new frames draw.** A variable row now
+  projects the code syntax Figma's variable settings define and the scale
+  drawing its scopes call for; a text-style row projects letter spacing,
+  paragraph spacing, case, decoration, and the token bound to each metric the
+  specimen line names. Every existing variable and text-style document reads
+  "Update available" once, and its change list names the new fields.
+
+- **Number tokens are drawn to scale.** A spacing token shows a bar of its
+  length, a radius token a square with that corner on it, a stroke token a
+  rule of its thickness, an opacity token a swatch at that opacity over a
+  checker, and type tokens an `Ag` sample at that size, line height or letter
+  spacing, each above the value it already showed. A bar or a square too big
+  for its cell is drawn as large as the cell allows and marked with a tick, so
+  a drawing never quietly disagrees with the number beside it. Which drawing a
+  token gets comes from its Figma scopes; a token with no scope, every scope,
+  or a scope the plugin cannot draw keeps the plain value.
+
+- **Effect styles are a foundation source.** Extraction plans an
+  `Effect styles` unit beside `Text styles`, splitting by group past the same
+  threshold, and projects each style as the layers its specimen card applies
+  plus the token bound to each field those layers' lines actually name. A
+  scoped Copy for AI target covers effect styles alone.
+
+- **An Effect styles row on the Foundations screen.** It selects, copies and
+  creates like the Text styles row, with its own glyph in the picker and in
+  My Library. Its Copy for AI carries the `Effect styles` set and the
+  collections its bound tokens need, and nothing else.
+
+- **Effect styles get a document.** Each style casts its layers on a white
+  card over a tinted pane, with a checkered backdrop behind a background
+  blur so the blur is visible, and lists every layer under the name: type,
+  offset, blur, spread and colour for shadows, and radius for blurs, each
+  with a chip when bound to a token. Noise, texture and glass layers show
+  their values with no chips. Hidden layers are listed and not applied; a
+  layer the plugin does not know is listed as unsupported.
+
 - **Foundation group descriptions come with a collection overview.** The one
   AI call that writes a line per colour group now also writes one paragraph
   about the whole collection, from its name, its mode names, and how many of
   its variables alias into each other collection, and nothing else. It is
-  stored on the document beside the group lines and kept across Update; the
-  foundation frame work shipping alongside draws it.
+  stored on the document beside the group lines, kept across Update, and
+  drawn as one paragraph under the header band.
 
 - **The component description reaches the document.** Extraction now carries
   the root component's Figma description and its documentation link URLs, the
@@ -93,9 +137,29 @@ none of the reasoning above.
   Run spec-layer pull.` when it does not; `list` names it in its own header
   line (`Library <id>, v1.5.0, published <date>.`). `manifest.json` gains
   `version`. Pinned pulls are not yet available.
+- **Reference names on foundation rows.** A variable whose Figma settings
+  define a code syntax shows it as a chip under its name, one per platform,
+  in the swatch list and in the table. Nothing is derived: a variable with no
+  code syntax shows no chip.
 
 ### Changed
 
+- **One overview per collection.** The group-description call now sends one
+  block per selected collection and asks for one overview per collection,
+  so a build over several collections gives each document its own paragraph
+  and a collection with no colour groups still gets one. The answer cap rises
+  from 1600 tokens to 4000 in the same move: a truncated answer has no closing
+  brace, so it parses as nothing and a build loses every description and every
+  overview at once rather than one short paragraph. The prompt bytes, the cap
+  and the cache key version all move (`prose:v3:groups:`), so the proxy has to
+  be redeployed before a plugin built from this change can generate. The
+  shipped 5.1.0 plugin's `prose:v1:groups:` request, cap included, is
+  unchanged.
+- **Text styles are shown, not tabulated.** Each style sets "The quick brown
+  fox jumps over the lazy dog" in itself at its true size, wrapping to the
+  column, with a line under it naming family, style, size over line height,
+  letter spacing, paragraph spacing, and any case or decoration, and a chip
+  for every metric bound to a token. The old three-column table is gone.
 - **When to use and Do and don't now answer different questions.** The first
   live Button run wrote the same three rules under When not to use and again
   as DON'T cards, because the prompt asked for both without saying how they

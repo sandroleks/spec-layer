@@ -17,10 +17,12 @@ Extraction, rendering, drift detection, and Copy for AI are **deterministic**.
 Only optional AI prose uses a model. That split is the product's core claim, so
 do not blur it.
 
-There is no web app and no Markdown export. Both were built, deleted in 2026,
-and are not coming back. The plugin, the extractor, the proxy, the CLI, the
-shared brand package, and the site at `spec-layer.com` are the whole product
-boundary.
+There is no web app. The 1.x Markdown specification and its format package
+were deleted in 2026 and are not coming back; Markdown exists today only as a
+projection of the Component Context v5 artifact (`v5/markdown.ts`), beside
+YAML and DTCG, and never as a contract of its own. The plugin, the extractor,
+the proxy, the CLI, the shared brand package, and the site at
+`spec-layer.com` are the whole product boundary.
 
 ## Layout
 
@@ -126,8 +128,8 @@ shared core, and the piece a future `spec-layer diff` reuses.
 
 **`EXTRACTOR_VERSION` is a rebuild request.** Bump it only when extraction
 output can change for unchanged source. A spurious bump asks every user to
-regenerate every document. It is currently `'2'`, and the only sanctioned bump
-to `'3'` belongs to the Component Frame Quality plan below.
+regenerate every document. It is currently `'3'`, and the next sanctioned
+bump belongs to the Component Frame Quality plan below.
 
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits` from
 `v5/diagnostics.ts`. Locale ordering makes hashes machine-dependent.
@@ -150,6 +152,13 @@ slice a Component Context v5 copy embeds.
 **DTCG is a projection.** `v5/dtcg.ts` reads a validated artifact and never
 feeds a hash. What the format cannot express is omitted and written to the
 report. Never a plausible default, never a fake reference.
+
+**Markdown is a projection.** `v5/markdown.ts` reads a validated artifact and
+never feeds a hash. It drops the per-row machine fields the YAML carries
+(`source_id`, `collection_id`, `issue_counts`) and keeps the same `spec_layer`
+and `source` envelope, so a page can still be matched to the artifact it came
+from. It marks AI prose as AI written and never invents a value. Nothing
+parses it back, and it has no version of its own.
 
 **Shared brand values are generated, never copied.** `packages/brand/src` is
 the one source for shared color, type, shape, and motion. Consumers call
@@ -222,9 +231,10 @@ Open, in rough priority order:
    limiter is the only ceiling. See the accepted risks in
    `packages/proxy/README.md`.
 
-Explicitly not doing: remote MCP or agentic vision enrichment, new Markdown
-sections, a hosted composition layer. Those were considered and rejected; the
-bet is deterministic extraction depth.
+Explicitly not doing: remote MCP or agentic vision enrichment, a Markdown
+contract, a parser for the Markdown projection, or sections that exist only
+in Markdown; and a hosted composition layer. Those were considered and
+rejected; the bet is deterministic extraction depth.
 
 ## Working conventions
 

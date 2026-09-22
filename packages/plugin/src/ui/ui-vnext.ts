@@ -113,7 +113,6 @@ import {
   type BuildPresenter,
 } from './actions';
 import { generateGroupDescriptions, resolveComponentImage } from './ai';
-import { hasColorGroups } from './foundationState';
 import {
   activateLicense as activateLicenseKey,
   deactivateLicense,
@@ -711,11 +710,14 @@ async function buildFoundations(): Promise<void> {
   foundationAiNote = '';
   setFoundationGenerating(true);
   let groupDescriptions: Record<string, string> | undefined;
-  let collectionOverview: string | undefined;
+  let collectionOverviews: Record<string, string> | undefined;
   const briefs = currentGroupBriefs();
   const hasIdentity = Boolean(state.licenseKey || state.figmaUserId);
 
-  if (hasColorGroups(spec, foundationSelection) && hasIdentity && briefs?.groups.length) {
+  // One brief per selected collection (Task 13), so a collection of only
+  // spacing tokens still gets its own overview even though it has no colour
+  // groups to describe.
+  if (hasIdentity && briefs && briefs.collections.length > 0) {
     try {
       const draft = await generateGroupDescriptions(
         briefs,
@@ -732,8 +734,8 @@ async function buildFoundations(): Promise<void> {
         },
       );
       groupDescriptions = draft.descriptions;
-      collectionOverview = foundationSelection.collections.length === 1 ? draft.overview ?? undefined : undefined;
-      if (Object.keys(groupDescriptions).length === 0) {
+      collectionOverviews = Object.keys(draft.overviews).length > 0 ? draft.overviews : undefined;
+      if (Object.keys(groupDescriptions).length === 0 && !collectionOverviews) {
         foundationAiNote = 'AI descriptions came back empty.';
       }
     } catch (error) {
@@ -763,7 +765,7 @@ async function buildFoundations(): Promise<void> {
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
       ? { groupDescriptions }
       : {}),
-    ...(collectionOverview ? { collectionOverview } : {}),
+    ...(collectionOverviews ? { collectionOverviews } : {}),
   });
 }
 
@@ -926,14 +928,18 @@ function copyPresenter(): BuildPresenter {
 }
 
 /**
- * Copy one Foundations row: a collection with all of its modes, or the text
- * styles. Reuses the Library row's scoped copy, which widens a collection to
- * every mode and its local dependency closure. modeIds is a frame-only limit
- * the copy ignores, so it is passed empty.
+ * Copy one Foundations row: a collection with all of its modes, the text
+ * styles, or the effect styles. Reuses the Library row's scoped copy, which
+ * widens a collection to every mode and its local dependency closure. modeIds
+ * is a frame-only limit the copy ignores, so it is passed empty.
  */
-function copyFoundationRow(id: string, textStyles: boolean): void {
-  if (textStyles) {
+function copyFoundationRow(id: string, kind: 'collection' | 'textStyles' | 'effectStyles'): void {
+  if (kind === 'textStyles') {
     void copyFoundationBriefForScope({ target: 'textStyles' }, copyPresenter());
+    return;
+  }
+  if (kind === 'effectStyles') {
+    void copyFoundationBriefForScope({ target: 'effectStyles' }, copyPresenter());
     return;
   }
   const collection = currentFoundationSpec()?.collections.find((c) => c.id === id);
@@ -1909,7 +1915,12 @@ document.addEventListener('click', (event) => {
 
   const foundationCopy = target.closest<HTMLButtonElement>('[data-foundation-copy]');
   if (foundationCopy?.dataset.foundationCopy) {
-    copyFoundationRow(foundationCopy.dataset.foundationCopy, foundationCopy.dataset.textStyles === 'true');
+    const copyKind = foundationCopy.dataset.textStyles === 'true'
+      ? 'textStyles'
+      : foundationCopy.dataset.effectStyles === 'true'
+        ? 'effectStyles'
+        : 'collection';
+    copyFoundationRow(foundationCopy.dataset.foundationCopy, copyKind);
     return;
   }
 
@@ -1918,6 +1929,8 @@ document.addEventListener('click', (event) => {
     const checked = foundationSource.getAttribute('aria-pressed') !== 'true';
     if (foundationSource.dataset.textStyles === 'true') {
       onFoundationChange({ kind: 'textStyles', checked });
+    } else if (foundationSource.dataset.effectStyles === 'true') {
+      onFoundationChange({ kind: 'effectStyles', checked });
     } else {
       onFoundationChange({
         kind: 'collection',

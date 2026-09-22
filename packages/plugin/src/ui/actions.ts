@@ -28,7 +28,7 @@ import {
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
-  defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
+  defaultSelection, toggleCollection, toggleMode, toggleTextStyles, toggleEffectStyles,
   frameCount, selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
@@ -756,7 +756,7 @@ export async function copyBriefFromSource(
 // ---------------------------------------------------------------------------
 
 let foundationSpec: FoundationSpec | null = null;
-let foundationSelection: FoundationSelection = { collections: [], textStyles: false };
+let foundationSelection: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
 // AI-written group descriptions merged from every foundation doc link on
 // canvas, keyed by collection name then folder path. Read-only pass-through
 // for copyFoundationBrief; never generated here.
@@ -875,7 +875,8 @@ function foundationDtcgJson(
   descriptions: Record<string, Record<string, string>>,
   scope?:
     | { target: 'collection'; collectionId: string }
-    | { target: 'textStyles' },
+    | { target: 'textStyles' }
+    | { target: 'effectStyles' },
 ): string {
   const { artifact } = buildFoundationArtifactV5(spec, {
     exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
@@ -927,8 +928,9 @@ export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
  * ignores the scope selection" reasoning is a doctrine for a file-wide screen,
  * and it should not acquire an escape hatch.
  *
- * Both row kinds use direct v5 and include the complete local token dependency
- * closure needed by the requested collection or typography styles.
+ * Every row kind, a collection as well as text styles and effect styles, uses
+ * direct v5 and includes the complete local token dependency closure the
+ * requested scope needs.
  */
 export async function copyFoundationBriefForScope(
   scope: FoundationScope,
@@ -972,12 +974,24 @@ export async function copyFoundationBriefForScope(
     return;
   }
 
-  if (spec.textStyles.length === 0) {
-    ui.error('This file has no text styles left. Nothing was copied.');
+  if (scope.target === 'textStyles') {
+    if (spec.textStyles.length === 0) {
+      ui.error('This file has no text styles left. Nothing was copied.');
+      return;
+    }
+    await deliverBrief(
+      () => foundationDtcgJson(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+      ui,
+    );
+    return;
+  }
+
+  if (spec.effectStyles.length === 0) {
+    ui.error('This file has no effect styles left. Nothing was copied.');
     return;
   }
   await deliverBrief(
-    () => foundationDtcgJson(spec, generatedAt, groupDescriptions, { target: 'textStyles' }),
+    () => foundationDtcgJson(spec, generatedAt, {}, { target: 'effectStyles' }),
     ui,
   );
 }
@@ -1076,7 +1090,8 @@ export function onFoundationToggleAll(): void {
 export type FoundationChange =
   | { kind: 'collection'; collectionId: string; checked: boolean }
   | { kind: 'mode'; collectionId: string; modeId: string; checked: boolean }
-  | { kind: 'textStyles'; checked: boolean };
+  | { kind: 'textStyles'; checked: boolean }
+  | { kind: 'effectStyles'; checked: boolean };
 
 export function onFoundationChange(change: FoundationChange): void {
   if (!foundationSpec) return;
@@ -1092,6 +1107,9 @@ export function onFoundationChange(change: FoundationChange): void {
       break;
     case 'textStyles':
       foundationSelection = toggleTextStyles(foundationSelection, change.checked);
+      break;
+    case 'effectStyles':
+      foundationSelection = toggleEffectStyles(foundationSelection, change.checked);
       break;
     default: {
       const exhaustive: never = change;

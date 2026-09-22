@@ -3,9 +3,11 @@ import {
   valueLines, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
   buildFoundationFrame, headerSubtitle, tableColumns, cardWidth, rowWidth,
   rgbLabel, hslLabel, swatchValueLines, isColorRow, swatchRowWidth,
+  referenceChips, nameCell, PLATFORM_LABEL,
   type TableColumn,
 } from '../src/foundationFrame';
 import { hstack, vstack, solidFill, palette } from '../src/frameKit';
+import { SPECIMEN_TEXT } from '../src/foundationSpecimens';
 import {
   installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
 } from './fakeFigma';
@@ -206,7 +208,7 @@ describe('footerNotes — end to end over a split batch', () => {
       collections: dump.collections.map((c) => ({
         collectionId: c.id, modeIds: c.modes.map((m) => m.modeId),
       })),
-      textStyles: false,
+      textStyles: false, effectStyles: false,
     });
     // Numbering the batch would read "Part 4 of 5" / "Part 5 of 5" for Semantic.
     expect(units.map((u) => footerNotes(unitContent(spec, u.scope)!)[0])).toEqual([
@@ -327,11 +329,11 @@ describe('table cell sizing (row-clipping regression)', () => {
   const builders: [string, 'HORIZONTAL' | 'VERTICAL', (w: number) => FakeFrame][] = [
     ['cellText', 'VERTICAL', (w) => cellText('spacing/md', w) as unknown as FakeFrame],
     ['cellText (muted)', 'VERTICAL', (w) => cellText('a description', w, true) as unknown as FakeFrame],
-    ['swatchCell (color, with chip)', 'HORIZONTAL', (w) =>
+    ['swatchCell (color, with chip)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'color', hex: '#2563eb', alpha: 1 }, w) as unknown as FakeFrame],
-    ['swatchCell (number, no chip)', 'HORIZONTAL', (w) =>
+    ['swatchCell (number, no chip)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'number', value: 16 }, w) as unknown as FakeFrame],
-    ['swatchCell (unresolved)', 'HORIZONTAL', (w) =>
+    ['swatchCell (unresolved)', 'VERTICAL', (w) =>
       swatchCell({ kind: 'unresolved', reason: 'cycle' }, w) as unknown as FakeFrame],
     ['headerCell', 'VERTICAL', (w) => headerCell('Name', w) as unknown as FakeFrame],
   ];
@@ -399,8 +401,9 @@ describe('table cell sizing (row-clipping regression)', () => {
       kind: 'alias', targetName: 'colors/blue/500', targetCollection: 'P',
       external: false, resolved: { kind: 'color', hex: '#722ed1', alpha: 1 },
     }, 160) as unknown as FakeFrame;
-    // chip + the two-line stack
-    expect(cell.children).toHaveLength(2);
+    // chip + the two-line stack, one level down inside the value line
+    const line = cell.children[0] as FakeFrame;
+    expect(line.children).toHaveLength(2);
     expect(cell.textChars()).toEqual(['→ colors/blue/500', '#722ED1']);
   });
 
@@ -411,7 +414,8 @@ describe('table cell sizing (row-clipping regression)', () => {
 
   it('top-aligns the swatch against the first line, not the midpoint', () => {
     const cell = swatchCell({ kind: 'color', hex: '#000000', alpha: 1 }, 160) as unknown as FakeFrame;
-    expect(cell.counterAxisAlignItems).toBe('MIN');
+    const line = cell.children[0] as FakeFrame;
+    expect(line.counterAxisAlignItems).toBe('MIN');
   });
 
   it('sets the resolved value smaller than the name above it', () => {
@@ -419,9 +423,42 @@ describe('table cell sizing (row-clipping regression)', () => {
       kind: 'alias', targetName: 'a', targetCollection: 'P',
       external: false, resolved: { kind: 'color', hex: '#000000', alpha: 1 },
     }, 160) as unknown as FakeFrame;
-    const stack = cell.children.find((c) => c instanceof FakeFrame) as FakeFrame;
+    const line = cell.children[0] as FakeFrame;
+    const stack = line.children.find((c) => c instanceof FakeFrame) as FakeFrame;
     const [primary, secondary] = stack.children as Record<string, unknown>[];
     expect(Number(secondary.fontSize)).toBeLessThan(Number(primary.fontSize));
+  });
+
+  it('draws the glyph above the value when the row has one, and only then', () => {
+    const plain = swatchCell({ kind: 'number', value: 16 }, 160);
+    expect(plain.children).toHaveLength(1);
+    const withBar = swatchCell({ kind: 'number', value: 16 }, 160, 'bar');
+    expect(withBar.children).toHaveLength(2);
+    expect((withBar.children[0] as unknown as FakeFrame).name).toBe('Glyph bar');
+    const outOfRange = swatchCell({ kind: 'number', value: 50 }, 160, 'opacity');
+    expect(outOfRange.children).toHaveLength(1);
+  });
+});
+
+describe('referenceChips', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('draws one chip per defined platform with a readable label, and nothing when none is defined', () => {
+    expect(referenceChips({})).toBeNull();
+    const row = referenceChips({ WEB: '--brand-primary', iOS: 'brandPrimary' }) as unknown as FakeFrame;
+    expect(row.children).toHaveLength(2);
+    expect(row.textChars()).toEqual(['Web', '--brand-primary', 'iOS', 'brandPrimary']);
+  });
+  it('shows an unknown platform key as stored rather than guessing a name', () => {
+    const row = referenceChips({ FLUTTER: 'brandPrimary' }) as unknown as FakeFrame;
+    expect(row.textChars()).toEqual(['FLUTTER', 'brandPrimary']);
+    expect(PLATFORM_LABEL.ANDROID).toBe('Android');
+  });
+  it('puts the chips under the name in the table cell', () => {
+    const cell = nameCell({ kind: 'variable', name: 'space/4', description: '', resolvedType: 'FLOAT',
+      codeSyntax: { WEB: '--space-4' }, glyph: null, cells: [] }, 240) as unknown as FakeFrame;
+    expect(cell.textChars()).toEqual(['space/4', 'Web', '--space-4']);
   });
 });
 
@@ -445,7 +482,16 @@ describe('buildFoundationFrame', () => {
   /** Two modes, three described variables, plus one text style. */
   function dump(): SerializedFoundation {
     return {
-      fileKey: 'FILE1', extractedAt: '2026-07-27T00:00:00.000Z', externals: [], effectStyles: [],
+      fileKey: 'FILE1',
+      extractedAt: '2026-07-27T00:00:00.000Z',
+      externals: [],
+      effectStyles: [{
+        id: 'e1', name: 'Elevation/Low', description: 'Cards at rest.',
+        effects: [{
+          type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+          color: { hex: '#0f172a', alpha: 0.16 }, offset: { x: 0, y: 4 }, radius: 12, spread: 0,
+        }],
+      }],
       collections: [{
         id: 'c1', name: 'Primitives', defaultModeId: 'light',
         modes: [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
@@ -470,20 +516,25 @@ describe('buildFoundationFrame', () => {
   }
 
   function build(opts: {
-    textStyles?: boolean; descriptions?: boolean; logo?: string | null;
-    singleMode?: boolean;
+    textStyles?: boolean; effectStyles?: boolean; descriptions?: boolean; logo?: string | null;
+    singleMode?: boolean; codeSyntax?: Record<string, string>; overview?: string;
   } = {}) {
-    const spec = buildFoundation(dump());
+    const d = dump();
+    // The first colour variable of the dump, for the one test that needs a
+    // code syntax to render a chip; every other test leaves it {} as dump() did.
+    if (opts.codeSyntax) d.collections[0].variables[0].codeSyntax = opts.codeSyntax;
+    const spec = buildFoundation(d);
     const units = planFoundationUnits(spec, {
-      collections: opts.textStyles
+      collections: opts.textStyles || opts.effectStyles
         ? []
         : [{ collectionId: 'c1', modeIds: opts.singleMode ? ['light'] : ['light', 'dark'] }],
-      textStyles: opts.textStyles ?? false,
+      textStyles: opts.textStyles ?? false, effectStyles: opts.effectStyles ?? false,
     });
     const unit = units[0];
     const content = unitContent(spec, unit.scope)!;
     return buildFoundationFrame(
       content, unit, theme, opts.descriptions ?? false, opts.logo,
+      undefined, false, undefined, null, opts.overview,
     ) as unknown as Promise<FakeSection>;
   }
 
@@ -518,9 +569,31 @@ describe('buildFoundationFrame', () => {
     expect(card.name).toBe('Text styles');
   });
 
+  it('draws the effect-styles document as specimens, not a table of blank cells', async () => {
+    const card = cardOf(await build({ effectStyles: true, descriptions: true }));
+    expect(card.name).toBe('Effect styles');
+    const texts = card.textChars();
+    expect(texts).toContain('Elevation/Low');
+    expect(texts).toContain('Drop shadow');
+    expect(texts).toContain('1 effect style');
+  });
+
+  it('sets a text style in the pangram specimen, not the old two-letter sample', async () => {
+    const card = cardOf(await build({ textStyles: true }));
+    const texts = card.textChars();
+    expect(texts).toContain(SPECIMEN_TEXT);
+    expect(texts).not.toContain('Ag');
+  });
+
   it('counts what the document covers in the subtitle', async () => {
     const card = cardOf(await build());
     expect(card.textChars()).toContain('3 variables across 2 modes');
+  });
+
+  it('draws a reference chip under a colour token that defines a code syntax', async () => {
+    const card = cardOf(await build({ codeSyntax: { WEB: '--bg-brand' } }));
+    expect(card.textChars()).toContain('--bg-brand');
+    expect(card.textChars()).toContain('Web');
   });
 
   it('stamps the captured logo into the header', async () => {
@@ -557,7 +630,7 @@ describe('buildFoundationFrame', () => {
   it('widens past the minimum when the table needs the room', async () => {
     const wide = cardWidth(tableColumns(
       { collectionName: 'C', modeNames: ['a', 'b', 'c', 'd'], omittedModeNames: [], rows: [] },
-      false, true,
+      true,
     ));
     // Name 240 + Description 220 + 4 x 180 = 1180, plus gaps and padding.
     expect(wide).toBeGreaterThan(880);
@@ -653,6 +726,19 @@ describe('buildFoundationFrame', () => {
     expect(off.textChars()).not.toContain('Page background');
   });
 
+  it('draws the stored collection overview under the header, untagged so selfHash covers it', async () => {
+    const card = cardOf(await build({ overview: 'Semantic colours for surfaces and text, in Light and Dark.' }));
+    const body = card.children[1] as FakeFrame;
+    expect((body.children[0] as FakeFrame).name).toBe('Overview');
+    expect(body.textChars()[0]).toBe('Semantic colours for surfaces and text, in Light and Dark.');
+    expect((body.children[0] as FakeFrame).getPluginData('specLayerSlot')).toBe('');
+  });
+  it('draws no overview for a text-styles unit or when none is stored', async () => {
+    expect(cardOf(await build({ textStyles: true, overview: 'x' })).textChars()).not.toContain('x');
+    const body = cardOf(await build()).children[1] as FakeFrame;
+    expect((body.children[0] as FakeFrame).name).not.toBe('Overview');
+  });
+
   it('names the Section for the document it holds', async () => {
     const section = await build();
     expect(section.name).toBe('Foundations: Primitives');
@@ -734,30 +820,38 @@ describe('headerSubtitle', () => {
   const rows = (n: number): FoundationUnitContent['rows'] =>
     Array.from({ length: n }, (_, i) => ({
       kind: 'variable' as const, name: `v${i}`, description: '',
-      resolvedType: 'FLOAT' as const, cells: [],
+      resolvedType: 'FLOAT' as const, codeSyntax: {}, glyph: null, cells: [],
     }));
 
   it('counts variables and the modes they are shown in', () => {
-    expect(headerSubtitle({ ...base, rows: rows(12), modeNames: ['L', 'D'] }, false))
+    expect(headerSubtitle({ ...base, rows: rows(12), modeNames: ['L', 'D'] }, 'collection'))
       .toBe('12 variables across 2 modes');
   });
 
   it('says one variable and one mode in the singular', () => {
-    expect(headerSubtitle({ ...base, rows: rows(1) }, false))
+    expect(headerSubtitle({ ...base, rows: rows(1) }, 'collection'))
       .toBe('1 variable across 1 mode');
   });
 
   it('counts text styles, which have no modes', () => {
-    expect(headerSubtitle({ ...base, rows: rows(8) }, true)).toBe('8 text styles');
-    expect(headerSubtitle({ ...base, rows: rows(1) }, true)).toBe('1 text style');
+    expect(headerSubtitle({ ...base, rows: rows(8) }, 'textStyles')).toBe('8 text styles');
+    expect(headerSubtitle({ ...base, rows: rows(1) }, 'textStyles')).toBe('1 text style');
+  });
+
+  it('counts effect styles in the subtitle', () => {
+    const content = { collectionName: '', modeNames: [], omittedModeNames: [], rows: [
+      { kind: 'effectStyle', name: 'a', description: '', layers: [], boundTokens: {} },
+      { kind: 'effectStyle', name: 'b', description: '', layers: [], boundTokens: {} },
+    ] } as FoundationUnitContent;
+    expect(headerSubtitle(content, 'effectStyles')).toBe('2 effect styles');
   });
 
   it('states an empty document plainly rather than leaving the line blank', () => {
-    expect(headerSubtitle(base, false)).toBe('0 variables across 1 mode');
+    expect(headerSubtitle(base, 'collection')).toBe('0 variables across 1 mode');
   });
 
   it('contains no em dash', () => {
-    expect(headerSubtitle({ ...base, rows: rows(3) }, false)).not.toContain('—');
+    expect(headerSubtitle({ ...base, rows: rows(3) }, 'collection')).not.toContain('—');
   });
 });
 
@@ -767,24 +861,17 @@ describe('tableColumns', () => {
   };
 
   it('is Name plus one column per rendered mode', () => {
-    expect(tableColumns(content, false, false).map((c) => c.label))
+    expect(tableColumns(content, false).map((c) => c.label))
       .toEqual(['Name', 'Light', 'Dark']);
   });
 
   it('inserts Description between Name and the modes', () => {
-    expect(tableColumns(content, false, true).map((c) => c.label))
+    expect(tableColumns(content, true).map((c) => c.label))
       .toEqual(['Name', 'Description', 'Light', 'Dark']);
   });
 
-  it('replaces the mode columns with one wide Specimen column for text styles', () => {
-    const cols = tableColumns(content, true, false);
-    expect(cols.map((c) => c.label)).toEqual(['Name', 'Specimen']);
-    // The specimen needs the room two mode columns would have taken.
-    expect(cols[1].width).toBe(320);
-  });
-
   it('gives every column a positive width', () => {
-    for (const col of tableColumns(content, false, true)) {
+    for (const col of tableColumns(content, true)) {
       expect(col.width).toBeGreaterThan(0);
     }
   });
@@ -797,12 +884,14 @@ describe('cardWidth', () => {
 
   /** Every shape a foundation table can take, widest last. */
   const shapes: [string, TableColumn[]][] = [
-    ['one mode', tableColumns(content(['Value']), false, false)],
-    ['one mode + descriptions', tableColumns(content(['Value']), false, true)],
-    ['text styles', tableColumns(content([]), true, false)],
-    ['text styles + descriptions', tableColumns(content([]), true, true)],
-    ['four modes', tableColumns(content(['a', 'b', 'c', 'd']), false, false)],
-    ['four modes + descriptions', tableColumns(content(['a', 'b', 'c', 'd']), false, true)],
+    // No modes is reachable: unitContent drops stale mode ids, so a collection
+    // whose every stored mode is gone renders a name-only table.
+    ['no modes', tableColumns(content([]), false)],
+    ['no modes + descriptions', tableColumns(content([]), true)],
+    ['one mode', tableColumns(content(['Value']), false)],
+    ['one mode + descriptions', tableColumns(content(['Value']), true)],
+    ['four modes', tableColumns(content(['a', 'b', 'c', 'd']), false)],
+    ['four modes + descriptions', tableColumns(content(['a', 'b', 'c', 'd']), true)],
   ];
 
   for (const [name, columns] of shapes) {
@@ -829,8 +918,8 @@ describe('cardWidth', () => {
   });
 
   it('counts the gaps between columns, not just the columns', () => {
-    const one = tableColumns(content(['Value']), false, false);
-    const two = tableColumns(content(['Value', 'Dark']), false, false);
+    const one = tableColumns(content(['Value']), false);
+    const two = tableColumns(content(['Value', 'Dark']), false);
     // Adding a 160px column costs 160 plus one 12px gap.
     expect(rowWidth(two) - rowWidth(one)).toBe(172);
   });
@@ -946,7 +1035,8 @@ describe('swatchValueLines', () => {
 
 describe('isColorRow', () => {
   const row = (resolvedType: 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN') => ({
-    kind: 'variable' as const, name: 'n', description: '', resolvedType, cells: [],
+    kind: 'variable' as const, name: 'n', description: '', resolvedType,
+    codeSyntax: {}, glyph: null, cells: [],
   });
 
   it('claims colour variables', () => {
@@ -962,7 +1052,11 @@ describe('isColorRow', () => {
   it('leaves text styles to the table', () => {
     expect(isColorRow({
       kind: 'textStyle', name: 'H1', description: '',
-      metrics: { fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' } },
+      metrics: {
+        fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 32, lineHeight: { unit: 'AUTO' },
+        letterSpacing: { unit: 'PIXELS', value: 0 }, paragraphSpacing: 0,
+        textCase: 'ORIGINAL', textDecoration: 'NONE', boundTokens: {},
+      },
     })).toBe(false);
   });
 
@@ -971,6 +1065,7 @@ describe('isColorRow', () => {
     // value would drop a whole semantic collection into the numbers table.
     expect(isColorRow({
       kind: 'variable', name: 'bg', description: '', resolvedType: 'COLOR',
+      codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'unresolved', reason: 'external' } }],
     })).toBe(true);
   });
@@ -1028,7 +1123,7 @@ describe('buildFoundationFrame — colour groups', () => {
   async function listFor(names: string[]): Promise<FakeFrame> {
     const spec = buildFoundation(grouped(names));
     const units = planFoundationUnits(spec, {
-      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false, effectStyles: false,
     });
     const content = unitContent(spec, units[0].scope)!;
     const section = await buildFoundationFrame(
@@ -1127,7 +1222,7 @@ describe('buildFoundationFrame — AI group descriptions', () => {
     };
     const spec = buildFoundation(dump);
     const units = planFoundationUnits(spec, {
-      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false,
+      collections: [{ collectionId: 'c1', modeIds: ['m1'] }], textStyles: false, effectStyles: false,
     });
     const content = unitContent(spec, units[0].scope)!;
     const section = await buildFoundationFrame(

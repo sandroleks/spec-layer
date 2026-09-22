@@ -137,6 +137,9 @@ describe('buildLibraryRow capabilities', () => {
     // still render a glyph rather than nothing.
     expect(buildLibraryRow(entry({ kind: 'foundation', sourceNodeId: '' }), { now: NOW })
       .foundationIcon).toBe('mixed');
+    expect(buildLibraryRow(entry({
+      kind: 'foundation', foundationIcon: 'effect', sourceNodeId: '',
+    }), { now: NOW }).foundationIcon).toBe('effect');
   });
 
   it('keeps manual Update available for a proven in-sync connection', () => {
@@ -465,6 +468,7 @@ describe('resolveLibraryChanges', () => {
   const unit: FoundationUnitContent = {
     collectionName: 'Semantic', modeNames: ['Light'], omittedModeNames: [],
     rows: [{ kind: 'variable', name: 'bg/brand', description: '', resolvedType: 'COLOR',
+      codeSyntax: {}, glyph: null,
       cells: [{ modeName: 'Light', value: { kind: 'color', hex: '#0055FF', alpha: 1 } }] }],
   };
   const component: ComponentDocBaseline = { v: 1, kind: 'component', contentHash: 'a', projection };

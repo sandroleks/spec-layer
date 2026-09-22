@@ -19,6 +19,7 @@ export * from './fromFoundation';
 export * from './fonts';
 export * from './aiContext';
 export * from './dtcg';
+export * from './markdown';
 export * from './usageUnits';
 export * from './outputs/index';
 export * from './componentContext';

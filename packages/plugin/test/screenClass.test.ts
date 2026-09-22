@@ -73,10 +73,12 @@ const SPEC = {
     variables: [{ id: 'v', name: 'bg', resolvedType: 'COLOR' }],
   }],
   textStyles: [],
+  effectStyles: [],
 } as unknown as FoundationSpec;
 const SELECTION: FoundationSelection = {
   collections: [{ collectionId: 'c1', modeIds: ['m1'] }],
   textStyles: false,
+  effectStyles: false,
 };
 
 /** Every screen, and the exact class each one must leave behind. */

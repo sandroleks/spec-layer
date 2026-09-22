@@ -12,7 +12,8 @@
  */
 import { canonicalEqual, type SpecHashProjection } from './hash';
 import type {
-  FoundationRow, FoundationTextMetrics, FoundationUnitContent, FoundationValue,
+  FoundationGlyph, FoundationRow, FoundationTextMetrics, FoundationUnitContent,
+  FoundationValue, FoundationVariableRow,
 } from './foundation';
 import { compareCodeUnits } from './v5/diagnostics';
 import { matchesVariant } from './resolve';
@@ -178,13 +179,38 @@ function formatLineHeight(lineHeight: FoundationTextMetrics['lineHeight']): stri
   return lineHeight.unit === 'PERCENT' ? `${lineHeight.value}%` : String(lineHeight.value);
 }
 
-/** "family style size/lineHeight", the same line the frame draws. */
+function formatSpacing(spacing: FoundationTextMetrics['letterSpacing']): string {
+  return spacing.unit === 'PERCENT' ? `${spacing.value}%` : String(spacing.value);
+}
+
+/** The metrics line the frame draws, minus the chips; default case and decoration are silent there too. */
 export function formatTextMetrics(metrics: FoundationTextMetrics): string {
-  return `${metrics.fontFamily} ${metrics.fontStyle} ${metrics.fontSize}/${formatLineHeight(metrics.lineHeight)}`;
+  const parts = [
+    `${metrics.fontFamily} ${metrics.fontStyle} ${metrics.fontSize}/${formatLineHeight(metrics.lineHeight)}`,
+    `letter spacing ${formatSpacing(metrics.letterSpacing)}`,
+    `paragraph spacing ${metrics.paragraphSpacing}`,
+  ];
+  if (metrics.textCase !== 'ORIGINAL') parts.push(metrics.textCase.toLowerCase().replace(/_/g, ' '));
+  if (metrics.textDecoration !== 'NONE') parts.push(metrics.textDecoration.toLowerCase());
+  return parts.join(', ');
+}
+
+const GLYPH_NOUN: Record<FoundationGlyph, string> = {
+  bar: 'a bar', radius: 'a rounded square', stroke: 'a stroke', opacity: 'an opacity swatch',
+  fontSize: 'a font size sample', lineHeight: 'a line height sample', letterSpacing: 'a letter spacing sample',
+};
+
+/** True for a baseline written before Plan 3, which has no `codeSyntax` on any variable row. */
+function isPrePlan3(before: FoundationUnitContent): boolean {
+  return list(before.rows).some((row) =>
+    (row.kind === 'variable' && (row as Partial<FoundationVariableRow>).codeSyntax === undefined)
+    || (row.kind === 'textStyle' && (row.metrics as Partial<FoundationTextMetrics>).boundTokens === undefined));
 }
 
 function rowTypeLabel(row: FoundationRow): string {
-  return row.kind === 'textStyle' ? 'text style' : row.resolvedType;
+  return row.kind === 'textStyle' ? 'text style'
+    : row.kind === 'effectStyle' ? 'effect style'
+    : row.resolvedType;
 }
 
 function formatPart(part: FoundationUnitContent['part']): string | undefined {
@@ -192,8 +218,8 @@ function formatPart(part: FoundationUnitContent['part']): string | undefined {
 }
 
 /**
- * Groups, in order: Tokens, Descriptions, Modes, Part. Empty groups are
- * dropped; `[]` means nothing differs, which for two inputs that hash
+ * Groups, in order: Layout, Tokens, Descriptions, Modes, Part. Empty groups
+ * are dropped; `[]` means nothing differs, which for two inputs that hash
  * differently should not happen.
  */
 export function foundationChangeGroups(
@@ -202,6 +228,18 @@ export function foundationChangeGroups(
 ): ChangeGroup[] {
   const tokens: Draft[] = [];
   const descriptions: Draft[] = [];
+
+  // A baseline written before Plan 3 has no codeSyntax/glyph/full text metrics
+  // at all, so diffing those fields against the current projection would
+  // report every row as changed. One Layout item explains the whole move
+  // instead, so the badge never shows "Update available" over an empty list.
+  const layout: Draft[] = [];
+  const prePlan3 = isPrePlan3(before);
+  if (prePlan3) {
+    layout.push(before.rows.some((r) => r.kind === 'textStyle')
+      ? 'New layout: full type metrics are now part of the document'
+      : 'New layout: reference names and scale drawings are now part of the document');
+  }
 
   const rows = diffKeyed(list(before.rows), list(after.rows), (row) => row.name);
   for (const row of rows.added) tokens.push(`Added ${row.name}`);
@@ -224,8 +262,28 @@ export function foundationChangeGroups(
       for (const { before: cb, after: ca } of cells.changed) {
         tokens.push(`${a.name} in ${ca.modeName}: ${formatFoundationValue(cb.value)} changed to ${formatFoundationValue(ca.value)}`);
       }
-    } else if (b.kind === 'textStyle' && a.kind === 'textStyle' && !canonicalEqual(b.metrics, a.metrics)) {
+      if (!prePlan3) {
+        const syntax = diffKeyed(
+          Object.entries(b.codeSyntax).map(([platform, id]) => ({ platform, id })),
+          Object.entries(a.codeSyntax).map(([platform, id]) => ({ platform, id })),
+          (e) => e.platform,
+        );
+        for (const e of syntax.added) tokens.push(`${a.name}: ${e.platform} reference name added (${e.id})`);
+        for (const e of syntax.removed) tokens.push(`${a.name}: ${e.platform} reference name removed (${e.id})`);
+        for (const { before: sb, after: sa } of syntax.changed) {
+          tokens.push(`${a.name}: ${sa.platform} reference name ${sb.id} changed to ${sa.id}`);
+        }
+        if (b.glyph !== a.glyph) {
+          tokens.push(a.glyph
+            ? `${a.name}: now drawn as ${GLYPH_NOUN[a.glyph]}`
+            : `${a.name}: no longer drawn to scale`);
+        }
+      }
+    } else if (b.kind === 'textStyle' && a.kind === 'textStyle' && !prePlan3 && !canonicalEqual(b.metrics, a.metrics)) {
       tokens.push(`${a.name}: ${formatTextMetrics(b.metrics)} changed to ${formatTextMetrics(a.metrics)}`);
+    } else if (b.kind === 'effectStyle' && a.kind === 'effectStyle'
+      && (!canonicalEqual(b.layers, a.layers) || !canonicalEqual(b.boundTokens, a.boundTokens))) {
+      tokens.push(`${a.name}: effect layers changed`);
     }
     if (b.description !== a.description) descriptions.push(`Description of ${a.name} changed`);
   }
@@ -246,6 +304,7 @@ export function foundationChangeGroups(
   if (!canonicalEqual(before.part, after.part)) part.push(scalarItem('Part', formatPart(before.part), formatPart(after.part)));
 
   return groups([
+    ['Layout', layout],
     ['Tokens', tokens],
     ['Descriptions', descriptions],
     ['Modes', modes],

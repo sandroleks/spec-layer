@@ -13,6 +13,8 @@ import {
   componentFoundationDependencies, componentSemanticContentHash,
   validateComponentArtifactV5,
 } from '../../src/v5/componentContext';
+import { componentFoundationAiSlice } from '../../src/index';
+import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
 
 const SOURCE = {
   provider: 'figma' as const,
@@ -502,5 +504,21 @@ describe('Component Context v5', () => {
     expect(entry?.severity).toBe('error');
     expect(entry?.path).toBe('space/component');
     expect(entry?.message).toBe('The Foundation read named this source id as unavailable.');
+  });
+});
+
+describe('componentFoundationAiSlice', () => {
+  it('returns the same dependency hash and collections the AI profile carries', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const slice = componentFoundationAiSlice(artifact);
+    expect(slice).not.toBeNull();
+    expect(slice!.dependency_hash).toBe(artifact.foundation_dependency_hash);
+    expect(slice!.compact.collections.map((c: { name: string }) => c.name)).toEqual(['Material tokens']);
+  });
+
+  it('returns null when the foundation was not read', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const without = { ...artifact, references: { ...artifact.references, foundation: undefined } };
+    expect(componentFoundationAiSlice(without)).toBeNull();
   });
 });
