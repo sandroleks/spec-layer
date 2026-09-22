@@ -27,9 +27,22 @@ export function escapeInline(text: string): string {
     .trim();
 }
 
-/** @internal `escapeInline` plus the cell separator. */
+/** @internal `escapeInline` plus the cell separator, escaped in ONE pass.
+ *
+ * The pipe is in the same character class as the backslash rather than added
+ * by a second `.replace`, so the escape character can never be escaped after
+ * the delimiter it is supposed to protect. Composing two passes happened to
+ * be correct here, because `escapeInline` runs first, but that correctness
+ * was an ordering accident a later edit could silently undo, and the same
+ * accident in `codeCell` was a real defect: it destroyed a table cell whose
+ * value held a backslash before a pipe. One pass removes the ordering
+ * question entirely. Verified byte-identical to the two-pass form over every
+ * string up to length three drawn from the characters either form touches. */
 export function escapeCell(text: string): string {
-  return escapeInline(text).replace(/\|/g, '\\|');
+  return text
+    .replace(/\r?\n/g, ' ')
+    .replace(/([\\*_<>[\]|])/g, '\\$1')
+    .trim();
 }
 
 /** @internal `escapeInline` plus the two characters that could make a
@@ -44,7 +57,10 @@ export function escapeCell(text: string): string {
  * must not gain this extra escaping or the golden `#6750a4` token value
  * would corrupt into `\#6750a4`. */
 function escapeHeading(text: string): string {
-  return escapeInline(text).replace(/\|/g, '\\|').replace(/^#/, '\\#');
+  // `escapeCell` has already escaped the backslash and the pipe in one pass,
+  // so the only thing left is the leading hash, which a character class
+  // cannot express because it matters at position zero and nowhere else.
+  return escapeCell(text).replace(/^#/, '\\#');
 }
 
 /** @internal `escapeInline` plus the constructs that open a BLOCK when they
