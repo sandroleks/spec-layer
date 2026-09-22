@@ -269,6 +269,10 @@ none of the reasoning above.
   page header hidden, the scroll region auto-placed into the header's
   content-sized grid row and took about half the panel. The scroll region and
   footer are now pinned to their rows.
+- **The atom notice lines up with the rows below it.** The component screen's
+  scroll region has no side padding, and every row carries its own inset
+  except the atom notice, which ran edge to edge and touched the AI writing
+  row. It now takes the same inset and gap.
 
 - **A Pro generation no longer fails on Sonnet 5's thinking block.** Sonnet 5
   thinks before it answers unless told not to, and the thinking arrives as a
