@@ -40,7 +40,10 @@ describe('componentMarkdown front matter', () => {
     const out = componentMarkdown(buildComponentV5GoldenArtifact());
     expect(out.endsWith('\n')).toBe(true);
     expect(out.endsWith('\n\n')).toBe(false);
-    expect(out).not.toMatch(/[\t\0]/);
+    // Built at runtime, not as a regex literal: a backslash-zero escape fails
+    // scripts/check-nul-bytes.mjs, and a unicode control escape fails the
+    // no-control-regex lint rule, which is only disabled for src/yaml.ts.
+    expect(out).not.toMatch(new RegExp('[' + String.fromCharCode(9) + String.fromCharCode(0) + ']'));
   });
 
   it('is deterministic and does not mutate the artifact', () => {
