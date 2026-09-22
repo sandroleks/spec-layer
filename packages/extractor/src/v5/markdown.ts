@@ -9,7 +9,8 @@
 
 import { toYaml } from '../yaml';
 import type { YamlValue } from '../yaml';
-import { componentEnvelope } from './componentContext';
+import { valueText } from './aiContext';
+import { componentEnvelope, componentFoundationAiSlice } from './componentContext';
 import type { ComponentArtifactV5 } from './componentContext';
 
 /** Opening bytes of the YAML profile, for ownership checks. */
@@ -169,6 +170,118 @@ function anatomyBullets(nodes: unknown[], depth: number): string[] {
   return lines;
 }
 
+const NOT_READ_SENTENCE =
+  'Token values are not included: the foundations had not been read when this was exported.';
+
+/** @internal Unwraps the one extra `{ type, value }` layer
+ * `compactStyleProperty` (`aiContext.ts`) puts around a literal typography
+ * property, then hands the inner shape to the shared `valueText`. A resolved
+ * alias property nests one layer deeper still (`{ alias, resolved: {...} }`)
+ * and is not unwrapped here: this fixture only exercises literal properties,
+ * and per the plan's resolution for `valueText`, a value shape it renders
+ * wrongly is a stop-and-report, not a fork. */
+function styleValueText(value: unknown): string {
+  if (value !== null && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+    return valueText((value as Record<string, unknown>).value);
+  }
+  return valueText(value);
+}
+
+function typographySection(items: unknown[]): string | undefined {
+  if (items.length === 0) return undefined;
+  const rows = items.map((raw) => {
+    const style = asRecord(raw);
+    const properties = asRecord(style.properties);
+    return [
+      escapeCell(str(style.name) ?? ''),
+      escapeCell(styleValueText(properties.font_family)),
+      escapeCell(styleValueText(properties.font_weight)),
+      escapeCell(styleValueText(properties.font_size)),
+      escapeCell(styleValueText(properties.line_height)),
+    ];
+  });
+  return [
+    '### Typography styles',
+    table(['Style', 'Font family', 'Weight', 'Size', 'Line height'], rows).trimEnd(),
+  ].join('\n\n');
+}
+
+function effectSummary(effect: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const type = str(effect.type);
+  if (type) parts.push(type);
+  if (effect.offset_x !== undefined || effect.offset_y !== undefined) {
+    parts.push(`offset ${valueText(effect.offset_x)}/${valueText(effect.offset_y)}`);
+  }
+  if (effect.blur !== undefined) parts.push(`blur ${valueText(effect.blur)}`);
+  if (effect.spread !== undefined) parts.push(`spread ${valueText(effect.spread)}`);
+  if (effect.color !== undefined) parts.push(valueText(effect.color));
+  return parts.join(', ');
+}
+
+function effectsSection(items: unknown[]): string | undefined {
+  if (items.length === 0) return undefined;
+  const rows = items.map((raw) => {
+    const style = asRecord(raw);
+    const mode = str(style.mode);
+    const effects = Array.isArray(style.effects) ? style.effects : [];
+    const summary = effects.map((effect) => effectSummary(asRecord(effect))).join(', ');
+    return [escapeCell(str(style.name) ?? ''), mode ? escapeCell(mode) : '', escapeCell(summary)];
+  });
+  return [
+    '### Effect styles',
+    table(['Style', 'Mode', 'Effects'], rows).trimEnd(),
+  ].join('\n\n');
+}
+
+/**
+ * The `## Tokens used` section: the Foundation dependency slice a component
+ * needs, reusing `componentFoundationAiSlice` for the join, the mode-name
+ * mapping and the value formatting rather than a second interpretation of
+ * `artifact.references.foundation`. Always renders, even when the foundation
+ * was never read, because that absence is itself a fact worth stating.
+ */
+function tokensUsedSection(artifact: ComponentArtifactV5): string {
+  const slice = componentFoundationAiSlice(artifact);
+  if (!slice) return `## Tokens used\n\n${NOT_READ_SENTENCE}`;
+  const { compact } = slice;
+  const parts = ['## Tokens used'];
+  parts.push(
+    `Foundation: collections ${compact.completeness.collections}, `
+    + `styles ${compact.completeness.styles}.`,
+  );
+  if (compact.completeness.unavailable_sources.length > 0) {
+    parts.push(`Unavailable sources: ${compact.completeness.unavailable_sources
+      .map((source) => escapeInline(source)).join(', ')}.`);
+  }
+  for (const collection of compact.collections) {
+    parts.push(`### ${escapeInline(collection.name)}`);
+    const modes = collection.modes.map((mode) => (mode === collection.default_mode
+      ? `${escapeInline(mode)} (default)`
+      : escapeInline(mode)));
+    parts.push(`Modes: ${modes.join(', ')}.`);
+    const rows = collection.tokens.map((token) => [
+      escapeCell(token.name),
+      escapeCell(token.type),
+      ...collection.modes.map((mode) => escapeCell(valueText(token.values[mode]))),
+      token.code_syntax
+        ? Object.entries(token.code_syntax)
+          .map(([platform, id]) => (id ? `${escapeCell(platform)} ${code(id)}` : escapeCell(platform)))
+          .join(', ')
+        : '',
+    ]);
+    parts.push(table(
+      ['Token', 'Type', ...collection.modes.map((mode) => escapeCell(mode)), 'Code syntax'],
+      rows,
+    ).trimEnd());
+  }
+  const typography = typographySection(compact.styles.typography);
+  if (typography) parts.push(typography);
+  const effects = effectsSection(compact.styles.effects);
+  if (effects) parts.push(effects);
+  return parts.join('\n\n');
+}
+
 function frontMatter(artifact: ComponentArtifactV5): string {
   const envelope = componentEnvelope(artifact, 'markdown');
   return `---\n${toYaml(envelope as unknown as YamlValue)}---\n`;
@@ -206,6 +319,8 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
 
   const bindings = bindingsSection(asRecord(artifact.references));
   if (bindings) blocks.push(bindings);
+
+  blocks.push(tokensUsedSection(artifact));
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
 }

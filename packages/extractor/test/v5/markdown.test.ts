@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { code, escapeCell, escapeInline, table, componentMarkdown, COMPONENT_MARKDOWN_MARKER } from '../../src/v5/markdown';
-import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
+import { buildComponentV5GoldenArtifact, buildComponentV5StyledArtifact } from '../fixtures/componentV5';
 
 describe('markdown primitives', () => {
   it('collapses newlines and escapes inline markup', () => {
@@ -155,5 +155,68 @@ describe('componentMarkdown token bindings', () => {
       ...artifact, references: { ...artifact.references, used: [] },
     });
     expect(out).toContain('| `Container/container` | fill | VariableID:1 |');
+  });
+});
+
+describe('componentMarkdown tokens used', () => {
+  it('states completeness and one column per mode', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Tokens used');
+    expect(out).toContain('Foundation: collections complete, styles complete.');
+    expect(out).toContain('### Material tokens');
+    expect(out).toContain('Modes: Default (default).');
+    expect(out).toContain('| Token | Type | Default | Code syntax |');
+    expect(out).toContain('| md.sys.color.primary | color | #6750a4 | WEB `--md-sys-color-primary` |');
+    expect(out).toContain('| md.sys.shape.corner.full | dimension | 999px |');
+  });
+
+  it('says plainly that the foundation was not read', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact, references: { ...artifact.references, foundation: undefined },
+    });
+    expect(out).toContain(
+      'Token values are not included: the foundations had not been read when this was exported.',
+    );
+    expect(out).not.toContain('### Material tokens');
+  });
+
+  it('lists unavailable sources and a partial completeness verbatim', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const foundation = {
+      ...artifact.references.foundation!,
+      completeness: {
+        collections: 'partial' as const,
+        styles: 'complete' as const,
+        unavailable_sources: ['VariableID:gone'],
+      },
+    };
+    const out = componentMarkdown({
+      ...artifact, references: { ...artifact.references, foundation },
+    });
+    expect(out).toContain('Foundation: collections partial, styles complete.');
+    expect(out).toContain('Unavailable sources: VariableID:gone.');
+  });
+
+  it('omits typography and effect subsections when the foundation carries none', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).not.toContain('### Typography styles');
+    expect(out).not.toContain('### Effect styles');
+  });
+
+  it('tables typography styles from literal properties', () => {
+    const out = componentMarkdown(buildComponentV5StyledArtifact());
+    expect(out).toContain('### Typography styles');
+    expect(out).toContain('| Style | Font family | Weight | Size | Line height |');
+    expect(out).toContain('| Body/Regular | Inter | 400 | 16px | 24px |');
+  });
+
+  it('tables effect styles, summarizing each layer', () => {
+    const out = componentMarkdown(buildComponentV5StyledArtifact());
+    expect(out).toContain('### Effect styles');
+    expect(out).toContain('| Style | Mode | Effects |');
+    expect(out).toContain(
+      '| Elevation/Card |  | drop\\_shadow, offset 0px/2px, blur 8px, #000000 alpha 0.2 |',
+    );
   });
 });
