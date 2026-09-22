@@ -612,7 +612,21 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
  * rather than guessed. "Free" only for the free tier, because a Pro plan has
  * its own ceiling.
  */
-export function quotaExhaustedNote(quota: ProxyQuota | null, rebuild = false): string {
+/** What running out cost, per kind of build. */
+const QUOTA_CONSEQUENCE = {
+  component: 'the AI sections were left out',
+  // A rebuild keeps the prose the document already had, so only what was
+  // still empty stays empty; "left out" would say the stored prose went too.
+  rebuild: 'sections that needed AI were left empty',
+  // A foundation frame has no AI sections, only group descriptions and
+  // collection overviews on top of a frame that renders either way.
+  foundation: 'the AI descriptions were left out',
+} as const;
+
+export function quotaExhaustedNote(
+  quota: ProxyQuota | null,
+  kind: keyof typeof QUOTA_CONSEQUENCE = 'component',
+): string {
   const free = quota?.tier !== 'pro';
   const limit = quota?.limit;
   const uses = typeof limit === 'number' && limit > 0
@@ -620,9 +634,7 @@ export function quotaExhaustedNote(quota: ProxyQuota | null, rebuild = false): s
     : `all your ${free ? 'free ' : ''}AI uses`;
   const reset = formatResetDate(quota?.resetsAt ?? '');
   return (
-    // A rebuild keeps the prose the document already had, so only what was
-    // still empty stays empty; "left out" would say the stored prose went too.
-    `You've used ${uses} this month, so ${rebuild ? 'sections that needed AI were left empty' : 'the AI sections were left out'}.` +
+    `You've used ${uses} this month, so ${QUOTA_CONSEQUENCE[kind]}.` +
     (reset ? ` Your uses reset on ${reset}.` : '')
   );
 }
@@ -672,7 +684,7 @@ export async function topUpProseForRebuild(state: UiState, src: DocSource): Prom
   } catch (err) {
     noteGenerationError(state, err);
     if (err instanceof ProseProxyError && err.code === 'quota_exhausted') {
-      state.pendingAiNote = quotaExhaustedNote(state.quota, true);
+      state.pendingAiNote = quotaExhaustedNote(state.quota, 'rebuild');
     }
     return src.prose;
   }

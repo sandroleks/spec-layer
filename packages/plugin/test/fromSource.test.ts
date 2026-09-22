@@ -461,6 +461,11 @@ describe('quota exhausted note', () => {
       .toBe("You've used all your free AI uses this month, so the AI sections were left out.");
   });
 
+  it('words a foundation build for descriptions, not sections', () => {
+    expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }, 'foundation'))
+      .toBe("You've used all 10 free AI uses this month, so the AI descriptions were left out. Your uses reset on Oct 1.");
+  });
+
   it('does not call a Pro allowance free', () => {
     expect(quotaExhaustedNote({ tier: 'pro', used: 500, limit: 500, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
       .not.toContain('free');

@@ -277,7 +277,9 @@ none of the reasoning above.
   snapshot and left out when that snapshot lacks them, and drops the per
   section lines for AI sections. Deterministic omissions are still listed. A
   Library rebuild says "sections that needed AI were left empty", because it
-  keeps the prose the document already had.
+  keeps the prose the document already had, and a Foundations build says "the
+  AI descriptions were left out" in place of "AI descriptions were skipped.
+  Your monthly AI allowance is used up."
 - **The atom notice lines up with the rows below it.** The component screen's
   scroll region has no side padding, and every row carries its own inset
   except the atom notice, which ran edge to edge and touched the AI writing

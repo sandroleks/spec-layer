@@ -99,6 +99,7 @@ import {
   onSelectionFoundation,
   omissionsMessage,
   withoutAiOmissions,
+  quotaExhaustedNote,
   onFoundationToggleAll,
   pluginBuild,
   resultOutcome,
@@ -740,10 +741,17 @@ async function buildFoundations(): Promise<void> {
         foundationAiNote = 'AI descriptions came back empty.';
       }
     } catch (error) {
-      const detail = error instanceof ProseProxyError
-        ? groupErrorCopy(error.code)
-        : 'The AI service could not be reached.';
-      foundationAiNote = `AI descriptions were skipped. ${detail}`;
+      if (error instanceof ProseProxyError && error.code === 'quota_exhausted') {
+        // The same sentence a component build uses, with the limit and the
+        // reset date, rather than "skipped" plus a bare "used up".
+        state.quotaExhausted = true;
+        foundationAiNote = quotaExhaustedNote(state.quota, 'foundation');
+      } else {
+        const detail = error instanceof ProseProxyError
+          ? groupErrorCopy(error.code)
+          : 'The AI service could not be reached.';
+        foundationAiNote = `AI descriptions were skipped. ${detail}`;
+      }
     }
   }
 
@@ -2573,7 +2581,7 @@ window.onmessage = (event: MessageEvent): void => {
           msg.replaced ? `${msg.replaced} updated` : '',
           foundationAiNote,
         ].filter(Boolean);
-        nativeNotify(parts.join(' · ') || 'Foundation docs created');
+        nativeNotify(parts.join(' · ') || 'Foundation docs created', foundationAiNote ? { timeout: 5500 } : {});
       }
       foundationScreen = { kind: 'ready' };
       foundationAiNote = '';
