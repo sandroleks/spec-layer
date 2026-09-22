@@ -419,3 +419,107 @@ describe('componentMarkdown unbound and issues', () => {
     expect(out).not.toContain('[object Object]');
   });
 });
+
+describe('componentMarkdown prose', () => {
+  const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
+  const markerRegex = new RegExp(AI_MARKER.replace(/[*.]/g, '\\$&'), 'g');
+
+  // The seven headings the renderer produces from `guidelines`, per the
+  // plan's section mapping: `## Overview`, `## Variants`, `## Do and don't`,
+  // `## Accessibility`, `## Interactions`, `## Content considerations`,
+  // `## Design considerations`. `anatomy_summary` is deliberately left out of
+  // this fixture -- it extends the existing `## Anatomy` heading rather than
+  // opening one of its own, and is covered by its own test below, so this
+  // count stays a clean 7.
+  const GUIDELINES = {
+    origin: 'generated',
+    definition: 'A button triggers an action.',
+    variants_summary: 'Filled leads. Outlined is secondary.',
+    accessibility: '## Keyboard\n\nEnter activates.',
+    interactions: 'Hover darkens the fill.',
+    content_considerations: 'Use a verb.',
+    design_considerations: 'Keep one filled button per view.',
+    dos: ['Use for the primary action.'],
+    donts: ['Do not use for navigation.'],
+  };
+
+  it('reads the snake_case artifact keys and marks every prose section', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({ ...artifact, guidelines: GUIDELINES } as typeof artifact);
+    for (const heading of ['## Overview', '## Variants', "## Do and don't",
+      '## Accessibility', '## Interactions', '## Content considerations',
+      '## Design considerations']) {
+      expect(out).toContain(heading);
+    }
+    expect(out).toContain('A button triggers an action.');
+    expect(out).toContain('- Use for the primary action.');
+    expect(out).toContain('- Do not use for navigation.');
+    expect(out.match(markerRegex)).toHaveLength(7);
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('places Overview before Properties and the rest after the fact sections', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({ ...artifact, guidelines: GUIDELINES } as typeof artifact);
+    expect(out.indexOf('## Overview')).toBeLessThan(out.indexOf('## Properties'));
+    // `## Unbound values` is the golden artifact's last fact section (it never
+    // trips `## Issues`, per the existing tests above).
+    expect(out.indexOf('## Unbound values')).toBeLessThan(out.indexOf('## Variants'));
+    expect(out.indexOf('## Variants')).toBeLessThan(out.indexOf("## Do and don't"));
+  });
+
+  it('extends the existing Anatomy section with the summary paragraph and its own marker', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: {
+        origin: 'generated',
+        anatomy_summary: 'A container wrapping a label and an optional icon.',
+      },
+    } as typeof artifact);
+    // One `## Anatomy` heading: Task 5's bullets are extended, never duplicated.
+    expect(out.match(/^## Anatomy$/m)).toHaveLength(1);
+    expect(out).toContain(
+      '## Anatomy\n\n' + AI_MARKER + '\n\nA container wrapping a label and an optional icon.',
+    );
+    expect(out.match(markerRegex)).toHaveLength(1);
+  });
+
+  it('renders nothing for the camelCase input names, so the 2026-09-19 mistake cannot return', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: {
+        origin: 'generated', variantsSummary: 'x', anatomySummary: 'y',
+        contentConsiderations: 'z', designConsiderations: 'w', anatomyParts: [{ name: 'a', role: 'b' }],
+      },
+    } as typeof artifact);
+    expect(out).not.toContain('## Variants');
+    expect(out).not.toContain('## Content considerations');
+    expect(out).not.toContain('## Design considerations');
+    expect(out).not.toContain('## Origin');
+    expect(out).not.toContain(AI_MARKER);
+  });
+
+  it('demotes a heading inside a prose blob so a model cannot open a top-level section', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: '# Keyboard\n\nEnter activates.' },
+    } as typeof artifact);
+    expect(out).toContain('### Keyboard');
+    expect(out).not.toMatch(/^# Keyboard$/m);
+  });
+
+  it('renders no prose section at all for the golden artifact, which carries no guidelines', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    expect(artifact.guidelines).toBeUndefined();
+    const out = componentMarkdown(artifact);
+    for (const heading of ['## Overview', '## Variants', "## Do and don't",
+      '## Accessibility', '## Interactions', '## Content considerations',
+      '## Design considerations']) {
+      expect(out).not.toContain(heading);
+    }
+    expect(out).not.toContain(AI_MARKER);
+  });
+});

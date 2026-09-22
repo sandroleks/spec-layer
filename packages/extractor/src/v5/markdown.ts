@@ -483,6 +483,72 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
   return parts.join('\n\n');
 }
 
+/** @internal The honesty invariant made visible: every prose section carries
+ * this exact line directly under its heading, so a reader can never mistake
+ * model-written prose for something a designer wrote. Never appears on a
+ * fact section. */
+const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
+
+/** @internal Prose blobs are already Markdown (bullets, bold lead-ins,
+ * sub-headings), so they are embedded rather than escaped. Every heading
+ * inside one is demoted to at least `###`, so a model-written `# Keyboard`
+ * cannot open a top-level section the renderer itself did not. */
+function demote(blob: string): string {
+  return blob.replace(/^(#{1,2})(?= )/gm, '###').trimEnd();
+}
+
+function proseSection(heading: string, blob: string): string {
+  return `## ${heading}\n\n${AI_MARKER}\n\n${demote(blob)}`;
+}
+
+/**
+ * `guidelines` exactly as the ARTIFACT carries it: `guidelinesOf`
+ * (`brief.ts:371`) renames every field to snake_case on the way in and drops
+ * `anatomyParts` entirely. Reading only the exact keys below means a stray
+ * camelCase field -- or `anatomyParts` itself -- is silently unread rather
+ * than rendered, and `origin` is excluded from every section by
+ * construction (no function here ever reads it), never by a filter.
+ */
+function overviewBlock(guidelines: Record<string, unknown>): string | undefined {
+  const blob = str(guidelines.definition);
+  return blob ? proseSection('Overview', blob) : undefined;
+}
+
+/** The `anatomy_summary` paragraph plus its own marker line, meant to be
+ * embedded inside the existing `## Anatomy` heading above the bullets
+ * (rendered separately, below) -- never a second `## Anatomy` heading. */
+function anatomyProseParagraph(guidelines: Record<string, unknown>): string | undefined {
+  const blob = str(guidelines.anatomy_summary);
+  return blob ? `${AI_MARKER}\n\n${demote(blob)}` : undefined;
+}
+
+/** The prose sections that follow every fact section: `## Variants`,
+ * `## Do and don't`, `## Accessibility`, `## Interactions`,
+ * `## Content considerations`, `## Design considerations`, in that order.
+ * `## Overview` and the `## Anatomy` paragraph are placed earlier in the
+ * document by `componentMarkdown` itself, so they are not part of this list. */
+function restProseBlocks(guidelines: Record<string, unknown>): string[] {
+  const blocks: string[] = [];
+  const add = (heading: string, key: string): void => {
+    const blob = str(guidelines[key]);
+    if (blob) blocks.push(proseSection(heading, blob));
+  };
+  add('Variants', 'variants_summary');
+  const dos = Array.isArray(guidelines.dos) ? guidelines.dos : [];
+  const donts = Array.isArray(guidelines.donts) ? guidelines.donts : [];
+  if (dos.length > 0 || donts.length > 0) {
+    const parts = [`## Do and don't`, AI_MARKER];
+    if (dos.length > 0) parts.push(dos.map((d) => `- ${escapeInline(String(d))}`).join('\n'));
+    if (donts.length > 0) parts.push(donts.map((d) => `- ${escapeInline(String(d))}`).join('\n'));
+    blocks.push(parts.join('\n\n'));
+  }
+  add('Accessibility', 'accessibility');
+  add('Interactions', 'interactions');
+  add('Content considerations', 'content_considerations');
+  add('Design considerations', 'design_considerations');
+  return blocks;
+}
+
 function frontMatter(artifact: ComponentArtifactV5): string {
   const envelope = componentEnvelope(artifact, 'markdown');
   return `---\n${toYaml(envelope as unknown as YamlValue)}---\n`;
@@ -490,6 +556,7 @@ function frontMatter(artifact: ComponentArtifactV5): string {
 
 export function componentMarkdown(artifact: ComponentArtifactV5): string {
   const component = asRecord(artifact.component);
+  const guidelines = asRecord(artifact.guidelines);
   const blocks: string[] = [];
 
   blocks.push(`# ${escapeInline(str(component.name) ?? 'Component')}`);
@@ -504,13 +571,23 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
     blocks.push(`Related: ${related.map((r) => escapeInline(r)).join(', ')}`);
   }
 
+  // `## Overview` sits before the fact sections, immediately after the lead.
+  const overview = overviewBlock(guidelines);
+  if (overview) blocks.push(overview);
+
   if (artifact.api !== undefined) {
     const section = propertiesSection(asRecord(artifact.api));
     if (section) blocks.push(section);
   }
 
   if (artifact.anatomy.length > 0) {
-    blocks.push(`## Anatomy\n\n${anatomyBullets(artifact.anatomy, 0).join('\n')}`);
+    // `anatomy_summary` extends this heading with a marked paragraph above
+    // the bullets Task 5 already renders, rather than opening a second
+    // `## Anatomy` heading of its own.
+    const anatomyProse = anatomyProseParagraph(guidelines);
+    const bullets = anatomyBullets(artifact.anatomy, 0).join('\n');
+    const body = anatomyProse ? `${anatomyProse}\n\n${bullets}` : bullets;
+    blocks.push(`## Anatomy\n\n${body}`);
   }
 
   if (artifact.layout !== undefined) {
@@ -535,6 +612,9 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
 
   const issues = issuesSection(artifact);
   if (issues) blocks.push(issues);
+
+  // The remaining prose sections follow every fact section.
+  blocks.push(...restProseBlocks(guidelines));
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
 }
