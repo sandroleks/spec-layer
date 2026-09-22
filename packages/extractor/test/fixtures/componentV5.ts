@@ -12,9 +12,9 @@ import {
   componentAiContext, extract, toYaml,
 } from '../../src/index';
 import type {
-  ArtifactSource, EffectStyleV5, FoundationArtifactV5, IntermediateSpec, SemanticPayload,
-  SerializedFoundation, SerializedNode, StyleProperty, TokenRule, TypographyStyleV5, Unit,
-  YamlValue,
+  ArtifactSource, CollectionV5, EffectStyleV5, FoundationArtifactV5, IntermediateSpec,
+  SemanticPayload, SerializedFoundation, SerializedNode, StyleProperty, TokenRule, TokenV5,
+  TypographyStyleV5, Unit, YamlValue,
 } from '../../src/index';
 import type { ComponentArtifactV5 } from '../../src/index';
 import button from './button.json';
@@ -99,22 +99,51 @@ const literalDimension = (number: number, unit: Unit): StyleProperty => ({
 });
 
 /** A second, standalone Foundation carrying one typography style and one
- *  effect style, both with literal (not aliased) properties. Kept separate
- *  from `foundationDump` above: that dump backs `button-component-ai-v5.yaml`,
- *  and adding style entries to it would move `foundation_hash` in that
- *  byte-identical fixture. Neither style aliases a token, so this Foundation
- *  needs no collections or tokens of its own. */
+ *  effect style. Kept separate from `foundationDump` above: that dump backs
+ *  `button-component-ai-v5.yaml`, and adding style entries to it would move
+ *  `foundation_hash` in that byte-identical fixture.
+ *
+ *  The typography style deliberately exercises all four shapes
+ *  `compactStyleProperty` (`aiContext.ts:306`) can produce for a property, so
+ *  the Markdown renderer's handling of each is proven against real projection
+ *  output rather than a hand-built `AiValue`:
+ *   - `font_family`, `font_weight`, `line_height`: literal, resolved
+ *   - `font_size`: alias, resolved -- aliases `typeScaleBody` below
+ *   - `letter_spacing`: literal, unresolved (`resolved: null`)
+ *   - `paragraph_indent`: alias, unresolved (`target_id: null`, `resolved: null`)
+ */
 function buildStyledFoundation(): FoundationArtifactV5 {
+  const typeScale: CollectionV5 = {
+    id: 'CollectionID:type-scale', name: 'Type scale', path: ['Type scale'],
+    default_mode_id: 'CollectionID:type-scale:mode',
+    modes: [{ id: 'CollectionID:type-scale:mode', name: 'Default', order: 0 }],
+  };
+  const typeScaleBody: TokenV5 = {
+    id: 'VariableID:type-scale-body', collection_id: typeScale.id,
+    name: 'type.scale.body', path: ['type', 'scale', 'body'], type: 'dimension',
+    description: '', scopes: [],
+    values: {
+      [typeScale.default_mode_id]: {
+        kind: 'literal', value: { type: 'dimension', number: 16, unit: 'px' },
+      },
+    },
+  };
   const typography: TypographyStyleV5 = {
     id: 'StyleID:text', name: 'Body/Regular', path: ['Body', 'Regular'], description: '',
     properties: {
       font_family: { source: { kind: 'literal' }, resolved: { type: 'font_family', value: 'Inter' } },
       font_weight: { source: { kind: 'literal' }, resolved: { type: 'number', value: 400 } },
-      font_size: literalDimension(16, 'px'),
+      font_size: {
+        source: { kind: 'alias', target_id: typeScaleBody.id, target_path: typeScaleBody.path },
+        resolved: { type: 'dimension', number: 16, unit: 'px' },
+      },
       line_height: literalDimension(24, 'px'),
-      letter_spacing: literalDimension(0, '%'),
+      letter_spacing: { source: { kind: 'literal' }, resolved: null },
       paragraph_spacing: literalDimension(0, 'px'),
-      paragraph_indent: literalDimension(0, 'px'),
+      paragraph_indent: {
+        source: { kind: 'alias', target_id: null, target_path: ['missing', 'token'] },
+        resolved: null,
+      },
       text_case: 'original', text_decoration: 'none',
     },
   };
@@ -130,7 +159,7 @@ function buildStyledFoundation(): FoundationArtifactV5 {
   };
   const payload: SemanticPayload = {
     completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },
-    collections: [], tokens: [],
+    collections: [typeScale], tokens: [typeScaleBody],
     styles: { typography: [typography], effects: [effect] },
   };
   return {

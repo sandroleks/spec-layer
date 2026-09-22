@@ -173,16 +173,38 @@ function anatomyBullets(nodes: unknown[], depth: number): string[] {
 const NOT_READ_SENTENCE =
   'Token values are not included: the foundations had not been read when this was exported.';
 
-/** @internal Unwraps the one extra `{ type, value }` layer
- * `compactStyleProperty` (`aiContext.ts`) puts around a literal typography
- * property, then hands the inner shape to the shared `valueText`. A resolved
- * alias property nests one layer deeper still (`{ alias, resolved: {...} }`)
- * and is not unwrapped here: this fixture only exercises literal properties,
- * and per the plan's resolution for `valueText`, a value shape it renders
- * wrongly is a stop-and-report, not a fork. */
+/** @internal Renders one typography `StyleProperty`, as `compactStyleProperty`
+ * (`aiContext.ts:306`) actually shapes it. That function emits exactly four
+ * shapes, and each is handled explicitly rather than falling through to the
+ * shared `valueText` -- which knows none of them and would silently print
+ * `[object Object]`, a never-fabricate violation in a document a coding agent
+ * reads as fact:
+ *
+ * 1. literal, resolved:   `{ type, value }`               -> `valueText(value)`
+ * 2. literal, unresolved: `{ missing: reason }`            -> `missing: <reason>`
+ * 3. alias, resolved:     `{ alias, resolved: { value } }` -> `<alias> (resolved: <value>)`
+ * 4. alias, unresolved:   `{ alias, unresolved: reason }`  -> `<alias> (unresolved: <reason>)`
+ *
+ * The caller wraps this function's return value in `escapeCell`, same as
+ * every other cell in this table, so an alias name containing `|` cannot
+ * break the row -- there is deliberately no second escape here. Anything
+ * else (a shape this function does not recognise) still falls back to
+ * `valueText`, unchanged, per the plan's resolution: a value shape `valueText`
+ * renders wrongly is a stop-and-report, not a fork of `valueText` itself. */
 function styleValueText(value: unknown): string {
-  if (value !== null && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
-    return valueText((value as Record<string, unknown>).value);
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.missing === 'string') return `missing: ${record.missing}`;
+    if (typeof record.alias === 'string') {
+      if (record.resolved !== undefined) {
+        const resolved = record.resolved as Record<string, unknown>;
+        return `${record.alias} (resolved: ${valueText(resolved.value)})`;
+      }
+      if (typeof record.unresolved === 'string') {
+        return `${record.alias} (unresolved: ${record.unresolved})`;
+      }
+    }
+    if ('value' in record) return valueText(record.value);
   }
   return valueText(value);
 }
@@ -198,11 +220,16 @@ function typographySection(items: unknown[]): string | undefined {
       escapeCell(styleValueText(properties.font_weight)),
       escapeCell(styleValueText(properties.font_size)),
       escapeCell(styleValueText(properties.line_height)),
+      escapeCell(styleValueText(properties.letter_spacing)),
+      escapeCell(styleValueText(properties.paragraph_indent)),
     ];
   });
   return [
     '### Typography styles',
-    table(['Style', 'Font family', 'Weight', 'Size', 'Line height'], rows).trimEnd(),
+    table(
+      ['Style', 'Font family', 'Weight', 'Size', 'Line height', 'Letter spacing', 'Paragraph indent'],
+      rows,
+    ).trimEnd(),
   ].join('\n\n');
 }
 

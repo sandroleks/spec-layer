@@ -204,11 +204,22 @@ describe('componentMarkdown tokens used', () => {
     expect(out).not.toContain('### Effect styles');
   });
 
-  it('tables typography styles from literal properties', () => {
+  it('tables typography styles, rendering all four StyleProperty shapes', () => {
     const out = componentMarkdown(buildComponentV5StyledArtifact());
     expect(out).toContain('### Typography styles');
-    expect(out).toContain('| Style | Font family | Weight | Size | Line height |');
-    expect(out).toContain('| Body/Regular | Inter | 400 | 16px | 24px |');
+    expect(out).toContain(
+      '| Style | Font family | Weight | Size | Line height | Letter spacing | Paragraph indent |',
+    );
+    // literal, resolved (font family / weight / line height)
+    expect(out).toContain('Inter');
+    expect(out).toContain('| Body/Regular | Inter | 400 |');
+    expect(out).toContain('24px');
+    // alias, resolved (font size aliases a real Foundation token)
+    expect(out).toContain('Type scale/type.scale.body (resolved: 16px)');
+    // literal, unresolved (letter spacing)
+    expect(out).toContain('missing: source\\_unavailable');
+    // alias, unresolved (paragraph indent aliases a dangling target)
+    expect(out).toContain('missing/token (unresolved: target\\_not\\_found)');
   });
 
   it('tables effect styles, summarizing each layer', () => {
@@ -218,5 +229,10 @@ describe('componentMarkdown tokens used', () => {
     expect(out).toContain(
       '| Elevation/Card |  | drop\\_shadow, offset 0px/2px, blur 8px, #000000 alpha 0.2 |',
     );
+  });
+
+  it('never renders a bare [object Object] for a value it does not recognise', () => {
+    expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toContain('[object Object]');
+    expect(componentMarkdown(buildComponentV5StyledArtifact())).not.toContain('[object Object]');
   });
 });
