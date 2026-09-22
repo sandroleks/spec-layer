@@ -10,6 +10,7 @@ Figma node
   → IntermediateSpec
   ├─→ deterministic canvas documentation + connected Library entry
   ├─→ compact YAML context on the clipboard (Copy for AI)
+  ├─→ readable Markdown projection of the same artifact (no surface yet)
   └─→ optional AI-writing proxy → Anthropic
 ```
 
@@ -35,6 +36,19 @@ slice. Anatomy and inline effect bindings retain exact path/source identities;
 the compact projection groups otherwise-identical rules under ordered `paths`
 without changing canonical bindings or hashes. Saved AI guidelines and
 diagnostic wording remain outside the semantic hash.
+
+`v5/markdown.ts` projects that same validated Component Context v5 artifact to
+a readable Markdown page, the way `v5/dtcg.ts` projects a Foundation artifact
+to a resolver document: front matter carrying the same envelope as the AI
+YAML but with `profile: markdown`, then title, description lead, Related,
+Overview, Properties, Anatomy, Layout, Token bindings, Tokens used, Effects,
+Unbound values, and Issues, with each AI-written prose section marked by an
+italic line stating the prose came from AI rather than Figma. It reuses
+`componentFoundationAiSlice` for the Foundation dependency slice and
+`componentEnvelope` for the shared envelope rather than re-implementing
+either. Like the DTCG projection, it never feeds a hash, is never stored in a
+bundle, and nothing parses it back. No surface calls it yet; the CLI and the
+plugin follow as separate work.
 
 `unitContent(spec, scope)` returns everything one foundation document renders and nothing it does not: its collection name, group, mode columns, rows, the names of any modes left out, and the part numbering of a split unit. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline, and the property has to hold in both directions to be worth anything.
 

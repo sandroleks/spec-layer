@@ -19,6 +19,14 @@ none of the reasoning above.
 
 ### Added
 
+- **A component artifact can be rendered as Markdown.** `componentMarkdown` in
+  `packages/extractor/src/v5/markdown.ts` projects a validated Component
+  Context v5 artifact to a readable page: properties, anatomy, layout, token
+  bindings, the Foundation dependency slice, unbound values and issues, with
+  any AI-written prose marked as AI written. It is a projection like DTCG. It
+  never feeds a hash, is never stored in a bundle, and nothing parses it back.
+  No surface produces it yet; the CLI and the plugin follow.
+
 - **Foundation rows carry what the new frames draw.** A variable row now
   projects the code syntax Figma's variable settings define and the scale
   drawing its scopes call for; a text-style row projects letter spacing,
