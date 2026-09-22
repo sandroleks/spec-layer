@@ -834,6 +834,8 @@ export function componentFoundationAiSlice(
     ...payload,
     spec_layer: {
       kind: 'foundation',
+      // The Foundation schema's own version, since this slice is a Foundation
+      // artifact: the two happen to agree today and need not tomorrow.
       schema_version: SCHEMA_VERSION,
       schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
       extractor: artifact.spec_layer.extractor,

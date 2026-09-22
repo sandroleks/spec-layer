@@ -13,8 +13,8 @@ import {
 } from '../../src/index';
 import type {
   ArtifactSource, CollectionV5, EffectStyleV5, FoundationArtifactV5, IntermediateSpec,
-  SemanticPayload, SerializedFoundation, SerializedNode, StyleProperty, TokenRule, TokenV5,
-  TypographyStyleV5, Unit, YamlValue,
+  ProseDrafts, SemanticPayload, SerializedFoundation, SerializedNode, StyleProperty, TokenRule,
+  TokenV5, TypographyStyleV5, Unit, YamlValue,
 } from '../../src/index';
 import type { ComponentArtifactV5 } from '../../src/index';
 import button from './button.json';
@@ -75,17 +75,20 @@ const foundationDump: SerializedFoundation = {
   textStyles: [], effectStyles: [], externals: [],
 };
 
+function buildGoldenFoundation(): FoundationArtifactV5 {
+  const foundationSpec = buildFoundation(foundationDump);
+  return buildFoundationArtifactV5(foundationSpec, {
+    exportId: 'foundation:golden', generatedAt: GENERATED_AT, build: 'test',
+  }).artifact;
+}
+
 export function buildComponentV5GoldenArtifact(): ComponentArtifactV5 {
   const spec = extract(button as SerializedNode, {
     figmaFile: 'FILE1', figmaFileName: 'Design System',
   });
-  const foundationSpec = buildFoundation(foundationDump);
-  const foundation = buildFoundationArtifactV5(foundationSpec, {
-    exportId: 'foundation:golden', generatedAt: GENERATED_AT, build: 'test',
-  }).artifact;
   return buildComponentArtifactV5(spec, {
     exportId: 'component:golden', generatedAt: GENERATED_AT, build: 'test',
-    foundation,
+    foundation: buildGoldenFoundation(),
   });
 }
 
@@ -204,6 +207,118 @@ export function buildComponentV5StyledArtifact(): ComponentArtifactV5 {
   });
 }
 
+/** Prose shaped the way the prose prompt (`prose/prompt.ts`) actually asks
+ *  for it, so the second reviewed Markdown page exercises the prose half of
+ *  the renderer as a document rather than as isolated assertions: bold
+ *  lead-ins, inline code spans, level-3 subheadings inside a blob, and a
+ *  Do/Don't list whose rules are Markdown fragments rather than plain text.
+ *
+ *  Passed as `prose` rather than written as a `guidelines` object, so the
+ *  snake_case artifact keys the renderer reads are produced by `guidelinesOf`
+ *  (`brief.ts:371`) on the real path. A hand-written camelCase block is
+ *  exactly the 2026-09-19 mistake, and hand-writing the snake_case one would
+ *  prove only that the fixture and the renderer agree with each other.
+ *
+ *  Every claim here is checkable against the facts the same page renders:
+ *  the Style axis really is Filled/Outlined, the states really are Enabled,
+ *  Hovered and Disabled with no pressed state, the hover fill really is
+ *  `md.sys.color.primary-hover`, and the container's padding and gap really
+ *  are unbound. Prose that contradicted its own fact tables would make the
+ *  page worse than no prose at all. */
+const GOLDEN_PROSE: ProseDrafts = {
+  definition: [
+    'A button triggers an action in place, such as submitting a form or confirming a choice.',
+    '',
+    'A button is where a decision becomes a change, so its weight tells people which action the',
+    'screen expects next. Keep one clearly leading action per view and let the rest sit quieter,',
+    'so the choice reads at a glance rather than after a comparison.',
+  ].join('\n'),
+  accessibility: [
+    '### Keyboard',
+    '',
+    '- **Activation:** `Enter` and `Space` both activate a button, while a link activates on',
+    '  `Enter` alone. That difference is one reason not to swap the two.',
+    '- **Focus order:** the design file does not encode focus order. Confirm in build that the',
+    '  button takes focus in reading order.',
+    '',
+    '### Screen readers',
+    '',
+    '- **Accessible name:** the visible label is the accessible name. A button that shows only',
+    '  its icon needs an explicit label in code, which the design file cannot carry.',
+    '- **Disabled state:** a disabled control drops out of the tab order, so nobody hears why it',
+    '  is unavailable. Put the reason next to it instead.',
+  ].join('\n'),
+  variantsSummary: [
+    'One axis varies the visual weight: Style is either Filled or Outlined. A separate boolean',
+    'controls whether the icon shows.',
+    '',
+    '- **Filled**: the single most important action in a view.',
+    '- **Outlined**: a secondary action that still needs a clear edge, next to a Filled button or',
+    '  alone in a quieter area.',
+  ].join('\n'),
+  anatomySummary: [
+    'A container holds a text label and an optional icon. The container carries the fill, the',
+    'corner radius and the padding, so the label and the icon only have to sit inside it.',
+  ].join('\n'),
+  interactions: [
+    '- **Hover:** the container fill moves to `md.sys.color.primary-hover`.',
+    '- **Pressed:** this component records no pressed state, so choose one in build and apply it',
+    '  to every button.',
+    '- **Focus:** focus styling is not encoded in the design file. A visible focus ring is',
+    '  required, not optional.',
+  ].join('\n'),
+  designConsiderations: [
+    '- **Contrast:** keep label-to-background contrast at 4.5:1 or better in both styles,',
+    '  including the hover fill.',
+    '- **Spacing:** the padding and gap on the container are not bound to tokens, so a change to',
+    '  the spacing scale will not reach this component on its own.',
+    '- **One leading action:** two Filled buttons side by side make the leading action ambiguous.',
+  ].join('\n'),
+  contentConsiderations: [
+    '- **Verb first:** write the label as an action in one to three words, such as "Save" or',
+    '  "Add item", never a bare "OK".',
+    '- **Length:** plan for labels that wrap or truncate, and allow roughly 30 to 40 percent text',
+    '  expansion in translation.',
+    '- **Icon pairing:** when the icon shows, it repeats what the label already says rather than',
+    '  carrying half the meaning.',
+  ].join('\n'),
+  dos: [
+    '**Use the Filled style for the single most important action in a view.** Its weight tells'
+    + ' people where to go next.',
+    '**Keep labels to one to three words, verb first** ("Save", "Add item"). People can then scan'
+    + ' the action without reading a sentence.',
+    '**Pair the icon with the label, not instead of it.** An icon with no label needs its own'
+    + ' accessible name, which this component does not provide.',
+  ],
+  donts: [
+    "**Don't place more than one Filled button in the same view.** Competing primary actions make"
+    + ' it unclear which one matters most.',
+    "**Don't use a button for plain navigation.** Screen readers announce links and buttons"
+    + ' differently, so use a link (`<a>`) when it just goes somewhere.',
+    "**Don't disable a button without explaining why.** A disabled control gives no reason and"
+    + ' drops out of the tab order, so use inline validation instead.',
+  ],
+};
+
+/** The golden Button, carrying a designer-written description and a full set
+ *  of model-written guidelines. A SEPARATE builder, following
+ *  `buildComponentV5StyledArtifact` above: adding either to
+ *  `buildComponentV5GoldenArtifact` would move `content_hash` in the
+ *  byte-identical `button-component-ai-v5.yaml`. */
+export function buildComponentV5ProseArtifact(): ComponentArtifactV5 {
+  const spec = extract(button as SerializedNode, {
+    figmaFile: 'FILE1', figmaFileName: 'Design System',
+  });
+  const described: IntermediateSpec = {
+    ...spec,
+    description: 'Material 3 button. Pick the visual weight with the Style property.',
+  };
+  return buildComponentArtifactV5(described, {
+    exportId: 'component:prose', generatedAt: GENERATED_AT, build: 'test',
+    foundation: buildGoldenFoundation(), prose: GOLDEN_PROSE,
+  });
+}
+
 export function renderComponentV5Golden(): string {
   return toYaml(componentAiContext(buildComponentV5GoldenArtifact()) as unknown as YamlValue);
 }
@@ -224,8 +339,24 @@ export function writeComponentV5MarkdownGolden(): void {
   writeFileSync(COMPONENT_V5_MARKDOWN_GOLDEN_PATH, renderComponentV5MarkdownGolden());
 }
 
+/** The second reviewed page: the same Button, with a description and every
+ *  prose section. The first golden carries no `guidelines` at all, so on its
+ *  own it leaves the prose half of the renderer unread by any human. */
+export const COMPONENT_V5_MARKDOWN_PROSE_GOLDEN_PATH = fileURLToPath(
+  new URL('./v5/button-component-prose-md-v5.md', import.meta.url),
+);
+
+export function renderComponentV5MarkdownProseGolden(): string {
+  return componentMarkdown(buildComponentV5ProseArtifact());
+}
+
+export function writeComponentV5MarkdownProseGolden(): void {
+  writeFileSync(COMPONENT_V5_MARKDOWN_PROSE_GOLDEN_PATH, renderComponentV5MarkdownProseGolden());
+}
+
 if (process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   writeComponentV5Golden();
   writeComponentV5MarkdownGolden();
+  writeComponentV5MarkdownProseGolden();
 }

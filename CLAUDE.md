@@ -154,7 +154,7 @@ feeds a hash. What the format cannot express is omitted and written to the
 report. Never a plausible default, never a fake reference.
 
 **Markdown is a projection.** `v5/markdown.ts` reads a validated artifact and
-never feeds a hash. It drops the per-row machine identifiers the YAML carries
+never feeds a hash. It drops the per-row machine fields the YAML carries
 (`source_id`, `collection_id`, `issue_counts`) and keeps the same `spec_layer`
 and `source` envelope, so a page can still be matched to the artifact it came
 from. It marks AI prose as AI written and never invents a value. Nothing

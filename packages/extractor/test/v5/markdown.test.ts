@@ -74,6 +74,59 @@ describe('componentMarkdown front matter', () => {
     } as typeof artifact);
     expect(out).toContain('# Button\n\nRelated: Icon');
   });
+
+  // The description is live designer-authored free text pushed as its own
+  // BLOCK directly under the H1, so it is the one prose slot where a leading
+  // block-opening construct would not read as the text the designer typed.
+  // `escapeInline` neutralises inline markup only: it does not touch `#`,
+  // backticks, `~`, `-`, `+`, `=` or a leading ordered-list marker.
+  const withDescription = (description: string): string => {
+    const artifact = buildComponentV5GoldenArtifact();
+    return componentMarkdown({
+      ...artifact, component: { ...artifact.component, description },
+    } as typeof artifact);
+  };
+
+  it('neutralises a leading code fence, so the description cannot swallow the page', () => {
+    const out = withDescription('```ts\nconst label = "Save";');
+    expect(out).toContain('# Button\n\n\\```ts const label = "Save";');
+    // Not one fence delimiter anywhere: an unclosed fence here would turn
+    // every table and heading below into sample text.
+    expect(out.split('\n').filter((line) => /^(`{3,}|~{3,})/.test(line))).toEqual([]);
+  });
+
+  it('neutralises a leading ##, so a description cannot forge a section heading', () => {
+    const out = withDescription('## Usage\n\nUse it for the primary action.');
+    expect(out).toContain('# Button\n\n\\## Usage');
+    expect(out).not.toMatch(/^## Usage$/m);
+  });
+
+  it('neutralises a leading #, so the title stays the only H1', () => {
+    const out = withDescription('# Button styles');
+    expect(out).toContain('# Button\n\n\\# Button styles');
+    expect(out.split('\n').filter((line) => /^# /.test(line))).toEqual(['# Button']);
+  });
+
+  it('neutralises every other leading block opener a description can carry', () => {
+    const cases: Array<[string, string]> = [
+      ['- One, then two', '\\- One, then two'],
+      ['+ One', '\\+ One'],
+      ['~~~\nsample', '\\~~~ sample'],
+      ['=== not an underline', '\\=== not an underline'],
+      ['2026. A good year for buttons', '2026\\. A good year for buttons'],
+      ['1) First of two', '1\\) First of two'],
+    ];
+    for (const [description, lead] of cases) {
+      expect(withDescription(description)).toContain(`# Button\n\n${lead}\n`);
+    }
+  });
+
+  it('leaves one or two leading backticks alone, since neither can open a block', () => {
+    // Escaping them would turn a description that legitimately opens with an
+    // inline code span into literal backticks, which is a worse page.
+    expect(withDescription('`Container` is the root frame.'))
+      .toContain('# Button\n\n`Container` is the root frame.');
+  });
 });
 
 describe('componentMarkdown properties', () => {
@@ -429,6 +482,26 @@ describe('componentMarkdown unbound and issues', () => {
   });
 });
 
+/** A backslash inside a code span is a LITERAL character, never an escape, so
+ * one there is a character no artifact ever said: a page rendering `` `\<a>` ``
+ * tells a coding agent to write a tag the design system does not contain.
+ * `\|` is the one deliberate exception, produced by `codeCell` so a hostile
+ * path cannot widen a GFM table row; Task 12 verified against
+ * `mdast-util-gfm-table` that the row splitter honours it and that it still
+ * renders as a literal `|`.
+ *
+ * Pairs backticks naively, so it is for WELL-FORMED input only. Text carrying
+ * stray backticks of its own (the hostile sweep's `NASTY`) makes any
+ * line-local pairing ambiguous, here and in a real CommonMark parser alike,
+ * and this would then read escaped prose BETWEEN two unrelated backticks as a
+ * span. That case is covered by the sweep's table and heading assertions
+ * instead. */
+function assertNoStrayBackslashInCodeSpans(markdown: string): void {
+  for (const span of markdown.match(/`[^`\n]+`/g) ?? []) {
+    expect(span.replace(/\\\|/g, '')).not.toContain('\\');
+  }
+}
+
 describe('componentMarkdown prose', () => {
   const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
   const markerRegex = new RegExp(AI_MARKER.replace(/[*.]/g, '\\$&'), 'g');
@@ -465,6 +538,57 @@ describe('componentMarkdown prose', () => {
     expect(out).toContain('- Do not use for navigation.');
     expect(out.match(markerRegex)).toHaveLength(7);
     expect(out).not.toContain('[object Object]');
+    assertNoStrayBackslashInCodeSpans(out);
+  });
+
+  // A Do/Don't rule is a Markdown FRAGMENT, exactly like every other prose
+  // field: the prose prompt asks for a bold lead-in on each one and its own
+  // exemplars carry inline code spans. Escaping them printed literal `\*\*`
+  // and, worse, put a backslash inside a code span.
+  it('embeds each rule as the markdown fragment it is, under its own label', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: {
+        origin: 'generated',
+        dos: ['**Use one primary action per view.** Its weight tells people where to go next.'],
+        donts: ["**Don't use a button for navigation.** Use a link (`<a>`) when it goes somewhere."],
+      },
+    } as typeof artifact);
+    expect(out).toContain('- **Use one primary action per view.**');
+    expect(out).not.toContain('\\*\\*');
+    expect(out).toContain('Use a link (`<a>`) when it goes somewhere.');
+    assertNoStrayBackslashInCodeSpans(out);
+    // Two labelled lists: without the subheadings CommonMark reads a bare `-`
+    // list, a blank line and a second bare `-` list as ONE loose list, so
+    // nothing in the page says which rules are prohibitions.
+    expect(out).toContain(`## Do and don't\n\n${AI_MARKER}\n\n### Do\n\n- **Use one`);
+    expect(out).toContain("### Don't\n\n- **Don't use a button");
+    // The section still carries exactly one AI marker, on the `##` heading.
+    expect(out.match(markerRegex)).toHaveLength(1);
+  });
+
+  it('floors a heading inside a rule at level 3, like every other prose blob', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', dos: ['# Shouting\n\nA rule with a heading in it.'] },
+    } as typeof artifact);
+    expect(out).toContain('- ### Shouting');
+    expect(out).not.toMatch(/^# Shouting$/m);
+    expect(out.split('\n').filter((line) => /^# /.test(line))).toEqual(['# Button']);
+    // A rule that arrives with a line break stays inside its own bullet.
+    expect(out).toContain('\n  A rule with a heading in it.');
+  });
+
+  it('labels only the list that has rules, when one of the two is empty', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', donts: ['**Never** ship it disabled with no reason.'] },
+    } as typeof artifact);
+    expect(out).toContain("### Don't\n\n- **Never** ship it disabled with no reason.");
+    expect(out).not.toContain('### Do\n');
   });
 
   it('places Overview before Properties and the rest after the fact sections', () => {
@@ -681,12 +805,15 @@ describe('componentMarkdown hostile input', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
       ...artifact,
-      component: { name: NASTY, related: [NASTY] },
+      component: { name: NASTY, description: NASTY, related: [NASTY] },
       anatomy: [{ part: NASTY, path: NASTY, type: 'FRAME' }],
     } as typeof artifact);
-    // The hostile name must not open a section of its own: the only `#` or
-    // `##` lines in the body are the renderer's own headings plus the single
-    // `# ` title line, whose text is escaped.
+    // The hostile name and the hostile DESCRIPTION must not open a section of
+    // their own: the only `#` or `##` lines in the body are the renderer's own
+    // headings plus the single `# ` title line, whose text is escaped. The
+    // description is the one that makes this assertion bite -- it is pushed as
+    // its own block, so `escapeInline` alone would leave its leading `#`
+    // opening a second H1 here.
     const body = out.slice(out.indexOf('\n---\n') + 5);
     const headings = body.split('\n').filter((l) => /^#{1,2} /.test(l));
     expect(headings.filter((l) => l.startsWith('# '))).toHaveLength(1);

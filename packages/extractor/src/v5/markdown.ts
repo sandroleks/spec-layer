@@ -47,6 +47,40 @@ function escapeHeading(text: string): string {
   return escapeInline(text).replace(/\|/g, '\\|').replace(/^#/, '\\#');
 }
 
+/** @internal `escapeInline` plus the constructs that open a BLOCK when they
+ * lead a line. Used for the one slot where designer-authored free text is
+ * pushed as its own top-level block: the component description, which sits
+ * directly under the H1. `escapeInline` alone is not enough there, because it
+ * neutralises inline markup only: a description beginning with a triple
+ * backtick would open a fenced code block that swallows every table and
+ * section below it, one beginning with `##` would forge a section heading the
+ * renderer never produced, and one beginning with `#` would emit a second H1.
+ *
+ * `escapeInline` has already collapsed every newline to a space and trimmed
+ * the result, so only the START of that single line can open anything and one
+ * backslash there is enough. The backslash is a Markdown escape, so the
+ * character the designer typed is what the reader sees.
+ *
+ * Deliberately NOT `escapeHeading`: that also escapes every `|`, which is a
+ * cell boundary in a table row and nothing at all in a paragraph, so reusing
+ * it here would leave a visible stray backslash in prose rather than a needed
+ * escape.
+ *
+ * `>`, `*` and `_` are absent from the list because `escapeInline` has
+ * already escaped them, so they can never lead its result; adding them here
+ * would be an alternative that can never match. One or two backticks (or
+ * tildes) are left alone because a run shorter than three cannot open a
+ * fenced block, and escaping it would turn a description that legitimately
+ * opens with an inline code span into literal backticks. */
+function escapeBlock(text: string): string {
+  return escapeInline(text)
+    .replace(/^(`{3,}|~{3,}|[#=+-])/, '\\$1')
+    // An ordered list marker is up to nine digits followed by `.` or `)`;
+    // escaping the delimiter is what stops CommonMark reading it as a list,
+    // and renders as the digits and the delimiter the designer typed.
+    .replace(/^(\d{1,9})([.)])/, '$1\\$2');
+}
+
 /** @internal Inline code with a fence longer than any run of backticks inside. */
 export function code(text: string): string {
   const flat = text.replace(/\r?\n/g, ' ');
@@ -631,6 +665,29 @@ function anatomyProseParagraph(guidelines: Record<string, unknown>): string | un
   return blob ? `${AI_MARKER}\n\n${demote(blob)}` : undefined;
 }
 
+/**
+ * One bullet per Do or Don't rule. Each rule is a Markdown FRAGMENT, not
+ * plain text, exactly like every other prose field: the prose prompt
+ * (`prompt.ts:82`) tells the model to open each rule with a short bold
+ * lead-in, and its own exemplars (`prompt.ts:177`) carry inline code spans.
+ * Escaping them would print `\*\*` where the bold was meant, and -- worse --
+ * would put a backslash INSIDE a code span, where a backslash is a literal
+ * character rather than an escape: a page reading `` `\<a>` `` tells a coding
+ * agent to write a tag no artifact ever mentioned, which is the never-
+ * fabricate rule broken in the renderer itself. So each rule goes through
+ * `demote`, which floors any heading a model wrote inside it at `###` just as
+ * it does for a whole blob. Continuation lines are indented two spaces so a
+ * rule that arrives with a line break stays inside its own bullet instead of
+ * closing the list.
+ */
+function ruleList(items: unknown[]): string {
+  const indent = (blob: string): string => blob
+    .split('\n')
+    .map((line, index) => (index === 0 || line === '' ? line : `  ${line}`))
+    .join('\n');
+  return items.map((item) => `- ${indent(demote(String(item)))}`).join('\n');
+}
+
 /** The prose sections that follow every fact section: `## Variants`,
  * `## Do and don't`, `## Accessibility`, `## Interactions`,
  * `## Content considerations`, `## Design considerations`, in that order.
@@ -646,9 +703,16 @@ function restProseBlocks(guidelines: Record<string, unknown>): string[] {
   const dos = Array.isArray(guidelines.dos) ? guidelines.dos : [];
   const donts = Array.isArray(guidelines.donts) ? guidelines.donts : [];
   if (dos.length > 0 || donts.length > 0) {
+    // Two labelled lists, not two unlabelled ones. A bare `-` list followed
+    // by a blank line and another bare `-` list is ONE loose list to
+    // CommonMark, so without these subheadings nothing in the page says which
+    // rules are prohibitions -- a reader would have to infer it from the
+    // wording of each rule. `###` is the right level: the section itself is
+    // `##`, and `demote` floors a model-written heading at `###` too, so a
+    // rule can never open a heading above these.
     const parts = [`## Do and don't`, AI_MARKER];
-    if (dos.length > 0) parts.push(dos.map((d) => `- ${escapeInline(String(d))}`).join('\n'));
-    if (donts.length > 0) parts.push(donts.map((d) => `- ${escapeInline(String(d))}`).join('\n'));
+    if (dos.length > 0) parts.push('### Do', ruleList(dos));
+    if (donts.length > 0) parts.push(`### Don't`, ruleList(donts));
     blocks.push(parts.join('\n\n'));
   }
   add('Accessibility', 'accessibility');
@@ -671,7 +735,7 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   blocks.push(`# ${escapeHeading(str(component.name) ?? 'Component')}`);
 
   const description = str(component.description);
-  if (description) blocks.push(escapeInline(description));
+  if (description) blocks.push(escapeBlock(description));
 
   const related = Array.isArray(component.related)
     ? component.related.filter((r): r is string => typeof r === 'string')
