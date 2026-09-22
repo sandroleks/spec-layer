@@ -34,6 +34,7 @@ import type {
   TypographyStyleV5,
 } from './entities';
 import { foundationAiContext } from './aiContext';
+import type { FoundationAiContext } from './aiContext';
 import { computeFoundationStatistics } from './statistics';
 import { validateLevel1, validateLevel2 } from './validate';
 import { resolvedValueOf } from './value';
@@ -815,58 +816,62 @@ function compactComponentBindings(
     : { paths, ...facts });
 }
 
-/** Compact clipboard projection of a finished canonical component artifact. */
-export function componentAiContext(
+/** The Foundation dependency slice, projected exactly as the AI profile
+ * projects it. Lifted out of `componentAiContext` so the Markdown projection
+ * reuses one tested rendering of modes, values and aliases rather than a
+ * second interpretation of them. Never feeds a hash. */
+export interface ComponentFoundationSlice {
+  dependency_hash: string;
+  compact: FoundationAiContext;
+}
+
+export function componentFoundationAiSlice(
   artifact: ComponentArtifactV5,
-): ComponentAiContextV5 {
-  let foundation: YamlValue = { status: 'not_read' };
-  if (artifact.references.foundation) {
-    const payload = artifact.references.foundation;
-    const dependencyArtifact: FoundationArtifactV5 = {
-      ...payload,
-      spec_layer: {
-        kind: 'foundation',
-        // The Foundation schema's own version, since this slice is a Foundation
-        // artifact: the two happen to agree today and need not tomorrow.
-        schema_version: SCHEMA_VERSION,
-        schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
-        extractor: artifact.spec_layer.extractor,
-        export: {
-          id: `${artifact.spec_layer.export.id}:foundation-dependencies`,
-          generated_at: artifact.spec_layer.export.generated_at,
-          deterministic: true,
-          content_hash: artifact.foundation_dependency_hash
-            ?? semanticContentHash(payload),
-        },
-        source: {
-          provider: 'figma',
-          file_id: null,
-          file_name: artifact.spec_layer.source.file_name,
-          file_version: null,
-          library_enabled: null,
-        },
+): ComponentFoundationSlice | null {
+  const payload = artifact.references.foundation;
+  if (!payload) return null;
+  const dependencyArtifact: FoundationArtifactV5 = {
+    ...payload,
+    spec_layer: {
+      kind: 'foundation',
+      // The Foundation schema's own version, since this slice is a Foundation
+      // artifact: the two happen to agree today and need not tomorrow.
+      schema_version: SCHEMA_VERSION,
+      schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
+      extractor: artifact.spec_layer.extractor,
+      export: {
+        id: `${artifact.spec_layer.export.id}:foundation-dependencies`,
+        generated_at: artifact.spec_layer.export.generated_at,
+        deterministic: true,
+        content_hash: artifact.foundation_dependency_hash
+          ?? semanticContentHash(payload),
       },
-      diagnostics: artifact.foundation_diagnostics ?? [],
-      statistics: {},
-    };
-    const compact = foundationAiContext(dependencyArtifact, { includeSourceIds: true });
-    foundation = {
-      dependency_hash: dependencyArtifact.spec_layer.export.content_hash,
-      completeness: compact.completeness as unknown as YamlValue,
-      collections: compact.collections as unknown as YamlValue,
-      styles: compact.styles as unknown as YamlValue,
-      ...(compact.validation
-        ? { validation: compact.validation as unknown as YamlValue }
-        : {}),
-      ...(compact.issue_counts
-        ? { issue_counts: compact.issue_counts as unknown as YamlValue }
-        : {}),
-    };
-  }
-  const counts = componentIssueCounts(artifact.diagnostics);
+      source: {
+        provider: 'figma',
+        file_id: null,
+        file_name: artifact.spec_layer.source.file_name,
+        file_version: null,
+        library_enabled: null,
+      },
+    },
+    diagnostics: artifact.foundation_diagnostics ?? [],
+    statistics: {},
+  };
+  return {
+    dependency_hash: dependencyArtifact.spec_layer.export.content_hash,
+    compact: foundationAiContext(dependencyArtifact, { includeSourceIds: true }),
+  };
+}
+
+/** The `spec_layer` + `source` envelope both component projections open with.
+ * Shared so a field added to one profile cannot be forgotten in the other. */
+export function componentEnvelope(
+  artifact: ComponentArtifactV5,
+  profile: 'ai' | 'markdown',
+): { spec_layer: Record<string, YamlValue>; source: Record<string, YamlValue> } {
   return {
     spec_layer: {
-      kind: 'component', version: 5, profile: 'ai',
+      kind: 'component', version: 5, profile,
       content_hash: artifact.spec_layer.export.content_hash,
       ...(artifact.foundation_content_hash
         ? { foundation_hash: artifact.foundation_content_hash }
@@ -885,6 +890,37 @@ export function componentAiContext(
         ? { component_key: artifact.spec_layer.source.component_key }
         : {}),
     },
+  };
+}
+
+/** Compact clipboard projection of a finished canonical component artifact. */
+export function componentAiContext(
+  artifact: ComponentArtifactV5,
+): ComponentAiContextV5 {
+  let foundation: YamlValue = { status: 'not_read' };
+  const slice = componentFoundationAiSlice(artifact);
+  if (slice) {
+    const { compact } = slice;
+    foundation = {
+      dependency_hash: slice.dependency_hash,
+      completeness: compact.completeness as unknown as YamlValue,
+      collections: compact.collections as unknown as YamlValue,
+      styles: compact.styles as unknown as YamlValue,
+      ...(compact.validation
+        ? { validation: compact.validation as unknown as YamlValue }
+        : {}),
+      ...(compact.issue_counts
+        ? { issue_counts: compact.issue_counts as unknown as YamlValue }
+        : {}),
+    };
+  }
+  const counts = componentIssueCounts(artifact.diagnostics);
+  const envelope = componentEnvelope(artifact, 'ai') as {
+    spec_layer: ComponentAiContextV5['spec_layer'];
+    source: ComponentAiContextV5['source'];
+  };
+  return {
+    ...envelope,
     component: artifact.component,
     ...(artifact.api !== undefined ? { api: artifact.api } : {}),
     anatomy: artifact.anatomy,

@@ -409,16 +409,23 @@ function kebab(code: string): string {
   return code.toLowerCase().replace(/_/g, '-');
 }
 
-/** Renders a typed value envelope compactly for a validation message. Reads
- *  only the shapes a diagnostic's `details` actually carries -- a scalar
- *  envelope (`{ type, value }`), a dimension/duration (`{ type, number, unit }`),
- *  or a color (`{ type, hex, alpha, channels? }`) -- and never invents a
- *  value: an unrecognised shape falls back to its own JSON text rather than a
- *  guess. A colour's `alpha` is always stated, never dropped: `ColorValue`
- *  itself carries it "even when opaque, so 'opaque' and 'alpha not stated'
- *  are never the same output" (`value.ts`), and two style/token snapshots
- *  that drift only in alpha must not render as the identical hex twice. */
-function valueText(value: unknown): string {
+/** @internal Renders a typed value envelope compactly for a validation
+ *  message. Reads only the shapes a diagnostic's `details` actually carries --
+ *  a scalar envelope (`{ type, value }`), a dimension/duration
+ *  (`{ type, number, unit }`), or a color (`{ type, hex, alpha, channels? }`)
+ *  -- and never invents a value: an unrecognised shape falls back to its own
+ *  JSON text rather than a guess. A colour's `alpha` is always stated, never
+ *  dropped: `ColorValue` itself carries it "even when opaque, so 'opaque' and
+ *  'alpha not stated' are never the same output" (`value.ts`), and two
+ *  style/token snapshots that drift only in alpha must not render as the
+ *  identical hex twice.
+ *
+ *  Also reused by `markdown.ts` to render one Foundation token value per mode
+ *  column -- reused rather than reimplemented so the two profiles never
+ *  disagree on what a value says. Do not change this function's behaviour for
+ *  that caller: it also renders `DIAGNOSTIC_MESSAGE` text the AI golden
+ *  covers, so any change here moves that fixture too. */
+export function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'unknown';
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
