@@ -144,6 +144,20 @@ none of the reasoning above.
 
 ### Changed
 
+- **Stale docs are explained once, in a banner.** The Library no longer
+  repeats the rebuild explanation under every "Rebuild needed" row. When any
+  row needs a rebuild, a short banner above the filters ("New plugin
+  version") offers "Rebuild docs",
+  which queues only those rows. The button's tooltip notes that Keyboard is
+  rewritten when AI writing is on.
+- **A real first screen when no component is selected.** The component
+  screen's empty state now shows a small looping drawing of selecting a
+  component and getting a doc (held still under `prefers-reduced-motion`), asks
+  for a selection in one line, and offers "Document foundations" and "View library"
+  as starts that need no selection. Until the main thread reports the first
+  selection, the screen shows a skeleton instead, so opening the plugin on a
+  selected component no longer flashes "No component selected".
+
 - **One overview per collection.** The group-description call now sends one
   block per selected collection and asks for one overview per collection,
   so a build over several collections gives each document its own paragraph
@@ -244,6 +258,33 @@ none of the reasoning above.
   clean rebuild.
 
 ### Fixed
+
+- **"Update all docs" now rebuilds docs made by an earlier version.** The
+  button counted "Rebuild needed" rows toward the Updates filter and stayed
+  enabled for them, but only queued "Update available" rows, so a Library
+  whose only drift was a stale version offered a button that did nothing. It
+  now queues both, and each row keeps its own intent (a rebuild still tops up
+  the AI sections an older prompt could not write).
+- **The component screen fills the panel when nothing is selected.** With the
+  page header hidden, the scroll region auto-placed into the header's
+  content-sized grid row and took about half the panel. The scroll region and
+  footer are now pinned to their rows.
+- **Running out of AI uses is said plainly.** A build with the free allowance
+  used up listed every AI section as "Left out Overview: nothing to show.",
+  blaming the component for what was the allowance. It now says "You've used
+  all 10 free AI uses this month, so the AI sections were left out. Your uses
+  reset on Oct 1.", with the limit and date taken from the proxy's last quota
+  snapshot and left out when that snapshot lacks them, and drops the per
+  section lines for AI sections. Deterministic omissions are still listed. A
+  Library rebuild says "sections that needed AI were left empty", because it
+  keeps the prose the document already had, and a Foundations build says "the
+  AI descriptions were left out" in place of "AI descriptions were skipped.
+  Your monthly AI allowance is used up."
+- **The atom notice lines up with the rows below it.** The component screen's
+  scroll region has no side padding, and every row carries its own inset
+  except the atom notice, which ran edge to edge and touched the AI writing
+  row. It now takes the same inset and gap, and its copy is shorter: "Atom
+  component. Usually part of larger ones, but you can document it on its own."
 
 - **A Pro generation no longer fails on Sonnet 5's thinking block.** Sonnet 5
   thinks before it answers unless told not to, and the thinking arrives as a

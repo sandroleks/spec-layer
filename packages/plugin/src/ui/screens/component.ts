@@ -20,7 +20,7 @@ import {
 import type { ComponentFacts, VariantChip } from '../viewModel/componentFacts';
 import { icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
-import { progressMarkup } from './progress';
+import { loadingRowsMarkup, progressMarkup } from './progress';
 
 /** The user's picks. Held here, handed to createDocFrame at build time. */
 export interface ComponentSelection {
@@ -83,8 +83,7 @@ const HIDDEN_HELP =
   'property that shows each one.';
 
 const ATOM_NOTICE =
-  'Atom component. It is normally used to build larger components, but you ' +
-  'can still export it individually.';
+  'Atom component. Usually part of larger ones, but you can document it on its own.';
 
 const CHECK_GLYPH =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
@@ -99,12 +98,76 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** The centered state shown when Figma has nothing usable selected. */
+/**
+ * A small drawing of the act the screen is waiting for: a cursor selects a
+ * component on the canvas and a doc sheet comes out of it. Decorative only,
+ * so it is hidden from assistive tech; the heading carries the message. The
+ * motion is CSS, and prefers-reduced-motion stills it.
+ */
+const EMPTY_ILLUSTRATION =
+  '<svg class="sl-select-illustration" viewBox="0 0 160 112" width="160" height="112" ' +
+  'fill="none" aria-hidden="true" focusable="false">' +
+  // The doc sheet, behind the component so it reads as coming out of it.
+  '<g class="sl-select-doc">' +
+  '<rect x="108" y="20" width="48" height="64" rx="6" class="sl-select-sheet"/>' +
+  '<rect x="115" y="29" width="22" height="4" rx="2" class="sl-select-line is-strong"/>' +
+  '<rect x="115" y="38" width="34" height="3" rx="1.5" class="sl-select-line"/>' +
+  '<rect x="115" y="45" width="28" height="3" rx="1.5" class="sl-select-line"/>' +
+  '<rect x="115" y="55" width="15" height="10" rx="2" class="sl-select-chip"/>' +
+  '<rect x="133" y="55" width="15" height="10" rx="2" class="sl-select-chip"/>' +
+  '<rect x="115" y="71" width="26" height="3" rx="1.5" class="sl-select-line"/>' +
+  '</g>' +
+  // The component: a button-like tile with an icon and a label.
+  '<g class="sl-select-component">' +
+  '<rect x="20" y="40" width="72" height="32" rx="8" class="sl-select-tile"/>' +
+  '<circle cx="36" cy="56" r="5" class="sl-select-dot"/>' +
+  '<rect x="46" y="53" width="34" height="6" rx="3" class="sl-select-label"/>' +
+  '</g>' +
+  // The selection marquee and its corner handles.
+  '<g class="sl-select-marquee">' +
+  '<rect x="14" y="34" width="84" height="44" rx="11" class="sl-select-outline"/>' +
+  '<rect x="11" y="31" width="6" height="6" rx="1" class="sl-select-handle"/>' +
+  '<rect x="95" y="31" width="6" height="6" rx="1" class="sl-select-handle"/>' +
+  '<rect x="11" y="75" width="6" height="6" rx="1" class="sl-select-handle"/>' +
+  '<rect x="95" y="75" width="6" height="6" rx="1" class="sl-select-handle"/>' +
+  '</g>' +
+  '<path class="sl-select-cursor" d="M70 66 L70 88 L75.5 82.5 L79.5 91 L83 89.4 L79 81 L86.5 81 Z"/>' +
+  '</svg>';
+
+/**
+ * The centered state shown when Figma has nothing usable selected.
+ *
+ * This is the first screen a new user meets, so it teaches the one move that
+ * starts everything and offers the two starts that need no selection:
+ * foundations, and the Library of docs already made. The buttons navigate
+ * through the same views the rail does and start nothing.
+ */
 function emptyMarkup(): string {
   return (
-    '<div class="sl-empty-state">' +
-    '<strong>No component selected</strong>' +
-    '<p>Select a component or component set in Figma to document it.</p>' +
+    '<div class="sl-empty-state sl-select-empty">' +
+    EMPTY_ILLUSTRATION +
+    '<strong>Start with a component</strong>' +
+    '<p>Select a component or component set on the canvas to create its docs.</p>' +
+    '<div class="sl-select-actions">' +
+    '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="foundations">' +
+    `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
+    '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="library">' +
+    `${icon('folder', 15)}<span>View library</span></button>` +
+    '</div>' +
+    '</div>'
+  );
+}
+
+/**
+ * Shown from the moment the panel opens until the main thread reports the
+ * first selection. Without it the panel said "Select a component" for a beat
+ * even when one was already selected, then swapped to the picker.
+ */
+function waitingMarkup(): string {
+  return (
+    '<div class="sl-select-waiting" aria-busy="true" aria-label="Reading the selection">' +
+    '<i class="sl-skeleton sl-select-waiting-switch"></i>' +
+    loadingRowsMarkup(6) +
     '</div>'
   );
 }
@@ -347,7 +410,7 @@ export function componentScrollMarkup(
   selection: ComponentSelection,
   facts: ComponentFacts,
 ): string {
-  if (state.kind === 'empty') return emptyMarkup();
+  if (state.kind === 'empty') return state.waiting ? waitingMarkup() : emptyMarkup();
   const busy = state.kind === 'reading' || state.kind === 'building';
 
   const groups = sectionGroups(

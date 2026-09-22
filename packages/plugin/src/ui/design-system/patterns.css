@@ -367,6 +367,10 @@
 }
 
 .sl-screen-scroll {
+  /* Pinned to the 1fr track. A screen that hides its page header (the
+     component screen's empty state) otherwise auto-places the scroll region
+     into the header's content-sized row, and it stops filling the panel. */
+  grid-row: 2;
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--sl-space-14) var(--sl-space-20);
@@ -375,6 +379,9 @@
 }
 
 .sl-screen-footer {
+  /* Pinned for the same reason as .sl-screen-scroll: with the header hidden,
+     an auto-placed footer would take the empty first row. */
+  grid-row: 3;
   min-height: var(--sl-footer-height);
   display: grid;
   align-content: center;
@@ -486,6 +493,16 @@
   margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
   padding: 0 var(--sl-space-10);
   border-radius: var(--sl-radius-md);
+}
+
+/* The atom notice above them takes the same inset. This scroll region has no
+   side padding of its own (each row carries its margin), so a banner without
+   one ran edge to edge and sat flush against the AI writing row. */
+.sl-component-controls > .sl-banner {
+  margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
 }
 
 .sl-ai-control {
@@ -797,6 +814,48 @@
   padding: 0;
 }
 
+/* One notice for every stale-version row, above the filters. It replaced a
+   note repeated under each "Rebuild needed" row, and it carries the one
+   action that acts on all of them. Accent, not warning: nothing is broken,
+   the docs were drawn by an older version. */
+.sl-library-rebuild-banner {
+  align-items: center;
+  gap: var(--sl-space-10);
+  margin: 0 var(--sl-space-12) var(--sl-space-10) var(--sl-space-14);
+  padding: var(--sl-space-10) var(--sl-space-12);
+  background: var(--sl-color-accent-soft);
+  border-color: var(--sl-color-accent-border);
+}
+
+.sl-library-rebuild-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--sl-color-accent-text);
+}
+
+.sl-library-rebuild-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-2);
+}
+
+.sl-library-rebuild-copy > strong {
+  color: var(--sl-color-text);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-library-rebuild-copy > small {
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
+}
+
+.sl-library-rebuild-banner > .sl-button {
+  flex: none;
+}
+
 .sl-library-filters {
   width: max-content;
   min-height: var(--sl-control-md);
@@ -1015,20 +1074,6 @@
 .sl-library-status.is-pending,
 .sl-library-status.is-unavailable {
   color: var(--sl-color-text-quiet);
-}
-
-/* The rebuild note. It follows the status in the DOM, because it explains that
-   status, but it is placed on its own row spanning every track: a fifth item
-   in the summary's four-column flow would push the timestamp and the row menu
-   onto a second line, and a note sized into the status column would widen it
-   and break the column alignment the eye scans down. */
-.sl-library-note {
-  grid-row: 2;
-  grid-column: 1 / -1;
-  min-width: 0;
-  display: block;
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
 }
 
 .sl-library-update-disclosure {
@@ -2878,6 +2923,147 @@
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-control);
   line-height: var(--sl-line-height-body);
+}
+
+/*
+ * The component screen's empty state: the first screen a new user meets.
+ * The drawing loops one gesture (the marquee settles on a component and a doc
+ * sheet lifts out of it) slowly enough to read as ambient, not as a spinner.
+ */
+.sl-select-empty {
+  min-height: 100%;
+  padding-bottom: var(--sl-space-32);
+  gap: var(--sl-space-10);
+}
+
+.sl-select-illustration {
+  margin-bottom: var(--sl-space-8);
+  overflow: visible;
+}
+
+.sl-select-sheet {
+  fill: var(--sl-color-surface-raised);
+  stroke: var(--sl-color-border-strong);
+}
+
+.sl-select-line {
+  fill: var(--sl-color-border-strong);
+}
+
+.sl-select-line.is-strong {
+  fill: var(--sl-color-text-quiet);
+}
+
+.sl-select-chip {
+  fill: var(--sl-color-accent-soft);
+  stroke: var(--sl-color-accent-border);
+}
+
+.sl-select-tile {
+  fill: var(--sl-color-surface-raised);
+  stroke: var(--sl-color-border-strong);
+}
+
+.sl-select-dot {
+  fill: var(--sl-color-accent);
+}
+
+.sl-select-label {
+  fill: var(--sl-color-text-quiet);
+}
+
+.sl-select-outline {
+  stroke: var(--sl-color-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  animation: sl-select-march 1.6s linear infinite;
+}
+
+.sl-select-handle {
+  fill: var(--sl-color-canvas);
+  stroke: var(--sl-color-accent);
+  stroke-width: 1.5;
+}
+
+.sl-select-marquee {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sl-select-marquee 4.8s var(--sl-ease-standard) infinite;
+}
+
+.sl-select-doc {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: sl-select-doc 4.8s var(--sl-ease-out) infinite;
+}
+
+.sl-select-cursor {
+  fill: var(--sl-color-text);
+  stroke: var(--sl-color-canvas);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: top left;
+  animation: sl-select-cursor 4.8s var(--sl-ease-standard) infinite;
+}
+
+.sl-select-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sl-space-8);
+  margin-top: var(--sl-space-12);
+}
+
+/* The cursor glides in, presses, and rests; the marquee appears on the press;
+   the doc lifts out after it and fades before the loop restarts. */
+@keyframes sl-select-cursor {
+  0% { opacity: 0; transform: translate(22px, 18px); }
+  14% { opacity: 1; }
+  30% { transform: translate(0, 0) scale(1); }
+  34% { transform: translate(0, 0) scale(0.86); }
+  38%, 86% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(0, 0); }
+}
+
+@keyframes sl-select-marquee {
+  0%, 32% { opacity: 0; transform: scale(1.06); }
+  40%, 88% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes sl-select-doc {
+  0%, 42% { opacity: 0; transform: translateX(-18px) scale(0.92); }
+  58%, 88% { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(0) scale(1); }
+}
+
+@keyframes sl-select-march {
+  to { stroke-dashoffset: -18; }
+}
+
+/* Reduced motion shows the finished picture, not the first frame of the loop,
+   which would be an empty canvas. */
+@media (prefers-reduced-motion: reduce) {
+  .sl-select-outline,
+  .sl-select-marquee,
+  .sl-select-doc,
+  .sl-select-cursor {
+    animation: none;
+  }
+}
+
+/* The boot skeleton: a stand-in for the switch and the section list. */
+.sl-select-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-12);
+  padding-top: var(--sl-space-8);
+}
+
+.sl-select-waiting-switch {
+  height: 38px;
+  border-radius: var(--sl-radius-md);
 }
 
 /* Where a screen puts its build result. Collapses to nothing when empty, so it

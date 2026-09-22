@@ -8,6 +8,8 @@ import {
   libraryHeaderMarkup,
   libraryRowMarkup,
   libraryScrollMarkup,
+  rebuildBannerMarkup,
+  REBUILD_TITLE,
   revealScrollTop,
   rowMenuTop,
   type LibraryRowPresentation,
@@ -124,17 +126,39 @@ describe('library screen presentation', () => {
     expect(markup).not.toContain('data-library-status="inSync"');
   });
 
-  it('explains a rebuild under the status', () => {
+  it('says Rebuild needed on the row without repeating the explanation', () => {
     const html = libraryRowMarkup(row('buttonRebuild', 'rebuildNeeded'), null, false);
     expect(html).toContain('Rebuild needed');
-    expect(html).toContain('Frames are rebuilt in the new layout. Your written sections are kept. Keyboard is rewritten when AI writing is on.');
+    expect(html).not.toContain(REBUILD_TITLE);
+    expect(html).not.toContain('sl-library-note');
   });
 
-  it('leaves every other status without a rebuild note', () => {
-    for (const status of ['inSync', 'edited', 'orphaned'] as const) {
-      expect(libraryRowMarkup(row('button', status), null, false))
-        .not.toContain('Frames are rebuilt in the new layout.');
-    }
+  it('explains rebuilds once, in one banner with one action for all of them', () => {
+    const rows = [
+      row('a', 'rebuildNeeded'),
+      row('b', 'rebuildNeeded'),
+      row('c', 'updateAvailable'),
+      row('d', 'inSync'),
+    ];
+    const markup = libraryScrollMarkup(model({ allRows: rows, rows }));
+    expect(markup.split(REBUILD_TITLE)).toHaveLength(2);
+    expect(markup).toContain('<strong>New plugin version</strong>');
+    expect(markup).toContain('<span>Rebuild docs</span>');
+    expect(markup).not.toMatch(/Rebuild \d/);
+    // Above the filters, so it is the first thing the screen says.
+    expect(markup.indexOf('data-library-rebuild-all'))
+      .toBeLessThan(markup.indexOf('sl-library-filters'));
+    expect(markup).not.toContain('\u2014');
+  });
+
+  it('shows no banner without stale rows, while loading, and disables it when busy', () => {
+    expect(libraryScrollMarkup(model())).not.toContain('data-library-rebuild-all');
+    const rows = [row('a', 'rebuildNeeded')];
+    expect(libraryScrollMarkup(model({ allRows: rows, rows, loading: true })))
+      .not.toContain('data-library-rebuild-all');
+    expect(rebuildBannerMarkup(1, false)).toContain('<span>Rebuild docs</span>');
+    expect(rebuildBannerMarkup(1, true)).toContain('data-library-rebuild-all disabled');
+    expect(rebuildBannerMarkup(0, false)).toBe('');
   });
 
   it('uses the honest detailed-comparison fallback verbatim', () => {
@@ -237,7 +261,7 @@ describe('library screen presentation', () => {
       .slice(1)
       .map((rest) => rest.split('</div></div>')[0]);
     expect(panels).toHaveLength(3);
-    for (const panel of panels) expect(panel).not.toContain('—');
+    for (const panel of panels) expect(panel).not.toContain('\u2014');
   });
 
   it('escapes document and change content before placing it in HTML', () => {
@@ -781,6 +805,6 @@ describe('library footer publish action', () => {
   });
 
   it('keeps the plugin voice in the new label', () => {
-    expect(libraryFooterMarkup(model())).not.toContain('—');
+    expect(libraryFooterMarkup(model())).not.toContain('\u2014');
   });
 });

@@ -98,6 +98,8 @@ import {
   setFoundationGroupDescriptions,
   onSelectionFoundation,
   omissionsMessage,
+  withoutAiOmissions,
+  quotaExhaustedNote,
   onFoundationToggleAll,
   pluginBuild,
   resultOutcome,
@@ -153,7 +155,7 @@ wireShellTheme(refs);
 
 const state = createState();
 const selection: ComponentSelection = createComponentSelection(state.aiEnabled);
-let screen: ComponentScreenState = { kind: 'empty' };
+let screen: ComponentScreenState = { kind: 'empty', waiting: true };
 let foundationScreen: FoundationScreenState = { kind: 'loading' };
 let view: PluginView = 'component';
 let facts: ComponentFacts = NO_FACTS;
@@ -739,10 +741,17 @@ async function buildFoundations(): Promise<void> {
         foundationAiNote = 'AI descriptions came back empty.';
       }
     } catch (error) {
-      const detail = error instanceof ProseProxyError
-        ? groupErrorCopy(error.code)
-        : 'The AI service could not be reached.';
-      foundationAiNote = `AI descriptions were skipped. ${detail}`;
+      if (error instanceof ProseProxyError && error.code === 'quota_exhausted') {
+        // The same sentence a component build uses, with the limit and the
+        // reset date, rather than "skipped" plus a bare "used up".
+        state.quotaExhausted = true;
+        foundationAiNote = quotaExhaustedNote(state.quota, 'foundation');
+      } else {
+        const detail = error instanceof ProseProxyError
+          ? groupErrorCopy(error.code)
+          : 'The AI service could not be reached.';
+        foundationAiNote = `AI descriptions were skipped. ${detail}`;
+      }
     }
   }
 
@@ -970,7 +979,7 @@ function finishLibraryOperation(error = ''): void {
     // Same sentences the Create path appends, so a section the Library left
     // out is reported rather than silently missing from the frame.
     if (!error && active.omitted.length) {
-      omitted = active.omitted;
+      omitted = state.quotaExhausted ? withoutAiOmissions(active.omitted) : active.omitted;
       message = omissionsMessage(message, omitted);
     }
     // A failed rebuild top-up, reported the way Create reports its own
@@ -1568,6 +1577,15 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // The component empty state's shortcuts. Their own attribute, not
+  // data-view: setRailBadge finds the rail button by [data-view], and a second
+  // match in the screen would make that lookup depend on DOM order.
+  const emptyNav = target.closest<HTMLButtonElement>('[data-empty-nav]');
+  if (emptyNav?.dataset.emptyNav) {
+    navigateToView(emptyNav.dataset.emptyNav as PluginView);
+    return;
+  }
+
   if (target.closest(`#${refs.allowanceButton.id}`)) {
     navigateToView('license');
     return;
@@ -1588,7 +1606,8 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  if (target.closest('[data-library-update-all]')) {
+  const batchButton = target.closest('[data-library-update-all], [data-library-rebuild-all]');
+  if (batchButton) {
     const model = currentLibraryModel();
     if (
       model.allRows.some((row) => row.status === 'pending' || row.status === 'unavailable')
@@ -1599,9 +1618,16 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
+    // "Update all docs" takes both kinds of drift, the same set the Updates
+    // count and the button's enabled state already cover; it used to take
+    // only source updates, so a Library whose only drift was a stale version
+    // offered an enabled button that did nothing. The rebuild banner takes
+    // only the stale rows. dispatchNextLibraryUpdate picks each row's intent.
+    const rebuildOnly = batchButton.matches('[data-library-rebuild-all]');
     void startLibraryUpdates(
       model.allRows
-        .filter((row) => row.status === 'updateAvailable')
+        .filter((row) => row.status === 'rebuildNeeded'
+          || (!rebuildOnly && row.status === 'updateAvailable'))
         .map((row) => row.docId),
       true,
     );
@@ -2401,7 +2427,10 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), state.lastOmitted);
+        // Out of AI uses: the note explains the empty AI sections once, so
+        // they are not also listed one by one as "nothing to show".
+        const omittedToList = state.quotaExhausted ? withoutAiOmissions(state.lastOmitted) : state.lastOmitted;
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), omittedToList);
         screen = {
           kind: 'success',
           componentName: currentName(),
@@ -2552,7 +2581,7 @@ window.onmessage = (event: MessageEvent): void => {
           msg.replaced ? `${msg.replaced} updated` : '',
           foundationAiNote,
         ].filter(Boolean);
-        nativeNotify(parts.join(' · ') || 'Foundation docs created');
+        nativeNotify(parts.join(' · ') || 'Foundation docs created', foundationAiNote ? { timeout: 5500 } : {});
       }
       foundationScreen = { kind: 'ready' };
       foundationAiNote = '';
