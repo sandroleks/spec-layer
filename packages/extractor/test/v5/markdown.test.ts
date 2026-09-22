@@ -526,3 +526,89 @@ describe('componentMarkdown prose', () => {
     expect(out).not.toContain(AI_MARKER);
   });
 });
+
+describe('componentMarkdown prose heading demotion', () => {
+  it('neutralises a setext H1 (an underline of "="), leaving no bare heading line', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: 'Keyboard\n========\n\nEnter activates.' },
+    } as typeof artifact);
+    expect(out).toContain('### Keyboard');
+    expect(out).not.toMatch(/^# Keyboard$/m);
+    expect(out.split('\n')).not.toContain('========');
+  });
+
+  it('neutralises a setext H2 (an underline of "-"), dropping the underline itself', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: 'Keyboard\n--------\n\nEnter activates.' },
+    } as typeof artifact);
+    expect(out).toContain('### Keyboard');
+    expect(out.split('\n')).not.toContain('--------');
+  });
+
+  it('leaves a thematic break (a "-" line after a blank line) alone, not a setext heading', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: {
+        origin: 'generated',
+        accessibility: 'Some intro text.\n\n---\n\nMore text after the break.',
+      },
+    } as typeof artifact);
+    expect(out.split('\n')).toContain('---');
+    expect(out).not.toContain('### Some intro text.');
+    expect(out).not.toContain('### ---');
+  });
+
+  it('demotes an ATX heading indented up to three spaces, per CommonMark', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: '  # Keyboard\n\nEnter activates.' },
+    } as typeof artifact);
+    expect(out).toContain('### Keyboard');
+    expect(out).not.toMatch(/^ {0,3}# Keyboard$/m);
+  });
+
+  it('leaves a "#" line untouched inside a fenced code block, and keeps the fence intact', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const blob = 'Use it like this:\n\n```\n# comment inside the sample\necho hi\n```\n\nDone.';
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: blob },
+    } as typeof artifact);
+    expect(out).toContain('# comment inside the sample');
+    expect(out).not.toContain('### comment inside the sample');
+    expect(out).toContain('```\n# comment inside the sample\necho hi\n```');
+  });
+
+  it('still demotes a plain ATX heading (the existing case)', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: { origin: 'generated', accessibility: '# Keyboard\n\nEnter activates.' },
+    } as typeof artifact);
+    expect(out).toContain('### Keyboard');
+    expect(out).not.toMatch(/^# Keyboard$/m);
+  });
+
+  it('holds the whole invariant across a full document: the component title is the only single-# line', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      guidelines: {
+        origin: 'generated',
+        definition: 'A button triggers an action.',
+        accessibility: 'Keyboard\n========\n\nEnter activates.',
+        interactions: '  # Hover\n\nHover darkens the fill.',
+        design_considerations: 'Naming\n------\n\nKeep one filled button per view.',
+        content_considerations: '## Content note\n\nUse a verb.',
+      },
+    } as typeof artifact);
+    const singleHashLines = out.split('\n').filter((line) => /^# /.test(line));
+    expect(singleHashLines).toEqual(['# Button']);
+  });
+});

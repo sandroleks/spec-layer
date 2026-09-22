@@ -489,12 +489,90 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
  * fact section. */
 const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
 
-/** @internal Prose blobs are already Markdown (bullets, bold lead-ins,
- * sub-headings), so they are embedded rather than escaped. Every heading
- * inside one is demoted to at least `###`, so a model-written `# Keyboard`
- * cannot open a top-level section the renderer itself did not. */
+/** @internal An ATX heading of level 1 or 2, CommonMark-legal indentation
+ * (up to three leading spaces) included. Levels 3-6 are already deep enough
+ * and are left alone; the lookahead requires a following space or end of
+ * line, exactly as CommonMark itself does, so `##Heading` (no space) is
+ * plain text, not a heading. */
+const ATX_H1_H2 = /^ {0,3}(#{1,2})(?= |$)/;
+
+/** @internal A line that is a fenced code block delimiter (three or more
+ * backticks or tildes, CommonMark allows leading indentation here too, but
+ * these blobs are never that deeply nested so a bare `trim()` is enough). */
+const FENCE_MARKER = /^(`{3,}|~{3,})/;
+
+/** @internal A setext underline candidate: one or more `=` (level 1) or one
+ * or more `-` (level 2), and nothing else on the line. */
+const SETEXT_UNDERLINE = /^(?:=+|-+)$/;
+
+/**
+ * Prose blobs are already Markdown (bullets, bold lead-ins, sub-headings),
+ * so they are embedded rather than escaped. Every heading inside one is
+ * demoted to at least `###`, so a model-written heading cannot open a
+ * top-level section the renderer itself did not -- this is the ENTIRE
+ * enforcement of that invariant, so it walks the blob line by line rather
+ * than running one regex over the whole string, to close every CommonMark
+ * way a heading can be spelled:
+ *
+ * - ATX (`# Heading`, `## Heading`): demoted to `###`, dropping any leading
+ *   indentation together with the original hashes (indentation is not
+ *   preserved -- a demoted heading reads the same left-aligned as every
+ *   other one this renderer produces).
+ * - Setext (`Heading` followed by a line of `=` or `-`): the underline line
+ *   is dropped and the paragraph line above it becomes `### <text>`. A line
+ *   of `-` is only treated as a setext underline when the line directly
+ *   above it (as already emitted, i.e. after any of its own demotion) is
+ *   non-blank and not itself a heading or fence delimiter -- a blank line
+ *   above it makes it a thematic break, and both a table separator row and
+ *   a front-matter delimiter also always follow non-blank text, which this
+ *   line-by-line heuristic cannot distinguish from a real setext heading.
+ *   That is a known, accepted limitation: these blobs are prose, not full
+ *   documents with tables or front matter.
+ *
+ * Fenced code blocks (three or more backticks or tildes) suspend ALL of the
+ * above while open: a `#`-prefixed comment or a `---`-shaped divider inside
+ * a fenced sample is sample content, never a heading, and demoting it would
+ * corrupt the sample.
+ */
 function demote(blob: string): string {
-  return blob.replace(/^(#{1,2})(?= )/gm, '###').trimEnd();
+  const lines = blob.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+
+  const isHeadingOrFence = (line: string | undefined): boolean => {
+    if (line === undefined) return false;
+    const trimmed = line.trim();
+    return /^#{1,6}(?= |$)/.test(trimmed) || FENCE_MARKER.test(trimmed);
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (FENCE_MARKER.test(trimmed)) {
+      inFence = !inFence;
+      out.push(rawLine);
+      continue;
+    }
+    if (inFence) {
+      out.push(rawLine);
+      continue;
+    }
+
+    if (SETEXT_UNDERLINE.test(trimmed)) {
+      const previous = out[out.length - 1];
+      const previousIsBlank = previous === undefined || previous.trim() === '';
+      if (!previousIsBlank && !isHeadingOrFence(previous)) {
+        out[out.length - 1] = `### ${previous!.trim()}`;
+        continue; // the underline itself never survives
+      }
+      out.push(rawLine); // a thematic break, or nothing eligible above it
+      continue;
+    }
+
+    out.push(rawLine.replace(ATX_H1_H2, '###'));
+  }
+
+  return out.join('\n').trimEnd();
 }
 
 function proseSection(heading: string, blob: string): string {
