@@ -885,6 +885,47 @@ describe('componentMarkdown hostile input', () => {
     expect(out).not.toContain('[object Object]');
   });
 
+  // CodeQL alert 70 on `codeCell`: escaping the cell separator without first
+  // accounting for the escape character. It was a real defect. A path holding
+  // a backslash directly before a pipe has no encoding inside a code span in
+  // a GFM table row, because `\|` is the only escape the row splitter honours
+  // there. Wrapping it in backticks and escaping only the pipe destroyed the
+  // code span and silently dropped the rest of the cell, so such a value now
+  // renders as plain escaped text instead, keeping its own characters.
+  it('keeps a backslash-before-pipe path intact by dropping the code span', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const path = 'Container\\|label';
+    const out = componentMarkdown({
+      ...artifact,
+      references: {
+        ...artifact.references,
+        used: [{
+          source_id: 'VariableID:1', name: 'md.sys.color.primary',
+          kind: 'variable' as const, remote: false, status: 'resolved' as const,
+        }],
+        bindings: [{
+          path, property: 'fill', source_id: 'VariableID:1', kind: 'variable' as const,
+        }],
+      },
+    } as typeof artifact);
+    // The exact characters survive, and the cell is not truncated at the
+    // backslash the way the unescaped code span truncated it.
+    expect(out).toContain('| Container\\\\\\|label | fill | md.sys.color.primary |');
+    expect(out).not.toContain('`Container\\\\|label`');
+    assertWellFormedTables(out);
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('still wraps a pipe-bearing path with no backslash in a code span', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      layout: { scope: 'default_variant', items: [{ path: 'a|b', summary: 'x' }] },
+    } as typeof artifact);
+    expect(out).toContain('| `a\\|b` | x |');
+    assertWellFormedTables(out);
+  });
+
   it('renders a minimal artifact carrying only required fields', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({

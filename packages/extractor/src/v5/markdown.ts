@@ -102,6 +102,16 @@ export function code(text: string): string {
  * cell, where a stray backslash would be a fabricated character rather than
  * a needed escape. */
 function codeCell(text: string): string {
+  // A literal backslash has NO encoding inside a code span in a GFM table
+  // row. `\|` is the only escape the row splitter honours there, so a
+  // backslash immediately before a pipe is inexpressible. Verified against
+  // remark-gfm: `a\|b` wrapped by the branch below renders as the row
+  // `` `a\\|b` ``, whose code span is destroyed and whose remaining text is
+  // silently dropped from the cell, and escaping the backslash as well
+  // renders a doubled backslash the designer never typed. Plain escaped text
+  // round-trips every one of those inputs exactly, so a value carrying a
+  // backslash gives up the monospace font rather than its own characters.
+  if (text.includes('\\')) return escapeCell(text);
   return code(text).replace(/\|/g, '\\|');
 }
 
