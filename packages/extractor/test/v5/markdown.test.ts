@@ -498,7 +498,14 @@ describe('componentMarkdown unbound and issues', () => {
  * instead. */
 function assertNoStrayBackslashInCodeSpans(markdown: string): void {
   for (const span of markdown.match(/`[^`\n]+`/g) ?? []) {
-    expect(span.replace(/\\\|/g, '')).not.toContain('\\');
+    // Collect each backslash with the character it precedes, rather than
+    // stripping the legitimate pair and testing what is left. Same assertion,
+    // but a failure names the offending escape instead of only proving one
+    // exists somewhere in the span.
+    const strays = [...span.matchAll(/\\(.?)/g)]
+      .filter(([, next]) => next !== '|')
+      .map(([pair]) => pair);
+    expect(strays).toEqual([]);
   }
 }
 
