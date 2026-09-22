@@ -511,7 +511,11 @@ function assertNoStrayBackslashInCodeSpans(markdown: string): void {
 
 describe('componentMarkdown prose', () => {
   const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
-  const markerRegex = new RegExp(AI_MARKER.replace(/[*.]/g, '\\$&'), 'g');
+  // Counted by splitting rather than by a regex built from the marker: the
+  // marker is prose carrying `*` and `.`, so a regex needs every one of its
+  // metacharacters escaped, and an escaper that misses one silently counts
+  // the wrong thing. Splitting needs no escaping at all.
+  const countMarkers = (out: string): number => out.split(AI_MARKER).length - 1;
 
   // The seven headings the renderer produces from `guidelines`, per the
   // plan's section mapping: `## Overview`, `## Variants`, `## Do and don't`,
@@ -543,7 +547,7 @@ describe('componentMarkdown prose', () => {
     expect(out).toContain('A button triggers an action.');
     expect(out).toContain('- Use for the primary action.');
     expect(out).toContain('- Do not use for navigation.');
-    expect(out.match(markerRegex)).toHaveLength(7);
+    expect(countMarkers(out)).toBe(7);
     expect(out).not.toContain('[object Object]');
     assertNoStrayBackslashInCodeSpans(out);
   });
@@ -572,7 +576,7 @@ describe('componentMarkdown prose', () => {
     expect(out).toContain(`## Do and don't\n\n${AI_MARKER}\n\n### Do\n\n- **Use one`);
     expect(out).toContain("### Don't\n\n- **Don't use a button");
     // The section still carries exactly one AI marker, on the `##` heading.
-    expect(out.match(markerRegex)).toHaveLength(1);
+    expect(countMarkers(out)).toBe(1);
   });
 
   it('floors a heading inside a rule at level 3, like every other prose blob', () => {
@@ -622,7 +626,7 @@ describe('componentMarkdown prose', () => {
     expect(out).toContain(
       '## Anatomy\n\n' + AI_MARKER + '\n\nA container wrapping a label and an optional icon.',
     );
-    expect(out.match(markerRegex)).toHaveLength(1);
+    expect(countMarkers(out)).toBe(1);
   });
 
   it('renders nothing for the camelCase input names, so the 2026-09-19 mistake cannot return', () => {
