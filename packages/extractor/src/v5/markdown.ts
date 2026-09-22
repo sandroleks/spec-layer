@@ -758,7 +758,12 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   const guidelines = asRecord(artifact.guidelines);
   const blocks: string[] = [];
 
-  blocks.push(`# ${escapeHeading(str(component.name) ?? 'Component')}`);
+  // The schema requires a name, so a valid artifact always has one. The CLI
+  // renders published bundles no schema check has passed, and a heading made
+  // up for a nameless one would state a fact the artifact does not.
+  const name = str(component.name);
+  if (name === undefined) throw new Error('componentMarkdown needs component.name; the artifact has none.');
+  blocks.push(`# ${escapeHeading(name)}`);
 
   const description = str(component.description);
   if (description) blocks.push(escapeBlock(description));

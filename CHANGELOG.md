@@ -25,6 +25,8 @@ none of the reasoning above.
   bindings, the Foundation dependency slice, unbound values and issues, with
   any AI-written prose marked as AI written. It is a projection like DTCG. It
   never feeds a hash, is never stored in a bundle, and nothing parses it back.
+  An artifact with no component name is refused with an error rather than
+  given a placeholder heading.
   No surface produces it yet; the CLI and the plugin follow.
 
 - **Foundation rows carry what the new frames draw.** A variable row now
