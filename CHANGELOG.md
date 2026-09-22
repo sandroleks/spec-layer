@@ -272,7 +272,8 @@ none of the reasoning above.
 - **The atom notice lines up with the rows below it.** The component screen's
   scroll region has no side padding, and every row carries its own inset
   except the atom notice, which ran edge to edge and touched the AI writing
-  row. It now takes the same inset and gap.
+  row. It now takes the same inset and gap, and its copy is shorter: "Atom
+  component. Usually part of larger ones, but you can document it on its own."
 
 - **A Pro generation no longer fails on Sonnet 5's thinking block.** Sonnet 5
   thinks before it answers unless told not to, and the thinking arrives as a

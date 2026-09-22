@@ -83,8 +83,7 @@ const HIDDEN_HELP =
   'property that shows each one.';
 
 const ATOM_NOTICE =
-  'Atom component. It is normally used to build larger components, but you ' +
-  'can still export it individually.';
+  'Atom component. Usually part of larger ones, but you can document it on its own.';
 
 const CHECK_GLYPH =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
