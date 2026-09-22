@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildComponentArtifactV5, buildEnvelope, buildFoundation, buildFoundationArtifactV5,
-  componentAiContext, extract, toYaml,
+  componentAiContext, componentMarkdown, extract, toYaml,
 } from '../../src/index';
 import type {
   ArtifactSource, CollectionV5, EffectStyleV5, FoundationArtifactV5, IntermediateSpec,
@@ -212,7 +212,20 @@ export function writeComponentV5Golden(): void {
   writeFileSync(COMPONENT_V5_GOLDEN_PATH, renderComponentV5Golden());
 }
 
+export const COMPONENT_V5_MARKDOWN_GOLDEN_PATH = fileURLToPath(
+  new URL('./v5/button-component-md-v5.md', import.meta.url),
+);
+
+export function renderComponentV5MarkdownGolden(): string {
+  return componentMarkdown(buildComponentV5GoldenArtifact());
+}
+
+export function writeComponentV5MarkdownGolden(): void {
+  writeFileSync(COMPONENT_V5_MARKDOWN_GOLDEN_PATH, renderComponentV5MarkdownGolden());
+}
+
 if (process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   writeComponentV5Golden();
+  writeComponentV5MarkdownGolden();
 }
