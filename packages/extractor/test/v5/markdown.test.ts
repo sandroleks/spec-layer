@@ -49,4 +49,20 @@ describe('componentMarkdown front matter', () => {
     expect(componentMarkdown(artifact)).toBe(componentMarkdown(artifact));
     expect(JSON.stringify(artifact)).toBe(before);
   });
+
+  it('renders a figma description as the lead paragraph', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact, component: { ...artifact.component, description: 'Triggers an action.' },
+    } as typeof artifact);
+    expect(out).toContain('# Button\n\nTriggers an action.');
+  });
+
+  it('renders no lead paragraph for an empty description', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact, component: { ...artifact.component, description: '' },
+    } as typeof artifact);
+    expect(out).toContain('# Button\n\nRelated: Icon');
+  });
 });

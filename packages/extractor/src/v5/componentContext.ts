@@ -861,6 +861,36 @@ export function componentFoundationAiSlice(
   };
 }
 
+/** The `spec_layer` + `source` envelope both component projections open with.
+ * Shared so a field added to one profile cannot be forgotten in the other. */
+export function componentEnvelope(
+  artifact: ComponentArtifactV5,
+  profile: 'ai' | 'markdown',
+): { spec_layer: Record<string, YamlValue>; source: Record<string, YamlValue> } {
+  return {
+    spec_layer: {
+      kind: 'component', version: 5, profile,
+      content_hash: artifact.spec_layer.export.content_hash,
+      ...(artifact.foundation_content_hash
+        ? { foundation_hash: artifact.foundation_content_hash }
+        : {}),
+      source: {
+        provider: 'figma',
+        ...(artifact.spec_layer.source.file_name
+          ? { file_name: artifact.spec_layer.source.file_name }
+          : {}),
+      },
+    },
+    source: {
+      node_id: artifact.spec_layer.source.node_id,
+      node_name: artifact.spec_layer.source.node_name,
+      ...(artifact.spec_layer.source.component_key
+        ? { component_key: artifact.spec_layer.source.component_key }
+        : {}),
+    },
+  };
+}
+
 /** Compact clipboard projection of a finished canonical component artifact. */
 export function componentAiContext(
   artifact: ComponentArtifactV5,
@@ -883,27 +913,12 @@ export function componentAiContext(
     };
   }
   const counts = componentIssueCounts(artifact.diagnostics);
+  const envelope = componentEnvelope(artifact, 'ai') as {
+    spec_layer: ComponentAiContextV5['spec_layer'];
+    source: ComponentAiContextV5['source'];
+  };
   return {
-    spec_layer: {
-      kind: 'component', version: 5, profile: 'ai',
-      content_hash: artifact.spec_layer.export.content_hash,
-      ...(artifact.foundation_content_hash
-        ? { foundation_hash: artifact.foundation_content_hash }
-        : {}),
-      source: {
-        provider: 'figma',
-        ...(artifact.spec_layer.source.file_name
-          ? { file_name: artifact.spec_layer.source.file_name }
-          : {}),
-      },
-    },
-    source: {
-      node_id: artifact.spec_layer.source.node_id,
-      node_name: artifact.spec_layer.source.node_name,
-      ...(artifact.spec_layer.source.component_key
-        ? { component_key: artifact.spec_layer.source.component_key }
-        : {}),
-    },
+    ...envelope,
     component: artifact.component,
     ...(artifact.api !== undefined ? { api: artifact.api } : {}),
     anatomy: artifact.anatomy,
