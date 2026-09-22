@@ -112,6 +112,7 @@ renderAllowance(refs.header, ALLOWANCES[param('allowance', 'normal')] ?? ALLOWAN
 /** The component screen's states, keyed for `?state=`. */
 const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   empty: { kind: 'empty' },
+  waiting: { kind: 'empty', waiting: true },
   reading: { kind: 'reading', componentName: 'buttonPrimary' },
   ready: { kind: 'ready', componentName: 'buttonPrimary' },
   building: { kind: 'building', componentName: 'buttonPrimary', action: 'create' },
@@ -490,10 +491,13 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
 let revealLibraryFixtureRow: ((docId: string) => void) | null = null;
 
 if (view === 'library') {
+  // `?rebuild=N` turns the N rows after the drifted ones stale, which is the
+  // only way to see the rebuild banner outside an EXTRACTOR_VERSION bump.
+  const rebuildRows = Number(param('rebuild', '0')) || 0;
   const drift = new Map<string, LibraryDriftState>(
     LIBRARY_ENTRIES.map((entry, index) => [
       entry.docId,
-      index < 3 ? 'drifted' : 'inSync',
+      index < 3 ? 'drifted' : index < 3 + rebuildRows ? 'staleVersion' : 'inSync',
     ]),
   );
   let libraryFilter: LibraryFilter = param('filter', 'all') as LibraryFilter;
@@ -800,11 +804,15 @@ if (view === 'library') {
       }, 450);
       return;
     }
-    if (target.closest('[data-library-update-all]')) {
+    const batch = target.closest('[data-library-update-all], [data-library-rebuild-all]');
+    if (batch) {
+      const rebuildOnly = batch.matches('[data-library-rebuild-all]');
       updatingAll = true;
       renderLibraryFixture();
       window.setTimeout(() => {
-        for (const entry of LIBRARY_ENTRIES.slice(0, 3)) drift.set(entry.docId, 'inSync');
+        for (const [docId, status] of drift) {
+          if (status === 'staleVersion' || (!rebuildOnly && status === 'drifted')) drift.set(docId, 'inSync');
+        }
         updatingAll = false;
         expandedDocId = null;
         renderLibraryFixture();

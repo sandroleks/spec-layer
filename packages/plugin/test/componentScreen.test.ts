@@ -471,6 +471,24 @@ describe('component screen markup', () => {
     expect(componentFooterMarkup({ kind: 'empty' })).toBe('');
   });
 
+  it('teaches the first move on the empty screen and offers starts that need no selection', () => {
+    const empty = componentScrollMarkup({ kind: 'empty' }, createComponentSelection(true), NO_FACTS);
+    expect(empty).toContain('Start with a component');
+    expect(empty).toContain('data-empty-nav="foundations"');
+    expect(empty).toContain('data-empty-nav="library"');
+    // Its own attribute: a second [data-view] would compete with the rail's.
+    expect(empty).not.toContain('data-view=');
+    expect(empty).toContain('aria-hidden="true"');
+    expect(empty).not.toContain('—');
+  });
+
+  it('shows a skeleton, not the empty state, until the first selection report lands', () => {
+    const waiting = componentScrollMarkup({ kind: 'empty', waiting: true }, createComponentSelection(true), NO_FACTS);
+    expect(waiting).toContain('aria-busy="true"');
+    expect(waiting).not.toContain('Select a component');
+    expect(componentFooterMarkup({ kind: 'empty', waiting: true })).toBe('');
+  });
+
   it('renders the selected-component eyebrow and follows the icon contract', () => {
     const header = componentHeaderMarkup(READY);
     const footer = componentFooterMarkup(READY);

@@ -153,7 +153,7 @@ wireShellTheme(refs);
 
 const state = createState();
 const selection: ComponentSelection = createComponentSelection(state.aiEnabled);
-let screen: ComponentScreenState = { kind: 'empty' };
+let screen: ComponentScreenState = { kind: 'empty', waiting: true };
 let foundationScreen: FoundationScreenState = { kind: 'loading' };
 let view: PluginView = 'component';
 let facts: ComponentFacts = NO_FACTS;
@@ -1568,6 +1568,15 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // The component empty state's shortcuts. Their own attribute, not
+  // data-view: setRailBadge finds the rail button by [data-view], and a second
+  // match in the screen would make that lookup depend on DOM order.
+  const emptyNav = target.closest<HTMLButtonElement>('[data-empty-nav]');
+  if (emptyNav?.dataset.emptyNav) {
+    navigateToView(emptyNav.dataset.emptyNav as PluginView);
+    return;
+  }
+
   if (target.closest(`#${refs.allowanceButton.id}`)) {
     navigateToView('license');
     return;
@@ -1588,7 +1597,8 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  if (target.closest('[data-library-update-all]')) {
+  const batchButton = target.closest('[data-library-update-all], [data-library-rebuild-all]');
+  if (batchButton) {
     const model = currentLibraryModel();
     if (
       model.allRows.some((row) => row.status === 'pending' || row.status === 'unavailable')
@@ -1599,9 +1609,16 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
+    // "Update all docs" takes both kinds of drift, the same set the Updates
+    // count and the button's enabled state already cover; it used to take
+    // only source updates, so a Library whose only drift was a stale version
+    // offered an enabled button that did nothing. The rebuild banner takes
+    // only the stale rows. dispatchNextLibraryUpdate picks each row's intent.
+    const rebuildOnly = batchButton.matches('[data-library-rebuild-all]');
     void startLibraryUpdates(
       model.allRows
-        .filter((row) => row.status === 'updateAvailable')
+        .filter((row) => row.status === 'rebuildNeeded'
+          || (!rebuildOnly && row.status === 'updateAvailable'))
         .map((row) => row.docId),
       true,
     );

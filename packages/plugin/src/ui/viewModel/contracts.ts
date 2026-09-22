@@ -23,7 +23,8 @@ export type AllowanceState =
   | { kind: "unknown"; message: string };
 
 export type ComponentScreenState =
-  | { kind: "empty" }
+  /** `waiting`: the panel has opened and no selection report has landed yet. */
+  | { kind: "empty"; waiting?: boolean }
   | { kind: "reading"; componentName: string }
   | { kind: "ready"; componentName: string }
   | { kind: "building"; componentName: string; action: "create" | "download"; phase?: string }
@@ -46,7 +47,8 @@ export type LibraryStatus =
 export type FoundationScreenState =
   | { kind: "loading" }
   | { kind: "ready" }
-  | { kind: "empty" }
+  /** `waiting`: the panel has opened and no selection report has landed yet. */
+  | { kind: "empty"; waiting?: boolean }
   | { kind: "error"; message: string }
   | { kind: "generating"; done: number; total: number; phase?: string }
   | {

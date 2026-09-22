@@ -82,11 +82,34 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
   unavailable: 'Check unavailable',
 };
 
-/** What "Rebuild needed" costs the reader, said once, under the status. A
- *  rebuild redraws the frames in the current layout; the two-lane doc model
- *  keeps whatever was written into the editorial slots, and Keyboard is
- *  rewritten because the old prompt's bullets upgrade to the table lossily. */
-export const REBUILD_NOTE = 'Frames are rebuilt in the new layout. Your written sections are kept. Keyboard is rewritten when AI writing is on.';
+/**
+ * The rebuild banner, said once for the whole Library above the filters
+ * rather than under every stale row. A title and a button, nothing more: the
+ * rows already say "Rebuild needed", and the button carries no count, like
+ * "Update all docs", because the Updates filter shows it and a label that
+ * changes width makes the button jump. A rebuild keeps the editorial slots
+ * and rewrites Keyboard, because the old prompt's bullets upgrade to the table
+ * lossily (see missingProseKeys in actions.ts); that caveat rides the
+ * button's tooltip.
+ */
+export const REBUILD_TITLE = 'New plugin version';
+export const REBUILD_KEYBOARD_NOTE = 'With AI writing on, Keyboard is rewritten.';
+
+export function rebuildBannerMarkup(count: number, disabled: boolean): string {
+  if (count === 0) return '';
+  return (
+    '<div class="sl-banner sl-library-rebuild-banner" data-tone="accent" role="status">' +
+    `<span class="sl-library-rebuild-icon">${icon('infoCircle', 16)}</span>` +
+    '<span class="sl-library-rebuild-copy">' +
+    `<strong>${REBUILD_TITLE}</strong>` +
+    '</span>' +
+    '<button class="sl-button" data-tone="primary" data-size="small" type="button" ' +
+    `title="${esc(REBUILD_KEYBOARD_NOTE)}" ` +
+    `data-library-rebuild-all${disabled ? ' disabled' : ''}>${icon('fileCheck', 14)}` +
+    '<span>Rebuild docs</span></button>' +
+    '</div>'
+  );
+}
 
 function statusMarkup(status: LibraryRowStatus): string {
   return (
@@ -329,9 +352,6 @@ export function libraryRowMarkup(
       '</button>'
     )
     : statusMarkup(row.status);
-  const rebuildNote = row.status === 'rebuildNeeded'
-    ? `<small class="sl-library-note">${esc(REBUILD_NOTE)}</small>`
-    : '';
   const sourceIcon = icon(rowIcon(row), 17);
   const title = esc(rowTitle(row));
   const jump = row.canOpenFrame
@@ -358,7 +378,6 @@ export function libraryRowMarkup(
     '<div class="sl-library-summary">' +
     jump +
     status +
-    rebuildNote +
     `<time>${esc(row.ageLabel)}</time>` +
     menuMarkup(row, menuDocId === row.docId, busy) +
     '</div>' +
@@ -429,7 +448,14 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
       )
       : emptyMarkup(model.filter, model.allRows.length > 0);
 
-  return filterMarkup + content;
+  const rebuilds = model.loading
+    ? 0
+    : model.allRows.filter((row) => row.status === 'rebuildNeeded').length;
+  return (
+    rebuildBannerMarkup(rebuilds, busy || Boolean(model.checksIncomplete)) +
+    filterMarkup +
+    content
+  );
 }
 
 export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
