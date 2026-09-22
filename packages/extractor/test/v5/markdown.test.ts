@@ -112,3 +112,18 @@ describe('componentMarkdown anatomy', () => {
     expect(componentMarkdown({ ...artifact, anatomy: [] })).not.toContain('## Anatomy');
   });
 });
+
+describe('componentMarkdown layout', () => {
+  it('names the scope and tables the items', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Layout');
+    expect(out).toContain('Default variant.');
+    expect(out).toContain('| Part | Layout |');
+    expect(out).toContain('| `Container/container` | horizontal, padding 10/24/10/24, gap 8 |');
+  });
+
+  it('omits the section when there is no layout', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    expect(componentMarkdown({ ...artifact, layout: undefined })).not.toContain('## Layout');
+  });
+});

@@ -55,6 +55,30 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const str = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
+// `componentLayout` emits exactly one scope value today
+// (`componentContext.ts:500`). Every member of this map must be a value the
+// extractor actually produces: inventing a sentence for a scope that does not
+// exist is the never-fabricate rule broken in the renderer itself.
+const SCOPE_SENTENCE: Record<string, string> = {
+  default_variant: 'Default variant.',
+};
+
+function layoutSection(layout: Record<string, unknown>): string | undefined {
+  const items = Array.isArray(layout.items) ? layout.items : [];
+  if (items.length === 0) return undefined;
+  const rows = items.map((raw) => {
+    const item = asRecord(raw);
+    const path = str(item.path);
+    return [path ? code(path) : '', escapeCell(str(item.summary) ?? '')];
+  });
+  const scope = str(layout.scope);
+  const sentence = scope ? SCOPE_SENTENCE[scope] : undefined;
+  const parts = ['## Layout'];
+  if (sentence) parts.push(sentence);
+  parts.push(table(['Part', 'Layout'], rows).trimEnd());
+  return parts.join('\n\n');
+}
+
 function propertiesSection(api: Record<string, unknown>): string | undefined {
   const rows: string[][] = [];
 
@@ -142,6 +166,11 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
 
   if (artifact.anatomy.length > 0) {
     blocks.push(`## Anatomy\n\n${anatomyBullets(artifact.anatomy, 0).join('\n')}`);
+  }
+
+  if (artifact.layout !== undefined) {
+    const section = layoutSection(asRecord(artifact.layout));
+    if (section) blocks.push(section);
   }
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
