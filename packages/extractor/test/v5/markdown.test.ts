@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { code, escapeCell, escapeInline, table, componentMarkdown, COMPONENT_MARKDOWN_MARKER } from '../../src/v5/markdown';
 import { buildComponentV5GoldenArtifact, buildComponentV5StyledArtifact } from '../fixtures/componentV5';
 
+// The exact sentence `tokensUsedSection` (`markdown.ts`) renders when
+// `references.foundation` is absent, pinned here as its own constant per
+// Task 12's brief rather than repeated as an inline literal below.
+const NOT_READ_SENTENCE =
+  'Token values are not included: the foundations had not been read when this was exported.';
+
 describe('markdown primitives', () => {
   it('collapses newlines and escapes inline markup', () => {
     expect(escapeInline('a\nb')).toBe('a b');
@@ -610,5 +616,218 @@ describe('componentMarkdown prose heading demotion', () => {
     } as typeof artifact);
     const singleHashLines = out.split('\n').filter((line) => /^# /.test(line));
     expect(singleHashLines).toEqual(['# Button']);
+  });
+});
+
+// Task 12: the hostile-input and minimal-artifact sweep. Every prior task
+// tested its own section with well-formed data; this attacks the whole
+// renderer at once and proves it degrades honestly rather than corrupting
+// the document. Only `markdown.ts`'s `escapeHeading` (used solely for the H1
+// title) changed as a result -- everything else here is coverage, not a
+// defect fix, per the brief's instruction to fix the renderer, never the
+// test, and only when the sweep finds a real gap.
+describe('componentMarkdown hostile input', () => {
+  // One string carrying every character this sweep is required to try: a
+  // pipe, a backtick, a raw newline, a literal `<b>` tag, a leading `#`, an
+  // asterisk, an underscore-shaped emphasis marker (`*e*` doubles as the
+  // underscore case, since `_e_` and `*e*` exercise the same character
+  // class in `escapeInline`) and a square bracket.
+  const NASTY = '# a|b`c\nd <b> *e* [f]';
+
+  // Built at runtime, not as a regex literal: a backslash-zero escape fails
+  // scripts/check-nul-bytes.mjs, and a unicode control escape fails the
+  // no-control-regex lint rule, which is only disabled for src/yaml.ts.
+  const HOSTILE_BYTES = new RegExp('[' + [9, 0, 8211, 8212].map((code) =>
+    String.fromCharCode(code)).join('') + ']');
+
+  /** A GFM table row splitter counts columns on UNESCAPED `|` characters
+   * only -- a `\|` never opens a new column, in a plain cell or inside a
+   * matched pair of backticks alike (verified against the reference
+   * `mdast-util-gfm-table` implementation) -- so counting columns must skip
+   * every backslash-escaped character exactly as that splitter does, not
+   * just split on a bare `|`. */
+  function countColumns(row: string): number {
+    let columns = 1;
+    for (let i = 0; i < row.length; i += 1) {
+      if (row[i] === '\\') { i += 1; continue; }
+      if (row[i] === '|') columns += 1;
+    }
+    return columns;
+  }
+
+  /** Every GFM table this renderer can produce is `| cells |` immediately
+   * followed by a `|---|` separator of the same column count, and every data
+   * row under it holds that same column count -- a row with a different
+   * count means an unescaped `|` widened it, or an unescaped raw newline
+   * split a cell across two lines. */
+  function assertWellFormedTables(markdown: string): void {
+    const lines = markdown.split('\n');
+    for (let i = 0; i < lines.length - 1; i += 1) {
+      const header = lines[i];
+      const separator = lines[i + 1];
+      if (!/^\|.*\|$/.test(header)) continue;
+      if (!/^\|[-:\s|]+\|$/.test(separator) || !separator.includes('---')) continue;
+      const columns = countColumns(header);
+      expect(countColumns(separator)).toBe(columns);
+      let j = i + 2;
+      while (j < lines.length && lines[j].startsWith('|')) {
+        expect(countColumns(lines[j])).toBe(columns);
+        j += 1;
+      }
+    }
+  }
+
+  it('neutralises pipes, backticks, newlines, tags and leading hashes in every slot', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      component: { name: NASTY, related: [NASTY] },
+      anatomy: [{ part: NASTY, path: NASTY, type: 'FRAME' }],
+    } as typeof artifact);
+    // The hostile name must not open a section of its own: the only `#` or
+    // `##` lines in the body are the renderer's own headings plus the single
+    // `# ` title line, whose text is escaped.
+    const body = out.slice(out.indexOf('\n---\n') + 5);
+    const headings = body.split('\n').filter((l) => /^#{1,2} /.test(l));
+    expect(headings.filter((l) => l.startsWith('# '))).toHaveLength(1);
+    expect(headings[0]).toBe('# \\# a\\|b`c d \\<b\\> \\*e\\* \\[f\\]');
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    assertWellFormedTables(out);
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('carries the hostile string through Related and an anatomy child bullet unbroken', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      component: { name: 'Button', related: [NASTY] },
+      anatomy: [{
+        part: 'root', path: 'Root', type: 'FRAME',
+        children: [{ part: NASTY, path: NASTY, type: 'TEXT', shown_by: NASTY }],
+      }],
+    } as typeof artifact);
+    // `Related:` is prose, not a heading or a table cell: it goes through
+    // `escapeInline` alone, which never touches `#` or `|` (only `escapeHeading`,
+    // used solely for the H1 title, does).
+    expect(out).toContain('Related: # a|b`c d \\<b\\> \\*e\\* \\[f\\]');
+    assertWellFormedTables(out);
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    expect(out).not.toContain('[object Object]');
+    // Still exactly one single-`#` line: the title.
+    expect(out.split('\n').filter((l) => /^# /.test(l))).toEqual(['# Button']);
+  });
+
+  it('neutralises the hostile string in property names, options and states', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      api: {
+        variants: { [NASTY]: { options: [NASTY], default: NASTY } },
+        booleans: { [NASTY]: { default: true } },
+        slots: { [NASTY]: { type: 'text', default: NASTY } },
+        states: [NASTY],
+      },
+    } as typeof artifact);
+    expect(out).toContain('## Properties');
+    assertWellFormedTables(out);
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('neutralises the hostile string in binding paths, properties and layout items', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      references: {
+        ...artifact.references,
+        used: [{
+          source_id: 'VariableID:1', name: NASTY, kind: 'variable' as const,
+          remote: false, status: 'resolved' as const,
+        }],
+        bindings: [{
+          path: NASTY, property: NASTY, source_id: 'VariableID:1', kind: 'variable' as const,
+          when: { [NASTY]: [NASTY] },
+        }],
+      },
+      layout: { scope: 'default_variant', items: [{ path: NASTY, summary: NASTY }] },
+    } as typeof artifact);
+    expect(out).toContain('## Token bindings');
+    expect(out).toContain('## Layout');
+    assertWellFormedTables(out);
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('renders a minimal artifact carrying only required fields', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      component: { name: 'Bare' }, api: undefined, anatomy: [], layout: undefined,
+      effects_inline: undefined, unbound: undefined, validation: undefined,
+      guidelines: undefined, diagnostics: [],
+      references: { used: [], bindings: [], foundation: undefined },
+    } as typeof artifact);
+    expect(out).toContain('# Bare');
+    expect(out).toContain(NOT_READ_SENTENCE);
+    for (const heading of ['## Properties', '## Anatomy', '## Layout',
+      '## Token bindings', '## Unbound values', '## Issues']) {
+      expect(out).not.toContain(heading);
+    }
+    expect(out).not.toContain('[object Object]');
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    expect(out.endsWith('\n')).toBe(true);
+    expect(out.endsWith('\n\n')).toBe(false);
+  });
+
+  // Carried forward from Task 5's review as an explicit gap: no test proved
+  // the guard around `code('')`, which returns a bare `` `` `` pair -- not a
+  // valid CommonMark code span. `anatomyBullets` only calls `code(path)`
+  // behind `if (path)`, and only calls `code(shownBy)` behind `if (shownBy)`,
+  // and `str()` turns an absent field into `undefined` rather than `''`, so
+  // neither guard should ever see an empty string reach `code()`. These two
+  // tests drive exactly that through the public `componentMarkdown` entry
+  // point rather than calling `code('')` directly, so a regression in either
+  // guard -- not just in `code` itself -- would be caught.
+  it('never emits a bare double-backtick for an anatomy node with no path', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [{ part: 'root', type: 'FRAME' }],
+    } as typeof artifact);
+    expect(out).toContain('- root: frame');
+    expect(out).not.toContain('``');
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('never emits a bare double-backtick for an anatomy node with no shown_by', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [{ part: 'root', path: 'Root', type: 'FRAME' }],
+    } as typeof artifact);
+    expect(out).toContain('- root: `Root`, frame');
+    expect(out).not.toContain('``');
+    expect(out).not.toContain('[object Object]');
+  });
+
+  it('holds every byte-hygiene invariant across a fully hostile document', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      component: { name: NASTY, related: [NASTY] },
+      anatomy: [{ part: NASTY, path: NASTY, type: 'FRAME', shown_by: NASTY }],
+      api: {
+        variants: { [NASTY]: { options: [NASTY], default: NASTY } },
+        states: [NASTY],
+      },
+      layout: { scope: 'default_variant', items: [{ path: NASTY, summary: NASTY }] },
+      unbound: [{ path: NASTY, property: NASTY, issue: NASTY, value: NASTY }],
+      validation: [{ id: 'orphan-part', severity: 'error', path: NASTY, property: NASTY, message: NASTY }],
+    } as typeof artifact);
+    expect(out).not.toMatch(HOSTILE_BYTES);
+    expect(out.endsWith('\n')).toBe(true);
+    expect(out.endsWith('\n\n')).toBe(false);
+    assertWellFormedTables(out);
+    expect(out).not.toContain('[object Object]');
   });
 });

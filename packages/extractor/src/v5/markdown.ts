@@ -32,12 +32,43 @@ export function escapeCell(text: string): string {
   return escapeInline(text).replace(/\|/g, '\\|');
 }
 
+/** @internal `escapeInline` plus the two characters that could make a
+ * hostile component name read as something other than the literal text of
+ * the H1 title: a leading `#` (escaped only at position zero, so a name that
+ * happens to be reused as the whole content of some other line can never be
+ * mistaken for a fresh ATX heading) and every `|` (a table cell boundary
+ * elsewhere in this document, escaped here purely for consistency with how
+ * the same name renders in a table row). Used only for the title -- every
+ * other value that could legitimately start with `#` (a hex color, for
+ * instance) reaches the page through `escapeCell`/`escapeInline` alone, and
+ * must not gain this extra escaping or the golden `#6750a4` token value
+ * would corrupt into `\#6750a4`. */
+function escapeHeading(text: string): string {
+  return escapeInline(text).replace(/\|/g, '\\|').replace(/^#/, '\\#');
+}
+
 /** @internal Inline code with a fence longer than any run of backticks inside. */
 export function code(text: string): string {
   const flat = text.replace(/\r?\n/g, ' ');
   const longest = (flat.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0);
   const fence = '`'.repeat(longest + 1);
   return longest === 0 ? `${fence}${flat}${fence}` : `${fence} ${flat} ${fence}`;
+}
+
+/** @internal `code`, plus escaping for the one character a GFM table row
+ * splitter treats as a cell boundary even inside a matched pair of
+ * backticks: cell splitting runs on the raw line, before backtick spans are
+ * parsed, so `` `a|b` `` as a whole cell's content genuinely widens that row
+ * by one column -- wrapping a path in backticks does not, by itself, make an
+ * embedded `|` safe. A backslash-escaped pipe is honoured by that splitter
+ * even inside backticks and still renders as a literal `|` once the code
+ * span is finalised (verified against `mdast-util-gfm-table`), so this is
+ * safe everywhere it is used. It is deliberately NOT used by `anatomyBullets`
+ * or the `## Issues` bullet list: those spans sit in prose, never a table
+ * cell, where a stray backslash would be a fabricated character rather than
+ * a needed escape. */
+function codeCell(text: string): string {
+  return code(text).replace(/\|/g, '\\|');
 }
 
 /** @internal A GFM table. Cells are already escaped by the caller. */
@@ -89,7 +120,7 @@ function bindingsSection(references: Record<string, unknown>): string | undefine
       .join('; ');
     const path = str(binding.path);
     const property = str(binding.property);
-    return [path ? code(path) : '', property ? escapeCell(property) : '',
+    return [path ? codeCell(path) : '', property ? escapeCell(property) : '',
       `${escapeCell(name ?? '')}${status}`, whenStr];
   });
   return `## Token bindings\n\n${table(['Part', 'Property', 'Token', 'When'], rows).trimEnd()}`;
@@ -101,7 +132,7 @@ function layoutSection(layout: Record<string, unknown>): string | undefined {
   const rows = items.map((raw) => {
     const item = asRecord(raw);
     const path = str(item.path);
-    return [path ? code(path) : '', escapeCell(str(item.summary) ?? '')];
+    return [path ? codeCell(path) : '', escapeCell(str(item.summary) ?? '')];
   });
   const scope = str(layout.scope);
   const sentence = scope ? SCOPE_SENTENCE[scope] : undefined;
@@ -377,7 +408,7 @@ function effectsInlineSection(items: unknown[]): string | undefined {
     const path = str(item.path);
     const layers = Array.isArray(item.layers) ? item.layers : [];
     const summary = layers.map((layer) => inlineEffectLayerText(layer)).join('; ');
-    return [path ? code(path) : '', escapeCell(summary)];
+    return [path ? codeCell(path) : '', escapeCell(summary)];
   });
   return `## Effects\n\n${table(['Part', 'Effects'], rows).trimEnd()}`;
 }
@@ -394,7 +425,7 @@ function unboundSection(unbound: unknown): string | undefined {
   const rows = entries.map((raw) => {
     const entry = asRecord(raw);
     return [
-      str(entry.path) ? code(str(entry.path)!) : '',
+      str(entry.path) ? codeCell(str(entry.path)!) : '',
       escapeCell(str(entry.property) ?? ''),
       escapeCell(str(entry.issue) ?? ''),
       entry.value === undefined ? '' : escapeCell(String(entry.value)),
@@ -467,7 +498,7 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
       ...collection.modes.map((mode) => escapeCell(valueText(token.values[mode]))),
       token.code_syntax
         ? Object.entries(token.code_syntax)
-          .map(([platform, id]) => (id ? `${escapeCell(platform)} ${code(id)}` : escapeCell(platform)))
+          .map(([platform, id]) => (id ? `${escapeCell(platform)} ${codeCell(id)}` : escapeCell(platform)))
           .join(', ')
         : '',
     ]);
@@ -637,7 +668,7 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   const guidelines = asRecord(artifact.guidelines);
   const blocks: string[] = [];
 
-  blocks.push(`# ${escapeInline(str(component.name) ?? 'Component')}`);
+  blocks.push(`# ${escapeHeading(str(component.name) ?? 'Component')}`);
 
   const description = str(component.description);
   if (description) blocks.push(escapeInline(description));
