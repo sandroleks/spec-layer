@@ -55,6 +55,43 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const str = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
+function propertiesSection(api: Record<string, unknown>): string | undefined {
+  const rows: string[][] = [];
+
+  for (const [name, raw] of Object.entries(asRecord(api.variants))) {
+    const axis = asRecord(raw);
+    const options = Array.isArray(axis.options)
+      ? axis.options.map((o) => escapeCell(String(o))).join(', ')
+      : '';
+    rows.push([escapeCell(name), 'Variant', options, escapeCell(String(axis.default ?? ''))]);
+  }
+  for (const [name, raw] of Object.entries(asRecord(api.booleans))) {
+    const b = asRecord(raw);
+    rows.push([escapeCell(name), 'Boolean', '',
+      b.default === undefined ? '' : escapeCell(String(b.default))]);
+  }
+  for (const [name, raw] of Object.entries(asRecord(api.slots))) {
+    const slot = asRecord(raw);
+    const type = str(slot.type);
+    const label = type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Slot';
+    rows.push([escapeCell(name), label, '',
+      slot.default === undefined ? '' : escapeCell(String(slot.default))]);
+  }
+
+  const states = Array.isArray(api.states)
+    ? api.states.map((s) => escapeInline(String(s)))
+    : [];
+
+  if (rows.length === 0 && states.length === 0) return undefined;
+
+  const parts = ['## Properties'];
+  if (rows.length > 0) {
+    parts.push(table(['Property', 'Type', 'Options', 'Default'], rows).trimEnd());
+  }
+  if (states.length > 0) parts.push(`States: ${states.join(', ')}`);
+  return parts.join('\n\n');
+}
+
 function frontMatter(artifact: ComponentArtifactV5): string {
   const envelope = componentEnvelope(artifact, 'markdown');
   return `---\n${toYaml(envelope as unknown as YamlValue)}---\n`;
@@ -74,6 +111,11 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
     : [];
   if (related.length > 0) {
     blocks.push(`Related: ${related.map((r) => escapeInline(r)).join(', ')}`);
+  }
+
+  if (artifact.api !== undefined) {
+    const section = propertiesSection(asRecord(artifact.api));
+    if (section) blocks.push(section);
   }
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;

@@ -66,3 +66,22 @@ describe('componentMarkdown front matter', () => {
     expect(out).toContain('# Button\n\nRelated: Icon');
   });
 });
+
+describe('componentMarkdown properties', () => {
+  it('renders one row per axis, boolean and slot, with blank cells for absent facts', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Properties');
+    expect(out).toContain('| Property | Type | Options | Default |');
+    expect(out).toContain('| Style | Variant | Filled, Outlined | Filled |');
+    expect(out).toContain('| Show icon | Boolean |  | false |');
+    expect(out).toContain('| Label | Text |  | Button |');
+    expect(out).toContain('States: Enabled, Hovered, Disabled');
+  });
+
+  it('omits the section entirely when there is no api', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({ ...artifact, api: undefined });
+    expect(out).not.toContain('## Properties');
+    expect(out).not.toContain('States:');
+  });
+});
