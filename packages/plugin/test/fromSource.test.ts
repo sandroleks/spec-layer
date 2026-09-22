@@ -21,7 +21,9 @@ import {
   mergeTopUp,
   topUpProseForRebuild,
   takeTopUpNote,
-  QUOTA_EXHAUSTED_REBUILD_NOTE,
+  quotaExhaustedNote,
+  withoutAiOmissions,
+  noteGenerationError,
   type BuildPresenter,
   type DocSource,
 } from '../src/ui/actions';
@@ -295,18 +297,17 @@ describe('topUpProseForRebuild', () => {
     expect(state.pendingAiNote).toBe('Too many requests just now. Give it a minute.');
   });
 
-  it('says so when the AI allowance runs out, which Create answers with the upgrade fork', async () => {
-    // noteGenerationError sets state.quotaExhausted and no note; the Create
-    // screen renders that as the fork, the rebuild path has nothing to render
-    // it with, so silence here would attribute the empty sections to "nothing
-    // to show".
+  it('says so when the AI allowance runs out, worded for a rebuild', async () => {
+    // Silence here would attribute the empty sections to "nothing to show".
     vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('quota_exhausted'));
     const state = aiState();
+    state.quota = { tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' };
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.quotaExhausted).toBe(true);
-    expect(state.pendingAiNote).toBe(QUOTA_EXHAUSTED_REBUILD_NOTE);
-    expect(state.pendingAiNote).not.toBe('');
-    expect(state.pendingAiNote).not.toContain('—');
+    expect(state.pendingAiNote).toBe(
+      "You've used all 10 free AI uses this month, so sections that needed AI were left empty. Your uses reset on Oct 1.",
+    );
+    expect(state.pendingAiNote).not.toContain('\u2014');
   });
 
   it('does not top up a document that was built with AI writing off', async () => {
@@ -446,5 +447,39 @@ describe('createDocFrame', () => {
       config: { aiEnabled: boolean };
     };
     expect(msg.config.aiEnabled).toBe(true);
+  });
+});
+
+describe('quota exhausted note', () => {
+  it('names the limit and the reset date the proxy reported', () => {
+    expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
+      .toBe("You've used all 10 free AI uses this month, so the AI sections were left out. Your uses reset on Oct 1.");
+  });
+
+  it('invents neither a limit nor a date the snapshot lacks', () => {
+    expect(quotaExhaustedNote(null))
+      .toBe("You've used all your free AI uses this month, so the AI sections were left out.");
+  });
+
+  it('does not call a Pro allowance free', () => {
+    expect(quotaExhaustedNote({ tier: 'pro', used: 500, limit: 500, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
+      .not.toContain('free');
+  });
+
+  it('is what Create records, not an empty note', () => {
+    const state = createState();
+    noteGenerationError(state, new ProseProxyError('quota_exhausted'));
+    expect(state.quotaExhausted).toBe(true);
+    expect(state.pendingAiNote).toContain("You've used all");
+  });
+
+  it('drops only the AI sections left empty, not deterministic or AI-off omissions', () => {
+    const kept = withoutAiOmissions([
+      { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
+      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
+      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+    ]);
+    expect(kept.map((o) => o.id)).toEqual(['related', 'whenToUse']);
   });
 });

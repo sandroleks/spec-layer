@@ -98,6 +98,7 @@ import {
   setFoundationGroupDescriptions,
   onSelectionFoundation,
   omissionsMessage,
+  withoutAiOmissions,
   onFoundationToggleAll,
   pluginBuild,
   resultOutcome,
@@ -970,7 +971,7 @@ function finishLibraryOperation(error = ''): void {
     // Same sentences the Create path appends, so a section the Library left
     // out is reported rather than silently missing from the frame.
     if (!error && active.omitted.length) {
-      omitted = active.omitted;
+      omitted = state.quotaExhausted ? withoutAiOmissions(active.omitted) : active.omitted;
       message = omissionsMessage(message, omitted);
     }
     // A failed rebuild top-up, reported the way Create reports its own
@@ -2418,7 +2419,10 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), state.lastOmitted);
+        // Out of AI uses: the note explains the empty AI sections once, so
+        // they are not also listed one by one as "nothing to show".
+        const omittedToList = state.quotaExhausted ? withoutAiOmissions(state.lastOmitted) : state.lastOmitted;
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), omittedToList);
         screen = {
           kind: 'success',
           componentName: currentName(),

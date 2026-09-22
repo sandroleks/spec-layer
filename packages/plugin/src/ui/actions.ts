@@ -22,9 +22,10 @@ import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
+import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import {
-  buildDocModel, frameCountFor, proseKeysForSections,
+  ALL_SECTIONS, buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
@@ -238,7 +239,11 @@ export function licenseFailureNote(reason: string | undefined): { note: string; 
  */
 export function noteGenerationError(state: UiState, err: unknown): void {
   if (err instanceof ProseProxyError) {
-    if (err.code === 'quota_exhausted') { state.quotaExhausted = true; return; }
+    if (err.code === 'quota_exhausted') {
+      state.quotaExhausted = true;
+      state.pendingAiNote = quotaExhaustedNote(state.quota);
+      return;
+    }
     if (err.code === 'license_not_active') {
       const { note, markInactive } = licenseFailureNote(err.reason);
       if (markInactive) state.licenseActive = false;
@@ -596,17 +601,45 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
 }
 
 /**
- * What a rebuild says when the AI allowance ran out part-way through.
+ * What a build says when the AI allowance ran out: that the uses are gone,
+ * what that cost this document, and when they come back. It replaces the
+ * per-section "Left out Overview: nothing to show." lines for the sections AI
+ * would have written (see withoutAiOmissions), which blamed the component for
+ * what was really the allowance.
  *
- * `noteGenerationError` answers `quota_exhausted` by setting
- * `state.quotaExhausted`, which the Create screen renders as the upgrade
- * fork. A rebuild has no such fork, so without a note of its own the batch
- * would report plain success and the sections AI never wrote would be
- * attributed to "nothing to show". The wording reuses `groupErrorCopy`'s
- * quota sentence, so neither a period nor a number is invented here.
+ * Only facts the proxy reported: the limit and the reset date come from the
+ * last quota snapshot, and each is left out when that snapshot lacks it
+ * rather than guessed. "Free" only for the free tier, because a Pro plan has
+ * its own ceiling.
  */
-export const QUOTA_EXHAUSTED_REBUILD_NOTE =
-  'Your monthly AI allowance is used up, so the sections that needed it were left empty.';
+export function quotaExhaustedNote(quota: ProxyQuota | null, rebuild = false): string {
+  const free = quota?.tier !== 'pro';
+  const limit = quota?.limit;
+  const uses = typeof limit === 'number' && limit > 0
+    ? `all ${limit} ${free ? 'free ' : ''}AI uses`
+    : `all your ${free ? 'free ' : ''}AI uses`;
+  const reset = formatResetDate(quota?.resetsAt ?? '');
+  return (
+    // A rebuild keeps the prose the document already had, so only what was
+    // still empty stays empty; "left out" would say the stored prose went too.
+    `You've used ${uses} this month, so ${rebuild ? 'sections that needed AI were left empty' : 'the AI sections were left out'}.` +
+    (reset ? ` Your uses reset on ${reset}.` : '')
+  );
+}
+
+const AI_SECTION_IDS: ReadonlySet<SectionId> = new Set(
+  ALL_SECTIONS.filter((section) => section.ai).map((section) => section.id),
+);
+
+/**
+ * The omissions still worth listing once the quota note has explained the AI
+ * ones. An AI section left empty because no model ran is not "nothing to
+ * show", and listing it that way under the quota note says the same thing
+ * twice, the second time wrongly.
+ */
+export function withoutAiOmissions(omitted: readonly OmittedSection[]): OmittedSection[] {
+  return omitted.filter((o) => !(o.reason === 'nothingToShow' && AI_SECTION_IDS.has(o.id)));
+}
 
 /**
  * The AI half of a stale-version rebuild (spec 8.3): when AI writing is on,
@@ -638,10 +671,8 @@ export async function topUpProseForRebuild(state: UiState, src: DocSource): Prom
     return mergeTopUp(src.prose, draft?.prose ?? null);
   } catch (err) {
     noteGenerationError(state, err);
-    // The one failure it answers with state instead of a note, said out loud
-    // here because this path has no upgrade fork to render it.
-    if (!state.pendingAiNote && err instanceof ProseProxyError && err.code === 'quota_exhausted') {
-      state.pendingAiNote = QUOTA_EXHAUSTED_REBUILD_NOTE;
+    if (err instanceof ProseProxyError && err.code === 'quota_exhausted') {
+      state.pendingAiNote = quotaExhaustedNote(state.quota, true);
     }
     return src.prose;
   }

@@ -269,6 +269,15 @@ none of the reasoning above.
   page header hidden, the scroll region auto-placed into the header's
   content-sized grid row and took about half the panel. The scroll region and
   footer are now pinned to their rows.
+- **Running out of AI uses is said plainly.** A build with the free allowance
+  used up listed every AI section as "Left out Overview: nothing to show.",
+  blaming the component for what was the allowance. It now says "You've used
+  all 10 free AI uses this month, so the AI sections were left out. Your uses
+  reset on Oct 1.", with the limit and date taken from the proxy's last quota
+  snapshot and left out when that snapshot lacks them, and drops the per
+  section lines for AI sections. Deterministic omissions are still listed. A
+  Library rebuild says "sections that needed AI were left empty", because it
+  keeps the prose the document already had.
 - **The atom notice lines up with the rows below it.** The component screen's
   scroll region has no side padding, and every row carries its own inset
   except the atom notice, which ran edge to edge and touched the AI writing
