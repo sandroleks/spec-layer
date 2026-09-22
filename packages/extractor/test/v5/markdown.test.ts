@@ -85,3 +85,30 @@ describe('componentMarkdown properties', () => {
     expect(out).not.toContain('States:');
   });
 });
+
+describe('componentMarkdown anatomy', () => {
+  it('renders one bullet per part, lowercasing the node type', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Anatomy');
+    expect(out).toContain('- container: `Container/container`, frame');
+    expect(out).toContain('- label: `Container/label`, text');
+    expect(out).toContain('- icon: `Container/icon`, instance of Icon');
+  });
+
+  it('indents children and states the boolean that shows a part', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [{
+        part: 'root', path: 'Root', type: 'FRAME',
+        children: [{ part: 'kid', path: 'Root/kid', type: 'TEXT', shown_by: 'Show icon' }],
+      }],
+    } as typeof artifact);
+    expect(out).toContain('- root: `Root`, frame\n  - kid: `Root/kid`, text, shown when `Show icon` is true');
+  });
+
+  it('omits the section when anatomy is empty', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    expect(componentMarkdown({ ...artifact, anatomy: [] })).not.toContain('## Anatomy');
+  });
+});

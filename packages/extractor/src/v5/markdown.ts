@@ -92,6 +92,28 @@ function propertiesSection(api: Record<string, unknown>): string | undefined {
   return parts.join('\n\n');
 }
 
+function anatomyBullets(nodes: unknown[], depth: number): string[] {
+  const lines: string[] = [];
+  for (const raw of nodes) {
+    const node = asRecord(raw);
+    const part = escapeInline(str(node.part) ?? '');
+    const path = str(node.path);
+    const type = str(node.type);
+    const parts: string[] = [];
+    if (path) parts.push(code(path));
+    const component = str(node.component);
+    if (component) parts.push(`instance of ${escapeInline(component)}`);
+    else if (type) parts.push(escapeInline(type.toLowerCase()));
+    const shownBy = str(node.shown_by);
+    if (shownBy) parts.push(`shown when ${code(shownBy)} is true`);
+    lines.push(`${'  '.repeat(depth)}- ${part}: ${parts.join(', ')}`);
+    if (Array.isArray(node.children)) {
+      lines.push(...anatomyBullets(node.children, depth + 1));
+    }
+  }
+  return lines;
+}
+
 function frontMatter(artifact: ComponentArtifactV5): string {
   const envelope = componentEnvelope(artifact, 'markdown');
   return `---\n${toYaml(envelope as unknown as YamlValue)}---\n`;
@@ -116,6 +138,10 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   if (artifact.api !== undefined) {
     const section = propertiesSection(asRecord(artifact.api));
     if (section) blocks.push(section);
+  }
+
+  if (artifact.anatomy.length > 0) {
+    blocks.push(`## Anatomy\n\n${anatomyBullets(artifact.anatomy, 0).join('\n')}`);
   }
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
