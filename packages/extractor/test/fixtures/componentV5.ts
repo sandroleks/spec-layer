@@ -147,15 +147,23 @@ function buildStyledFoundation(): FoundationArtifactV5 {
       text_case: 'original', text_decoration: 'none',
     },
   };
+  // Two layers, one hidden: proves the Markdown renderer both marks a
+  // `visible: false` layer as hidden and separates layers unambiguously.
   const effect: EffectStyleV5 = {
     id: 'StyleID:effect', name: 'Elevation/Card', path: ['Elevation', 'Card'], mode_id: null,
-    effects: [{
-      type: 'drop_shadow', visible: true,
-      offset_x: { type: 'dimension', number: 0, unit: 'px' },
-      offset_y: { type: 'dimension', number: 2, unit: 'px' },
-      blur: { type: 'dimension', number: 8, unit: 'px' },
-      color: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
-    }],
+    effects: [
+      {
+        type: 'drop_shadow', visible: true,
+        offset_x: { type: 'dimension', number: 0, unit: 'px' },
+        offset_y: { type: 'dimension', number: 2, unit: 'px' },
+        blur: { type: 'dimension', number: 8, unit: 'px' },
+        color: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
+      },
+      {
+        type: 'layer_blur', visible: false,
+        blur: { type: 'dimension', number: 4, unit: 'px' },
+      },
+    ],
   };
   const payload: SemanticPayload = {
     completeness: { collections: 'complete', styles: 'complete', unavailable_sources: [] },

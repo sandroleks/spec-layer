@@ -222,13 +222,27 @@ describe('componentMarkdown tokens used', () => {
     expect(out).toContain('missing/token (unresolved: target\\_not\\_found)');
   });
 
-  it('tables effect styles, summarizing each layer', () => {
+  it('tables effect styles, separating layers with a semicolon', () => {
     const out = componentMarkdown(buildComponentV5StyledArtifact());
     expect(out).toContain('### Effect styles');
     expect(out).toContain('| Style | Mode | Effects |');
+    // Two layers on one style: `; ` marks the boundary between them, distinct
+    // from the `, ` between a single layer's own fields, so a reader (or an
+    // agent) cannot mistake "blur 8px" and "blur 4px" for the same layer.
     expect(out).toContain(
-      '| Elevation/Card |  | drop\\_shadow, offset 0px/2px, blur 8px, #000000 alpha 0.2 |',
+      '| Elevation/Card |  | drop\\_shadow, offset 0px/2px, blur 8px, #000000 alpha 0.2; '
+      + 'layer\\_blur, blur 4px (hidden) |',
     );
+  });
+
+  it('marks a hidden effect layer, leaving a visible one unmarked', () => {
+    const out = componentMarkdown(buildComponentV5StyledArtifact());
+    // The visible drop shadow layer carries no marker at all.
+    expect(out).toContain('#000000 alpha 0.2;');
+    expect(out).not.toContain('#000000 alpha 0.2 (hidden)');
+    // The hidden blur layer is marked, so an agent cannot implement a shadow
+    // the designer turned off.
+    expect(out).toContain('layer\\_blur, blur 4px (hidden)');
   });
 
   it('never renders a bare [object Object] for a value it does not recognise', () => {

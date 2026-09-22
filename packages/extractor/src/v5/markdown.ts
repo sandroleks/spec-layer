@@ -209,6 +209,10 @@ function styleValueText(value: unknown): string {
   return valueText(value);
 }
 
+// Deliberately does not render `paragraph_spacing`, `text_case` or
+// `text_decoration`: an honest scope cut to the properties most useful for an
+// implementer, not an oversight. Extend the table and this comment together
+// if a later task needs them.
 function typographySection(items: unknown[]): string | undefined {
   if (items.length === 0) return undefined;
   const rows = items.map((raw) => {
@@ -243,7 +247,13 @@ function effectSummary(effect: Record<string, unknown>): string {
   if (effect.blur !== undefined) parts.push(`blur ${valueText(effect.blur)}`);
   if (effect.spread !== undefined) parts.push(`spread ${valueText(effect.spread)}`);
   if (effect.color !== undefined) parts.push(valueText(effect.color));
-  return parts.join(', ');
+  const summary = parts.join(', ');
+  // A hidden layer must read differently from an active one: `visible` is a
+  // real Figma fact (`EffectV5.visible`), and silently dropping it would have
+  // a coding agent implement a shadow the designer turned off. `visible ===
+  // true` and an absent `visible` both stay unmarked -- the unmarked case is
+  // the normal one, and stating it on every row would only be noise.
+  return effect.visible === false ? `${summary} (hidden)` : summary;
 }
 
 function effectsSection(items: unknown[]): string | undefined {
@@ -252,7 +262,10 @@ function effectsSection(items: unknown[]): string | undefined {
     const style = asRecord(raw);
     const mode = str(style.mode);
     const effects = Array.isArray(style.effects) ? style.effects : [];
-    const summary = effects.map((effect) => effectSummary(asRecord(effect))).join(', ');
+    // Layers are joined with `; `, one level up from the `, ` a single
+    // layer's own fields use, so a reader can find the boundary between two
+    // layers -- otherwise ambiguous whenever two layers share a `type`.
+    const summary = effects.map((effect) => effectSummary(asRecord(effect))).join('; ');
     return [escapeCell(str(style.name) ?? ''), mode ? escapeCell(mode) : '', escapeCell(summary)];
   });
   return [
