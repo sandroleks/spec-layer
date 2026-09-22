@@ -406,15 +406,22 @@ function unboundSection(unbound: unknown): string | undefined {
 /**
  * The `## Issues` section: every `validation` row that is not an
  * `unbound-value` finding (those are already the Unbound values table above,
- * and repeating them here would double-count the same fact), plus every
- * `artifact.diagnostics` entry. Omitted entirely when both are empty --
- * including when every validation row is an `unbound-value` finding, which
- * is exactly the golden Button's case.
+ * and repeating them here would double-count the same fact). Omitted
+ * entirely when there is none -- including when every validation row is an
+ * `unbound-value` finding, which is exactly the golden Button's case.
+ *
+ * Deliberately reads `validation` ALONE and never `artifact.diagnostics`.
+ * `buildComponentArtifactV5` (`componentContext.ts:767`) already folds every
+ * diagnostic into `validation` via `componentDiagnosticRows`, which adds
+ * `path`/`property` a raw diagnostic does not carry -- so `validation`'s
+ * copy of a diagnostic is strictly more informative than the diagnostic
+ * itself, and iterating both would render the same finding twice, the
+ * duplicate being the worse of the two renderings.
  */
 function issuesSection(artifact: ComponentArtifactV5): string | undefined {
   const validation = Array.isArray(artifact.validation) ? artifact.validation : [];
   const lines: string[] = [];
-  for (const raw of [...validation, ...artifact.diagnostics]) {
+  for (const raw of validation) {
     const row = asRecord(raw);
     if (str(row.id) === 'unbound-value') continue;
     const severity = escapeInline(str(row.severity) ?? 'info');

@@ -345,7 +345,7 @@ describe('componentMarkdown unbound and issues', () => {
     expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toContain('## Issues');
   });
 
-  it('renders non-unbound validation rows and diagnostics under Issues', () => {
+  it('renders non-unbound validation rows under Issues', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
       ...artifact,
@@ -356,6 +356,46 @@ describe('componentMarkdown unbound and issues', () => {
     } as typeof artifact);
     expect(out).toContain('## Issues');
     expect(out).toContain('- error: fill points at a deleted variable. (`Container/x`, fill)');
+  });
+
+  it('renders a diagnostic-derived validation row exactly once, never doubled by the raw diagnostic', () => {
+    // HUMAN RULING (superseding the original brief): `## Issues` reads
+    // `validation` alone. `buildComponentArtifactV5` (`componentContext.ts:767`)
+    // already folds every `artifact.diagnostics` entry into `validation` via
+    // `componentDiagnosticRows`, which adds `path`/`property` the raw
+    // diagnostic itself does not carry -- so the `validation` copy is
+    // strictly more informative, and also iterating `artifact.diagnostics`
+    // would render the same underlying finding twice.
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      validation: [{
+        id: 'unresolved-reference', severity: 'error', path: 'Container/x',
+        property: 'fill', message: 'fill points at a deleted variable.',
+      }],
+      diagnostics: [{
+        code: 'UNRESOLVED_REFERENCE', severity: 'error', entity_id: 'Container/x',
+        message: 'fill points at a deleted variable.',
+      }],
+    } as typeof artifact);
+    expect(out.split('fill points at a deleted variable.').length - 1).toBe(1);
+  });
+
+  it('never renders a bare diagnostic that has no corresponding validation row', () => {
+    // Pins the ruling deliberately: `artifact.diagnostics` is never read by
+    // `## Issues` (`componentContext.ts:767` already folds every diagnostic
+    // into `validation`, so a diagnostic with no validation counterpart is
+    // not a real production shape, but the renderer must not read it anyway).
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      diagnostics: [{
+        code: 'INCONSISTENT_REFERENCE', severity: 'warning', entity_id: 'Container/y',
+        message: 'a lone diagnostic with no validation row.',
+      }],
+    } as typeof artifact);
+    expect(out).not.toContain('a lone diagnostic with no validation row.');
+    expect(out).not.toContain('## Issues');
   });
 
   it('renders a validation row with no path or property as a bare bullet', () => {
