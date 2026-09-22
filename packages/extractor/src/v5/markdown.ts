@@ -63,6 +63,37 @@ const SCOPE_SENTENCE: Record<string, string> = {
   default_variant: 'Default variant.',
 };
 
+function bindingsSection(references: Record<string, unknown>): string | undefined {
+  const bindings = Array.isArray(references.bindings) ? references.bindings : [];
+  if (bindings.length === 0) return undefined;
+  const byId = new Map(
+    (Array.isArray(references.used) ? references.used : []).map((r) => [
+      asRecord(r).source_id,
+      r,
+    ]),
+  );
+  const rows = bindings.map((raw) => {
+    const binding = asRecord(raw);
+    const source_id = str(binding.source_id);
+    const reference = source_id ? byId.get(source_id) : undefined;
+    const ref = asRecord(reference);
+    const name = str(ref.name) ?? source_id;
+    const status = ref.status && ref.status !== 'resolved' ? ` (${ref.status})` : '';
+    const when = asRecord(binding.when);
+    const whenStr = Object.entries(when)
+      .map(([axis, raw_values]) => {
+        const values = Array.isArray(raw_values) ? raw_values : [];
+        return `${escapeCell(axis)}: ${values.map((v) => escapeCell(String(v))).join(', ')}`;
+      })
+      .join('; ');
+    const path = str(binding.path);
+    const property = str(binding.property);
+    return [path ? code(path) : '', property ? escapeCell(property) : '',
+      `${escapeCell(name ?? '')}${status}`, whenStr];
+  });
+  return `## Token bindings\n\n${table(['Part', 'Property', 'Token', 'When'], rows).trimEnd()}`;
+}
+
 function layoutSection(layout: Record<string, unknown>): string | undefined {
   const items = Array.isArray(layout.items) ? layout.items : [];
   if (items.length === 0) return undefined;
@@ -172,6 +203,9 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
     const section = layoutSection(asRecord(artifact.layout));
     if (section) blocks.push(section);
   }
+
+  const bindings = bindingsSection(asRecord(artifact.references));
+  if (bindings) blocks.push(bindings);
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
 }

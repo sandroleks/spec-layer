@@ -127,3 +127,33 @@ describe('componentMarkdown layout', () => {
     expect(componentMarkdown({ ...artifact, layout: undefined })).not.toContain('## Layout');
   });
 });
+
+describe('componentMarkdown token bindings', () => {
+  it('names the token, renders conditions, and keeps artifact order', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Token bindings');
+    expect(out).toContain('| Part | Property | Token | When |');
+    expect(out).toContain(
+      '| `Container/container` | fill | md.sys.color.primary | Style: Filled; State: Enabled |',
+    );
+    expect(out).toContain('| `Container/container` | border-radius | md.sys.shape.corner.full |  |');
+  });
+
+  it('states a non-resolved status beside the token name', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const used = artifact.references.used.map((r) =>
+      r.source_id === 'VariableID:1' ? { ...r, status: 'external' as const } : r);
+    const out = componentMarkdown({
+      ...artifact, references: { ...artifact.references, used },
+    });
+    expect(out).toContain('md.sys.color.primary (external)');
+  });
+
+  it('falls back to the source id when the reference is unknown, never inventing a name', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact, references: { ...artifact.references, used: [] },
+    });
+    expect(out).toContain('| `Container/container` | fill | VariableID:1 |');
+  });
+});
