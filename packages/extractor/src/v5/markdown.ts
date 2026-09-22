@@ -275,6 +275,160 @@ function effectsSection(items: unknown[]): string | undefined {
 }
 
 /**
+ * One inline effect layer, as `exactEffectLayer` (`componentContext.ts:510`)
+ * actually shapes it: the RAW `EffectLayer` record (`effects.ts:44`), not
+ * `compactEffect`'s compacted AI-profile shape. The two are unrelated: a raw
+ * layer nests its offset in `offset: {x,y}` rather than separate `offset_x`/
+ * `offset_y` typed envelopes, names its blur radius `radius` rather than
+ * `blur`, and carries a plain `Rgba` (`{hex, alpha}`) rather than a
+ * `compactTypedValue` color -- so `effectSummary` (`compactEffect`'s renderer,
+ * above) would read every one of those fields as `undefined` and print
+ * nothing but the bare effect type. This renders each of the nine concrete
+ * shapes `EffectLayer` can be explicitly, using only the fields that shape
+ * actually carries, plus any per-field variable binding `exactEffectLayer`
+ * attached. Returns plain text; the caller escapes once, after joining every
+ * layer for a part.
+ */
+function inlineEffectLayerText(raw: unknown): string {
+  const layer = asRecord(raw);
+  const type = str(layer.type) ?? 'unknown';
+  const num = (value: unknown): string => (typeof value === 'number' ? String(value) : '');
+  let summary: string;
+  switch (type) {
+    case 'drop-shadow':
+    case 'inner-shadow': {
+      const offset = asRecord(layer.offset);
+      const color = asRecord(layer.color);
+      const parts = [type, `offset ${num(offset.x)}/${num(offset.y)}`, `radius ${num(layer.radius)}`];
+      if (layer.spread !== undefined) parts.push(`spread ${num(layer.spread)}`);
+      if (str(color.hex)) parts.push(`${str(color.hex)} alpha ${num(color.alpha)}`);
+      summary = parts.join(', ');
+      break;
+    }
+    case 'layer-blur':
+    case 'background-blur': {
+      const progressive = layer.blurType === 'progressive';
+      const parts = [progressive ? `${type} (progressive)` : type, `radius ${num(layer.radius)}`];
+      if (progressive) {
+        const startOffset = asRecord(layer.startOffset);
+        const endOffset = asRecord(layer.endOffset);
+        parts.push(`start radius ${num(layer.startRadius)}`);
+        parts.push(`start offset ${num(startOffset.x)}/${num(startOffset.y)}`);
+        parts.push(`end offset ${num(endOffset.x)}/${num(endOffset.y)}`);
+      }
+      summary = parts.join(', ');
+      break;
+    }
+    case 'noise': {
+      const color = asRecord(layer.color);
+      const noiseType = str(layer.noiseType);
+      const parts = [noiseType ? `noise (${noiseType})` : 'noise'];
+      if (str(color.hex)) parts.push(`${str(color.hex)} alpha ${num(color.alpha)}`);
+      parts.push(`size ${num(layer.noiseSize)}`);
+      parts.push(`density ${num(layer.density)}`);
+      const secondary = asRecord(layer.secondaryColor);
+      if (str(secondary.hex)) parts.push(`secondary ${str(secondary.hex)} alpha ${num(secondary.alpha)}`);
+      if (layer.opacity !== undefined) parts.push(`opacity ${num(layer.opacity)}`);
+      summary = parts.join(', ');
+      break;
+    }
+    case 'texture': {
+      const parts = ['texture', `size ${num(layer.noiseSize)}`, `radius ${num(layer.radius)}`,
+        `clip ${layer.clipToShape === true ? 'true' : 'false'}`];
+      const vector = asRecord(layer.noiseSizeVector);
+      if (vector.x !== undefined) parts.push(`vector ${num(vector.x)}/${num(vector.y)}`);
+      summary = parts.join(', ');
+      break;
+    }
+    case 'glass': {
+      summary = [
+        'glass', `radius ${num(layer.radius)}`, `light intensity ${num(layer.lightIntensity)}`,
+        `light angle ${num(layer.lightAngle)}`, `refraction ${num(layer.refraction)}`,
+        `depth ${num(layer.depth)}`, `dispersion ${num(layer.dispersion)}`,
+      ].join(', ');
+      break;
+    }
+    default: {
+      const figmaType = str(layer.figma_type);
+      summary = figmaType ? `unknown (${figmaType})` : 'unknown';
+    }
+  }
+  const bindings = layer.bindings !== undefined ? asRecord(layer.bindings) : undefined;
+  const boundText = bindings
+    ? Object.entries(bindings)
+      .map(([field, reference]) => `${field} bound to ${str(asRecord(reference).name) ?? ''}`)
+      .join(', ')
+    : '';
+  const hidden = layer.visible === false ? ' (hidden)' : '';
+  return `${summary}${boundText ? `, ${boundText}` : ''}${hidden}`;
+}
+
+/**
+ * The `## Effects` section: inline effects applied directly to component
+ * parts (`artifact.effects_inline`), distinct from `## Tokens used`'s
+ * `### Effect styles` subsection above, which renders the Foundation's
+ * SHARED effect styles from `compactEffect`'s compacted shape. This section
+ * has no relation to that one beyond both describing shadows and blurs.
+ */
+function effectsInlineSection(items: unknown[]): string | undefined {
+  if (items.length === 0) return undefined;
+  const rows = items.map((raw) => {
+    const item = asRecord(raw);
+    const path = str(item.path);
+    const layers = Array.isArray(item.layers) ? item.layers : [];
+    const summary = layers.map((layer) => inlineEffectLayerText(layer)).join('; ');
+    return [path ? code(path) : '', escapeCell(summary)];
+  });
+  return `## Effects\n\n${table(['Part', 'Effects'], rows).trimEnd()}`;
+}
+
+/**
+ * The `## Unbound values` section: `artifact.unbound`, one row per
+ * `{ path, property, issue, value? }` entry. An absent `value` renders as an
+ * empty cell -- never `none`, never a dash -- because `unbound-value` findings
+ * without a value (e.g. a missing token binding) genuinely have none to show.
+ */
+function unboundSection(unbound: unknown): string | undefined {
+  const entries = Array.isArray(unbound) ? unbound : [];
+  if (entries.length === 0) return undefined;
+  const rows = entries.map((raw) => {
+    const entry = asRecord(raw);
+    return [
+      str(entry.path) ? code(str(entry.path)!) : '',
+      escapeCell(str(entry.property) ?? ''),
+      escapeCell(str(entry.issue) ?? ''),
+      entry.value === undefined ? '' : escapeCell(String(entry.value)),
+    ];
+  });
+  return `## Unbound values\n\n${table(['Part', 'Property', 'Issue', 'Value'], rows).trimEnd()}`;
+}
+
+/**
+ * The `## Issues` section: every `validation` row that is not an
+ * `unbound-value` finding (those are already the Unbound values table above,
+ * and repeating them here would double-count the same fact), plus every
+ * `artifact.diagnostics` entry. Omitted entirely when both are empty --
+ * including when every validation row is an `unbound-value` finding, which
+ * is exactly the golden Button's case.
+ */
+function issuesSection(artifact: ComponentArtifactV5): string | undefined {
+  const validation = Array.isArray(artifact.validation) ? artifact.validation : [];
+  const lines: string[] = [];
+  for (const raw of [...validation, ...artifact.diagnostics]) {
+    const row = asRecord(raw);
+    if (str(row.id) === 'unbound-value') continue;
+    const severity = escapeInline(str(row.severity) ?? 'info');
+    const message = escapeInline(str(row.message) ?? '');
+    const where = [
+      str(row.path) ? code(str(row.path)!) : undefined,
+      str(row.property) ? escapeInline(str(row.property)!) : undefined,
+    ].filter((v): v is string => v !== undefined);
+    lines.push(`- ${severity}: ${message}${where.length > 0 ? ` (${where.join(', ')})` : ''}`);
+  }
+  return lines.length === 0 ? undefined : `## Issues\n\n${lines.join('\n')}`;
+}
+
+/**
  * The `## Tokens used` section: the Foundation dependency slice a component
  * needs, reusing `componentFoundationAiSlice` for the join, the mode-name
  * mapping and the value formatting rather than a second interpretation of
@@ -361,6 +515,19 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   if (bindings) blocks.push(bindings);
 
   blocks.push(tokensUsedSection(artifact));
+
+  if (artifact.effects_inline !== undefined) {
+    const section = effectsInlineSection(
+      Array.isArray(artifact.effects_inline) ? artifact.effects_inline : [],
+    );
+    if (section) blocks.push(section);
+  }
+
+  const unbound = unboundSection(artifact.unbound);
+  if (unbound) blocks.push(unbound);
+
+  const issues = issuesSection(artifact);
+  if (issues) blocks.push(issues);
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;
 }

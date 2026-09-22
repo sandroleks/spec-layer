@@ -250,3 +250,132 @@ describe('componentMarkdown tokens used', () => {
     expect(componentMarkdown(buildComponentV5StyledArtifact())).not.toContain('[object Object]');
   });
 });
+
+describe('componentMarkdown effects', () => {
+  it('omits the section when there is no inline effect', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).not.toContain('## Effects');
+  });
+
+  it('tables inline effect layers by their real fields, separating layers with a semicolon', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      effects_inline: [
+        {
+          path: 'Container/container',
+          layers: [
+            {
+              type: 'drop-shadow', visible: true, blendMode: 'NORMAL',
+              color: { hex: '#000000', alpha: 0.2 }, offset: { x: 0, y: 2 }, radius: 8,
+              bindings: {
+                radius: {
+                  source_id: 'VariableID:9', name: 'md.sys.elevation.blur',
+                  kind: 'variable', remote: false,
+                },
+              },
+            },
+            { type: 'layer-blur', blurType: 'normal', visible: false, radius: 4 },
+          ],
+        },
+      ],
+    } as typeof artifact);
+    expect(out).toContain('## Effects');
+    expect(out).toContain('| Part | Effects |');
+    expect(out).toContain(
+      '| `Container/container` | drop-shadow, offset 0/2, radius 8, #000000 alpha 0.2, '
+      + 'radius bound to md.sys.elevation.blur; layer-blur, radius 4 (hidden) |',
+    );
+  });
+
+  it('renders every other concrete effect shape by its own fields, never [object Object]', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      effects_inline: [
+        {
+          path: 'Container/backdrop',
+          layers: [
+            {
+              type: 'background-blur', blurType: 'progressive', visible: true,
+              radius: 12, startRadius: 0, startOffset: { x: 0, y: 0 }, endOffset: { x: 0, y: 100 },
+            },
+            {
+              type: 'noise', noiseType: 'monotone', visible: true, blendMode: 'NORMAL',
+              color: { hex: '#ffffff', alpha: 1 }, noiseSize: 1, density: 0.5,
+            },
+            { type: 'texture', visible: true, noiseSize: 1, radius: 2, clipToShape: true },
+            {
+              type: 'glass', visible: true, radius: 4, lightIntensity: 1, lightAngle: 45,
+              refraction: 1.1, depth: 2, dispersion: 0.1,
+            },
+            { type: 'unknown', figma_type: 'FUTURE_EFFECT' },
+          ],
+        },
+      ],
+    } as typeof artifact);
+    expect(out).toContain(
+      'background-blur (progressive), radius 12, start radius 0, start offset 0/0, end offset 0/100',
+    );
+    expect(out).toContain('noise (monotone), #ffffff alpha 1, size 1, density 0.5');
+    expect(out).toContain('texture, size 1, radius 2, clip true');
+    expect(out).toContain(
+      'glass, radius 4, light intensity 1, light angle 45, refraction 1.1, depth 2, dispersion 0.1',
+    );
+    expect(out).toContain('unknown (FUTURE\\_EFFECT)');
+    expect(out).not.toContain('[object Object]');
+  });
+});
+
+describe('componentMarkdown unbound and issues', () => {
+  it('tables unbound values and leaves an absent value blank', () => {
+    const out = componentMarkdown(buildComponentV5GoldenArtifact());
+    expect(out).toContain('## Unbound values');
+    expect(out).toContain('| Part | Property | Issue | Value |');
+    expect(out).toContain('| `Container/container` | gap | hardcoded-value | 8 |');
+    expect(out).toContain('| `Container/label` | typography | missing-token-binding |  |');
+  });
+
+  it('omits the section when there is no unbound value', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    expect(componentMarkdown({ ...artifact, unbound: undefined })).not.toContain('## Unbound values');
+  });
+
+  it('renders no Issues section when every validation row is an unbound value', () => {
+    expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toContain('## Issues');
+  });
+
+  it('renders non-unbound validation rows and diagnostics under Issues', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      validation: [{
+        id: 'orphan-part', severity: 'error', path: 'Container/x',
+        property: 'fill', message: 'fill points at a deleted variable.',
+      }],
+    } as typeof artifact);
+    expect(out).toContain('## Issues');
+    expect(out).toContain('- error: fill points at a deleted variable. (`Container/x`, fill)');
+  });
+
+  it('renders a validation row with no path or property as a bare bullet', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      validation: [{ id: 'artifact-level', severity: 'warning', message: 'something is off.' }],
+    } as typeof artifact);
+    expect(out).toContain('- warning: something is off.\n');
+  });
+
+  it('never renders a bare [object Object] anywhere in unbound or issues', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      validation: [{
+        id: 'orphan-part', severity: 'error', path: 'Container/x',
+        property: 'fill', message: 'fill points at a deleted variable.',
+      }],
+    } as typeof artifact);
+    expect(out).not.toContain('[object Object]');
+  });
+});
