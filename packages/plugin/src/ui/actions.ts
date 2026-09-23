@@ -9,7 +9,7 @@
 import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext, toYaml,
+  buildComponentArtifactV5, componentAiContext, toYaml, componentMarkdown,
   proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
@@ -24,7 +24,7 @@ import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
-import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
+import { DEFAULT_COMPONENT_FORMAT, COMPONENT_FORMAT_NAME, type ComponentFormat } from '../componentFormat';
 import {
   ALL_SECTIONS, buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
@@ -784,17 +784,22 @@ export async function copyBriefFromSource(
       // flattened at the extractor call rather than carried as v1 anywhere.
       prose: prose ? proseToLegacy(prose) : null,
     });
-    const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
-    const size = sizeCaveat(yaml);
+    // One artifact, two renderings. The page comes from the same projection
+    // `spec-layer pull --component-format md` runs, so nothing is re-derived.
+    const format = state.componentFormat;
+    const text = format === 'md'
+      ? componentMarkdown(artifact)
+      : toYaml(componentAiContext(artifact) as unknown as YamlValue);
+    const size = sizeCaveat(text);
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
     const noProse = prose || options.guidelinesNote === false ? '' : ' This document has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
-    const tier = await copyText(yaml);
+    const tier = await copyText(text);
     if (tier === 'manual') {
-      renderManualCopyModal(yaml, caveat || undefined);
+      renderManualCopyModal(text, caveat || undefined);
       return;
     }
-    ui.info(`Copied.${size}${missing}${noProse}`);
+    ui.info(`Copied as ${COMPONENT_FORMAT_NAME[format]}.${size}${missing}${noProse}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Could not read that component. Nothing was copied. ${msg}`);

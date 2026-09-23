@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { load } from 'js-yaml';
 import type { ProseV2 } from '@spec-layer/extractor';
+import { COMPONENT_MARKDOWN_MARKER } from '@spec-layer/extractor';
 import type { DocSource } from '../src/ui/actions';
 
 const copyText = vi.fn();
@@ -166,6 +167,47 @@ describe('copyBriefFromSource', () => {
     expect(bytes).toBeGreaterThan(LARGE_COPY_BYTES);
     expect(notice).toContain(`${Math.round(bytes / 1024)} KB, which is large for some chat windows.`);
     expect(notice ?? '').not.toMatch(/\d+ lines/);
+  });
+
+  it('says which format it copied, YAML by default', async () => {
+    const ui = presenter();
+    await copyBriefFromSource(createState(), SRC, STORED, ui);
+    expect(ui.info).toHaveBeenCalledTimes(1);
+    expect(ui.info.mock.calls[0][0]).toMatch(/^Copied as YAML\./);
+  });
+
+  it('copies the Markdown page when Markdown is chosen, with every caveat', async () => {
+    const ui = presenter();
+    const state = createState();
+    state.componentFormat = 'md';
+    await copyBriefFromSource(state, SRC, null, ui);
+    const text = copyText.mock.calls[0][0] as string;
+    expect(text.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+    expect(text).toContain('\n# Button\n');
+    expect(ui.info).toHaveBeenCalledWith(
+      'Copied as Markdown. Token values are missing because foundations have not been read yet. '
+      + 'This document has no saved guidelines.',
+    );
+  });
+
+  it('renders both formats from the same artifact, so both carry the same content hash', async () => {
+    await copyBriefFromSource(createState(), SRC, STORED, presenter());
+    const markdown = createState();
+    markdown.componentFormat = 'md';
+    await copyBriefFromSource(markdown, SRC, STORED, presenter());
+    const yaml = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
+    const page = copyText.mock.calls[1][0] as string;
+    expect(page).toContain(`content_hash: ${yaml.spec_layer.content_hash}\n`);
+  });
+
+  it('hands the Markdown page to the tier-3 modal with its caveats', async () => {
+    copyText.mockResolvedValue('manual');
+    const state = createState();
+    state.componentFormat = 'md';
+    await copyBriefFromSource(state, SRC, null, presenter());
+    const [text, notice] = renderManualCopyModal.mock.calls[0];
+    expect(text.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+    expect(notice).toContain('This document has no saved guidelines.');
   });
 
   // This test sets foundationSpec at module scope via onSelectionFoundation,
