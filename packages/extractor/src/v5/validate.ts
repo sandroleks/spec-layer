@@ -27,9 +27,10 @@
 import { compareCodeUnits, diagnostic } from './diagnostics';
 import type { Diagnostic } from './diagnostics';
 import {
-  SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
+  SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_UNRESOLVED_REASONS, SUPPORTED_VALUE_KINDS,
 } from './value';
-import type { CanonicalValue, TokenType, TypedValue, Unit } from './value';
+import type { CanonicalValue, MissingReason, TokenType, TypedValue, Unit, UnresolvedReason } from './value';
 import type { EffectStyleV5, TokenV5 } from './entities';
 import { canonicalJson } from './canonical';
 import type { FoundationArtifactV5 } from './canonical';
@@ -208,8 +209,9 @@ function validateAliasResolution(
   if (status === 'resolved') {
     validateTypedValueEnvelope(resolved.value, entityId, out, modeId, expectedType);
   } else if (status === 'unresolved') {
-    if (!isNonEmptyString(resolved.reason)) {
-      out.push(shape(entityId, 'An unresolved alias must carry a non-empty reason.', modeId));
+    if (!isNonEmptyString(resolved.reason)
+      || !SUPPORTED_UNRESOLVED_REASONS.includes(resolved.reason as UnresolvedReason)) {
+      out.push(shape(entityId, `An unresolved alias must carry a reason from the v5 vocabulary, not ${JSON.stringify(resolved.reason)}.`, modeId));
     }
     if (resolved.value !== null) {
       out.push(shape(entityId, 'An unresolved alias must carry a null value.', modeId));
@@ -253,8 +255,9 @@ function validateValue(
       validateAliasResolution(value.resolved, entityId, out, modeId, expectedType);
     }
   } else if (kind === 'missing') {
-    if (!isNonEmptyString(value.reason)) {
-      out.push(shape(entityId, 'A missing value must carry a non-empty reason.', modeId));
+    if (!isNonEmptyString(value.reason)
+      || !SUPPORTED_MISSING_REASONS.includes(value.reason as MissingReason)) {
+      out.push(shape(entityId, `A missing value must carry a reason from the v5 vocabulary, not ${JSON.stringify(value.reason)}.`, modeId));
     }
   }
 }

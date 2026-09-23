@@ -192,6 +192,19 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Changed
 
+- **The published Foundation Context v5 schema pins its envelope, diagnostics
+  and statistics.** `spec_layer`, each `diagnostics` entry and `statistics`
+  were untyped objects, and an alias or missing value's `reason` was any
+  string, while the Component Context schema pinned all of them. The
+  Foundation schema now states the envelope field by field, lists the
+  diagnostic codes and severities, types every statistic as a count, and
+  lists both reason vocabularies; `validateLevel1` learns the two reason
+  lists so the plugin's own check and the published schema keep agreeing.
+  `completeness.styles` documents why it is `partial` for any file with a
+  style. Every committed golden validates. The live schema at
+  `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
+  until the private site redeploys, so `npm run check:site-live` fails from
+  this change until that deploy; it is not part of `npm run check`.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping

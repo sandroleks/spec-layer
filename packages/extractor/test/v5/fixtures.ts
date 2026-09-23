@@ -19,6 +19,7 @@ import type { CanonicalValue, TokenType, TypedValue } from '../../src/v5/value';
 import type { CollectionV5, TokenV5 } from '../../src/v5/entities';
 import type { ArtifactSource, FoundationArtifactV5, SemanticPayload } from '../../src/v5/canonical';
 import { buildEnvelope } from '../../src/v5/canonical';
+import { computeFoundationStatistics } from '../../src/v5/statistics';
 
 const SOURCE: ArtifactSource = {
   provider: 'figma',
@@ -78,7 +79,7 @@ export const OK_ARTIFACT: FoundationArtifactV5 = {
   ...PAYLOAD,
   spec_layer: buildEnvelope(PAYLOAD, META),
   diagnostics: [],
-  statistics: {},
+  statistics: computeFoundationStatistics({ ...PAYLOAD, diagnostics: [] }),
 };
 
 export interface FixtureCase { name: string; artifact: unknown }
@@ -397,6 +398,15 @@ export const INVALID_CASES: FixtureCase[] = [
     }),
   },
   { name: 'missing value has no reason', artifact: withValue({ kind: 'missing' }) },
+  {
+    name: 'unresolved alias reason is outside the vocabulary',
+    artifact: withValue({
+      kind: 'alias',
+      reference: (UNRESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).reference,
+      resolved: { status: 'unresolved', reason: 'gremlins', value: null, chain: [] },
+    }),
+  },
+  { name: 'missing value reason is outside the vocabulary', artifact: withValue({ kind: 'missing', reason: 'gremlins' }) },
 
   // -- §9.5/§9.6 typed value content: well-formed shape, unrepresentable data --
   { name: 'color hex is uppercase', artifact: withValue({ kind: 'literal', value: { type: 'color', color_space: 'srgb', hex: '#FFFFFF', alpha: 1 } }) },

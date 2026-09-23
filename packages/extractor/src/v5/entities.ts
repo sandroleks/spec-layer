@@ -119,6 +119,12 @@ export interface EffectStyleV5 extends EntityIdentity {
   lifecycle?: LifecycleState;
 }
 
+/** `styles` is `complete` only for a file with no typography or effect
+ *  styles: Figma exposes no publication state, lifecycle or consuming mode
+ *  for a style, so any exported style leaves it `partial`, and the
+ *  METADATA_UNAVAILABLE diagnostic on the artifact root names the absent
+ *  fields (`fromFoundation.ts`, `completenessOf`). The published schema
+ *  carries the same sentence on `completeness.styles`. */
 export type Completeness = 'complete' | 'partial' | 'unavailable';
 
 /**

@@ -38,6 +38,18 @@ export const SUPPORTED_VALUE_KINDS = ['literal', 'alias', 'missing'] as const;
  *  reason the two arrays above are. */
 export const SUPPORTED_DURATION_UNITS: readonly ('ms' | 's')[] = ['ms', 's'] as const;
 
+/** Runtime mirrors of `UnresolvedReason` and `MissingReason`, for the same
+ *  reason as the arrays above: the published schema lists them as enums, and
+ *  only a runtime array lets the parity test hold the two together. */
+export const SUPPORTED_UNRESOLVED_REASONS: readonly UnresolvedReason[] = [
+  'source_library_unavailable', 'target_not_found', 'cycle', 'type_mismatch',
+  'depth_exceeded', 'ambiguous_target', 'target_mode_unresolvable',
+  'target_mode_value_missing',
+] as const;
+export const SUPPORTED_MISSING_REASONS: readonly MissingReason[] = [
+  'no_value_for_mode', 'unsupported_value_type', 'invalid_source_value', 'source_unavailable',
+] as const;
+
 export interface ColorValue {
   type: 'color';
   color_space: 'srgb';

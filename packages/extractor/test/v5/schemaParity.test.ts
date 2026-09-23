@@ -4,11 +4,13 @@ import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { validateLevel1 } from '../../src/v5/validate';
 import { SCHEMA_URI } from '../../src/v5/canonical';
-import { compareCodeUnits } from '../../src/v5/diagnostics';
+import { DEFAULT_SEVERITY, compareCodeUnits } from '../../src/v5/diagnostics';
+import { computeFoundationStatistics } from '../../src/v5/statistics';
 import {
-  SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_UNRESOLVED_REASONS,
 } from '../../src/v5/value';
-import { VALID_CASES, INVALID_CASES } from './fixtures';
+import { OK_ARTIFACT, VALID_CASES, INVALID_CASES } from './fixtures';
 
 const schemaText = readFileSync(
   'packages/extractor/src/v5/schema/foundation-5.1.0.json', 'utf8',
@@ -69,6 +71,9 @@ describe('schema parity', () => {
       ['token_type', SUPPORTED_TOKEN_TYPES, enumOf('token_type', [])],
       ['duration_value.unit', SUPPORTED_DURATION_UNITS,
         enumOf('duration_value', ['properties', 'unit'])],
+      ['unresolved_reason', SUPPORTED_UNRESOLVED_REASONS, enumOf('unresolved_reason', [])],
+      ['missing_reason', SUPPORTED_MISSING_REASONS, enumOf('missing_reason', [])],
+      ['diagnostic.code', Object.keys(DEFAULT_SEVERITY), enumOf('diagnostic', ['properties', 'code'])],
     ];
     for (const [name, runtime, schemaEnum] of pairs) {
       expect(
@@ -122,5 +127,46 @@ describe('schema parity', () => {
       expect(validateLevel1(artifact).length, `handwritten accepted invalid ${name}`)
         .toBeGreaterThan(0);
     }
+  });
+});
+
+describe('schema-only envelope rules', () => {
+  // Level 1 runs inside the plugin on an artifact the plugin itself just
+  // wrote, so it checks only that the envelope, the diagnostics list and the
+  // statistics block exist; their contents are the writer's own output. The
+  // published schema is the consumer's check on the same bytes and pins them.
+  const rejects = (name: string, mutate: (root: Record<string, unknown>) => void) => {
+    const root = structuredClone(OK_ARTIFACT) as unknown as Record<string, unknown>;
+    mutate(root);
+    expect(compiled(root), `schema accepted ${name}`).toBe(false);
+  };
+  const envelope = (root: Record<string, unknown>) => root.spec_layer as Record<string, Record<string, unknown>>;
+
+  it('rejects a foreign envelope', () => {
+    rejects('a component envelope kind', (r) => { (r.spec_layer as Record<string, unknown>).kind = 'component'; });
+    rejects('the component extractor name', (r) => { envelope(r).extractor.name = 'spec-layer-component'; });
+    rejects('a content hash that is not sha256', (r) => { envelope(r).export.content_hash = 'md5:abc'; });
+    rejects('an unknown envelope field', (r) => { (r.spec_layer as Record<string, unknown>).extra = true; });
+  });
+
+  it('rejects a diagnostic outside the vocabulary', () => {
+    rejects('an unknown code', (r) => {
+      r.diagnostics = [{ code: 'MADE_UP', severity: 'error', entity_id: 'x', message: 'y' }];
+    });
+    rejects('an unknown severity', (r) => {
+      r.diagnostics = [{ code: 'UNRESOLVED_ALIAS', severity: 'fatal', entity_id: 'x', message: 'y' }];
+    });
+  });
+
+  it('rejects statistics that are not the extractor counts', () => {
+    rejects('a fractional token count', (r) => { (r.statistics as Record<string, unknown>).tokens = 1.5; });
+    rejects('a missing lifecycle block', (r) => { delete (r.statistics as Record<string, unknown>).lifecycle; });
+    rejects('an unknown statistic', (r) => { (r.statistics as Record<string, unknown>).luck = 7; });
+  });
+
+  it('accepts exactly the statistics the extractor computes', () => {
+    const root = structuredClone(OK_ARTIFACT);
+    root.statistics = computeFoundationStatistics({ ...root, diagnostics: root.diagnostics });
+    expect(compiled(root), ajv.errorsText(compiled.errors)).toBe(true);
   });
 });
