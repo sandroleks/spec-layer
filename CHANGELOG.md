@@ -624,6 +624,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   token per mode. `config_hash` is unchanged: it digests the overrides as
   written.
 
+- **A collection named `Typography styles` or `Effect styles` keeps its own
+  resolver set.** It used to share the set name with the style file, and
+  the file written last won. The collection is now labelled by its name and
+  id, like two collections that share a name, and the report says why.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable

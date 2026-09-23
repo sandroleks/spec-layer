@@ -998,6 +998,29 @@ describe('foundationDtcg resolver and document', () => {
     expect(Object.keys(doc.modifiers).sort()).toEqual([first, second]);
   });
 
+  it('keeps a collection named like a style set apart from that set', () => {
+    const artifact = syntheticArtifact();
+    const semantic = artifact.collections.find((c) => c.id === 'CollectionID:semantic');
+    if (!semantic) throw new Error('fixture lost Semantic');
+    // One mode, so the collection becomes a resolver set rather than a modifier.
+    const keep = semantic.modes[0];
+    semantic.modes = [keep];
+    semantic.default_mode_id = keep.id;
+    for (const token of artifact.tokens) {
+      if (token.collection_id === semantic.id) token.values = { [keep.id]: token.values[keep.id] };
+    }
+    semantic.name = 'Typography styles';
+    const out = foundationDtcg(artifact);
+    const label = 'Typography styles [CollectionID:semantic]';
+    expect(out.resolver.sets['Typography styles']).toEqual({ sources: [{ $ref: 'styles.typography.json' }] });
+    expect(out.resolver.sets[label]).toEqual({ sources: [{ $ref: 'typography-styles.light.json' }] });
+    expect(out.resolver.resolutionOrder).toContainEqual({ $ref: `#/sets/${label}` });
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'collection_name_collision', severity: 'warning', path: label,
+      details: { id: 'CollectionID:semantic', reserved: 'Typography styles' },
+    }));
+  });
+
   it('escapes JSON pointer characters in set and modifier names', () => {
     const renamed = syntheticArtifact();
     renamed.collections[1].name = 'a/b~c';

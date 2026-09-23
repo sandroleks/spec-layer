@@ -158,6 +158,12 @@ const RESERVED_FILE_NAMES: readonly string[] = [
   'resolver.json', 'spec-layer.meta.json', 'report.json',
 ];
 
+/** The set names the resolver writes for styles. A collection label must never
+ *  land on one: a single-mode collection named "Typography styles" would
+ *  otherwise share a `sets` entry with the typography file, and whichever
+ *  was written last would win. */
+const RESERVED_SET_NAMES: readonly string[] = ['Typography styles', 'Effect styles'];
+
 /** `<collection>.<mode>.json`, with `-2`, `-3` on a slug collision with an
  *  already taken or reserved name. */
 export function fileNameFor(
@@ -673,11 +679,12 @@ function modeLabels(collection: CollectionV5): Map<string, string> {
   return new Map(collection.modes.map((m) => [m.id, counts.get(m.name) === 1 ? m.name : `${m.name} [${m.id}]`]));
 }
 
-/** Collection labels unique across the artifact, by the same rule as modes.
- *  Two Figma collections may share a display name, and keying the resolver by
- *  the bare name would drop one of them. */
+/** Collection labels unique across the artifact, by the same rule as modes,
+ *  and never equal to a reserved style set name. Two Figma collections may
+ *  share a display name, and keying the resolver by the bare name would drop
+ *  one of them. */
 function collectionLabels(collections: CollectionV5[]): Map<string, string> {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, number>(RESERVED_SET_NAMES.map((name) => [name, 1]));
   for (const c of collections) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
   return new Map(collections.map(
     (c) => [c.id, counts.get(c.name) === 1 ? c.name : `${c.name} [${c.id}]`],
@@ -707,6 +714,15 @@ function reportCollectionNameCollisions(p: Projection): void {
         details: { id: collection.id, ids: collections.map((c) => c.id) },
       });
     }
+  }
+  for (const collection of p.artifact.collections) {
+    if (!RESERVED_SET_NAMES.includes(collection.name)) continue;
+    reportOnce(p, {
+      code: 'collection_name_collision', severity: 'warning',
+      path: collectionLabelOf(p, collection),
+      message: `"${collection.name}" is the name this export gives its own style set, so the resolver labels the collection by its name followed by its id in brackets.`,
+      details: { id: collection.id, reserved: collection.name },
+    });
   }
 }
 
