@@ -14,14 +14,16 @@ re-projects on its first pull with 0.9.0 and picks all of this up. A release
 that changes what a pull writes has to bump the CLI, or a repository with a
 current pull is told it is already up to date and keeps the old files. The
 plugin portion adds a download feature to the Publish screen and ships in the
-plugin's own release, on its own schedule; it needs no CLI version and moves
-none of the reasoning above.
+plugin's own release, on its own schedule; its snapshot download needs no CLI
+version, but its Markdown setup command does, per the 0.10.0 paragraph below.
 
 The CLI's Markdown support below ships as 0.10.0, a minor release because it
 adds an option. The manifest records the component format, so switching
 formats re-projects on the next pull; a repository that stays on YAML
 re-projects once on upgrade through the `manifest.cliVersion` check and gets
-byte-identical files.
+byte-identical files. The plugin's Markdown setup command depends on it: CLI
+0.9.0 does not know `--component-format`, prints its usage, and exits 1, so a
+plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
@@ -41,6 +43,23 @@ byte-identical files.
   "(3 Markdown files)". The agent guide from `spec-layer skill` describes the
   page's headings when the pull wrote Markdown.
 
+- **Copy for AI and the snapshot can write components as Markdown.** Settings
+  now has tabs, Frames, Export and About, and Export holds **Component
+  format**: YAML, the default, or Markdown. The choice is per user, like the
+  frame theme. With Markdown, Copy for AI on the component screen and on a
+  component's Library row copies the page `componentMarkdown` renders from the
+  artifact the copy just built, the same projection `spec-layer pull
+  --component-format md` runs, and the toast names the format: "Copied as
+  YAML." or "Copied as Markdown.", followed by the same caveats as before. The
+  snapshot download writes `components/<slug>.md`, and its `SKILL.md`
+  describes the page's headings instead of YAML keys; `tokens/` and
+  `fonts.json` are unchanged. The Publish screen's setup command and agent
+  prompt add `--component-format md`, so a repository set up from them pulls
+  Markdown too, and the download block says which format is in use with a way
+  to Settings. Foundations copy and download as DTCG in both formats. YAML
+  output is unchanged byte for byte. The Markdown setup command needs
+  `spec-layer@0.10.0` on npm.
+
 - **A component artifact can be rendered as Markdown.** `componentMarkdown` in
   `packages/extractor/src/v5/markdown.ts` projects a validated Component
   Context v5 artifact to a readable page: properties, anatomy, layout, token
@@ -49,7 +68,8 @@ byte-identical files.
   never feeds a hash, is never stored in a bundle, and nothing parses it back.
   An artifact with no component name is refused with an error rather than
   given a placeholder heading.
-  The CLI produces it with `--component-format md`; the plugin follows.
+  The CLI produces it with `--component-format md`, and the plugin when
+  Settings is set to Markdown.
 
 - **Foundation rows carry what the new frames draw.** A variable row now
   projects the code syntax Figma's variable settings define and the scale

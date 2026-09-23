@@ -9,7 +9,7 @@
 import {
   extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
-  buildComponentArtifactV5, componentAiContext, toYaml,
+  buildComponentArtifactV5, componentAiContext, toYaml, componentMarkdown,
   proseToLegacy, hasProseContent,
 } from '@spec-layer/extractor';
 import type {
@@ -24,6 +24,7 @@ import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
+import { DEFAULT_COMPONENT_FORMAT, COMPONENT_FORMAT_NAME, type ComponentFormat } from '../componentFormat';
 import {
   ALL_SECTIONS, buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
@@ -67,6 +68,9 @@ export interface UiState {
   quota: ProxyQuota | null;
   quotaExhausted: boolean;
   aiEnabled: boolean;
+  // How Copy for AI and the snapshot write a component. Per user, stored by
+  // the main thread; YAML until the boot message says otherwise.
+  componentFormat: ComponentFormat;
   generatedProse: ProseV2 | null;
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
@@ -106,6 +110,7 @@ export function createState(): UiState {
     quota: null,
     quotaExhausted: false,
     aiEnabled: false,
+    componentFormat: DEFAULT_COMPONENT_FORMAT,
     generatedProse: null,
     generatedProseKeys: null,
     lastOmitted: [],
@@ -478,6 +483,11 @@ export function setAiEnabled(state: UiState, value: boolean): void {
   send({ type: 'setAiEnabled', value });
 }
 
+export function setComponentFormat(state: UiState, value: ComponentFormat): void {
+  state.componentFormat = value;
+  send({ type: 'setComponentFormat', value });
+}
+
 export function setBrandTheme(state: UiState, value: BrandTheme): void {
   state.brandTheme = value;
   send({ type: 'setBrandTheme', value });
@@ -774,17 +784,22 @@ export async function copyBriefFromSource(
       // flattened at the extractor call rather than carried as v1 anywhere.
       prose: prose ? proseToLegacy(prose) : null,
     });
-    const yaml = toYaml(componentAiContext(artifact) as unknown as YamlValue);
-    const size = sizeCaveat(yaml);
+    // One artifact, two renderings. The page comes from the same projection
+    // `spec-layer pull --component-format md` runs, so nothing is re-derived.
+    const format = state.componentFormat;
+    const text = format === 'md'
+      ? componentMarkdown(artifact)
+      : toYaml(componentAiContext(artifact) as unknown as YamlValue);
+    const size = sizeCaveat(text);
     const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
     const noProse = prose || options.guidelinesNote === false ? '' : ' This document has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
-    const tier = await copyText(yaml);
+    const tier = await copyText(text);
     if (tier === 'manual') {
-      renderManualCopyModal(yaml, caveat || undefined);
+      renderManualCopyModal(text, caveat || undefined);
       return;
     }
-    ui.info(`Copied.${size}${missing}${noProse}`);
+    ui.info(`Copied as ${COMPONENT_FORMAT_NAME[format]}.${size}${missing}${noProse}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Could not read that component. Nothing was copied. ${msg}`);

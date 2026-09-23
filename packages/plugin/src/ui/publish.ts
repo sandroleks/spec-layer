@@ -14,6 +14,7 @@ import {
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
+import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
 import { pluginBuild, generatedGuidelines } from './actions';
 import { PROXY_URL, authHeaders, isLibraryId, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
@@ -355,8 +356,18 @@ export async function rotatePullKey(
   return { kind: 'error', message: `Rotating the key failed with HTTP ${res.status}.` };
 }
 
-export function setupCommand(libraryId: string, pullKey: string): string {
-  return `npx spec-layer setup --id ${libraryId} --key ${pullKey}`;
+/**
+ * The flag a setup line carries for the component format. Empty for YAML, the
+ * CLI's default, so the YAML command stays exactly what it always was. The
+ * CLI's `setup` stores the flag in speclayer.json, so every later pull in that
+ * repository writes the same format.
+ */
+function formatFlag(format: ComponentFormat): string {
+  return format === 'md' ? ' --component-format md' : '';
+}
+
+export function setupCommand(libraryId: string, pullKey: string, format: ComponentFormat): string {
+  return `npx spec-layer setup --id ${libraryId} --key ${pullKey}${formatFlag(format)}`;
 }
 
 /**
@@ -366,12 +377,12 @@ export function setupCommand(libraryId: string, pullKey: string): string {
  * agent's guide to the pulled files, since an agent that only receives the
  * setup line has no way to know what landed or how to read it.
  */
-export function agentSetupMessage(libraryId: string, pullKey: string): string {
+export function agentSetupMessage(libraryId: string, pullKey: string, format: ComponentFormat): string {
   return [
     'Set up Spec Layer design-system context in this repository.',
     '',
     '1. In the repository root, run:',
-    `   npx --yes spec-layer setup --id ${libraryId} --key ${pullKey}`,
+    `   npx --yes spec-layer setup --id ${libraryId} --key ${pullKey}${formatFlag(format)}`,
     '   It writes speclayer.json, stores the pull key in a gitignored speclayer.local.json, and pulls the published library into .speclayer/.',
     '2. Then run:',
     '   npx --yes spec-layer skill --install',
@@ -401,6 +412,10 @@ export interface PublishState {
    *  one round trip to the main thread, and only this says which reply
    *  handler should run. */
   intent: 'publish' | 'download' | 'dryRun';
+  /** The component format the in-flight download was started with. Read at
+   *  the click, so a change in Settings during the collect cannot change the
+   *  zip. Only a download reads it. */
+  downloadFormat: ComponentFormat;
   /** The library's current version as last reported; null before the first
    *  versioned publish. */
   version: string | null;
@@ -418,6 +433,7 @@ export interface PublishState {
 export function createPublishState(): PublishState {
   return {
     status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'publish',
+    downloadFormat: DEFAULT_COMPONENT_FORMAT,
     version: null, proposal: null, proposalStatus: 'idle', chosenBump: null, note: '', initialVersion: '1.0.0',
   };
 }
@@ -541,11 +557,12 @@ export function onPublishClick(_auth: ProxyAuth): void {
 /**
  * Start a download: the same collect a publish starts, marked so the reply
  * writes a zip instead of contacting the proxy. Takes no auth because a
- * snapshot needs no identity, no license, and no pull key.
+ * snapshot needs no identity, no license, and no pull key. The format is
+ * taken now, from the caller, and held for the reply.
  */
-export function onDownloadSkillClick(): void {
+export function onDownloadSkillClick(format: ComponentFormat): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
-  state = { ...state, status: 'collecting', message: null, intent: 'download' };
+  state = { ...state, status: 'collecting', message: null, intent: 'download', downloadFormat: format };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
 }
@@ -647,7 +664,7 @@ export async function onPublishSources(
       const generatedAt = new Date().toISOString();
       const bundle = buildPublishBundle(msg, generatedAt);
       downloadBytes(
-        zipFiles(buildSkillFiles(bundle, generatedAt)),
+        zipFiles(buildSkillFiles(bundle, generatedAt, state.downloadFormat)),
         skillZipFilename(bundle.fileName),
         'application/zip',
       );

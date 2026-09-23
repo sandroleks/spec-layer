@@ -429,6 +429,16 @@ captured for the review record.
     same file with this development build and refresh the Library. Run
     **Update documentation**, change the source again, refresh, and confirm
     the list now appears.
+14. In Settings > Export choose **Markdown**. Run **Copy for AI** from the
+    component screen's footer and from a component row's menu, and paste each
+    into a plain text editor. Each opens with `---` and `spec_layer:` over
+    `kind: component` and `profile: markdown`, then `# <component name>`, and
+    the toast reads "Copied as Markdown." followed by the usual caveats. Choose
+    **YAML** again: the toast reads "Copied as YAML." and the payload is the
+    same YAML brief as before this build.
+15. With Markdown chosen, run **Copy for AI** on a Foundation row and on the
+    Foundations screen. Both still copy the DTCG JSON document, and the toast
+    still begins "Copied." and names no format.
 
 ## AI-writing allowance (free plan)
 
@@ -501,6 +511,28 @@ action. The rows below start there.
       the same id and key as the setup command, followed by
       `npx --yes spec-layer skill --install`. Pasting the message into a coding
       agent in an empty git repository ends with `AGENTS.md` written.
+- [ ] Markdown setup: with Markdown chosen in Settings > Export, both setup
+      blocks end their setup line with `--component-format md`, and each
+      **Copy** puts exactly that on the clipboard. With YAML chosen the line
+      carries no flag. Run the Markdown command in an empty directory once
+      `spec-layer@0.10.0` or later is `latest` on npm (check with `npm view
+      spec-layer version`); before that, run `npx spec-layer@0.10.0 setup ...`
+      in place of `npx spec-layer setup ...`. `speclayer.json` carries
+      `"componentSpecsFormat": "md"` and `component-specs/` holds one `.md`
+      page per component.
+- [ ] Format switch: in that repository a plain `npx spec-layer pull` reports
+      up to date; `npx spec-layer pull --component-format yaml` removes the
+      `.md` pages and writes `.yaml`; `npx spec-layer show component Button
+      --component-format md` prints the page; `--canonical` still prints JSON;
+      `npx spec-layer show foundation --component-format md` refuses with
+      "--component-format applies to components. The Foundation prints as its
+      DTCG document."
+- [ ] Same page both ways: open Foundations once so the plugin has read them,
+      publish, and change nothing. With Markdown chosen, **Copy for AI** on a
+      component's Library row must match that component's pulled
+      `component-specs/<slug>.md` byte for byte. Use the Library row, not the
+      component screen: the screen copies without saved guidelines, so it never
+      matches a pull of a document that has them.
 - [ ] Stored key, already tracked: after the no-git run above, `git init` in
       that directory, then `git add -A && git commit -m tracked` so
       speclayer.local.json is tracked. Re-paste the setup command: it refuses,
@@ -631,6 +663,13 @@ all.
    describing tokens that are not there.
 7. Run `npx spec-layer skill --install` in that same repository. Confirm it
    prints the line naming the now stale `components` and `tokens` folders.
+8. In Settings > Export choose **Markdown**, then download. The block's line
+   reads "Components export as Markdown." The zip holds
+   `components/<slug>.md` and no `.yaml`; every file `SKILL.md` names exists,
+   and its step 1 names **Properties**, **Anatomy**, **Token bindings** and
+   **Unbound values**. `tokens/` and `fonts.json` are byte-identical to a YAML
+   download of the same file.
+9. **Change this in Settings** opens Settings on the Export tab.
 
 ## Settings, search, keyboard, and visuals
 
@@ -651,6 +690,17 @@ all.
    visible in light and dark Figma themes.
 6. Reduced-motion mode avoids nonessential animation. Errors remain visible
    and retryable.
+7. On a fresh launch of the plugin, Settings opens on **Frames**, with
+   **Export** and **About** beside it; within a session it reopens on the last
+   tab chosen. Each tab shows only its own content, the strip stays in place
+   while the panel scrolls, and About shows both versions and the Documentation
+   link. With focus on a tab, Left and Right move and select, wrapping at the
+   ends, and Home and End go to the first and last; Tab moves into the panel,
+   not to the next tab. Open a font list on Frames, then choose Export: the
+   list closes.
+8. **Export** shows **Component format** on YAML. Choose Markdown, close the
+   plugin and reopen it: Markdown is still chosen. The arrow keys move the
+   choice.
 
 ## Automated checks
 
@@ -673,6 +723,11 @@ Repository builds target `https://api.spec-layer.com` in both
 `packages/plugin/src/ui/proxy.ts` and `packages/plugin/manifest.json`. Before a
 public production build, verify those locations remain aligned, build again,
 and rerun this checklist.
+
+`spec-layer@0.10.0` or later must be the `latest` on npm (`npm view
+spec-layer version`) before a plugin build whose setup command can carry
+`--component-format md` reaches the Figma listing. CLI 0.9.0 does not know the
+flag: it prints its usage and exits 1.
 
 Use only synthetic or publishable Figma files in screenshots, fixtures, and
 bug reports.

@@ -31,6 +31,7 @@ function state(overrides: Partial<PublishState> = {}): PublishState {
     chosenBump: null,
     note: '',
     initialVersion: '1.0.0',
+    downloadFormat: 'yaml',
     ...overrides,
   };
 }
@@ -186,7 +187,7 @@ describe('publish screen body', () => {
     const markup = proScroll(PUBLISHED);
     const dev = block(markup, 'Developer setup');
     const agent = block(markup, 'AI agent setup');
-    expect(dev).toContain(setupCommand(LIBRARY_ID, PULL_KEY));
+    expect(dev).toContain(setupCommand(LIBRARY_ID, PULL_KEY, 'yaml'));
     expect(dev).toContain('data-publish-copy-command');
     expect(dev).toContain('<pre class="sl-publish-code"><code>');
     // The agent message is multi-line; it has to be visible, not just copyable.
@@ -199,7 +200,7 @@ describe('publish screen body', () => {
 
   it('escapes the copied texts rather than trusting them as markup', () => {
     // The raw prompt is plain text; the rendered block carries it escaped.
-    expect(proScroll(PUBLISHED)).toContain(agentSetupMessage(LIBRARY_ID, PULL_KEY).split('\n')[0]);
+    expect(proScroll(PUBLISHED)).toContain(agentSetupMessage(LIBRARY_ID, PULL_KEY, 'yaml').split('\n')[0]);
     const evil = proScroll(state({ libraryId: 'lib_<b>x</b>', pullKey: PULL_KEY }));
     expect(evil).toContain('lib_&lt;b&gt;x&lt;/b&gt;');
     expect(evil).not.toContain('<b>x</b>');
@@ -705,7 +706,7 @@ describe('publish screen styling', () => {
    * dash where two hyphens belong and typing back what they read would fail.
    */
   it('turns off ligatures so the command\'s -- flag cannot render as a dash', () => {
-    expect(setupCommand(LIBRARY_ID, PULL_KEY)).toContain('--id');
+    expect(setupCommand(LIBRARY_ID, PULL_KEY, 'yaml')).toContain('--id');
     expect(rule('.sl-publish-code > code'))
       .toMatch(/font-variant-ligatures:\s*none/);
   });
@@ -754,5 +755,56 @@ describe('publish screen styling', () => {
     expect(margin).toContain('--sl-line-height-tight');
     expect(margin).toContain('--sl-control-sm');
     expect(margin).not.toMatch(/\d+px/);
+  });
+});
+
+/**
+ * The setup commands carry the component format, so a repository set up from
+ * this screen pulls what this person copies. YAML is the CLI's default, so a
+ * YAML command carries no flag and stays exactly what it always was. The
+ * download block names the format in both cases and points at the one place
+ * it is set.
+ */
+describe('component format on the publish screen', () => {
+  it('keeps the YAML setup command exactly as it was', () => {
+    expect(setupCommand(LIBRARY_ID, PULL_KEY, 'yaml'))
+      .toBe(`npx spec-layer setup --id ${LIBRARY_ID} --key ${PULL_KEY}`);
+    expect(agentSetupMessage(LIBRARY_ID, PULL_KEY, 'yaml')).not.toContain('--component-format');
+  });
+
+  it('adds --component-format md to the setup line, and only there, for Markdown', () => {
+    expect(setupCommand(LIBRARY_ID, PULL_KEY, 'md'))
+      .toBe(`npx spec-layer setup --id ${LIBRARY_ID} --key ${PULL_KEY} --component-format md`);
+    const message = agentSetupMessage(LIBRARY_ID, PULL_KEY, 'md');
+    expect(message).toContain(
+      `   npx --yes spec-layer setup --id ${LIBRARY_ID} --key ${PULL_KEY} --component-format md\n`,
+    );
+    // skill --install takes no format.
+    expect(message.match(/--component-format/g)).toHaveLength(1);
+  });
+
+  it('draws both setup blocks in the format it is given', () => {
+    const md = publishScrollMarkup(PUBLISHED, allowance, undefined, 'md');
+    expect(block(md, 'Developer setup')).toContain(setupCommand(LIBRARY_ID, PULL_KEY, 'md'));
+    expect(block(md, 'AI agent setup')).toContain('--component-format md');
+    expect(publishScrollMarkup(PUBLISHED, allowance)).not.toContain('--component-format');
+  });
+
+  it('names the format in the download block in both formats and every state, with a way to Settings', () => {
+    for (const [format, name] of [['yaml', 'YAML'], ['md', 'Markdown']] as const) {
+      for (const s of [state(), state({ libraryId: LIBRARY_ID }), PUBLISHED]) {
+        const html = block(publishScrollMarkup(s, allowance, undefined, format), 'Download a snapshot');
+        expect(html).toContain(`Components export as ${name}. `);
+        expect(html).toContain(
+          '<button class="sl-text-button" type="button" data-open-settings="export">'
+          + 'Change this in Settings</button>',
+        );
+      }
+    }
+  });
+
+  it('uses no em dash in the new copy', () => {
+    const html = publishScrollMarkup(PUBLISHED, allowance, undefined, 'md');
+    expect(block(html, 'Download a snapshot')).not.toContain('—');
   });
 });

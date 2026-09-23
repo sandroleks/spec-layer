@@ -10,7 +10,7 @@ Figma node
   → IntermediateSpec
   ├─→ deterministic canvas documentation + connected Library entry
   ├─→ compact YAML context on the clipboard (Copy for AI)
-  ├─→ readable Markdown projection of the same artifact (spec-layer pull and show)
+  ├─→ readable Markdown projection of the same artifact (Copy for AI, the snapshot, spec-layer pull and show)
   └─→ optional AI-writing proxy → Anthropic
 ```
 
@@ -48,7 +48,8 @@ italic line stating the prose came from AI rather than Figma. It reuses
 `componentEnvelope` for the shared envelope rather than re-implementing
 either. Like the DTCG projection, it never feeds a hash, is never stored in a
 bundle, and nothing parses it back. `spec-layer pull` and `show` call it when
-`componentSpecsFormat` is `md`; the plugin follows as separate work.
+`componentSpecsFormat` is `md`, and the plugin's Copy for AI and snapshot
+download call it when the Component format setting is Markdown.
 
 `unitContent(spec, scope)` returns everything one foundation document renders and nothing it does not: its collection name, group, mode columns, rows, the names of any modes left out, and the part numbering of a split unit. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline, and the property has to hold in both directions to be worth anything.
 
@@ -70,6 +71,12 @@ Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It
 supports selected-component extraction, canvas documentation, Copy for AI,
 Foundation documents, connected-document maintenance, frame themes, and license
 management. There is one UI and one bundle.
+
+Copy for AI and the snapshot download write components as YAML or Markdown,
+per the Component format setting on the Settings Export tab; the Publish
+screen's setup command carries `--component-format md` when it is Markdown.
+Foundations always leave as DTCG. Both renderings come from the one artifact
+a copy or download builds.
 
 A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
 
@@ -292,9 +299,11 @@ The plugin persists nothing outside Figma. Three surfaces hold state, each
 chosen for its lifetime:
 
 - `figma.clientStorage` holds per-user preferences: the license key and its
-  instance id, the `aiEnabled` toggle, the brand theme, and the captured logo.
-  It is per user and per machine, which is why license activation re-probes
-  each session rather than trusting a stored verdict.
+  instance id, the `aiEnabled` toggle, the component format (`componentFormat`,
+  YAML or Markdown, read back as YAML when missing or unrecognised), the brand
+  theme, and the captured logo. It is per user and per machine, which is why
+  license activation re-probes each session rather than trusting a stored
+  verdict.
 - `figma.root` plugin data holds the document registry, so a file knows which
   documents it contains without scanning every page. It also holds the file's
   published library id (`speclayer.publish.libraryId`) and the library's

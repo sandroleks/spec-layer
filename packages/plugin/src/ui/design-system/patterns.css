@@ -1357,6 +1357,11 @@
   margin-top: var(--sl-space-8);
 }
 
+/* The download block's format line sits just under its note. */
+.sl-publish-format {
+  margin-top: var(--sl-space-6);
+}
+
 /* The two setup blocks are peers, spaced like the groups they replaced. */
 .sl-publish-block + .sl-publish-block {
   margin-top: var(--sl-space-16);
@@ -1982,6 +1987,22 @@
 
 .sl-settings-section {
   min-width: 0;
+}
+
+/* The tab strip sits under the title and stays put while the panel scrolls. */
+.sl-settings-tabs {
+  margin-top: var(--sl-space-10);
+}
+
+/*
+ * A panel's first section has nothing above it to be separated from, so the
+ * divider every later section carries (.sl-logo-setting, .sl-about-section)
+ * is dropped there. That is what lets About open its own tab cleanly.
+ */
+.sl-settings-panel > .sl-settings-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .sl-settings-section-heading {

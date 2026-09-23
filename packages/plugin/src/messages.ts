@@ -4,6 +4,7 @@ import type {
 } from '@spec-layer/extractor';
 import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
+import type { ComponentFormat } from './componentFormat';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
@@ -88,6 +89,7 @@ export type MainToUi =
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
   | { type: 'userInfo'; userId: string | null }
   | { type: 'aiEnabled'; value: boolean }
+  | { type: 'componentFormat'; value: ComponentFormat }
   | { type: 'brandTheme'; value: BrandTheme }
   | { type: 'fontList'; families: string[] }
   | { type: 'logoCaptured'; base64: string }
@@ -202,6 +204,7 @@ export type UiToMain =
   | { type: 'openBrowser'; url: string }
   | { type: 'setLicenseKey'; value: string; instanceId: string | null }
   | { type: 'setAiEnabled'; value: boolean }
+  | { type: 'setComponentFormat'; value: ComponentFormat }
   | { type: 'setBrandTheme'; value: BrandTheme }
   | { type: 'requestFonts' }
   | { type: 'captureLogo' }

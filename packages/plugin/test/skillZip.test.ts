@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  dtcgExportFiles, foundationDtcg, usageUnits,
-  type LibraryBundleV1, type SerializedFoundation,
+  COMPONENT_MARKDOWN_MARKER, componentMarkdown, dtcgExportFiles, foundationDtcg, usageUnits,
+  type ComponentArtifactV5, type LibraryBundleV1, type SerializedFoundation,
 } from '@spec-layer/extractor';
 import { renderSnapshotSkill, buildSkillFiles, skillZipFilename, type SnapshotInventory } from '../src/ui/skillZip';
 import { buildPublishBundle, type PublishBundleV1, type PublishSources } from '../src/ui/publish';
@@ -17,6 +17,7 @@ const FULL: SnapshotInventory = {
   ],
   tokens: { files: ['tokens/resolver.json', 'tokens/semantic.light.json'] },
   fonts: [{ family: 'Inter', weights: [400, 700], used_by: ['Body'] }],
+  format: 'yaml',
 };
 
 describe('renderSnapshotSkill', () => {
@@ -159,6 +160,40 @@ describe('renderSnapshotSkill', () => {
     expect(md).not.toContain('## Fonts');
     expect(md).not.toContain('fonts.json');
   });
+
+  it('keeps the YAML guide word for word', () => {
+    const md = renderSnapshotSkill(FULL);
+    expect(md).toContain(
+      "prose: a component's `guidelines` block, marked `origin: generated`, and a token group's "
+      + '`$description` in `tokens/`',
+    );
+    expect(md).toContain(
+      '1. Building or changing a component: read its YAML under `components/`. `api` gives variants, states, '
+      + "booleans, and slots; `anatomy` names the parts; `references.bindings` says which token each part's "
+      + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
+    );
+    expect(md).toContain('4. An `unbound` entry is design debt reported from Figma.');
+  });
+
+  it('describes page headings, not YAML keys, when the components are Markdown', () => {
+    const md = renderSnapshotSkill({
+      ...FULL,
+      format: 'md',
+      components: [{ name: 'Button', path: 'components/button.md' }],
+    });
+    expect(md).toContain('read its page under `components/`');
+    for (const heading of ['**Properties**', '**Anatomy**', '**Token bindings**', '**When**', '**Unbound values**']) {
+      expect(md).toContain(heading);
+    }
+    expect(md).toContain('4. A row under **Unbound values** is design debt reported from Figma.');
+    expect(md).toContain('a section of a component page that says it was written by AI');
+    expect(md).toContain('`$description`');
+    expect(md).not.toContain('`origin: generated`');
+    expect(md).not.toContain('references.bindings');
+    expect(md).not.toContain('read its YAML');
+    expect(md).toContain('- Button: `components/button.md`');
+    expect(md).not.toContain('—');
+  });
 });
 
 /** A bundle with no foundation: the components half alone, which is the shape
@@ -203,6 +238,12 @@ describe('buildSkillFiles', () => {
       if (path === 'spec-layer/SKILL.md') continue;
       expect(md).toContain(path.replace('spec-layer/', ''));
     }
+  });
+
+  it('refuses to invent a page for an artifact that cannot be rendered', () => {
+    // COMPONENTS_ONLY carries empty artifacts. publish.ts turns the throw
+    // into its download-failed message, and nothing is saved.
+    expect(() => buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z', 'md')).toThrow();
   });
 });
 
@@ -460,5 +501,37 @@ describe('buildSkillFiles with a foundation', () => {
     // default.
     const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_UNSCOPED_GAP), GENERATED_AT);
     expect(usageUnits(bundle as unknown as LibraryBundleV1).size).toBe(0);
+  });
+
+  it('writes each component as its Markdown page, and no YAML', () => {
+    const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_NO_FONTS), GENERATED_AT);
+    const files = buildSkillFiles(bundle, GENERATED_AT, 'md');
+    expect(files['spec-layer/components/button.md'])
+      .toBe(componentMarkdown(bundle.components[0].artifact as ComponentArtifactV5));
+    expect(files['spec-layer/components/button-2.md'])
+      .toBe(componentMarkdown(bundle.components[1].artifact as ComponentArtifactV5));
+    expect(files['spec-layer/components/button.md'].startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+    expect(Object.keys(files).some((path) => path.endsWith('.yaml'))).toBe(false);
+  });
+
+  it('leaves tokens/ and fonts.json byte-identical across the two formats', () => {
+    const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_WITH_FONTS), GENERATED_AT);
+    const shared = (files: Record<string, string>) => Object.fromEntries(
+      Object.entries(files).filter(([path]) => path.startsWith('spec-layer/tokens/') || path === 'spec-layer/fonts.json'),
+    );
+    const yaml = shared(buildSkillFiles(bundle, GENERATED_AT, 'yaml'));
+    expect(Object.keys(yaml).length).toBeGreaterThan(1);
+    expect(shared(buildSkillFiles(bundle, GENERATED_AT, 'md'))).toEqual(yaml);
+  });
+
+  it('writes a Markdown SKILL.md that names every file it carries', () => {
+    const bundle = buildPublishBundle(sourcesWithFoundation(FOUNDATION_NO_FONTS), GENERATED_AT);
+    const files = buildSkillFiles(bundle, GENERATED_AT, 'md');
+    const md = files['spec-layer/SKILL.md'];
+    expect(md).toContain('read its page under `components/`');
+    for (const path of Object.keys(files)) {
+      if (path === 'spec-layer/SKILL.md') continue;
+      expect(md).toContain(path.replace('spec-layer/', ''));
+    }
   });
 });

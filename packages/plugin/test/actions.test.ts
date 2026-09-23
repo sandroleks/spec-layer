@@ -6,6 +6,7 @@ import {
   createState,
   omissionsMessage,
   resultOutcome,
+  setComponentFormat,
   setLicenseKey,
   licenseFailureNote,
   type BuildPresenter,
@@ -164,5 +165,24 @@ describe('resultOutcome', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('setComponentFormat', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('starts on YAML', () => {
+    expect(createState().componentFormat).toBe('yaml');
+  });
+
+  it('holds the choice and asks the main thread to store it', () => {
+    const sent: unknown[] = [];
+    vi.stubGlobal('parent', {
+      postMessage: (m: { pluginMessage: unknown }) => { sent.push(m.pluginMessage); },
+    });
+    const s = createState();
+    setComponentFormat(s, 'md');
+    expect(s.componentFormat).toBe('md');
+    expect(sent).toEqual([{ type: 'setComponentFormat', value: 'md' }]);
   });
 });

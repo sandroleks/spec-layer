@@ -36,11 +36,16 @@ import {
 } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import {
+  SETTINGS_TABS,
   fontMenuMarkup,
+  isSettingsTab,
   renderSettingsScreen,
   type ColorField,
   type FontField,
+  type SettingsTab,
 } from './screens/settings';
+import { rovingIndex } from './viewModel/roving';
+import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../componentFormat';
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
@@ -106,6 +111,7 @@ import {
   send,
   setAiEnabled,
   setBrandTheme,
+  setComponentFormat,
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
@@ -167,6 +173,11 @@ let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
 let settingsCustomMode = false;
+/**
+ * The Settings tab on show. On a fresh launch of the plugin Settings opens
+ * on Frames; within a session it reopens on the last tab chosen.
+ */
+let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
@@ -403,6 +414,8 @@ function paint(): void {
         customMode: settingsCustomMode,
         logoAttached: Boolean(state.logoBase64),
         pluginVersion: pluginBuild(),
+        tab: settingsTab,
+        componentFormat: state.componentFormat,
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
@@ -417,7 +430,7 @@ function paint(): void {
           return;
         }
         if (libraryPane === 'publish') {
-          renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot));
+          renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot), state.componentFormat);
           return;
         }
         const model = currentLibraryModel();
@@ -1480,6 +1493,26 @@ function paintAndFocus(selector: string): void {
   document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
 }
 
+/**
+ * Show one Settings tab and leave focus on it, where the click or the arrow
+ * key already was. The panel starts at its top. Leaving Frames closes an open
+ * font list, whose field is no longer drawn.
+ */
+function selectSettingsTab(next: SettingsTab): void {
+  if (next !== 'frames') closeFontMenu();
+  settingsTab = next;
+  paint();
+  refs.scroll.scrollTop = 0;
+  document.querySelector<HTMLElement>(`[data-settings-tab="${next}"]`)?.focus({ preventScroll: true });
+}
+
+/** Take a component format from the Export tab, store it, and keep focus on
+ *  the choice just made. Choosing the current one again changes nothing. */
+function chooseComponentFormat(value: ComponentFormat): void {
+  if (value !== state.componentFormat) setComponentFormat(state, value);
+  paintAndFocus(`[data-component-format="${value}"]`);
+}
+
 function syncVariantPicker(): void {
   const inputs = [
     ...refs.scroll.querySelectorAll<HTMLInputElement>('[data-variant]'),
@@ -1677,14 +1710,25 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-publish-download]')) {
-    onDownloadSkillClick();
+    onDownloadSkillClick(state.componentFormat);
+    return;
+  }
+
+  // The download block's "Change this in Settings". The format is set there,
+  // so this goes to that tab rather than drawing a second control here.
+  const openSettings = target.closest<HTMLButtonElement>('[data-open-settings]');
+  if (openSettings) {
+    const tab = openSettings.dataset.openSettings ?? '';
+    if (isSettingsTab(tab)) settingsTab = tab;
+    navigateToView('settings');
+    document.querySelector<HTMLElement>(`[data-settings-tab="${settingsTab}"]`)?.focus({ preventScroll: true });
     return;
   }
 
   if (target.closest('[data-publish-copy-command]')) {
     const { libraryId, pullKey } = publishState();
     if (libraryId && pullKey) {
-      const command = setupCommand(libraryId, pullKey);
+      const command = setupCommand(libraryId, pullKey, state.componentFormat);
       void copyText(command).then((tier) => {
         if (tier === 'manual') renderManualCopyModal(command);
         else nativeNotify('Copied.');
@@ -1696,7 +1740,7 @@ document.addEventListener('click', (event) => {
   if (target.closest('[data-publish-copy-agent]')) {
     const { libraryId, pullKey } = publishState();
     if (libraryId && pullKey) {
-      const message = agentSetupMessage(libraryId, pullKey);
+      const message = agentSetupMessage(libraryId, pullKey, state.componentFormat);
       void copyText(message).then((tier) => {
         if (tier === 'manual') renderManualCopyModal(message);
         else nativeNotify('Copied.');
@@ -1854,6 +1898,20 @@ document.addEventListener('click', (event) => {
   // Anything else outside the open list dismisses it, then falls through so the
   // click still does whatever it was for.
   if (fontMenu) closeFontMenu();
+
+  const settingsTabButton = target.closest<HTMLButtonElement>('[data-settings-tab]');
+  const settingsTabId = settingsTabButton?.dataset.settingsTab;
+  if (settingsTabId && isSettingsTab(settingsTabId)) {
+    selectSettingsTab(settingsTabId);
+    return;
+  }
+
+  const formatChoice = target.closest<HTMLButtonElement>('[data-component-format]');
+  const formatValue = formatChoice?.dataset.componentFormat;
+  if (formatValue && isComponentFormat(formatValue)) {
+    chooseComponentFormat(formatValue);
+    return;
+  }
 
   if (target.closest('[data-theme-preset="__custom__"]')) {
     settingsColorError = '';
@@ -2270,6 +2328,30 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Tab' && fontMenu) closeFontMenu();
   }
 
+  // Settings tab strip: the arrow keys move and select, Home and End jump to
+  // the ends. Tab is left alone, so it leaves the strip for the panel.
+  if (event.target instanceof HTMLElement && event.target.dataset.settingsTab) {
+    const ids = SETTINGS_TABS.map((tab) => tab.id);
+    const current = ids.indexOf(event.target.dataset.settingsTab as SettingsTab);
+    const next = rovingIndex(current, ids.length, event.key, 'horizontal');
+    if (next !== null) {
+      event.preventDefault();
+      selectSettingsTab(ids[next]);
+      return;
+    }
+  }
+
+  // Component format radios: any arrow moves and checks, Home and End jump.
+  if (event.target instanceof HTMLElement && event.target.dataset.componentFormat) {
+    const current = COMPONENT_FORMATS.indexOf(event.target.dataset.componentFormat as ComponentFormat);
+    const next = rovingIndex(current, COMPONENT_FORMATS.length, event.key, 'both');
+    if (next !== null) {
+      event.preventDefault();
+      chooseComponentFormat(COMPONENT_FORMATS[next]);
+      return;
+    }
+  }
+
   if (libraryMenuDocId) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -2483,6 +2565,11 @@ window.onmessage = (event: MessageEvent): void => {
     case 'aiEnabled':
       state.aiEnabled = msg.value;
       selection.aiEnabled = msg.value;
+      paint();
+      return;
+
+    case 'componentFormat':
+      state.componentFormat = msg.value;
       paint();
       return;
 

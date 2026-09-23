@@ -19,6 +19,7 @@ import {
   PROPOSAL_FAILED_MESSAGE, BELOW_MINIMUM_MESSAGE,
   type PublishState, type DryRunResult,
 } from '../publish';
+import { COMPONENT_FORMAT_NAME, DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../../componentFormat';
 import { PUBLISH_DOCS_URL } from '../proxy';
 import {
   formatPublishedAt, publishAllowanceCopy, type PublishAllowance,
@@ -266,14 +267,22 @@ function copyBlock(kind: 'command' | 'agent', label: string, text: string): stri
  * before the first publish, because a snapshot depends on nothing the publish
  * service holds. Disabled while a collect is in flight, since both actions
  * share one round trip.
+ *
+ * The format line says how the zip writes components and where that is set.
+ * The setting lives in Settings, not here: a second control on this screen
+ * would read as a separate choice. It shows in both formats, so someone who
+ * only ever downloads still learns the choice exists.
  */
-function downloadBlock(busy: boolean): string {
+function downloadBlock(busy: boolean, format: ComponentFormat): string {
   return (
     '<section class="sl-publish-block sl-publish-download">' +
     '<div class="sl-publish-block-head"><h2>Download a snapshot</h2></div>' +
     '<p class="sl-publish-note">A zip of everything this file documents: component briefs, ' +
     'design tokens, and a SKILL.md a coding agent reads. No account needed. It does not ' +
     'update, so download it again after the design system changes.</p>' +
+    `<p class="sl-publish-note sl-publish-format">Components export as ${COMPONENT_FORMAT_NAME[format]}. ` +
+    '<button class="sl-text-button" type="button" data-open-settings="export">' +
+    'Change this in Settings</button></p>' +
     '<button class="sl-button" data-tone="secondary" type="button" ' +
     `data-publish-download${busy ? ' disabled' : ''}>Download snapshot (.zip)</button>` +
     '</section>'
@@ -289,6 +298,7 @@ function downloadBlock(busy: boolean): string {
  */
 export function publishScrollMarkup(
   state: PublishState, allowance: PublishAllowance, locale?: string,
+  componentFormat: ComponentFormat = DEFAULT_COMPONENT_FORMAT,
 ): string {
   const busy = isBusy(state);
   // Rotating during an upload would race the publish on the server, so the
@@ -305,8 +315,8 @@ export function publishScrollMarkup(
   let body: string;
   if (state.libraryId && state.pullKey) {
     body =
-      copyBlock('command', 'Developer setup', setupCommand(state.libraryId, state.pullKey)) +
-      copyBlock('agent', 'AI agent setup', agentSetupMessage(state.libraryId, state.pullKey)) +
+      copyBlock('command', 'Developer setup', setupCommand(state.libraryId, state.pullKey, componentFormat)) +
+      copyBlock('agent', 'AI agent setup', agentSetupMessage(state.libraryId, state.pullKey, componentFormat)) +
       rotateRow;
   } else if (state.libraryId) {
     // The id lives in the file; the key lives on the device that published or
@@ -338,7 +348,7 @@ export function publishScrollMarkup(
     metaMarkup(state, allowance, locale) +
     versionBlock(state) +
     body +
-    downloadBlock(busy) +
+    downloadBlock(busy, componentFormat) +
     errorLine +
     '</div>'
   );
@@ -394,7 +404,7 @@ export function publishFooterMarkup(state: PublishState): string {
 }
 
 export function renderPublishScreen(
-  refs: ShellRefs, state: PublishState, allowance: PublishAllowance,
+  refs: ShellRefs, state: PublishState, allowance: PublishAllowance, componentFormat: ComponentFormat,
 ): void {
   // A repaint of the screen already on show (a bump choice, a note) keeps
   // the reader's place; arriving from another screen starts at the top.
@@ -404,7 +414,7 @@ export function renderPublishScreen(
   refs.screen.className = 'sl-screen sl-publish-screen';
   refs.pageHeader.innerHTML = publishHeaderMarkup(state);
   refs.pageHeader.hidden = false;
-  refs.scroll.innerHTML = publishScrollMarkup(state, allowance);
+  refs.scroll.innerHTML = publishScrollMarkup(state, allowance, undefined, componentFormat);
   refs.scroll.scrollTop = samePane ? top : 0;
   refs.footer.innerHTML = publishFooterMarkup(state);
   refs.footer.hidden = false;

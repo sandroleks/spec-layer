@@ -24,15 +24,15 @@ describe('renderPublishScreen scroll position', () => {
   it('resets the scroll on arrival and keeps it on a repaint of the same screen', () => {
     const r = refs();
     const state = { ...createPublishState(), libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', version: '1.0.0' };
-    renderPublishScreen(r, state, { kind: 'hidden' });
+    renderPublishScreen(r, state, { kind: 'hidden' }, 'yaml');
     expect(r.scroll.scrollTop).toBe(0);
     r.scroll.scrollTop = 40;
-    renderPublishScreen(r, state, { kind: 'hidden' });
+    renderPublishScreen(r, state, { kind: 'hidden' }, 'yaml');
     // happy-dom keeps scrollTop as set; a reset to 0 would show here.
     expect(r.scroll.scrollTop).toBe(40);
     r.screen.className = 'sl-screen sl-library-screen';
     r.scroll.scrollTop = 40;
-    renderPublishScreen(r, state, { kind: 'hidden' });
+    renderPublishScreen(r, state, { kind: 'hidden' }, 'yaml');
     expect(r.scroll.scrollTop).toBe(0);
   });
 });
