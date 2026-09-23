@@ -454,7 +454,26 @@ describe('library screen presentation', () => {
       allRows: [],
       rows: [],
       counts: { all: 0, updates: 0, inSync: 0 },
-    }))).toContain('<p>Docs you create in this file appear here. Select a component or open Foundations to create one.</p>');
+    }))).toContain('<p>Docs you create in this file appear here, so you can see when their source changes and update them.</p>');
+    const noDocs = libraryScrollMarkup(model({
+      allRows: [],
+      rows: [],
+      counts: { all: 0, updates: 0, inSync: 0 },
+    }));
+    // Three zero counts sort nothing; the two starts replace them.
+    expect(noDocs).not.toContain('sl-library-filters');
+    expect(noDocs).toContain('data-empty-nav="component"');
+    expect(noDocs).toContain('data-empty-nav="foundations"');
+    const noDocsFooter = libraryFooterMarkup(model({
+      allRows: [],
+      rows: [],
+      counts: { all: 0, updates: 0, inSync: 0 },
+    }));
+    // "Up to date" would claim a check that never ran. Publish still ships
+    // the file's foundations, so it stays.
+    expect(noDocsFooter).not.toContain('data-library-update-all');
+    expect(noDocsFooter).toContain('data-publish-open');
+    expect(noDocsFooter).toContain('data-library-refresh');
     expect(libraryScrollMarkup(model({
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [],

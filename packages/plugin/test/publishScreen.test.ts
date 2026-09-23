@@ -273,21 +273,22 @@ describe('publish screen body', () => {
    * Success is a toast (the controller's `notify`), so a done state renders
    * no line. Errors stay on screen until the next action.
    */
-  it('shows only errors as a result line, after everything else', () => {
-    const failed = proScroll(
-      state({ status: 'error', message: 'Could not reach the publish service.' }),
-    );
-    expect(failed).toContain('sl-publish-status is-error');
-    expect(failed).toContain('Could not reach the publish service.');
-    expect(failed.indexOf('sl-publish-status')).toBeGreaterThan(failed.indexOf('sl-publish-intro'));
+  it('shows only errors, above the footer buttons rather than below the fold', () => {
+    const errored = state({ status: 'error', message: 'Could not reach the publish service.' });
+    const footer = publishFooterMarkup(errored);
+    expect(footer).toContain('sl-publish-error');
+    expect(footer).toContain('role="alert"');
+    expect(footer).toContain('Could not reach the publish service.');
+    expect(footer.indexOf('sl-publish-error')).toBeLessThan(footer.indexOf('sl-footer-actions'));
+    expect(proScroll(errored)).not.toContain('Could not reach the publish service.');
 
-    expect(proScroll(PUBLISHED)).not.toContain('sl-publish-status');
-    expect(proScroll(state({ status: 'done', message: 'Published.' }))).not.toContain('Published.');
-    expect(proScroll(state())).not.toContain('sl-publish-status');
+    expect(publishFooterMarkup(PUBLISHED)).not.toContain('sl-publish-error');
+    expect(publishFooterMarkup(state({ status: 'done', message: 'Published.' }))).not.toContain('Published.');
+    expect(publishFooterMarkup(state())).not.toContain('sl-publish-error');
   });
 
   it('escapes an error message rather than trusting it as markup', () => {
-    const markup = proScroll(
+    const markup = publishFooterMarkup(
       state({ status: 'error', message: 'Failed <b>badly</b> & loudly' }),
     );
     expect(markup).toContain('Failed &lt;b&gt;badly&lt;/b&gt; &amp; loudly');

@@ -345,18 +345,14 @@ export function publishScrollMarkup(
   } else {
     body = `<p class="sl-publish-intro">${BEFORE_FIRST_PUBLISH}</p>`;
   }
-  // Errors stay on screen until the next action; a toast would be gone before
-  // the reader looked up from the button.
-  const errorLine = state.status === 'error' && state.message
-    ? `<p class="sl-publish-status is-error">${esc(state.message)}</p>`
-    : '';
+  // Room to scroll the last control out from under the floating error.
+  const hasError = state.status === 'error' && Boolean(state.message);
   return (
-    '<div class="sl-publish-body">' +
+    `<div class="sl-publish-body${hasError ? ' has-error' : ''}">` +
     metaMarkup(state, allowance, locale) +
     versionBlock(state) +
     body +
     downloadBlock(busy, componentFormat) +
-    errorLine +
     '</div>'
   );
 }
@@ -389,7 +385,15 @@ export function publishFooterMarkup(state: PublishState): string {
       }) +
       '</div>'
     )
-    : '';
+    // Errors stay on screen until the next action; a toast would be gone
+    // before the reader looked up from the button. They float in the same
+    // slot as progress, just above the button that failed: at the end of the
+    // body they sat below the fold on any library with setup blocks.
+    : state.status === 'error' && state.message
+      ? '<div class="sl-footer-progress">' +
+        `<div class="sl-banner sl-publish-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
+        '</div>'
+      : '';
   // The primary names the version a publish would make, so the reader never
   // has to hold the raise control's choice in their head to know what
   // clicking it does. Silent when there is nothing to propose yet (no

@@ -652,6 +652,28 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent
     : `Nothing was published. ${found} Fix or remove those docs, then publish again.`;
 }
 
+/**
+ * Why a publish or download would carry nothing, or null when it would carry
+ * something. The proxy accepts an empty bundle, so without this a first
+ * publish of an empty file creates a library, a pull key, and spends the free
+ * plan's one library; a republish would replace what developers pull with
+ * nothing. A failed variable read also arrives empty (`unavailable`, or null
+ * when the read threw), and asking that user to add variables would be wrong.
+ */
+export function emptyBundleMessage(
+  msg: Pick<PublishSourcesMsg, 'components' | 'foundation'>,
+  intent: PublishState['intent'],
+): string | null {
+  if (msg.components.length > 0) return null;
+  const f = msg.foundation;
+  if (f && (f.collections.length > 0 || f.textStyles.length > 0 || f.effectStyles.length > 0)) return null;
+  const verb = intent === 'download' ? 'downloaded' : 'published';
+  if (!f || f.unavailable) {
+    return `Nothing was ${verb}. Couldn’t read this file’s variables and styles, and it has no component docs. Try again.`;
+  }
+  return `Nothing was ${verb}. This file has no local variables or styles and no component docs yet. Add a variable or style, or create a doc, then try again.`;
+}
+
 /** Shown when the download branch itself throws (a `Blob`/`URL`/`document`
  *  failure, or a bad zip), so the controller lands in `error` instead of
  *  staying in `collecting` with both entry points guard-blocked and no
@@ -690,6 +712,14 @@ export async function onPublishSources(
     } else {
       state = { ...state, status: 'error', message: skippedMessage(msg.skipped, state.intent) };
     }
+    host.repaint();
+    return;
+  }
+
+  // A dry run is left alone: it only diffs, and an empty answer is honest.
+  const empty = state.intent === 'dryRun' ? null : emptyBundleMessage(msg, state.intent);
+  if (empty) {
+    state = { ...state, status: 'error', message: empty };
     host.repaint();
     return;
   }

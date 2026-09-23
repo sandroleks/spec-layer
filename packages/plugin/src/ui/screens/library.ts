@@ -378,11 +378,44 @@ export function libraryRowMarkup(
   );
 }
 
+/**
+ * A doc sheet drops into a folder and is marked in sync: what the Library does
+ * with every doc once one exists. Decorative, so hidden from assistive tech.
+ */
+const EMPTY_ILLUSTRATION =
+  '<svg class="sl-empty-illustration sl-lib-illustration" viewBox="0 0 160 112" width="160" height="112" ' +
+  'fill="none" aria-hidden="true" focusable="false">' +
+  '<rect x="36" y="30" width="34" height="14" rx="4" class="sl-lib-folder-back"/>' +
+  '<rect x="36" y="38" width="88" height="58" rx="7" class="sl-lib-folder-back"/>' +
+  '<g class="sl-lib-doc">' +
+  '<rect x="56" y="18" width="48" height="58" rx="5" class="sl-empty-sheet"/>' +
+  '<rect x="63" y="26" width="20" height="4" rx="2" class="sl-empty-line is-strong"/>' +
+  '<rect x="63" y="35" width="32" height="3" rx="1.5" class="sl-empty-line"/>' +
+  '<rect x="63" y="42" width="26" height="3" rx="1.5" class="sl-empty-line"/>' +
+  '</g>' +
+  '<rect x="32" y="56" width="96" height="40" rx="7" class="sl-empty-tile"/>' +
+  '<rect x="44" y="68" width="30" height="4" rx="2" class="sl-empty-line"/>' +
+  '<g class="sl-lib-badge">' +
+  '<circle cx="124" cy="58" r="10" class="sl-lib-badge-dot"/>' +
+  '<path d="M119.5 58.2l3 3 6-6.2" class="sl-lib-badge-check"/>' +
+  '</g>' +
+  '</svg>';
+
 function emptyMarkup(filter: LibraryFilter, hasRows: boolean): string {
   if (!hasRows) {
+    // Two starts, the same two views the rail opens. Nothing here creates.
     return (
-      '<div class="sl-empty-state"><strong>No docs yet</strong>' +
-      '<p>Docs you create in this file appear here. Select a component or open Foundations to create one.</p></div>'
+      '<div class="sl-empty-state sl-empty-illustrated">' +
+      EMPTY_ILLUSTRATION +
+      '<strong>No docs yet</strong>' +
+      '<p>Docs you create in this file appear here, so you can see when their source changes and update them.</p>' +
+      '<div class="sl-empty-actions">' +
+      '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="component">' +
+      `${icon('puzzle', 15)}<span>Document a component</span></button>` +
+      '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="foundations">' +
+      `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
+      '</div>' +
+      '</div>'
     );
   }
   if (filter === 'updates') {
@@ -443,9 +476,11 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   const rebuilds = model.loading
     ? 0
     : model.allRows.filter((row) => row.status === 'rebuildNeeded').length;
+  // Three filters counting zero sort nothing, so an empty Library drops them.
+  const noDocs = !model.loading && model.allRows.length === 0;
   return (
     rebuildBannerMarkup(rebuilds, busy || Boolean(model.checksIncomplete)) +
-    filterMarkup +
+    (noDocs ? '' : filterMarkup) +
     content
   );
 }
@@ -495,9 +530,12 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     '<button class="sl-button sl-library-refresh" data-tone="secondary" ' +
     `type="button" data-library-refresh${busy ? ' disabled' : ''}>` +
     `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
-    '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
-    `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
-    `${icon('fileCheck', 15)}<span>${batchLabel}</span></button>` +
+    // "Up to date" with no docs would claim a state nothing was checked for.
+    (!model.loading && model.allRows.length === 0
+      ? ''
+      : '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
+        `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
+        `${icon('fileCheck', 15)}<span>${batchLabel}</span></button>`) +
     '</div>'
   );
 }
