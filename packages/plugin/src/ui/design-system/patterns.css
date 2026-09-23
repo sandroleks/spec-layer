@@ -1989,7 +1989,12 @@
   min-width: 0;
 }
 
-/* The tab strip sits under the title and stays put while the panel scrolls. */
+/* The tab strip sits under the title and stays put while the panel scrolls.
+   The header copy takes the header's width so the strip's hairline spans it. */
+.sl-settings-screen .sl-page-header-copy {
+  flex: 1 1 auto;
+}
+
 .sl-settings-tabs {
   margin-top: var(--sl-space-10);
 }

@@ -539,6 +539,40 @@ button {
   cursor: default;
 }
 
+/*
+ * Underline tabs: moving between panels, as opposed to .sl-segmented, which
+ * picks a value. Plain text on one hairline, the selected tab in full text
+ * colour over a 2px accent underline that sits on the hairline (the -1px
+ * margin). No surface and no shadow, so a tab can never read as a choice
+ * already made.
+ */
+.sl-tabs {
+  display: flex;
+  gap: var(--sl-space-16);
+  border-bottom: 1px solid var(--sl-color-border);
+}
+
+.sl-tabs > [role="tab"] {
+  margin-bottom: -1px;
+  padding: var(--sl-space-6) 0 var(--sl-space-8);
+  color: var(--sl-color-text-muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: var(--sl-font-size-control);
+  font-weight: var(--sl-font-weight-medium);
+  cursor: pointer;
+}
+
+.sl-tabs > [role="tab"]:hover {
+  color: var(--sl-color-text);
+}
+
+.sl-tabs > [role="tab"][aria-selected="true"] {
+  color: var(--sl-color-text);
+  border-bottom-color: var(--sl-color-accent);
+}
+
 .sl-field {
   min-width: 0;
   display: flex;
