@@ -424,6 +424,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   from an omitted token is now omitted too, and reported `target_omitted`,
   instead of writing a reference to a path the export never declares.
 
+- **A style bound to an unscoped number no longer reports drift against
+  itself.** A Figma variable with no unit-pinning scope is a bare number in
+  the Foundation artifact, while a text style's font size or an effect's
+  blur is always a pixel dimension. Comparing the two whole made every such
+  binding a `STYLE_BINDING_DRIFT` warning, in every artifact and every
+  `report.json` a pull wrote. The check now compares the number when one
+  side states no unit, the same rule the Level 2 chain replay already
+  applied, and still reports two different numbers or two different units.
+  `content_hash` is unchanged: diagnostics are outside it.
+
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

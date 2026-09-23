@@ -729,29 +729,45 @@ function scalarOf(value: TypedValue): number | string | undefined {
   return undefined;
 }
 
+/**
+ * Whether two typed values state the same thing, allowing the two pairs of
+ * v5 types that are one raw Figma type. A FLOAT reads as `number` when its
+ * scopes state no unit and as `dimension` when they do, and a STRING reads
+ * as `font_family` under the FONT_FAMILY scope, so `number 16` and
+ * `dimension 16px` are one Figma value seen through two scopes, not a
+ * disagreement. Two dimensions with different units ARE a disagreement, and
+ * stay one: the same-type branch compares them whole.
+ *
+ * Shared by the Level 2 chain replay below and by the style-binding drift
+ * check in `fromFoundation.ts`, so the two can never judge one pair
+ * differently.
+ */
+export function typedValuesAgree(a: TypedValue, b: TypedValue): boolean {
+  if (a.type === b.type) return canonicalJson(a) === canonicalJson(b);
+  if ((a.type === 'dimension' && b.type === 'number')
+    || (a.type === 'number' && b.type === 'dimension')) {
+    return scalarOf(a) === scalarOf(b);
+  }
+  if ((a.type === 'font_family' && b.type === 'string')
+    || (a.type === 'string' && b.type === 'font_family')) {
+    return scalarOf(a) === scalarOf(b);
+  }
+  return false;
+}
+
 function snapshotMatchesTerminal(
   snapshot: TypedValue,
   terminal: TypedValue,
   owner: TokenV5,
 ): boolean {
-  if (snapshot.type === terminal.type) return canonicalJson(snapshot) === canonicalJson(terminal);
-
-  if ((snapshot.type === 'dimension' && terminal.type === 'number')
-    || (snapshot.type === 'number' && terminal.type === 'dimension')) {
-    const scalar = scalarOf(terminal);
-    if (typeof scalar !== 'number') return false;
-    if (snapshot.type === 'dimension') {
-      const specialized = numericValue(scalar, owner.scopes);
-      return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
-    }
-    return snapshot.value === scalar;
+  // A dimension snapshot over a bare-number terminal must be the OWNER's own
+  // specialization of that number: the unit came from the owner's scopes, so
+  // those scopes have to reproduce exactly this dimension.
+  if (snapshot.type === 'dimension' && terminal.type === 'number') {
+    const specialized = numericValue(terminal.value, owner.scopes);
+    return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
   }
-
-  if ((snapshot.type === 'font_family' && terminal.type === 'string')
-    || (snapshot.type === 'string' && terminal.type === 'font_family')) {
-    return scalarOf(snapshot) === scalarOf(terminal);
-  }
-  return false;
+  return typedValuesAgree(snapshot, terminal);
 }
 
 function provenanceFinding(
