@@ -366,6 +366,21 @@ describe('settings tabs', () => {
     expect(selected?.[1]).not.toMatch(/box-shadow|background/);
     expect(components).toMatch(/\n\.sl-tabs \{[^}]*border-bottom:\s*1px solid var\(--sl-color-border\)/);
   });
+
+  /**
+   * The strip's hairline is a divider, so the panel under it keeps the room
+   * every section divider on this screen keeps under its line: 14px, which
+   * is the header's own 6px bottom padding plus the panel's 8px. With no
+   * panel padding the first heading sat 6px under the line.
+   */
+  it('leaves the same room under the tab strip as under a section divider', () => {
+    const patterns = readFileSync(
+      new URL('../src/ui/design-system/patterns.css', import.meta.url), 'utf-8',
+    );
+    expect(patterns).toMatch(/\n\.sl-settings-panel \{[^}]*padding-top:\s*var\(--sl-space-8\)/);
+    expect(patterns).toMatch(/\n\.sl-page-header \{[^}]*padding:\s*var\(--sl-space-10\) var\(--sl-space-12\) var\(--sl-space-6\)/);
+    expect(patterns).toMatch(/\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)|\n\.sl-logo-setting,\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)/);
+  });
 });
 
 /**

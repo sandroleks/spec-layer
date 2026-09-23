@@ -1999,6 +1999,13 @@
   margin-top: var(--sl-space-10);
 }
 
+/* The strip's hairline is a divider, so the panel keeps the 14px every
+   section divider below keeps under its line (.sl-logo-setting): the
+   header's own 6px bottom padding plus this 8px. */
+.sl-settings-panel {
+  padding-top: var(--sl-space-8);
+}
+
 /*
  * A panel's first section has nothing above it to be separated from, so the
  * divider every later section carries (.sl-logo-setting, .sl-about-section)
