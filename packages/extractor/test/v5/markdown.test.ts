@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { code, escapeCell, escapeInline, table, componentMarkdown, COMPONENT_MARKDOWN_MARKER } from '../../src/v5/markdown';
+import {
+  buildComponentArtifactV5, buildFoundation, buildFoundationArtifactV5, diagnostic, extract,
+} from '../../src/index';
+import type { ComponentArtifactV5, SerializedFoundation, SerializedNode } from '../../src/index';
 import { buildComponentV5GoldenArtifact, buildComponentV5StyledArtifact } from '../fixtures/componentV5';
+import button from '../fixtures/button.json';
 
 // The exact sentence `tokensUsedSection` (`markdown.ts`) renders when
 // `references.foundation` is absent, pinned here as its own constant per
@@ -310,6 +315,174 @@ describe('componentMarkdown tokens used', () => {
   it('never renders a bare [object Object] for a value it does not recognise', () => {
     expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toContain('[object Object]');
     expect(componentMarkdown(buildComponentV5StyledArtifact())).not.toContain('[object Object]');
+  });
+});
+
+/**
+ * A real semantic layer is mostly aliases: a token points at a primitive in
+ * another collection, sometimes through a step or two. The slice hands each
+ * such value over as `{ alias, resolved | unresolved, chain? }`, and the page
+ * has to say what the token points at and what that resolves to, the way the
+ * Typography styles table already does for a bound style property. Both
+ * goldens carry literal tokens only, which is how `[object Object]` reached a
+ * real snapshot: the escaped `\[object Object\]` a table cell prints also
+ * slips past a `not.toContain('[object Object]')` guard.
+ */
+describe('tokens used: aliased values', () => {
+  const GENERATED_AT = '2026-08-29T00:00:00.000Z';
+  const color = (hex: string) => {
+    const value = Number.parseInt(hex.slice(1), 16);
+    return { r: ((value >> 16) & 255) / 255, g: ((value >> 8) & 255) / 255, b: (value & 255) / 255, a: 1 };
+  };
+  const alias = (id: string) => ({ type: 'VARIABLE_ALIAS' as const, id });
+
+  /** The golden button, bound against a Foundation whose Material tokens alias
+   *  primitives: `primary` points one step into Primitives, `primary-hover`
+   *  goes through `md.ref.hover` first, and `on-primary` points at a variable
+   *  that no longer exists in Light while Dark stays a literal. */
+  function aliasedArtifact(): ComponentArtifactV5 {
+    const dump: SerializedFoundation = {
+      fileKey: 'FILE1', fileName: 'Design System', extractedAt: GENERATED_AT,
+      collections: [
+        {
+          id: 'VariableCollectionId:1', name: 'Material tokens', defaultModeId: 'm1',
+          modes: [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }],
+          variables: [
+            {
+              id: 'VariableID:1', name: 'md.sys.color.primary', resolvedType: 'COLOR', description: '',
+              codeSyntax: { WEB: '--md-sys-color-primary' }, scopes: ['FRAME_FILL'],
+              valuesByMode: { m1: alias('VariableID:p1'), m2: alias('VariableID:p2') },
+            },
+            {
+              id: 'VariableID:5', name: 'md.sys.color.primary-hover', resolvedType: 'COLOR', description: '',
+              codeSyntax: {}, scopes: ['FRAME_FILL'],
+              valuesByMode: { m1: alias('VariableID:mid'), m2: alias('VariableID:mid') },
+            },
+            {
+              id: 'VariableID:3', name: 'md.sys.color.on-primary', resolvedType: 'COLOR', description: '',
+              codeSyntax: {}, scopes: ['FRAME_FILL'],
+              valuesByMode: { m1: alias('VariableID:gone'), m2: color('#ffffff') },
+            },
+            {
+              id: 'VariableID:mid', name: 'md.ref.hover', resolvedType: 'COLOR', description: '',
+              codeSyntax: {}, scopes: [],
+              valuesByMode: { m1: alias('VariableID:p2'), m2: alias('VariableID:p2') },
+            },
+          ],
+        },
+        {
+          id: 'VariableCollectionId:2', name: 'Primitives', defaultModeId: 'pm',
+          modes: [{ modeId: 'pm', name: 'Value' }],
+          variables: [
+            {
+              id: 'VariableID:p1', name: 'purple/500', resolvedType: 'COLOR', description: '',
+              codeSyntax: {}, scopes: [], valuesByMode: { pm: color('#6750a4') },
+            },
+            {
+              id: 'VariableID:p2', name: 'purple/300', resolvedType: 'COLOR', description: '',
+              codeSyntax: {}, scopes: [], valuesByMode: { pm: color('#d0bcff') },
+            },
+          ],
+        },
+      ],
+      textStyles: [], effectStyles: [], externals: [],
+    };
+    const foundation = buildFoundationArtifactV5(buildFoundation(dump), {
+      exportId: 'foundation:aliased', generatedAt: GENERATED_AT, build: 'test',
+    }).artifact;
+    const spec = extract(button as SerializedNode, { figmaFile: 'FILE1', figmaFileName: 'Design System' });
+    return buildComponentArtifactV5(spec, {
+      exportId: 'component:aliased', generatedAt: GENERATED_AT, build: 'test', foundation,
+    });
+  }
+
+  it('shows an alias as its target and the value it resolves to', () => {
+    expect(componentMarkdown(aliasedArtifact())).toContain(
+      '| md.sys.color.primary | color | Primitives/purple/500 @ Value (resolved: #6750a4) '
+      + '| Primitives/purple/300 @ Value (resolved: #d0bcff) |',
+    );
+  });
+
+  it('shows every step of a multi-step alias', () => {
+    expect(componentMarkdown(aliasedArtifact())).toContain(
+      '| md.sys.color.primary-hover | color '
+      + '| Material tokens/md.ref.hover @ Light → Primitives/purple/300 @ Value (resolved: #d0bcff) '
+      + '| Material tokens/md.ref.hover @ Dark → Primitives/purple/300 @ Value (resolved: #d0bcff) |',
+    );
+  });
+
+  it('names an unresolved alias by its reason, beside a literal in the other mode', () => {
+    expect(componentMarkdown(aliasedArtifact())).toContain(
+      '| md.sys.color.on-primary | color | VariableID:gone (unresolved: target\\_not\\_found) | #ffffff |',
+    );
+  });
+
+  it('names a missing value by its reason', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const foundation = artifact.references.foundation!;
+    const tokens = foundation.tokens.map((token) => (token.name === 'md.sys.color.primary'
+      ? {
+        ...token,
+        values: Object.fromEntries(Object.keys(token.values).map((mode) => [
+          mode, { kind: 'missing' as const, reason: 'unsupported_value_type' as const },
+        ])),
+      }
+      : token));
+    const out = componentMarkdown({
+      ...artifact, references: { ...artifact.references, foundation: { ...foundation, tokens } },
+    } as ComponentArtifactV5);
+    expect(out).toContain('| md.sys.color.primary | color | missing: unsupported\\_value\\_type |');
+  });
+
+  it('never renders [object Object], escaped or not', () => {
+    const out = componentMarkdown(aliasedArtifact());
+    expect(out).not.toMatch(/object Object/);
+    expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toMatch(/object Object/);
+    expect(componentMarkdown(buildComponentV5StyledArtifact())).not.toMatch(/object Object/);
+  });
+});
+
+/**
+ * The slice carries the Foundation's own actionable findings as prose
+ * `validation` rows, and the YAML hands them over. A page that dropped them
+ * would show a style's value beside a disagreeing token value with nothing
+ * saying the two disagree.
+ */
+describe('tokens used: foundation issues', () => {
+  function driftingArtifact(): ComponentArtifactV5 {
+    return {
+      ...buildComponentV5StyledArtifact(),
+      foundation_diagnostics: [diagnostic('STYLE_BINDING_DRIFT', {
+        entity_id: 'StyleID:text',
+        message: 'The typography property snapshot differs from its unambiguous bound token value.',
+        details: {
+          property: 'font_size',
+          token_id: 'VariableID:type-scale-body',
+          style_value: { type: 'dimension', number: 14, unit: 'px' },
+          token_value: { type: 'dimension', number: 16, unit: 'px' },
+        },
+      })],
+    };
+  }
+
+  it("lists the Foundation's own issues after its tables", () => {
+    const out = componentMarkdown(driftingArtifact());
+    expect(out).toContain(
+      '### Foundation issues\n\n- warning: font\\_size is 14px in the style but 16px in the token '
+      + 'it is bound to; the two disagree. (`Typography/Body/Regular`, font\\_size)',
+    );
+    // Inside Tokens used, after its tables: before the next `## ` section, if any.
+    const tokensUsed = out.indexOf('## Tokens used');
+    const nextSection = out.indexOf('\n## ', tokensUsed + 1);
+    const issues = out.indexOf('### Foundation issues');
+    expect(out.indexOf('### Typography styles')).toBeLessThan(issues);
+    expect(issues).toBeGreaterThan(tokensUsed);
+    expect(issues).toBeLessThan(nextSection === -1 ? out.length : nextSection);
+  });
+
+  it('draws no Foundation issues subsection when the Foundation reports nothing actionable', () => {
+    expect(componentMarkdown(buildComponentV5StyledArtifact())).not.toContain('### Foundation issues');
+    expect(componentMarkdown(buildComponentV5GoldenArtifact())).not.toContain('### Foundation issues');
   });
 });
 

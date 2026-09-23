@@ -67,7 +67,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   any AI-written prose marked as AI written. It is a projection like DTCG. It
   never feeds a hash, is never stored in a bundle, and nothing parses it back.
   An artifact with no component name is refused with an error rather than
-  given a placeholder heading.
+  given a placeholder heading. An aliased token shows what it points at and
+  what that resolves to (`Primitives/purple/500 @ Value (resolved: #6750a4)`),
+  every step of a longer chain, or why it did not resolve; the Foundation's
+  own findings, such as a text style whose weight disagrees with the token it
+  is bound to, are listed under Tokens used as they are in the YAML.
   The CLI produces it with `--component-format md`, and the plugin when
   Settings is set to Markdown.
 
