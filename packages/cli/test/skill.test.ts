@@ -169,6 +169,7 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain('2. Building or changing a component: read its page under `component-specs/`, or `npx spec-layer show component NAME`. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part\'s property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.');
     expect(guide).toContain('5. A row under **Unbound values** is design debt reported from Figma.');
     expect(guide).toContain('a section of a component page that says it was written by AI');
+    expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
     expect(guide).not.toContain('one YAML per component');
     expect(guide).not.toContain('read its YAML under');
   });

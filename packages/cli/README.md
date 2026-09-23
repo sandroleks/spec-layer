@@ -66,20 +66,22 @@ need 0.7.0 or later. The `census` and `config_hash` blocks inside
 `resolver.json`, and the `transform` and `resolved` fields in
 `spec-layer.meta.json`, need 0.8.2 or later; an earlier version pulls the same
 files without those fields. Markdown component pages (`componentSpecsFormat`
-and `--component-format`) need 0.10.0 or later; an earlier version ignores the
-key and writes YAML.
+and `--component-format`) need 0.10.0 or later. An earlier version ignores the
+key, and refuses to pull into a `component-specs/` that already holds
+Markdown pages, so every CLI that pulls a repository using Markdown needs
+0.10.0.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection] [--component-format yaml|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
-| `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection] [--component-format yaml|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
+| `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
+| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
 | `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
-| `show component NAME [--component-format yaml|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
+| `show component NAME [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. |
 | `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
@@ -209,10 +211,8 @@ artifact at pull time, so every library already published gets it without a
 republish. It opens with front matter carrying the same `spec_layer` envelope
 the YAML does, with `profile: markdown`, and marks any AI-written section as
 AI written. Switching formats removes the other format's files on the next
-pull. Foundations are unaffected: `tokens/` stays DTCG in either format.
-
-A page pulled here and the same component copied from the plugin match byte
-for byte when both carry the same extractor build.
+pull. Foundations are unaffected: `.speclayer/tokens/` stays DTCG in either
+format, and the CSS output directory from `outputs` is unaffected too.
 
 ## Reading one artifact
 

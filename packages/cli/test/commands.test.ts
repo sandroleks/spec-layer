@@ -1276,6 +1276,19 @@ describe('runPull component format', () => {
     expect(io.outLines).toContain('Wrote component-specs/ (1 YAML file).');
   });
 
+  it('pins the plural line when a Markdown pull writes more than one file', async () => {
+    const twoComponentBundle = {
+      ...MD_BUNDLE,
+      components: [
+        ...MD_BUNDLE.components,
+        { name: 'Card', ai: brief('card: yes\n'), artifact: buildComponentV5GoldenArtifact() },
+      ],
+    };
+    const io = makeIo();
+    expect(await runPull(cwd, { 'component-format': 'md' }, ENV, io, stub200(JSON.stringify(twoComponentBundle)))).toBe(0);
+    expect(io.outLines).toContain('Wrote component-specs/ (2 Markdown files).');
+  });
+
   it('reads componentSpecsFormat from speclayer.json, and a flag beats it for the run', async () => {
     runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
     expect(await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);

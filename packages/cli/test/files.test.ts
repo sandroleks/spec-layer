@@ -829,6 +829,7 @@ describe('writeBundleFiles component format', () => {
 
   it('renders a component artifact published at schema 5.1.0', () => {
     const artifact = componentArtifactAt510();
+    expect(JSON.stringify(artifact.anatomy)).not.toContain('"shown_by"');
     const bundle = makeBundle({
       components: [{ name: 'Chip', ai: brief('chip\n'), artifact: artifact as unknown as BundleV1['components'][number]['artifact'] }],
     });

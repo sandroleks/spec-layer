@@ -17,9 +17,11 @@ plugin portion adds a download feature to the Publish screen and ships in the
 plugin's own release, on its own schedule; it needs no CLI version and moves
 none of the reasoning above.
 
-The CLI's Markdown support below ships as 0.10.0, for the same reason 0.9.0
-did: it changes what a pull writes, so the version bump is what makes an
-existing repository re-project on its first pull with the new release.
+The CLI's Markdown support below ships as 0.10.0, a minor release because it
+adds an option. The manifest records the component format, so switching
+formats re-projects on the next pull; a repository that stays on YAML
+re-projects once on upgrade through the `manifest.cliVersion` check and gets
+byte-identical files.
 
 ### Added
 

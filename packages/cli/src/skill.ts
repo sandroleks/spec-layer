@@ -598,7 +598,7 @@ export function buildSkillGuide(input: SkillInput): string {
     + 'Everything in those files is extracted deterministically from Figma and validated against a published schema, '
     + (markdown
       ? 'with two exceptions that can carry model-written prose: a section of a component page that says it was written by AI, '
-        + `or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')}; and a token group's `
+        + `or a component's or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')}; and a token group's `
         + `${code('$description')}, which carries no marker `
       : `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
         + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `)

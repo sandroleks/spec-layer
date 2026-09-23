@@ -47,8 +47,8 @@ italic line stating the prose came from AI rather than Figma. It reuses
 `componentFoundationAiSlice` for the Foundation dependency slice and
 `componentEnvelope` for the shared envelope rather than re-implementing
 either. Like the DTCG projection, it never feeds a hash, is never stored in a
-bundle, and nothing parses it back. No surface calls it yet; the CLI and the
-plugin follow as separate work.
+bundle, and nothing parses it back. `spec-layer pull` and `show` call it when
+`componentSpecsFormat` is `md`; the plugin follows as separate work.
 
 `unitContent(spec, scope)` returns everything one foundation document renders and nothing it does not: its collection name, group, mode columns, rows, the names of any modes left out, and the part numbering of a split unit. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline, and the property has to hold in both directions to be worth anything.
 
@@ -246,11 +246,12 @@ and refuses a bundle whose major version it does not know. Eight commands:
   the local pull is behind (exit 2) without writing anything, leaving `pull`
   to do the actual update.
 - `list` prints every artifact from the local manifest with its path or
-  `not written`, and `show foundation` / `show component NAME` print one
-  entry's `ai` field from the local `bundle.json` to stdout (or its canonical
-  JSON with `--canonical`): the DTCG resolver document for `show foundation`,
-  component AI YAML, or its Markdown page by the configured format, for
-  `show component NAME`. Both are local only and need no key.
+  `not written`. `show foundation` prints the Foundation entry's `ai` field
+  from the local `bundle.json` to stdout, the DTCG resolver document (or its
+  canonical JSON with `--canonical`). `show component NAME` prints the
+  component's `ai` field as YAML, or, when the resolved format is `md`, a
+  Markdown page rendered from its canonical artifact instead (or its
+  canonical JSON with `--canonical`). Both are local only and need no key.
 - `tools` prints the command catalogue in `packages/cli/src/tools.ts`, the one
   list the usage banner, the agent guide, and the README are checked against:
   for each command its usage, purpose, whether it reaches the network, whether

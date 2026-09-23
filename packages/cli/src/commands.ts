@@ -741,7 +741,7 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     return 0;
   }
   if (component) {
-    // Match what is on disk: the flag, then the config, then the last pull.
+    // The flag, then the config (what the next pull will write), then the last pull (what is on disk).
     let configFormat: ComponentFormat | undefined;
     try {
       configFormat = readConfig(cwd)?.componentSpecsFormat;
