@@ -109,9 +109,9 @@ function withVariants(b: LibraryBundleV1, variants: { name: string; values: Reco
 
 describe('bumpFor', () => {
   const structural: ChangeEntity[] = [
-    'component', 'property', 'option', 'variant_axis', 'state', 'anatomy_part', 'collection', 'mode', 'token',
+    'component', 'property', 'option', 'variant_axis', 'state', 'anatomy_part', 'collection', 'mode', 'token', 'style',
   ];
-  const valueLike: ChangeEntity[] = ['binding', 'value', 'token_value', 'style'];
+  const valueLike: ChangeEntity[] = ['binding', 'value', 'token_value'];
 
   it.each(structural)('%s removed or renamed is major, added is minor, changed is patch', (entity) => {
     expect(bumpFor(entity, 'removed')).toBe('major');
@@ -518,7 +518,7 @@ describe('libraryDiff: foundation', () => {
     expect(values.find((c) => c.scope === 'Dark')?.to).toBe('missing (no_value_for_mode)');
   });
 
-  it('style: every kind is patch; typography renders family weight size/line height', () => {
+  it('style: a value change is patch, a removal is major; typography renders family weight size/line height', () => {
     const bigger = withFoundation((a) => {
       const typo = (a.styles as { typography: Array<{ properties: Record<string, unknown> }> }).typography[0];
       typo.properties.font_size = { source: { kind: 'literal' }, resolved: { type: 'dimension', number: 18, unit: 'px' } };
@@ -527,8 +527,31 @@ describe('libraryDiff: foundation', () => {
       kind: 'changed', id: 'S:t1', name: 'Body', from: 'Inter 400 16px/24px', to: 'Inter 400 18px/24px', bump: 'patch',
     })]);
 
+    // Code that applies a style by name breaks when it goes, as it does for a token.
     const noShadow = withFoundation((a) => { (a.styles as { effects: unknown[] }).effects = []; });
-    expect(only(libraryDiff(base, noShadow), 'style')).toEqual([expect.objectContaining({ kind: 'removed', id: 'S:e1', name: 'Shadow', bump: 'patch' })]);
+    const removed = libraryDiff(base, noShadow);
+    expect(only(removed, 'style')).toEqual([expect.objectContaining({ kind: 'removed', id: 'S:e1', name: 'Shadow', from: 'Drop shadow', bump: 'major' })]);
+    expect(removed.minimumBump).toBe('major');
+    expect(only(libraryDiff(noShadow, base), 'style')).toEqual([expect.objectContaining({ kind: 'added', id: 'S:e1', to: 'Drop shadow', bump: 'minor' })]);
+  });
+
+  it('style: a rename is its own major change, and a rename with new values also reports the values', () => {
+    const renamed = withFoundation((a) => { (a.styles as { effects: Array<{ name: string }> }).effects[0].name = 'Elevation'; });
+    const diff = libraryDiff(base, renamed);
+    expect(only(diff, 'style')).toEqual([expect.objectContaining({
+      kind: 'renamed', id: 'S:e1', name: 'Elevation', from: 'Shadow', to: 'Elevation', bump: 'major',
+    })]);
+    expect(diff.minimumBump).toBe('major');
+
+    const both = withFoundation((a) => {
+      const shadow = (a.styles as { effects: Array<{ name: string; effects: unknown[] }> }).effects[0];
+      shadow.name = 'Elevation';
+      shadow.effects = [{ type: 'inner_shadow', visible: true }];
+    });
+    expect(only(libraryDiff(base, both), 'style')).toEqual([
+      expect.objectContaining({ kind: 'changed', from: 'Drop shadow', to: 'Inner shadow', bump: 'patch' }),
+      expect.objectContaining({ kind: 'renamed', from: 'Shadow', to: 'Elevation', bump: 'major' }),
+    ]);
   });
 
   it('style: an effect whose layers moved but whose summary reads the same has null from and to', () => {
@@ -536,6 +559,22 @@ describe('libraryDiff: foundation', () => {
       (a.styles as { effects: Array<{ effects: unknown[] }> }).effects[0].effects = [{ type: 'drop_shadow', visible: true, blur: { type: 'dimension', number: 8, unit: 'px' } }];
     });
     expect(only(libraryDiff(base, shifted), 'style')).toEqual([expect.objectContaining({ kind: 'changed', id: 'S:e1', from: null, to: null })]);
+  });
+
+  it('style: names effect layers the way the canvas does, and marks a hidden one', () => {
+    const layered = withFoundation((a) => {
+      (a.styles as { effects: Array<{ effects: unknown[] }> }).effects[0].effects = [
+        { type: 'drop_shadow', visible: true },
+        { type: 'inner_shadow', visible: false },
+        { type: 'layer_blur', visible: true },
+        { type: 'background_blur', visible: false },
+        { visible: true },
+      ];
+    });
+    expect(only(libraryDiff(base, layered), 'style')).toEqual([expect.objectContaining({
+      kind: 'changed', from: 'Drop shadow',
+      to: 'Drop shadow, Inner shadow (hidden), Layer blur, Background blur (hidden), Effect',
+    })]);
   });
 
   it('a description-only change is an empty diff', () => {

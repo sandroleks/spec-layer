@@ -248,7 +248,7 @@ export function slotAround(inst: InstanceNode | null, width: number): FrameNode 
   slot.primaryAxisSizingMode = 'AUTO';
   slot.minHeight = SLOT_MIN_H;
   if (inst) slot.appendChild(inst);
-  else slot.appendChild(makeText('Drop instance', 'Regular', 11, palette.muted));
+  else slot.appendChild(makeText('Preview unavailable', 'Regular', 11, palette.muted));
   return slot;
 }
 

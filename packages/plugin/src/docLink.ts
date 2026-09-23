@@ -239,7 +239,7 @@ export interface DocConfig {
   sections: SectionId[];
   variantIds: string[];
   aiEnabled: boolean;
-  anatomyView: 'diagram' | 'table' | 'both';
+  anatomyView: 'diagram';
   measureViews: MeasureView[];
   /**
    * Draw the parts a boolean component property hides by default, and set

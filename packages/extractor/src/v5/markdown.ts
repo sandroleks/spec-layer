@@ -521,12 +521,27 @@ function issuesSection(artifact: ComponentArtifactV5): string | undefined {
   return lines.length === 0 ? undefined : `## Issues\n\n${lines.join('\n')}`;
 }
 
+/** @internal `escapeInline` for a finding's message, which can name a field
+ * in an inline code span (`` `font_size` is 14px in the style ... ``). A
+ * backslash inside a code span is a literal character, so escaping the span
+ * would print `font\_size`; the text between single-backtick pairs is kept as
+ * it is, and everything outside them is escaped as before. An unpaired
+ * backtick opens nothing, so it is left in the escaped text. */
+function escapeMessage(text: string): string {
+  return text
+    .replace(/\r?\n/g, ' ')
+    .split(/(`[^`]+`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/([\\*_<>[\]])/g, '\\$1')))
+    .join('')
+    .trim();
+}
+
 /** @internal One finding as a bullet, `- severity: message (path, property)`.
  * Shared by the component's `## Issues` and the Foundation's own issues under
  * `## Tokens used`, so the two lists cannot format a finding differently. */
 function issueLine(row: Record<string, unknown>): string {
   const severity = escapeInline(str(row.severity) ?? 'info');
-  const message = escapeInline(str(row.message) ?? '');
+  const message = escapeMessage(str(row.message) ?? '');
   const where = [
     str(row.path) ? code(str(row.path)!) : undefined,
     str(row.property) ? escapeInline(str(row.property)!) : undefined,

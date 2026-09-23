@@ -239,9 +239,9 @@ export function validate(
   if (stateAxes.length > 1) {
     findings.push({
       id: 'ambiguous-state-axis', severity: 'warning',
-      message: `${stateAxes.join(' and ')} all read as state axes. Only `
-        + `${stateAxes[0]} was used as the state matrix, and the rest were treated `
-        + 'as ordinary variants.',
+      message: `${stateAxes.join(' and ')} each read as a state axis. Only `
+        + `${stateAxes[0]} was used for the state matrix, and the rest were treated `
+        + 'as ordinary variant properties.',
     });
   }
 

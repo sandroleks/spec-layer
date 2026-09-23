@@ -94,30 +94,67 @@ export function effectiveAuth(
   return { licenseKey: useKey, licenseInstanceId: useKey ? licenseInstanceId : null, figmaUserId };
 }
 
-export function generationErrorCopy(code: ProseProxyErrorCode): string {
+/**
+ * What a failed AI request cost, per kind of build. Every AI note, from a spent
+ * allowance to an unreachable Spec Layer, names one of these.
+ */
+export const AI_CONSEQUENCE = {
+  component: 'the AI sections were left out',
+  // A rebuild keeps the prose the document already had, so only what was
+  // still empty stays empty; "left out" would say the stored prose went too.
+  rebuild: 'sections that needed AI were left empty',
+  // A foundation frame has no AI sections, only group descriptions and
+  // collection overviews on top of a frame that renders either way.
+  foundation: 'the AI descriptions were left out',
+} as const;
+
+export type AiBuildKind = keyof typeof AI_CONSEQUENCE;
+
+/**
+ * One failure note: the cause and what it cost, then the fix.
+ *
+ * A rebuild ends at the cost. It is a Library update's one-time AI top-up for
+ * a doc from an older extractor, and the rebuilt doc is no longer stale, so
+ * updating it again never asks AI again. "Try again" would be false there.
+ */
+export function aiNote(cause: string, kind: AiBuildKind, retry: string): string {
+  const note = `${cause}, so ${AI_CONSEQUENCE[kind]}.`;
+  return kind === 'rebuild' ? note : `${note} ${retry}`;
+}
+
+/** A typed proxy failure, worded for the kind of build it interrupted. */
+export function generationErrorCopy(code: ProseProxyErrorCode, kind: AiBuildKind = 'component'): string {
   switch (code) {
-    case 'rate_limited': return 'Too many requests just now. Give it a minute.';
-    case 'generation_pending': return "That one's already generating. Hang tight.";
-    default: return "AI didn't run this time, so the AI sections were left out.";
+    case 'rate_limited':
+      return aiNote('Too many AI writing requests in the last minute', kind, 'Try again in a minute.');
+    case 'generation_pending':
+      return aiNote('AI writing is still busy with an earlier request', kind, 'Try again in a minute or two.');
+    default:
+      return aiFailedCopy(kind);
   }
 }
 
+/** Spec Layer answered with an error, or its answer could not be read. */
+export function aiFailedCopy(kind: AiBuildKind = 'component'): string {
+  return aiNote('AI writing failed', kind, 'Try again.');
+}
+
+/** The request never reached Spec Layer. */
+export function unreachableCopy(kind: AiBuildKind = 'component'): string {
+  return aiNote('Couldn’t reach Spec Layer', kind, 'Check your connection and try again.');
+}
+
 /**
- * The same failures, worded for a foundation build.
+ * Whether a thrown error is fetch failing to reach the network.
  *
- * A component doc drops the sections AI would have written; a foundation frame
- * has no such sections to drop, so the component copy ("the AI sections were
- * left out") describes something that did not happen. Same causes, different
- * consequence, so different words.
+ * fetch rejects with a TypeError whose message names the fetch ("Failed to
+ * fetch", "fetch failed", "Load failed", "NetworkError when attempting to
+ * fetch resource"). A TypeError from a bug in the code is not a network
+ * failure, and telling the user to check their connection for it would be
+ * false, so the message has to agree as well as the type.
  */
-export function groupErrorCopy(code: ProseProxyErrorCode): string {
-  switch (code) {
-    case 'rate_limited': return 'Too many requests just now. Give it a minute and press Update.';
-    case 'quota_exhausted': return 'Your monthly AI allowance is used up.';
-    case 'license_not_active': return 'The AI service did not accept this license key.';
-    case 'generation_pending': return 'Another generation is already running.';
-    default: return 'The AI service could not be reached.';
-  }
+export function isNetworkFailure(err: unknown): boolean {
+  return err instanceof TypeError && /fetch|network|load failed/i.test(err.message);
 }
 
 /** Quota snapshot for the meter. Null (no identity / offline) hides the meter. */
@@ -135,14 +172,28 @@ export async function fetchQuota(
   }
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The device name a new activation registers: "Figma plugin, added Sep 23,
+ * 2026". It is what Manage subscription lists for each device, so a user
+ * freeing a slot can tell one activation from another. The user's local date,
+ * because that is the day they activated; a fixed month table rather than
+ * Intl, so the name does not change with the machine's locale.
+ */
+export function activationInstanceName(now: Date): string {
+  return `Figma plugin, added ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+}
+
 export async function activateLicense(
   key: string,
   instanceId: string | null,
   fetcher: typeof fetch = window.fetch.bind(window),
+  now: Date = new Date(),
 ): Promise<{ valid: boolean; status: string; instanceId?: string }> {
   // With a known instance id the proxy re-validates instead of registering a
   // new device, so repeat clicks never burn the key's activation limit.
-  const body = instanceId ? { key, instanceId } : { key, instanceName: 'Figma plugin' };
+  const body = instanceId ? { key, instanceId } : { key, instanceName: activationInstanceName(now) };
   const res = await fetcher(`${PROXY_URL}/v1/license/activate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

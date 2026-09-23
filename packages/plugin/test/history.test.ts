@@ -17,11 +17,11 @@ describe('groupChanges', () => {
       change({ kind: 'renamed', entity: 'token', id: 'V2', name: 'color/brand', from: 'color/primary', to: 'color/brand', scope: null, bump: 'major' }),
     ]);
     expect(cards.map((c) => c.label)).toEqual(['Foundations', 'Button']);
-    expect(cards[0].items.map((i) => i.text)).toEqual(['Token color/brand renamed from color/primary', 'color/primary in Light']);
+    expect(cards[0].items.map((i) => i.text)).toEqual(['Variable color/primary renamed to color/brand', 'color/primary in Light']);
     // A rename's old and new names are in the sentence, so no struck value.
     expect(cards[0].items[0]).toMatchObject({ kind: 'renamed', from: null, to: null, scope: null });
     expect(cards[0].items[1]).toEqual({ kind: 'changed', text: 'color/primary in Light', from: '#000000', to: '#111111', scope: null });
-    expect(cards[1].items.map((i) => i.text)).toEqual(['State Hover removed', 'Option Huge added to size', 'Container / fill']);
+    expect(cards[1].items.map((i) => i.text)).toEqual(['State Hover removed', 'Value Huge added to size', 'Container / fill']);
     expect(cards[1].items[1].scope).toBeNull();
     expect(cards[1].items[2]).toEqual({ kind: 'changed', text: 'Container / fill', from: 'a', to: 'b', scope: '1 of 2 variants: size Large' });
   });
@@ -49,12 +49,12 @@ describe('describeChange', () => {
   it('names every component entity in plain words without the component prefix', () => {
     expect(t({ component: 'Button', entity: 'component', kind: 'added', name: 'Button' })).toEqual({ text: 'Component added', scope: null });
     expect(t({ component: 'Button', entity: 'component', kind: 'removed', name: 'Button' })).toEqual({ text: 'Component removed', scope: null });
-    expect(t({ component: 'Button', entity: 'component', kind: 'renamed', name: 'Button', from: 'Btn' })).toEqual({ text: 'Renamed from Btn', scope: null });
-    expect(t({ component: 'Button', entity: 'variant_axis', kind: 'added', name: 'hover', to: 'True, False', scope: null })).toEqual({ text: 'Axis hover added', scope: null });
-    expect(t({ component: 'Button', entity: 'variant_axis', kind: 'removed', name: 'hover', scope: null })).toEqual({ text: 'Axis hover removed', scope: null });
+    expect(t({ component: 'Button', entity: 'component', kind: 'renamed', name: 'Button', from: 'Btn' })).toEqual({ text: 'Component renamed from Btn', scope: null });
+    expect(t({ component: 'Button', entity: 'variant_axis', kind: 'added', name: 'hover', to: 'True, False', scope: null })).toEqual({ text: 'Variant property hover added', scope: null });
+    expect(t({ component: 'Button', entity: 'variant_axis', kind: 'removed', name: 'hover', scope: null })).toEqual({ text: 'Variant property hover removed', scope: null });
     expect(t({ component: 'Button', entity: 'variant_axis', kind: 'changed', name: 'size', scope: null })).toEqual({ text: 'Default of size changed', scope: null });
-    expect(t({ component: 'Button', entity: 'option', kind: 'added', name: 'Huge', scope: 'size' })).toEqual({ text: 'Option Huge added to size', scope: null });
-    expect(t({ component: 'Button', entity: 'option', kind: 'removed', name: 'Huge', scope: 'size' })).toEqual({ text: 'Option Huge removed from size', scope: null });
+    expect(t({ component: 'Button', entity: 'option', kind: 'added', name: 'Huge', scope: 'size' })).toEqual({ text: 'Value Huge added to size', scope: null });
+    expect(t({ component: 'Button', entity: 'option', kind: 'removed', name: 'Huge', scope: 'size' })).toEqual({ text: 'Value Huge removed from size', scope: null });
     expect(t({ component: 'Button', entity: 'property', kind: 'added', name: 'icon', to: 'instanceSwap', scope: null })).toEqual({ text: 'Property icon added', scope: null });
     expect(t({ component: 'Button', entity: 'property', kind: 'changed', name: 'icon', scope: null })).toEqual({ text: 'Property icon changed', scope: null });
     expect(t({ component: 'Button', entity: 'state', kind: 'removed', name: 'Hover', scope: null })).toEqual({ text: 'State Hover removed', scope: null });
@@ -70,17 +70,20 @@ describe('describeChange', () => {
 
   it('names every foundation entity, folding the mode into the sentence', () => {
     expect(t({ entity: 'collection', kind: 'added', name: 'Theme', scope: null })).toEqual({ text: 'Collection Theme added', scope: null });
-    expect(t({ entity: 'collection', kind: 'renamed', name: 'Theme', from: 'Colors', scope: null })).toEqual({ text: 'Collection renamed from Colors', scope: null });
+    expect(t({ entity: 'collection', kind: 'renamed', name: 'Theme', from: 'Colors', scope: null })).toEqual({ text: 'Collection Colors renamed to Theme', scope: null });
     expect(t({ entity: 'mode', kind: 'added', name: 'Contrast', scope: 'Theme' })).toEqual({ text: 'Mode Contrast added to Theme', scope: null });
     expect(t({ entity: 'mode', kind: 'removed', name: 'Contrast', scope: 'Theme' })).toEqual({ text: 'Mode Contrast removed from Theme', scope: null });
-    expect(t({ entity: 'mode', kind: 'renamed', name: 'Night', from: 'Dark', scope: 'Theme' })).toEqual({ text: 'Mode renamed from Dark in Theme', scope: null });
-    expect(t({ entity: 'token', kind: 'added', name: 'color/x', to: 'color in Theme, scopes ALL_SCOPES', scope: null })).toEqual({ text: 'Token color/x added', scope: null });
-    expect(t({ entity: 'token', kind: 'removed', name: 'color/x', scope: null })).toEqual({ text: 'Token color/x removed', scope: null });
-    expect(t({ entity: 'token', kind: 'renamed', name: 'color/y', from: 'color/x', scope: null })).toEqual({ text: 'Token color/y renamed from color/x', scope: null });
-    expect(t({ entity: 'token', kind: 'changed', name: 'color/x', scope: null })).toEqual({ text: 'Token color/x changed', scope: null });
+    expect(t({ entity: 'mode', kind: 'renamed', name: 'Night', from: 'Dark', scope: 'Theme' })).toEqual({ text: 'Mode Dark renamed to Night in Theme', scope: null });
+    expect(t({ entity: 'token', kind: 'added', name: 'color/x', to: 'color in Theme, scopes ALL_SCOPES', scope: null })).toEqual({ text: 'Variable color/x added', scope: null });
+    expect(t({ entity: 'token', kind: 'removed', name: 'color/x', scope: null })).toEqual({ text: 'Variable color/x removed', scope: null });
+    expect(t({ entity: 'token', kind: 'renamed', name: 'color/y', from: 'color/x', scope: null })).toEqual({ text: 'Variable color/x renamed to color/y', scope: null });
+    expect(t({ entity: 'token', kind: 'changed', name: 'color/x', scope: null })).toEqual({ text: 'Variable color/x changed', scope: null });
     expect(t({ entity: 'token_value', kind: 'changed', name: 'color/x', scope: 'Dark' })).toEqual({ text: 'color/x in Dark', scope: null });
     expect(t({ entity: 'style', kind: 'changed', name: 'Body', scope: null })).toEqual({ text: 'Style Body changed', scope: null });
     expect(t({ entity: 'style', kind: 'added', name: 'Body', scope: null })).toEqual({ text: 'Style Body added', scope: null });
+    // A rename drops its struck values, so both names must be in the sentence.
+    expect(t({ entity: 'style', kind: 'renamed', name: 'Body/Regular', from: 'Body', to: 'Body/Regular', scope: null }))
+      .toEqual({ text: 'Style Body renamed to Body/Regular', scope: null });
   });
 
   it('carries no em dash in any sentence', () => {
@@ -104,7 +107,7 @@ describe('bump tone, label and explanation', () => {
     expect(bumpLabel('initial')).toBe('First version');
     expect(bumpExplanation('major')).toBe('Something was removed or renamed. Code that used it may break.');
     expect(bumpExplanation('minor')).toBe('Something was added. Existing code keeps working.');
-    expect(bumpExplanation('patch')).toBe('Values or prose changed. Nothing was added or removed.');
+    expect(bumpExplanation('patch')).toBe('Values, bindings, or text changed. No component, property, variable, or mode was added or removed.');
     expect(bumpExplanation('initial')).toBe('The first publish. Nothing to compare against.');
     for (const bump of ['major', 'minor', 'patch', 'initial'] as const) expect(bumpExplanation(bump)).not.toContain('—');
   });
@@ -159,7 +162,56 @@ describe('history controller', () => {
     await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', vi.fn(async () => response(404, { error: 'not_found' })) as unknown as typeof fetch);
     expect(history.historyState().status).toBe('gone');
     await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', vi.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch);
-    expect(history.historyState()).toMatchObject({ status: 'error', message: 'Could not reach the publish service. Check your connection and try again.' });
+    expect(history.historyState()).toMatchObject({ status: 'error', message: 'Couldn’t reach Spec Layer. Check your connection and try again.' });
+  });
+
+  it('asks again without If-None-Match when a 304 arrives with no log cached, since Spec Layer did answer', async () => {
+    const seen: (string | undefined)[] = [];
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      const etag = (init?.headers as Record<string, string>)['If-None-Match'];
+      seen.push(etag);
+      return etag ? response(304, null) : response(200, LOG, { ETag: '"new"' });
+    }) as unknown as typeof fetch;
+    // Load once, then open without a key: the log goes, the ETag stays.
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', vi.fn(async () => response(200, LOG, { ETag: '"abc"' })) as unknown as typeof fetch);
+    await history.onHistoryOpen('lib_000000000000000000000001', null);
+    expect(history.historyState()).toMatchObject({ status: 'noKey', log: null, etag: '"abc"' });
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', fetcher);
+    expect(seen).toEqual(['"abc"', undefined]);
+    expect(history.historyState()).toMatchObject({ status: 'ready', log: LOG, etag: '"new"', message: null });
+  });
+
+  it('never reports a connection failure for a 304, even one repeated to a request that named no version', async () => {
+    const fetcher = vi.fn(async () => response(304, null)) as unknown as typeof fetch;
+    await history.onHistoryOpen('lib_000000000000000000000001', 'sl_key', fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(history.historyState()).toMatchObject({
+      status: 'error',
+      message: 'Couldn’t load versions. Spec Layer sent a reply the plugin couldn’t read. Try again in a moment.',
+    });
+  });
+
+  it('opens every failure with the outcome, then the cause and the fix', async () => {
+    const at = async (res: Response) => history.fetchVersionLog({
+      libraryId: 'lib_000000000000000000000001', pullKey: 'sl_key', etag: null,
+      fetcher: vi.fn(async () => res) as unknown as typeof fetch,
+    });
+    expect(await at(response(401, null))).toEqual({
+      kind: 'error',
+      message: 'Couldn’t load versions. This device’s pull key no longer works, likely because it was rotated elsewhere. '
+        + 'Open History there, or rotate the key on the Publish screen.',
+    });
+    expect(await at(response(429, null))).toEqual({
+      kind: 'error', message: 'Couldn’t load versions. Too many requests in the last minute. Try again in a minute.',
+    });
+    expect(await at(response(503, null))).toEqual({ kind: 'error', message: 'Couldn’t load versions. Try again in a moment (HTTP 503).' });
+    const unreadable = 'Couldn’t load versions. Spec Layer sent a reply the plugin couldn’t read. Try again in a moment.';
+    expect(await at(response(200, { v: 2, records: [] }))).toEqual({ kind: 'error', message: unreadable });
+    const broken = { status: 200, ok: true, headers: new Headers(), json: async () => { throw new SyntaxError('bad'); } } as unknown as Response;
+    expect(await at(broken)).toEqual({ kind: 'error', message: unreadable });
+    expect(await history.fetchVersionLog({ libraryId: 'not-an-id', pullKey: 'sl_key', etag: null })).toEqual({
+      kind: 'error', message: 'Couldn’t load versions. This file’s link to its published library is damaged.',
+    });
   });
 
   it('toggles one expanded record at a time', async () => {

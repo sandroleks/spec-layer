@@ -50,18 +50,33 @@ function resultMarkup(state: FoundationScreenState): string {
 function footerProgressMarkup(state: FoundationScreenState): string {
   if (state.kind === 'loading') {
     return progressMarkup({
-      label: 'Reading this file',
+      label: 'Reading this file’s variables and styles',
     });
   }
   if (state.kind === 'generating') {
+    // setFoundationGenerating sets a phase from foundationBuildMessages before
+    // any paint, so there is no phase-less build to put words to.
     return progressMarkup({
-      label: state.phase ?? 'Creating foundation frames',
+      label: state.phase ?? '',
       current: state.done,
       total: state.total,
     });
   }
   return '';
 }
+
+/**
+ * Whether the file has anything this screen documents. buildFoundation always
+ * returns a spec, so an empty file is a spec with nothing in it, not a null.
+ */
+function hasSources(spec: FoundationSpec): boolean {
+  return spec.collections.length > 0 || spec.textStyles.length > 0 || spec.effectStyles.length > 0;
+}
+
+const EMPTY_STATE =
+  '<div class="sl-empty-state"><strong>No local variables or styles</strong>' +
+  '<p>Spec Layer documents local variable collections, text styles, and effect styles. ' +
+  'Add one to this file, then select Refresh sources.</p></div>';
 
 function sourceRow(options: {
   id: string;
@@ -73,13 +88,15 @@ function sourceRow(options: {
   effectStyles?: boolean;
   busy: boolean;
 }): string {
-  const action = options.checked ? 'Remove' : 'Include';
+  // One constant label for a toggle: aria-pressed carries the state, so a
+  // label that flipped with it would announce "Remove Color from docs,
+  // pressed".
   return (
     '<article class="sl-foundation-row">' +
     `<button class="sl-foundation-summary" type="button" data-foundation-source="${esc(options.id)}"` +
     `${options.textStyles ? ' data-text-styles="true"' : ''}` +
     `${options.effectStyles ? ' data-effect-styles="true"' : ''} aria-pressed="${options.checked}" ` +
-    `aria-label="${action} ${esc(options.name)} ${options.checked ? 'from' : 'in'} docs">` +
+    `aria-label="Include ${esc(options.name)} in docs">` +
     checkbox(options.checked) +
     `<span class="sl-foundation-source-icon">${icon(options.iconName, 17)}</span>` +
     '<span class="sl-foundation-title">' +
@@ -98,7 +115,7 @@ function sourceRow(options: {
 }
 
 export function foundationHeaderMarkup(): string {
-  return '<div class="sl-page-header-copy"><h1>Foundation documents</h1></div>';
+  return '<div class="sl-page-header-copy"><h1>Foundations</h1></div>';
 }
 
 export function foundationScrollMarkup(
@@ -116,11 +133,11 @@ export function foundationScrollMarkup(
   }
   if (!spec) {
     if (state.kind === 'error') return resultMarkup(state);
-    return (
-      '<div class="sl-empty-state"><strong>No foundation sources</strong>' +
-      '<p>This file has no local variable collections, text styles, or effect styles.</p></div>'
-    );
+    return EMPTY_STATE;
   }
+  // An empty file, not a missing read: no toolbar, no "0 of 0 included".
+  // A failed refresh keeps its banner above the empty state.
+  if (!hasSources(spec)) return resultMarkup(state) + EMPTY_STATE;
 
   const summary = summarize(spec);
   // 'loading' already returned above, so 'generating' or an in-flight
@@ -202,7 +219,7 @@ export function foundationFooterMarkup(
    * reads. The reason is already on screen in each case: the progress line, the
    * empty state, or the error banner.
    */
-  const nothingTicked = state.kind === 'ready' && Boolean(spec) && frames === 0;
+  const nothingTicked = state.kind === 'ready' && spec !== null && hasSources(spec) && frames === 0;
   const label = state.kind === 'generating'
     ? 'Creating docs…'
     : nothingTicked

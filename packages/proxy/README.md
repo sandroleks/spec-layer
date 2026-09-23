@@ -290,7 +290,7 @@ cache inside the DO; prompts and prose are never logged.
 - **Free publishing budgets are per client-supplied identity.** The Figma user
   id is hashed with a server salt, but it is not a secret and nothing
   authenticates it. Each self-asserted identity therefore gets its own budget
-  of 1 library and 10 updates a month, over up to 5 MB of KV that never
+  of 1 library and 10 publishes a month (the first publish counts), over up to 5 MB of KV that never
   expires. A client that lies about `X-Figma-User` can shop for fresh buckets,
   and a lapsed Pro owner can do the same for its own library, because
   ownership passes on the key while the counter follows the Figma identity.

@@ -29,27 +29,27 @@ tokens:
       kind: variable
       resolution:
         status: no-foundation
-        reason: no foundation was read, so no definition could be looked up.
+        reason: No foundation snapshot was read, so no definition could be looked up.
     - token: md.sys.color.primary-hover
       kind: variable
       resolution:
         status: no-foundation
-        reason: no foundation was read, so no definition could be looked up.
+        reason: No foundation snapshot was read, so no definition could be looked up.
     - token: md.sys.shape.corner.full
       kind: variable
       resolution:
         status: no-foundation
-        reason: no foundation was read, so no definition could be looked up.
+        reason: No foundation snapshot was read, so no definition could be looked up.
     - token: md.sys.color.outline
       kind: variable
       resolution:
         status: no-foundation
-        reason: no foundation was read, so no definition could be looked up.
+        reason: No foundation snapshot was read, so no definition could be looked up.
     - token: md.sys.color.on-primary
       kind: variable
       resolution:
         status: no-foundation
-        reason: no foundation was read, so no definition could be looked up.
+        reason: No foundation snapshot was read, so no definition could be looked up.
   bindings:
     - path: Container/container
       property: fill

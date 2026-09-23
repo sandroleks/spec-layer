@@ -48,7 +48,7 @@ describe('valueLines', () => {
   });
 
   it('labels an empty string variable as a stated fact, not a blank cell', () => {
-    expect(valueLines({ kind: 'string', value: '' }).primary).toBe('(empty string)');
+    expect(valueLines({ kind: 'string', value: '' }).primary).toBe('Empty string');
   });
 
   it('labels a non-empty string unchanged', () => {
@@ -70,7 +70,7 @@ describe('valueLines', () => {
       kind: 'alias', targetName: 'core/blue', targetCollection: 'Core Library',
       external: true, resolved: null,
     };
-    expect(valueLines(v)).toEqual({ primary: '→ core/blue', secondary: 'library variable' });
+    expect(valueLines(v)).toEqual({ primary: '→ core/blue', secondary: 'Library variable' });
   });
 
   it('leaves the second line empty for an unresolvable local alias', () => {
@@ -81,15 +81,15 @@ describe('valueLines', () => {
     expect(valueLines(v)).toEqual({ primary: '→ gone', secondary: '' });
   });
 
-  it('states every unresolved reason plainly', () => {
+  it('states every unresolved reason in plain words, never the raw code', () => {
     expect(valueLines({ kind: 'unresolved', reason: 'cycle' }).primary)
-      .toBe('not resolved: cycle');
+      .toBe('Not resolved: aliases form a loop');
     expect(valueLines({ kind: 'unresolved', reason: 'missing' }).primary)
-      .toBe('not resolved: missing');
+      .toBe('Not resolved: value missing');
     expect(valueLines({ kind: 'unresolved', reason: 'depth' }).primary)
-      .toBe('not resolved: depth');
+      .toBe('Not resolved: alias chain too long');
     expect(valueLines({ kind: 'unresolved', reason: 'external' }).primary)
-      .toBe('not resolved: external library variable');
+      .toBe('Not resolved: library variable');
   });
 
   it('carries a failed chain reason on the second line', () => {
@@ -97,7 +97,7 @@ describe('valueLines', () => {
       kind: 'alias', targetName: 'a', targetCollection: 'P', external: false,
       resolved: { kind: 'unresolved', reason: 'cycle' },
     };
-    expect(valueLines(v)).toEqual({ primary: '→ a', secondary: 'not resolved: cycle' });
+    expect(valueLines(v)).toEqual({ primary: '→ a', secondary: 'Not resolved: aliases form a loop' });
   });
 
   it('degrades to a name if a resolved target is ever itself an alias', () => {
@@ -1013,12 +1013,12 @@ describe('swatchValueLines', () => {
     expect(swatchValueLines({
       kind: 'alias', targetName: 'core/blue', targetCollection: 'Lib',
       external: true, resolved: null,
-    })).toEqual(['→ core/blue', 'library variable']);
+    })).toEqual(['→ core/blue', 'Library variable']);
   });
 
   it('states an unresolved value plainly', () => {
     expect(swatchValueLines({ kind: 'unresolved', reason: 'cycle' }))
-      .toEqual(['not resolved: cycle']);
+      .toEqual(['Not resolved: aliases form a loop']);
   });
 
   it('never returns an empty line', () => {

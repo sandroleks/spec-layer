@@ -21,17 +21,20 @@ import { EXTRACTOR_VERSION, PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { UiToMain } from '../messages';
 import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
-import { effectiveAuth, generationErrorCopy } from './proxy';
+import {
+  AI_CONSEQUENCE, aiFailedCopy, effectiveAuth, generationErrorCopy, isNetworkFailure,
+  unreachableCopy, type AiBuildKind,
+} from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { DEFAULT_COMPONENT_FORMAT, COMPONENT_FORMAT_NAME, type ComponentFormat } from '../componentFormat';
 import {
-  ALL_SECTIONS, buildDocModel, frameCountFor, proseKeysForSections,
+  ALL_SECTIONS, buildDocModel, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
   defaultSelection, toggleCollection, toggleMode, toggleTextStyles, toggleEffectStyles,
-  frameCount, selectAll, clearAll, allSelected, groupBriefs,
+  selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
 
@@ -79,8 +82,6 @@ export interface UiState {
   // What the last build left out, and why, so the result message can say so.
   // Set by every assembled build and cleared once it has been reported.
   lastOmitted: OmittedSection[];
-  // Frames the last assembled build draws, for the result message.
-  lastFrameCount: number;
   // Set when an AI generation attempt fails so the next frame-build can note it
   // ("the AI sections were left out") instead of aborting the whole frame.
   pendingAiNote: string;
@@ -114,7 +115,6 @@ export function createState(): UiState {
     generatedProse: null,
     generatedProseKeys: null,
     lastOmitted: [],
-    lastFrameCount: 0,
     pendingAiNote: '',
     brandTheme: emptyBrandTheme(),
     logoBase64: null,
@@ -223,43 +223,61 @@ export function willGenerateProseFor(state: UiState, sections: Set<SectionId>): 
   return proseNeedsRegen(state, requested);
 }
 
-/** Note + state effect for a failed license during generation. Pure for tests. */
-export function licenseFailureNote(reason: string | undefined): { note: string; markInactive: boolean } {
+/**
+ * Note + state effect for a failed license during generation. Pure for tests.
+ *
+ * `unreachable` means Spec Layer answered but could not reach the license
+ * check behind it, so the key is kept and the check can simply run again. A
+ * rebuild drops that retry, for the reason `aiNote` gives.
+ */
+export function licenseFailureNote(
+  reason: string | undefined,
+  kind: AiBuildKind = 'component',
+): { note: string; markInactive: boolean } {
+  const consequence = AI_CONSEQUENCE[kind];
   if (reason === 'unreachable') {
+    const note = `Spec Layer couldn’t check your license key, so ${consequence}. Your key is still saved.`;
     return {
-      note: "We couldn't check your Pro key this time, so AI didn't run. Your key is still saved. Try again in a minute.",
+      note: kind === 'rebuild' ? note : `${note} Try again in a minute.`,
       markInactive: false,
     };
   }
   return {
-    note: "Your Pro subscription isn't active, so AI didn't run this time. You're back on the free tier, and the renew option is in Settings.",
+    note: `Your Pro subscription isn’t active, so ${consequence}. You’re on the free plan now. Renew Pro on the License screen.`,
     markInactive: true,
   };
 }
 
 /**
- * Turn a failed generation into state: the quota fork, a lapsed license, a
- * typed proxy code, or a plain error message. Shared by the Create path and
- * the rebuild top-up so the two never explain the same failure differently.
+ * Turn a failed AI request into a note and its effect on state: the quota
+ * fork, a lapsed license, a typed proxy code, an unreachable Spec Layer, or
+ * anything else. One function for Create, the rebuild top-up, and the
+ * Foundations build, so the three never explain the same failure differently;
+ * `kind` only changes what the failure cost.
+ *
+ * The raw error goes to the console, never into the note. "Failed to fetch"
+ * or a JSON parse message tells a designer nothing they can act on.
  */
-export function noteGenerationError(state: UiState, err: unknown): void {
+export function aiFailureNote(state: UiState, err: unknown, kind: AiBuildKind): string {
   if (err instanceof ProseProxyError) {
     if (err.code === 'quota_exhausted') {
       state.quotaExhausted = true;
-      state.pendingAiNote = quotaExhaustedNote(state.quota);
-      return;
+      return quotaExhaustedNote(state.quota, kind);
     }
     if (err.code === 'license_not_active') {
-      const { note, markInactive } = licenseFailureNote(err.reason);
+      const { note, markInactive } = licenseFailureNote(err.reason, kind);
       if (markInactive) state.licenseActive = false;
-      state.pendingAiNote = note;
-      return;
+      return note;
     }
-    state.pendingAiNote = generationErrorCopy(err.code);
-    return;
+    return generationErrorCopy(err.code, kind);
   }
-  const detail = err instanceof Error ? err.message : String(err);
-  state.pendingAiNote = `AI didn't run (${detail}), so the AI sections were left out.`;
+  console.warn('[Spec Layer] AI writing failed:', err);
+  return isNetworkFailure(err) ? unreachableCopy(kind) : aiFailedCopy(kind);
+}
+
+/** Record a failed generation for the build that asked for it. */
+export function noteGenerationError(state: UiState, err: unknown, kind: AiBuildKind = 'component'): void {
+  state.pendingAiNote = aiFailureNote(state, err, kind);
 }
 
 async function ensureProseFor(state: UiState, sections: Set<SectionId>): Promise<void> {
@@ -354,10 +372,9 @@ export async function createDocFrame(
 ): Promise<void> {
   ui.clear();
 
-  if (!ensureExtracted(state)) {
-    ui.error('Select a component first.');
-    return;
-  }
+  // No component, no build. The screen only offers Create once a component
+  // is on it, so there is nothing here to tell the user.
+  if (!ensureExtracted(state)) return;
 
   // Guard against a double-click sending two renderDocFrame messages (and
   // building two frames). Re-enabled by docFrameDone/docFrameError, or here on
@@ -386,7 +403,7 @@ export async function createDocFrame(
   } catch (err) {
     ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Frame failed: ${msg}`);
+    ui.error(`Couldn’t create the docs. Nothing changed on the canvas. (${msg})`);
     ui.setBusy(false);
   }
 }
@@ -415,7 +432,6 @@ async function assembleDocFor(
     measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
   });
   state.lastOmitted = model.omitted;
-  state.lastFrameCount = frameCountFor(model);
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
@@ -437,9 +453,12 @@ const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
   aiOff: 'AI writing is off',
 };
 
-/** The first sentence of the result message, spec 9.3: `Created 3 frames.` */
-export function resultOutcome(replaced: boolean, frames: number): string {
-  return `${replaced ? 'Replaced' : 'Created'} ${frames} frame${frames === 1 ? '' : 's'}.`;
+/**
+ * The first sentence of the result message: `Docs created.` No frame count.
+ * A frame is how a doc is stored, not what the user came for.
+ */
+export function resultOutcome(replaced: boolean): string {
+  return `Docs ${replaced ? 'updated' : 'created'}.`;
 }
 
 /** The result line: the outcome, then one sentence per omitted section. */
@@ -456,14 +475,23 @@ export function generatingMessages(withAi: boolean): string[] {
         'Looking at the component',
         'Writing the guidelines',
         'Composing sections',
-        'Placing the frame on the canvas',
+        'Placing docs on the canvas',
       ]
     : [
         'Reading the component',
         'Composing sections',
         'Laying out the content',
-        'Placing the frame on the canvas',
+        'Placing docs on the canvas',
       ];
+}
+
+/**
+ * The loader line after `index`, or null to stay put. A loader holds on its
+ * last line instead of wrapping: a slow AI build that cycled from "Placing
+ * docs on the canvas" back to its first line would read as starting over.
+ */
+export function nextPhaseIndex(index: number, count: number): number | null {
+  return index + 1 < count ? index + 1 : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -528,7 +556,9 @@ export async function updateFromSource(
   // docFrameError releases that lock; only a synchronous failure tears down
   // here. The vNext Library must preserve that caller-owned lifecycle.
   ui.clear();
-  ui.startProgress(['Reading the component', 'Composing sections', 'Placing the frame on the canvas']);
+  // No lines: the Library shows its own "Updating" label, and its presenter
+  // uses this call only to repaint.
+  ui.startProgress([]);
   try {
     const spec = extract(src.node, { figmaFile: src.fileKey, ...(src.fileName ? { figmaFileName: src.fileName } : {}) });
     const selected = new Set<SectionId>(src.config.sections);
@@ -541,7 +571,6 @@ export async function updateFromSource(
     // Same record the Create path keeps, so the Library's completion message
     // can name the sections it left out instead of staying silent about them.
     state.lastOmitted = model.omitted;
-    state.lastFrameCount = frameCountFor(model);
     send({
       type: 'renderDocFrame',
       model,
@@ -557,7 +586,7 @@ export async function updateFromSource(
   } catch (err) {
     ui.stopProgress();
     const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Update failed: ${msg}`);
+    ui.error(`Couldn’t update this doc. (${msg})`);
     return false;
   }
 }
@@ -620,31 +649,21 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
  * Only facts the proxy reported: the limit and the reset date come from the
  * last quota snapshot, and each is left out when that snapshot lacks it
  * rather than guessed. "Free" only for the free tier, because a Pro plan has
- * its own ceiling.
+ * its own ceiling. What running out cost, per kind of build, is the same
+ * AI_CONSEQUENCE every other AI note names.
  */
-/** What running out cost, per kind of build. */
-const QUOTA_CONSEQUENCE = {
-  component: 'the AI sections were left out',
-  // A rebuild keeps the prose the document already had, so only what was
-  // still empty stays empty; "left out" would say the stored prose went too.
-  rebuild: 'sections that needed AI were left empty',
-  // A foundation frame has no AI sections, only group descriptions and
-  // collection overviews on top of a frame that renders either way.
-  foundation: 'the AI descriptions were left out',
-} as const;
-
 export function quotaExhaustedNote(
   quota: ProxyQuota | null,
-  kind: keyof typeof QUOTA_CONSEQUENCE = 'component',
+  kind: AiBuildKind = 'component',
 ): string {
   const free = quota?.tier !== 'pro';
   const limit = quota?.limit;
   const uses = typeof limit === 'number' && limit > 0
-    ? `all ${limit} ${free ? 'free ' : ''}AI uses`
-    : `all your ${free ? 'free ' : ''}AI uses`;
+    ? `all ${limit} ${free ? 'free ' : ''}AI writing uses`
+    : `all your ${free ? 'free ' : ''}AI writing uses`;
   const reset = formatResetDate(quota?.resetsAt ?? '');
   return (
-    `You've used ${uses} this month, so ${QUOTA_CONSEQUENCE[kind]}.` +
+    `You’ve used ${uses} this month, so ${AI_CONSEQUENCE[kind]}.` +
     (reset ? ` Your uses reset on ${reset}.` : '')
   );
 }
@@ -654,10 +673,10 @@ const AI_SECTION_IDS: ReadonlySet<SectionId> = new Set(
 );
 
 /**
- * The omissions still worth listing once the quota note has explained the AI
- * ones. An AI section left empty because no model ran is not "nothing to
- * show", and listing it that way under the quota note says the same thing
- * twice, the second time wrongly.
+ * The omissions still worth listing once an AI note (the quota, or any other
+ * failed request) has explained the AI ones. An AI section left empty because
+ * no model answered is not "nothing to show", and listing it that way under
+ * the note says the same thing twice, the second time wrongly.
  */
 export function withoutAiOmissions(omitted: readonly OmittedSection[]): OmittedSection[] {
   return omitted.filter((o) => !(o.reason === 'nothingToShow' && AI_SECTION_IDS.has(o.id)));
@@ -692,10 +711,7 @@ export async function topUpProseForRebuild(state: UiState, src: DocSource): Prom
     );
     return mergeTopUp(src.prose, draft?.prose ?? null);
   } catch (err) {
-    noteGenerationError(state, err);
-    if (err instanceof ProseProxyError && err.code === 'quota_exhausted') {
-      state.pendingAiNote = quotaExhaustedNote(state.quota, 'rebuild');
-    }
+    noteGenerationError(state, err, 'rebuild');
     return src.prose;
   }
 }
@@ -733,7 +749,7 @@ export function takeTopUpNote(state: UiState): string | null {
 export type CopySource = Pick<DocSource, 'node' | 'fileKey' | 'fileName'>;
 
 export interface CopyBriefOptions {
-  /** Say "This document has no saved guidelines" when prose is null. True for
+  /** Say "This doc has no saved guidelines" when prose is null. True for
    *  a Library row, where a document exists and could have had them. False
    *  from the component screen, where there is no document to speak of. */
   guidelinesNote?: boolean;
@@ -752,7 +768,7 @@ export const LARGE_COPY_BYTES = 200 * 1024;
 export function sizeCaveat(text: string): string {
   const bytes = new TextEncoder().encode(text).length;
   if (bytes <= LARGE_COPY_BYTES) return '';
-  return ` ${Math.round(bytes / 1024)} KB, which is large for some chat windows.`;
+  return ` It’s ${Math.round(bytes / 1024)} KB, which some chat windows can’t take in one paste.`;
 }
 
 export async function copyBriefFromSource(
@@ -791,8 +807,10 @@ export async function copyBriefFromSource(
       ? componentMarkdown(artifact)
       : toYaml(componentAiContext(artifact) as unknown as YamlValue);
     const size = sizeCaveat(text);
-    const missing = foundationSpec ? '' : ' Token values are missing because foundations have not been read yet.';
-    const noProse = prose || options.guidelinesNote === false ? '' : ' This document has no saved guidelines.';
+    const missing = foundationSpec
+      ? ''
+      : ' Token values are missing because this file’s variables haven’t loaded yet. Open Foundations, then copy again.';
+    const noProse = prose || options.guidelinesNote === false ? '' : ' This doc has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
     const tier = await copyText(text);
     if (tier === 'manual') {
@@ -802,7 +820,7 @@ export async function copyBriefFromSource(
     ui.info(`Copied as ${COMPONENT_FORMAT_NAME[format]}.${size}${missing}${noProse}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Could not read that component. Nothing was copied. ${msg}`);
+    ui.error(`Couldn’t read that component. Nothing was copied. (${msg})`);
   }
 }
 
@@ -820,10 +838,9 @@ let foundationSelection: FoundationSelection = { collections: [], textStyles: fa
 // for copyFoundationBrief; never generated here.
 //
 // Set initially by onFoundationMessage, alongside foundationSpec (never by
-// onSelectionFoundation, since the copy button's guard, "Read the
-// foundations first", never fires without a 'foundation' reply landing
-// first). But that first population goes stale the moment the user
-// generates or changes descriptions in the SAME session: creating or
+// onSelectionFoundation, whose dump carries no descriptions). But that first
+// population goes stale the moment the user generates or changes
+// descriptions in the SAME session: creating or
 // rebuilding a foundation doc, or detaching/removing one, all change what is
 // on canvas without re-sending 'foundation'. setFoundationGroupDescriptions
 // is the one place every one of those replies (foundationDone, docDetached,
@@ -908,7 +925,7 @@ async function deliverBrief(buildText: () => string, ui: BuildPresenter): Promis
     ui.info(`Copied.${size}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Could not read the foundations. Nothing was copied. ${msg}`);
+    ui.error(`Couldn’t read this file’s variables and styles. Nothing was copied. (${msg})`);
   }
 }
 
@@ -967,10 +984,9 @@ function foundationDtcgJson(
 export async function copyFoundationBrief(ui: BuildPresenter): Promise<void> {
   ui.clear();
   const spec = currentFoundationSpec();
-  if (!spec) {
-    ui.error('Read the foundations first, then copy.');
-    return;
-  }
+  // The Foundations footer only draws this button once the file has been read,
+  // so there is no spec-less click to explain.
+  if (!spec) return;
   const generatedAt = new Date().toISOString();
   await deliverBrief(
     () => foundationDtcgJson(spec, generatedAt, foundationGroupDescriptions),
@@ -997,10 +1013,10 @@ export async function copyFoundationBriefForScope(
   ui.clear();
   const spec = currentFoundationSpec();
   if (!spec) {
-    // Not "read the foundations first": from My Library that names a remedy on
-    // another screen. The Library view asks for the dump on entry, so this is a
-    // sub-second race or a read that failed, and both resolve by retrying.
-    ui.error("Still reading this file's variables. Try again in a moment.");
+    // No remedy on another screen: the Library view asks for the dump on
+    // entry, so this is a sub-second race or a read that failed, and both
+    // resolve by retrying.
+    ui.error('Still reading this file’s variables. Try again in a moment.');
     return;
   }
   if (scope.target === 'collection'
@@ -1071,11 +1087,7 @@ export function setFoundationGenerating(value: boolean): void {
   // cannot end up running with no loader (or a loader with no build): both
   // callers set the flag, and there are three ways a build can finish.
   if (value) {
-    foundationHost.startProgress(
-      foundationBuildMessages(
-        foundationSpec ? frameCount(foundationSpec, foundationSelection) : 0,
-      ),
-    );
+    foundationHost.startProgress(foundationBuildMessages());
   } else {
     foundationHost.stopProgress();
   }
@@ -1083,17 +1095,16 @@ export function setFoundationGenerating(value: boolean): void {
 }
 
 /**
- * What the build loader says while frames are produced. These phases are real:
+ * What the build loader says while docs are produced. These phases are real:
  * the main thread re-reads the file, lays out each table, then places the
- * Sections. The last line is singular for a one-frame build, since claiming
- * "frames" for one frame is the kind of small lie that makes a user distrust
- * the rest of the message.
+ * Sections. The last line names docs, not frames, so it holds for one doc or
+ * many and matches the component loader's last line.
  */
-function foundationBuildMessages(frames: number): string[] {
+function foundationBuildMessages(): string[] {
   return [
-    "Reading this file's variables and styles",
+    'Reading this file’s variables and styles',
     'Laying out the tables',
-    frames === 1 ? 'Placing the frame on the canvas' : 'Placing the frames on the canvas',
+    'Placing docs on the canvas',
   ];
 }
 

@@ -57,18 +57,22 @@ function detailsMarkup(record: VersionRecord, expanded: boolean): string {
   if (record.changes.length === 0 && record.changesTruncated) {
     // Compacted by the proxy's log cap (see versions.ts compactLog): the
     // counts survive, but the per-change list this old does not. Never claim
-    // "No property changes" over a version that plainly had some.
+    // "No changes" over a version that plainly had some.
     content =
-      `<p class="sl-library-change-fallback"><strong>The changes for this version are no longer ` +
-      `stored (${total} changes).</strong></p>`;
+      '<p class="sl-library-change-fallback"><strong>Older versions keep only a count of their changes. ' +
+      `This one had ${total}.</strong></p>`;
   } else if (record.changes.length === 0 && record.bump === 'initial') {
-    content = '<p class="sl-library-change-fallback"><strong>First version, nothing to compare against.</strong></p>';
+    content = '<p class="sl-library-change-fallback"><strong>The first publish. Nothing to compare against.</strong></p>';
   } else if (record.changes.length === 0) {
-    content = '<p class="sl-library-change-fallback"><strong>No property changes</strong></p>';
+    content =
+      '<p class="sl-library-change-fallback"><strong>No changes to components, variables, or styles. ' +
+      'Text changes, such as descriptions, aren’t listed.</strong></p>';
   } else {
     content = groupChanges(record.changes).map(cardMarkup).join('');
     if (record.changesTruncated) {
-      content += `<p class="sl-history-truncated">Showing the first ${record.changes.length} changes of ${total}</p>`;
+      content +=
+        `<p class="sl-history-truncated">Showing the first ${record.changes.length} of ${total} changes. ` +
+        'The full list was too large to store.</p>';
     }
   }
   return (
@@ -115,13 +119,19 @@ export function historyScrollMarkup(state: HistoryState, locale?: string): strin
       body = empty('Publish this file to start a version history.');
       break;
     case 'noKey':
-      body = empty('Version history needs this library\'s pull key, which is stored on the device that published it. Ask that person, or rotate the key from the Publish screen.');
+      body = empty(
+        'This device doesn’t have the pull key. Only the device that first published this file, ' +
+        'or last rotated its key, has it. Open History there, or rotate the key on the Publish screen.',
+      );
       break;
     case 'gone':
-      body = empty('That library no longer exists on the publish service. Publish again to create a new one.');
+      body = empty(
+        'This published library no longer exists on Spec Layer. Publish again to create a new one, ' +
+        'then give developers the new setup command.',
+      );
       break;
     case 'error':
-      body = empty(esc(state.message ?? 'Could not load the version history.'), true);
+      body = empty(esc(state.message), true);
       break;
     case 'ready':
       if (state.log && state.log.records.length > 0) {
@@ -131,7 +141,7 @@ export function historyScrollMarkup(state: HistoryState, locale?: string): strin
         const rows = state.log.records.map((record) => rowMarkup(record, state.expanded === record.version, locale)).join('');
         return `<div class="sl-history-list">${rows}</div>`;
       }
-      body = empty('No versions yet. The first publish creates 1.0.0.');
+      body = empty('No versions yet. Your next publish starts the history at 1.0.0.');
       break;
   }
   return `<div class="sl-publish-body sl-history-body">${body}</div>`;

@@ -95,8 +95,8 @@ describe('formatLibraryAge', () => {
   });
 
   it('is honest about missing data and tolerant of clock skew', () => {
-    expect(formatLibraryAge(undefined, NOW)).toBe('—');
-    expect(formatLibraryAge(Number.NaN, NOW)).toBe('—');
+    expect(formatLibraryAge(undefined, NOW)).toBe('Unknown');
+    expect(formatLibraryAge(Number.NaN, NOW)).toBe('Unknown');
     expect(formatLibraryAge(NOW + 60_000, NOW)).toBe('just now');
   });
 });
@@ -113,7 +113,6 @@ describe('buildLibraryRow capabilities', () => {
       expanded: true,
       canOpenFrame: true,
       canOpenSource: true,
-      canReconnect: false,
       canUpdate: true,
       canDetach: true,
       canRemove: true,
@@ -157,7 +156,6 @@ describe('buildLibraryRow capabilities', () => {
       status: 'orphaned',
       canOpenFrame: true,
       canOpenSource: false,
-      canReconnect: false,
       canUpdate: false,
       canDetach: true,
       canRemove: true,
@@ -483,7 +481,7 @@ describe('resolveLibraryChanges', () => {
   it('diffs a component baseline against the cached live projection', () => {
     const live = { ...projection, states: ['default', 'hover'] };
     expect(resolveLibraryChanges({ baseline: component, liveProjection: live })).toEqual({
-      state: 'ready', groups: [{ label: 'States', items: [{ text: 'Added state hover' }] }],
+      state: 'ready', groups: [{ label: 'States', items: [{ text: 'State hover added' }] }],
     });
   });
 
@@ -494,7 +492,7 @@ describe('resolveLibraryChanges', () => {
   it('diffs a foundation baseline against the live unit content main sent', () => {
     const live: FoundationUnitContent = { ...unit, modeNames: ['Light', 'Dark'] };
     expect(resolveLibraryChanges({ baseline: foundation, live })).toEqual({
-      state: 'ready', groups: [{ label: 'Modes', items: [{ text: 'Added mode Dark' }] }],
+      state: 'ready', groups: [{ label: 'Modes', items: [{ text: 'Mode Dark added' }] }],
     });
   });
 

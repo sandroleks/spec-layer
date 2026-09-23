@@ -19,24 +19,28 @@ describe('metricsLine', () => {
   it('names family, style, size over line height, letter spacing and paragraph spacing', () => {
     expect(metricsLine(BASE)).toEqual([
       { label: 'Inter', tokens: [] }, { label: 'Semi Bold', tokens: [] },
-      { label: '24/32', tokens: [] }, { label: 'letter spacing 0', tokens: [] },
-      { label: 'paragraph spacing 16', tokens: [] },
+      { label: '24px/32px', tokens: [] }, { label: 'letter spacing 0px', tokens: [] },
+      { label: 'paragraph spacing 16px', tokens: [] },
     ]);
   });
   it('adds case and decoration only when they are not the defaults, in words', () => {
     const parts = metricsLine({ ...BASE, textCase: 'UPPER', textDecoration: 'UNDERLINE' }).map((p) => p.label);
     expect(parts.slice(-2)).toEqual(['uppercase', 'underline']);
     expect(metricsLine({ ...BASE, textCase: 'SMALL_CAPS' }).map((p) => p.label)).toContain('small caps');
+    expect(metricsLine({ ...BASE, textCase: 'SMALL_CAPS_FORCED' }).map((p) => p.label)).toContain('forced small caps');
   });
   it('renders auto and percent line heights and percent letter spacing honestly', () => {
-    expect(metricsLine({ ...BASE, lineHeight: { unit: 'AUTO' } })[2].label).toBe('24/auto');
-    expect(metricsLine({ ...BASE, lineHeight: { unit: 'PERCENT', value: 150 } })[2].label).toBe('24/150%');
+    expect(metricsLine({ ...BASE, lineHeight: { unit: 'AUTO' } })[2].label).toBe('24px/auto');
+    expect(metricsLine({ ...BASE, lineHeight: { unit: 'PERCENT', value: 150 } })[2].label).toBe('24px/150%');
     expect(metricsLine({ ...BASE, letterSpacing: { unit: 'PERCENT', value: 2 } })[3].label).toBe('letter spacing 2%');
+  });
+  it('states the pixel unit on every pixel value, never a bare number', () => {
+    expect(metricsLine({ ...BASE, letterSpacing: { unit: 'PIXELS', value: 0.5 } })[3].label).toBe('letter spacing 0.5px');
   });
   it('attaches the bound token to the part that draws it', () => {
     const parts = metricsLine({ ...BASE, boundTokens: { fontSize: 'type/lg', lineHeight: 'type/lg-lh', paragraphSpacing: 'space/4' } });
-    expect(parts[2]).toEqual({ label: '24/32', tokens: ['type/lg', 'type/lg-lh'] });
-    expect(parts[4]).toEqual({ label: 'paragraph spacing 16', tokens: ['space/4'] });
+    expect(parts[2]).toEqual({ label: '24px/32px', tokens: ['type/lg', 'type/lg-lh'] });
+    expect(parts[4]).toEqual({ label: 'paragraph spacing 16px', tokens: ['space/4'] });
   });
 });
 
@@ -56,11 +60,12 @@ describe('buildTextSpecimenList', () => {
     const specimen = list.findText(SPECIMEN_TEXT) as FakeText;
     expect(specimen.fontName).toEqual({ family: 'Inter', style: 'Semi Bold' });
     expect(specimen.fontSize).toBe(24);
-    expect(chars).toContain('paragraph spacing 16');
+    expect(chars).toContain('paragraph spacing 16px');
   });
   it('keeps the default font and says so when the family failed to load', () => {
     const list = buildTextSpecimenList([row], 768, true, new Set(['Inter|Semi Bold'])) as unknown as FakeFrame;
-    expect(list.textChars()).toContain('Font not available, showing the default font.');
+    expect(list.textChars()).toContain(
+      'Font not available, so this sample uses the default font. The listed metrics are the style’s own.');
     expect((list.findText(SPECIMEN_TEXT) as FakeText).fontName.family).not.toBe('Inter');
   });
   it('leaves the description out when descriptions are off', () => {
@@ -90,16 +95,16 @@ describe('layerLines', () => {
       { type: 'unknown', figma_type: 'HOLOGRAM' },
     ], { 'effects[0].blur': 'shadow/blur', 'effects[0].color': 'shadow/ink' });
     expect(lines.map((parts) => parts.map((p) => p.label).join(' · '))).toEqual([
-      'Drop shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16%',
-      'Inner shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16% · hidden',
-      'Layer blur · 8',
-      'Background blur · 20 · progressive from 2',
+      'Drop shadow · 0px, 4px · blur 12px · spread 0px · #0F172A 16%',
+      'Inner shadow · 0px, 4px · blur 12px · spread 0px · #0F172A 16% · hidden',
+      'Layer blur · 8px',
+      'Background blur · 20px · progressive from 2px',
       'Noise · monotone · size 1 · density 0.5 · #000000',
       'Texture · size 2 · radius 4',
       'Glass · radius 12 · light 0.5 at 45° · refraction 0.2 · depth 4 · dispersion 0.1',
       'Unsupported effect (HOLOGRAM)',
     ]);
-    expect(lines[0][2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
+    expect(lines[0][2]).toEqual({ label: 'blur 12px', tokens: ['shadow/blur'] });
     expect(lines[0][4]).toEqual({ label: '#0F172A 16%', tokens: ['shadow/ink'] });
     expect(lines[1].every((p) => p.tokens.length === 0)).toBe(true);
   });
@@ -194,8 +199,8 @@ describe('effect binding vocabulary', () => {
     expect(Object.keys(row.boundTokens).sort())
       .toEqual(['effects[0].blur', 'effects[0].offset_y']);
     const parts = layerLines(row.layers, row.boundTokens)[0];
-    expect(parts[1]).toEqual({ label: '0, 4', tokens: ['shadow/offset-y'] });
-    expect(parts[2]).toEqual({ label: 'blur 12', tokens: ['shadow/blur'] });
+    expect(parts[1]).toEqual({ label: '0px, 4px', tokens: ['shadow/offset-y'] });
+    expect(parts[2]).toEqual({ label: 'blur 12px', tokens: ['shadow/blur'] });
   });
 
   it('drops a binding on a field no layer line prints, so it is never hashed unrendered', async () => {

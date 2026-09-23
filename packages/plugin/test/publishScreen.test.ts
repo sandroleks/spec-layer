@@ -142,10 +142,10 @@ describe('publish screen meta line', () => {
 
   it('shows the free allowance on a free plan and nothing on pro or unknown', () => {
     expect(publishScrollMarkup(state(), FREE))
-      .toContain('<span>3 of 10 free updates left this month, resets Oct 1</span>');
+      .toContain('<span>3 of 10 free publishes left this month, resets Oct 1</span>');
     expect(publishScrollMarkup(state(), { ...FREE, remaining: 0 }))
-      .toContain('<span>No free updates left this month, resets Oct 1</span>');
-    expect(publishScrollMarkup(state(), { kind: 'hidden' })).not.toContain('free updates');
+      .toContain('<span>No free publishes left this month, resets Oct 1</span>');
+    expect(publishScrollMarkup(state(), { kind: 'hidden' })).not.toContain('free publishes');
   });
 
   it('keeps Publish enabled at zero remaining, since the server decides', () => {
@@ -159,8 +159,10 @@ describe('publish screen body', () => {
   it('explains once, before the first publish, and names both audiences', () => {
     const markup = proScroll(state());
     expect(markup).toContain('sl-publish-intro');
-    expect(markup).toContain('developers and coding agents');
-    expect(markup).toContain('The setup commands appear here after the first publish.');
+    expect(markup).toContain(
+      'Publish this file’s component and foundation docs so developers and coding agents can pull them. '
+      + 'The setup commands appear here after the first publish.',
+    );
     // The download block is its own sl-publish-block and renders before the
     // first publish too (a snapshot needs no library), so this only checks
     // that no *setup* block (developer command, agent prompt) appears yet.
@@ -220,6 +222,8 @@ describe('publish screen body', () => {
     expect(rotate).not.toContain('data-tone="danger"');
     const row = /<div class="sl-publish-rotate">([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? '';
     expect(row).toContain('data-publish-rotate');
+    // The screen shows two keys, so the button names the one it rotates.
+    expect(row).toContain('>Rotate pull key</button>');
     expect(markup.indexOf('sl-publish-rotate')).toBeGreaterThan(markup.indexOf('AI agent setup'));
     expect(markup).not.toContain('Rotating cuts off');
     expect(markup).not.toContain('sl-publish-hint');
@@ -247,10 +251,13 @@ describe('publish screen body', () => {
     // Says where the key is and names both ways out, and this is the one
     // place the rotate consequence is stated: rotating from a device that
     // never had the key cuts off developers the reader may not know about.
-    expect(markup).toContain('stored on the device that published it');
-    expect(markup).toContain('Ask that person for the setup command');
-    expect(markup).toContain('rotate the key to issue a new one here');
-    expect(markup).toContain('stops the current key working for everyone within about a minute');
+    // Rotating from here needs the publishing license key, so it says so.
+    expect(markup).toContain(
+      'Its pull key is on the device that first published it or last rotated the key, '
+      + 'so ask that person for the setup command. If this device has the license key it was '
+      + 'published with, you can rotate the pull key here instead. '
+      + 'Rotating stops the current key working for everyone within about a minute.',
+    );
     expect(proScroll(PUBLISHED)).not.toContain('stops the current key');
     expect(markup).toContain('data-publish-rotate');
     expect(markup).not.toContain('sl-publish-code');
@@ -318,7 +325,7 @@ describe('publish screen footer', () => {
     expect(link).toContain(`href="${PUBLISH_DOCS_URL}"`);
     expect(link).toContain('target="_blank"');
     expect(link).toContain('rel="noopener"');
-    expect(markup).toContain('Read documentation');
+    expect(markup).toContain('<span>Read the guide</span>');
     expect(markup).toContain(ICON_PATHS.externalLink);
     expect(markup.indexOf('sl-publish-docs')).toBeLessThan(markup.indexOf('data-publish>'));
     expect(PUBLISH_DOCS_URL).toBe('https://spec-layer.com/docs/quickstart/#publish-pull');
@@ -491,7 +498,8 @@ describe('publish screen version block', () => {
     const markup = block(proScroll(versioned), 'Version');
     expect(markup).toMatch(/<button[^>]*data-publish-bump="patch"[^>]*disabled[^>]*>Patch<\/button>/);
     expect(markup).toMatch(/<span data-tooltip-trigger><button[^>]*data-publish-bump="patch"/);
-    expect(markup).toContain('<span class="sl-tooltip" role="tooltip">The changes need at least a minor bump.</span>');
+    expect(markup).toContain('<span class="sl-tooltip" role="tooltip">These edits need at least a minor version change.</span>');
+    expect(markup).toContain('role="radiogroup" aria-label="Version change"');
     expect(markup).not.toContain('below the minimum');
     expect(markup).toMatch(/<button[^>]*data-publish-bump="minor"[^>]*aria-checked="true"[^>]*>Minor<\/button>/);
     expect(markup).toMatch(/<button[^>]*data-publish-bump="major"[^>]*aria-checked="false"[^>]*>Major<\/button>/);
@@ -514,10 +522,10 @@ describe('publish screen version block', () => {
     expect(markup).toContain('<span>Major: 2 additions, 1 removal, 4 value changes</span>');
   });
 
-  it('has a 500-character note field with a one-word placeholder and a history link', () => {
+  it('has a 500-character note field whose placeholder says where the note shows, and a history link', () => {
     const markup = block(proScroll(versioned), 'Version');
     expect(markup).toMatch(/<textarea[^>]*data-publish-note[^>]*maxlength="500"/);
-    expect(markup).toContain('placeholder="Optional"');
+    expect(markup).toContain('placeholder="Optional. Appears in version history."');
     expect(markup).toContain('data-publish-history');
   });
 
@@ -544,9 +552,12 @@ describe('publish screen version block', () => {
     expect(markup).not.toContain('Next version');
   });
 
-  it('says the minimum will apply when the dry run failed, with no raise control', () => {
+  it('says the smallest version change will apply when the dry run failed, with no raise control', () => {
     const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2', proposalStatus: 'failed' })), 'Version');
-    expect(markup).toContain('Could not compute the next version. Publishing will apply the minimum bump.');
+    expect(markup).toContain(
+      'Couldn’t check what changed, so there’s no version to preview. '
+      + 'If you publish, Spec Layer picks the smallest version change the edits need.',
+    );
     expect(markup).not.toContain('data-publish-bump');
     expect(markup).not.toContain('Current version');
   });
@@ -604,7 +615,7 @@ describe('publish screen version block', () => {
     });
     const markup = block(proScroll(done), 'Version');
     expect(markup).toContain('Nothing changed since 1.4.2.');
-    expect(markup).not.toContain('Could not compute the next version');
+    expect(markup).not.toContain('Couldn’t check what changed');
   });
 
   /**
@@ -615,7 +626,7 @@ describe('publish screen version block', () => {
   it('says nothing yet is known rather than claiming the dry run failed', () => {
     const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2' })), 'Version');
     expect(markup).toContain('Open Publish again to check what changed.');
-    expect(markup).not.toContain('Could not compute the next version');
+    expect(markup).not.toContain('Couldn’t check what changed');
   });
 
   /**
@@ -636,9 +647,14 @@ describe('publish screen version block', () => {
 });
 
 describe('proposalReason', () => {
-  it('counts additions, removals, renames and value changes, and says when there are none', () => {
+  /**
+   * An empty change list does not mean nothing changed (the server may have
+   * no list, as for a stored bundle it cannot read), so the empty reason
+   * speaks about the list, lowercase because it follows "Patch: ".
+   */
+  it('counts additions, removals, renames and value changes, and says when none are listed', () => {
     expect(proposalReason(PROPOSAL)).toBe('2 additions, 1 removal, 4 value changes');
-    expect(proposalReason(firstPublishProposal())).toBe('No property changes');
+    expect(proposalReason(firstPublishProposal())).toBe('no listed changes');
     expect(proposalReason({ ...PROPOSAL, changes: [{ ...PROPOSAL.changes[0], kind: 'renamed' }] })).toBe('1 rename');
   });
 });

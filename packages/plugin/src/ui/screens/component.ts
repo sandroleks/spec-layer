@@ -1,5 +1,5 @@
 /**
- * component.ts — the "Generate component docs" screen.
+ * component.ts — the "Create component docs" screen.
  *
  * Owns presentation and the user's section choice. Everything that touches the
  * document, the proxy, or the canvas stays in actions.ts: this module hands it
@@ -49,10 +49,18 @@ export function createComponentSelection(aiEnabled: boolean): ComponentSelection
 }
 
 const MEASURE_CHIPS: { id: 'size' | 'padding' | 'spacing'; label: string }[] = [
-  { id: 'size', label: 'Height & width' },
+  { id: 'size', label: 'Height and width' },
   { id: 'padding', label: 'Inner padding' },
-  { id: 'spacing', label: 'Children & spacing' },
+  { id: 'spacing', label: 'Gaps between items' },
 ];
+
+/**
+ * The tooltip on the one measurement chip still on, which cannot be turned
+ * off. ui-vnext.ts repaints the chips in place and sets the same title, so it
+ * should read this constant rather than carry its own copy of the words.
+ */
+export const MEASURE_LAST_VIEW_TITLE =
+  'Keep at least one on, or clear Measurements to leave the diagram out.';
 
 const GROUP_ICONS: Record<GroupId, IconName> = {
   usage: 'fileDescription',
@@ -65,9 +73,9 @@ const GROUP_ICONS: Record<GroupId, IconName> = {
 const DISPLAY_LABELS: Partial<Record<SectionId, string>> = {};
 
 const AI_HELP =
-  'AI can assist sections labeled AI. Component data, measurements, states, ' +
-  'and tokens still come directly from Figma. Creating docs uses one free AI ' +
-  'writing use when this is on.';
+  'With this on, AI drafts the text in sections marked AI. Measurements, ' +
+  'states, and tokens always come from Figma. On the free plan, each draft ' +
+  'takes 1 free AI writing use.';
 
 /**
  * The explanation the switch's own label cannot carry.
@@ -78,12 +86,18 @@ const AI_HELP =
  * tooltip pattern the AI writing switch already uses rather than being cut.
  */
 const HIDDEN_HELP =
-  'This component has layers that a boolean property turns on, off by ' +
-  'default. Turn this on and every section documents them, noting the ' +
-  'property that shows each one.';
+  'Some layers in this component stay hidden until a property shows them. ' +
+  'With this on, the docs include them, and the Anatomy section names that ' +
+  'property for each one.';
 
+/**
+ * States what was detected, a leading dot in the name, rather than asserting
+ * the component is an atom: the dot is a naming convention, not a fact the
+ * plugin can check.
+ */
 const ATOM_NOTICE =
-  'Atom component. Usually part of larger ones, but you can document it on its own.';
+  'This component’s name starts with a dot, so it’s likely a building block ' +
+  'for larger ones. You can still document it on its own.';
 
 const CHECK_GLYPH =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
@@ -152,7 +166,7 @@ function emptyMarkup(): string {
     '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="foundations">' +
     `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
     '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="library">' +
-    `${icon('folder', 15)}<span>View library</span></button>` +
+    `${icon('folder', 15)}<span>Open Library</span></button>` +
     '</div>' +
     '</div>'
   );
@@ -320,7 +334,7 @@ function detailsFor(
         return (
           `<button class="sl-chip sl-option-chip" type="button" data-measure="${c.id}" ` +
           `aria-pressed="${selected}"${onlySelected ? ' aria-disabled="true" ' +
-          'title="At least one measurement view is required"' : ''}>` +
+          `title="${esc(MEASURE_LAST_VIEW_TITLE)}"` : ''}>` +
           `<span class="sl-option-check" aria-hidden="true">${icon('check', 13)}</span>` +
           `${esc(c.label)}</button>`
         );
@@ -328,7 +342,7 @@ function detailsFor(
     ).join('');
     return (
       '<div class="sl-section-details">' +
-      '<span class="sl-section-option-label">Diagrams to include</span>' +
+      '<span class="sl-section-option-label">Show on the diagram</span>' +
       `<div class="sl-chip-group">${chips}</div>` +
       '</div>'
     );
@@ -443,15 +457,20 @@ export function componentHeaderMarkup(state: ComponentScreenState): string {
   );
 }
 
-export function componentFooterMarkup(state: ComponentScreenState): string {
+/**
+ * `hasDoc`: the selected component already has a doc, so the button replaces
+ * it rather than creating one, and says so. Unknown counts as no doc: "Create
+ * docs" is never false, since Create also replaces.
+ */
+export function componentFooterMarkup(state: ComponentScreenState, hasDoc = false): string {
   if (state.kind === 'empty') return '';
   const busy = state.kind === 'reading' || state.kind === 'building';
   const progress = componentStatusMarkup(state);
   // Both busy labels take the ellipsis. "Creating docs" without one read as a
   // second, differently-worded action rather than the same button working.
   const createLabel = state.kind === 'building'
-    ? 'Creating docs…'
-    : 'Create docs';
+    ? (hasDoc ? 'Replacing docs…' : 'Creating docs…')
+    : (hasDoc ? 'Replace docs' : 'Create docs');
   // Both footer buttons carry a glyph, and this one keeps `filePlus` through
   // every state. Per the icon contract in design-system/components.css: one
   // button, one glyph. The old `fileDescription` was dropped because it drew
@@ -483,13 +502,10 @@ export function componentStatusMarkup(state: ComponentScreenState): string {
         label: 'Reading the selected component',
       });
     case 'building':
-      return progressMarkup({
-        label: state.phase ?? (
-          state.action === 'download'
-            ? 'Preparing documentation'
-            : 'Creating documentation'
-        ),
-      });
+      // The phase is always set: startComponentProgress in ui-vnext.ts is the
+      // only way in, and every caller passes a phase list, so no fallback
+      // label is needed here.
+      return progressMarkup({ label: state.phase });
     case 'empty':
     case 'ready':
       return '';
@@ -504,6 +520,7 @@ export function renderComponentScreen(
   state: ComponentScreenState,
   selection: ComponentSelection,
   facts: ComponentFacts,
+  hasDoc = false,
 ): void {
   // Replace, never add. Every other screen assigns the full class here, and this
   // one adding to it meant the previous screen's class stayed on the element:
@@ -522,6 +539,6 @@ export function renderComponentScreen(
   )) {
     input.indeterminate = true;
   }
-  refs.footer.innerHTML = componentFooterMarkup(state);
+  refs.footer.innerHTML = componentFooterMarkup(state, hasDoc);
   refs.footer.hidden = state.kind === 'empty';
 }

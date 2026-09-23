@@ -285,20 +285,22 @@ export function collectionMeta(c: FoundationSummaryCollection, frames: number): 
     plural(c.variableCount, 'variable', 'variables'),
     plural(c.modes.length, 'mode', 'modes'),
   ];
-  // Only worth saying when it is not the obvious one frame.
-  if (frames > 1) parts.push(`+ ${frames} frames`);
+  // Only worth saying when it is not the obvious one doc. Each split unit is
+  // its own Section and Library row, so the honest count is docs, and it is
+  // the total rather than a "+" on top of one.
+  if (frames > 1) parts.push(`${frames} docs`);
   return parts.join(' · ');
 }
 
 /** The text-styles row's second line. */
 export function textStyleMeta(count: number, frames: number): string {
   const parts = [plural(count, 'style', 'styles')];
-  if (frames > 1) parts.push(`+ ${frames} frames`);
+  if (frames > 1) parts.push(`${frames} docs`);
   return parts.join(' · ');
 }
 
 /** The effect-styles row's second line. Counts the same way text styles do:
- *  a plain style count, plus a frame count only when the row splits. */
+ *  a plain style count, plus a doc count only when the row splits. */
 export function effectStyleMeta(count: number, frames: number): string {
   return textStyleMeta(count, frames);
 }
@@ -306,8 +308,8 @@ export function effectStyleMeta(count: number, frames: number): string {
 /**
  * The create button's label. See docs/plugin-voice-and-copy.md ("Footer
  * actions") for why this names the action rather than counting frames:
- * collectionMeta and textStyleMeta already append "+ N frames" to any row
- * that splits, and a frame is the wrong noun for what the user came for.
+ * collectionMeta and textStyleMeta already append "N docs" to any row that
+ * splits, and a frame is the wrong noun for what the user came for.
  */
 export const FOUNDATION_CREATE_LABEL = 'Create docs';
 

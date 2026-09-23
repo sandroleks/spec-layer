@@ -21,6 +21,7 @@ import {
   componentScrollMarkup,
   componentStatusMarkup,
   createComponentSelection,
+  MEASURE_LAST_VIEW_TITLE,
 } from '../src/ui/screens/component';
 import { NO_FACTS, type ComponentFacts } from '../src/ui/viewModel/componentFacts';
 import { ICON_PATHS } from '../src/ui/shell/icons';
@@ -83,7 +84,7 @@ describe('sectionGroups', () => {
   it('counts included against total per group', () => {
     const groups = sectionGroups(defaultSections(), ALL_GROUPS, true);
     const usage = groups.find((g) => g.id === 'usage')!;
-    // Usage holds Overview, When to use, Variants, Do and don't, and Related;
+    // Usage holds Overview, When to use, Variants, Do and don’t, and Related;
     // Related is off.
     expect(usage.total).toBe(5);
     expect(usage.included).toBe(4);
@@ -113,7 +114,7 @@ describe('sectionGroups', () => {
     const groups = sectionGroups(defaultSections(), ALL_GROUPS, true);
     const labels = groups.flatMap((g) => g.options.map((o) => o.label));
     expect(labels).toEqual([
-      'Overview', 'When to use', 'Variants', "Do and don't", 'Related components',
+      'Overview', 'When to use', 'Variants', 'Do and don’t', 'Related components',
       'Anatomy', 'Properties', 'States', 'Measurements', 'Tokens',
       'Keyboard', 'Pointer and touch', 'Semantics and focus', 'Content',
     ]);
@@ -274,9 +275,12 @@ describe('component screen markup', () => {
     const selection = createComponentSelection(true);
     const on = componentScrollMarkup(READY, selection, facts({ isAtom: true, hasStates: true }));
     const off = componentScrollMarkup(READY, selection, facts({ isAtom: false, hasStates: true }));
-    expect(on).toContain('Atom component');
+    // It says what was detected, the leading dot, rather than asserting the
+    // component is an atom.
+    expect(on).toContain('This component’s name starts with a dot');
     expect(on).toContain('data-tone="neutral"');
-    expect(off).not.toContain('Atom component');
+    expect(on).not.toContain('Atom component');
+    expect(off).not.toContain('starts with a dot');
   });
 
   it('omits States once extraction confirms there is no state axis', () => {
@@ -376,7 +380,8 @@ describe('component screen markup', () => {
     expect(withHidden).toContain('data-tooltip-trigger');
     expect(withHidden).toContain('id="sl-hidden-help-text" role="tooltip"');
     expect(withHidden).toContain('aria-describedby="sl-hidden-help-text"');
-    expect(withHidden).toContain('layers that a boolean property turns on');
+    expect(withHidden).toContain('stay hidden until a property shows them');
+    expect(withHidden).not.toContain('boolean');
     expect(withHidden).not.toContain('data-include-hidden checked');
 
     selection.includeHidden = true;
@@ -410,10 +415,22 @@ describe('component screen markup', () => {
     const markup = componentScrollMarkup(READY, selection, facts({ hasStates: true }));
     expect(markup).toContain(
       'data-measure="padding" aria-pressed="true" aria-disabled="true" ' +
-      'title="At least one measurement view is required"',
+      `title="${MEASURE_LAST_VIEW_TITLE}"`,
     );
+    expect(MEASURE_LAST_VIEW_TITLE)
+      .toBe('Keep at least one on, or clear Measurements to leave the diagram out.');
     expect(markup).toContain('data-measure="size" aria-pressed="false"');
     expect(markup).toContain('sl-option-check');
+  });
+
+  it('labels the measurement chips as what the one diagram draws', () => {
+    const markup = componentScrollMarkup(
+      READY, createComponentSelection(true), facts({ hasStates: true }),
+    );
+    expect(markup).toContain('<span class="sl-section-option-label">Show on the diagram</span>');
+    expect(markup).toContain('Height and width</button>');
+    expect(markup).toContain('Gaps between items</button>');
+    expect(markup).not.toContain('&amp;');
   });
 
   it('draws the section-map labels, with no screen-only rewording', () => {
@@ -458,6 +475,14 @@ describe('component screen markup', () => {
       .toContain('id="sl-create" type="button" disabled');
   });
 
+  it('says Replace docs when the component already has a doc, and Create docs otherwise', () => {
+    const building = { kind: 'building', componentName: 'Button', action: 'create', phase: 'Composing sections' } as const;
+    expect(componentFooterMarkup(READY)).toContain('<span>Create docs</span>');
+    expect(componentFooterMarkup(READY, true)).toContain('<span>Replace docs</span>');
+    expect(componentFooterMarkup(building)).toContain('<span>Creating docs…</span>');
+    expect(componentFooterMarkup(building, true)).toContain('<span>Replacing docs…</span>');
+  });
+
   it('offers Copy for AI beside Create docs whenever the screen is not busy', () => {
     const ready = componentFooterMarkup(READY);
     expect(ready).toContain('id="sl-copy-component"');
@@ -466,7 +491,7 @@ describe('component screen markup', () => {
     expect(ready).not.toMatch(/id="sl-copy-component"[^>]*disabled/);
     expect(componentFooterMarkup({ kind: 'reading', componentName: 'Button' }))
       .toMatch(/id="sl-copy-component"[^>]*disabled/);
-    expect(componentFooterMarkup({ kind: 'building', componentName: 'Button', action: 'create' }))
+    expect(componentFooterMarkup({ kind: 'building', componentName: 'Button', action: 'create', phase: 'Composing sections' }))
       .toMatch(/id="sl-copy-component"[^>]*disabled/);
     expect(componentFooterMarkup({ kind: 'empty' })).toBe('');
   });
@@ -476,6 +501,8 @@ describe('component screen markup', () => {
     expect(empty).toContain('Start with a component');
     expect(empty).toContain('data-empty-nav="foundations"');
     expect(empty).toContain('data-empty-nav="library"');
+    // Library is the screen this opens, so it takes the screen's capital.
+    expect(empty).toContain('<span>Open Library</span>');
     // Its own attribute: a second [data-view] would compete with the rail's.
     expect(empty).not.toContain('data-view=');
     expect(empty).toContain('aria-hidden="true"');
@@ -520,7 +547,7 @@ describe('component screen markup', () => {
     for (const state of [
       READY,
       { kind: 'reading', componentName: 'Button' },
-      { kind: 'building', componentName: 'Button', action: 'create' },
+      { kind: 'building', componentName: 'Button', action: 'create', phase: 'Composing sections' },
       { kind: 'error', componentName: 'Button', message: 'nope' },
     ] as ComponentScreenState[]) {
       expect(componentFooterMarkup(state)).toContain(ICON_PATHS.filePlus);
@@ -535,7 +562,7 @@ describe('component screen markup', () => {
       NO_FACTS,
     )).toContain('disabled aria-busy="true"');
     expect(componentScrollMarkup(
-      { kind: 'building', componentName: 'Button', action: 'create' },
+      { kind: 'building', componentName: 'Button', action: 'create', phase: 'Composing sections' },
       selection,
       facts({ hasStates: true }),
     )).toContain('disabled aria-busy="true"');
@@ -551,6 +578,9 @@ describe('component screen markup', () => {
     expect(footer).toContain('Creating docs…');
     expect(footer).toContain('Composing sections');
     expect(footer).toContain('sl-footer-progress');
+    // The phase is the whole progress line: there is no fallback label, and
+    // the retired download build left no "Preparing documentation" behind.
+    expect(footer).not.toContain('documentation');
   });
 
   it('marks the busy label with an ellipsis', () => {
@@ -560,6 +590,7 @@ describe('component screen markup', () => {
       kind: 'building',
       componentName: 'Button',
       action: 'create',
+      phase: 'Composing sections',
     })).toContain('<span>Creating docs…</span>');
     expect(componentFooterMarkup({ kind: 'ready', componentName: 'Button' }))
       .toContain('<span>Create docs</span>');
@@ -618,10 +649,12 @@ describe('createDocFrame', () => {
     };
   }
 
-  it('refuses without a component, and never claims to be busy', async () => {
+  it('does nothing without a component: no message, and never claims to be busy', async () => {
+    // The screen only offers Create once a component is on it, so a toast
+    // here could never be the answer to anything the user did.
     const ui = fakePresenter();
     await createDocFrame(createState(), { sections: new Set(), variantIds: new Set() }, ui);
-    expect(ui.errors).toEqual(['Select a component first.']);
+    expect(ui.errors).toEqual([]);
     expect(ui.busy).toEqual([]);
   });
 

@@ -69,6 +69,15 @@ describe('buildMatrixSection', () => {
     expect(chars).toContain('checkbox');
   });
 
+  it('says "No variant" in a cell the component has no variant for, never a dash', async () => {
+    const grid = await buildMatrixSection({
+      axisName: 'State', columns: ['Default', 'Hover'], rows: [{ label: 'checkbox', cells: [null, null] }],
+    }, 768) as unknown as FakeFrame;
+    const chars = grid.textChars();
+    expect(chars.filter((c) => c === 'No variant')).toHaveLength(2);
+    for (const c of chars) expect(c).not.toMatch(/[–—]/);
+  });
+
   it('never scales an instance: a wide component gets one column per band and a cell that fits it', async () => {
     const { instances } = figmaWithComponent(500, 40);
     await applyThemeToKit(resolveTheme(emptyBrandTheme()));

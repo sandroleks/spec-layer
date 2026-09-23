@@ -102,7 +102,8 @@ describe('foundationAiContext', () => {
       code: 'STYLE_BINDING_DRIFT',
       severity: 'warning',
       entity_id: 'S:abc,',
-      message: 'The typography property snapshot differs from its unambiguous bound token value.',
+      message: 'The typography style\'s own value for `details.property` differs from the value its bound '
+        + 'token holds in every mode; the style keeps its own value, and `details` carries both.',
       details: {
         property: 'font_weight',
         style_value: { type: 'number', value: 400 },
@@ -170,7 +171,8 @@ describe('foundationAiContext', () => {
       code: 'STYLE_BINDING_DRIFT',
       severity: 'warning',
       entity_id: 'StyleID:shadow-card',
-      message: 'The effect property snapshot differs from its unambiguous bound token value.',
+      message: 'The effect style\'s own value for `details.property` differs from the value its bound token '
+        + 'holds in every mode; the style keeps its own value, and `details` carries both.',
       details: {
         property: 'effects[0].color',
         style_value: { type: 'color', color_space: 'srgb', hex: '#000000', alpha: 0.2 },
@@ -186,8 +188,12 @@ describe('foundationAiContext', () => {
     // never renders the two sides as the identical hex, which would silently
     // hide a real drift
     expect(entry?.message).not.toBe(
-      'effects[0].color is #000000 in the style but #000000 in the token it is bound to; '
-      + 'the two disagree.',
+      '`effects[0].color` is #000000 in the style but #000000 in the token it is bound to; '
+      + 'both values are kept as Figma states them, and neither is corrected.',
+    );
+    expect(entry?.message).toBe(
+      '`effects[0].color` is #000000 alpha 0.2 in the style but #000000 alpha 0.5 in the token it is '
+      + 'bound to; both values are kept as Figma states them, and neither is corrected.',
     );
   });
 

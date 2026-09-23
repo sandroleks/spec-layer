@@ -798,7 +798,7 @@ describe('units derived from stated usage', () => {
     expect(entries[0].details).toMatchObject({
       id: 'VariableID:unknown-number', unit: 'px', via: 'binding', source: 'Button', reason: 'height',
     });
-    expect(entries[0].message).toContain('Button binds it to height');
+    expect(entries[0].message).toContain('Button binds it to `height`');
 
     // The sidecar names the rule that produced the value, rather than claiming
     // the token held a dimension of its own.
@@ -807,13 +807,14 @@ describe('units derived from stated usage', () => {
     expect(transforms.length).toBeGreaterThan(0);
   });
 
-  it('words a scope-pinned alias as scoped rather than bound', () => {
+  it('words a scope-pinned alias as an aliasing, scoped token rather than a binding', () => {
     const out = foundationDtcg(
       syntheticArtifact(), {},
       derived('VariableID:unknown-number', { via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' }),
     );
     const entry = out.report.find((r) => r.code === 'unit_derived_from_usage');
-    expect(entry?.message).toContain('Radius.rd-sm is scoped CORNER_RADIUS');
+    expect(entry?.message).toContain('Radius.rd-sm aliases it and is scoped `CORNER_RADIUS`.');
+    expect(entry?.message).not.toContain('binds it to');
   });
 
   it('lets an explicit units override beat the derived evidence', () => {

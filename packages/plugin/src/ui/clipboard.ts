@@ -75,7 +75,7 @@ export function renderManualCopyModal(text: string, notice?: string): () => void
   host.className = 'sl-copy-fallback';
   host.innerHTML =
     '<div class="sl-copy-fallback-panel">' +
-    '<p>Select the text below and press Cmd C.</p>' +
+    '<p>Couldn’t copy automatically. Press Cmd C (Ctrl C on Windows) to copy the selected text below.</p>' +
     '<textarea readonly rows="12"></textarea>' +
     '<button type="button" data-copy-fallback-close>Close</button>' +
     '</div>';

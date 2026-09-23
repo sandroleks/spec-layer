@@ -1833,8 +1833,21 @@ describe('runSkill', () => {
     const io = makeIo();
     expect(runSkill(cwd, { install: true, agent: ['claude'] }, io)).toBe(0);
     expect(io.outLines).toContain(
-      'A downloaded snapshot is still in .claude/skills/spec-layer/components and .claude/skills/spec-layer/tokens. '
-      + 'The guide above supersedes it, and those folders can be deleted.',
+      'A downloaded snapshot is still at .claude/skills/spec-layer/components and .claude/skills/spec-layer/tokens. '
+      + 'The guide above supersedes it, and those paths can be deleted.',
+    );
+  });
+
+  it('--install names a snapshot fonts.json beside the folders', () => {
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/components'), { recursive: true });
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/tokens'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/fonts.json'), '[]\n');
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/SKILL.md'), 'old\n');
+    const io = makeIo();
+    expect(runSkill(cwd, { install: true, agent: ['claude'] }, io)).toBe(0);
+    expect(io.outLines).toContain(
+      'A downloaded snapshot is still at .claude/skills/spec-layer/components, .claude/skills/spec-layer/tokens, '
+      + 'and .claude/skills/spec-layer/fonts.json. The guide above supersedes it, and those paths can be deleted.',
     );
   });
 

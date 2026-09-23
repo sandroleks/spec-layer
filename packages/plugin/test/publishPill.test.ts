@@ -31,7 +31,7 @@ describe('pillState', () => {
 describe('pillLabel', () => {
   it('uses a middle dot, never an em dash', () => {
     expect(pillLabel({ kind: 'published', version: '1.5.0' })).toBe('v1.5.0 · Published');
-    expect(pillLabel({ kind: 'changed', version: '1.5.0' })).toBe('v1.5.0 · Changed since');
+    expect(pillLabel({ kind: 'changed', version: '1.5.0' })).toBe('Changed since v1.5.0');
     expect(pillLabel({ kind: 'unpublished' })).toBe('Not published');
     for (const state of [{ kind: 'published', version: '1.0.0' }, { kind: 'changed', version: '1.0.0' }, { kind: 'unpublished' }] as const) {
       expect(pillLabel(state)).not.toContain('—');
@@ -58,6 +58,6 @@ describe('publish record round trip', () => {
   it('names the keys other modules look for', () => {
     expect(PUBLISH_RECORD_KEY).toBe('specLayerPublish');
     expect(PILL_KEY).toBe('specLayerPill');
-    expect(PILL_NODE_NAME).toBe('Spec Layer publish pill');
+    expect(PILL_NODE_NAME).toBe('Spec Layer publish status');
   });
 });

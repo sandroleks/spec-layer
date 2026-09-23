@@ -205,15 +205,15 @@ export function buildTable(columns: string[], rows: string[][], contentWidth: nu
     applyColWidth(cell, widths[i]);
   }
   // Data rows. Kept as a permanent fallback: a table with no rows still says
-  // "None." rather than reading as a bare header strip, matching the sibling
-  // variant-token table's own empty-state row.
+  // "None" rather than reading as a bare header strip. A cell is a label, so
+  // no period. Every current caller skips an empty table, so this is a guard.
   if (rows.length === 0) {
     const empty = hstack(0);
     table.appendChild(empty);
     empty.layoutSizingHorizontal = 'FILL';
     empty.strokes = solidFill(palette.divider);
     empty.strokeTopWeight = 1;
-    const cell = makeCell('None.', 'Regular', 14, palette.muted);
+    const cell = makeCell('None', 'Regular', 14, palette.muted);
     empty.appendChild(cell);
     applyColWidth(cell, 'grow');
   }

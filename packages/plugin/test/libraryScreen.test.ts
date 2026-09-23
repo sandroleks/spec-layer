@@ -33,7 +33,6 @@ function row(
     expanded: false,
     canOpenFrame: true,
     canOpenSource: true,
-    canReconnect: false,
     canUpdate: status === 'updateAvailable',
     canDetach: true,
     canRemove: true,
@@ -122,7 +121,7 @@ describe('library screen presentation', () => {
       counts: { all: 2, updates: 0, inSync: 0 },
     }));
     expect(markup).toContain('Checking…');
-    expect(markup).toContain('Check unavailable');
+    expect(markup).toContain('Couldn’t check');
     expect(markup).not.toContain('data-library-status="inSync"');
   });
 
@@ -142,7 +141,7 @@ describe('library screen presentation', () => {
     ];
     const markup = libraryScrollMarkup(model({ allRows: rows, rows }));
     expect(markup.split(REBUILD_TITLE)).toHaveLength(2);
-    expect(markup).toContain('<strong>New plugin version</strong>');
+    expect(markup).toContain('<strong>Some docs are from an older plugin version</strong>');
     expect(markup).toContain('<span>Rebuild docs</span>');
     expect(markup).not.toMatch(/Rebuild \d/);
     // Above the filters, so it is the first thing the screen says.
@@ -161,12 +160,12 @@ describe('library screen presentation', () => {
     expect(rebuildBannerMarkup(0, false)).toBe('');
   });
 
-  it('uses the honest detailed-comparison fallback verbatim', () => {
+  it('says what failed and the step that still works when no list can be shown', () => {
     const markup = libraryScrollMarkup(model());
     expect(markup).toContain('<h2>Changes</h2>');
     expect(markup).toContain('<strong>Source changed</strong>');
     expect(markup).toContain(
-      'A detailed comparison isn&#39;t available. Review the source from the row menu.',
+      'Couldn’t list what changed. You can still update this doc from its menu.',
     );
     expect(markup).not.toContain('Last synced');
   });
@@ -224,7 +223,7 @@ describe('library screen presentation', () => {
       rows: [row('emptyDiff', 'updateAvailable', { expanded: true, changeState: 'ready', changeGroups: [] })],
     }));
     expect(markup).toContain('<strong>Source changed</strong>');
-    expect(markup).toContain('No itemized differences were found.');
+    expect(markup).toContain('No individual changes to list. Update this doc to bring it back in sync.');
   });
 
   it('names the reason a comparison is unavailable', () => {
@@ -232,7 +231,7 @@ describe('library screen presentation', () => {
       rows: [row('why', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: reason })],
     }));
     expect(line('noBaseline')).toContain('Update this doc once to enable change lists.');
-    expect(line('other')).toContain('A detailed comparison isn&#39;t available. Review the source from the row menu.');
+    expect(line('other')).toContain('Couldn’t list what changed. You can still update this doc from its menu.');
     for (const reason of ['noBaseline', 'other'] as const) {
       expect(line(reason)).toContain('<strong>Source changed</strong>');
     }
@@ -254,8 +253,7 @@ describe('library screen presentation', () => {
         row('c', 'updateAvailable', { expanded: true, changeState: 'unavailable', changeUnavailableReason: 'noBaseline' }),
       ],
     }));
-    // Scope the check to the change panels: other parts of the screen (the
-    // unknown-age label, for one) legitimately use the character.
+    // Scope the check to the change panels, the lines this test is about.
     const panels = markup
       .split('class="sl-library-change-list">')
       .slice(1)
@@ -296,7 +294,6 @@ describe('library screen presentation', () => {
         row('mappedColors', 'orphaned', {
           canOpenFrame: true,
           canOpenSource: false,
-          canReconnect: false,
           canUpdate: false,
           canDetach: false,
           canRemove: true,
@@ -306,7 +303,6 @@ describe('library screen presentation', () => {
         row('mappedColors', 'orphaned', {
           canOpenFrame: true,
           canOpenSource: false,
-          canReconnect: false,
           canUpdate: false,
           canDetach: false,
           canRemove: true,
@@ -314,13 +310,27 @@ describe('library screen presentation', () => {
       ],
       menuDocId: 'mappedColors',
     }));
-    expect(markup).toContain('Open documentation frame');
-    expect(markup).toContain('Remove connection');
+    expect(markup).toContain('View this doc on canvas');
+    expect(markup).toContain('Delete this doc');
     expect(markup).not.toContain('View source component');
     expect(markup).not.toContain('Download documentation');
     expect(markup).not.toContain('Reconnect');
-    expect(markup).not.toContain('Update documentation');
-    expect(markup).not.toContain('Review detected changes');
+    expect(markup).not.toContain('<span>Update this doc</span>');
+    expect(markup).not.toContain('Show changes');
+  });
+
+  it('names the row menu actions after the doc, and pairs Show with Hide', () => {
+    const closed = row('buttonText', 'updateAvailable');
+    const menu = (item: LibraryRowPresentation) => libraryRowMarkup(item, item.docId, false);
+    const markup = menu(closed);
+    for (const label of ['Show changes', 'Update this doc', 'View this doc on canvas', 'View source component', 'Detach this doc', 'Delete this doc']) {
+      expect(markup).toContain(`<span>${label}</span>`);
+    }
+    expect(markup).not.toContain('Reconnect');
+    expect(menu({ ...closed, expanded: true })).toContain('<span>Hide changes</span>');
+    // The accessible name starts with the words the button shows (WCAG 2.5.3).
+    expect(markup).toContain('aria-label="Update available. Show changes for buttonText"');
+    expect(markup).toContain('aria-label="View buttonText on canvas"');
   });
 
   it('offers Copy for AI on a component row whose source still exists', () => {
@@ -376,7 +386,7 @@ describe('library screen presentation', () => {
     const idle = libraryFooterMarkup(model());
     expect(idle).toContain('Refresh library');
     // Names the object, not the count. The count is on the Updates filter, and
-    // "all" is what separates this from a row's own "Update documentation".
+    // "all" is what separates this from a row's own "Update this doc".
     expect(idle).toContain('Update all docs');
     expect(idle).not.toMatch(/Update all \d/);
     expect(idle).not.toContain('data-library-update-all disabled');
@@ -433,13 +443,32 @@ describe('library screen presentation', () => {
       allRows: [],
       rows: [],
       counts: { all: 0, updates: 0, inSync: 0 },
-    }))).toContain('No connected documents');
+    }))).toContain('No docs yet');
     expect(libraryScrollMarkup(model({
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [],
       filter: 'updates',
       counts: { all: 1, updates: 0, inSync: 1 },
-    }))).toContain('Everything is in sync');
+    }))).toContain('No updates waiting');
+    expect(libraryScrollMarkup(model({
+      allRows: [],
+      rows: [],
+      counts: { all: 0, updates: 0, inSync: 0 },
+    }))).toContain('<p>Docs you create in this file appear here. Select a component or open Foundations to create one.</p>');
+    expect(libraryScrollMarkup(model({
+      allRows: [row('buttonPrimary', 'inSync')],
+      rows: [],
+      filter: 'updates',
+      counts: { all: 1, updates: 0, inSync: 1 },
+    }))).toContain('<p>Docs appear here when their source changes or they need a rebuild.</p>');
+    const noneInSync = libraryScrollMarkup(model({
+      allRows: [row('buttonText', 'updateAvailable')],
+      rows: [],
+      filter: 'sync',
+      counts: { all: 1, updates: 1, inSync: 0 },
+    }));
+    expect(noneInSync).toContain('<strong>No docs in sync</strong>');
+    expect(noneInSync).toContain('<p>Docs appear here when they match their source.</p>');
   });
 
   it('shows real batch progress without rendering an in-plugin toast', () => {
@@ -545,7 +574,7 @@ describe('component vs foundation row differentiation', () => {
     expect(markup).not.toContain('<strong>Foundations · Foundation · colors</strong>');
     // The accessible name keeps the full, unambiguous label — only the
     // on-screen title is shortened. The visible text stays a substring of it.
-    expect(markup).toContain('aria-label="Open Foundations · Foundation · colors in Figma"');
+    expect(markup).toContain('aria-label="View Foundations · Foundation · colors on canvas"');
   });
 
   it('leaves a component row label untouched — it never had the prefix', () => {

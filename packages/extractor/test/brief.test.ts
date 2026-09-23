@@ -1462,8 +1462,8 @@ describe('componentBrief typography', () => {
     expect(b.typography?.['Missing/Style']).toEqual({
       resolution: {
         status: 'not-in-snapshot',
-        reason: 'local to this file but absent from the foundation snapshot, which is read '
-          + 'once per session. Read the foundations again to pick it up.',
+        reason: 'This reference is local to this file but absent from the foundation snapshot, '
+          + 'which is read once per session. Refresh sources on the Foundations screen to include it.',
       },
     });
   });
@@ -1725,7 +1725,7 @@ describe('tokens.used as a list', () => {
     };
     expect(brief.tokens.used[0]).toEqual({
       token: 'Brand/Card', kind: 'paint-style',
-      resolution: { status: 'not-extracted', reason: 'paint style definitions are not extracted.' },
+      resolution: { status: 'not-extracted', reason: 'Paint style definitions are not extracted.' },
     });
   });
 

@@ -113,8 +113,10 @@ describe('copyBriefFromSource', () => {
     await copyBriefFromSource(createState(), SRC, null, presenter());
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
     const [, notice] = renderManualCopyModal.mock.calls[0];
-    expect(notice).toContain('Token values are missing because foundations have not been read yet.');
-    expect(notice).toContain('This document has no saved guidelines.');
+    expect(notice).toContain(
+      'Token values are missing because this file’s variables haven’t loaded yet. Open Foundations, then copy again.',
+    );
+    expect(notice).toContain('This doc has no saved guidelines.');
   });
 
   it('omits the modal caveat entirely when nothing is missing', async () => {
@@ -165,7 +167,7 @@ describe('copyBriefFromSource', () => {
     const [text, notice] = renderManualCopyModal.mock.calls[0];
     const bytes = new TextEncoder().encode(text).length;
     expect(bytes).toBeGreaterThan(LARGE_COPY_BYTES);
-    expect(notice).toContain(`${Math.round(bytes / 1024)} KB, which is large for some chat windows.`);
+    expect(notice).toContain(`It’s ${Math.round(bytes / 1024)} KB, which some chat windows can’t take in one paste.`);
     expect(notice ?? '').not.toMatch(/\d+ lines/);
   });
 
@@ -185,8 +187,8 @@ describe('copyBriefFromSource', () => {
     expect(text.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
     expect(text).toContain('\n# Button\n');
     expect(ui.info).toHaveBeenCalledWith(
-      'Copied as Markdown. Token values are missing because foundations have not been read yet. '
-      + 'This document has no saved guidelines.',
+      'Copied as Markdown. Token values are missing because this file’s variables haven’t loaded yet. '
+      + 'Open Foundations, then copy again. This doc has no saved guidelines.',
     );
   });
 
@@ -207,7 +209,7 @@ describe('copyBriefFromSource', () => {
     await copyBriefFromSource(state, SRC, null, presenter());
     const [text, notice] = renderManualCopyModal.mock.calls[0];
     expect(text.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
-    expect(notice).toContain('This document has no saved guidelines.');
+    expect(notice).toContain('This doc has no saved guidelines.');
   });
 
   // This test sets foundationSpec at module scope via onSelectionFoundation,

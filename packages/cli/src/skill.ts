@@ -616,8 +616,8 @@ export function buildSkillGuide(input: SkillInput): string {
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
   lines.push(markdown
-    ? '5. A row under **Unbound values** is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.'
-    : `5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);
+    ? '5. A row under **Unbound values** is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.'
+    : `5. An ${code('unbound')} entry is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.`);
   const writtenOutputs = input.pull?.outputs.filter((o) => o.written) ?? [];
   const outputNote = writtenOutputs.length
     ? ` Never edit ${writtenOutputs.map((o) => code(`${o.path}/`)).join(', ')} either: pull replaces or removes files there.`
@@ -695,22 +695,24 @@ export function upsertBlock(existing: string | null, guide: string): string {
 export type InstallOutcome = {
   path: string;
   result: 'created' | 'updated' | 'unchanged';
-  /** Directories from a downloaded snapshot left beside the file this install
-   *  replaced. The plugin's download and this command both write
+  /** Folders and files from a downloaded snapshot left beside the file this
+   *  install replaced. The plugin's download and this command both write
    *  `.claude/skills/spec-layer/`, so a guide that points at the pulled files
-   *  can end up sitting next to a snapshot's data folders that it never
-   *  mentions. Reported so the command can say so; never deleted here, since
-   *  the CLI does not own files it did not write. */
+   *  can end up sitting next to a snapshot's data that it never mentions.
+   *  Reported so the command can say so; never deleted here, since the CLI
+   *  does not own files it did not write. */
   staleSnapshot: string[];
 };
 
-/** The folders a downloaded snapshot writes beside its SKILL.md. */
-const SNAPSHOT_DIRS = ['components', 'tokens'];
+/** What a downloaded snapshot writes beside its SKILL.md: two folders and
+ *  `fonts.json`, the list the snapshot's own SKILL.md tells a reader to
+ *  delete once this command has replaced it. */
+const SNAPSHOT_ENTRIES = ['components', 'tokens', 'fonts.json'];
 
-function staleSnapshotDirs(cwd: string, target: InstallTarget): string[] {
+function staleSnapshotEntries(cwd: string, target: InstallTarget): string[] {
   if (target.host !== 'claude') return [];
   const dir = dirname(target.path);
-  return SNAPSHOT_DIRS
+  return SNAPSHOT_ENTRIES
     .map((name) => `${dir}/${name}`)
     .filter((rel) => existsSync(join(cwd, rel)));
 }
@@ -719,7 +721,7 @@ export function installSkill(cwd: string, host: AgentHost, guide: string): Insta
   const target = installTarget(host);
   const abs = join(cwd, target.path);
   const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-  const staleSnapshot = staleSnapshotDirs(cwd, target);
+  const staleSnapshot = staleSnapshotEntries(cwd, target);
   const next = target.mode === 'file' ? renderForHost(host, guide) : upsertBlock(existing, renderForHost(host, guide));
   if (existing === next) return { path: target.path, result: 'unchanged', staleSnapshot };
   mkdirSync(dirname(abs), { recursive: true });

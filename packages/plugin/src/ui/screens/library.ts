@@ -79,7 +79,7 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
   rebuildNeeded: 'Rebuild needed',
   edited: 'Manually edited',
   orphaned: 'Source missing',
-  unavailable: 'Check unavailable',
+  unavailable: 'Couldn’t check',
 };
 
 /**
@@ -92,8 +92,9 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
  * lossily (see missingProseKeys in actions.ts); that caveat rides the
  * button's tooltip.
  */
-export const REBUILD_TITLE = 'New plugin version';
-export const REBUILD_KEYBOARD_NOTE = 'With AI writing on, Keyboard is rewritten.';
+export const REBUILD_TITLE = 'Some docs are from an older plugin version';
+export const REBUILD_KEYBOARD_NOTE =
+  'In docs made with AI writing, AI rewrites Keyboard and fills empty sections, if AI writing is on. Everything else is kept.';
 
 export function rebuildBannerMarkup(count: number, disabled: boolean): string {
   if (count === 0) return '';
@@ -131,13 +132,13 @@ function changeGroupMarkup(group: LibraryChangeGroupPresentation): string {
 }
 
 /**
- * The second line under "Source changed" when no list can be shown. The
- * `other` line is the pre-baseline fallback, kept verbatim. Pre-escaped
- * because it is placed in HTML directly, not through esc().
+ * The second line under "Source changed" when no list can be shown. Placed in
+ * HTML directly, not through esc(), so it must stay free of markup characters;
+ * the typographic apostrophe needs no escape.
  */
 const CHANGE_UNAVAILABLE_COPY: Record<LibraryChangeUnavailableReason, string> = {
   noBaseline: 'Update this doc once to enable change lists.',
-  other: 'A detailed comparison isn&#39;t available. Review the source from the row menu.',
+  other: 'Couldn’t list what changed. You can still update this doc from its menu.',
 };
 
 function changeFallbackMarkup(detail: string): string {
@@ -161,7 +162,7 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
         ? row.changeGroups.map(changeGroupMarkup).join('')
         // Should not occur: the diff input is the hash input. Better than an
         // empty panel if it does.
-        : changeFallbackMarkup('No itemized differences were found.');
+        : changeFallbackMarkup('No individual changes to list. Update this doc to bring it back in sync.');
     case 'unavailable':
       return changeFallbackMarkup(CHANGE_UNAVAILABLE_COPY[row.changeUnavailableReason ?? 'other']);
   }
@@ -185,13 +186,11 @@ interface MenuItem {
     | 'update'
     | 'open-frame'
     | 'open-source'
-    | 'reconnect'
     | 'copy'
     | 'detach'
     | 'remove';
   glyph:
     | 'adjustments'
-    | 'refresh'
     | 'fileCheck'
     | 'externalLink'
     | 'puzzle'
@@ -206,14 +205,14 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
   if (isUpdate(row)) {
     maintenance.push({
       action: 'review',
-      label: row.expanded ? 'Hide detected changes' : 'Review detected changes',
+      label: row.expanded ? 'Hide changes' : 'Show changes',
       glyph: 'adjustments',
     });
   }
   if (row.canUpdate) {
     maintenance.push({
       action: 'update',
-      label: 'Update documentation',
+      label: 'Update this doc',
       // Same glyph as the footer's "Update all docs": one act, one glyph,
       // whether it runs on this row or on every drifted doc. It wore `refresh`
       // here, which is the re-check that writes nothing.
@@ -225,7 +224,7 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
   if (row.canOpenFrame) {
     navigation.push({
       action: 'open-frame',
-      label: 'Open documentation frame',
+      label: 'View this doc on canvas',
       glyph: 'externalLink',
     });
   }
@@ -243,26 +242,19 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
       glyph: 'copy',
     });
   }
-  if (row.canReconnect) {
-    navigation.push({
-      action: 'reconnect',
-      label: 'Reconnect',
-      glyph: 'refresh',
-    });
-  }
 
   const destructive: MenuItem[] = [];
   if (row.canDetach) {
     destructive.push({
       action: 'detach',
-      label: 'Detach documentation',
+      label: 'Detach this doc',
       glyph: 'externalLink',
     });
   }
   if (row.canRemove) {
     destructive.push({
       action: 'remove',
-      label: 'Remove connection',
+      label: 'Delete this doc',
       glyph: 'alertCircle',
       danger: true,
     });
@@ -346,7 +338,7 @@ export function libraryRowMarkup(
       '<button class="sl-library-update-disclosure" type="button" ' +
       `data-library-disclosure="${esc(row.docId)}" aria-expanded="${expanded}" ` +
       `aria-controls="sl-library-details-${esc(row.docId)}" ` +
-      `aria-label="Review changes for ${esc(row.label)}">` +
+      `aria-label="Update available. Show changes for ${esc(row.label)}">` +
       `${statusMarkup(row.status)}` +
       `<span class="sl-library-chevron${expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
       '</button>'
@@ -357,7 +349,7 @@ export function libraryRowMarkup(
   const jump = row.canOpenFrame
     ? (
       '<button class="sl-library-jump" type="button" ' +
-      `data-library-open-frame="${esc(row.docId)}" aria-label="Open ${esc(row.label)} in Figma">` +
+      `data-library-open-frame="${esc(row.docId)}" aria-label="View ${esc(row.label)} on canvas">` +
       `<span class="sl-library-source-icon">${sourceIcon}</span>` +
       '<span class="sl-library-identity">' +
       `<strong>${title}</strong>` +
@@ -389,21 +381,21 @@ export function libraryRowMarkup(
 function emptyMarkup(filter: LibraryFilter, hasRows: boolean): string {
   if (!hasRows) {
     return (
-      '<div class="sl-empty-state"><strong>No connected documents</strong>' +
-      '<p>Create documentation to add it to this Library.</p></div>'
+      '<div class="sl-empty-state"><strong>No docs yet</strong>' +
+      '<p>Docs you create in this file appear here. Select a component or open Foundations to create one.</p></div>'
     );
   }
   if (filter === 'updates') {
     return (
-      '<div class="sl-empty-state"><strong>Everything is in sync</strong>' +
-      '<p>There are no documentation updates waiting.</p>' +
+      '<div class="sl-empty-state"><strong>No updates waiting</strong>' +
+      '<p>Docs appear here when their source changes or they need a rebuild.</p>' +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-library-filter="all">View all docs</button></div>'
     );
   }
   return (
-    '<div class="sl-empty-state"><strong>No documents in sync</strong>' +
-    '<p>Updated documentation will appear here.</p>' +
+    '<div class="sl-empty-state"><strong>No docs in sync</strong>' +
+    '<p>Docs appear here when they match their source.</p>' +
     '<button class="sl-button" data-tone="secondary" type="button" ' +
     'data-library-filter="all">View all docs</button></div>'
   );
@@ -469,12 +461,12 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
    * Label only. The glyph is fixed at `fileCheck` and does not vary with
    * state: one slot must not show an action, then a warning, then a status.
    * Circular arrows mean "re-reads, writes nothing" and belong to "Refresh
-   * library" beside it; failed checks are already visible per row as "Check
-   * unavailable". See the icon contract in design-system/components.css.
+   * library" beside it; failed checks are already visible per row as
+   * "Couldn’t check". See the icon contract in design-system/components.css.
    *
    * "Update all docs", not "Update all 3": see docs/plugin-voice-and-copy.md
    * ("Footer actions"). It names the same object the create buttons do, and
-   * "all" is what separates it from a row's own "Update documentation" — the
+   * "all" is what separates it from a row's own "Update this doc" — the
    * count is already on the Updates filter beside it, and a label that changes
    * width as rows drift in and out made the button jump.
    */

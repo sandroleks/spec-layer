@@ -157,11 +157,18 @@ export interface PublishResult {
   quota: PublishQuotaSnapshot | null;
 }
 
-const NO_IDENTITY = 'Publishing needs a signed-in Figma account or a license key.';
-const ROTATE_NO_IDENTITY = 'Rotating the key needs a signed-in Figma account or a license key.';
-const ROTATE_BAD_ID = 'The library id stored for this file is not valid, so the key cannot be rotated.';
+const NO_IDENTITY =
+  'Couldn’t publish without a Figma account or license key. '
+  + 'Sign in to Figma, or activate your license key on the License screen.';
+const ROTATE_NO_IDENTITY =
+  'Couldn’t rotate the pull key without a Figma account or license key. '
+  + 'Sign in to Figma, or activate your license key on the License screen.';
+const ROTATE_BAD_ID = 'Couldn’t rotate the pull key. The library link saved in this file is damaged.';
 
-const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Free plans publish one Figma file.';
+/** A publish or rotate whose request never reached the proxy at all. */
+const UNREACHABLE = 'Couldn’t reach Spec Layer. Check your connection and try again.';
+
+const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Couldn’t publish. The free plan publishes 1 Figma file.';
 
 /** Bytes as "5.6 MB", with no decimal when it is whole, or the raw value when it is not a number. */
 function megabytes(bytes: unknown): string {
@@ -171,30 +178,49 @@ function megabytes(bytes: unknown): string {
 }
 
 const NOT_OWNER =
-  'This library was published by another account, or from a device that no longer holds its key. Nothing was published.';
+  'Couldn’t publish. This library belongs to another account, or this device doesn’t have its current pull key. '
+  + 'Publish from the device that first published it or last rotated its key.';
 
-function publishErrorCopy(status: number, body: Record<string, unknown>): string {
+/**
+ * The spent allowance, in the server's own number. The 402 carries the
+ * publish quota headers, so the count is read from them rather than written
+ * here, where it could drift from the proxy's limit. A response without them
+ * gets the sentence with no number, never a guessed one.
+ */
+function exhaustedCopy(body: Record<string, unknown>, quota: PublishQuotaSnapshot | null): string {
+  const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
+  const after = reset ? ` or publish again from ${reset}` : '';
+  const limit = quota?.limit;
+  const spent = typeof limit === 'number' && Number.isFinite(limit)
+    ? `your ${limit} free publish${limit === 1 ? '' : 'es'}`
+    : 'your free publishes';
+  return `Couldn’t publish. You’ve used ${spent} this month. Upgrade to Pro${after}.`;
+}
+
+function publishErrorCopy(
+  status: number, body: Record<string, unknown>, quota: PublishQuotaSnapshot | null = null,
+): string {
   const error = typeof body.error === 'string' ? body.error : '';
   if (status === 401) {
     // A bearer-only request with a key that is not buying Pro. Say what the
     // proxy said about the key rather than asking for one already entered.
     if (error === 'license_not_active') {
       return body.reason === 'unreachable'
-        ? 'Could not check your license key just now. Nothing was published. Try again in a minute.'
-        : 'This license key is not active. Renew it in Settings, or sign in to Figma to publish on the free plan.';
+        ? 'Couldn’t publish. Spec Layer couldn’t check your license key right now. Try again in a minute.'
+        : 'Couldn’t publish. Your license key isn’t active. Renew or reconnect it on the License screen, '
+          + 'or sign in to Figma to publish on the free plan.';
     }
     return NO_IDENTITY;
   }
   if (error === 'not_owner') return NOT_OWNER;
-  if (status === 402) {
-    const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
-    const after = reset ? ` or publish again after ${reset}` : '';
-    return `You have used your 10 free updates for this month. Upgrade to Pro${after}.`;
-  }
+  if (status === 402) return exhaustedCopy(body, quota);
   if (status === 409 || error === 'publish_pending') {
-    return 'A publish is already running. Give it a moment and try again.';
+    return 'These changes are already being published. Try again in a minute.';
   }
-  if (error === 'bundle_too_large') return `This library is larger than the publish limit (${megabytes(body.size)} of ${megabytes(body.limit)}).`;
+  if (error === 'bundle_too_large') {
+    return `Couldn’t publish. This library is ${megabytes(body.size)}, over the ${megabytes(body.limit)} limit. `
+      + 'Remove docs you don’t need from this file, then publish again.';
+  }
   if (error === 'library_limit') {
     const existing = body.existing as { fileName?: unknown } | undefined;
     if (existing) {
@@ -206,10 +232,11 @@ function publishErrorCopy(status: number, body: Record<string, unknown>): string
         : name;
       return `${PUBLISH_LIMIT_MESSAGE_PREFIX} This account already publishes ${owned}. Upgrade to Pro to publish up to 10 files.`;
     }
-    return `This plan already publishes ${String(body.limit)} Figma files, which is the limit.`;
+    return `Couldn’t publish. This account already publishes ${String(body.limit)} Figma files, which is the Pro limit.`;
   }
-  if (status === 429) return 'Too many requests just now. Give it a minute.';
-  return `Publishing failed with HTTP ${status}.`;
+  if (status === 429) return 'Couldn’t publish. Too many requests in the last minute. Try again in a minute.';
+  return 'Couldn’t publish. Spec Layer returned an error. Try again, or reopen the plugin if it keeps happening. '
+    + `(HTTP ${status})`;
 }
 
 async function bodyOf(res: Response): Promise<Record<string, unknown>> {
@@ -254,13 +281,7 @@ export async function publishBundle(
       }),
     });
   } catch {
-    return {
-      outcome: {
-        kind: 'error',
-        message: 'Could not reach the publish service. Check your connection and try again.',
-      },
-      quota: null,
-    };
+    return { outcome: { kind: 'error', message: UNREACHABLE }, quota: null };
   }
   const body = await bodyOf(res);
   // Read the allowance off every answer that states one, refusals included: a
@@ -288,15 +309,19 @@ export async function publishBundle(
   // someone else owns it (or this device lacks its key): the id in the file
   // is still the one developers pull, so it must stay put.
   if (opts.libraryId && res.status === 404) return result({ kind: 'gone' });
-  return result({ kind: 'error', message: publishErrorCopy(res.status, body) });
+  return result({ kind: 'error', message: publishErrorCopy(res.status, body, quota) });
 }
 
-const DRY_RUN_FAILED = 'Could not check what changed.';
-
+/**
+ * The screen shows no dry-run message (a failed dry run reads as
+ * PROPOSAL_FAILED_MESSAGE in the version block), so a request that never
+ * reached the proxy carries none. The refusals keep theirs for a caller that
+ * wants to show one.
+ */
 export async function dryRunBundle(
   bundle: PublishBundleV1,
   opts: { auth: ProxyAuth; libraryId: string; pullKey?: string | null; fetcher?: typeof fetch },
-): Promise<{ kind: 'ok'; result: DryRunResult } | { kind: 'error'; message: string }> {
+): Promise<{ kind: 'ok'; result: DryRunResult } | { kind: 'error'; message?: string }> {
   const headers = authHeaders(opts.auth);
   if (!headers) return { kind: 'error', message: NO_IDENTITY };
   const doFetch = opts.fetcher ?? fetch;
@@ -308,7 +333,7 @@ export async function dryRunBundle(
       body: JSON.stringify({ libraryId: opts.libraryId, bundle, dryRun: true }),
     });
   } catch {
-    return { kind: 'error', message: DRY_RUN_FAILED };
+    return { kind: 'error' };
   }
   const body = await bodyOf(res);
   if (!res.ok) return { kind: 'error', message: publishErrorCopy(res.status, body) };
@@ -343,17 +368,25 @@ export async function rotatePullKey(
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries/${libraryId}/rotate`, { method: 'POST', headers: withPullKey(headers, pullKey) });
   } catch {
-    return { kind: 'error', message: 'Could not reach the publish service. Check your connection and try again.' };
+    return { kind: 'error', message: UNREACHABLE };
   }
   const body = await bodyOf(res);
   if (res.ok) return { kind: 'rotated', pullKey: String(body.pullKey) };
-  // Ownership is proved by the identity that published (the license key or
-  // the Figma account), so a teammate looking at the file's id can reach the
-  // button and be refused. Say why, rather than quoting the status code.
+  // Ownership is proved by the identity that published (the license key, or
+  // the Figma account together with the current pull key), so a teammate
+  // looking at the file's id can reach the button and be refused. Say what
+  // it takes, rather than quoting the status code.
   if (res.status === 403 || body.error === 'not_owner') {
-    return { kind: 'error', message: 'Only the account that published this library can rotate its key.' };
+    return {
+      kind: 'error',
+      message: 'Couldn’t rotate the pull key. That takes the license key this library was published with, '
+        + 'or the Figma account that published it on a device with the current pull key.',
+    };
   }
-  return { kind: 'error', message: `Rotating the key failed with HTTP ${res.status}.` };
+  return {
+    kind: 'error',
+    message: `Couldn’t rotate the pull key. Spec Layer returned an error. Try again in a minute. (HTTP ${res.status})`,
+  };
 }
 
 /**
@@ -383,11 +416,11 @@ export function agentSetupMessage(libraryId: string, pullKey: string, format: Co
     '',
     '1. In the repository root, run:',
     `   npx --yes spec-layer setup --id ${libraryId} --key ${pullKey}${formatFlag(format)}`,
-    '   It writes speclayer.json, stores the pull key in a gitignored speclayer.local.json, and pulls the published library into .speclayer/.',
+    '   It writes `speclayer.json`, stores the pull key in a gitignored `speclayer.local.json`, and pulls the published library into `.speclayer/`.',
     '2. Then run:',
     '   npx --yes spec-layer skill --install',
-    '   It writes a guide to the pulled files, adapted to this codebase, where you read project instructions. Read that guide before using the files.',
-    '3. Never print, commit, or copy the key anywhere else. npx --yes spec-layer tools lists every command with what it reaches and writes.',
+    '   It writes a guide to the pulled files, adapted to this codebase, into the file you read project instructions from. Read that guide before using the files.',
+    '3. Never print, commit, or copy the pull key anywhere else. `npx --yes spec-layer tools` lists every command with what it reaches and writes.',
   ].join('\n');
 }
 
@@ -461,8 +494,10 @@ export function publishedProposal(version: string): DryRunResult {
   };
 }
 
-export const PROPOSAL_FAILED_MESSAGE = 'Could not compute the next version. Publishing will apply the minimum bump.';
-export const BELOW_MINIMUM_MESSAGE = (minimum: Bump): string => `The changes need at least a ${minimum} bump.`;
+export const PROPOSAL_FAILED_MESSAGE =
+  'Couldn’t check what changed, so there’s no version to preview. '
+  + 'If you publish, Spec Layer picks the smallest version change the edits need.';
+export const BELOW_MINIMUM_MESSAGE = (minimum: Bump): string => `These edits need at least a ${minimum} version change.`;
 const INVALID_FIRST_VERSION = 'The first version needs three numbers, like 1.0.0.';
 
 /** The bump the publish will send: the choice when it is at or above the
@@ -611,7 +646,7 @@ export function onInitialVersionInput(text: string): void {
 function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: PublishState['intent']): string {
   const names = skipped.map((s) => s.name).join(', ');
   const count = skipped.length;
-  const found = `${count} component${count === 1 ? '' : 's'} could not be read: ${names}.`;
+  const found = `${count} component${count === 1 ? '' : 's'} couldn’t be read: ${names}.`;
   return intent === 'download'
     ? `Nothing was downloaded. ${found} Fix or remove those docs, then download again.`
     : `Nothing was published. ${found} Fix or remove those docs, then publish again.`;
@@ -622,11 +657,11 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent
  *  staying in `collecting` with both entry points guard-blocked and no
  *  message on screen. Names what failed without inventing why. */
 const DOWNLOAD_FAILED_MESSAGE =
-  'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
+  'Couldn’t create the download. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
 
 const GONE_MESSAGE =
-  'That library no longer exists on the publish service. Nothing was published. '
-  + 'Publish again to create a new library, then share its setup command with your developers.';
+  'Couldn’t publish. Spec Layer no longer has this library. '
+  + 'Publish again to create a new one, then share its new setup command with your developers.';
 
 /**
  * Stamp only when the proxy named a version. A proxy that predates
@@ -682,7 +717,9 @@ export async function onPublishSources(
     // a snapshot is not a publish.
     state = { ...state, status: 'idle', message: null };
     host.repaint();
-    host.notify('Downloaded.');
+    // The file is handed to the browser, which can still refuse to save it,
+    // so the toast claims only that the download started.
+    host.notify('Snapshot download started.');
     return;
   }
 
@@ -758,8 +795,8 @@ export async function onPublishSources(
       stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
       host.notify(
         outcome.version
-          ? `Published ${outcome.version}. Anyone with the key can pull this version.`
-          : 'Published. Anyone with the key can pull this version.',
+          ? `Published ${outcome.version}. Anyone with the pull key can pull this version.`
+          : 'Published. Anyone with the pull key can pull this version.',
       );
       break;
     case 'updated':
@@ -864,12 +901,14 @@ export async function onPublishSources(
  */
 function sourcesErrorMessage(message: string, intent: PublishState['intent']): string {
   const outcome = intent === 'download' ? 'downloaded' : 'published';
-  // `message` is a caught error's own text (main.ts forwards `err.message`
-  // verbatim), which has no guaranteed terminal punctuation, so the retry
-  // sentence after it would otherwise run on with no boundary between them.
-  const detail = /[.!?]$/.test(message) ? message : `${message}.`;
-  return `Could not read the library. Nothing was ${outcome}. ${detail} `
+  const sentence = `Couldn’t read this file’s docs. Nothing was ${outcome}. `
     + 'Try again, or reopen the plugin if it keeps happening.';
+  // `message` is a caught error's own text (main.ts forwards `err.message`
+  // verbatim): technical detail, so it goes last, in parentheses. A trailing
+  // period of its own is dropped so the parentheses close cleanly, and an
+  // empty one adds nothing rather than a bare "()".
+  const detail = message.trim().replace(/\.$/, '');
+  return detail ? `${sentence} (${detail})` : sentence;
 }
 
 export function onPublishSourcesError(message: string): void {
@@ -916,7 +955,7 @@ export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Pr
       message: null,
     };
     host.send({ type: 'setPublishInfo', libraryId, pullKey: outcome.pullKey });
-    host.notify('Key rotated. The old key stops working within about a minute. Share the new command with your developers.');
+    host.notify('Pull key rotated. The old key stops working within about a minute. Share the new setup command.');
   } else {
     state = { ...state, status: 'error', message: outcome.message };
   }

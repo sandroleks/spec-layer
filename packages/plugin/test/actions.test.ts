@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   proseNeedsRegen,
+  aiFailureNote,
   canGenerate,
   createDocFrame,
   createState,
+  generatingMessages,
+  nextPhaseIndex,
   omissionsMessage,
   resultOutcome,
   setComponentFormat,
@@ -12,8 +15,8 @@ import {
   type BuildPresenter,
   type UiState,
 } from '../src/ui/actions';
-import { frameCountFor, type DocFrameModel } from '../src/ui/docModel';
-import type { ProseV2Key, SerializedNode } from '@spec-layer/extractor';
+import type { DocFrameModel } from '../src/ui/docModel';
+import { ProseProxyError, type ProseV2Key, type SerializedNode } from '@spec-layer/extractor';
 
 /** A minimal component set: one variant, one bound fill, one text child. Same
  *  shape as the fixture in actionsRun.test.ts/fromSource.test.ts; duplicated
@@ -114,34 +117,120 @@ describe('licenseFailureNote', () => {
   it('an unreachable license server never flips the key to inactive', () => {
     const out = licenseFailureNote('unreachable');
     expect(out.markInactive).toBe(false);
-    expect(out.note).toContain('still saved');
+    expect(out.note).toBe(
+      'Spec Layer couldn’t check your license key, so the AI sections were left out. '
+      + 'Your key is still saved. Try again in a minute.',
+    );
   });
-  it('a definite lapse drops to the free tier', () => {
+  it('a definite lapse drops to the free plan and says where to renew', () => {
     expect(licenseFailureNote('expired').markInactive).toBe(true);
     expect(licenseFailureNote(undefined).markInactive).toBe(true);
+    expect(licenseFailureNote('expired').note).toBe(
+      'Your Pro subscription isn’t active, so the AI sections were left out. '
+      + 'You’re on the free plan now. Renew Pro on the License screen.',
+    );
+  });
+  it('words a foundation build for descriptions', () => {
+    expect(licenseFailureNote('inactive', 'foundation').note).toBe(
+      'Your Pro subscription isn’t active, so the AI descriptions were left out. '
+      + 'You’re on the free plan now. Renew Pro on the License screen.',
+    );
+  });
+  it('never tells a rebuild to try again', () => {
+    // A rebuilt doc is no longer stale, so updating it again never asks AI.
+    expect(licenseFailureNote('unreachable', 'rebuild').note).toBe(
+      'Spec Layer couldn’t check your license key, so sections that needed AI were left empty. '
+      + 'Your key is still saved.',
+    );
+  });
+});
+
+describe('aiFailureNote', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('keeps the raw error out of the note and logs it instead', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const note = aiFailureNote(createState(), new SyntaxError('Unexpected token < in JSON'), 'component');
+    expect(note).toBe('AI writing failed, so the AI sections were left out. Try again.');
+    expect(note).not.toContain('Unexpected token');
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('names Spec Layer as unreachable only for a fetch that never arrived', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(aiFailureNote(createState(), new TypeError('Failed to fetch'), 'component')).toBe(
+      'Couldn’t reach Spec Layer, so the AI sections were left out. Check your connection and try again.',
+    );
+    // A TypeError from a bug is not a connection problem.
+    expect(aiFailureNote(createState(), new TypeError('Cannot read properties of undefined'), 'component'))
+      .toBe('AI writing failed, so the AI sections were left out. Try again.');
+  });
+
+  it('words each typed failure for the build it interrupted', () => {
+    const rate = new ProseProxyError('rate_limited');
+    expect(aiFailureNote(createState(), rate, 'component')).toBe(
+      'Too many AI writing requests in the last minute, so the AI sections were left out. Try again in a minute.',
+    );
+    expect(aiFailureNote(createState(), rate, 'foundation')).toBe(
+      'Too many AI writing requests in the last minute, so the AI descriptions were left out. Try again in a minute.',
+    );
+    expect(aiFailureNote(createState(), new ProseProxyError('generation_pending'), 'foundation')).toBe(
+      'AI writing is still busy with an earlier request, so the AI descriptions were left out. Try again in a minute or two.',
+    );
+    expect(aiFailureNote(createState(), new ProseProxyError('upstream'), 'foundation')).toBe(
+      'AI writing failed, so the AI descriptions were left out. Try again.',
+    );
+  });
+
+  it('never says a rebuild left the AI sections out, or to try again', () => {
+    for (const code of ['rate_limited', 'generation_pending', 'upstream'] as const) {
+      const note = aiFailureNote(createState(), new ProseProxyError(code), 'rebuild');
+      expect(note).toContain('sections that needed AI were left empty.');
+      expect(note).not.toContain('left out');
+      expect(note).not.toMatch(/try again/i);
+    }
+  });
+
+  it('drops a foundation build to the free plan on a lapsed license', () => {
+    const state = createState();
+    const note = aiFailureNote(state, new ProseProxyError('license_not_active', undefined, 'expired'), 'foundation');
+    expect(state.licenseActive).toBe(false);
+    expect(note).toContain('the AI descriptions were left out');
+  });
+
+  it('keeps the key on an unreachable license check', () => {
+    const state = createState();
+    aiFailureNote(state, new ProseProxyError('license_not_active', undefined, 'unreachable'), 'foundation');
+    expect(state.licenseActive).toBeNull();
+  });
+
+  it('marks the quota exhausted for any build', () => {
+    const state = createState();
+    expect(aiFailureNote(state, new ProseProxyError('quota_exhausted'), 'foundation'))
+      .toBe('You’ve used all your free AI writing uses this month, so the AI descriptions were left out.');
+    expect(state.quotaExhausted).toBe(true);
   });
 });
 
 describe('omissionsMessage', () => {
   it('states the outcome alone when nothing was left out', () => {
-    expect(omissionsMessage('Created 3 frames.', [])).toBe('Created 3 frames.');
+    expect(omissionsMessage('Docs created.', [])).toBe('Docs created.');
   });
   it('names every omitted section with its reason, in order', () => {
-    expect(omissionsMessage('Created 3 frames.', [
+    expect(omissionsMessage('Docs created.', [
       { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
       { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-    ])).toBe('Created 3 frames. Left out Keyboard: nothing to show. Left out When to use: AI writing is off.');
+    ])).toBe('Docs created. Left out Keyboard: nothing to show. Left out When to use: AI writing is off.');
   });
 });
 
 describe('resultOutcome', () => {
-  it('counts frames in sentence case with the right plural', () => {
-    expect(resultOutcome(false, 3)).toBe('Created 3 frames.');
-    expect(resultOutcome(false, 1)).toBe('Created 1 frame.');
-    expect(resultOutcome(true, 2)).toBe('Replaced 2 frames.');
+  it('names the outcome in docs, with no frame count', () => {
+    expect(resultOutcome(false)).toBe('Docs created.');
+    expect(resultOutcome(true)).toBe('Docs updated.');
   });
 
-  it('reads the frame count off the assembled model', async () => {
+  it('is what follows a build the main thread was sent', async () => {
     // createDocFrame with AI off (the default createState()) never calls the
     // AI module, so this needs no mock of it, only the parent postMessage
     // seam every build path sends through.
@@ -160,11 +249,27 @@ describe('resultOutcome', () => {
       await createDocFrame(state, { sections: new Set(['properties']), variantIds: new Set() }, presenter);
       const msg = sent.find((m) => (m as { type: string }).type === 'renderDocFrame') as { model: DocFrameModel };
       expect(msg).toBeDefined();
-      expect(state.lastFrameCount).toBe(frameCountFor(msg.model));
-      expect(state.lastFrameCount).toBe(1);
+      expect(msg.model.componentName).toBe('Button');
+      expect(presenter.error).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('loader phases', () => {
+  it('end on the same docs line whether AI writes or not', () => {
+    for (const withAi of [true, false]) {
+      const lines = generatingMessages(withAi);
+      expect(lines[lines.length - 1]).toBe('Placing docs on the canvas');
+    }
+  });
+
+  it('hold on the last line instead of wrapping to the first', () => {
+    expect(nextPhaseIndex(0, 3)).toBe(1);
+    expect(nextPhaseIndex(1, 3)).toBe(2);
+    expect(nextPhaseIndex(2, 3)).toBeNull();
+    expect(nextPhaseIndex(0, 1)).toBeNull();
   });
 });
 

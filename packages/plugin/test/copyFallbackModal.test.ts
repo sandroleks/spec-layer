@@ -15,7 +15,8 @@ describe('renderManualCopyModal', () => {
   it('keeps the primary instruction and puts the payload in a pre-selected textarea', () => {
     renderManualCopyModal('spec_layer: {}');
     const panel = document.querySelector('.sl-copy-fallback-panel');
-    expect(panel?.querySelector('p')?.textContent).toBe('Select the text below and press Cmd C.');
+    expect(panel?.querySelector('p')?.textContent)
+      .toBe('Couldn’t copy automatically. Press Cmd C (Ctrl C on Windows) to copy the selected text below.');
     const ta = document.querySelector('textarea') as HTMLTextAreaElement;
     expect(ta.value).toBe('spec_layer: {}');
     expect(document.activeElement).toBe(ta);

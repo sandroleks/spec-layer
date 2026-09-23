@@ -115,14 +115,17 @@ afterEach(() => {
 });
 
 describe('updateFromSource', () => {
-  it('narrates before it starts working', async () => {
+  it('starts the presenter before it works, with no lines of its own', async () => {
+    // The Library shows its own "Updating" label; its presenter only repaints.
     const ui = fakePresenter();
     await updateFromSource(createState(), badSource, ui);
-    expect(ui.progress[0]).toEqual([
-      'Reading the component',
-      'Composing sections',
-      'Placing the frame on the canvas',
-    ]);
+    expect(ui.progress[0]).toEqual([]);
+  });
+
+  it('says it could not update the doc, with the cause last', async () => {
+    const ui = fakePresenter();
+    await updateFromSource(createState(), badSource, ui);
+    expect(ui.errors[0]).toMatch(/^Couldn’t update this doc\. \(.+\)$/);
   });
 
   it('reports failure through the presenter rather than throwing', async () => {
@@ -294,7 +297,22 @@ describe('topUpProseForRebuild', () => {
     vi.mocked(generateProse).mockRejectedValueOnce(new ProseProxyError('rate_limited'));
     const state = aiState();
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
-    expect(state.pendingAiNote).toBe('Too many requests just now. Give it a minute.');
+    // Worded for a rebuild: the stored prose stays, and there is no "try
+    // again", because the rebuilt doc is no longer stale and an Update never
+    // asks AI.
+    expect(state.pendingAiNote).toBe(
+      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+    );
+  });
+
+  it('logs a thrown error instead of putting it in the note', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(generateProse).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const state = aiState();
+    expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
+    expect(state.pendingAiNote).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left empty.');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('says so when the AI allowance runs out, worded for a rebuild', async () => {
@@ -305,7 +323,7 @@ describe('topUpProseForRebuild', () => {
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.quotaExhausted).toBe(true);
     expect(state.pendingAiNote).toBe(
-      "You've used all 10 free AI uses this month, so sections that needed AI were left empty. Your uses reset on Oct 1.",
+      'You’ve used all 10 free AI writing uses this month, so sections that needed AI were left empty. Your uses reset on Oct 1.',
     );
     expect(state.pendingAiNote).not.toContain('\u2014');
   });
@@ -324,8 +342,9 @@ describe('topUpProseForRebuild', () => {
 describe('takeTopUpNote', () => {
   it('returns the note and clears the slot', () => {
     const state = createState();
-    state.pendingAiNote = 'Too many requests just now. Give it a minute.';
-    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    const note = 'Too many AI writing requests in the last minute, so sections that needed AI were left empty.';
+    state.pendingAiNote = note;
+    expect(takeTopUpNote(state)).toBe(note);
     expect(state.pendingAiNote).toBe('');
   });
 
@@ -349,7 +368,9 @@ describe('takeTopUpNote', () => {
     // The UI drains the note the instant this document's own top-up finishes
     // (this is the fix: ui-vnext.ts no longer waits for a later, unrelated
     // completion to read the shared slot).
-    expect(takeTopUpNote(state)).toBe('Too many requests just now. Give it a minute.');
+    expect(takeTopUpNote(state)).toBe(
+      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+    );
     expect(state.pendingAiNote).toBe('');
     vi.mocked(generateProse).mockClear();
 
@@ -453,17 +474,17 @@ describe('createDocFrame', () => {
 describe('quota exhausted note', () => {
   it('names the limit and the reset date the proxy reported', () => {
     expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
-      .toBe("You've used all 10 free AI uses this month, so the AI sections were left out. Your uses reset on Oct 1.");
+      .toBe('You’ve used all 10 free AI writing uses this month, so the AI sections were left out. Your uses reset on Oct 1.');
   });
 
   it('invents neither a limit nor a date the snapshot lacks', () => {
     expect(quotaExhaustedNote(null))
-      .toBe("You've used all your free AI uses this month, so the AI sections were left out.");
+      .toBe('You’ve used all your free AI writing uses this month, so the AI sections were left out.');
   });
 
   it('words a foundation build for descriptions, not sections', () => {
     expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }, 'foundation'))
-      .toBe("You've used all 10 free AI uses this month, so the AI descriptions were left out. Your uses reset on Oct 1.");
+      .toBe('You’ve used all 10 free AI writing uses this month, so the AI descriptions were left out. Your uses reset on Oct 1.');
   });
 
   it('does not call a Pro allowance free', () => {
@@ -475,7 +496,7 @@ describe('quota exhausted note', () => {
     const state = createState();
     noteGenerationError(state, new ProseProxyError('quota_exhausted'));
     expect(state.quotaExhausted).toBe(true);
-    expect(state.pendingAiNote).toContain("You've used all");
+    expect(state.pendingAiNote).toContain('You’ve used all');
   });
 
   it('drops only the AI sections left empty, not deterministic or AI-off omissions', () => {

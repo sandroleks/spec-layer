@@ -37,6 +37,26 @@ import {
 import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 
+type UnresolvedReason = Extract<FoundationValue, { kind: 'unresolved' }>['reason'];
+
+/**
+ * Reader words for each unresolved reason code. The codes (`cycle`, `depth`,
+ * `missing`) are extractor vocabulary and must never be drawn into a customer's
+ * file as they are. Display only: foundationContentHash hashes the code, not
+ * this label, so rewording here moves no hash.
+ */
+const UNRESOLVED_WORDS: Record<UnresolvedReason, string> = {
+  external: 'library variable',
+  cycle: 'aliases form a loop',
+  missing: 'value missing',
+  depth: 'alias chain too long',
+};
+
+/** "Not resolved: {plain reason}", the one form every unresolved value takes. */
+export function unresolvedLabel(reason: UnresolvedReason): string {
+  return `Not resolved: ${UNRESOLVED_WORDS[reason]}`;
+}
+
 /**
  * Label for a single value. Never returns an empty string.
  *
@@ -57,13 +77,11 @@ function leafLabel(value: FoundationValue): string {
       // String() on a number never prints trailing zeros: 16 stays "16", 1.5 stays "1.5".
       return String(value.value);
     case 'string':
-      return value.value === '' ? '(empty string)' : value.value;
+      return value.value === '' ? 'Empty string' : value.value;
     case 'boolean':
       return String(value.value);
     case 'unresolved':
-      return value.reason === 'external'
-        ? 'not resolved: external library variable'
-        : `not resolved: ${value.reason}`;
+      return unresolvedLabel(value.reason);
   }
 }
 
@@ -86,7 +104,7 @@ export function valueLines(value: FoundationValue): ValueLines {
   const primary = `→ ${value.targetName}`;
   // A library's modes cannot be mapped onto local ones, so there is no value to
   // show. Say which kind of reference it is rather than leaving a bare arrow.
-  if (value.external) return { primary, secondary: 'library variable' };
+  if (value.external) return { primary, secondary: 'Library variable' };
   if (!value.resolved) return { primary, secondary: '' };
   return { primary, secondary: leafLabel(value.resolved) };
 }
@@ -365,7 +383,7 @@ export function referenceChips(codeSyntax: Record<string, string>): FrameNode | 
   const entries = Object.entries(codeSyntax);
   if (entries.length === 0) return null;
   const row = hstack(6);
-  row.name = 'References';
+  row.name = 'Code syntax';
   row.layoutWrap = 'WRAP';
   for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier));
   return row;
@@ -573,7 +591,7 @@ function swatchRow(
     line.appendChild(values);
     fixWidthHugHeight(values, VALUES_W);
     appendSwatchValues(
-      values, cell ? swatchValueLines(cell.value) : ['not resolved: missing'], 'RIGHT');
+      values, cell ? swatchValueLines(cell.value) : [unresolvedLabel('missing')], 'RIGHT');
     return line;
   }
 

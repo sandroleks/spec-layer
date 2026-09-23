@@ -17,6 +17,16 @@ export interface LicenseScreenModel {
   remaining: number;
   limit: number;
   resetsAt: string;
+  /**
+   * Whether a quota has arrived from the proxy, so `remaining` and `limit`
+   * are the server's numbers. False draws no usage row: before the first
+   * answer, or offline, the counts are placeholders, and "0 of 0 free uses
+   * left" on a full amber bar would be a claim nobody made. Omitted reads as
+   * known, which is how every caller behaved before the flag existed.
+   */
+  quotaKnown?: boolean;
+  /** A saved key's check is running again, so its button reads as busy. */
+  rechecking?: boolean;
 }
 
 const STORED_STATES = new Set<LicenseState>([
@@ -40,13 +50,10 @@ const STATUS_MESSAGES: Partial<Record<LicenseState, {
   inactive: {
     tone: 'warning',
     title: 'This key isn’t connected to this device',
-    detail: 'Activate it again to reconnect this Figma plugin.',
+    detail: 'Press Reconnect to use Pro on this device again.',
   },
-  unknown: {
-    tone: 'neutral',
-    title: 'Your Pro key is saved',
-    detail: 'We couldn’t verify it right now. Your key stays connected while you retry.',
-  },
+  // No `unknown` entry: that state speaks through the plan card and the
+  // saved-key row, and neither statusMessage() call below ever passes it.
   invalid: {
     tone: 'danger',
     title: 'We couldn’t find that key',
@@ -64,13 +71,13 @@ const STATUS_MESSAGES: Partial<Record<LicenseState, {
   },
   unreachable: {
     tone: 'neutral',
-    title: 'Couldn’t reach the license server',
+    title: 'Couldn’t check your key right now',
     detail: 'Your current plan hasn’t changed. Try again in a minute.',
   },
   removed: {
     tone: 'success',
     title: 'Key removed from this device',
-    detail: 'This plugin is back on the free plan.',
+    detail: 'This device is back on the free plan.',
   },
 };
 
@@ -130,35 +137,40 @@ function planCard(model: LicenseScreenModel): string {
   const fill = isExhausted
     ? 100
     : safeLimit > 0 ? Math.min(100, (safeRemaining / safeLimit) * 100) : 0;
-  const title = isPro ? 'Pro plan' : isUnknown ? 'Pro key saved' : 'Free plan';
+  const title = isPro ? 'Pro plan' : isUnknown ? 'License key saved' : 'Free plan';
   // Says it once. Pro has no monthly cap, but PRO_SOFT_THRESHOLD and the
   // per-minute rate limit still apply, so "unlimited" is the word voice rule 6
-  // tells us not to use here.
+  // tells us not to use here. The file counts are the proxy's LIBRARY_LIMITS
+  // (1 free, 10 Pro). The free line names no AI or publish number: the AI
+  // allowance changes after the first 30 days, and the meter carries it.
   const detail = isPro
-    ? 'Up to 10 published Figma files, no monthly cap on AI writing or updates'
+    ? 'Up to 10 published Figma files, no monthly cap on AI writing or publishing'
     : isUnknown
-      ? 'Verification is temporarily unavailable'
-      : 'For lighter AI-assisted documentation';
+      ? 'Couldn’t check it right now'
+      : '1 published Figma file, with limits on AI writing and publishing';
   const badge = isPro ? 'Active' : isUnknown ? 'Unverified' : 'Current';
 
   // Pro adds nothing here. The heading already states the plan, the badge
   // already states that it is active, and the detail already states what that
-  // buys, so a benefits list could only repeat one of the three.
+  // buys, so a benefits list could only repeat one of the three. A free plan
+  // with no quota yet has no count to show, so it shows none.
   const body = isPro
     ? ''
     : isUnknown
       ? (
         '<div class="sl-license-unknown-note">' +
-        `${icon('infoCircle', 14)}Your saved key stays connected until verification succeeds.</div>`
+        `${icon('infoCircle', 14)}Your license key is still saved on this device. Check again in a minute.</div>`
       )
-      : (
-        '<div class="sl-license-usage">' +
-        '<div class="sl-license-usage-copy"><span><strong>AI writing</strong>' +
-        `<small>${esc(resetCopy(model.resetsAt))}</small></span>` +
-        `<span>${safeRemaining} of ${safeLimit} free uses left</span></div>` +
-        `<span class="sl-license-usage-track" data-tone="${usageTone}" aria-hidden="true">` +
-        `<i style="width:${fill}%"></i></span></div>`
-      );
+      : model.quotaKnown === false
+        ? ''
+        : (
+          '<div class="sl-license-usage">' +
+          '<div class="sl-license-usage-copy"><span><strong>AI writing</strong>' +
+          `<small>${esc(resetCopy(model.resetsAt))}</small></span>` +
+          `<span>${safeRemaining} of ${safeLimit} free uses left</span></div>` +
+          `<span class="sl-license-usage-track" data-tone="${usageTone}" aria-hidden="true">` +
+          `<i style="width:${fill}%"></i></span></div>`
+        );
 
   const action = isUnknown
     ? ''
@@ -188,7 +200,7 @@ function connectedLicense(model: LicenseScreenModel): string {
   const removing = model.state === 'removing';
   return (
     '<div class="sl-settings-section-heading"><h2>Connected license</h2>' +
-    '<p>This key is active on this Figma plugin.</p></div>' +
+    '<p>This key is active on this device.</p></div>' +
     '<div class="sl-connected-license">' +
     `<span class="sl-connected-license-icon">${icon('key', 16)}</span>` +
     `<span><strong>${esc(maskedKey(model.licenseKey))}</strong>` +
@@ -211,18 +223,22 @@ function activation(model: LicenseScreenModel): string {
     ? 'Reconnect or manage the license saved on this device.'
     : 'Paste the key from your purchase email.';
   const savedUnknown = hasStoredKey && model.state === 'unknown';
+  const rechecking = savedUnknown && model.rechecking === true;
   const form = savedUnknown
     ? (
       '<div class="sl-saved-license-row"><span>' +
       `${icon('key', 15)}<strong>${esc(maskedKey(model.licenseKey))}</strong></span>` +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
-      'data-license-retry>Retry</button></div>'
+      `data-license-retry${rechecking ? ' disabled' : ''}>` +
+      `${rechecking ? `${icon('refresh', 14)}Checking…` : 'Check again'}</button></div>`
     )
     : (
+      // The placeholder is the field's only visible label, so it names the
+      // field rather than drawing a key shape (real keys have five groups).
       '<form class="sl-license-activation-form" data-license-form>' +
-      '<label class="sl-license-field"><span class="sl-sr-only">Pro license key</span>' +
+      '<label class="sl-license-field"><span class="sl-sr-only">License key</span>' +
       `${icon('key', 15)}<input type="password" data-license-input ` +
-      `value="${esc(model.input)}" placeholder="XXXXXXXX-XXXX-XXXX-XXXX" autocomplete="off"` +
+      `value="${esc(model.input)}" placeholder="License key" autocomplete="off"` +
       `${checking ? ' disabled' : ''}></label>` +
       '<button class="sl-button" data-tone="primary" type="submit" ' +
       `data-license-activate${!model.input.trim() || checking ? ' disabled' : ''}>` +

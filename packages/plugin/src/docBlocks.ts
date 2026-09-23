@@ -85,7 +85,7 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
   box.fills = solidFill(kind === 'do' ? palette.doTint : palette.dontTint);
   box.strokes = solidFill(kind === 'do' ? palette.doBorder : palette.dontBorder);
   tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
-  const label = makeText(kind === 'do' ? 'DO' : "DON'T", 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
+  const label = makeText(kind === 'do' ? 'DO' : 'DON’T', 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
   box.appendChild(label);
   const ruleRuns = parseRuns(card.rule);
   const rule = makeText(ruleRuns.map((r) => r.text).join(''), 'Bold', 15, palette.heading, 145);

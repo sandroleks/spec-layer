@@ -37,7 +37,6 @@ import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
   buildPropertiesTable, columnParagraph,
 } from './docBlocks';
-import { displayPartName } from './ui/displayNames';
 import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
 
 // ---------------------------------------------------------------------------
@@ -215,9 +214,9 @@ async function buildTokenTable(
     sizeCol(cell, i);
   }
 
-  // No "None." row. A variant card with no rows is a non-default variant
+  // No "None" row. A variant card with no rows is a non-default variant
   // whose tokens all match the default, and the "Identical to default (N
-  // tokens)" note the caller appends already says so; printing "None." under
+  // tokens)" note the caller appends already says so; printing "None" under
   // it would read as "this variant binds no tokens", which is the opposite.
   if (rows.length === 0) return table;
 
@@ -273,10 +272,11 @@ async function buildTokenTable(
   return table;
 }
 
-/** The left-pane PROPERTIES list: a small heading + axis/value rows. */
+/** The left-pane "Differs from default" list: a small heading + axis/value
+ *  rows, only for the properties whose value differs from the default. */
 function buildPropertyList(props: { name: string; value: string }[]): FrameNode {
   const wrap = vstack(8);
-  const heading = makeText('PROPERTIES', 'Medium', 10, palette.muted);
+  const heading = makeText('Differs from default', 'Medium', 10, palette.muted);
   wrap.appendChild(heading);
   heading.layoutSizingHorizontal = 'FILL';
 
@@ -371,27 +371,21 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'table': fill(buildTable(section.columns, section.rows, CONTENT_WIDTH)); break;
     case 'anatomy': {
       if (section.summary) body.appendChild(buildTaggedParagraph(section.summary, 'anatomySummary'));
-      if (section.view !== 'table') {
-        const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden, CONTENT_WIDTH);
-        if (diagram) {
-          // Hug and centre: a small component sits in a card its own size, not
-          // in a column-wide field of white.
-          const holder = vstack(8);
-          holder.counterAxisAlignItems = 'CENTER';
-          holder.appendChild(diagram.card);
-          const note = scaleNote(diagram.scale);
-          if (note) holder.appendChild(note);
-          fill(holder);
-        } else {
-          fill(buildAnatomyLegend(section.parts));
-        }
-      }
-      if (section.view === 'table' || section.view === 'both') {
-        const rows = section.parts.map((p) => [
-          p.label, `${'    '.repeat(p.depth)}${displayPartName(p.name)}`, p.type.toLowerCase(), p.component ?? '',
-          p.tokens.length <= 3 ? p.tokens.join(' · ') : `${p.tokens.slice(0, 3).join(' · ')} +${p.tokens.length - 3}`,
-        ]);
-        fill(buildTable(['#', 'Part', 'Type', 'Component', 'Tokens'], rows, CONTENT_WIDTH));
+      // The diagram is the only anatomy view. The old table view never ran
+      // (every doc link normalizes anatomyView to 'diagram'), so its branch is
+      // gone and `section.view` is not consulted here.
+      const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden, CONTENT_WIDTH);
+      if (diagram) {
+        // Hug and centre: a small component sits in a card its own size, not
+        // in a column-wide field of white.
+        const holder = vstack(8);
+        holder.counterAxisAlignItems = 'CENTER';
+        holder.appendChild(diagram.card);
+        const note = scaleNote(diagram.scale);
+        if (note) holder.appendChild(note);
+        fill(holder);
+      } else {
+        fill(buildAnatomyLegend(section.parts));
       }
       break;
     }
@@ -431,7 +425,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         // never appear again.
         const differing = variant.props.filter((p) => defaultValues.get(p.name) !== p.value);
         const propList = variant.isDefault || differing.length === 0
-          ? labelBlock(variant.isDefault ? 'Default variant' : 'Same axes as default')
+          ? labelBlock(variant.isDefault ? 'Default variant' : 'Same values as default')
           : buildPropertyList(differing);
         left.appendChild(propList);
         propList.layoutSizingHorizontal = 'FILL';
@@ -456,9 +450,10 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
           note.paddingBottom = 12;
           note.paddingLeft = 16;
           note.paddingRight = 16;
+          const tokenWord = variant.sameAsDefault === 1 ? 'token' : 'tokens';
           const text = variant.rows.length === 0
-            ? `Identical to default (${variant.sameAsDefault} tokens)`
-            : `Same as default · ${variant.sameAsDefault} more token${variant.sameAsDefault === 1 ? '' : 's'}`;
+            ? `Identical to default (${variant.sameAsDefault} ${tokenWord})`
+            : `${variant.sameAsDefault} more ${tokenWord} identical to default`;
           note.appendChild(makeText(text, 'Regular', 12, palette.muted, 140));
           right.appendChild(note);
           note.layoutSizingHorizontal = 'FILL';
@@ -483,7 +478,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'statesMatrix': {
       const grid = await buildMatrixSection({
         axisName: section.axisName, columns: section.states, rows: section.rows,
-        note: section.capped ? 'Showing the first 4 values. Other rows share the same state behaviour.' : null,
+        note: section.capped ? 'Showing the first 4 values. The other values are not drawn.' : null,
       }, CONTENT_WIDTH, includeHidden);
       fill(grid);
       break;
@@ -509,7 +504,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
       // Combine the row-cap disclosure (when the first axis had >4 values) with
       // any held-axis note, so a capped Variants matrix explains its truncation
       // the same way the States matrix does.
-      const capNote = section.capped ? 'Showing the first 4 values. Other variants share the same structure.' : null;
+      const capNote = section.capped ? 'Showing the first 4 values. The other values are not drawn.' : null;
       const note = [capNote, section.note].filter(Boolean).join(' ') || null;
       const grid = await buildMatrixSection({ columns: section.columns, rows: section.rows, note }, CONTENT_WIDTH, includeHidden);
       fill(grid);
@@ -762,7 +757,9 @@ export async function buildDocFrames(
     subtitle = null;
     subtitleSource = null;
   }
-  if (groups.length === 0) throw new Error('No sections selected.');
+  if (groups.length === 0) {
+    throw new Error('Nothing to draw. The selected sections have no content for this component. Select more sections.');
+  }
 
   // Build frames (auto-appended to the page by createFrame), then wrap + lay out.
   const GAP = 80; // gap between frames

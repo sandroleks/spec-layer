@@ -1,5 +1,5 @@
 /**
- * diff.ts: the semantic diff behind the Library's "Review detected changes".
+ * diff.ts: the semantic diff behind the Library's "Show changes".
  *
  * Pure and Figma-free. Two layers: a keyed-list core (diffKeyed) that the later
  * `spec-layer diff` command reuses with its own v5 keys, and group builders that
@@ -92,7 +92,7 @@ export function diffKeyed<T>(
 /**
  * One line of a change list. `text` is the change; `scope` is an optional
  * second, quieter line saying which variants it reaches ("1 of 64 variants:
- * size Large · others default"). Absent scope means the whole document.
+ * size Large · others at default"). Absent scope means the whole document.
  */
 export interface ChangeItem { text: string; scope?: string }
 export interface ChangeGroup { label: string; items: ChangeItem[] }
@@ -139,10 +139,11 @@ function groups(entries: readonly [string, readonly Draft[]][]): ChangeGroup[] {
     }));
 }
 
+/** Subject first, value after a colon, so a long description still reads. */
 function scalarItem(label: string, before: string | undefined, after: string | undefined): string {
-  if (before === undefined) return `Added ${label.toLowerCase()} ${after}`;
-  if (after === undefined) return `Removed ${label.toLowerCase()} ${before}`;
-  return `${label} ${before} changed to ${after}`;
+  if (before === undefined) return `${label} added: ${after}`;
+  if (after === undefined) return `${label} removed: ${before}`;
+  return `${label}: ${before} changed to ${after}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ export function formatTextMetrics(metrics: FoundationTextMetrics): string {
   const parts = [
     `${metrics.fontFamily} ${metrics.fontStyle} ${metrics.fontSize}/${formatLineHeight(metrics.lineHeight)}`,
     `letter spacing ${formatSpacing(metrics.letterSpacing)}`,
-    `paragraph spacing ${metrics.paragraphSpacing}`,
+    `paragraph spacing ${metrics.paragraphSpacing}px`,
   ];
   if (metrics.textCase !== 'ORIGINAL') parts.push(metrics.textCase.toLowerCase().replace(/_/g, ' '));
   if (metrics.textDecoration !== 'NONE') parts.push(metrics.textDecoration.toLowerCase());
@@ -207,10 +208,15 @@ function isPrePlan3(before: FoundationUnitContent): boolean {
     || (row.kind === 'textStyle' && (row.metrics as Partial<FoundationTextMetrics>).boundTokens === undefined));
 }
 
+/** Figma's own names for a variable's type, lowercase, in place of the API enum. */
+const VARIABLE_TYPE_LABEL: Record<string, string> = {
+  FLOAT: 'number', COLOR: 'color', STRING: 'string', BOOLEAN: 'boolean',
+};
+
 function rowTypeLabel(row: FoundationRow): string {
   return row.kind === 'textStyle' ? 'text style'
     : row.kind === 'effectStyle' ? 'effect style'
-    : row.resolvedType;
+    : VARIABLE_TYPE_LABEL[row.resolvedType] ?? row.resolvedType;
 }
 
 function formatPart(part: FoundationUnitContent['part']): string | undefined {
@@ -237,13 +243,13 @@ export function foundationChangeGroups(
   const prePlan3 = isPrePlan3(before);
   if (prePlan3) {
     layout.push(before.rows.some((r) => r.kind === 'textStyle')
-      ? 'New layout: full type metrics are now part of the document'
-      : 'New layout: reference names and scale drawings are now part of the document');
+      ? 'Updating adds full type metrics to this doc'
+      : 'Updating adds reference names and scale drawings to this doc');
   }
 
   const rows = diffKeyed(list(before.rows), list(after.rows), (row) => row.name);
-  for (const row of rows.added) tokens.push(`Added ${row.name}`);
-  for (const row of rows.removed) tokens.push(`Removed ${row.name}`);
+  for (const row of rows.added) tokens.push(`${row.name} added`);
+  for (const row of rows.removed) tokens.push(`${row.name} removed`);
   for (const { before: b, after: a } of rows.changed) {
     const typeChanged = b.kind !== a.kind
       || (b.kind === 'variable' && a.kind === 'variable' && b.resolvedType !== a.resolvedType);
@@ -291,14 +297,14 @@ export function foundationChangeGroups(
 
   const modes = [
     ...stringSetItems(before.modeNames, after.modeNames,
-      (mode) => `Added mode ${mode}`, (mode) => `Removed mode ${mode}`),
+      (mode) => `Mode ${mode} added`, (mode) => `Mode ${mode} removed`),
     ...stringSetItems(before.omittedModeNames, after.omittedModeNames,
       (mode) => `Mode ${mode} is now left out`, (mode) => `Mode ${mode} is no longer left out`),
   ];
 
   const part: string[] = [];
   if (before.collectionName !== after.collectionName) {
-    part.push(`Collection ${before.collectionName} changed to ${after.collectionName}`);
+    part.push(`Collection: ${before.collectionName} changed to ${after.collectionName}`);
   }
   if (before.group !== after.group) part.push(scalarItem('Group', before.group, after.group));
   if (!canonicalEqual(before.part, after.part)) part.push(scalarItem('Part', formatPart(before.part), formatPart(after.part)));
@@ -487,8 +493,8 @@ export function coverConditions(
 
 /**
  * The scope line under a token item: "1 of 64 variants: type Primary · size
- * Large · others default". Axes pinned to their Figma default collapse into
- * "others default" once there are at least two of them and something else is
+ * Large · others at default". Axes pinned to their Figma default collapse into
+ * "others at default" once there are at least two of them and something else is
  * named; a scope pinned on every axis, all at default, is "the default
  * variant". An axis with no recorded default is always spelled out. No scope
  * at all when the conditions are empty: the change reaches every variant.
@@ -511,7 +517,7 @@ export function describeScope(
     const collapse = atDefault.length >= 2 && named.length >= 1;
     const shown = Object.fromEntries(collapse ? named : entries);
     const clauses = clauseGroups(shown).map(({ axes, values }) => `${axes.join(', ')} ${values.join(' or ')}`);
-    if (collapse) clauses.push('others default');
+    if (collapse) clauses.push('others at default');
     detail = clauses.join(' · ');
   }
   return `${count} of ${total} variants: ${detail}`;
@@ -573,8 +579,10 @@ function tokenItems(before: SpecHashProjection, after: SpecHashProjection): Chan
       const to = a?.get(k);
       if (canonicalEqual(from, to)) continue;
       let text: string;
-      if (!from) text = `Added ${label}: ${to!.join(', ')}`;
-      else if (!to) text = `Removed ${label}: ${from.join(', ')}`;
+      // A cell that lost its only binding reads the same as one that lost some
+      // of several, so both land in one bucket and share one scope line.
+      if (!from) text = `${label}: bound to ${to!.join(', ')}`;
+      else if (!to) text = `${label}: no longer bound to ${from.join(', ')}`;
       else {
         const lost = setDifference(from, to);
         const gained = setDifference(to, from);
@@ -601,8 +609,8 @@ function ruleItems(before: SpecHashProjection, after: SpecHashProjection): Draft
   const tokens: Draft[] = [];
   const rules = diffKeyed(list(before.tokens), list(after.tokens),
     (rule) => JSON.stringify([rule.part, rule.property, conditionsKey(rule.conditions)]));
-  for (const rule of rules.added) tokens.push(`Added ${tokenLabel(rule)}: ${rule.token}`);
-  for (const rule of rules.removed) tokens.push(`Removed ${tokenLabel(rule)}: ${rule.token}`);
+  for (const rule of rules.added) tokens.push(`${tokenLabel(rule)}: bound to ${rule.token}`);
+  for (const rule of rules.removed) tokens.push(`${tokenLabel(rule)}: no longer bound to ${rule.token}`);
   for (const { before: b, after: a } of rules.changed) {
     tokens.push(`${tokenLabel(a)}: ${b.token} changed to ${a.token}`);
   }
@@ -626,6 +634,16 @@ function formatGapValue(value: number | string | undefined): string {
   return value === undefined ? 'no value' : String(value);
 }
 
+/** Figma's words for a property type; `instanceSwap` is a code name. */
+function formatPropKind(kind: string): string {
+  return kind === 'instanceSwap' ? 'instance swap' : kind;
+}
+
+/** Figma's layer type as the layers panel says it, lowercase: FRAME reads "frame". */
+function formatLayerType(type: string): string {
+  return String(type).toLowerCase().replace(/_/g, ' ');
+}
+
 function formatValues(values: Record<string, string>): string {
   const entries = Object.entries(values ?? {}).map(([axis, value]) => `${axis}=${value}`);
   return entries.length > 0 ? entries.join(', ') : 'none';
@@ -645,7 +663,7 @@ export function componentChangeGroups(
   after: SpecHashProjection,
 ): ChangeGroup[] {
   const name: string[] = [];
-  if (before.name !== after.name) name.push(`Name ${before.name} changed to ${after.name}`);
+  if (before.name !== after.name) name.push(`Name: ${before.name} changed to ${after.name}`);
   if (before.description !== after.description) {
     name.push(scalarItem('Description', before.description || undefined, after.description || undefined));
   }
@@ -660,32 +678,34 @@ export function componentChangeGroups(
 
   const properties: string[] = [];
   const props = diffKeyed(list(before.props), list(after.props), (prop) => prop.name);
-  for (const prop of props.added) properties.push(`Added ${prop.name} property`);
-  for (const prop of props.removed) properties.push(`Removed ${prop.name} property`);
+  for (const prop of props.added) properties.push(`Property ${prop.name} added`);
+  for (const prop of props.removed) properties.push(`Property ${prop.name} removed`);
   for (const { before: b, after: a } of props.changed) {
-    if (b.kind !== a.kind) properties.push(`${a.name} property: kind ${b.kind} changed to ${a.kind}`);
+    if (b.kind !== a.kind) {
+      properties.push(`Property ${a.name}: type ${formatPropKind(b.kind)} changed to ${formatPropKind(a.kind)}`);
+    }
     if (!canonicalEqual(b.options, a.options)) {
-      properties.push(`${a.name} property: options were ${formatList(b.options)} changed to ${formatList(a.options)}`);
+      properties.push(`Property ${a.name}: values ${formatList(b.options)} changed to ${formatList(a.options)}`);
     }
     if (b.default !== a.default) {
-      properties.push(`${a.name} property: default ${formatDefault(b.default)} changed to ${formatDefault(a.default)}`);
+      properties.push(`Property ${a.name}: default ${formatDefault(b.default)} changed to ${formatDefault(a.default)}`);
     }
   }
   if (props.reordered) pushReordered(properties);
 
   const variants: string[] = [];
   const axes = diffKeyed(list(before.variants), list(after.variants), (axis) => axis.prop);
-  for (const axis of axes.added) variants.push(`Added ${axis.prop} axis`);
-  for (const axis of axes.removed) variants.push(`Removed ${axis.prop} axis`);
+  for (const axis of axes.added) variants.push(`Variant property ${axis.prop} added`);
+  for (const axis of axes.removed) variants.push(`Variant property ${axis.prop} removed`);
   for (const { before: b, after: a } of axes.changed) {
-    variants.push(`${a.prop}: values were ${formatList(b.values)} changed to ${formatList(a.values)}`);
+    variants.push(`Variant property ${a.prop}: values ${formatList(b.values)} changed to ${formatList(a.values)}`);
   }
   if (axes.reordered) pushReordered(variants);
   const instances = diffKeyed(list(before.variantInstances), list(after.variantInstances), (v) => v.nodeId);
-  for (const v of instances.added) variants.push(`Added variant ${v.name}`);
-  for (const v of instances.removed) variants.push(`Removed variant ${v.name}`);
+  for (const v of instances.added) variants.push(`Variant ${v.name} added`);
+  for (const v of instances.removed) variants.push(`Variant ${v.name} removed`);
   for (const { before: b, after: a } of instances.changed) {
-    if (b.name !== a.name) variants.push(`Variant ${b.name} changed to ${a.name}`);
+    if (b.name !== a.name) variants.push(`Variant ${b.name} renamed to ${a.name}`);
     if (!canonicalEqual(b.values, a.values)) {
       variants.push(`Variant ${a.name}: values ${formatValues(b.values)} changed to ${formatValues(a.values)}`);
     }
@@ -694,17 +714,20 @@ export function componentChangeGroups(
 
   const anatomy: string[] = [];
   const parts = diffKeyed(list(before.anatomy), list(after.anatomy), (part) => part.id);
-  for (const part of parts.added) anatomy.push(`Added ${part.name} part`);
-  for (const part of parts.removed) anatomy.push(`Removed ${part.name} part`);
+  for (const part of parts.added) anatomy.push(`Part ${part.name} added`);
+  for (const part of parts.removed) anatomy.push(`Part ${part.name} removed`);
   for (const { before: b, after: a } of parts.changed) {
     if (b.name !== a.name) anatomy.push(`Part ${b.name} renamed to ${a.name}`);
-    if (b.type !== a.type) anatomy.push(`${a.name} part: type ${b.type} changed to ${a.type}`);
-    if (b.nested !== a.nested) anatomy.push(`${a.name} part: nested ${b.nested} changed to ${a.nested}`);
+    // `nested` is derived from the type (anatomy.ts: type === 'INSTANCE'), so
+    // the type line already reports every change to it; no line of its own.
+    if (b.type !== a.type) {
+      anatomy.push(`Part ${a.name}: type ${formatLayerType(b.type)} changed to ${formatLayerType(a.type)}`);
+    }
   }
   if (parts.reordered) pushReordered(anatomy);
 
   const states = stringSetItems(before.states, after.states,
-    (state) => `Added state ${state}`, (state) => `Removed state ${state}`);
+    (state) => `State ${state} added`, (state) => `State ${state} removed`);
 
   const tokens = tokenItems(before, after) ?? ruleItems(before, after);
 
@@ -712,9 +735,9 @@ export function componentChangeGroups(
   const gaps = diffKeyed(list(before.gaps), list(after.gaps),
     (gap) => JSON.stringify([gap.part, gap.property, gap.issue]));
   for (const gap of gaps.added) {
-    unbound.push(`Added ${gapLabel(gap)}${gap.value !== undefined ? `: ${gap.value}` : ''}`);
+    unbound.push(`${gapLabel(gap)} added${gap.value !== undefined ? `: ${gap.value}` : ''}`);
   }
-  for (const gap of gaps.removed) unbound.push(`Removed ${gapLabel(gap)}`);
+  for (const gap of gaps.removed) unbound.push(`${gapLabel(gap)} removed`);
   for (const { before: b, after: a } of gaps.changed) {
     unbound.push(`${gapLabel(a)}: ${formatGapValue(b.value)} changed to ${formatGapValue(a.value)}`);
   }
@@ -722,15 +745,15 @@ export function componentChangeGroups(
 
   const layout: string[] = [];
   const layouts = diffKeyed(list(before.layout), list(after.layout), (entry) => entry.part);
-  for (const entry of layouts.added) layout.push(`Added ${entry.part} layout: ${entry.summary}`);
-  for (const entry of layouts.removed) layout.push(`Removed ${entry.part} layout`);
+  for (const entry of layouts.added) layout.push(`Layout of ${entry.part} added: ${entry.summary}`);
+  for (const entry of layouts.removed) layout.push(`Layout of ${entry.part} removed`);
   for (const { before: b, after: a } of layouts.changed) {
-    layout.push(`${a.part}: ${b.summary} changed to ${a.summary}`);
+    layout.push(`Layout of ${a.part}: ${b.summary} changed to ${a.summary}`);
   }
   if (layouts.reordered) pushReordered(layout);
 
   const related = stringSetItems(before.related, after.related,
-    (value) => `Added related ${value}`, (value) => `Removed related ${value}`);
+    (value) => `Related ${value} added`, (value) => `Related ${value} removed`);
 
   return groups([
     ['Name', name],

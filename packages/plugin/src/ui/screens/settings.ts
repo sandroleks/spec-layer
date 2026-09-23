@@ -99,7 +99,7 @@ export function fontMenuMarkup(model: FontMenuPresentation): string {
     }),
   ];
   const empty = !model.loaded
-    ? '<p class="sl-font-menu-note">Figma did not list any fonts. Type a family name instead.</p>'
+    ? '<p class="sl-font-menu-note">Figma hasn’t listed any fonts yet. Type a family name instead.</p>'
     : model.families.length === 0
       ? '<p class="sl-font-menu-note">No font matches that name.</p>'
       : '';
@@ -161,7 +161,7 @@ function themeChoice(
   return (
     `<button type="button" class="sl-theme-choice${selected ? ' is-selected' : ''}" ` +
     `data-theme-preset="${custom ? '__custom__' : esc(name)}" aria-pressed="${selected}" ` +
-    `aria-label="${esc(name)} frame theme">` +
+    `aria-label="${esc(name)} doc theme">` +
     `<span class="sl-theme-preview ${slug}"${swatch}>${preview}</span>` +
     `<span>${esc(name)}</span>` +
     `${selected ? `<span class="sl-theme-choice-check">${icon('check', 10)}</span>` : ''}` +
@@ -229,10 +229,10 @@ function logoControls(state: SettingsScreenState): string {
   return (
     '<section class="sl-settings-section sl-logo-setting" aria-labelledby="sl-logo-heading">' +
     '<div class="sl-settings-section-heading"><h2 id="sl-logo-heading">Logo</h2>' +
-    '<p>Optional. Appears in the header of generated frames.</p></div>' +
+    '<p>Optional. Appears in the header of your docs the next time you create or update them.</p></div>' +
     '<div class="sl-logo-actions">' +
     '<button class="sl-button" data-tone="secondary" type="button" data-settings-logo-capture>' +
-    `${state.logoAttached ? 'Replace with selected node' : 'Use selected node as logo'}</button>` +
+    `${state.logoAttached ? 'Replace with selection' : 'Use selection as logo'}</button>` +
     `${state.logoAttached ? '<button class="sl-button" data-tone="quiet" type="button" data-settings-logo-remove>Remove</button>' : ''}` +
     `${state.logoAttached ? `<span class="sl-logo-status">${icon('check', 13)}Logo added</span>` : ''}` +
     '</div>' +
@@ -305,7 +305,7 @@ function aboutSection(state: SettingsScreenState): string {
     // Same shape as the rail's outbound links, which is the plugin's one
     // established way to leave the iframe.
     `<a class="sl-about-docs" href="${DOCS_URL}" target="_blank" rel="noopener">` +
-    `Documentation${icon('externalLink', 14)}</a>` +
+    `Read the guide${icon('externalLink', 14)}</a>` +
     '</section>'
   );
 }

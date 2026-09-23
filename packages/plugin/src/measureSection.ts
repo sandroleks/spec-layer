@@ -323,7 +323,7 @@ function buildDiagram(
   const showSpacing = views.has('spacing');
 
   const box = figma.createFrame();
-  box.name = 'Measure diagram';
+  box.name = 'Measurements diagram';
   box.resize(2000, 2000);
   box.fills = [];
   box.clipsContent = false;
@@ -623,7 +623,7 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
   }
   const radius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
   if (radius > 0) {
-    bindings.push({ caption: 'radius', label: measureLabel(tokens, part, ['border-radius'], radius) });
+    bindings.push({ caption: 'border-radius', label: measureLabel(tokens, part, ['border-radius'], radius) });
   }
 
   if (!bindings.length) return null;

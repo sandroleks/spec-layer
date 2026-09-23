@@ -25,7 +25,7 @@ const LOG: VersionLog = { v: 1, records: [
 
 const state = (over: Partial<HistoryState> = {}): HistoryState => ({
   status: 'ready', log: LOG, etag: null, message: null, expanded: null, ...over,
-});
+}) as HistoryState;
 
 describe('history screen', () => {
   it('has a back control to the publish screen and the title', () => {
@@ -90,30 +90,38 @@ describe('history screen', () => {
   });
 
   it('says a first version has nothing to compare, and states truncation with counts for a truncated one', () => {
-    // 1.0.0 is bump 'initial' with no changes: never "No property changes",
+    // 1.0.0 is bump 'initial' with no changes: never the empty-list line,
     // which would read as if there was something to diff against.
-    expect(historyScrollMarkup(state({ expanded: '1.0.0' }), 'en-GB')).toContain('First version, nothing to compare against.');
+    expect(historyScrollMarkup(state({ expanded: '1.0.0' }), 'en-GB')).toContain('<strong>The first publish. Nothing to compare against.</strong>');
     const truncated: VersionLog = { v: 1, records: [{ ...LOG.records[0], changesTruncated: true, counts: { major: 1, minor: 2, patch: 40 } }] };
-    expect(historyScrollMarkup(state({ log: truncated, expanded: '2.0.0' }), 'en-GB')).toContain('Showing the first 3 changes of 43');
+    expect(historyScrollMarkup(state({ log: truncated, expanded: '2.0.0' }), 'en-GB')).toContain('Showing the first 3 of 43 changes. The full list was too large to store.');
   });
 
   it('says the changes are no longer stored for a record the log compacted, with the real counts', () => {
     // versions.ts compactLog empties `changes` and sets `changesTruncated` on
-    // an old record; the pane must not read that as "No property changes".
+    // an old record; the pane must not read that as "No changes".
     const compacted: VersionLog = { v: 1, records: [{ ...LOG.records[0], changes: [], changesTruncated: true }] };
     const markup = historyScrollMarkup(state({ log: compacted, expanded: '2.0.0' }), 'en-GB');
-    expect(markup).toContain('The changes for this version are no longer stored (3 changes).');
-    expect(markup).not.toContain('No property changes');
+    expect(markup).toContain('Older versions keep only a count of their changes. This one had 3.');
+    expect(markup).not.toContain('No changes to components');
+  });
+
+  it('says what the list covers when a later version has no listed changes', () => {
+    // Prose and descriptions never reach libraryDiff, so an empty list is not "nothing changed".
+    const quiet: VersionLog = { v: 1, records: [{ ...LOG.records[0], bump: 'patch', changes: [], changesTruncated: false }] };
+    expect(historyScrollMarkup(state({ log: quiet, expanded: '2.0.0' }), 'en-GB')).toContain(
+      '<strong>No changes to components, variables, or styles. Text changes, such as descriptions, aren’t listed.</strong>',
+    );
   });
 
   it('names every empty and failed state in plain words', () => {
     expect(historyScrollMarkup(state({ status: 'loading', log: null }))).toContain('Loading versions');
-    expect(historyScrollMarkup(state({ log: { v: 1, records: [] } }))).toContain('No versions yet. The first publish creates 1.0.0.');
+    expect(historyScrollMarkup(state({ log: { v: 1, records: [] } }))).toContain('No versions yet. Your next publish starts the history at 1.0.0.');
     expect(historyScrollMarkup(state({ status: 'noLibrary', log: null }))).toContain('Publish this file to start a version history.');
-    expect(historyScrollMarkup(state({ status: 'noKey', log: null }))).toContain('stored on the device that published it');
-    expect(historyScrollMarkup(state({ status: 'gone', log: null }))).toContain('no longer exists on the publish service');
-    const error = historyScrollMarkup(state({ status: 'error', log: null, message: 'Could not reach the publish service.' }));
-    expect(error).toContain('Could not reach the publish service.');
+    expect(historyScrollMarkup(state({ status: 'noKey', log: null }))).toContain('This device doesn’t have the pull key.');
+    expect(historyScrollMarkup(state({ status: 'gone', log: null }))).toContain('This published library no longer exists on Spec Layer.');
+    const error = historyScrollMarkup(state({ status: 'error', log: null, message: 'Couldn’t reach Spec Layer.' }));
+    expect(error).toContain('Couldn’t reach Spec Layer.');
     expect(error).toContain('data-history-retry');
   });
 

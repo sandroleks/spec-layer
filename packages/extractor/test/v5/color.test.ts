@@ -41,11 +41,13 @@ describe('canonicalColor', () => {
     // caller turns this into `missing` plus INVALID_SOURCE_COLOR.
     const r = canonicalColor({ r: -0.2, g: 1.4, b: 0.5, a: 2 });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain('out of range');
+    if (!r.ok) expect(r.reason).toBe('channel_out_of_range');
   });
 
   it('REJECTS a non-finite channel', () => {
-    expect(canonicalColor({ r: NaN, g: 0, b: 0, a: 1 }).ok).toBe(false);
+    const r = canonicalColor({ r: NaN, g: 0, b: 0, a: 1 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('channel_out_of_range');
   });
 });
 
@@ -62,9 +64,13 @@ describe('colorFromHex', () => {
     for (const bad of ['#ff', '#fffff', '#12345g', '#colors/blue/200', '', '#']) {
       expect(colorFromHex(bad, 1).ok).toBe(false);
     }
+    const r = colorFromHex('#ff', 1);
+    if (!r.ok) expect(r.reason).toBe('The value "#ff" is not a 3-digit or 6-digit hex color.');
   });
 
   it('REJECTS an alpha outside 0..1', () => {
-    expect(colorFromHex('#ffffff', 1.5).ok).toBe(false);
+    const r = colorFromHex('#ffffff', 1.5);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('The alpha 1.5 is not a number from 0 to 1.');
   });
 });

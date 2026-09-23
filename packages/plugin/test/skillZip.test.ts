@@ -40,14 +40,27 @@ describe('renderSnapshotSkill', () => {
     expect(md).toContain('components/card.yaml');
   });
 
-  it('says it is a snapshot and names what supersedes it', () => {
+  it('says it is a snapshot, names what supersedes it, and says how to tell and what to run', () => {
     const md = renderSnapshotSkill(FULL);
-    expect(md).toContain('does not update');
-    expect(md).toContain('spec-layer');
+    expect(md).toContain(
+      'This folder does not update. When the design system changes, download it again from the Spec Layer '
+      + 'plugin in Figma. For live updates and drift detection, publish the library from the plugin and use the '
+      + '`spec-layer` CLI instead. If this repository already uses that CLI (it has a `speclayer.json` at its '
+      + 'root), run `npx spec-layer skill --install` to replace this file with the CLI\'s guide, then delete the '
+      + '`components/` and `tokens/` folders and `fonts.json` next to it, which are stale.',
+    );
   });
 
   it('says what it cannot see, so it is not read as the CLI guide', () => {
-    expect(renderSnapshotSkill(FULL)).toContain('cannot see');
+    const md = renderSnapshotSkill(FULL);
+    expect(md).toContain('cannot see');
+    // What the CLI guide really adds, and no claim that it knows where
+    // components live: it detects stack and platform from root files only.
+    expect(md).toContain(
+      '`spec-layer skill`, run in the repository, writes a guide that names the languages, frameworks, and '
+      + 'target platforms it detects from files at the repository root.',
+    );
+    expect(md).toContain('Treat anything this file does not say about this codebase as unknown.');
   });
 
   /**
@@ -87,16 +100,27 @@ describe('renderSnapshotSkill', () => {
     expect(renderSnapshotSkill(FULL)).not.toContain('—');
   });
 
+  /** A missing folder may be NAMED, as absent or as stale snapshot data to
+   *  delete; what must never appear is a path inside one, or a section that
+   *  reads as if it were there. */
+  const namesAComponentFile = /components\/[^`]/;
+
   it('describes no tokens when the foundation was not read', () => {
     const md = renderSnapshotSkill({ ...FULL, tokens: null, fonts: [] });
     expect(md).not.toContain('tokens/resolver.json');
-    expect(md).toContain('foundation was not read');
+    expect(md).not.toContain('## Token files');
+    expect(md).toContain(
+      '2. This download does not include the file\'s variables and styles, so it has no `tokens/` folder and '
+      + 'no `fonts.json`.',
+    );
   });
 
   it('describes no components when there are none', () => {
     const md = renderSnapshotSkill({ ...FULL, components: [] });
-    expect(md).not.toContain('components/');
-    expect(md).toContain('No component documentation');
+    expect(md).not.toMatch(namesAComponentFile);
+    expect(md).not.toContain('## Components');
+    expect(md).not.toContain('read its YAML under');
+    expect(md).toContain('1. This download includes no components, so it has no `components/` folder.');
   });
 
   it('names no file when fileName is null', () => {
@@ -132,9 +156,9 @@ describe('renderSnapshotSkill', () => {
     );
     expect(md).not.toContain('Acme DS');
     expect(md).not.toContain('plugin version');
-    expect(md).toContain('No component documentation was included in this download.');
-    expect(md).toContain('foundation was not read');
-    expect(md).not.toContain('components/');
+    expect(md).toContain('1. This download includes no components, so it has no `components/` folder.');
+    expect(md).toContain('so it has no `tokens/` folder and no `fonts.json`.');
+    expect(md).not.toMatch(namesAComponentFile);
     expect(md).not.toContain('tokens/resolver.json');
     expect(md).not.toContain('  ');
     expect(md).not.toContain('—');
@@ -151,14 +175,17 @@ describe('renderSnapshotSkill', () => {
     const md = renderSnapshotSkill({ ...FULL, fonts: [] });
     expect(md).toContain('## Fonts');
     expect(md).toContain('fonts.json');
-    expect(md).toContain('present and empty');
+    expect(md).toContain('so `fonts.json` contains an empty list.');
     expect(md).not.toContain('need these families');
   });
 
   it('omits the Fonts section entirely when the foundation was not read, even though fonts is []', () => {
     const md = renderSnapshotSkill({ ...FULL, tokens: null, fonts: [] });
     expect(md).not.toContain('## Fonts');
-    expect(md).not.toContain('fonts.json');
+    // Named only as absent and as snapshot data to delete, never as present.
+    expect(md).not.toContain('listed in `fonts.json`');
+    expect(md).not.toContain('`fonts.json` contains');
+    expect(md).toContain('no `fonts.json`');
   });
 
   it('keeps the YAML guide word for word', () => {
@@ -172,7 +199,12 @@ describe('renderSnapshotSkill', () => {
       + "booleans, and slots; `anatomy` names the parts; `references.bindings` says which token each part's "
       + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
     );
-    expect(md).toContain('4. An `unbound` entry is design debt reported from Figma.');
+    expect(md).toContain(
+      '4. An `unbound` entry is a value hardcoded in Figma with no token bound to it, which is design debt. '
+      + 'Keep the literal value, do not replace it with a token, and note in your change that Figma has no '
+      + 'binding for it.',
+    );
+    expect(md).not.toContain('silently promote');
   });
 
   it('describes page headings, not YAML keys, when the components are Markdown', () => {
@@ -185,7 +217,12 @@ describe('renderSnapshotSkill', () => {
     for (const heading of ['**Properties**', '**Anatomy**', '**Token bindings**', '**When**', '**Unbound values**']) {
       expect(md).toContain(heading);
     }
-    expect(md).toContain('4. A row under **Unbound values** is design debt reported from Figma.');
+    expect(md).toContain(
+      '4. A row under **Unbound values** is a value hardcoded in Figma with no token bound to it, which is '
+      + 'design debt. Keep the literal value, do not replace it with a token, and note in your change that '
+      + 'Figma has no binding for it.',
+    );
+    expect(md).not.toContain('silently promote');
     expect(md).toContain('a section of a component page that says it was written by AI');
     expect(md).toContain('`$description`');
     expect(md).not.toContain('`origin: generated`');

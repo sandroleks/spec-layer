@@ -65,7 +65,6 @@ export interface LibraryRowModel {
   expanded: boolean;
   canOpenFrame: boolean;
   canOpenSource: boolean;
-  canReconnect: boolean;
   canUpdate: boolean;
   canDetach: boolean;
   canRemove: boolean;
@@ -133,7 +132,7 @@ export function formatLibraryAge(
   generatedAt: number | undefined,
   now = Date.now(),
 ): string {
-  if (!Number.isFinite(generatedAt) || !Number.isFinite(now)) return '—';
+  if (!Number.isFinite(generatedAt) || !Number.isFinite(now)) return 'Unknown';
 
   const elapsed = Math.max(0, now - (generatedAt as number));
   const minute = 60_000;
@@ -225,8 +224,6 @@ export function buildLibraryRow(
     expanded,
     canOpenFrame: true,
     canOpenSource: componentSourceAvailable,
-    // There is no reconnect command in the current main-thread protocol.
-    canReconnect: false,
     canUpdate: entry.sourceExists
       && status !== 'pending'
       && status !== 'unavailable'

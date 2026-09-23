@@ -68,10 +68,12 @@ export interface LibraryDiff {
 /**
  * Entities whose removal or rename breaks a consumer and whose addition is a
  * compatible extension. Everything else is a value and moves the patch number.
+ * A style is structural: code that applies a text or effect style by name
+ * breaks when it is removed or renamed, just as it does for a token.
  */
 const STRUCTURAL: ReadonlySet<ChangeEntity> = new Set<ChangeEntity>([
   'component', 'property', 'option', 'variant_axis', 'state', 'anatomy_part',
-  'collection', 'mode', 'token',
+  'collection', 'mode', 'token', 'style',
 ]);
 
 export function bumpFor(entity: ChangeEntity, kind: ChangeKind): Bump {
@@ -565,12 +567,27 @@ function formatTypography(properties: Record<string, unknown>): string {
   return `${resolved('font_family')} ${resolved('font_weight')} ${resolved('font_size')}/${resolved('line_height')}`;
 }
 
+/** The names the canvas draws for each v5 effect kind (foundationSpecimens.ts). */
+const EFFECT_LABEL: Record<string, string> = {
+  drop_shadow: 'Drop shadow',
+  inner_shadow: 'Inner shadow',
+  layer_blur: 'Layer blur',
+  background_blur: 'Background blur',
+};
+
+/**
+ * Display only. `summary` is compared only against the other side's summary,
+ * formatted the same way in the same run, and the style's full body decides
+ * whether it changed, so a label never hides or invents a change. A kind this
+ * map does not know keeps its own name rather than a guessed one.
+ */
 function formatEffects(effects: unknown[]): string {
   if (effects.length === 0) return 'no layers';
   return effects.map((effect) => {
     const record = asRecord(effect);
-    const type = asString(record.type) ?? 'effect';
-    return record.visible === false ? `${type} hidden` : type;
+    const type = asString(record.type);
+    const label = type === null ? 'Effect' : EFFECT_LABEL[type] ?? type;
+    return record.visible === false ? `${label} (hidden)` : label;
   }).join(', ');
 }
 
@@ -693,6 +710,13 @@ function diffFoundation(before: LibraryBundleV1, after: LibraryBundleV1, out: Li
   for (const s of styles.added) out.push(change({ kind: 'added', entity: 'style', component: null, id: s.id, name: s.name, from: null, to: s.summary, scope: null }));
   for (const s of styles.removed) out.push(change({ kind: 'removed', entity: 'style', component: null, id: s.id, name: s.name, from: s.summary, to: null, scope: null }));
   for (const { before: sb, after: sa } of styles.changed) {
+    // A rename is its own change, as it is for a token: it breaks code that
+    // applies the style by name. The body is compared separately, so a rename
+    // with the same values moves no patch line.
+    if (sb.name !== sa.name) {
+      out.push(change({ kind: 'renamed', entity: 'style', component: null, id: sa.id, name: sa.name, from: sb.name, to: sa.name, scope: null }));
+    }
+    if (sb.summary === sa.summary && sb.body === sa.body) continue;
     const readable = sb.summary !== sa.summary;
     out.push(change({ kind: 'changed', entity: 'style', component: null, id: sa.id, name: sa.name, from: readable ? sb.summary : null, to: readable ? sa.summary : null, scope: null }));
   }

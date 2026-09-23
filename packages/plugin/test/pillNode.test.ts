@@ -120,7 +120,7 @@ describe('the pill and the hand-edit hash', () => {
     const count = await repaintPills({ findAll: (p) => findAll(root, p) }, { kind: 'changed', version: '1.1.0' });
     expect(count).toBe(2);
     for (const pill of root.findAllNamed(PILL_NODE_NAME)) {
-      expect(textOf(pill).characters).toBe('v1.1.0 · Changed since');
+      expect(textOf(pill).characters).toBe('Changed since v1.1.0');
       expect(pill.fills).toEqual([{ type: 'SOLID', color: palette.onHeaderMuted, opacity: 0.18 }]);
     }
   });

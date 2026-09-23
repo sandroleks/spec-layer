@@ -722,7 +722,7 @@ describe('cssOutput reports unitless numbers', () => {
       meta: {},
       report: [{
         code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.spacing.900',
-        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Button binds it to height.',
+        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Button binds it to `height`.',
         details: { id: 'v1', unit: 'px', via: 'binding', source: 'Button', reason: 'height' },
       }],
       extension: EXTENSION,
@@ -761,7 +761,7 @@ describe('cssOutput reports unitless numbers', () => {
       meta: {},
       report: [{
         code: 'unit_derived_from_usage', severity: 'info', path: 'Foundation.radius.300',
-        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Radius.rd-sm is scoped CORNER_RADIUS.',
+        message: 'This token\'s own variable states no unit, so px was taken from how the library uses it: Radius.rd-sm aliases it and is scoped `CORNER_RADIUS`.',
         details: { id: 'v1', unit: 'px', via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' },
       }],
       extension: EXTENSION,

@@ -110,7 +110,7 @@ export function globalSearchResultsMarkup(
       '<section aria-labelledby="sl-global-search-group">' +
       `<h2 id="sl-global-search-group">${groupTitle(model)}</h2>` +
       '<div class="sl-global-search-loading" role="status">' +
-      `${icon('refresh', 15)}<span>Checking connected documentation…</span>` +
+      `${icon('refresh', 15)}<span>Finding docs in this file…</span>` +
       '</div></section>'
     );
   }
@@ -138,8 +138,8 @@ export function globalSearchMarkup(
     '<div class="sl-global-search-input">' +
     `${icon('search', 17)}` +
     '<input type="search" data-global-search-input autofocus ' +
-    `value="${esc(model.query)}" placeholder="Search your library…" ` +
-    'aria-label="Search your library" role="combobox" ' +
+    `value="${esc(model.query)}" placeholder="Search your docs…" ` +
+    'aria-label="Search your docs" role="combobox" ' +
     'aria-autocomplete="list" aria-expanded="true" ' +
     `aria-controls="sl-global-search-results"${activeDescendant}>` +
     '<button class="sl-global-search-close" type="button" data-search-close ' +

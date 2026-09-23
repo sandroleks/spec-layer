@@ -17,8 +17,10 @@ import {
 import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
 import type { PublishBundleV1 } from './publish';
 
-/** What SKILL.md describes, derived from the file set so it can never name a
- *  file the zip does not carry. */
+/** What SKILL.md describes, derived from the file set so it never presents a
+ *  file the zip does not carry as present. A missing folder or `fonts.json`
+ *  is still named where the guide says it is absent, or lists what a stale
+ *  snapshot leaves behind for the reader to delete. */
 export interface SnapshotInventory {
   fileName: string | null;
   pluginVersion: string | null;
@@ -66,10 +68,11 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
 
   lines.push('## This is a snapshot', '');
   lines.push(
-    'It does not update. When the design system changes, download it again from the Spec Layer plugin in '
-    + 'Figma. For live updates and drift detection instead, publish the library from the plugin and use the '
-    + 'spec-layer CLI. If this repository already uses that CLI, the guide it writes replaces this file, and '
-    + 'the components and tokens folders next to it are stale and should be deleted.',
+    'This folder does not update. When the design system changes, download it again from the Spec Layer '
+    + 'plugin in Figma. For live updates and drift detection, publish the library from the plugin and use the '
+    + '`spec-layer` CLI instead. If this repository already uses that CLI (it has a `speclayer.json` at its '
+    + 'root), run `npx spec-layer skill --install` to replace this file with the CLI\'s guide, then delete the '
+    + '`components/` and `tokens/` folders and `fonts.json` next to it, which are stale.',
     '',
   );
 
@@ -85,7 +88,7 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
         + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
     );
   } else {
-    lines.push('1. No component documentation was included in this download.');
+    lines.push('1. This download includes no components, so it has no `components/` folder.');
   }
   if (inv.tokens) {
     lines.push(
@@ -94,16 +97,21 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
       + 'designer declared for your platform.',
     );
   } else {
-    lines.push('2. The foundation was not read for this download, so it carries no tokens.');
+    lines.push(
+      '2. This download does not include the file\'s variables and styles, so it has no `tokens/` folder and '
+      + 'no `fonts.json`.',
+    );
   }
   lines.push(
     '3. Reference tokens by name in code; never paste a resolved value where a token exists. A value the '
     + 'design system does not define is not a token: say so in your change rather than adding one.',
     markdown
-      ? '4. A row under **Unbound values** is design debt reported from Figma. Do not silently promote it to '
-        + 'a token; keep the literal and note that Figma has no binding for it.'
-      : '4. An `unbound` entry is design debt reported from Figma. Do not silently promote it to a token; keep '
-        + 'the literal and note that Figma has no binding for it.',
+      ? '4. A row under **Unbound values** is a value hardcoded in Figma with no token bound to it, which is '
+        + 'design debt. Keep the literal value, do not replace it with a token, and note in your change that '
+        + 'Figma has no binding for it.'
+      : '4. An `unbound` entry is a value hardcoded in Figma with no token bound to it, which is design debt. '
+        + 'Keep the literal value, do not replace it with a token, and note in your change that Figma has no '
+        + 'binding for it.',
     '',
   );
 
@@ -130,7 +138,7 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
       for (const f of inv.fonts) lines.push(`- ${f.family}: ${f.weights.join(', ')}`);
     } else {
       lines.push(
-        'No typography style in this library resolved to a font family, so `fonts.json` is present and empty.',
+        'No typography style in this library resolved to a font family, so `fonts.json` contains an empty list.',
       );
     }
     lines.push('');
@@ -138,10 +146,10 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
 
   lines.push('## What this cannot see', '');
   lines.push(
-    'This guide knows the design system and nothing about the repository it was copied into. It does not '
-    + 'know the stack, where components live, or which platform naming to prefer. The spec-layer CLI reads '
-    + 'the repository and writes a guide that does. Do not read silence here as a statement about this '
-    + 'codebase.',
+    'This guide describes the design system and nothing about the repository it was copied into. It does not '
+    + 'know the stack, where components live, or which platform naming to prefer. `spec-layer skill`, run in '
+    + 'the repository, writes a guide that names the languages, frameworks, and target platforms it detects '
+    + 'from files at the repository root. Treat anything this file does not say about this codebase as unknown.',
     '',
   );
   lines.push('Generated by the Spec Layer Figma plugin.');

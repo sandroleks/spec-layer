@@ -43,8 +43,8 @@ function esc(value: string): string {
  * coding agent, and neither is the whole point.
  */
 const BEFORE_FIRST_PUBLISH =
-  "Publishes this file's foundation and component docs as context for " +
-  'developers and coding agents. The setup commands appear here after the ' +
+  'Publish this file’s component and foundation docs so developers and ' +
+  'coding agents can pull them. The setup commands appear here after the ' +
   'first publish.';
 
 /** Statuses where a publish OR a download is in flight, so the primary is
@@ -94,7 +94,7 @@ export function publishHeaderMarkup(state: PublishState): string {
 
 /**
  * One muted line under the header: when the library was last published, and
- * on a free plan how many updates are left. Each part appears only when it
+ * on a free plan how many free publishes are left. Each part appears only when it
  * has a true value. "Not recorded" covers a library published by a build
  * before the date was stored; the next publish records one. Never a guessed
  * date. `locale` is for deterministic tests; the plugin passes none.
@@ -131,7 +131,10 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
 
 /**
  * One line under the next version: what kind of changes drove it. Counts come
- * from the change list, so the line and the list can never disagree.
+ * from the change list, so the line and the list can never disagree. An empty
+ * list does not mean nothing changed (the content did, or there would be no
+ * next version; the server may just have no list, as for a stored bundle it
+ * cannot read), so it says the list is empty rather than the changes.
  */
 export function proposalReason(proposal: DryRunResult): string {
   let added = 0; let removed = 0; let renamed = 0; let changed = 0;
@@ -146,7 +149,7 @@ export function proposalReason(proposal: DryRunResult): string {
   if (removed > 0) parts.push(plural(removed, 'removal', 'removals'));
   if (renamed > 0) parts.push(plural(renamed, 'rename', 'renames'));
   if (changed > 0) parts.push(plural(changed, 'value change', 'value changes'));
-  return parts.length > 0 ? parts.join(', ') : 'No property changes';
+  return parts.length > 0 ? parts.join(', ') : 'no listed changes';
 }
 
 const BUMP_WORD: Record<Bump, string> = { patch: 'Patch', minor: 'Minor', major: 'Major' };
@@ -171,7 +174,7 @@ function bumpControl(minimum: Bump, chosen: Bump | null): string {
       ? `<span data-tooltip-trigger>${button}<span class="sl-tooltip" role="tooltip">${esc(BELOW_MINIMUM_MESSAGE(minimum))}</span></span>`
       : `<span>${button}</span>`;
   }).join('');
-  return `<div class="sl-segmented sl-publish-bumps" role="radiogroup" aria-label="Version bump">${buttons}</div>`;
+  return `<div class="sl-segmented sl-publish-bumps" role="radiogroup" aria-label="Version change">${buttons}</div>`;
 }
 
 function historyLink(): string {
@@ -195,7 +198,7 @@ function versionBlock(state: PublishState): string {
   const noteField = (
     '<label class="sl-field"><span class="sl-field-label">Note</span>' +
     '<textarea class="sl-publish-note-field" data-publish-note maxlength="500" rows="2" ' +
-    `placeholder="Optional">${esc(state.note)}</textarea></label>`
+    `placeholder="Optional. Appears in version history.">${esc(state.note)}</textarea></label>`
   );
   let body: string;
   if (!state.libraryId) {
@@ -310,7 +313,7 @@ export function publishScrollMarkup(
   const rotateRow =
     '<div class="sl-publish-rotate">' +
     '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
-    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate key</button>` +
+    `data-publish-rotate${busy ? ' disabled' : ''}>Rotate pull key</button>` +
     '</div>';
   let body: string;
   if (state.libraryId && state.pullKey) {
@@ -323,15 +326,19 @@ export function publishScrollMarkup(
     // rotated last, because the server hands it out only then and the file is
     // readable by every editor. Both halves are needed for a command a
     // developer can actually run, so with only the id the screen says where
-    // the key is and names both ways out: ask, or rotate. This is the one
-    // place the rotate consequence is stated, since rotating from here cuts
-    // off developers the reader may not know about.
+    // the key is and names both ways out: ask, or rotate. Rotating from here
+    // works only with the license key the library was published with, since
+    // a Figma identity alone must also present the current pull key, so the
+    // sentence says so. This is the one place the rotate consequence is
+    // stated, since rotating from here cuts off developers the reader may not
+    // know about.
     body =
       '<section class="sl-publish-block">' +
       '<div class="sl-publish-block-head"><h2>Developer setup</h2></div>' +
       `<p class="sl-publish-note">This file is published as <code>${esc(state.libraryId)}</code>. ` +
-      'The pull key is stored on the device that published it. Ask that person ' +
-      'for the setup command, or rotate the key to issue a new one here. ' +
+      'Its pull key is on the device that first published it or last rotated the key, ' +
+      'so ask that person for the setup command. If this device has the license key it was ' +
+      'published with, you can rotate the pull key here instead. ' +
       'Rotating stops the current key working for everyone within about a minute.</p>' +
       '</section>' +
       rotateRow;
@@ -395,7 +402,7 @@ export function publishFooterMarkup(state: PublishState): string {
     '<div class="sl-footer-actions">' +
     `<a class="sl-button sl-publish-docs" data-tone="secondary" href="${PUBLISH_DOCS_URL}" ` +
     'target="_blank" rel="noopener">' +
-    `<span>Read documentation</span>${icon('externalLink', 15)}</a>` +
+    `<span>Read the guide</span>${icon('externalLink', 15)}</a>` +
     '<button class="sl-button sl-publish-submit" data-tone="primary" ' +
     `type="button" data-publish${busy ? ' disabled' : ''}>` +
     `${icon('upload', 15)}<span>${label}</span></button>` +

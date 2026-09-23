@@ -126,13 +126,13 @@ const TEXT_BASE = {
 
 describe('formatTextMetrics', () => {
   it('renders the whole metrics line, omitting default case and decoration', () => {
-    expect(formatTextMetrics({ ...TEXT_BASE })).toBe('Inter Bold 32/40, letter spacing 0, paragraph spacing 0');
+    expect(formatTextMetrics({ ...TEXT_BASE })).toBe('Inter Bold 32/40, letter spacing 0, paragraph spacing 0px');
     expect(formatTextMetrics({ ...TEXT_BASE, lineHeight: { unit: 'PERCENT', value: 125 } }))
-      .toBe('Inter Bold 32/125%, letter spacing 0, paragraph spacing 0');
+      .toBe('Inter Bold 32/125%, letter spacing 0, paragraph spacing 0px');
     expect(formatTextMetrics({ ...TEXT_BASE, lineHeight: { unit: 'AUTO' } }))
-      .toBe('Inter Bold 32/auto, letter spacing 0, paragraph spacing 0');
+      .toBe('Inter Bold 32/auto, letter spacing 0, paragraph spacing 0px');
     expect(formatTextMetrics({ ...TEXT_BASE, letterSpacing: { unit: 'PERCENT', value: 2 }, paragraphSpacing: 16, textCase: 'UPPER', textDecoration: 'UNDERLINE' }))
-      .toBe('Inter Bold 32/40, letter spacing 2%, paragraph spacing 16, upper, underline');
+      .toBe('Inter Bold 32/40, letter spacing 2%, paragraph spacing 16px, upper, underline');
   });
 });
 
@@ -154,7 +154,7 @@ describe('foundationChangeGroups', () => {
     const before = unit([colorRow('color/brand/500', BLUE, BLUE), colorRow('color/brand/700', BLUE, BLUE)]);
     const after = unit([colorRow('color/brand/500', BLUE, BLUE), colorRow('color/brand/600', BLUE, BLUE)]);
     expect(foundationChangeGroups(before, after)).toEqual([
-      G('Tokens', 'Added color/brand/600', 'Removed color/brand/700'),
+      G('Tokens', 'color/brand/600 added', 'color/brand/700 removed'),
     ]);
   });
 
@@ -165,7 +165,7 @@ describe('foundationChangeGroups', () => {
       cells: [{ modeName: 'Light', value: { kind: 'number', value: 4 } }, { modeName: 'Dark', value: { kind: 'number', value: 4 } }],
     };
     expect(foundationChangeGroups(before, unit([afterRow]))).toEqual([
-      G('Tokens', 'size/base: type COLOR changed to FLOAT'),
+      G('Tokens', 'size/base: type color changed to number'),
     ]);
   });
 
@@ -180,7 +180,19 @@ describe('foundationChangeGroups', () => {
       },
     };
     expect(foundationChangeGroups(before, unit([text]))).toEqual([
-      G('Tokens', 'heading/lg: type COLOR changed to text style'),
+      G('Tokens', 'heading/lg: type color changed to text style'),
+    ]);
+  });
+
+  it('names every variable type the way Figma does, not by its API enum', () => {
+    const row = (resolvedType: FoundationVariableRow['resolvedType'], value: FoundationVariableRow['cells'][number]['value']): FoundationVariableRow => ({
+      kind: 'variable', name: 'x', description: '', resolvedType, codeSyntax: {}, glyph: null,
+      cells: [{ modeName: 'Light', value }, { modeName: 'Dark', value }],
+    });
+    const str = row('STRING', { kind: 'string', value: 'a' });
+    const bool = row('BOOLEAN', { kind: 'boolean', value: true });
+    expect(foundationChangeGroups(unit([str]), unit([bool]))).toEqual([
+      G('Tokens', 'x: type string changed to boolean'),
     ]);
   });
 
@@ -193,7 +205,7 @@ describe('foundationChangeGroups', () => {
     const before = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics }], { collectionName: '', modeNames: [] });
     const after = unit([{ kind: 'textStyle', name: 'heading/lg', description: '', metrics: { ...metrics, fontSize: 36 } }], { collectionName: '', modeNames: [] });
     expect(foundationChangeGroups(before, after)).toEqual([
-      G('Tokens', 'heading/lg: Inter Bold 32/40, letter spacing 0, paragraph spacing 0 changed to Inter Bold 36/40, letter spacing 0, paragraph spacing 0'),
+      G('Tokens', 'heading/lg: Inter Bold 32/40, letter spacing 0, paragraph spacing 0px changed to Inter Bold 36/40, letter spacing 0, paragraph spacing 0px'),
     ]);
   });
 
@@ -209,7 +221,7 @@ describe('foundationChangeGroups', () => {
     const before = unit([], { modeNames: ['Light'], omittedModeNames: ['Dark'] });
     const after = unit([], { modeNames: ['Light', 'Dark'], omittedModeNames: [] });
     expect(foundationChangeGroups(before, after)).toEqual([
-      G('Modes', 'Added mode Dark', 'Mode Dark is no longer left out'),
+      G('Modes', 'Mode Dark added', 'Mode Dark is no longer left out'),
     ]);
   });
 
@@ -226,13 +238,13 @@ describe('foundationChangeGroups', () => {
     const after = unit([], { collectionName: 'Primitives', group: 'colour', part: { index: 0, total: 3 } });
     expect(foundationChangeGroups(before, after)).toEqual([
       G('Part',
-        'Collection Core changed to Primitives',
-        'Group color changed to colour',
-        'Part 1 of 2 changed to 1 of 3',
+        'Collection: Core changed to Primitives',
+        'Group: color changed to colour',
+        'Part: 1 of 2 changed to 1 of 3',
       ),
     ]);
     expect(foundationChangeGroups(unit([]), unit([], { group: 'color', part: { index: 1, total: 2 } }))).toEqual([
-      G('Part', 'Added group color', 'Added part 2 of 2'),
+      G('Part', 'Group added: color', 'Part added: 2 of 2'),
     ]);
   });
 
@@ -245,7 +257,7 @@ describe('foundationChangeGroups', () => {
   it('treats a projection missing its lists as empty rather than throwing', () => {
     const partial = { collectionName: 'Semantic', modeNames: ['Light'] } as unknown as FoundationUnitContent;
     expect(foundationChangeGroups(partial, unit([colorRow('a', BLUE, BLUE)], { modeNames: ['Light'] })))
-      .toEqual([G('Tokens', 'Added a')]);
+      .toEqual([G('Tokens', 'a added')]);
   });
 });
 
@@ -289,7 +301,7 @@ describe('foundationChangeGroups — Plan 3 fields', () => {
       cells: [{ modeName: 'Light', value: { kind: 'number', value: 16 } }] } as never], { modeNames: ['Light'] });
     const now = unit([number('space/4', 16)], { modeNames: ['Light'] });
     expect(foundationChangeGroups(old, now)).toEqual([
-      G('Layout', 'New layout: reference names and scale drawings are now part of the document'),
+      G('Layout', 'Updating adds reference names and scale drawings to this doc'),
     ]);
   });
 });
@@ -325,22 +337,22 @@ describe('componentChangeGroups', () => {
       G('Name', 'Source identity changed'),
     ]);
     expect(componentChangeGroups(projection(), projection({ name: 'Button v2', anatomyComponentId: '2:2' }))).toEqual([
-      G('Name', 'Name Button changed to Button v2', 'Source identity changed'),
+      G('Name', 'Name: Button changed to Button v2', 'Source identity changed'),
     ]);
   });
 
   it('itemizes a description added, changed and removed, under Name', () => {
     expect(componentChangeGroups(projection(), projection({ description: 'Primary action.' }))).toEqual([
-      G('Name', 'Added description Primary action.'),
+      G('Name', 'Description added: Primary action.'),
     ]);
     expect(componentChangeGroups(
       projection({ description: 'Primary action.' }),
       projection({ description: 'Confirms the action.' }),
     )).toEqual([
-      G('Name', 'Description Primary action. changed to Confirms the action.'),
+      G('Name', 'Description: Primary action. changed to Confirms the action.'),
     ]);
     expect(componentChangeGroups(projection({ description: 'Primary action.' }), projection())).toEqual([
-      G('Name', 'Removed description Primary action.'),
+      G('Name', 'Description removed: Primary action.'),
     ]);
   });
 
@@ -353,18 +365,18 @@ describe('componentChangeGroups', () => {
     });
     expect(componentChangeGroups(projection(), after)).toEqual([
       G('Properties',
-        'Added Description property',
-        'Size property: options were Small, Medium changed to Small, Medium, Large',
-        'Size property: default Small changed to Medium',
+        'Property Description added',
+        'Property Size: values Small, Medium changed to Small, Medium, Large',
+        'Property Size: default Small changed to Medium',
       ),
     ]);
     expect(componentChangeGroups(projection(), projection({ props: [] }))).toEqual([
-      G('Properties', 'Removed Size property'),
+      G('Properties', 'Property Size removed'),
     ]);
     expect(componentChangeGroups(projection(), projection({
       props: [{ name: 'Size', kind: 'text', options: ['Small', 'Medium'], default: 'Small' }],
     }))).toEqual([
-      G('Properties', 'Size property: kind variant changed to text'),
+      G('Properties', 'Property Size: type variant changed to text'),
     ]);
   });
 
@@ -378,35 +390,48 @@ describe('componentChangeGroups', () => {
     });
     expect(componentChangeGroups(projection(), after)).toEqual([
       G('Variants',
-        'Added State axis',
-        'Size: values were Small, Medium changed to Small, Medium, Large',
-        'Added variant Size=Large, State=Default',
-        'Variant Size=Small changed to Size=Small, State=Default',
+        'Variant property State added',
+        'Variant property Size: values Small, Medium changed to Small, Medium, Large',
+        'Variant Size=Large, State=Default added',
+        'Variant Size=Small renamed to Size=Small, State=Default',
         'Variant Size=Small, State=Default: values Size=Small changed to Size=Small, State=Default',
       ),
     ]);
   });
 
-  it('itemizes anatomy parts by id', () => {
+  it('itemizes anatomy parts by id, with Figma layer types in lowercase', () => {
     const after = projection({
       anatomy: [
-        { id: '1:3', name: 'Text', type: 'TEXT', nested: true },
+        { id: '1:3', name: 'Text', type: 'INSTANCE', nested: true },
         { id: '1:4', name: 'Icon', type: 'INSTANCE', nested: true },
       ],
     });
+    // `nested` follows the type (INSTANCE), so the type line is the only one.
     expect(componentChangeGroups(projection(), after)).toEqual([
       G('Anatomy',
-        'Added Icon part',
+        'Part Icon added',
         'Part Label renamed to Text',
-        'Text part: nested false changed to true',
+        'Part Text: type text changed to instance',
       ),
+    ]);
+    const boolean = projection({ anatomy: [{ id: '1:3', name: 'Label', type: 'BOOLEAN_OPERATION', nested: false }] });
+    expect(componentChangeGroups(projection(), boolean)).toEqual([
+      G('Anatomy', 'Part Label: type text changed to boolean operation'),
+    ]);
+  });
+
+  it('names an instance swap property type in Figma words', () => {
+    expect(componentChangeGroups(projection(), projection({
+      props: [{ name: 'Size', kind: 'instanceSwap', options: ['Small', 'Medium'], default: 'Small' }],
+    }))).toEqual([
+      G('Properties', 'Property Size: type variant changed to instance swap'),
     ]);
   });
 
   it('treats states and related as sets', () => {
     expect(componentChangeGroups(projection(), projection({ states: ['default', 'disabled'], related: [] }))).toEqual([
-      G('States', 'Added state disabled', 'Removed state hover'),
-      G('Related', 'Removed related Icon'),
+      G('States', 'State disabled added', 'State hover removed'),
+      G('Related', 'Related Icon removed'),
     ]);
     expect(componentChangeGroups(projection(), projection({ states: ['hover', 'default'] }))).toEqual([
       G('States', 'Order changed, values unchanged'),
@@ -458,7 +483,7 @@ describe('componentChangeGroups', () => {
       expect(componentChangeGroups(base(), after)).toEqual([
         G('Tokens', {
           text: 'Container / fill: color/surface/primary/default changed to colors/gray/1000',
-          scope: '1 of 8 variants: size Large · others default',
+          scope: '1 of 8 variants: size Large · others at default',
         }),
       ]);
     });
@@ -501,7 +526,7 @@ describe('componentChangeGroups', () => {
       expect(componentChangeGroups(before, after)).toEqual([
         G('Tokens',
           { text: 'Container / fill: a changed to b', scope: '2 of 8 variants: size Small · hover True' },
-          { text: 'Container / fill: a changed to b', scope: '1 of 8 variants: size Large · others default' },
+          { text: 'Container / fill: a changed to b', scope: '1 of 8 variants: size Large · others at default' },
         ),
       ]);
       const orAfter = set([rule({ disabled: ['False'] }, 'a'), rule({ disabled: ['True'] }, 'b')]);
@@ -554,14 +579,23 @@ describe('componentChangeGroups', () => {
       ]);
     });
 
+    it('reads a cell that lost its only token the same as one that lost one of several, as one line', () => {
+      // Small loses its only token and Large loses one of two: the same fact,
+      // so one bucket over every variant and no scope line.
+      const before = set([rule({}, 'a'), rule({ size: ['Large'] }, 'b')]);
+      expect(componentChangeGroups(before, set([rule({ size: ['Large'] }, 'b')]))).toEqual([
+        G('Tokens', 'Container / fill: no longer bound to a'),
+      ]);
+    });
+
     it('carries the token on newly bound and unbound lines alike', () => {
       const before = set([rule({}, 'a'), rule({ size: ['Large'] }, 'space/2', 'Label', 'padding')]);
       const after = set([rule({ size: ['Small'] }, 'a'), rule({}, 'radius/md', 'Container', 'radius')]);
       expect(componentChangeGroups(before, after)).toEqual([
         G('Tokens',
-          { text: 'Removed Container / fill: a', scope: '4 of 8 variants: size Large' },
-          'Added Container / radius: radius/md',
-          { text: 'Removed Label / padding: space/2', scope: '4 of 8 variants: size Large' },
+          { text: 'Container / fill: no longer bound to a', scope: '4 of 8 variants: size Large' },
+          'Container / radius: bound to radius/md',
+          { text: 'Label / padding: no longer bound to space/2', scope: '4 of 8 variants: size Large' },
         ),
       ]);
     });
@@ -586,8 +620,8 @@ describe('componentChangeGroups', () => {
       const after = projection({ variantInstances: [], tokens: [rule({ Size: ['Large'], State: ['Hover'] }, 'b', 'Label')] });
       expect(componentChangeGroups(before, after)).toEqual([
         G('Tokens',
-          'Added Label / fill when Size is Large and State is Hover: b',
-          'Removed Label / fill when Size is Large: a',
+          'Label / fill when Size is Large and State is Hover: bound to b',
+          'Label / fill when Size is Large: no longer bound to a',
         ),
       ]);
     });
@@ -620,7 +654,7 @@ describe('componentChangeGroups', () => {
       expect(componentChangeGroups(before, after)).toEqual([
         G('Tokens', {
           text: 'Container / fill: color/surface/primary/default changed to colors/gray/1000',
-          scope: '1 of 8 variants: size Large · others default',
+          scope: '1 of 8 variants: size Large · others at default',
         }),
       ]);
     });
@@ -636,8 +670,8 @@ describe('componentChangeGroups', () => {
     });
     expect(componentChangeGroups(projection(), after)).toEqual([
       G('Unbound values',
-        'Added Container / fill (hardcoded color): #FFFFFF',
-        'Added Icon / stroke (missing token binding)',
+        'Container / fill (hardcoded color) added: #FFFFFF',
+        'Icon / stroke (missing token binding) added',
         'Label / padding (hardcoded value): 8 changed to 12',
       ),
     ]);
@@ -649,8 +683,8 @@ describe('componentChangeGroups', () => {
     });
     expect(componentChangeGroups(projection(), after)).toEqual([
       G('Layout',
-        'Added Label layout: hug',
-        'Container: horizontal, gap 8 changed to vertical, gap 12',
+        'Layout of Label added: hug',
+        'Layout of Container: horizontal, gap 8 changed to vertical, gap 12',
       ),
     ]);
   });
@@ -667,7 +701,7 @@ describe('componentChangeGroups', () => {
   it('treats a projection missing its lists as empty rather than throwing', () => {
     const partial = { name: 'Button', figmaKey: 'key-1', figmaFile: 'FILE1', figmaNode: '1:1', anatomyComponentId: '1:2' } as unknown as SpecHashProjection;
     const result = componentChangeGroups(partial, projection());
-    expect(result.find((g) => g.label === 'States')).toEqual(G('States', 'Added state default', 'Added state hover'));
+    expect(result.find((g) => g.label === 'States')).toEqual(G('States', 'State default added', 'State hover added'));
   });
 });
 
