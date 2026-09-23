@@ -392,6 +392,20 @@ describe('libraryDiff: components', () => {
     })]);
   });
 
+  it('binding, per variant: a token rename is not a binding change', () => {
+    // Review 2026-09-23. The cells compared display names, so renaming one
+    // token reported `binding changed` on every variant of every component
+    // bound to it, beside the one `token renamed` change the foundation diff
+    // already reports. Identity is the source id; the name is only rendered.
+    const renamed = withVariants(withComponent((a) => {
+      a.references = {
+        used: [{ source_id: 'VariableID:1', name: 'color/brand', kind: 'variable', remote: false, status: 'resolved' }],
+        bindings: refsOf().bindings,
+      };
+    }));
+    expect(libraryDiff(withVariants(base), renamed).changes).toEqual([]);
+  });
+
   it('binding: falls back to rule identity when either side carries no variants', () => {
     const unbound = withComponent((a) => { a.references = { used: refsOf().used, bindings: [refsOf().bindings[0]] }; });
     const ruleKeyed = expect.objectContaining({ kind: 'removed', id: 'Container / fill', scope: 'size Large', from: 'color/primary' });

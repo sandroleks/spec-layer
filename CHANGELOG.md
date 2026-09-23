@@ -447,6 +447,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   indicator (`|2-`) exactly when the first non-empty line begins with a
   space, which is the rule js-yaml's own writer follows; every other string
   is emitted byte for byte as before.
+- **Renaming a token no longer floods the version log.** The per-variant
+  binding comparison behind Publish compared token display names, so
+  renaming one token reported `binding changed` on every component and
+  variant bound to it, on top of the one `token renamed` change the
+  foundation diff already reports. Bindings are now compared by the token's
+  source id and rendered by name, so a rename is one major change and a real
+  rebinding reads exactly as before.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

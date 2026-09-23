@@ -409,7 +409,10 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
   const defaults = new Map<string, string>();
   for (const axis of after.axes) if (axis.default !== null) defaults.set(axis.name, axis.default);
 
-  // property key -> variant key -> sorted token names bound there.
+  // property key -> variant key -> sorted source ids bound there. Ids, not
+  // display names: a token rename is one `renamed` change on the foundation's
+  // `token` entity, and comparing names here reported it again as a
+  // `binding` change on every variant of every component bound to the token.
   const cells = (facts: ComponentFacts): Map<string, Map<string, string[]>> => {
     const sets = new Map<string, Map<string, Set<string>>>();
     for (const combo of shared) {
@@ -419,18 +422,22 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
         const pk = `${binding.path} / ${binding.property}`;
         let byVariant = sets.get(pk);
         if (!byVariant) sets.set(pk, (byVariant = new Map()));
-        const name = facts.tokenNames[binding.sourceId] ?? binding.sourceId;
-        const tokens = byVariant.get(vk);
-        if (tokens) tokens.add(name);
-        else byVariant.set(vk, new Set([name]));
+        const ids = byVariant.get(vk);
+        if (ids) ids.add(binding.sourceId);
+        else byVariant.set(vk, new Set([binding.sourceId]));
       }
     }
     const result = new Map<string, Map<string, string[]>>();
     for (const [pk, byVariant] of sets) {
-      result.set(pk, new Map([...byVariant].map(([vk, tokens]) => [vk, [...tokens].sort(compareCodeUnits)])));
+      result.set(pk, new Map([...byVariant].map(([vk, ids]) => [vk, [...ids].sort(compareCodeUnits)])));
     }
     return result;
   };
+  // `from` and `to` still read as display names, each side's own, sorted by
+  // code unit exactly as the cells were sorted when they held names, so a
+  // real rebinding renders as it did before.
+  const names = (facts: ComponentFacts, ids: string[]): string =>
+    ids.map((id) => facts.tokenNames[id] ?? id).sort(compareCodeUnits).join(', ');
   const b = cells(before);
   const a = cells(after);
   const properties = [...new Set([...a.keys(), ...b.keys()])].sort(compareCodeUnits);
@@ -444,10 +451,10 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
       const gained = to.filter((t) => !from.includes(t));
       if (lost.length === 0 && gained.length === 0) continue;
       const movement: { kind: ChangeKind; from: string | null; to: string | null } = lost.length > 0 && gained.length > 0
-        ? { kind: 'changed', from: lost.join(', '), to: gained.join(', ') }
+        ? { kind: 'changed', from: names(before, lost), to: names(after, gained) }
         : gained.length > 0
-          ? { kind: 'added', from: null, to: gained.join(', ') }
-          : { kind: 'removed', from: lost.join(', '), to: null };
+          ? { kind: 'added', from: null, to: names(after, gained) }
+          : { kind: 'removed', from: names(before, lost), to: null };
       const key = JSON.stringify([movement.kind, movement.from, movement.to]);
       const bucket = buckets.get(key);
       if (bucket) bucket.combos.push(combo);
