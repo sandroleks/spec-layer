@@ -1096,16 +1096,33 @@ interface TokenFilesResult {
   aliveIds: Set<string>;
 }
 
+const NO_DEAD_CHAIN_IDS: ReadonlySet<string> = new Set();
+
 /**
- * One full, honest attempt at every collection's token files, for a given
+ * One full attempt at every collection's token files, for a given
  * `omittedIds`. Resets `p.factsById` first: a fact an earlier, less-informed
  * attempt recorded against an id this attempt now omits must not linger into
  * the meta this attempt produces, since `metaEntry` only re-checks `omitted`,
- * not whether the fact itself is still current. `p.report` is left to
- * accumulate -- an entry this attempt earns (why a token wrote nothing) stays
- * true forever, because `omittedIds` only ever grows.
+ * not whether the fact itself is still current.
+ *
+ * `deadChainIds` names the subset of `omittedIds` that has no decision
+ * function of its own to explain it (unlike a path collision, a type DTCG
+ * cannot express, or a group conflict, each of which reports itself the
+ * moment it adds a token to `omittedIds`): a token found dead by
+ * `findDeadChainIds` is omitted only because nothing it can reach ever
+ * writes a leaf, and `tokenLeaf` is the only thing that can say why, mode by
+ * mode. Passing it empty (`findDeadChainIds`'s own use) skips every current
+ * member of `omittedIds` without asking why -- correct there, since that
+ * call is a side-effect-free liveness probe, not a report. Passing the real
+ * set (`stabilizeAliasChains`'s one authoritative call) still skips every
+ * OTHER omission, whose reason already exists, but calls `tokenLeaf` for
+ * each dead-chain id anyway, purely so the report it earns reflects the
+ * FINAL, fully-settled `omittedIds` rather than whatever a discarded, less-
+ * informed attempt would have said.
  */
-function buildTokenFiles(p: Projection, artifact: FoundationArtifactV5): TokenFilesResult {
+function buildTokenFiles(
+  p: Projection, artifact: FoundationArtifactV5, deadChainIds: ReadonlySet<string> = NO_DEAD_CHAIN_IDS,
+): TokenFilesResult {
   p.factsById = new Map();
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];
@@ -1118,13 +1135,18 @@ function buildTokenFiles(p: Projection, artifact: FoundationArtifactV5): TokenFi
       const a = newAccumulator();
       for (const token of artifact.tokens) {
         if (token.collection_id !== collection.id) continue;
-        if (p.omittedIds.has(token.id)) {
+        if (p.omittedIds.has(token.id) && !deadChainIds.has(token.id)) {
           a.omitted += 1;
           if (p.collidedIds.has(token.id)) a.collided += 1;
           continue;
         }
         const leaf = tokenLeaf(p, token, collection, mode.id);
-        if (!leaf) continue;
+        if (!leaf) {
+          // A dead-chain id reaches here to earn its report, not a leaf: it
+          // stays counted as omitted, the same as the skip branch above.
+          if (p.omittedIds.has(token.id)) a.omitted += 1;
+          continue;
+        }
         aliveIds.add(token.id);
         setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
         a.tokens += 1;
@@ -1154,27 +1176,55 @@ function buildTokenFiles(p: Projection, artifact: FoundationArtifactV5): TokenFi
 }
 
 /**
- * Grows `omittedIds` to a fixed point before the authoritative build. A
- * survivor whose every mode aliases another survivor can still write no leaf
- * anywhere, when that target is itself unwritable: `tokenLeaf` only checks
- * whether the DIRECT target id is omitted, so a token two or more hops from
- * an omitted one keeps a live-looking path that nothing ever declares, and
- * whatever aliases THAT keeps going the same way. Mirrors how
- * `outputs/css.ts` shrinks `alive` to a fixed point: every attempt is a full
- * rebuild via `buildTokenFiles` (never an incremental patch), so a token that
- * only looked alive because an earlier attempt had not yet caught its target
- * is re-judged from scratch each time, and the attempt that added nothing new
- * is the one kept.
+ * Finds every survivor that writes no leaf anywhere, to a fixed point,
+ * entirely against a throwaway shadow of `p`: a shadow `omittedIds` (seeded
+ * from the real one, then grown locally) and a shadow `report`/`reportKeys`/
+ * `factsById` that nothing outside this function ever reads. A token that
+ * only looks alive because an earlier attempt has not yet caught its
+ * target -- the exact shape of the bug this whole mechanism exists for --
+ * would otherwise leave a report behind (an `alias_type_mismatch` from a
+ * literal fallback a later attempt drops, a `mode_selection_not_expressible`
+ * promising a reference that a later attempt never keeps) that describes an
+ * attempt the real, final build never makes. Running the search here, where
+ * nothing is kept but the dead ids themselves, is what keeps the real
+ * `p.report` describing only the one build `stabilizeAliasChains` actually
+ * commits to. Mirrors how `outputs/css.ts` shrinks `alive` to a fixed point:
+ * every attempt is a full, independent rebuild via `buildTokenFiles`, never
+ * an incremental patch, so a token is re-judged from scratch each time.
+ */
+function findDeadChainIds(p: Projection, artifact: FoundationArtifactV5): Set<string> {
+  const shadowOmitted = new Set(p.omittedIds);
+  const shadow: Projection = {
+    ...p, omittedIds: shadowOmitted, report: [], reportKeys: new Set(), factsById: new Map(),
+  };
+  for (;;) {
+    const attempt = buildTokenFiles(shadow, artifact);
+    const dead = [...p.pathById.keys()]
+      .filter((id) => !shadowOmitted.has(id) && !attempt.aliveIds.has(id))
+      .sort(compareCodeUnits);
+    if (dead.length === 0) break;
+    for (const id of dead) shadowOmitted.add(id);
+  }
+  const deadChainIds = new Set<string>();
+  for (const id of shadowOmitted) if (!p.omittedIds.has(id)) deadChainIds.add(id);
+  return deadChainIds;
+}
+
+/**
+ * Grows the real `omittedIds` to the fixed point `findDeadChainIds` finds,
+ * then makes exactly one authoritative, reporting build with it -- the only
+ * call in this file that writes into the real `p.report`/`p.factsById` for
+ * token files. A survivor whose every mode aliases another survivor can
+ * still write no leaf anywhere, when that target is itself unwritable:
+ * `tokenLeaf` only checks whether the DIRECT target id is omitted, so a
+ * token two or more hops from an omitted one would otherwise keep a
+ * live-looking path that nothing ever declares, and whatever aliases THAT
+ * would keep going the same way.
  */
 function stabilizeAliasChains(p: Projection, artifact: FoundationArtifactV5): TokenFilesResult {
-  for (;;) {
-    const attempt = buildTokenFiles(p, artifact);
-    const dead = [...p.pathById.keys()]
-      .filter((id) => !p.omittedIds.has(id) && !attempt.aliveIds.has(id))
-      .sort(compareCodeUnits);
-    if (dead.length === 0) return attempt;
-    for (const id of dead) p.omittedIds.add(id);
-  }
+  const deadChainIds = findDeadChainIds(p, artifact);
+  for (const id of deadChainIds) p.omittedIds.add(id);
+  return buildTokenFiles(p, artifact, deadChainIds);
 }
 
 /**

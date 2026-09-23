@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
-  type DtcgJson, type UnitEvidence, type UsageUnitMap,
+  type DtcgJson, type TokenV5, type UnitEvidence, type UsageUnitMap,
 } from '../../src/index';
 import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
 
@@ -590,6 +590,100 @@ describe('an alias whose reference chain ends in an omitted token', () => {
     for (const r of reports) expect(r.details.reason).toBe('target_omitted');
   });
 
+  it('reports no stale mode_selection_not_expressible for a token that ends up fully omitted', () => {
+    const artifact = chainGroupConflict();
+    const owner = artifact.tokens.find((t) => t.id === 'VariableID:chain-owner');
+    if (!owner) throw new Error('fixture lost color/surface/primary');
+    const dark = owner.values['ModeID:s-dark'];
+    if (dark.kind !== 'alias' || dark.resolved.status !== 'resolved') {
+      throw new Error('fixture changed shape: chain-owner Dark is no longer a resolved alias');
+    }
+    // Figma resolved this hop through a target mode named differently than
+    // the consuming Semantic mode -- on its own, before bridge is recognised
+    // dead, this would report mode_selection_not_expressible and say the
+    // reference is kept. Both modes now take this shape, so no literal
+    // fallback is left to keep chain-owner alive once bridge dies.
+    const mismatchedHop = {
+      ...dark, resolved: { ...dark.resolved, chain: [{ ...dark.resolved.chain[0], mode_id: 'ModeID:p-light' }] },
+    };
+    owner.values['ModeID:s-dark'] = mismatchedHop;
+    owner.values['ModeID:s-light'] = mismatchedHop;
+
+    const out = foundationDtcg(artifact);
+    expect(out.meta['Semantic.color.surface.primary'])
+      .toMatchObject({ id: 'VariableID:chain-owner', omitted: true });
+    for (const [name, file] of Object.entries(out.files)) {
+      expect(leaf(file, 'Semantic.color.surface.primary'), name).toBeUndefined();
+    }
+    const reports = out.report.filter((r) => r.details.id === 'VariableID:chain-owner');
+    expect(reports.length).toBeGreaterThan(0);
+    for (const r of reports) expect(r.code).toBe('value_omitted');
+    expect(out.report.filter((r) => r.code === 'mode_selection_not_expressible')).toEqual([]);
+  });
+
+  it('reports no stale alias_type_mismatch for a token that ends up fully omitted', () => {
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
+    if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
+    const twin = { ...structuredClone(terminal), id: 'VariableID:unknown-number-twin' };
+    artifact.tokens.push(twin); // terminal collides with its twin -- both omitted
+
+    const collectionId = terminal.collection_id;
+    const modeIds = Object.keys(terminal.values);
+    for (const modeId of modeIds) {
+      terminal.values[modeId] = { kind: 'literal', value: { type: 'number', value: 8 } };
+      twin.values[modeId] = { kind: 'literal', value: { type: 'number', value: 8 } };
+    }
+
+    /** `throughTerminal` mirrors Figma's own chain metadata: `mid` resolves in
+     *  one hop straight to `terminal`, and `outer` resolves in two, through
+     *  `mid` to `terminal`, the same as Figma would record for a real chain. */
+    const aliasChain = (targetId: string, targetPath: string[], throughTerminal: boolean) => {
+      const values: TokenV5['values'] = {};
+      for (const modeId of modeIds) {
+        values[modeId] = {
+          kind: 'alias',
+          reference: {
+            target_id: targetId, target_collection_id: collectionId, target_path: targetPath, external: false,
+          },
+          resolved: {
+            status: 'resolved',
+            value: { type: 'dimension', number: 8, unit: 'px' },
+            chain: throughTerminal
+              ? [{ token_id: targetId, mode_id: modeId }]
+              : [{ token_id: targetId, mode_id: modeId }, { token_id: terminal.id, mode_id: modeId }],
+          },
+        };
+      }
+      return values;
+    };
+    const mid = {
+      ...structuredClone(terminal), id: 'VariableID:mid', name: 'x/mid', scopes: [] as string[],
+      values: aliasChain(terminal.id, terminal.name.split('/'), true),
+    };
+    // CORNER_RADIUS pins this token's own projected type to a dimension, but
+    // its alias target (mid) is a bare number: before mid is recognised dead
+    // this would report alias_type_mismatch and fall back to a literal.
+    const outer = {
+      ...structuredClone(terminal), id: 'VariableID:outer-mismatch', name: 'x/outer', scopes: ['CORNER_RADIUS'],
+      values: aliasChain(mid.id, ['x', 'mid'], false),
+    };
+    artifact.tokens.push(mid, outer);
+
+    const out = foundationDtcg(artifact);
+    const path = Object.keys(out.meta).find((k) => out.meta[k].id === 'VariableID:outer-mismatch');
+    expect(path).toBeDefined();
+    expect(out.meta[path as string]).toMatchObject({ omitted: true });
+    for (const [name, tree] of Object.entries(out.files)) {
+      expect(leaf(tree, path as string), name).toBeUndefined();
+    }
+
+    const reports = out.report.filter((r) => r.details.id === 'VariableID:outer-mismatch');
+    expect(reports.length).toBeGreaterThan(0);
+    for (const r of reports) expect(r.code).toBe('value_omitted');
+    expect(out.report.filter((r) => r.code === 'alias_type_mismatch')).toEqual([]);
+  });
+
   it('omits every level of a three-deep group conflict, in either order', () => {
     const NAMES: Record<string, string> = {
       'VariableID:color-exact': 'x', 'VariableID:color-lossy': 'x/y', 'VariableID:chain-terminal': 'x/y/z',
@@ -1064,22 +1158,27 @@ describe('units derived from stated usage', () => {
     expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
   });
 
-  it('reports a derived unit even when the token it pinned has no leaf of its own', () => {
+  it('never reports a derived unit through a chain terminal projection the final build does not reach', () => {
     // A -> B -> C, where C lost its DTCG path to a collision and so is never
-    // built as a leaf. B's only value aliases C directly, so B is exactly as
-    // dead as C from a consumer's point of view; A's only value aliases B, so
-    // A dies the same way, one hop further out (see "an alias whose reference
-    // chain ends in an omitted token" below -- this is that fix's own
-    // reporting machinery interacting with a chain that dies for a different
-    // reason, a collision rather than a group conflict). C's derived unit
-    // still reaches the output, though: a trial attempt at A's own leaf,
-    // taken before B is recognised dead, resolves through Figma's own chain
-    // straight to C and reports the derived unit there (the call site that
-    // projects the chain TERMINAL rather than the token being built); the
-    // entry survives once B and A are both recognised dead and dropped,
-    // because the report accumulates across fixed-point attempts. If only the
-    // owning call site reported, this unit would be applied with nothing
-    // naming it anywhere.
+    // built as a leaf. B's only value aliases C directly, so B dies exactly
+    // as C does, from a consumer's point of view; A's only value aliases B,
+    // so A dies the same way, one hop further out (see "an alias whose
+    // reference chain ends in an omitted token" below -- this is that fix's
+    // own reporting machinery interacting with a chain that dies for a
+    // different reason, a collision rather than a group conflict).
+    //
+    // Before the fixed-point search was made side-effect-free, an early
+    // attempt -- taken before B was recognised dead -- resolved A's own leaf
+    // through Figma's own resolved chain straight to C (the call site that
+    // projects the chain TERMINAL rather than the token being built) and
+    // reported C's derived unit there; that entry then survived into the
+    // final report even once B and A were both recognised dead and dropped,
+    // describing an attempt the authoritative build never actually makes.
+    // The one real, reporting build never reaches that call site here -- A
+    // returns via `target_omitted`, straight from its own direct target
+    // check, before it ever asks what type its chain resolves to -- so
+    // nothing names C's derived unit at all. The pin is simply unreachable
+    // from the finished export, and the report must not claim otherwise.
     const artifact = syntheticArtifact();
     const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
     if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
@@ -1127,13 +1226,9 @@ describe('units derived from stated usage', () => {
     expect(out.meta['Semantic.derived.inner']).toMatchObject({ omitted: true });
     expect(out.meta['Semantic.derived.outer']).toMatchObject({ omitted: true });
 
-    // ... and the derived unit still reached the output, through the chain
-    // terminal projection, even though nothing in the chain survived it.
-    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
-    expect(entries).toHaveLength(1);
-    // Keyed by path plus id, the same way the sidecar names a collided token.
-    expect(entries[0].path).toBe(`${PATH} [VariableID:unknown-number]`);
-    expect(entries[0].details).toMatchObject({ id: 'VariableID:unknown-number', via: 'binding' });
+    // ... and nothing reports the derived unit either: the report describes
+    // only the final build, and the final build never reaches C.
+    expect(out.report.filter((r) => r.code === 'unit_derived_from_usage')).toEqual([]);
   });
 
   it('leaves a number alone when nothing states a unit for it', () => {
