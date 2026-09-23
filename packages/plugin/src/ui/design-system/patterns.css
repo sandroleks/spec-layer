@@ -1357,6 +1357,11 @@
   margin-top: var(--sl-space-8);
 }
 
+/* The download block's format line sits just under its note. */
+.sl-publish-format {
+  margin-top: var(--sl-space-6);
+}
+
 /* The two setup blocks are peers, spaced like the groups they replaced. */
 .sl-publish-block + .sl-publish-block {
   margin-top: var(--sl-space-16);

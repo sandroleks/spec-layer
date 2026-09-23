@@ -561,14 +561,14 @@ describe('voice: no em dashes in error copy', () => {
 
 describe('setupCommand', () => {
   it('produces the exact one-liner', () => {
-    expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48)))
+    expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48), 'yaml'))
       .toBe('npx spec-layer setup --id lib_aaaaaaaaaaaaaaaaaaaaaaaa --key sl_' + 'b'.repeat(48));
   });
 
   // The voice rules forbid em dashes anywhere in plugin UI copy, and this
   // string is rendered into the publish screen.
   it('carries no em dash', () => {
-    expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48))).not.toContain('—');
+    expect(setupCommand('lib_aaaaaaaaaaaaaaaaaaaaaaaa', 'sl_' + 'b'.repeat(48), 'yaml')).not.toContain('—');
   });
 });
 
@@ -1357,7 +1357,7 @@ describe('agentSetupMessage', () => {
   const KEY = 'sl_' + 'b'.repeat(48);
 
   it('carries the setup command with --yes, the skill install, and the tools command', () => {
-    const message = agentSetupMessage(LIB, KEY);
+    const message = agentSetupMessage(LIB, KEY, 'yaml');
     expect(message).toContain(`npx --yes spec-layer setup --id ${LIB} --key ${KEY}`);
     expect(message).toContain('npx --yes spec-layer skill --install');
     expect(message).toContain('npx --yes spec-layer tools');
@@ -1365,7 +1365,7 @@ describe('agentSetupMessage', () => {
   });
 
   it('is plain text a person can read back: numbered steps, no em dash, no markup', () => {
-    const message = agentSetupMessage(LIB, KEY);
+    const message = agentSetupMessage(LIB, KEY, 'yaml');
     expect(message.split('\n').filter((l) => /^\d\. /.test(l))).toHaveLength(3);
     expect(message).not.toContain('—');
     expect(message).not.toMatch(/<[a-z]/);

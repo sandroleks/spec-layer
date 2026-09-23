@@ -427,7 +427,7 @@ function paint(): void {
           return;
         }
         if (libraryPane === 'publish') {
-          renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot));
+          renderPublishScreen(refs, publishState(), publishAllowance(state.quota?.publish ?? publishSnapshot), state.componentFormat);
           return;
         }
         const model = currentLibraryModel();
@@ -1711,10 +1711,21 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // The download block's "Change this in Settings". The format is set there,
+  // so this goes to that tab rather than drawing a second control here.
+  const openSettings = target.closest<HTMLButtonElement>('[data-open-settings]');
+  if (openSettings) {
+    const tab = openSettings.dataset.openSettings ?? '';
+    if (isSettingsTab(tab)) settingsTab = tab;
+    navigateToView('settings');
+    document.querySelector<HTMLElement>(`[data-settings-tab="${settingsTab}"]`)?.focus({ preventScroll: true });
+    return;
+  }
+
   if (target.closest('[data-publish-copy-command]')) {
     const { libraryId, pullKey } = publishState();
     if (libraryId && pullKey) {
-      const command = setupCommand(libraryId, pullKey);
+      const command = setupCommand(libraryId, pullKey, state.componentFormat);
       void copyText(command).then((tier) => {
         if (tier === 'manual') renderManualCopyModal(command);
         else nativeNotify('Copied.');
@@ -1726,7 +1737,7 @@ document.addEventListener('click', (event) => {
   if (target.closest('[data-publish-copy-agent]')) {
     const { libraryId, pullKey } = publishState();
     if (libraryId && pullKey) {
-      const message = agentSetupMessage(libraryId, pullKey);
+      const message = agentSetupMessage(libraryId, pullKey, state.componentFormat);
       void copyText(message).then((tier) => {
         if (tier === 'manual') renderManualCopyModal(message);
         else nativeNotify('Copied.');

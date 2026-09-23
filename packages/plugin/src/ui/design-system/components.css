@@ -183,6 +183,24 @@ button {
   background: var(--sl-color-surface-hover);
 }
 
+/*
+ * A button that reads as a link inside a sentence: accent text, no chrome.
+ * A button rather than an <a>, because it moves between screens inside the
+ * plugin instead of leaving it. Focus uses the global focus-visible ring.
+ */
+.sl-text-button {
+  padding: 0;
+  color: var(--sl-color-accent);
+  font: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sl-text-button:hover {
+  text-decoration: underline;
+}
+
 .sl-button[data-tone="danger"] {
   color: var(--sl-color-text-on-danger);
   background: var(--sl-color-danger-fill);

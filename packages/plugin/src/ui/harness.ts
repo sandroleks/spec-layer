@@ -7,6 +7,7 @@
  *
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
  *   ui-harness.html?view=library&pane=publish&publish=published
+ *   ui-harness.html?view=library&pane=publish&publish=published&format=md
  *   ui-harness.html?view=library&pane=publish&publish=proposal
  *   ui-harness.html?view=library&pane=history&history=ready
  *   ui-harness.html?view=settings&tab=about
@@ -679,7 +680,7 @@ if (view === 'library') {
       return;
     }
     if (libraryPane === 'publish') {
-      renderPublishScreen(refs, publishFixture, publishAllowanceFixture);
+      renderPublishScreen(refs, publishFixture, publishAllowanceFixture, storedComponentFormat(param('format', 'yaml')));
       return;
     }
     const model = buildLibraryModel(LIBRARY_ENTRIES, {
