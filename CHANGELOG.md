@@ -454,6 +454,14 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   foundation diff already reports. Bindings are now compared by the token's
   source id and rendered by name, so a rename is one major change and a real
   rebinding reads exactly as before.
+- **A first version with a leading zero or an oversized number is refused
+  before it can wedge a library.** `isSemver` accepted `01.0.0` and any run
+  of digits, and a 22-digit number came back from the next bump as
+  `1e+21.0.0`, which no later check accepted, so that library could never
+  publish again. Each of the three numbers must now be written without a
+  leading zero and fit a safe integer, and a bump that would leave that range
+  is refused rather than written. The proxy and the plugin's first-version
+  field already call the same check, so both refuse the same strings.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

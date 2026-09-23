@@ -145,6 +145,16 @@ describe('isSemver', () => {
     expect(isSemver(null)).toBe(false);
     expect(isSemver(100)).toBe(false);
   });
+
+  it('refuses a leading zero and a number that is not a safe integer (review 2026-09-23)', () => {
+    expect(isSemver('01.0.0')).toBe(false);
+    expect(isSemver('1.00.0')).toBe(false);
+    expect(isSemver('1.0.00')).toBe(false);
+    expect(isSemver('0.0.0')).toBe(true);
+    expect(isSemver('9007199254740991.0.0')).toBe(true);
+    expect(isSemver('9007199254740992.0.0')).toBe(false);
+    expect(isSemver('1000000000000000000000.0.0')).toBe(false);
+  });
 });
 
 describe('nextVersion', () => {
@@ -161,6 +171,15 @@ describe('nextVersion', () => {
 
   it('refuses a current version it cannot parse rather than guessing', () => {
     expect(() => nextVersion('1.2', 'patch')).toThrow(RangeError);
+  });
+
+  it('refuses a version it would have to round rather than emitting 1e+21.0.0', () => {
+    // A 22-digit major passed the old `\d+` and came back as `1e+21.0.0`,
+    // which no later isSemver accepted, so the library could never publish again.
+    expect(() => nextVersion('1000000000000000000000.0.0', 'major')).toThrow(RangeError);
+    expect(() => nextVersion('01.0.0', 'patch')).toThrow(RangeError);
+    // The one step past the safe range is refused too, not written.
+    expect(() => nextVersion('9007199254740991.0.0', 'major')).toThrow(RangeError);
   });
 });
 

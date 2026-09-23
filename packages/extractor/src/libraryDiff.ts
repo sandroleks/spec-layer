@@ -89,22 +89,33 @@ export function compareBump(a: Bump, b: Bump): number {
   return BUMP_RANK[a] - BUMP_RANK[b];
 }
 
-const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+/** Three dotted numeric identifiers as semver 2.0.0 writes them: digits only,
+ *  no leading zero on a multi-digit run. Each must also be a safe integer so
+ *  `nextVersion` can add one without rounding: a 22-digit run passed the old
+ *  `\d+`, came back from `nextVersion` as `1e+21.0.0`, and no later check
+ *  accepted that, so the library could never publish again. */
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-/** Three dotted integers. No prerelease, no build metadata, no leading `v`. */
+/** Three dotted integers. No prerelease, no build metadata, no leading `v`,
+ *  no leading zeros, each a safe integer. */
 export function isSemver(value: unknown): value is string {
-  return typeof value === 'string' && SEMVER_RE.test(value);
+  if (typeof value !== 'string') return false;
+  const match = SEMVER_RE.exec(value);
+  return match !== null && match.slice(1).every((n) => Number.isSafeInteger(Number(n)));
 }
 
-/** `null` means no version yet, and the first version is always 1.0.0. */
+/** `null` means no version yet, and the first version is always 1.0.0. Throws
+ *  rather than returning a string `isSemver` would refuse, so a version can
+ *  never be stored that the next publish cannot read. */
 export function nextVersion(current: string | null, bump: Bump): string {
   if (current === null) return '1.0.0';
-  const match = SEMVER_RE.exec(current);
-  if (!match) throw new RangeError(`Not a semantic version: ${current}`);
-  const [major, minor, patch] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (bump === 'major') return `${major + 1}.0.0`;
-  if (bump === 'minor') return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
+  if (!isSemver(current)) throw new RangeError(`Not a semantic version: ${current}`);
+  const [major, minor, patch] = current.split('.').map(Number);
+  const next = bump === 'major' ? `${major + 1}.0.0`
+    : bump === 'minor' ? `${major}.${minor + 1}.0`
+      : `${major}.${minor}.${patch + 1}`;
+  if (!isSemver(next)) throw new RangeError(`Cannot bump ${current}: ${next} is not a semantic version`);
+  return next;
 }
 
 /** Foundation first (null component sorts before any name), then by component, entity, id, scope, kind, from, to. */
