@@ -23,7 +23,9 @@ describe('scanSandboxBundle', () => {
   // Every shape here passed the scan before 2026-09-23 and would throw in the
   // Figma sandbox, which has none of these globals.
   it.each([
-    ['globalThis.fetch(u)', 'globalThis'],
+    ['globalThis.fetch(u)', 'fetch'],
+    ['const d = globalThis . document;', 'document'],
+    ['window.atob(s)', 'atob'],
     ['self.fetch(u)', 'self'],
     ['const f = fetch; f(u);', 'fetch'],
     ['const decoded = parts.map(atob);', 'atob'],
@@ -44,6 +46,18 @@ describe('scanSandboxBundle', () => {
 
   it('leaves property access, object keys, typeof guards and longer identifiers alone', () => {
     const src = 'obj.fetch(u); const o = { fetch: 1 }; if (typeof fetch === "function") {} fetchAll(); const self_ = 1; myWindow.x;';
+    expect(scanSandboxBundle(src)).toEqual([]);
+  });
+
+  // globalThis is ES2020 and exists in the Figma sandbox; the plugin's own
+  // tests install `figma` on it. Only a forbidden name reached through it is
+  // a defect.
+  it.each([
+    'globalThis.figma.notify(1);',
+    'const s = globalThis.Symbol;',
+    'var g = typeof globalThis<"u"?globalThis:x;',
+    'const f = globalThis.fetchAll;',
+  ])('leaves %s alone', (src) => {
     expect(scanSandboxBundle(src)).toEqual([]);
   });
 });

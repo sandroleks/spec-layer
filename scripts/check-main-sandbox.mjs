@@ -18,8 +18,10 @@
  *
  * Matching is deliberately narrow to avoid false positives on a bundled
  * artifact: constructor globals are matched only as `new X(`, and
- * namespace globals only as `X.` or `X(`. That catches real use while ignoring
- * the same word appearing in a comment or a string literal.
+ * namespace globals only as `X.` or `X(`. That skips the bare word in prose,
+ * but it does not understand strings or comments: a string literal or comment
+ * containing `document.title` or `fetch(` still matches. The bundle test in
+ * scripts/check-main-sandbox.test.ts is what shows the shipped bundle has none.
  *
  * The bundle is minified since 2026-09; minifiers rename locals, never
  * globals, and they drop the parentheses on a zero-argument `new`, so
@@ -29,8 +31,10 @@
  * Portable: plain Node, no shell pipeline, no `grep -P`.
  *
  * Since 2026-09-23 the lists also carry the WHATWG URL, fetch and abort
- * classes, `crypto`, `performance`, `globalThis` and `self`, the two extra
- * scheduler calls, and a bare-identifier pass for a global used as a value.
+ * classes, `crypto`, `performance` and `self`, the two extra scheduler calls,
+ * a bare-identifier pass for a global used as a value, and a pass for a listed
+ * name reached through `globalThis`, `self` or `window`. `globalThis` itself
+ * is standard ES2020 and is not an offence.
  * The shapes that pass are pinned in scripts/check-main-sandbox.test.ts.
  */
 import { readFileSync, existsSync } from 'node:fs';
@@ -48,7 +52,7 @@ const CONSTRUCTORS = [
 const NAMESPACES = [
   'document', 'window', 'navigator', 'localStorage', 'sessionStorage',
   'indexedDB', 'location', 'history',
-  'crypto', 'performance', 'globalThis', 'self',
+  'crypto', 'performance', 'self',
 ];
 const CALLS = [
   'fetch', 'atob', 'btoa', 'structuredClone', 'requestAnimationFrame',
@@ -66,6 +70,14 @@ const CALLS = [
  */
 const bare = (name) => new RegExp(`(?<=(?:[=(,\\[?:!&|]|\\breturn)\\s*)${name}(?=\\s*[,;)\\]}])`, 'g');
 
+/**
+ * A forbidden global reached through a global object: `globalThis.fetch(u)`,
+ * `window.atob(s)`. `globalThis` itself is ES2020 and exists in the sandbox,
+ * so `globalThis.figma`, `globalThis.Symbol` and a `typeof globalThis` guard
+ * pass; only a name from the lists above after the dot is an offence.
+ */
+const viaGlobal = (name) => new RegExp(`(?<![.\\w$])(?:globalThis|self|window)\\s*\\.\\s*${name}\\b`, 'g');
+
 function record(offenders, src, name, pattern) {
   const hits = src.match(pattern);
   if (hits) offenders.push({ name, count: hits.length });
@@ -82,6 +94,7 @@ export function scanSandboxBundle(src) {
   for (const name of NAMESPACES) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*[.(]`, 'g'));
   for (const name of CALLS) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*\\(`, 'g'));
   for (const name of [...CONSTRUCTORS, ...CALLS]) record(offenders, src, name, bare(name));
+  for (const name of [...CONSTRUCTORS, ...CALLS, ...NAMESPACES]) record(offenders, src, name, viaGlobal(name));
   return offenders;
 }
 
@@ -101,10 +114,11 @@ function main(bundlePath = DEFAULT_BUNDLE) {
       console.error(`  ${name}  (${count} reference${count === 1 ? '' : 's'})`);
     }
     console.error(
-      '\nThe main thread has the figma API and the ECMAScript built-ins, nothing'
-      + '\nmore. Node and the browser both provide these, so tests and typecheck'
-      + '\nwill not catch it. Either move the work to the UI iframe, or implement'
-      + '\nit against the built-ins (see utf8ByteLength in src/docLink.ts).',
+      '\nEach of these is either absent from the main thread or kept out of it on'
+      + '\npurpose: DOM and network work belong in the UI iframe. Node and the'
+      + '\nbrowser both provide them, so tests and typecheck will not catch it.'
+      + '\nEither move the work to the UI iframe, or implement it against the'
+      + '\nECMAScript built-ins (see utf8ByteLength in src/docLink.ts).',
     );
     process.exit(1);
   }

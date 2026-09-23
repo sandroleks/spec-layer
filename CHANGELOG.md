@@ -208,9 +208,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   now compiles `packages/proxy/test` and `packages/cli/test`; both had type
   errors that vitest's type stripping hid, all in test code.
   The main-thread sandbox scan now knows the URL, fetch and abort classes,
-  `crypto`, `performance`, `globalThis`, `self` and the scheduler calls,
-  catches a global used as a value, and runs from a checkout path with a
-  space in it, which it had not.
+  `crypto`, `performance`, `self` and the scheduler calls, catches a global
+  used as a value or reached through `globalThis`, `self` or `window`
+  (`globalThis` itself exists in the sandbox and passes), and runs from a
+  checkout path with a space in it, which it had not.
   The pre-commit hook recognises Spec Layer pull keys, npm tokens and
   Cloudflare token assignments, and `npm ci` now wires it into the clone.
   The NUL scan reads every tracked text file, including `.github/`, the root
