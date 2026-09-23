@@ -437,6 +437,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **A multi-line description whose first line begins with a space no longer
+  breaks the YAML.** The emitter wrote a literal block scalar without an
+  indentation indicator, so a parser took that line's leading spaces as the
+  block's indentation and the next line ended the block early: one such
+  description made the whole copied brief, the published artifact and the
+  pulled file unparseable, and a description whose every line was indented
+  parsed with its indentation silently stripped. The emitter now writes the
+  indicator (`|2-`) exactly when the first non-empty line begins with a
+  space, which is the rule js-yaml's own writer follows; every other string
+  is emitted byte for byte as before.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
