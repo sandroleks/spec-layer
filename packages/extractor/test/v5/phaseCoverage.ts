@@ -50,6 +50,6 @@ export const ACCEPTANCE_COVERAGE = {
   },
   12: {
     criterion: 'repeated extraction produces one semantic hash',
-    implementedBy: 'plan-1', gradedBy: 'plan-1',
+    implementedBy: 'plan-1', gradedBy: 'synthetic-direct-v5',
   },
 } as const;
