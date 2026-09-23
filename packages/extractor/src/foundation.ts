@@ -397,11 +397,17 @@ export interface FoundationRowGroup<T extends { name: string } = FoundationVaria
  */
 export function groupRowsByFolder<T extends { name: string }>(rows: T[]): FoundationRowGroup<T>[] {
   const groups: FoundationRowGroup<T>[] = [];
+  const byFolder = new Map<string, FoundationRowGroup<T>>();
   for (const row of rows) {
     const folder = folderOf(row.name);
-    const existing = groups.find((g) => g.folder === folder);
-    if (existing) existing.rows.push(row);
-    else groups.push({ folder, rows: [row] });
+    const existing = byFolder.get(folder);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      const group: FoundationRowGroup<T> = { folder, rows: [row] };
+      byFolder.set(folder, group);
+      groups.push(group);
+    }
   }
   return groups;
 }
@@ -847,14 +853,11 @@ export function foundationUnitTitle(
   return titleOf(base, content.group);
 }
 
-/** Distinct top-level groups in first-appearance order. */
+/** Distinct top-level groups in first-appearance order (a Set keeps insertion order). */
 function groupsInOrder(names: string[]): string[] {
-  const seen: string[] = [];
-  for (const name of names) {
-    const g = groupOf(name);
-    if (!seen.includes(g)) seen.push(g);
-  }
-  return seen;
+  const seen = new Set<string>();
+  for (const name of names) seen.add(groupOf(name));
+  return [...seen];
 }
 
 export function planFoundationUnits(
