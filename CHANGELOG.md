@@ -435,6 +435,20 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
 
+### Removed
+
+- **The legacy foundation YAML brief and the component brief's `foundation`
+  option.** Neither had a caller outside the tests: a Foundation copies and
+  downloads as a DTCG resolver document, and the Component Context v5 builder
+  takes `component`, `api` and `unbound` from the component brief and
+  resolves references itself. The `foundation` option was the only way a
+  brief could carry a resolved value, a text style's metrics or an effect
+  style's layers, and no shipping path passed one, so every brief already
+  stated `resolution: no-foundation` for its local references; that is now
+  the only shape, and the output of every shipping path is unchanged byte for
+  byte. Removing the option also removes a lookup that matched a token by
+  name across every collection and ignored its collection id.
+
 ### Fixed
 
 - **A multi-line description whose first line begins with a space no longer

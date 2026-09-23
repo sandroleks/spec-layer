@@ -11,8 +11,6 @@
  * document from the Foundation Context v5 artifact.
  */
 
-import type { FoundationSpec, FoundationValue } from './foundation';
-import { roundN } from './effects';
 import type { EffectLayer } from './effects';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
@@ -20,7 +18,7 @@ import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
 import type { ProseDrafts } from './prose/prompt';
 import { tokensFor, type TokenRule } from './tokens';
-import type { RefIdentity, RefKind } from './tree';
+import type { RefIdentity } from './tree';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
 import { resolutionOf } from './resolution';
@@ -79,41 +77,6 @@ function fileKeyOf(fileKey: string): { file_key?: string } {
   return fileKey && fileKey !== 'unknown' ? { file_key: fileKey } : {};
 }
 
-/** A resolved value flattened to what a consumer can act on. */
-function valueOf(v: FoundationValue): YamlValue {
-  switch (v.kind) {
-    case 'color':
-      // Four decimals on alpha. Figma stores it as a double derived from a
-      // percentage input, so 4% arrives as 0.03999999910593033 and an agent
-      // reproduces that verbatim in generated CSS. Two decimals is not enough:
-      // 0.04, 0.08 and 0.12 survive it, but Figma's own percent field can
-      // express 0.125.
-      return v.alpha === 1 ? v.hex : { hex: v.hex, alpha: roundN(v.alpha, 4) };
-    case 'number': return v.value;
-    case 'string': return v.value;
-    case 'boolean': return v.value;
-    case 'alias':
-      return {
-        alias: v.targetName,
-        // Conditional spreads throughout, not plain `key: cond ? x : undefined`
-        // assignments: a test inspects this raw object with `'key' in value`
-        // before any YAML round trip (the emitter would drop an undefined value
-        // either way, but the raw object would still have the key), so only the
-        // spread form leaves an absent field genuinely absent.
-        ...(v.resolved ? { resolved: valueOf(v.resolved) } : {}),
-        ...(v.external ? { external: true } : {}),
-        // The alias's target collection, on EXTERNAL aliases only. An external
-        // alias prints a name that may also exist locally as a different token,
-        // with nothing to separate them; a local alias already resolves, so
-        // naming its collection adds a line without adding information.
-        // Omitted when readCollectionName yielded '', because a blank name is
-        // not a name.
-        ...(v.external && v.targetCollection ? { collection: v.targetCollection } : {}),
-      };
-    case 'unresolved': return { unresolved: v.reason };
-  }
-}
-
 /**
  * Effect layers, projected for emission: every field-level binding becomes
  * its token NAME instead of the `RefIdentity` Figma gave it. `RefIdentity.id`
@@ -151,10 +114,6 @@ function projectEffectLayers(layers: EffectLayer[]): YamlValue {
 
 export interface ComponentBriefOptions {
   generatedAt: string;
-  /** Resolves token names to concrete values. Absent on the drift path, which
-   *  calls extract() without one; bindings then omit `resolved`, `mode` (and
-   *  `code`) rather than implying the token has none. */
-  foundation?: FoundationSpec;
   /** Guidelines read from storage. Never generated here. */
   prose?: ProseDrafts | null;
 }
@@ -278,82 +237,6 @@ function ruleKey(t: TokenRule): string {
 }
 
 /**
- * Look a token name up in the foundation, at its OWNING COLLECTION's default
- * mode. Mirrors the lookup resolveTokenColor performs in contrast.ts: walk
- * every collection's variables for a name match, then read that collection's
- * own defaultModeId (not some fixed mode) since the token can live in any
- * collection.
- *
- * Naming the mode is not decoration. `layout` reports the geometry a frame
- * actually renders, under whatever mode is applied on canvas; this reads the
- * owning collection's DEFAULT mode. On a themed file those can differ, and an
- * earlier version of this brief emitted both numbers with nothing saying they
- * were read under different conditions -- the sample Button claimed radius 4
- * in `layout` and rd-sm resolving to 8 in `tokens`, at the same time, with no
- * way for a reader to know why.
- *
- * The shape is flat -- `alias`/`resolved`/`code`/`mode` as siblings -- rather
- * than nesting `valueOf`'s own alias/scalar split inside a `value` key, since
- * that extra level carried no information: an alias already returns
- * `{ alias, resolved }` from `valueOf`, and every other kind is a bare value
- * that just needs a name (`resolved`) to sit under next to `mode` and `code`.
- * A raw value of `kind: 'alias'` is special-cased here rather than routed
- * through `valueOf` for that branch, specifically so `resolved` lands as its
- * OWN sibling key instead of nested a second time under a `value.resolved`
- * that no longer exists.
- *
- * Returns an empty object — not nulls — when there is no foundation or the
- * token isn't found, so `binding` below can spread the result straight into
- * the output and have every field come out simply absent rather than a
- * `null` that would misstate "resolved to nothing" as "no such value".
- *
- * Every optional field is added conditionally (`...(cond ? { k: v } : {})`)
- * rather than written as `{ k: v }` with `v` possibly `undefined`. Both forms
- * emit identically once run through the YAML emitter, which drops
- * `undefined`-valued keys -- but a caller that inspects the raw object
- * (`'mode' in used`, as a test below does for a deleted mode) sees a
- * genuinely-missing key only with the conditional form, since
- * `{ mode: undefined }` still satisfies `'mode' in obj`.
- */
-function lookupToken(
-  foundation: FoundationSpec | undefined,
-  ref: RefIdentity,
-): { alias?: string; resolved?: YamlValue; external?: boolean; code?: YamlValue; mode?: string } {
-  // Variables only. A style name has no entry in any collection, so a lookup
-  // for one would come back empty and must not be emitted as `{}`.
-  if (!foundation || ref.kind !== 'variable') return {};
-  for (const collection of foundation.collections) {
-    for (const variable of collection.variables) {
-      if (variable.name !== ref.name) continue;
-      const raw = variable.valuesByMode[collection.defaultModeId];
-      const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
-      // A modeId with no entry in collection.modes is stale (its mode was
-      // deleted after this value was recorded). Falling back to the raw
-      // Figma modeId would leak an internal id into a payload whose rule is
-      // that ids stay inside, so an unresolved mode name is left out of the
-      // result entirely rather than emitted blank or id-keyed.
-      const modeName = collection.modes.find((m) => m.modeId === collection.defaultModeId)?.name;
-      const shared: { code?: YamlValue; mode?: string } = {
-        ...(code !== undefined ? { code: code as YamlValue } : {}),
-        ...(modeName !== undefined ? { mode: modeName } : {}),
-      };
-      if (!raw) return shared;
-      if (raw.kind === 'alias') {
-        const resolved = raw.resolved ? valueOf(raw.resolved) : undefined;
-        return {
-          alias: raw.targetName,
-          ...(resolved !== undefined ? { resolved } : {}),
-          ...(raw.external ? { external: true } : {}),
-          ...shared,
-        };
-      }
-      return { resolved: valueOf(raw), ...shared };
-    }
-  }
-  return {};
-}
-
-/**
  * Token definitions once, bindings by condition.
  *
  * v1 resolved every rule against every variant instance and factored the
@@ -379,11 +262,7 @@ function lookupToken(
  *  places is one. */
 const usedKey = (r: TokenRule): string => JSON.stringify([r.kind, r.name]);
 
-function tokensOf(
-  spec: IntermediateSpec,
-  foundation: FoundationSpec | undefined,
-  definedNames: (kind: RefKind) => Set<string>,
-): YamlValue {
+function tokensOf(spec: IntermediateSpec): YamlValue {
   const seen = new Set<string>();
   const rules: TokenRule[] = [];
   for (const t of spec.tokens) {
@@ -406,20 +285,12 @@ function tokensOf(
     if (usedSeen.has(key)) continue;
     usedSeen.add(key);
 
-    // A style entry is a POINTER, not a copy: the definitions live in
-    // `typography:` and `effects:`, so restating them here would give the brief
-    // two owners for the same values.
-    if (r.kind === 'text-style' || r.kind === 'effect-style') {
-      used.push(definedNames(r.kind).has(r.name)
-        ? { token: r.name, kind: r.kind }
-        : { token: r.name, kind: r.kind, resolution: resolutionOf(foundation, r) as unknown as YamlValue });
-      continue;
-    }
-
-    const looked = lookupToken(foundation, r);
-    used.push(Object.keys(looked).length > 0
-      ? { token: r.name, kind: r.kind, ...looked }
-      : { token: r.name, kind: r.kind, resolution: resolutionOf(foundation, r) as unknown as YamlValue });
+    // No definition is looked up here: the brief has no foundation to read,
+    // so every entry states why it carries none. `no-foundation` for a local
+    // reference, `external` for a library one, `not-extracted` for a paint
+    // style (resolution.ts decides, from recorded facts only). Component
+    // Context v5 carries the resolved values in `references`.
+    used.push({ token: r.name, kind: r.kind, resolution: resolutionOf(undefined, r) as unknown as YamlValue });
   }
 
   return {
@@ -514,103 +385,44 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
 }
 
 /**
- * Every text style this component binds, resolved to the metrics an
- * implementation needs.
- *
- * v1 emitted only the display string, which made typography the one binding
- * shape that carried no value and no code: nothing downstream could act on
- * it, and an implementation could not produce CSS from a string like
- * "Button/L : 14px Medium".
- *
- * `source_name` keeps the raw Figma style name, stray double spaces
- * included, because that string is what a designer searches for in the
- * file — it is never normalised.
- *
- * Known gap: `font_style` is a Figma style name ("Medium", "Bold"), not a
- * numeric weight. A consumer that needs a numeric CSS `font-weight` has to
- * map the name itself; this block does not do that mapping.
- *
- * `line_height.value` is added conditionally, not assigned `undefined`:
- * `lineHeight.unit` can be `AUTO` with no numeric value at all (the style
- * inherits the renderer's default line height from the font), and a
- * fabricated 0 or a silently-dropped-by-YAML `undefined` would both misstate
- * that as a real, measured value. Leaving the key off entirely is the
- * truthful reading: "this style does not specify a line height", which is
- * exactly what AUTO means.
+ * Every text style this component binds, each with the resolution that says
+ * why this brief carries no definition for it: the brief has no foundation to
+ * read, and Component Context v5 carries style definitions in
+ * `references.foundation.styles`. The block still exists so the set of bound
+ * styles is stated rather than implied by `tokens.used`. `source_name` and
+ * the metrics this block once resolved were reachable only through an option
+ * no shipping path passed; they went with it on 2026-09-23.
  */
-function typographyOf(
-  spec: IntermediateSpec,
-  foundation: FoundationSpec | undefined,
-): YamlValue | undefined {
+function typographyOf(spec: IntermediateSpec): YamlValue | undefined {
   const names = new Set(
     spec.tokens.filter((t) => t.kind === 'text-style').map((t) => t.name));
   if (names.size === 0) return undefined;
 
   const out: Record<string, YamlValue> = {};
   for (const name of names) {
-    const style = foundation?.textStyles.find((s) => s.name === name);
-
-    if (!style) {
-      // Restated in the resolution vocabulary rather than as its own ad-hoc
-      // sentence, so `typography` and `tokens.used` cannot disagree about what
-      // "not in this file" means. The rule is looked up rather than
-      // reconstructed from the name, so the resolution reads Figma's own
-      // `remote` and reports `external` where that is the real cause.
-      const ref = spec.tokens.find((t) => t.kind === 'text-style' && t.name === name)!;
-      out[name] = { resolution: resolutionOf(foundation, ref) as unknown as YamlValue };
-      continue;
-    }
-    out[name] = {
-      source_name: style.name,
-      font_family: style.fontFamily,
-      font_style: style.fontStyle,
-      font_size: roundN(style.fontSize, 2),
-      line_height: {
-        unit: style.lineHeight.unit,
-        ...(style.lineHeight.value !== undefined ? { value: roundN(style.lineHeight.value, 2) } : {}),
-      },
-      letter_spacing: { unit: style.letterSpacing.unit, value: roundN(style.letterSpacing.value, 2) },
-    };
+    // Looked up rather than reconstructed from the name, so the resolution
+    // reads Figma's own `remote` and reports `external` where that is the cause.
+    const ref = spec.tokens.find((t) => t.kind === 'text-style' && t.name === name)!;
+    out[name] = { resolution: resolutionOf(undefined, ref) as unknown as YamlValue };
   }
   return out;
 }
 
 /**
- * Every effect style this component binds, resolved to its layers.
- *
- * Beside `typography:` and for the same reason: `tokens.used` carries the kind
- * and this block carries the definition, so the brief has exactly one owner for
- * the values. Keyed by style name, which is the join key `used` and `bindings`
- * both carry.
- *
- * `source_name` keeps the raw Figma style name, stray double spaces included,
- * because that string is what a designer searches for in the file.
+ * Every effect style this component binds, beside `typography:` and for the
+ * same reason: the set of bound styles is stated, and each entry says why no
+ * definition follows. Node-level effect layers, which need no style
+ * definition, are in `effects_inline`.
  */
-function effectsOf(
-  spec: IntermediateSpec,
-  foundation: FoundationSpec | undefined,
-): YamlValue | undefined {
+function effectsOf(spec: IntermediateSpec): YamlValue | undefined {
   const names = new Set(
     spec.tokens.filter((t) => t.kind === 'effect-style').map((t) => t.name));
   if (names.size === 0) return undefined;
 
   const out: Record<string, YamlValue> = {};
   for (const name of names) {
-    const style = foundation?.effectStyles.find((s) => s.name === name);
-    if (!style) {
-      const ref = spec.tokens.find((t) => t.kind === 'effect-style' && t.name === name)!;
-      out[name] = { resolution: resolutionOf(foundation, ref) as unknown as YamlValue };
-      continue;
-    }
-    out[name] = {
-      source_name: style.name,
-      description: style.description || undefined,
-      // Same source as the Foundation copy's effect_styles (foundation.effectStyles),
-      // so bindings is never populated here either -- projected anyway for the
-      // same reason: the type allows it, and the id-leak rule admits no
-      // exceptions.
-      layers: projectEffectLayers(style.effects),
-    };
+    const ref = spec.tokens.find((t) => t.kind === 'effect-style' && t.name === name)!;
+    out[name] = { resolution: resolutionOf(undefined, ref) as unknown as YamlValue };
   }
   return out;
 }
@@ -661,15 +473,8 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
       path: g.path, property: g.property, issue: g.issue,
       ...(g.value !== undefined ? { value: g.value } : {}),
     }));
-  const typography = typographyOf(spec, opts.foundation);
-  const effects = effectsOf(spec, opts.foundation);
-  // The definitions this brief actually carries, so `tokens.used` knows whether
-  // a style entry is a pointer to something real or needs a resolution instead.
-  const definedNames = (kind: RefKind): Set<string> => new Set(
-    kind === 'text-style'
-      ? (opts.foundation?.textStyles ?? []).map((s) => s.name)
-      : (opts.foundation?.effectStyles ?? []).map((s) => s.name),
-  );
+  const typography = typographyOf(spec);
+  const effects = effectsOf(spec);
   // Joined to `unbound` and `bindings` on (path, property), never on path alone:
   // one node routinely has several rows -- fill, border, effects, spacing -- at
   // the same path.
@@ -683,32 +488,16 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
     layers: projectEffectLayers(n.effects),
   }));
   const guidelines = guidelinesOf(opts.prose);
-  // The geometry-token-mismatch finding needs each bound token's resolved
-  // NUMBER, at the same mode `tokens.used` already reports it under (via
-  // lookupToken) -- not re-resolved by validate.ts itself, so the finding and
-  // the brief's own `tokens` block can never disagree about what a token
-  // resolves to.
-  const resolved = new Map<string, number>();
-  for (const t of spec.tokens) {
-    const looked = lookupToken(opts.foundation, t);
-    const v = looked.resolved;
-    if (typeof v === 'number') {
-      resolved.set(t.name, v);
-    } else if (v && typeof v === 'object' && 'resolved' in v
-               && typeof (v as { resolved?: unknown }).resolved === 'number') {
-      // One level of alias-of-alias: lookupToken flattens a single alias hop
-      // into a bare number, but a chain (alias -> alias -> number) still
-      // leaves one nested `resolved` key here.
-      resolved.set(t.name, (v as { resolved: number }).resolved);
-    }
-  }
+  // No resolved numbers: the brief has no foundation to read them from, so
+  // validate's geometry-token-mismatch rule cannot fire here. validate.ts
+  // keeps the rule for a caller that can supply them.
   // Projected into fresh literal objects rather than embedding `Finding[]`
   // directly: `Finding` is a declared interface, and TypeScript will not
   // assign a declared (non-literal) type to YamlValue's index-signature
   // branch even when every field is structurally a YamlValue -- the same
   // reason every other block in this file is built as a fresh object/array
   // literal rather than a typed internal shape passed through as-is.
-  const validation = validate(spec, resolved).map((f) => ({
+  const validation = validate(spec, new Map<string, number>()).map((f) => ({
     id: f.id,
     severity: f.severity,
     ...(f.path !== undefined ? { path: f.path } : {}),
@@ -746,7 +535,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
       // bindings talk about. Joinability is the whole point of the identity.
       ? spec.layout.map((l) => ({ path: l.path, summary: l.summary }))
       : undefined,
-    tokens: tokensOf(spec, opts.foundation, definedNames),
+    tokens: tokensOf(spec),
     ...(effectsInline.length > 0 ? { effects_inline: effectsInline } : {}),
     // Same reasoning as `api` above: spread the key in only when a gap
     // survived reconciliation, rather than assigning `unbound: undefined` —
