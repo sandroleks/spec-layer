@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
+  buildFoundation, buildFoundationArtifactV5, componentMarkdown, type SerializedFoundation,
 } from '@spec-layer/extractor';
 import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/componentV5';
 import {
@@ -1193,6 +1193,80 @@ describe('runPull safety and freshness', () => {
   });
 });
 
+describe('runPull component format', () => {
+  let cwd: string;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-fmt-'));
+    runInit(cwd, { id: 'lib_abc' }, makeIo());
+  });
+  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+
+  const headers = (fetcher: typeof fetch, call: number): Record<string, string> =>
+    ((fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[call] as [string, RequestInit])[1].headers as Record<string, string>;
+
+  it('--component-format md writes a markdown page and names the format', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, { 'component-format': 'md' }, ENV, io, stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(readFileSync(join(cwd, 'component-specs/button.md'), 'utf8')).toBe(componentMarkdown(MD_BUNDLE.components[0].artifact));
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(false);
+    expect(io.outLines).toContain('Wrote component-specs/ (1 Markdown file).');
+  });
+
+  it('names YAML in the summary by default', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, {}, ENV, io, stub200())).toBe(0);
+    expect(io.outLines).toContain('Wrote component-specs/ (1 YAML file).');
+  });
+
+  it('reads componentSpecsFormat from speclayer.json, and a flag beats it for the run', async () => {
+    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    expect(await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(true);
+
+    expect(await runPull(cwd, { 'component-format': 'yaml' }, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(false);
+    // pull never writes the config.
+    expect(readConfig(cwd)?.componentSpecsFormat).toBe('md');
+  });
+
+  it('asks for the bundle again instead of a 304 when the format changed, then caches again', async () => {
+    const fetcher = stubEtagAware(JSON.stringify(MD_BUNDLE));
+    expect(await runPull(cwd, {}, ENV, makeIo(), fetcher)).toBe(0);
+
+    const cached = makeIo();
+    expect(await runPull(cwd, {}, ENV, cached, fetcher)).toBe(0);
+    expect(cached.outLines.join('\n')).toMatch(/Already up to date/);
+
+    const switched = makeIo();
+    expect(await runPull(cwd, { 'component-format': 'md' }, ENV, switched, fetcher)).toBe(0);
+    expect(headers(fetcher, 2)['If-None-Match']).toBeUndefined();
+    expect(readdirSync(join(cwd, 'component-specs'))).toEqual(['button.md']);
+
+    const again = makeIo();
+    expect(await runPull(cwd, { 'component-format': 'md' }, ENV, again, fetcher)).toBe(0);
+    expect(again.outLines.join('\n')).toMatch(/Already up to date/);
+  });
+
+  it('refuses an unknown --component-format without reaching the network', async () => {
+    const io = makeIo();
+    const fetcher = stub200();
+    expect(await runPull(cwd, { 'component-format': 'markdown' }, ENV, io, fetcher)).toBe(1);
+    expect(io.errLines).toEqual(['--component-format takes yaml or md, not "markdown".']);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('fails with the render sentence and leaves the tree untouched when an artifact cannot be rendered', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, { 'component-format': 'md' }, ENV, io, stub200())).toBe(1);
+    expect(io.errLines).toEqual([
+      'The published component context for Button could not be rendered as Markdown. Republish from the plugin, then pull again.',
+    ]);
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+    expect(existsSync(join(cwd, 'component-specs'))).toBe(false);
+  });
+});
+
 describe('runSetup', () => {
   let cwd: string;
   const LIB = 'lib_aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -1455,7 +1529,7 @@ describe('runSetup', () => {
     expect(existsSync(join(cwd, 'tokens/index.css'))).toBe(true);
     expect(existsSync(join(cwd, '.speclayer/outputs/web-css.map.json'))).toBe(true);
     expect(io.outLines.some((l) => /^Wrote tokens\/ \(\d+ files, web\/css, kebab names\)\.$/.test(l))).toBe(true);
-    expect(io.outLines).toContain('Wrote component-specs/ (1 file).');
+    expect(io.outLines).toContain('Wrote component-specs/ (1 YAML file).');
   });
 
   it('setup without a platform in an empty directory writes no output and says which flag to pass', async () => {
@@ -1526,6 +1600,16 @@ describe('runSetup', () => {
     expect(io.errLines).toEqual(['--component-format takes yaml or md, not "txt".']);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
     expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
+  it('setup --component-format md pulls a markdown page, and a later yaml flag swaps it back', async () => {
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'md' }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(false);
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'yaml' }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+    expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(false);
   });
 });
 

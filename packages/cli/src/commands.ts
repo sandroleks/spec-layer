@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR,
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
   COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
@@ -37,6 +37,9 @@ export type Io = { out(line: string): void; err(line: string): void; write(text:
 
 const NO_LOCAL_PULL = 'No local pull found. Run spec-layer pull.';
 
+/** How the pull summary names each format. The plugin never shows `md`; neither does this line. */
+const FORMAT_NAME: Record<ComponentFormat, string> = { yaml: 'YAML', md: 'Markdown' };
+
 /** One manifest read per command, shared by the id fallback and the freshness check. */
 function manifestReader(): (outDir: string) => Manifest | null {
   const cache = new Map<string, Manifest | null>();
@@ -46,17 +49,18 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where briefs land. */
+/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where and how briefs land. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
+  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
+  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
   const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
   return selectionKey(a.selection) === selectionKey(b.selection)
     && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? [])
-    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR);
+    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR)
+    && (a.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT) === (b.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT);
 }
 
 function sortKeys(value: unknown): unknown {
@@ -490,13 +494,17 @@ export async function runPull(
   }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const flagFormat = componentFormatFromFlags(flags, io);
+  if (flagFormat === null) return 1;
+  const componentSpecsFormat = flagFormat ?? opts.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
   // Ask for a 304 only when the last pull wrote the same files this one would,
   // with the same CLI, AND every one of those files is still on disk; a
-  // changed selection, dtcg block, outputs block, or componentSpecsDir needs
-  // the bundle again to re-project, and so does a deleted brief, a deliverable
-  // directory a developer (or a clean) removed, or a part file index.css
+  // changed selection, dtcg block, outputs block, componentSpecsDir, or
+  // component format needs the bundle again to re-project, and so does a
+  // deleted brief, a deliverable directory a developer (or a clean) removed,
+  // or a part file index.css
   // imports (which is not always every file the record map names, since a map
   // entry names only the file that first declares a token), since a 304 would
   // leave any of those missing rather than restoring it. Outputs are only ever
@@ -529,8 +537,11 @@ export async function runPull(
     .filter((a) => a.kind === 'component' && a.path !== null)
     .every((a) => existsSync(resolve(cwd, a.path as string)));
   const etag = manifest && manifest.cliVersion === cliVersion() && sameOutput(
-    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs, componentSpecsDir: manifest.componentSpecsDir },
-    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir },
+    {
+      selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs,
+      componentSpecsDir: manifest.componentSpecsDir, componentSpecsFormat: manifest.componentSpecsFormat,
+    },
+    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir, componentSpecsFormat },
   ) && briefsOnDisk && (!willWriteFoundation || foundationFilesOnDisk(cwd, opts.outDir))
     && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
@@ -564,7 +575,7 @@ export async function runPull(
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
       version: result.version,
-      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir,
+      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir, componentSpecsFormat,
     });
     written = writeResult.written;
     componentSpecs = writeResult.componentSpecs;
@@ -579,7 +590,10 @@ export async function runPull(
   }
   const count = (n: number) => `${n} file${n === 1 ? '' : 's'}`;
   io.out(`Wrote ${written.length} files under ${opts.outDir}/.`);
-  if (componentSpecs.files.length > 0) io.out(`Wrote ${componentSpecs.path}/ (${count(componentSpecs.files.length)}).`);
+  if (componentSpecs.files.length > 0) {
+    const n = componentSpecs.files.length;
+    io.out(`Wrote ${componentSpecs.path}/ (${n} ${FORMAT_NAME[componentSpecsFormat]} file${n === 1 ? '' : 's'}).`);
+  }
   for (const r of outputResults) {
     const o = outputs.find((x) => x.path === r.path);
     if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
