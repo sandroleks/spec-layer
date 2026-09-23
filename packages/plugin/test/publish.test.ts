@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
+import { unzipSync } from 'fflate';
 import { extract, libraryBundleContentHash, specContentHash, type SerializedFoundation } from '@spec-layer/extractor';
 import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
@@ -897,7 +898,7 @@ describe('publish controller', () => {
    * skipped-guard fix (c72fb81) already stopped for the sibling guard above.
    */
   it('tells a download user honestly when the source read itself fails, never claiming a publish', () => {
-    publish.onDownloadSkillClick();
+    publish.onDownloadSkillClick('yaml');
     publish.onPublishSourcesError('the file has no docs');
     const state = publish.publishState();
     expect(state.status).toBe('error');
@@ -1237,14 +1238,14 @@ describe('publish controller', () => {
     });
 
     it('collects without contacting the proxy', () => {
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       expect(sent).toEqual([{ type: 'requestPublishSources' }]);
       expect(publish.publishState().status).toBe('collecting');
     });
 
     it('never uploads, and leaves the library identity and publish record untouched', async () => {
       const fetcher = vi.fn();
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       await publish.onPublishSources(sourcesMsg(), AUTH, fetcher as unknown as typeof fetch);
       expect(fetcher).not.toHaveBeenCalled();
       expect(publish.publishState().libraryId).toBeNull();
@@ -1264,7 +1265,7 @@ describe('publish controller', () => {
     });
 
     it('tells a download user honestly when components could not be read, never claiming a publish', async () => {
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       await publish.onPublishSources(
         { ...sourcesMsg(), skipped: [{ name: 'Button', reason: 'gone' }] }, AUTH,
       );
@@ -1297,7 +1298,7 @@ describe('publish controller', () => {
       vi.mocked(downloadBytes).mockImplementationOnce(() => {
         throw new Error('Blob is not defined');
       });
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
       const state = publish.publishState();
       expect(state.status).toBe('error');
@@ -1307,7 +1308,7 @@ describe('publish controller', () => {
       expect(state.message).not.toContain('—');
       // Not wedged: a fresh click is accepted rather than guard-blocked on
       // a status that never left 'collecting'.
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       expect(publish.publishState().status).toBe('collecting');
     });
 
@@ -1316,7 +1317,7 @@ describe('publish controller', () => {
       // onPublishClick ever stopped setting intent back to 'publish', a
       // publish click right after a download would silently re-run the
       // download branch and never call the fetcher.
-      publish.onDownloadSkillClick();
+      publish.onDownloadSkillClick('yaml');
       await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn());
       expect(publish.publishState().status).toBe('idle');
 
@@ -1330,6 +1331,23 @@ describe('publish controller', () => {
       expect(state.status).toBe('done');
       expect(state.libraryId).toBe('lib_new');
       expect(state.pullKey).toBe('sl_pull');
+    });
+
+    it('writes the zip in the format the download was started with', async () => {
+      publish.onDownloadSkillClick('md');
+      expect(publish.publishState().downloadFormat).toBe('md');
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn() as unknown as typeof fetch);
+      const paths = Object.keys(unzipSync(vi.mocked(downloadBytes).mock.calls[0][0]));
+      expect(paths).toContain('spec-layer/components/button.md');
+      expect(paths.some((path) => path.endsWith('.yaml'))).toBe(false);
+    });
+
+    it('keeps writing YAML for a YAML download', async () => {
+      publish.onDownloadSkillClick('yaml');
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn() as unknown as typeof fetch);
+      const paths = Object.keys(unzipSync(vi.mocked(downloadBytes).mock.calls[0][0]));
+      expect(paths).toContain('spec-layer/components/button.yaml');
+      expect(paths.filter((path) => path.endsWith('.md'))).toEqual(['spec-layer/SKILL.md']);
     });
   });
 });

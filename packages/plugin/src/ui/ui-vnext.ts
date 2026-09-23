@@ -1707,7 +1707,7 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-publish-download]')) {
-    onDownloadSkillClick();
+    onDownloadSkillClick(state.componentFormat);
     return;
   }
 

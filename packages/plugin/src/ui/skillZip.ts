@@ -1,18 +1,20 @@
 /**
  * skillZip.ts — the downloadable snapshot skill, as files.
  *
- * Every byte comes from extractor code that already ships: the component
- * briefs are the same YAML Copy for AI and publish produce, and the token
- * files are the same ones `spec-layer pull` writes. Nothing here is a second
- * interpretation of v5.
+ * Every byte comes from extractor code that already ships: each component
+ * file is the YAML publish produces or the Markdown page `componentMarkdown`
+ * renders from the same artifact, which is what Copy for AI and
+ * `spec-layer pull` write, and the token files are the ones `spec-layer pull`
+ * writes. Nothing here is a second interpretation of v5.
  *
  * Pure by construction, so the whole payload is testable without a DOM or a
  * Figma file. `download.ts` turns the result into bytes.
  */
 import {
-  componentSlugs, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
-  type FontRequirement, type FoundationArtifactV5, type LibraryBundleV1,
+  componentMarkdown, componentSlugs, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
+  type ComponentArtifactV5, type FontRequirement, type FoundationArtifactV5, type LibraryBundleV1,
 } from '@spec-layer/extractor';
+import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
 import type { PublishBundleV1 } from './publish';
 
 /** What SKILL.md describes, derived from the file set so it can never name a
@@ -24,6 +26,9 @@ export interface SnapshotInventory {
   components: Array<{ name: string; path: string }>;
   tokens: { files: string[] } | null;
   fonts: FontRequirement[];
+  /** How the component files are written, which decides how the guide tells
+   *  an agent to read them: by YAML key or by page heading. */
+  format: ComponentFormat;
 }
 
 const DESCRIPTION =
@@ -38,6 +43,7 @@ function day(iso: string): string {
 }
 
 export function renderSnapshotSkill(inv: SnapshotInventory): string {
+  const markdown = inv.format === 'md';
   const lines: string[] = [];
   lines.push('---', 'name: spec-layer', `description: ${JSON.stringify(DESCRIPTION)}`, '---', '');
   lines.push('# Spec Layer: design-system context', '');
@@ -47,8 +53,11 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
   lines.push(
     `This folder holds a design system extracted from ${source} on ${day(inv.generatedAt)}${version}. `
     + 'Everything in it is extracted deterministically and validated against a published schema, with two '
-    + "exceptions that can carry model-written prose: a component's `guidelines` block, marked `origin: "
-    + 'generated`, and a token group\'s `$description` in `tokens/`, which carries no marker and can be '
+    + 'exceptions that can carry model-written prose: '
+    + (markdown
+      ? 'a section of a component page that says it was written by AI, '
+      : "a component's `guidelines` block, marked `origin: generated`, ")
+    + 'and a token group\'s `$description` in `tokens/`, which carries no marker and can be '
     + 'model-written even though it looks like an ordinary field. Treat the rest as the source of truth for '
     + 'what the design system contains, and treat anything it does not state as unknown rather than as '
     + 'something to infer.',
@@ -66,10 +75,14 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
 
   lines.push('## How to read it', '');
   if (inv.components.length > 0) {
-    lines.push(
-      '1. Building or changing a component: read its YAML under `components/`. `api` gives variants, states, '
-      + 'booleans, and slots; `anatomy` names the parts; `references.bindings` says which token each part\'s '
-      + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
+    lines.push(markdown
+      ? '1. Building or changing a component: read its page under `components/`. **Properties** gives '
+        + 'variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which '
+        + "token each part's property uses and under which **When** conditions; **Unbound values** lists "
+        + 'values that are hardcoded in Figma.'
+      : '1. Building or changing a component: read its YAML under `components/`. `api` gives variants, states, '
+        + 'booleans, and slots; `anatomy` names the parts; `references.bindings` says which token each part\'s '
+        + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
     );
   } else {
     lines.push('1. No component documentation was included in this download.');
@@ -86,8 +99,11 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
   lines.push(
     '3. Reference tokens by name in code; never paste a resolved value where a token exists. A value the '
     + 'design system does not define is not a token: say so in your change rather than adding one.',
-    '4. An `unbound` entry is design debt reported from Figma. Do not silently promote it to a token; keep '
-    + 'the literal and note that Figma has no binding for it.',
+    markdown
+      ? '4. A row under **Unbound values** is design debt reported from Figma. Do not silently promote it to '
+        + 'a token; keep the literal and note that Figma has no binding for it.'
+      : '4. An `unbound` entry is design debt reported from Figma. Do not silently promote it to a token; keep '
+        + 'the literal and note that Figma has no binding for it.',
     '',
   );
 
@@ -145,17 +161,23 @@ const ROOT = 'spec-layer';
  * downloaded `tokens/` directory that disagrees with a pulled one.
  */
 export function buildSkillFiles(
-  bundle: PublishBundleV1, generatedAt: string,
+  bundle: PublishBundleV1, generatedAt: string, format: ComponentFormat = DEFAULT_COMPONENT_FORMAT,
 ): Record<string, string> {
   const files: Record<string, string> = {};
 
+  // YAML is the bundle's `ai`, verbatim, as publish wrote it. Markdown is
+  // rendered here from the same bundle's artifact; an artifact that cannot be
+  // rendered throws, and the download reports that rather than saving a zip
+  // with a gap in it.
   const slugs = componentSlugs(bundle.components.map((c) => c.name));
   const components = bundle.components.map((component, i) => ({
     name: component.name,
-    path: `components/${slugs[i]}.yaml`,
-    ai: component.ai,
+    path: `components/${slugs[i]}.${format}`,
+    text: format === 'md'
+      ? componentMarkdown(component.artifact as ComponentArtifactV5)
+      : component.ai,
   }));
-  for (const c of components) files[`${ROOT}/${c.path}`] = c.ai;
+  for (const c of components) files[`${ROOT}/${c.path}`] = c.text;
 
   let tokens: SnapshotInventory['tokens'] = null;
   let fonts: FontRequirement[] = [];
@@ -185,6 +207,7 @@ export function buildSkillFiles(
     components: components.map(({ name, path }) => ({ name, path })),
     tokens,
     fonts,
+    format,
   });
   return files;
 }

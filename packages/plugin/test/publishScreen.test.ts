@@ -31,6 +31,7 @@ function state(overrides: Partial<PublishState> = {}): PublishState {
     chosenBump: null,
     note: '',
     initialVersion: '1.0.0',
+    downloadFormat: 'yaml',
     ...overrides,
   };
 }
