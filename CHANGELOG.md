@@ -462,6 +462,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   leading zero and fit a safe integer, and a bump that would leave that range
   is refused rather than written. The proxy and the plugin's first-version
   field already call the same check, so both refuse the same strings.
+- **The Tokens table keeps a hardcoded value on each of two same-named
+  layers.** Unbound values were deduplicated by layer name and property, so
+  when two layers in different branches shared a name (two `Label` texts,
+  say) the second one's hardcoded fill, padding, gap or radius was dropped
+  from the table. Values are now keyed by the layer's path, as token bindings
+  and gaps already are. The canvas drift hash never covered these rows, so no
+  document reports an update.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
