@@ -16,15 +16,22 @@ import {
 import { DOCS_URL } from '../proxy';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
+import {
+  COMPONENT_FORMATS,
+  COMPONENT_FORMAT_NAME,
+  DEFAULT_COMPONENT_FORMAT,
+  type ComponentFormat,
+} from '../../componentFormat';
 
 export type FontField = 'headingFont' | 'bodyFont';
 export type ColorField = 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg';
 
 /** The Settings tabs, in strip order. */
-export type SettingsTab = 'frames' | 'about';
+export type SettingsTab = 'frames' | 'export' | 'about';
 
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'frames', label: 'Frames' },
+  { id: 'export', label: 'Export' },
   { id: 'about', label: 'About' },
 ];
 
@@ -50,6 +57,8 @@ export interface SettingsScreenState {
   pluginVersion: string | null;
   /** The tab on show. Absent means Frames, where Settings opens. */
   tab?: SettingsTab;
+  /** How components leave the plugin. Absent reads as YAML, the default. */
+  componentFormat?: ComponentFormat;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -233,6 +242,36 @@ function logoControls(state: SettingsScreenState): string {
 }
 
 /**
+ * The Export tab: one choice, YAML or Markdown, for every way a component
+ * leaves the plugin. The hint says what Markdown leaves out rather than
+ * calling it the same facts, which it is not: the page drops the machine
+ * fields the YAML carries. Foundations are named because the choice does not
+ * reach them, and the setting would otherwise look half applied.
+ */
+function exportSection(format: ComponentFormat): string {
+  const radios = COMPONENT_FORMATS.map((value) => {
+    const on = value === format;
+    return (
+      `<button type="button" role="radio" data-component-format="${value}" ` +
+      `aria-checked="${on}" tabindex="${on ? '0' : '-1'}">${COMPONENT_FORMAT_NAME[value]}</button>`
+    );
+  }).join('');
+  return (
+    '<section class="sl-settings-section sl-component-format-setting" ' +
+    'aria-labelledby="sl-component-format-heading">' +
+    '<div class="sl-settings-section-heading">' +
+    '<h2 id="sl-component-format-heading">Component format</h2>' +
+    '<p>How Copy for AI, the snapshot download, and the developer setup command write components.</p>' +
+    '</div>' +
+    `<div class="sl-segmented" role="radiogroup" aria-labelledby="sl-component-format-heading">${radios}</div>` +
+    '<p class="sl-settings-hint">YAML is compact and carries machine fields such as IDs. ' +
+    'Markdown reads as a page and leaves those out.</p>' +
+    '<p class="sl-settings-hint">Foundations always export as a DTCG JSON document.</p>' +
+    '</section>'
+  );
+}
+
+/**
  * The About section: two labelled versions and the way out to the docs.
  *
  * Both numbers carry their label. An unlabelled "Extractor 2" says neither
@@ -320,7 +359,11 @@ function framesPanel(state: SettingsScreenState): string {
 
 export function settingsScrollMarkup(state: SettingsScreenState): string {
   const tab = state.tab ?? 'frames';
-  const body = tab === 'about' ? aboutSection(state) : framesPanel(state);
+  const body = tab === 'about'
+    ? aboutSection(state)
+    : tab === 'export'
+      ? exportSection(state.componentFormat ?? DEFAULT_COMPONENT_FORMAT)
+      : framesPanel(state);
   return (
     `<div class="sl-settings-panel" role="tabpanel" id="sl-settings-panel" ` +
     `aria-labelledby="sl-settings-tab-${tab}">${body}</div>`

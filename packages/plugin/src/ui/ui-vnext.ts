@@ -45,6 +45,7 @@ import {
   type SettingsTab,
 } from './screens/settings';
 import { rovingIndex } from './viewModel/roving';
+import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../componentFormat';
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
@@ -110,6 +111,7 @@ import {
   send,
   setAiEnabled,
   setBrandTheme,
+  setComponentFormat,
   setLicenseKey,
   setFoundationGenerating,
   setFoundationHost,
@@ -410,6 +412,7 @@ function paint(): void {
         logoAttached: Boolean(state.logoBase64),
         pluginVersion: pluginBuild(),
         tab: settingsTab,
+        componentFormat: state.componentFormat,
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
@@ -1500,6 +1503,13 @@ function selectSettingsTab(next: SettingsTab): void {
   document.querySelector<HTMLElement>(`[data-settings-tab="${next}"]`)?.focus({ preventScroll: true });
 }
 
+/** Take a component format from the Export tab, store it, and keep focus on
+ *  the choice just made. Choosing the current one again changes nothing. */
+function chooseComponentFormat(value: ComponentFormat): void {
+  if (value !== state.componentFormat) setComponentFormat(state, value);
+  paintAndFocus(`[data-component-format="${value}"]`);
+}
+
 function syncVariantPicker(): void {
   const inputs = [
     ...refs.scroll.querySelectorAll<HTMLInputElement>('[data-variant]'),
@@ -1879,6 +1889,13 @@ document.addEventListener('click', (event) => {
   const settingsTabId = settingsTabButton?.dataset.settingsTab;
   if (settingsTabId && isSettingsTab(settingsTabId)) {
     selectSettingsTab(settingsTabId);
+    return;
+  }
+
+  const formatChoice = target.closest<HTMLButtonElement>('[data-component-format]');
+  const formatValue = formatChoice?.dataset.componentFormat;
+  if (formatValue && isComponentFormat(formatValue)) {
+    chooseComponentFormat(formatValue);
     return;
   }
 
@@ -2310,6 +2327,17 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
+  // Component format radios: any arrow moves and checks, Home and End jump.
+  if (event.target instanceof HTMLElement && event.target.dataset.componentFormat) {
+    const current = COMPONENT_FORMATS.indexOf(event.target.dataset.componentFormat as ComponentFormat);
+    const next = rovingIndex(current, COMPONENT_FORMATS.length, event.key, 'both');
+    if (next !== null) {
+      event.preventDefault();
+      chooseComponentFormat(COMPONENT_FORMATS[next]);
+      return;
+    }
+  }
+
   if (libraryMenuDocId) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -2523,6 +2551,11 @@ window.onmessage = (event: MessageEvent): void => {
     case 'aiEnabled':
       state.aiEnabled = msg.value;
       selection.aiEnabled = msg.value;
+      paint();
+      return;
+
+    case 'componentFormat':
+      state.componentFormat = msg.value;
       paint();
       return;
 

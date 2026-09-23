@@ -10,6 +10,7 @@
  *   ui-harness.html?view=library&pane=publish&publish=proposal
  *   ui-harness.html?view=library&pane=history&history=ready
  *   ui-harness.html?view=settings&tab=about
+ *   ui-harness.html?view=settings&tab=export&format=md
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
@@ -36,6 +37,7 @@ import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import { isSettingsTab, renderSettingsScreen, type SettingsScreenState } from './screens/settings';
+import { isComponentFormat, storedComponentFormat } from '../componentFormat';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
 import { createPublishState, firstPublishProposal, type PublishState } from './publish';
@@ -853,6 +855,7 @@ if (view === 'settings') {
     // unstamped branch, the way `?logo=` flips the logo one.
     pluginVersion: param('version', '5.0.0') || null,
     tab: isSettingsTab(tabParam) ? tabParam : 'frames',
+    componentFormat: storedComponentFormat(param('format', 'yaml')),
   };
   let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
   const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);
@@ -867,6 +870,14 @@ if (view === 'settings') {
       settingsState = { ...settingsState, tab: tabId };
       renderSettingsFixture();
       document.querySelector<HTMLElement>(`[data-settings-tab="${tabId}"]`)?.focus();
+      return;
+    }
+    const formatButton = target.closest<HTMLElement>('[data-component-format]');
+    const formatValue = formatButton?.dataset.componentFormat;
+    if (formatValue && isComponentFormat(formatValue)) {
+      settingsState = { ...settingsState, componentFormat: formatValue };
+      renderSettingsFixture();
+      document.querySelector<HTMLElement>(`[data-component-format="${formatValue}"]`)?.focus();
       return;
     }
     if (target.closest('[data-theme-preset="__custom__"]')) {

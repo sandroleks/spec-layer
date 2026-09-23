@@ -20,6 +20,7 @@ import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
+import { isComponentFormat, storedComponentFormat } from './componentFormat';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
@@ -261,6 +262,13 @@ figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Send the stored component format on startup (default YAML). Anything but a
+// known value reads as YAML, so a corrupt entry cannot choose a format.
+figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
+  const msg: MainToUi = { type: 'componentFormat', value: storedComponentFormat(value) };
+  figma.ui.postMessage(msg);
+}).catch(() => {/* ignore */});
+
 // Send stored frame brand theme on startup (default: no overrides). Reads
 // 'brandTheme'; a 1.x install that only has the two-color 'brandColors' key is
 // migrated once. The legacy key is left in place so a rollback still finds it.
@@ -496,6 +504,11 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'setAiEnabled':
       await figma.clientStorage.setAsync('aiEnabled', msg.value);
+      break;
+
+    case 'setComponentFormat':
+      // The UI only sends a known value, but this is the storage boundary.
+      if (isComponentFormat(msg.value)) await figma.clientStorage.setAsync('componentFormat', msg.value);
       break;
 
     case 'setBrandTheme':

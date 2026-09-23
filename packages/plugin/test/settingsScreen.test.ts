@@ -343,3 +343,61 @@ describe('settings tabs', () => {
     expect(isSettingsTab('')).toBe(false);
   });
 });
+
+/**
+ * Export holds the one choice about how component context leaves the plugin.
+ * It is a radio group, not two buttons, so assistive tech reads it as one
+ * choice with two options; the roving tabindex keeps it one Tab stop.
+ */
+describe('export tab', () => {
+  const state = {
+    theme: { ...THEME_PRESETS[0].theme },
+    customMode: false,
+    logoAttached: false,
+    pluginVersion: '5.0.0',
+    tab: 'export' as const,
+  };
+
+  it('sits between Frames and About', () => {
+    expect(SETTINGS_TABS.map((tab) => tab.label)).toEqual(['Frames', 'Export', 'About']);
+  });
+
+  it('offers YAML and Markdown as a radio group named by its heading, YAML checked by default', () => {
+    const markup = settingsScrollMarkup(state);
+    expect(markup).toContain('<h2 id="sl-component-format-heading">Component format</h2>');
+    expect(markup).toContain('role="radiogroup" aria-labelledby="sl-component-format-heading"');
+    expect(markup).toContain('data-component-format="yaml" aria-checked="true" tabindex="0">YAML</button>');
+    expect(markup).toContain('data-component-format="md" aria-checked="false" tabindex="-1">Markdown</button>');
+  });
+
+  it('checks Markdown when that is the stored choice', () => {
+    const markup = settingsScrollMarkup({ ...state, componentFormat: 'md' });
+    expect(markup).toContain('data-component-format="md" aria-checked="true" tabindex="0"');
+    expect(markup).toContain('data-component-format="yaml" aria-checked="false" tabindex="-1"');
+  });
+
+  it('says what the choice changes, and that Foundations do not change', () => {
+    const markup = settingsScrollMarkup(state);
+    expect(markup).toContain(
+      'How Copy for AI, the snapshot download, and the developer setup command write components.',
+    );
+    expect(markup).toContain(
+      'YAML is compact and carries machine fields such as IDs. Markdown reads as a page and leaves those out.',
+    );
+    expect(markup).toContain('Foundations always export as a DTCG JSON document.');
+  });
+
+  it('never shows the CLI value md, and uses no em dash', () => {
+    const markup = settingsScrollMarkup({ ...state, componentFormat: 'md' });
+    const text = markup.replace(/<[^>]*>/g, ' ');
+    expect(text).not.toMatch(/\bmd\b/);
+    expect(markup).not.toContain('—');
+  });
+
+  it('draws only the export section in its panel', () => {
+    const markup = settingsScrollMarkup(state);
+    expect(markup).toContain('aria-labelledby="sl-settings-tab-export"');
+    expect(markup).not.toContain('sl-frame-theme-section');
+    expect(markup).not.toContain('sl-about-section');
+  });
+});

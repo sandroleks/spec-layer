@@ -292,9 +292,11 @@ The plugin persists nothing outside Figma. Three surfaces hold state, each
 chosen for its lifetime:
 
 - `figma.clientStorage` holds per-user preferences: the license key and its
-  instance id, the `aiEnabled` toggle, the brand theme, and the captured logo.
-  It is per user and per machine, which is why license activation re-probes
-  each session rather than trusting a stored verdict.
+  instance id, the `aiEnabled` toggle, the component format (`componentFormat`,
+  YAML or Markdown, read back as YAML when missing or unrecognised), the brand
+  theme, and the captured logo. It is per user and per machine, which is why
+  license activation re-probes each session rather than trusting a stored
+  verdict.
 - `figma.root` plugin data holds the document registry, so a file knows which
   documents it contains without scanning every page. It also holds the file's
   published library id (`speclayer.publish.libraryId`) and the library's

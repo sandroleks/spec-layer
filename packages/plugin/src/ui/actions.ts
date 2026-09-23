@@ -24,6 +24,7 @@ import { generateProse } from './ai';
 import { effectiveAuth, generationErrorCopy } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
+import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
 import {
   ALL_SECTIONS, buildDocModel, frameCountFor, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
@@ -67,6 +68,9 @@ export interface UiState {
   quota: ProxyQuota | null;
   quotaExhausted: boolean;
   aiEnabled: boolean;
+  // How Copy for AI and the snapshot write a component. Per user, stored by
+  // the main thread; YAML until the boot message says otherwise.
+  componentFormat: ComponentFormat;
   generatedProse: ProseV2 | null;
   // The prose-key set the current draft was generated for. A checkbox change
   // that requests a key not in this set triggers exactly one regeneration;
@@ -106,6 +110,7 @@ export function createState(): UiState {
     quota: null,
     quotaExhausted: false,
     aiEnabled: false,
+    componentFormat: DEFAULT_COMPONENT_FORMAT,
     generatedProse: null,
     generatedProseKeys: null,
     lastOmitted: [],
@@ -476,6 +481,11 @@ export function setLicenseKey(state: UiState, value: string, instanceId: string 
 export function setAiEnabled(state: UiState, value: boolean): void {
   state.aiEnabled = value;
   send({ type: 'setAiEnabled', value });
+}
+
+export function setComponentFormat(state: UiState, value: ComponentFormat): void {
+  state.componentFormat = value;
+  send({ type: 'setComponentFormat', value });
 }
 
 export function setBrandTheme(state: UiState, value: BrandTheme): void {
