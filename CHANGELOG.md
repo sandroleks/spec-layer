@@ -213,6 +213,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   space in it, which it had not.
   The pre-commit hook recognises Spec Layer pull keys, npm tokens and
   Cloudflare token assignments, and `npm ci` now wires it into the clone.
+  The NUL scan reads every tracked text file, including `.github/`, the root
+  configs and the hook, not only `packages/` and `scripts/`.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping
