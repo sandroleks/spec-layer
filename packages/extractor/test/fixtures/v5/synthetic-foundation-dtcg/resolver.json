@@ -229,7 +229,7 @@
             "hidden_from_publishing": 0,
             "unstated": 1
           },
-          "omitted": 1
+          "omitted": 3
         },
         "semantic.light.json": {
           "tokens": 1,
@@ -254,7 +254,7 @@
             "hidden_from_publishing": 0,
             "unstated": 1
           },
-          "omitted": 1
+          "omitted": 3
         },
         "styles.effects.json": {
           "tokens": 1,

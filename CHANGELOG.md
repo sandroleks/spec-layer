@@ -420,7 +420,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   in, and `report.json` names it under `path_collision` with
   `details.reason: "group"`; its values stay in `spec-layer.meta.json`. A
   style whose name is a prefix of another style's name gets the same
-  treatment. Nothing here touches a content hash.
+  treatment. Nothing here touches a content hash. An alias two or more hops
+  from an omitted token is now omitted too, and reported `target_omitted`,
+  instead of writing a reference to a path the export never declares.
 
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles

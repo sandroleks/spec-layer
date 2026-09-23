@@ -375,8 +375,14 @@ function indexPaths(p: Projection): void {
  * the artifact listed first. The token AT the prefix is omitted, so the
  * output is the same in either order and the tokens beneath it keep their
  * group; the sidecar keeps the omitted token's values like any other omitted
- * token. Runs after `omitInexpressibleTypes`, because a descendant that is
- * itself omitted never creates a group.
+ * token. Runs after `omitInexpressibleTypes`, so a descendant DTCG has no
+ * type for never creates a group. That only holds for a type omission: this
+ * runs before `stabilizeAliasChains` decides which survivors never actually
+ * write a leaf, so a descendant that turns out to be dead by that later,
+ * value-dependent reckoning can still make its own ancestor a group here --
+ * the two checks answer different questions (can this path structurally hold
+ * both a leaf and a group, versus does this token's value ever resolve) and
+ * are not run to a joint fixed point.
  */
 function omitGroupConflicts(p: Projection): void {
   const survivors = [...p.pathById.keys()].filter((id) => !p.omittedIds.has(id));
@@ -1079,6 +1085,98 @@ function styleCensus(tree: DtcgTree): DtcgCensusEntry {
   return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
 }
 
+interface TokenFilesResult {
+  files: Record<string, DtcgTree>;
+  census: Record<string, DtcgCensusEntry>;
+  plans: FilePlan[];
+  /** Every token id that wrote a non-null leaf in at least one of its own
+   *  modes this attempt. A survivor absent here wrote nothing anywhere: an
+   *  alias chain reaches this even when nothing about its OWN path was ever
+   *  in question. */
+  aliveIds: Set<string>;
+}
+
+/**
+ * One full, honest attempt at every collection's token files, for a given
+ * `omittedIds`. Resets `p.factsById` first: a fact an earlier, less-informed
+ * attempt recorded against an id this attempt now omits must not linger into
+ * the meta this attempt produces, since `metaEntry` only re-checks `omitted`,
+ * not whether the fact itself is still current. `p.report` is left to
+ * accumulate -- an entry this attempt earns (why a token wrote nothing) stays
+ * true forever, because `omittedIds` only ever grows.
+ */
+function buildTokenFiles(p: Projection, artifact: FoundationArtifactV5): TokenFilesResult {
+  p.factsById = new Map();
+  const files: Record<string, DtcgTree> = {};
+  const plans: FilePlan[] = [];
+  const census: Record<string, DtcgCensusEntry> = {};
+  const aliveIds = new Set<string>();
+  const taken = new Set<string>(RESERVED_FILE_NAMES);
+  for (const collection of artifact.collections) {
+    for (const mode of collection.modes) {
+      const tree: DtcgTree = {};
+      const a = newAccumulator();
+      for (const token of artifact.tokens) {
+        if (token.collection_id !== collection.id) continue;
+        if (p.omittedIds.has(token.id)) {
+          a.omitted += 1;
+          if (p.collidedIds.has(token.id)) a.collided += 1;
+          continue;
+        }
+        const leaf = tokenLeaf(p, token, collection, mode.id);
+        if (!leaf) continue;
+        aliveIds.add(token.id);
+        setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
+        a.tokens += 1;
+        bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
+        // Classify from the recorded fact, not by sniffing `$value` for a
+        // leading "{": a font-family literal is free to start with that
+        // character, and the fact is the authoritative answer already
+        // computed by tokenLeaf.
+        const modeLabel = modeLabelOf(p, collection, mode.id);
+        if (p.factsById.get(token.id)?.transform[modeLabel] === 'alias') a.aliases += 1;
+        else a.literals += 1;
+        if (token.description.length > 0) a.present += 1; else a.missing += 1;
+        for (const scope of token.scopes) bump(a.scopes, scope);
+        if (token.code_syntax) a.codeSyntaxPresent += 1; else a.codeSyntaxMissing += 1;
+        if (token.publication?.published) a.published += 1;
+        if (token.publication?.hidden_from_publishing) a.hiddenFromPublishing += 1;
+        if (!token.publication) a.unstated += 1;
+      }
+      annotateGroups(p, tree, collection);
+      const file = fileNameFor(collection, mode, taken);
+      plans.push({ collection, modeId: mode.id, file });
+      files[file] = sortTree(tree) as DtcgTree;
+      census[file] = censusEntry(a);
+    }
+  }
+  return { files, census, plans, aliveIds };
+}
+
+/**
+ * Grows `omittedIds` to a fixed point before the authoritative build. A
+ * survivor whose every mode aliases another survivor can still write no leaf
+ * anywhere, when that target is itself unwritable: `tokenLeaf` only checks
+ * whether the DIRECT target id is omitted, so a token two or more hops from
+ * an omitted one keeps a live-looking path that nothing ever declares, and
+ * whatever aliases THAT keeps going the same way. Mirrors how
+ * `outputs/css.ts` shrinks `alive` to a fixed point: every attempt is a full
+ * rebuild via `buildTokenFiles` (never an incremental patch), so a token that
+ * only looked alive because an earlier attempt had not yet caught its target
+ * is re-judged from scratch each time, and the attempt that added nothing new
+ * is the one kept.
+ */
+function stabilizeAliasChains(p: Projection, artifact: FoundationArtifactV5): TokenFilesResult {
+  for (;;) {
+    const attempt = buildTokenFiles(p, artifact);
+    const dead = [...p.pathById.keys()]
+      .filter((id) => !p.omittedIds.has(id) && !attempt.aliveIds.has(id))
+      .sort(compareCodeUnits);
+    if (dead.length === 0) return attempt;
+    for (const id of dead) p.omittedIds.add(id);
+  }
+}
+
 /**
  * `derivedUnits` is optional because only a caller holding the whole library
  * can produce it: the evidence lives in the component artifacts, and this
@@ -1111,47 +1209,7 @@ export function foundationDtcg(
   reportDuplicateCodeSyntax(p);
   reportCollectionNameCollisions(p);
 
-  const files: Record<string, DtcgTree> = {};
-  const plans: FilePlan[] = [];
-  const census: Record<string, DtcgCensusEntry> = {};
-  const taken = new Set<string>(RESERVED_FILE_NAMES);
-  for (const collection of artifact.collections) {
-    for (const mode of collection.modes) {
-      const tree: DtcgTree = {};
-      const a = newAccumulator();
-      for (const token of artifact.tokens) {
-        if (token.collection_id !== collection.id) continue;
-        if (p.omittedIds.has(token.id)) {
-          a.omitted += 1;
-          if (p.collidedIds.has(token.id)) a.collided += 1;
-          continue;
-        }
-        const leaf = tokenLeaf(p, token, collection, mode.id);
-        if (!leaf) continue;
-        setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
-        a.tokens += 1;
-        bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
-        // Classify from the recorded fact, not by sniffing `$value` for a
-        // leading "{": a font-family literal is free to start with that
-        // character, and the fact is the authoritative answer already
-        // computed by tokenLeaf.
-        const modeLabel = modeLabelOf(p, collection, mode.id);
-        if (p.factsById.get(token.id)?.transform[modeLabel] === 'alias') a.aliases += 1;
-        else a.literals += 1;
-        if (token.description.length > 0) a.present += 1; else a.missing += 1;
-        for (const scope of token.scopes) bump(a.scopes, scope);
-        if (token.code_syntax) a.codeSyntaxPresent += 1; else a.codeSyntaxMissing += 1;
-        if (token.publication?.published) a.published += 1;
-        if (token.publication?.hidden_from_publishing) a.hiddenFromPublishing += 1;
-        if (!token.publication) a.unstated += 1;
-      }
-      annotateGroups(p, tree, collection);
-      const file = fileNameFor(collection, mode, taken);
-      plans.push({ collection, modeId: mode.id, file });
-      files[file] = sortTree(tree) as DtcgTree;
-      census[file] = censusEntry(a);
-    }
-  }
+  const { files, census, plans } = stabilizeAliasChains(p, artifact);
   const styles = styleFiles(p);
   Object.assign(files, styles);
   for (const [file, tree] of Object.entries(styles)) census[file] = styleCensus(tree);

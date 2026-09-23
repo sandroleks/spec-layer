@@ -1,9 +1,49 @@
 import { describe, expect, it } from 'vitest';
 import {
   dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
-  type UnitEvidence, type UsageUnitMap,
+  type DtcgJson, type UnitEvidence, type UsageUnitMap,
 } from '../../src/index';
 import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
+
+/** Every dot-joined path a tree writes a `$type`/`$value` leaf at. Stops
+ *  descending at the first such leaf: a group never itself holds one. */
+function declaredPaths(tree: DtcgJson): Set<string> {
+  const found = new Set<string>();
+  const walk = (node: DtcgJson, path: string[]): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) { found.add(path.join('.')); return; }
+    for (const [key, value] of Object.entries(record)) {
+      if (!key.startsWith('$')) walk(value, [...path, key]);
+    }
+  };
+  walk(tree, []);
+  return found;
+}
+
+/** Every path a plain token leaf's `$value` references with `{path}`. A
+ *  typography or effect leaf's `$value` is an object or array, never a bare
+ *  ref string, so this only ever finds a plain token's own alias. */
+function references(tree: DtcgJson): string[] {
+  const refs: string[] = [];
+  const walk = (node: DtcgJson): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) {
+      const value = record.$value;
+      if (typeof value === 'string') {
+        const match = /^\{(.+)\}$/.exec(value);
+        if (match) refs.push(match[1]);
+      }
+      return;
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (!key.startsWith('$')) walk(value);
+    }
+  };
+  walk(tree);
+  return refs;
+}
 
 describe('dtcgSegments', () => {
   it('splits on slash and keeps casing', () => {
@@ -481,6 +521,114 @@ describe('a token whose DTCG path is also a group', () => {
   });
 });
 
+describe('an alias whose reference chain ends in an omitted token', () => {
+  /** `color/chain/terminal` renamed to `color/chain`, a group over its own
+   *  two-hop-deep dependents `color/chain/middle` and `color/chain/bridge`:
+   *  the reviewer's reproduction for Task 1's group-conflict fix. */
+  const chainGroupConflict = (): ReturnType<typeof syntheticArtifact> => {
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:chain-terminal');
+    if (!terminal) throw new Error('fixture lost color/chain/terminal');
+    terminal.name = 'color/chain';
+    return artifact;
+  };
+
+  it('omits a token two hops from a group conflict, reports it target_omitted, and writes no dangling reference', () => {
+    const out = chainGroupConflict();
+    const exported = foundationDtcg(out);
+
+    expect(exported.meta['Primitives.color.chain.middle'])
+      .toMatchObject({ id: 'VariableID:chain-middle', omitted: true });
+    expect(exported.meta['Primitives.color.chain.bridge'])
+      .toMatchObject({ id: 'VariableID:chain-bridge', omitted: true });
+
+    for (const id of ['VariableID:chain-middle', 'VariableID:chain-bridge']) {
+      const reports = exported.report.filter((r) => r.code === 'value_omitted' && r.details.id === id);
+      expect(reports.length, id).toBeGreaterThan(0);
+      for (const r of reports) expect(r.details.reason, id).toBe('target_omitted');
+    }
+
+    // Every reference any token file writes resolves to a path some token
+    // file actually declares -- middle and bridge are both gone, so nothing
+    // may still point at them.
+    const tokenFiles = Object.entries(exported.files).filter(([name]) => !name.startsWith('styles.'));
+    const declared = new Set<string>();
+    for (const [, tree] of tokenFiles) for (const path of declaredPaths(tree)) declared.add(path);
+    expect(declared.has('Primitives.color.chain.middle')).toBe(false);
+    expect(declared.has('Primitives.color.chain.bridge')).toBe(false);
+    for (const [name, tree] of tokenFiles) {
+      for (const ref of references(tree)) expect(declared.has(ref), `${name} references ${ref}`).toBe(true);
+    }
+  });
+
+  it('projects a dead alias chain the same regardless of token order', () => {
+    const reordered = (): ReturnType<typeof syntheticArtifact> => {
+      const artifact = chainGroupConflict();
+      artifact.tokens = [...artifact.tokens].reverse();
+      return artifact;
+    };
+    expect(dtcgExportFiles(foundationDtcg(chainGroupConflict())))
+      .toEqual(dtcgExportFiles(foundationDtcg(reordered())));
+  });
+
+  it('propagates a dead alias chain across a collection boundary', () => {
+    const artifact = chainGroupConflict();
+    const owner = artifact.tokens.find((t) => t.id === 'VariableID:chain-owner');
+    if (!owner) throw new Error('fixture lost color/surface/primary');
+    // Both modes now alias the doomed Primitives chain; no literal fallback
+    // is left to keep this Semantic token alive.
+    owner.values['ModeID:s-light'] = owner.values['ModeID:s-dark'];
+    const out = foundationDtcg(artifact);
+
+    expect(out.meta['Semantic.color.surface.primary'])
+      .toMatchObject({ id: 'VariableID:chain-owner', omitted: true });
+    for (const [name, file] of Object.entries(out.files)) {
+      expect(leaf(file, 'Semantic.color.surface.primary'), name).toBeUndefined();
+    }
+    const reports = out.report.filter((r) => r.code === 'value_omitted' && r.details.id === 'VariableID:chain-owner');
+    expect(reports).toHaveLength(2);
+    for (const r of reports) expect(r.details.reason).toBe('target_omitted');
+  });
+
+  it('omits every level of a three-deep group conflict, in either order', () => {
+    const NAMES: Record<string, string> = {
+      'VariableID:color-exact': 'x', 'VariableID:color-lossy': 'x/y', 'VariableID:chain-terminal': 'x/y/z',
+    };
+    const threeDeep = (order: string[]): ReturnType<typeof syntheticArtifact> => {
+      const artifact = syntheticArtifact();
+      for (const [id, name] of Object.entries(NAMES)) {
+        const token = artifact.tokens.find((t) => t.id === id);
+        if (!token) throw new Error(`fixture lost ${id}`);
+        token.name = name;
+      }
+      const targeted = new Set(Object.keys(NAMES));
+      const rest = artifact.tokens.filter((t) => !targeted.has(t.id));
+      const byId = (id: string) => artifact.tokens.find((t) => t.id === id);
+      const picked = order.map(byId);
+      if (picked.some((t) => !t)) throw new Error('fixture lost one of the three chained tokens');
+      artifact.tokens = [...picked, ...rest] as typeof artifact.tokens;
+      return artifact;
+    };
+    const orders = [
+      Object.keys(NAMES),
+      [...Object.keys(NAMES)].reverse(),
+    ];
+    for (const order of orders) {
+      const out = foundationDtcg(threeDeep(order));
+      for (const [name, file] of Object.entries(out.files)) {
+        if (!name.startsWith('primitives.')) continue;
+        expect(leaf(file, 'Primitives.x.y.z')?.$type, name).toBe('color');
+        expect(leaf(file, 'Primitives.x'), name).not.toHaveProperty('$value');
+        expect(leaf(file, 'Primitives.x.y'), name).not.toHaveProperty('$value');
+      }
+      const groupReports = out.report.filter((r) => r.code === 'path_collision' && r.details.reason === 'group');
+      expect(groupReports.map((r) => r.path).sort()).toEqual(['Primitives.x', 'Primitives.x.y']);
+    }
+    expect(dtcgExportFiles(foundationDtcg(threeDeep(orders[0]))))
+      .toEqual(dtcgExportFiles(foundationDtcg(threeDeep(orders[1]))));
+  });
+});
+
 describe('foundationDtcg styles', () => {
   const out = foundationDtcg(syntheticArtifact());
 
@@ -918,11 +1066,20 @@ describe('units derived from stated usage', () => {
 
   it('reports a derived unit even when the token it pinned has no leaf of its own', () => {
     // A -> B -> C, where C lost its DTCG path to a collision and so is never
-    // built as a leaf. A's own leaf is still typed from C (its direct target B
-    // survives), so C's derived unit reaches the output through a call site
-    // that projects the chain TERMINAL rather than the token being built. If
-    // only the owning call site reported, this unit would be applied with
-    // nothing naming it anywhere.
+    // built as a leaf. B's only value aliases C directly, so B is exactly as
+    // dead as C from a consumer's point of view; A's only value aliases B, so
+    // A dies the same way, one hop further out (see "an alias whose reference
+    // chain ends in an omitted token" below -- this is that fix's own
+    // reporting machinery interacting with a chain that dies for a different
+    // reason, a collision rather than a group conflict). C's derived unit
+    // still reaches the output, though: a trial attempt at A's own leaf,
+    // taken before B is recognised dead, resolves through Figma's own chain
+    // straight to C and reports the derived unit there (the call site that
+    // projects the chain TERMINAL rather than the token being built); the
+    // entry survives once B and A are both recognised dead and dropped,
+    // because the report accumulates across fixed-point attempts. If only the
+    // owning call site reported, this unit would be applied with nothing
+    // naming it anywhere.
     const artifact = syntheticArtifact();
     const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
     if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
@@ -962,9 +1119,16 @@ describe('units derived from stated usage', () => {
     // The collided token really has no leaf: both twins were omitted.
     expect(out.report.some((r) => r.code === 'path_collision')).toBe(true);
     expect(leaf(out.files['primitives.light.json'], PATH)).toBeUndefined();
-    // ... and the derived unit really did reach the output through the alias.
-    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')?.$type).toBe('dimension');
+    // Neither hop between the collision and the surface token writes a leaf
+    // either: a reference to a token that itself resolves to nothing is
+    // exactly as dangling as a reference straight to the collision.
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.inner')).toBeUndefined();
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')).toBeUndefined();
+    expect(out.meta['Semantic.derived.inner']).toMatchObject({ omitted: true });
+    expect(out.meta['Semantic.derived.outer']).toMatchObject({ omitted: true });
 
+    // ... and the derived unit still reached the output, through the chain
+    // terminal projection, even though nothing in the chain survived it.
     const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
     expect(entries).toHaveLength(1);
     // Keyed by path plus id, the same way the sidecar names a collided token.
