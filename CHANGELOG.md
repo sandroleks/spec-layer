@@ -546,6 +546,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   extracted value carries one, so no hash moves; the pinned baselines in
   `specHash.test.ts` and `foundationHash.test.ts` prove it.
 
+- **A component property of a type the extractor does not know is reported
+  as `unknown`, not left untyped.** Figma defines four property types today
+  and the extractor names all four; a fifth used to produce a property with
+  no `kind` at all. It now reads `kind: unknown`, which the YAML brief lists
+  under `slots` with `type: unknown`. No existing file is affected and no
+  hash moves.
+
 - **A dimension token that aliases a number token no longer projects an
   invalid CSS value.** DTCG requires a referencing token's `$type` to equal
   its alias target's, but the DTCG projection decided each token's type from
