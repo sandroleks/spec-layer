@@ -100,10 +100,8 @@ function oneCollection(): FoundationSpec {
  * stays optional; a field a test dereferences further is typed as present.
  */
 /** One `tokens.used` entry now that `used` is a list, not a map keyed by
- *  name: every entry carries `token` and `kind` (the join identity), a
- *  variable entry also carries whatever `lookupToken` found, and a style
- *  entry (text-style / effect-style) carries neither a definition nor a
- *  lookup, only a `resolution` when it isn't a pointer to something real. */
+ *  name: every entry carries `token` and `kind` (the join identity), and a
+ *  `resolution` when it is not a pointer to a definition the brief carries. */
 interface UsedEntry {
   token: string;
   kind: string;
