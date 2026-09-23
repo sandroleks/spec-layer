@@ -1,14 +1,14 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
-  CSS_HEADER_PREFIX, CSS_INDEX_FILE, componentSlugs, dtcgExportFiles, fontRequirements, foundationDtcg,
-  slugify, usageUnits, validateLevel1,
-  type DtcgOptions, type FoundationArtifactV5,
+  CSS_HEADER_PREFIX, CSS_INDEX_FILE, COMPONENT_MARKDOWN_MARKER, COMPONENT_YAML_MARKER, componentMarkdown, componentSlugs,
+  dtcgExportFiles, fontRequirements, foundationDtcg, slugify, usageUnits, validateLevel1,
+  type ComponentArtifactV5, type DtcgOptions, type FoundationArtifactV5,
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
 import { outputId, outputPathProblem, renderOutput, type OutputConfig } from './outputs';
 import { visibleDirProblem, writeVisibleDir } from './visibleDir';
-import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
+import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, type ComponentFormat } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
@@ -19,18 +19,47 @@ import { cliVersion } from './version';
 export { slugify };
 
 /**
- * The first two lines of every component brief the extractor emits. The
- * visible component-specs/ directory is owned by this marker: files that
- * begin with it are ours to replace or remove, anything else stops the pull.
- * Nothing is prepended to a brief; the marker is what the plugin already
- * writes, so the file stays byte-identical to Copy for AI.
+ * The first two lines of every component brief the extractor emits, now
+ * defined once in the extractor beside the Markdown projection's. Kept under
+ * this name so existing callers are unchanged. Nothing is prepended to a
+ * brief; the marker is what the plugin already writes, so the file stays
+ * byte-identical to Copy for AI.
  */
-export const COMPONENT_SPEC_MARKER = 'spec_layer:\n  kind: component';
+export const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
+
+/**
+ * The visible component-specs/ directory is owned by either format's opening
+ * bytes, whichever this pull writes: files that begin with one are ours to
+ * replace or remove, anything else stops the pull. Owning both is what makes
+ * a format switch remove the other format's files through the ordinary
+ * replace-or-remove rule.
+ */
+export const COMPONENT_SPEC_MARKERS: readonly string[] = [COMPONENT_YAML_MARKER, COMPONENT_MARKDOWN_MARKER];
+
+/**
+ * One component's Markdown page, projected from its published artifact. The
+ * bundle's envelope check never looked inside the artifact, so a render can
+ * fail on a malformed one; that is one plain sentence, never a stack trace or
+ * a page with a gap papered over.
+ */
+export function componentMarkdownPage(component: { name: string; artifact: unknown }): string {
+  const failed = () => new Error(
+    `The published component context for ${component.name} could not be rendered as Markdown. Republish from the plugin, then pull again.`,
+  );
+  let page: string;
+  try {
+    page = componentMarkdown(component.artifact as ComponentArtifactV5);
+  } catch {
+    throw failed();
+  }
+  if (!page.startsWith(COMPONENT_MARKDOWN_MARKER)) throw failed();
+  return page;
+}
 
 /**
  * Every artifact in the bundle; path is null when the selection left it
  * unwritten, relative to the working directory: `.speclayer/tokens/resolver.json`
- * for the foundation, `component-specs/<slug>.yaml` for a component. A
+ * for the foundation, `component-specs/<slug>.yaml` or `.md` for a component. A
  * manifest written by CLI 0.6.0 or earlier carries paths relative to outDir;
  * the next pull rewrites them.
  */
@@ -75,6 +104,8 @@ export interface Manifest {
   outputs?: OutputConfig[];
   /** Where the briefs were written; absent in manifests before 0.7.0. Part of the freshness comparison. */
   componentSpecsDir?: string;
+  /** How the briefs were written; absent in manifests before 0.10.0, which always wrote yaml. Part of the freshness comparison. */
+  componentSpecsFormat?: ComponentFormat;
   artifacts: ManifestArtifact[];
 }
 
@@ -128,6 +159,7 @@ export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
   version?: string | null;
   selection?: Selection; dtcg?: DtcgOptions; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
+  componentSpecsFormat?: ComponentFormat;
 }): { written: string[]; componentSpecs: { path: string; files: string[] }; outputs: Array<{ path: string; files: string[] }> } {
   assertReplaceable(opts.outDir, opts.cwd);
   const selection = opts.selection ?? DEFAULT_SELECTION;
@@ -135,6 +167,7 @@ export function writeBundleFiles(opts: {
   const slugs = componentSlugs(opts.bundle.components.map((c) => c.name));
   const outputs = opts.outputs ?? [];
   const componentSpecsDir = opts.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
+  const componentSpecsFormat = opts.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
   // Manifest paths are relative to the working directory and always use `/`.
   const outDirRel = relative(resolve(opts.cwd), resolve(opts.outDir)).split(sep).join('/');
 
@@ -142,7 +175,7 @@ export function writeBundleFiles(opts: {
   // staged, so a refusal leaves the record and the team's tree exactly as
   // they were.
   const outputPaths = outputs.map((o) => o.path);
-  const specsProblem = visibleDirProblem(opts.cwd, outDirRel, componentSpecsDir, COMPONENT_SPEC_MARKER, outputPaths, 'componentSpecsDir');
+  const specsProblem = visibleDirProblem(opts.cwd, outDirRel, componentSpecsDir, COMPONENT_SPEC_MARKERS, outputPaths, 'componentSpecsDir');
   if (specsProblem) throw new Error(specsProblem);
   for (const o of outputs) {
     const problem = outputPathProblem(opts.cwd, outDirRel, o, [componentSpecsDir, ...outputPaths.filter((p) => p !== o.path)]);
@@ -151,6 +184,10 @@ export function writeBundleFiles(opts: {
   const briefs: Record<string, string> = {};
   opts.bundle.components.forEach((component, i) => {
     if (!selected[i]) return;
+    if (componentSpecsFormat === 'md') {
+      briefs[`${slugs[i]}.md`] = componentMarkdownPage(component);
+      return;
+    }
     if (!component.ai.startsWith(COMPONENT_SPEC_MARKER)) {
       throw new Error(`The published brief for ${component.name} does not begin with the Spec Layer marker. Republish from the plugin, then pull again.`);
     }
@@ -213,14 +250,14 @@ export function writeBundleFiles(opts: {
       artifacts.push({
         kind: 'component', name: component.name,
         contentHash: component.artifact.spec_layer.export.content_hash,
-        path: selected[i] ? `${componentSpecsDir}/${slugs[i]}.yaml` : null,
+        path: selected[i] ? `${componentSpecsDir}/${slugs[i]}.${componentSpecsFormat}` : null,
       });
     });
     const manifest: Manifest = {
       libraryId: opts.libraryId, publishedAt: opts.publishedAt, bundleHash: opts.bundleHash,
       pluginVersion: opts.bundle.pluginVersion, extractorVersion: opts.bundle.extractorVersion,
       cliVersion: cliVersion(),
-      selection, componentSpecsDir, artifacts,
+      selection, componentSpecsDir, componentSpecsFormat, artifacts,
       ...(opts.version ? { version: opts.version } : {}),
       ...(opts.dtcg && Object.keys(opts.dtcg).length > 0 ? { dtcg: opts.dtcg } : {}),
       ...(opts.platforms && opts.platforms.length > 0 ? { platforms: opts.platforms } : {}),
@@ -237,7 +274,7 @@ export function writeBundleFiles(opts: {
   // the team's tree changes. Briefs are written (and stale ones removed)
   // whenever a pull runs; tokens/ is touched only when the Foundation was
   // written, so a components-only pull leaves it exactly as it was.
-  const componentSpecs = { path: componentSpecsDir, files: writeVisibleDir(opts.cwd, componentSpecsDir, COMPONENT_SPEC_MARKER, briefs) };
+  const componentSpecs = { path: componentSpecsDir, files: writeVisibleDir(opts.cwd, componentSpecsDir, COMPONENT_SPEC_MARKERS, briefs) };
   const outputResults: Array<{ path: string; files: string[] }> = [];
   for (const d of deliverables) {
     outputResults.push({ path: d.output.path, files: writeVisibleDir(opts.cwd, d.output.path, CSS_HEADER_PREFIX, d.files, CSS_INDEX_FILE) });

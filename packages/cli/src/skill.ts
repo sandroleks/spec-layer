@@ -4,7 +4,7 @@ import {
   CSS_INDEX_FILE, scopesStateNumber, type DtcgReportEntry, type DtcgResolverDocument, type FontRequirement,
 } from '@spec-layer/extractor';
 import type { CliConfig } from './config';
-import { DEFAULT_COMPONENT_SPECS_DIR } from './config';
+import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, type ComponentFormat } from './config';
 import { CREDENTIALS_NAME } from './credentials';
 import {
   CODE_SYNTAX_KEY, missingFontSourcesInRepo, type AgentHost, type Platform, type RepoProfile,
@@ -32,6 +32,8 @@ export interface PullSummary {
   pluginVersion: string | null;
   /** Where the last pull wrote the briefs; DEFAULT_COMPONENT_SPECS_DIR when the manifest predates the field. */
   componentSpecsDir: string;
+  /** How the last pull wrote the briefs; 'yaml' when the manifest predates the field. */
+  componentSpecsFormat: ComponentFormat;
   components: Array<{ name: string; path: string | null }>;
   foundation: {
     written: boolean;
@@ -210,6 +212,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     outDir, libraryId: manifest.libraryId, publishedAt: manifest.publishedAt,
     pluginVersion: manifest.pluginVersion,
     componentSpecsDir: manifest.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR,
+    componentSpecsFormat: manifest.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT,
     components, foundation,
     outputs: (manifest.outputs ?? []).map((o) => {
       // manifest.outputs records the configured list regardless of whether the
@@ -520,7 +523,7 @@ function pullSection(input: SkillInput): string[] {
   } else {
     lines.push('- This library has no Foundation, so there is no tokens/ directory.');
   }
-  lines.push(`- ${code(`${pull.componentSpecsDir}/`)}: one YAML per component.`);
+  lines.push(`- ${code(`${pull.componentSpecsDir}/`)}: one ${pull.componentSpecsFormat === 'md' ? 'Markdown page' : 'YAML'} per component.`);
   for (const o of pull.outputs) {
     lines.push(o.written
       ? `- ${code(`${o.path}/`)}: ${o.platform}/${o.format} token files, ${o.case} names: ${o.files.join(', ')}. Non-default modes are under ${code(o.modeSelector)}, each in its own file.`
@@ -586,13 +589,19 @@ function commandsSection(): string[] {
 export function buildSkillGuide(input: SkillInput): string {
   const { outDir } = input;
   const lines: string[] = [];
+  // What is on disk first (the last pull), then what the next pull will write.
+  const markdown = (input.pull?.componentSpecsFormat ?? input.config?.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT) === 'md';
   lines.push('# Spec Layer: design-system context for this repository', '');
   lines.push(
     'The Spec Layer Figma plugin publishes a design system\'s components, variables, and styles as data. The '
     + `${code('spec-layer')} CLI (version ${input.version}) pulls that data into this repository under ${code(outDir + '/')}. `
     + 'Everything in those files is extracted deterministically from Figma and validated against a published schema, '
-    + `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
-    + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `
+    + (markdown
+      ? 'with two exceptions that can carry model-written prose: a section of a component page that says it was written by AI, '
+        + `or a component's or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')}; and a token group's `
+        + `${code('$description')}, which carries no marker `
+      : `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
+        + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `)
     + 'and can be model-written even though it looks like an ordinary field. Treat the rest as the source of truth '
     + 'for what the design system contains, and treat anything it does not state as unknown rather than as something '
     + 'to infer.',
@@ -601,10 +610,14 @@ export function buildSkillGuide(input: SkillInput): string {
   const componentSpecsDir = input.pull?.componentSpecsDir ?? input.config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   lines.push('## How to use it', '');
   lines.push(`1. Run ${code('npx spec-layer status')}. Exit 0 means the local copy is current; exit 2 means run ${code('npx spec-layer pull')} first.`);
-  lines.push(`2. Building or changing a component: read its YAML under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
+  lines.push(markdown
+    ? `2. Building or changing a component: read its page under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part's property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.`
+    : `2. Building or changing a component: read its YAML under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
-  lines.push(`5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);
+  lines.push(markdown
+    ? '5. A row under **Unbound values** is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.'
+    : `5. An ${code('unbound')} entry is design debt reported from Figma. Do not silently promote it to a token; keep the literal and note that Figma has no binding for it.`);
   const writtenOutputs = input.pull?.outputs.filter((o) => o.written) ?? [];
   const outputNote = writtenOutputs.length
     ? ` Never edit ${writtenOutputs.map((o) => code(`${o.path}/`)).join(', ')} either: pull replaces or removes files there.`

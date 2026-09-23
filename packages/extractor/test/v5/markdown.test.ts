@@ -958,6 +958,22 @@ describe('componentMarkdown hostile input', () => {
     expect(out.endsWith('\n\n')).toBe(false);
   });
 
+  it('throws rather than inventing a heading when the component has no name', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    for (const component of [undefined, {}, { name: '' }, { name: 42 }]) {
+      expect(() => componentMarkdown({ ...artifact, component } as unknown as typeof artifact))
+        .toThrow('componentMarkdown needs component.name; the artifact has none.');
+    }
+  });
+
+  it('throws rather than inventing anatomy bullets when anatomy is not a list', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    for (const anatomy of [undefined, 'abc', {}]) {
+      expect(() => componentMarkdown({ ...artifact, anatomy } as unknown as typeof artifact))
+        .toThrow('componentMarkdown needs anatomy as an array; the artifact has none.');
+    }
+  });
+
   // Carried forward from Task 5's review as an explicit gap: no test proved
   // the guard around `code('')`, which returns a bare `` `` `` pair -- not a
   // valid CommonMark code span. `anatomyBullets` only calls `code(path)`

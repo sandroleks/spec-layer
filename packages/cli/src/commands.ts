@@ -3,10 +3,11 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
+  COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
-import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
+import { componentMarkdownPage, readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
 import {
   DEFAULT_SELECTION, matchesName, resolveSelection, selectComponents, selectionFromFlags, type Selection,
 } from './selection';
@@ -26,6 +27,8 @@ export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
   only?: string; component?: string[]; canonical?: boolean;
   json?: boolean; install?: boolean; agent?: string[]; platform?: string[];
+  /** setup, init, pull, show: how component-specs/ is written or printed. */
+  'component-format'?: string;
   /** pull only: exit 1 when the output report holds an error-severity entry. Default exit codes are otherwise unchanged. */
   strict?: boolean;
 };
@@ -33,6 +36,9 @@ export type Flags = {
 export type Io = { out(line: string): void; err(line: string): void; write(text: string): void };
 
 const NO_LOCAL_PULL = 'No local pull found. Run spec-layer pull.';
+
+/** How the pull summary names each format. The plugin never shows `md`; neither does this line. */
+const FORMAT_NAME: Record<ComponentFormat, string> = { yaml: 'YAML', md: 'Markdown' };
 
 /** One manifest read per command, shared by the id fallback and the freshness check. */
 function manifestReader(): (outDir: string) => Manifest | null {
@@ -43,17 +49,18 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where briefs land. */
+/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where and how briefs land. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string },
+  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
+  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
   const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
   return selectionKey(a.selection) === selectionKey(b.selection)
     && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? [])
-    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR);
+    && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR)
+    && (a.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT) === (b.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT);
 }
 
 function sortKeys(value: unknown): unknown {
@@ -76,6 +83,15 @@ function platformsFromFlags(flags: Flags, io: Io): Platform[] | null | undefined
     if (!out.includes(value)) out.push(value);
   }
   return out;
+}
+
+/** --component-format as a format, undefined when absent, or null after printing the usage error. */
+function componentFormatFromFlags(flags: Flags, io: Io): ComponentFormat | null | undefined {
+  const value = flags['component-format'];
+  if (value === undefined) return undefined;
+  if (isComponentFormat(value)) return value;
+  io.err(`--component-format takes ${COMPONENT_FORMATS.join(' or ')}, not "${value}".`);
+  return null;
 }
 
 type PlatformSource = 'flag' | 'config' | 'detected' | 'none';
@@ -132,11 +148,15 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const format = componentFormatFromFlags(flags, io);
+  if (format === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
   const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, {
-    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR, ...(include ? { include } : {}),
+    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR,
+    ...(format ? { componentSpecsFormat: format } : {}),
+    ...(include ? { include } : {}),
     ...(platforms.length > 0 ? { platforms } : {}), ...(outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
@@ -254,10 +274,14 @@ export async function runSetup(
   try { existing = readConfig(cwd); } catch { existing = null; }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const format = componentFormatFromFlags(flags, io);
+  if (format === null) return 1;
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
   const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
+  // The same rule as include: a flag wins, else what the committed config says.
+  const keptFormat = format ?? existing?.componentSpecsFormat ?? null;
   // Platforms follow the same rule as include: a flag wins, else what the
   // committed config says, else detection. Outputs keep every entry the config
   // already has and gain a default for any platform that has none.
@@ -265,6 +289,7 @@ export async function runSetup(
   const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
     libraryId: flags.id, outDir, componentSpecsDir,
+    ...(keptFormat ? { componentSpecsFormat: keptFormat } : {}),
     ...(keptInclude ? { include: keptInclude } : {}),
     ...(keptDtcg ? { dtcg: keptDtcg } : {}),
     ...(platforms.length > 0 ? { platforms } : {}),
@@ -469,13 +494,17 @@ export async function runPull(
   }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const flagFormat = componentFormatFromFlags(flags, io);
+  if (flagFormat === null) return 1;
+  const componentSpecsFormat = flagFormat ?? opts.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
   // Ask for a 304 only when the last pull wrote the same files this one would,
   // with the same CLI, AND every one of those files is still on disk; a
-  // changed selection, dtcg block, outputs block, or componentSpecsDir needs
-  // the bundle again to re-project, and so does a deleted brief, a deliverable
-  // directory a developer (or a clean) removed, or a part file index.css
+  // changed selection, dtcg block, outputs block, componentSpecsDir, or
+  // component format needs the bundle again to re-project, and so does a
+  // deleted brief, a deliverable directory a developer (or a clean) removed,
+  // or a part file index.css
   // imports (which is not always every file the record map names, since a map
   // entry names only the file that first declares a token), since a 304 would
   // leave any of those missing rather than restoring it. Outputs are only ever
@@ -508,8 +537,11 @@ export async function runPull(
     .filter((a) => a.kind === 'component' && a.path !== null)
     .every((a) => existsSync(resolve(cwd, a.path as string)));
   const etag = manifest && manifest.cliVersion === cliVersion() && sameOutput(
-    { selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs, componentSpecsDir: manifest.componentSpecsDir },
-    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir },
+    {
+      selection: manifest.selection ?? DEFAULT_SELECTION, dtcg: manifest.dtcg, outputs: manifest.outputs,
+      componentSpecsDir: manifest.componentSpecsDir, componentSpecsFormat: manifest.componentSpecsFormat,
+    },
+    { selection, dtcg: opts.dtcg, outputs, componentSpecsDir: opts.componentSpecsDir, componentSpecsFormat },
   ) && briefsOnDisk && (!willWriteFoundation || foundationFilesOnDisk(cwd, opts.outDir))
     && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
@@ -543,7 +575,7 @@ export async function runPull(
       outDir: join(cwd, opts.outDir), cwd, raw: result.raw, bundle, selection,
       libraryId: opts.libraryId, publishedAt: result.publishedAt, bundleHash: result.bundleHash,
       version: result.version,
-      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir,
+      dtcg: opts.dtcg, platforms, outputs, componentSpecsDir: opts.componentSpecsDir, componentSpecsFormat,
     });
     written = writeResult.written;
     componentSpecs = writeResult.componentSpecs;
@@ -558,7 +590,10 @@ export async function runPull(
   }
   const count = (n: number) => `${n} file${n === 1 ? '' : 's'}`;
   io.out(`Wrote ${written.length} files under ${opts.outDir}/.`);
-  if (componentSpecs.files.length > 0) io.out(`Wrote ${componentSpecs.path}/ (${count(componentSpecs.files.length)}).`);
+  if (componentSpecs.files.length > 0) {
+    const n = componentSpecs.files.length;
+    io.out(`Wrote ${componentSpecs.path}/ (${n} ${FORMAT_NAME[componentSpecsFormat]} file${n === 1 ? '' : 's'}).`);
+  }
   for (const r of outputResults) {
     const o = outputs.find((x) => x.path === r.path);
     if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
@@ -659,6 +694,12 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     io.err(SHOW_USAGE);
     return 1;
   }
+  const flagFormat = componentFormatFromFlags(flags, io);
+  if (flagFormat === null) return 1;
+  if (wantsFoundation && flagFormat !== undefined) {
+    io.err('--component-format applies to components. The Foundation prints as its DTCG document.');
+    return 1;
+  }
   const outDir = resolvedOutDir(cwd, flags, io);
   if (!outDir) return 1;
   let bundle: BundleV1 | null;
@@ -673,6 +714,8 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     return 1;
   }
   let entry: { ai: string; artifact: unknown };
+  // Set only for `show component`: the bundle entry, which always carries a name.
+  let component: { name: string; artifact: unknown } | null = null;
   if (wantsFoundation) {
     if (!bundle.foundation) {
       io.err('This library has no Foundation. Run spec-layer list to see what it holds.');
@@ -691,8 +734,33 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
       return 1;
     }
     entry = matches[0];
+    component = matches[0];
   }
-  io.write(flags.canonical ? `${JSON.stringify(entry.artifact, null, 2)}\n` : entry.ai);
+  if (flags.canonical) {
+    io.write(`${JSON.stringify(entry.artifact, null, 2)}\n`);
+    return 0;
+  }
+  if (component) {
+    // The flag, then the config (what the next pull will write), then the last pull (what is on disk).
+    let configFormat: ComponentFormat | undefined;
+    try {
+      configFormat = readConfig(cwd)?.componentSpecsFormat;
+    } catch (err) {
+      io.err(errorText(err));
+      return 1;
+    }
+    const format = flagFormat ?? configFormat ?? readManifest(outDir)?.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
+    if (format === 'md') {
+      try {
+        io.write(componentMarkdownPage(component));
+      } catch (err) {
+        io.err(errorText(err));
+        return 1;
+      }
+      return 0;
+    }
+  }
+  io.write(entry.ai);
   return 0;
 }
 

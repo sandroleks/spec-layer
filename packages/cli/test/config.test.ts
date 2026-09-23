@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR } from '../src/config';
+import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, isComponentFormat } from '../src/config';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -416,5 +416,53 @@ describe('componentSpecsDir', () => {
   it('rejects a value that normalizes to empty', () => {
     writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abc', componentSpecsDir: './' }));
     expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsDir" must be a non-empty string.');
+  });
+});
+
+describe('config componentSpecsFormat', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), 'sl-cli-fmt-')); });
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('reads yaml and md', () => {
+    for (const value of ['yaml', 'md'] as const) {
+      writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer', componentSpecsFormat: value }));
+      expect(readConfig(tmpDir)).toEqual({ libraryId: 'lib_x', outDir: '.speclayer', componentSpecsFormat: value });
+    }
+  });
+
+  it('leaves the key out when the file has none', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', outDir: '.speclayer' }));
+    expect(readConfig(tmpDir)).not.toHaveProperty('componentSpecsFormat');
+  });
+
+  it('rejects any other value with a sentence naming both', () => {
+    for (const value of ['markdown', 'YAML', '', 1, null]) {
+      writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', componentSpecsFormat: value }));
+      expect(() => readConfig(tmpDir)).toThrow('speclayer.json "componentSpecsFormat" must be "yaml" or "md".');
+    }
+  });
+
+  it('writes the key after componentSpecsDir only when given, and round-trips', () => {
+    writeConfig(tmpDir, { libraryId: 'lib_x', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md' });
+    const text = readFileSync(join(tmpDir, 'speclayer.json'), 'utf8');
+    expect(Object.keys(JSON.parse(text))).toEqual(['libraryId', 'outDir', 'componentSpecsDir', 'componentSpecsFormat']);
+    expect(readConfig(tmpDir)?.componentSpecsFormat).toBe('md');
+    writeConfig(tmpDir, { libraryId: 'lib_x', outDir: '.speclayer' });
+    expect(readConfig(tmpDir)).not.toHaveProperty('componentSpecsFormat');
+  });
+
+  it('resolveOptions carries the config value and nothing when absent', () => {
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x', componentSpecsFormat: 'md' }));
+    expect(resolveOptions(tmpDir, {}, {}, () => null).componentSpecsFormat).toBe('md');
+    writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_x' }));
+    expect(resolveOptions(tmpDir, {}, {}, () => null)).not.toHaveProperty('componentSpecsFormat');
+  });
+
+  it('isComponentFormat accepts exactly the two values', () => {
+    expect(isComponentFormat('yaml')).toBe(true);
+    expect(isComponentFormat('md')).toBe(true);
+    expect(isComponentFormat('markdown')).toBe(false);
+    expect(isComponentFormat(undefined)).toBe(false);
   });
 });

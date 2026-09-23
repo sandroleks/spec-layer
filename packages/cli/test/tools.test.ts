@@ -51,6 +51,15 @@ describe('the tool catalogue', () => {
     expect(byName.init.writes).toEqual(['speclayer.json']);
   });
 
+  it('names the component format flag for setup, init, pull, and show, and in the banner', () => {
+    const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
+    for (const name of ['setup', 'init', 'pull', 'show']) {
+      expect(byName[name].usage, name).toContain('[--component-format yaml|md]');
+    }
+    expect(CLI_SOURCE).toContain('--component-format yaml|md');
+    expect(byName.show.summary).toContain('AI YAML or Markdown');
+  });
+
   it('prints stable JSON carrying the version', () => {
     const parsed = JSON.parse(toolsJson('9.9.9')) as { cli: string; version: string; tools: Array<{ name: string }> };
     expect(parsed.cli).toBe('spec-layer');

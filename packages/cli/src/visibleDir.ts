@@ -18,23 +18,29 @@ const inside = (parent: string, child: string): boolean => {
 
 const isDotfile = (name: string): boolean => name.startsWith('.');
 
+/** One marker, or several when a directory is owned by more than one file format. */
+export type Markers = string | readonly string[];
+
+const markerList = (marker: Markers): readonly string[] => (typeof marker === 'string' ? [marker] : marker);
+
 /**
- * Whether the file at `abs` begins with `marker`. Reads only enough bytes for
- * `marker` itself, plus one byte per `\n` it contains, so a CRLF checkout of
- * a marker that spans lines (a Git for Windows repository with
+ * Whether the file at `abs` begins with any of `marker`. Reads only enough
+ * bytes for the longest marker, plus one byte per `\n` it contains, so a CRLF
+ * checkout of a marker that spans lines (a Git for Windows repository with
  * core.autocrlf=true) still reads the whole prefix. `\r\n` is then folded
  * back to `\n` before the comparison, so the check does not care which line
- * ending the file on disk uses.
+ * ending the file on disk uses. An empty list owns nothing.
  */
-export function carriesMarker(abs: string, marker: string): boolean {
-  const newlines = (marker.match(/\n/g) ?? []).length;
-  const wantBytes = Buffer.byteLength(marker, 'utf8') + newlines;
+export function carriesMarker(abs: string, marker: Markers): boolean {
+  const markers = markerList(marker);
+  if (markers.length === 0) return false;
+  const wantBytes = Math.max(...markers.map((m) => Buffer.byteLength(m, 'utf8') + (m.match(/\n/g) ?? []).length));
   const fd = openSync(abs, 'r');
   try {
     const buf = Buffer.alloc(wantBytes);
     const read = readSync(fd, buf, 0, wantBytes, 0);
     const text = buf.subarray(0, read).toString('utf8').replace(/\r\n/g, '\n');
-    return text.startsWith(marker);
+    return markers.some((m) => text.startsWith(m));
   } finally {
     closeSync(fd);
   }
@@ -47,7 +53,7 @@ export function carriesMarker(abs: string, marker: string): boolean {
  * reader exactly what to edit.
  */
 export function visibleDirProblem(
-  cwd: string, outDir: string, dir: string, marker: string, others: string[], configKey: string,
+  cwd: string, outDir: string, dir: string, marker: Markers, others: string[], configKey: string,
 ): string | null {
   const root = resolve(cwd);
   const abs = resolve(cwd, dir);
@@ -90,7 +96,7 @@ function writeAtomically(abs: string, text: string): void {
  * write did not produce. Returns the names written, in write order. Assumes
  * visibleDirProblem returned null for this directory.
  */
-export function writeVisibleDir(cwd: string, dir: string, marker: string, files: Record<string, string>, last?: string): string[] {
+export function writeVisibleDir(cwd: string, dir: string, marker: Markers, files: Record<string, string>, last?: string): string[] {
   const abs = resolve(cwd, dir);
   const names = Object.keys(files).filter((n) => n !== last);
   if (last !== undefined && last in files) names.push(last);

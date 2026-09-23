@@ -17,7 +17,29 @@ plugin portion adds a download feature to the Publish screen and ships in the
 plugin's own release, on its own schedule; it needs no CLI version and moves
 none of the reasoning above.
 
+The CLI's Markdown support below ships as 0.10.0, a minor release because it
+adds an option. The manifest records the component format, so switching
+formats re-projects on the next pull; a repository that stays on YAML
+re-projects once on upgrade through the `manifest.cliVersion` check and gets
+byte-identical files.
+
 ### Added
+
+- **`spec-layer pull` can write components as Markdown.** Set
+  `componentSpecsFormat: "md"` in `speclayer.json`, or pass
+  `--component-format md` to `setup`, `init`, `pull`, or `show`, and
+  `component-specs/<slug>.md` is written in place of `<slug>.yaml`, rendered
+  from the published artifact by `componentMarkdown`. YAML stays the default
+  and is unchanged byte for byte. Every library already published renders
+  without a republish; the bundle and the proxy are untouched. Switching
+  formats removes the other format's files, and the manifest records the
+  format so a switch re-projects instead of reporting "Already up to date".
+  `show component` follows the flag, then the config, then the last pull;
+  `show foundation` refuses the flag. A component artifact that cannot be
+  rendered fails the pull with one sentence before anything is written. The
+  pull summary now names the format: "(3 YAML files)" or
+  "(3 Markdown files)". The agent guide from `spec-layer skill` describes the
+  page's headings when the pull wrote Markdown.
 
 - **A component artifact can be rendered as Markdown.** `componentMarkdown` in
   `packages/extractor/src/v5/markdown.ts` projects a validated Component
@@ -25,7 +47,9 @@ none of the reasoning above.
   bindings, the Foundation dependency slice, unbound values and issues, with
   any AI-written prose marked as AI written. It is a projection like DTCG. It
   never feeds a hash, is never stored in a bundle, and nothing parses it back.
-  No surface produces it yet; the CLI and the plugin follow.
+  An artifact with no component name is refused with an error rather than
+  given a placeholder heading.
+  The CLI produces it with `--component-format md`; the plugin follows.
 
 - **Foundation rows carry what the new frames draw.** A variable row now
   projects the code syntax Figma's variable settings define and the scale
