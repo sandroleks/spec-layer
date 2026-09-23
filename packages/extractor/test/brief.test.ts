@@ -1,12 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { load } from 'js-yaml';
-import { foundationBrief, componentBrief } from '../src/brief';
+import { componentBrief } from '../src/brief';
 import type { ComponentBriefOptions } from '../src/brief';
 import { toYaml } from '../src/yaml';
-import { buildFoundation, narrowFoundation } from '../src/foundation';
-import type { FoundationSpec, FoundationVariable, SerializedFoundation } from '../src/foundation';
+import type { FoundationSpec, FoundationVariable } from '../src/foundation';
 import type { IntermediateSpec } from '../src/extract';
-import type { YamlValue } from '../src/yaml';
 import type { RefIdentity } from '../src/tree';
 import type { TokenRule } from '../src/tokens';
 
@@ -30,18 +28,6 @@ const AT = '2026-08-14T10:22:00.000Z';
 const provenance = (id: string): FoundationVariable['provenance'] => ({
   id, scopes: [], valuesByMode: {}, staleModeIds: [],
 });
-
-/** Shape of the parsed brief, just deep enough for these assertions. Typed
- *  rather than `any` so a shape drift fails at compile time, matching the
- *  convention in yaml.test.ts. */
-interface ParsedBrief {
-  collections: { tokens: Record<string, unknown>[] }[];
-  text_styles: Record<string, unknown>[];
-}
-
-function parseBrief(v: YamlValue): ParsedBrief {
-  return load(toYaml(v)) as ParsedBrief;
-}
 
 const FOUNDATION: FoundationSpec = {
   fileKey: 'abc123',
@@ -106,17 +92,12 @@ function oneCollection(): FoundationSpec {
 }
 
 /**
- * Structural shape of the raw (pre-YAML) object foundationBrief and
- * componentBrief return, covering just the blocks the tests below read
- * directly off that object -- before it round-trips through YAML, so a test
- * can still tell a genuinely-absent key from a present-but-undefined one via
- * `'x' in obj`. A field every test only ever passes whole into `expect(...)`
- * or checks with `in` stays optional here; a field a test indexes or
- * dereferences further (`.api.variants.type`, `.guidelines.group_descriptions.A`,
- * `.collections[0].tokens[0]`, ...) is typed as present, because a raw,
- * un-narrowed chain like that needs every intermediate step to be provably
- * defined. One cast at the point each brief is produced, reused by every
- * test below instead of a fresh `any` at each site.
+ * Structural shape of the raw (pre-YAML) object componentBrief returns,
+ * covering just the blocks the tests below read directly off that object --
+ * before it round-trips through YAML, so a test can still tell a
+ * genuinely-absent key from a present-but-undefined one via `'x' in obj`.
+ * A field a test only passes whole into `expect(...)` or checks with `in`
+ * stays optional; a field a test dereferences further is typed as present.
  */
 /** One `tokens.used` entry now that `used` is a list, not a map keyed by
  *  name: every entry carries `token` and `kind` (the join identity), a
@@ -167,8 +148,6 @@ interface BriefShape {
     id: string; severity: string; path?: string; property?: string;
     message: string; when?: Record<string, string[]>;
   }>;
-  guidelines: { origin?: string; group_descriptions: Record<string, Record<string, string>> };
-  collections: Array<{ name: string; tokens: Array<{ name: string; values: Record<string, YamlValue> }> }>;
   typography?: Record<string, {
     resolution?: { status: string; reason: string };
     source_name?: string;
@@ -186,175 +165,6 @@ interface BriefShape {
   }>;
   effects_inline?: Array<{ path: string; layers: unknown[] }>;
 }
-
-describe('foundationBrief', () => {
-  it('stamps the envelope with the extractor version and brief version', () => {
-    const b = foundationBrief(FOUNDATION, { generatedAt: AT }) as Record<string, Record<string, unknown>>;
-    expect(b.spec_layer.kind).toBe('foundation');
-    expect(b.spec_layer.version).toBe(4);
-    expect(b.spec_layer.extractor).toBe('3');
-  });
-
-  it('names the file key as file_key, and omits the source block entirely when unavailable', () => {
-    const withKey = foundationBrief(FOUNDATION, { generatedAt: AT }) as unknown as BriefShape;
-    expect(withKey.source).toEqual({ file_key: 'abc123' });
-    // Not `source: {}`: an empty container reads as a measured verdict rather
-    // than as an absence, so the whole key is missing instead.
-    const noKey = foundationBrief({ ...FOUNDATION, fileKey: 'unknown' },
-      { generatedAt: AT }) as unknown as Record<string, unknown>;
-    expect('source' in noKey).toBe(false);
-  });
-
-  it('keys mode values by mode name, not modeId', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
-    expect(y.collections[0].tokens[0].values).toEqual({ Light: '#2563EB', Dark: '#3B82F6' });
-  });
-
-  it('keeps v5 identity, scopes, channels, and full chains out of the legacy v4 projection', () => {
-    const enriched = structuredClone(FOUNDATION);
-    const variable = enriched.collections[0].variables[0];
-    variable.provenance.id = 'VariableID:v5-only-marker';
-    variable.provenance.scopes = ['FRAME_FILL', 'SHAPE_FILL'];
-    variable.provenance.valuesByMode.m1 = {
-      kind: 'alias', targetId: 'VariableID:target-only-marker',
-      targetName: 'target/only/marker', targetPath: ['target', 'only', 'marker'],
-      targetCollectionId: 'CollectionID:v5-only-marker',
-      targetCollection: 'Primitives', external: false,
-      resolved: { kind: 'color', hex: '#2563EB', alpha: 1, channels: [0.145, 0.388, 0.921] },
-      chain: [
-        { tokenId: 'VariableID:hop-only-marker', modeId: 'ModeID:hop-only-marker' },
-        { tokenId: 'VariableID:terminal-only-marker', modeId: 'ModeID:terminal-only-marker' },
-      ],
-    };
-
-    const brief = foundationBrief(enriched, { generatedAt: AT });
-    const serialized = JSON.stringify(brief);
-    expect((brief as Record<string, Record<string, unknown>>).spec_layer.version).toBe(4);
-    expect(parseBrief(brief).collections[0].tokens[0].values)
-      .toEqual({ Light: '#2563EB', Dark: '#3B82F6' });
-    for (const marker of [
-      'v5-only-marker', 'target-only-marker', 'hop-only-marker',
-      'terminal-only-marker', 'FRAME_FILL', 'channels', 'chain',
-    ]) {
-      expect(serialized).not.toContain(marker);
-    }
-  });
-
-  it('emits code only when codeSyntax is populated', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
-    expect(y.collections[0].tokens[0].code).toEqual({ WEB: '--color-bg-brand' });
-    expect('code' in y.collections[0].tokens[1]).toBe(false);
-  });
-
-  it('gives an alias both its target and its resolved value', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
-    expect((y.collections[0].tokens[1].values as Record<string, unknown>).Light)
-      .toEqual({ alias: 'color/neutral/100', resolved: '#F5F5F5' });
-  });
-
-  it('states why an unresolved value is unresolved instead of dropping it', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
-    expect((y.collections[0].tokens[1].values as Record<string, unknown>).Dark).toEqual({ unresolved: 'external' });
-  });
-
-  it('emits text styles', () => {
-    const y = parseBrief(foundationBrief(FOUNDATION, { generatedAt: AT }));
-    expect(y.text_styles[0]).toEqual({
-      name: 'Body/Regular',
-      font: { family: 'Inter', style: 'Regular', size: 16 },
-      line_height: { unit: 'PIXELS', value: 24 },
-      letter_spacing: { unit: 'PERCENT', value: 0 },
-    });
-  });
-
-  it('is deterministic', () => {
-    expect(toYaml(foundationBrief(FOUNDATION, { generatedAt: AT }))).toBe(toYaml(foundationBrief(FOUNDATION, { generatedAt: AT })));
-  });
-
-  it('drops a value keyed by a mode no longer in collection.modes instead of leaking the raw modeId', () => {
-    const stale: FoundationSpec = {
-      ...FOUNDATION,
-      collections: [{
-        ...FOUNDATION.collections[0],
-        variables: [{
-          provenance: provenance('color/bg/brand'),
-          name: 'color/bg/brand', group: 'color', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: {
-            m1: { kind: 'color', hex: '#2563EB', alpha: 1 },
-            // 'm9' has no entry in collection.modes: its mode was deleted
-            // after this value was recorded.
-            m9: { kind: 'color', hex: '#000000', alpha: 1 },
-          },
-        }],
-      }],
-    };
-    const y = parseBrief(foundationBrief(stale, { generatedAt: AT }));
-    const values = y.collections[0].tokens[0].values as Record<string, unknown>;
-    expect(values).toEqual({ Light: '#2563EB' });
-    expect(Object.values(values)).not.toContain('m9');
-    expect(JSON.stringify(y)).not.toContain('m9');
-  });
-
-  it('omits default_mode rather than emitting a raw modeId when the default mode was deleted', () => {
-    const stale: FoundationSpec = {
-      ...FOUNDATION,
-      collections: [{ ...FOUNDATION.collections[0], defaultModeId: 'm9' }],
-    };
-    const y = parseBrief(foundationBrief(stale, { generatedAt: AT })) as unknown as
-      { collections: Record<string, unknown>[] };
-    expect('default_mode' in y.collections[0]).toBe(false);
-    expect(JSON.stringify(y)).not.toContain('m9');
-  });
-
-  it('carries group descriptions nested under their collection', () => {
-    const brief = foundationBrief(oneCollection(), {
-      generatedAt: 'T',
-      groupDescriptions: { Primitives: { 'color/surface': 'Surfaces you paint panels with.' } },
-    }) as unknown as BriefShape;
-    expect(brief.guidelines.origin).toBe('generated');
-    expect(brief.guidelines.group_descriptions).toEqual({
-      Primitives: { 'color/surface': 'Surfaces you paint panels with.' },
-    });
-  });
-
-  it('nests by collection so two collections can share a folder name', () => {
-    const brief = foundationBrief(oneCollection(), {
-      generatedAt: 'T',
-      groupDescriptions: { A: { color: 'From A.' }, B: { color: 'From B.' } },
-    }) as unknown as BriefShape;
-    expect(brief.guidelines.group_descriptions.A.color).toBe('From A.');
-    expect(brief.guidelines.group_descriptions.B.color).toBe('From B.');
-  });
-
-  it('omits the guidelines block entirely when there are no descriptions', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect('guidelines' in brief).toBe(false);
-  });
-
-  it('omits the block when a description map is present but empty', () => {
-    const brief = foundationBrief(oneCollection(), {
-      generatedAt: 'T', groupDescriptions: { Primitives: {} },
-    }) as unknown as BriefShape;
-    expect('guidelines' in brief).toBe(false);
-  });
-
-  it('never carries a contrast block', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as
-      Record<string, unknown>;
-    // A guard, not a shape check: contrast used to ride along here, and its
-    // failure list grows with the file, which is exactly what this payload
-    // cannot afford. The measurement still exists for the foundation FRAME.
-    expect('contrast' in brief).toBe(false);
-  });
-
-  it('still emits collections and text styles unchanged', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect(brief.collections[0].name).toBe('Primitives');
-    expect(brief.collections[0].tokens[0].name).toBe('color/surface/default');
-  });
-
-});
 
 // ---------------------------------------------------------------------------
 // componentBrief
@@ -435,6 +245,11 @@ const brief = (over: Partial<Parameters<typeof componentBrief>[1]> = {}): Parsed
   load(toYaml(componentBrief(SPEC, { generatedAt: AT, ...over }))) as ParsedComponentBrief;
 
 describe('componentBrief', () => {
+  it('is the only brief: the foundation brief is gone (review 2026-09-23)', async () => {
+    const extractor = await import('../src/index');
+    expect('foundationBrief' in extractor).toBe(false);
+  });
+
   it('stamps a component envelope and the source identity', () => {
     const y = brief();
     expect(y.spec_layer.kind).toBe('component');
@@ -1773,211 +1588,5 @@ describe('tokens.used as a list', () => {
     // The style kinds share one vocabulary now: `typography` named the PROPERTY,
     // not the kind of thing bound.
     expect(brief.tokens.used[0].kind).toBe('text-style');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// honest values and containers (B6, B7)
-// ---------------------------------------------------------------------------
-
-/** One collection ('Semantic') holding a plain colour token and a second
- *  token that aliases out to `targetName` in `targetCollection`, external by
- *  default. `targetCollection` is what an EXTERNAL alias carries end to end;
- *  passing '' models `readCollectionName` failing to name it. */
-function aliasFoundation(targetCollection = 'Core Palette'): FoundationSpec {
-  return {
-    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
-    collections: [{
-      id: 'sem', name: 'Semantic', defaultModeId: 'm1',
-      modes: [{ modeId: 'm1', name: 'Mode 1' }],
-      variables: [
-        {
-          provenance: provenance('color/bg/default'),
-          name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
-        },
-        {
-          provenance: provenance('color/bg/alias'),
-          name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: {
-            m1: { kind: 'alias', targetName: 'colors/gray/200', targetCollection,
-                  external: true, resolved: null },
-          },
-        },
-      ],
-    }],
-  };
-}
-
-/** Same shape as aliasFoundation, but the second token's alias resolves
- *  LOCALLY (external: false). A local alias already resolves, so its
- *  targetCollection -- 'Semantic', the same collection it lives in -- must
- *  never surface: naming it would add a line without adding information. */
-function localAliasFoundation(): FoundationSpec {
-  return {
-    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
-    collections: [{
-      id: 'sem', name: 'Semantic', defaultModeId: 'm1',
-      modes: [{ modeId: 'm1', name: 'Mode 1' }],
-      variables: [
-        {
-          provenance: provenance('color/bg/default'),
-          name: 'color/bg/default', group: 'color', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: { m1: { kind: 'color', hex: '#ffffff', alpha: 1 } },
-        },
-        {
-          provenance: provenance('color/bg/alias'),
-          name: 'color/bg/alias', group: 'color', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: {
-            m1: { kind: 'alias', targetName: 'color/bg/default', targetCollection: 'Semantic',
-                  external: false, resolved: { kind: 'color', hex: '#ffffff', alpha: 1 } },
-          },
-        },
-      ],
-    }],
-  };
-}
-
-/** One collection holding a single colour token at the given alpha, to probe
- *  the rounding boundary between "noise" (0.03999999910593033) and a real
- *  value the percent field can express (0.125). */
-function alphaFoundation(alpha: number): FoundationSpec {
-  return {
-    fileKey: 'FILE1', extractedAt: 'T', textStyles: [], effectStyles: [],
-    collections: [{
-      id: 'c1', name: 'Colors', defaultModeId: 'm1',
-      modes: [{ modeId: 'm1', name: 'Mode 1' }],
-      variables: [{
-        provenance: provenance('color/overlay'),
-        name: 'color/overlay', group: 'color', resolvedType: 'COLOR',
-        description: '', codeSyntax: {},
-        valuesByMode: { m1: { kind: 'color', hex: '#000000', alpha } },
-      }],
-    }],
-  };
-}
-
-/** A raw dump (buildFoundation input, not a resolved FoundationSpec) with two
- *  collections -- 'Primitives' (id 'prim') and 'Semantic' (id 'sem') -- so
- *  narrowFoundation's collection branch has a real target to narrow down to,
- *  distinct from the collection left behind. Carries one real text style, not
- *  `[]`: narrowFoundation's textStyles branch returns null BEFORE stamping
- *  anything when textStyles is empty, which would make a textStyles-scoped
- *  narrowing test vacuous (asserting against a spec that was never produced). */
-function twoCollectionDump(): SerializedFoundation {
-  return {
-    fileKey: 'FILE1', extractedAt: 'T', externals: [], effectStyles: [],
-    textStyles: [{
-      name: 'Body/Regular', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
-      lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: 0 },
-      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
-      boundVariables: {},
-    }],
-    collections: [
-      {
-        id: 'prim', name: 'Primitives', defaultModeId: 'm1',
-        modes: [{ modeId: 'm1', name: 'Value' }],
-        variables: [{
-          id: 'v1', name: 'color/gray/100', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: { m1: { r: 1, g: 1, b: 1, a: 1 } },
-        }],
-      },
-      {
-        id: 'sem', name: 'Semantic', defaultModeId: 'm1',
-        modes: [{ modeId: 'm1', name: 'Mode 1' }],
-        variables: [{
-          id: 'v2', name: 'color/bg/default', resolvedType: 'COLOR',
-          description: '', codeSyntax: {},
-          valuesByMode: { m1: { r: 1, g: 1, b: 1, a: 1 } },
-        }],
-      },
-    ],
-  };
-}
-
-describe('honest values and containers', () => {
-  it('names the collection an external alias points into', () => {
-    // In one real export, 13 external target names also existed locally and 4
-    // did not. Without the collection, the payload prints a name matching a
-    // local token of different identity with nothing to separate them.
-    const brief = foundationBrief(aliasFoundation(), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect(brief.collections[0].tokens[1].values['Mode 1'])
-      .toEqual({ alias: 'colors/gray/200', external: true, collection: 'Core Palette' });
-  });
-
-  it('omits the collection when the reader could not name it', () => {
-    const brief = foundationBrief(aliasFoundation(''), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect('collection' in (brief.collections[0].tokens[1].values['Mode 1'] as object)).toBe(false);
-  });
-
-  it('leaves a local alias alone', () => {
-    // A local alias already resolves, so naming its collection adds a line
-    // without adding information.
-    const brief = foundationBrief(localAliasFoundation(), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect('collection' in (brief.collections[0].tokens[1].values['Mode 1'] as object)).toBe(false);
-  });
-
-  it('trims float noise off alpha without flattening a real 0.125', () => {
-    const brief = foundationBrief(alphaFoundation(0.03999999910593033), { generatedAt: 'T' }) as unknown as BriefShape;
-    expect((brief.collections[0].tokens[0].values['Mode 1'] as { alpha: number }).alpha).toBe(0.04);
-    const fine = foundationBrief(alphaFoundation(0.125), { generatedAt: 'T' }) as unknown as BriefShape;
-    // Four decimals, not two: Figma's own percent field can express 0.125 and
-    // two decimals would silently round it to 0.13.
-    expect((fine.collections[0].tokens[0].values['Mode 1'] as { alpha: number }).alpha).toBe(0.125);
-  });
-
-  it('omits source entirely when Figma exposes no file key', () => {
-    const brief = foundationBrief({ ...oneCollection(), fileKey: 'unknown' },
-      { generatedAt: 'T' }) as unknown as Record<string, unknown>;
-    // `source: {}` is not an honest empty: it reads as a measured verdict.
-    expect('source' in brief).toBe(false);
-  });
-
-  it('omits empty text_styles and effect_styles rather than emitting []', () => {
-    const brief = foundationBrief(oneCollection(), { generatedAt: 'T' }) as unknown as Record<string, unknown>;
-    expect('text_styles' in brief).toBe(false);
-    expect('effect_styles' in brief).toBe(false);
-  });
-
-  it('says what a narrowed copy covers, and says nothing on a whole-file copy', () => {
-    const whole = buildFoundation(twoCollectionDump());
-    expect('scope' in (foundationBrief(whole, { generatedAt: 'T' }) as object)).toBe(false);
-
-    const narrowed = narrowFoundation(whole, { target: 'collection', collectionId: 'sem' })!;
-    const brief = foundationBrief(narrowed, { generatedAt: 'T' }) as unknown as {
-      scope: { collections: string[]; text_styles: string; effect_styles: string };
-    };
-    // `text_styles: []` used to read as "this file has no text styles". It means
-    // "this copy does not cover them".
-    expect(brief.scope).toEqual({
-      collections: ['Semantic'], text_styles: 'excluded', effect_styles: 'excluded',
-    });
-  });
-
-  it('states scope for a text-styles-scoped copy, distinctly from a collection-scoped one', () => {
-    const whole = buildFoundation(twoCollectionDump());
-    const narrowed = narrowFoundation(whole, { target: 'textStyles' });
-    // Guards the vacuous-test trap: narrowFoundation's textStyles branch
-    // returns null BEFORE stamping narrowedTo when textStyles is empty, so a
-    // fixture with none would make every assertion below compare against
-    // `undefined` rather than against real behaviour.
-    expect(narrowed).not.toBeNull();
-    const brief = foundationBrief(narrowed!, { generatedAt: 'T' }) as unknown as {
-      scope: { collections: string; text_styles: string; effect_styles: string };
-      text_styles?: unknown[];
-    };
-    expect(brief.scope).toEqual({
-      collections: 'excluded', text_styles: 'included', effect_styles: 'excluded',
-    });
-    // Pins 'included' against what the payload actually contains, not just
-    // against the literal string: a textStyles-scoped copy covers them, so it
-    // must still emit the text_styles block itself.
-    expect(brief.text_styles).toBeDefined();
-    expect(brief.text_styles!.length).toBeGreaterThan(0);
   });
 });

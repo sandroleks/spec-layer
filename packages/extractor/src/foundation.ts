@@ -260,8 +260,8 @@ export type FoundationCopyTarget =
   | { target: 'effectStyles' };
 
 /**
- * Reduce a whole-file spec to the part one Copy covers, so foundationBrief and
- * colorContrast can run over it unmodified.
+ * Reduce a whole-file spec to the part one Copy covers, so colorContrast and
+ * any other whole-spec reader can run over it unmodified.
  *
  * Returns null when the target resolves to nothing: a collection deleted since
  * its document was generated, or a text-styles target in a file whose styles

@@ -1,15 +1,17 @@
 /**
- * brief.ts — the public YAML brief projections.
+ * brief.ts — the component YAML brief projection.
  *
- * These are the product's only export contract now that Markdown is retired,
- * so they are deliberately a PROJECTION of the internal types rather than a
- * dump of them: the legacy component/foundation-v4 projections keep internal
- * ids, minimized token conditions, and rendering concerns inside, and their
- * shapes stay stable while the extractor's internals change. Foundation v5 is
- * a separate direct export whose contract intentionally includes stable ids.
+ * Component Context v5 (`v5/componentContext.ts`) takes `component`, `api` and
+ * `unbound` from `componentBrief` and builds the rest of its artifact itself.
+ * This is deliberately a PROJECTION of the internal types rather than a dump
+ * of them: internal ids stay inside, minimized token conditions and rendering
+ * concerns stay inside, and the shape stays stable while the extractor's
+ * internals change. The foundation half of this file (the v4 foundation
+ * brief) was removed on 2026-09-23; a Foundation exports as a DTCG resolver
+ * document from the Foundation Context v5 artifact.
  */
 
-import type { FoundationSpec, FoundationValue, FoundationVariable } from './foundation';
+import type { FoundationSpec, FoundationValue } from './foundation';
 import { roundN } from './effects';
 import type { EffectLayer } from './effects';
 import { EXTRACTOR_VERSION } from './version';
@@ -60,7 +62,7 @@ import { resolutionOf } from './resolution';
  */
 export const BRIEF_VERSION = 4;
 
-function envelope(kind: 'component' | 'foundation', generatedAt: string): YamlValue {
+function envelope(kind: 'component', generatedAt: string): YamlValue {
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
 }
 
@@ -112,28 +114,6 @@ function valueOf(v: FoundationValue): YamlValue {
   }
 }
 
-function tokenOf(variable: FoundationVariable, modeName: (id: string) => string | undefined): YamlValue {
-  const values: Record<string, YamlValue> = {};
-  for (const [modeId, value] of Object.entries(variable.valuesByMode)) {
-    // A modeId with no entry in collection.modes is stale (its mode was
-    // deleted after this value was recorded). Drop the column rather than
-    // keying it by the raw Figma modeId: this legacy foundation-v4 payload's
-    // rule is that internal ids stay inside, matching how unitContent() in
-    // foundation.ts drops a stale id instead of producing an id-keyed column.
-    const name = modeName(modeId);
-    if (name === undefined) continue;
-    values[name] = valueOf(value);
-  }
-  const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
-  return {
-    name: variable.name,
-    type: variable.resolvedType.toLowerCase(),
-    description: variable.description || undefined,
-    code: code as YamlValue,
-    values,
-  };
-}
-
 /**
  * Effect layers, projected for emission: every field-level binding becomes
  * its token NAME instead of the `RefIdentity` Figma gave it. `RefIdentity.id`
@@ -167,114 +147,6 @@ function projectEffectLayers(layers: EffectLayer[]): YamlValue {
     for (const [field, ref] of Object.entries(bindings)) projected[field] = ref.name;
     return { ...raw, bindings: projected } as unknown as YamlValue;
   }) as unknown as YamlValue;
-}
-
-export interface FoundationBriefOptions {
-  generatedAt: string;
-  /**
-   * AI-written group descriptions, read from the foundation doc links on canvas
-   * and keyed by collection name, then folder path. Nested rather than flat
-   * because two collections can each hold a folder of the same name, which a
-   * flat map would silently collapse into one entry.
-   *
-   * Partial by nature: copyFoundationBrief deliberately covers the whole file
-   * while a foundation doc may cover one scope, and a file may have no
-   * foundation doc at all. Never generated here, only passed through from
-   * storage.
-   */
-  groupDescriptions?: Record<string, Record<string, string>>;
-}
-
-/**
- * What a narrowed copy covers, stated rather than implied by an empty container.
- *
- * Derived from `narrowedTo`, which narrowFoundation stamps, so
- * copyFoundationBriefForScope gets a scope block and copyFoundationBrief does
- * not without either caller passing anything extra. Neither changes WHAT it
- * covers: copyFoundationBrief still deliberately ignores the scope selection
- * that document generation respects.
- */
-function scopeOf(foundation: FoundationSpec): YamlValue | undefined {
-  const target = foundation.narrowedTo;
-  if (!target) return undefined;
-  if (target.target === 'textStyles') {
-    return { collections: 'excluded', text_styles: 'included', effect_styles: 'excluded' };
-  }
-  return {
-    collections: foundation.collections.map((c) => c.name),
-    text_styles: 'excluded',
-    effect_styles: 'excluded',
-  };
-}
-
-export function foundationBrief(
-  foundation: FoundationSpec,
-  opts: FoundationBriefOptions,
-): YamlValue {
-  // A collection whose map is present but empty contributes nothing, and
-  // letting it through would emit a guidelines block containing an empty
-  // object.
-  const descriptions = Object.fromEntries(
-    Object.entries(opts.groupDescriptions ?? {})
-      .filter(([, folders]) => Object.keys(folders).length > 0),
-  );
-  const hasDescriptions = Object.keys(descriptions).length > 0;
-  const source = fileKeyOf(foundation.fileKey);
-  const scope = scopeOf(foundation);
-  return {
-    spec_layer: envelope('foundation', opts.generatedAt),
-    // Omitted ENTIRELY when Figma exposes no file key. fileKeyOf already refuses
-    // to emit the literal 'unknown'; spreading its empty result into a key
-    // anyway produced `source: {}`, and an empty container reads as a measured
-    // verdict rather than as an absence.
-    ...(Object.keys(source).length > 0 ? { source } : {}),
-    // Present only on a narrowed copy. A whole-file copy covers everything, so
-    // there is nothing to state.
-    ...(scope !== undefined ? { scope } : {}),
-    collections: foundation.collections.map((c) => {
-      const byId = new Map(c.modes.map((m) => [m.modeId, m.name]));
-      // Same staleness class as unitContent() in foundation.ts: a mode can be
-      // deleted after a value or a defaultModeId referencing it was recorded.
-      // Falling back to the raw modeId would leak a Figma-internal id into a
-      // payload whose stated rule is that ids stay inside, so an unresolved
-      // id resolves to undefined instead — dropped from `values` in tokenOf,
-      // and omitted from `default_mode` here (the YAML emitter drops
-      // undefined-valued keys), narrowing the brief rather than misreporting it.
-      const modeName = (id: string): string | undefined => byId.get(id);
-      return {
-        name: c.name,
-        modes: c.modes.map((m) => m.name),
-        default_mode: modeName(c.defaultModeId),
-        tokens: c.variables.map((v) => tokenOf(v, modeName)),
-      };
-    }),
-    // Omitted when empty, for the reason `source` is: `text_styles: []` reads as
-    // "this file has no text styles" when it means "this copy does not cover
-    // them", and narrowFoundation sets exactly that on every scoped copy.
-    ...(foundation.textStyles.length > 0
-      ? { text_styles: foundation.textStyles.map((t) => ({
-          name: t.name,
-          font: { family: t.fontFamily, style: t.fontStyle, size: t.fontSize },
-          line_height: { unit: t.lineHeight.unit, value: t.lineHeight.value },
-          letter_spacing: { unit: t.letterSpacing.unit, value: t.letterSpacing.value },
-        })) }
-      : {}),
-    ...(foundation.effectStyles.length > 0
-      ? { effect_styles: foundation.effectStyles.map((s) => ({
-          name: s.name,
-          description: s.description || undefined,
-          // Style layers are never resolved with bindings today (see
-          // RawEffectStyle in foundation.ts), so this is a no-op in practice --
-          // routed through the same projection as effects_inline anyway, since
-          // the type still allows a `bindings` key and the id-leak rule admits
-          // no exceptions.
-          effects: projectEffectLayers(s.effects),
-        })) }
-      : {}),
-    ...(hasDescriptions
-      ? { guidelines: { origin: 'generated', group_descriptions: descriptions } }
-      : {}),
-  };
 }
 
 export interface ComponentBriefOptions {
@@ -347,10 +219,10 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
  * Guidelines read from storage, passed through verbatim. Renamed to the
  * brief's snake_case convention; nothing here is written by this function.
  *
- * `origin: 'generated'` leads the block, the same marker foundationBrief
- * stamps on its own guidelines. The prose in here is the only model-written
- * content in either brief, so one marked block is the whole generated-content
- * boundary and a consumer needs no per-field annotation to find it.
+ * `origin: 'generated'` leads the block. The prose in here is the only
+ * model-written content in the brief, so one marked block is the whole
+ * generated-content boundary and a consumer needs no per-field annotation to
+ * find it.
  *
  * Every field applies the same empty-string-means-absent guard (`|| undefined`
  * for strings, a length check for the two string arrays) so a field that
@@ -456,11 +328,10 @@ function lookupToken(
       const raw = variable.valuesByMode[collection.defaultModeId];
       const code = Object.keys(variable.codeSyntax).length > 0 ? variable.codeSyntax : undefined;
       // A modeId with no entry in collection.modes is stale (its mode was
-      // deleted after this value was recorded) -- same staleness class the
-      // foundation brief's tokenOf/modeName already handle. Falling back to
-      // the raw Figma modeId would leak an internal id into a payload whose
-      // rule is that ids stay inside, so an unresolved mode name is left out
-      // of the result entirely rather than emitted blank or id-keyed.
+      // deleted after this value was recorded). Falling back to the raw
+      // Figma modeId would leak an internal id into a payload whose rule is
+      // that ids stay inside, so an unresolved mode name is left out of the
+      // result entirely rather than emitted blank or id-keyed.
       const modeName = collection.modes.find((m) => m.modeId === collection.defaultModeId)?.name;
       const shared: { code?: YamlValue; mode?: string } = {
         ...(code !== undefined ? { code: code as YamlValue } : {}),
@@ -734,7 +605,7 @@ function effectsOf(
     out[name] = {
       source_name: style.name,
       description: style.description || undefined,
-      // Same source as foundationBrief's effect_styles (foundation.effectStyles),
+      // Same source as the Foundation copy's effect_styles (foundation.effectStyles),
       // so bindings is never populated here either -- projected anyway for the
       // same reason: the type allows it, and the id-leak rule admits no
       // exceptions.
@@ -848,7 +719,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
-      // Same two fixes as foundationBrief's source above: a file KEY no longer
+      // A file KEY no longer
       // sits under a field named `file`, and an unavailable key is omitted
       // rather than emitted as the literal string 'unknown'. Conditional
       // spreads, not `key: undefined`: the YAML emitter drops undefined-valued
