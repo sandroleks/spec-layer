@@ -377,6 +377,16 @@ export function comboKey(values: Combo): string {
  * `bindingCells` expands a projection's minimized rules back over its variant
  * instances, which is the shape the canvas Tokens table renders and the shape
  * a designer edits one variant at a time.
+ *
+ * Keyed on `part`, not `path`, because SpecHashProjection carries only `part`:
+ * `path` stays out of the hash (see specHashProjection in hash.ts), and the
+ * diff input is the hash input. So two same-named parts in different
+ * subtrees share one cell here, and a change to either reads as a change to
+ * the pair. Fixing that means adding `path` to the projection, which moves
+ * specContentHash for every committed document, so it waits for the next
+ * EXTRACTOR_VERSION bump (review 2026-09-23). The same applies to ruleItems
+ * below. libraryDiff.ts, which reads the v5 artifact rather than the
+ * projection, already keys on `path`.
  */
 type CellsByProperty = Map<string, { part: string; property: string; cells: Map<string, string[]> }>;
 
@@ -620,7 +630,8 @@ function tokenItems(before: SpecHashProjection, after: SpecHashProjection): Chan
   return items;
 }
 
-/** Rule-identity fallback for a projection missing its variant instances. */
+/** Rule-identity fallback for a projection missing its variant instances.
+ *  Keyed on `part` for the reason bindingCells gives: the projection has no `path`. */
 function ruleItems(before: SpecHashProjection, after: SpecHashProjection): Draft[] {
   const tokens: Draft[] = [];
   const rules = diffKeyed(list(before.tokens), list(after.tokens),
