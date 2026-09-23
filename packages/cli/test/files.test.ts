@@ -4,9 +4,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
+  COMPONENT_MARKDOWN_MARKER, buildComponentArtifactV5, buildFoundation, buildFoundationArtifactV5, componentMarkdown, extract,
+  type SerializedFoundation, type SerializedNode,
 } from '@spec-layer/extractor';
 import { slugify, readManifest, readLocalBundle, writeBundleFiles, type Manifest } from '../src/files';
+import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/componentV5';
+import chipHidden from '../../extractor/test/fixtures/chip-hidden.json';
 import type { BundleV1 } from '../src/bundle';
 
 const SERIALIZED = fileURLToPath(new URL(
@@ -711,5 +714,129 @@ describe('readLocalBundle', () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'bundle.json'), '{ not json');
     expect(() => readLocalBundle(outDir)).toThrow(/bundle\.json.*pull/i);
+  });
+});
+
+/**
+ * A component artifact shaped the way plugin 5.0.0 (tag v5.0.0) published
+ * it: component schema 5.1.0, before #54 added `shown_by` to anatomy nodes.
+ * Built from the hidden-elements Chip so the removal is not vacuous.
+ */
+function componentArtifactAt510() {
+  const artifact = buildComponentArtifactV5(
+    extract(chipHidden as SerializedNode, { figmaFile: 'FILE1', figmaFileName: 'Design System' }),
+    { exportId: 'component:chip-510', generatedAt: '2026-09-03T00:00:00.000Z', build: null },
+  );
+  if (!JSON.stringify(artifact.anatomy).includes('"shown_by"')) {
+    throw new Error('fixture shape changed: expected chip-hidden to carry shown_by');
+  }
+  type Node = Record<string, unknown> & { children?: Node[] };
+  const strip = (nodes: Node[]): Node[] => nodes.map(({ shown_by: _dropped, children, ...rest }) => ({
+    ...rest, ...(children ? { children: strip(children) } : {}),
+  }));
+  return {
+    ...artifact,
+    spec_layer: { ...artifact.spec_layer, schema_version: '5.1.0' },
+    anatomy: strip(artifact.anatomy as unknown as Node[]),
+  };
+}
+
+describe('writeBundleFiles component format', () => {
+  let tmpDir: string;
+  let outDir: string;
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'sl-files-fmt-'));
+    outDir = join(tmpDir, '.speclayer');
+  });
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  const golden = buildComponentV5GoldenArtifact();
+  const mdBundle = () => makeBundle({
+    components: [{ name: 'Button', ai: brief('button: yes\n'), artifact: golden as unknown as BundleV1['components'][number]['artifact'] }],
+  });
+  const write = (bundle: BundleV1, componentSpecsFormat?: 'yaml' | 'md') => writeBundleFiles({
+    outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+    libraryId: 'lib-1', publishedAt: 'p', bundleHash: 'h',
+    selection: { foundation: false, components: null },
+    ...(componentSpecsFormat ? { componentSpecsFormat } : {}),
+  });
+
+  it('writes <slug>.md as exactly componentMarkdown(artifact)', () => {
+    const { componentSpecs } = write(mdBundle(), 'md');
+    expect(componentSpecs.files).toEqual(['button.md']);
+    const page = readFileSync(join(tmpDir, 'component-specs/button.md'), 'utf8');
+    expect(page).toBe(componentMarkdown(golden));
+    expect(page.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+    expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(false);
+  });
+
+  it('records the format and the .md path in the manifest', () => {
+    write(mdBundle(), 'md');
+    const manifest = readManifest(outDir) as Manifest;
+    expect(manifest.componentSpecsFormat).toBe('md');
+    expect(manifest.artifacts.find((a) => a.kind === 'component')?.path).toBe('component-specs/button.md');
+  });
+
+  it('defaults to yaml, byte-identical to the published ai, and records it', () => {
+    const bundle = mdBundle();
+    write(bundle);
+    expect(readFileSync(join(tmpDir, 'component-specs/button.yaml'), 'utf8')).toBe(bundle.components[0].ai);
+    const manifest = readManifest(outDir) as Manifest;
+    expect(manifest.componentSpecsFormat).toBe('yaml');
+    expect(manifest.artifacts.find((a) => a.kind === 'component')?.path).toBe('component-specs/button.yaml');
+  });
+
+  it('switching yaml to md removes the yaml file, and md to yaml removes the md file', () => {
+    write(mdBundle(), 'yaml');
+    write(mdBundle(), 'md');
+    expect(readdirSync(join(tmpDir, 'component-specs'))).toEqual(['button.md']);
+    write(mdBundle(), 'yaml');
+    expect(readdirSync(join(tmpDir, 'component-specs'))).toEqual(['button.yaml']);
+  });
+
+  it('still refuses a foreign file in component-specs/ in md mode', () => {
+    mkdirSync(join(tmpDir, 'component-specs'));
+    writeFileSync(join(tmpDir, 'component-specs/notes.md'), '# Notes\n');
+    expect(() => write(mdBundle(), 'md')).toThrow(/component-specs holds files spec-layer did not write/);
+  });
+
+  it('fails with one plain sentence and writes nothing when an artifact cannot be rendered', () => {
+    // A content-hash stub has no component name: Task 1 makes the renderer throw.
+    const bundle = makeBundle({
+      components: [{ name: 'Button', ai: brief('button: yes\n'), artifact: { spec_layer: { export: { content_hash: 'c'.repeat(64) } } } }],
+    });
+    expect(() => write(bundle, 'md')).toThrow(
+      'The published component context for Button could not be rendered as Markdown. Republish from the plugin, then pull again.',
+    );
+    expect(existsSync(outDir)).toBe(false);
+    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(existsSync(join(tmpDir, 'component-specs'))).toBe(false);
+  });
+
+  it('does not render an unselected component, so a broken one outside the selection cannot fail the pull', () => {
+    const bundle = makeBundle({
+      components: [
+        { name: 'Button', ai: brief('button: yes\n'), artifact: golden as unknown as BundleV1['components'][number]['artifact'] },
+        { name: 'Broken', ai: brief('broken\n'), artifact: { spec_layer: { export: { content_hash: 'd'.repeat(64) } } } },
+      ],
+    });
+    const { componentSpecs } = writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle, libraryId: 'lib-1', publishedAt: 'p', bundleHash: 'h',
+      selection: { foundation: false, components: ['Button'] }, componentSpecsFormat: 'md',
+    });
+    expect(componentSpecs.files).toEqual(['button.md']);
+  });
+
+  it('renders a component artifact published at schema 5.1.0', () => {
+    const artifact = componentArtifactAt510();
+    const bundle = makeBundle({
+      components: [{ name: 'Chip', ai: brief('chip\n'), artifact: artifact as unknown as BundleV1['components'][number]['artifact'] }],
+    });
+    write(bundle, 'md');
+    const page = readFileSync(join(tmpDir, 'component-specs/chip.md'), 'utf8');
+    expect(page.startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+    expect(page).toContain('# Chip');
+    expect(page).toContain('## Anatomy');
+    expect(page).not.toContain('[object Object]');
   });
 });
