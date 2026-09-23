@@ -7,7 +7,7 @@ import {
   COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
-import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
+import { componentMarkdownPage, readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
 import {
   DEFAULT_SELECTION, matchesName, resolveSelection, selectComponents, selectionFromFlags, type Selection,
 } from './selection';
@@ -694,6 +694,12 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     io.err(SHOW_USAGE);
     return 1;
   }
+  const flagFormat = componentFormatFromFlags(flags, io);
+  if (flagFormat === null) return 1;
+  if (wantsFoundation && flagFormat !== undefined) {
+    io.err('--component-format applies to components. The Foundation prints as its DTCG document.');
+    return 1;
+  }
   const outDir = resolvedOutDir(cwd, flags, io);
   if (!outDir) return 1;
   let bundle: BundleV1 | null;
@@ -708,6 +714,8 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
     return 1;
   }
   let entry: { ai: string; artifact: unknown };
+  // Set only for `show component`: the bundle entry, which always carries a name.
+  let component: { name: string; artifact: unknown } | null = null;
   if (wantsFoundation) {
     if (!bundle.foundation) {
       io.err('This library has no Foundation. Run spec-layer list to see what it holds.');
@@ -726,8 +734,33 @@ export function runShow(cwd: string, flags: Flags, args: string[], io: Io): numb
       return 1;
     }
     entry = matches[0];
+    component = matches[0];
   }
-  io.write(flags.canonical ? `${JSON.stringify(entry.artifact, null, 2)}\n` : entry.ai);
+  if (flags.canonical) {
+    io.write(`${JSON.stringify(entry.artifact, null, 2)}\n`);
+    return 0;
+  }
+  if (component) {
+    // Match what is on disk: the flag, then the config, then the last pull.
+    let configFormat: ComponentFormat | undefined;
+    try {
+      configFormat = readConfig(cwd)?.componentSpecsFormat;
+    } catch (err) {
+      io.err(errorText(err));
+      return 1;
+    }
+    const format = flagFormat ?? configFormat ?? readManifest(outDir)?.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
+    if (format === 'md') {
+      try {
+        io.write(componentMarkdownPage(component));
+      } catch (err) {
+        io.err(errorText(err));
+        return 1;
+      }
+      return 0;
+    }
+  }
+  io.write(entry.ai);
   return 0;
 }
 

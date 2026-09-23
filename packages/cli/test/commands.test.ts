@@ -1105,6 +1105,64 @@ describe('runShow', () => {
     expect(runShow(cwd, {}, ['component'], makeIo())).toBe(1);
     expect(runShow(cwd, {}, ['tokens'], makeIo())).toBe(1);
   });
+
+  it('prints the markdown page when speclayer.json says md', async () => {
+    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
+    const io = makeIo();
+    expect(runShow(cwd, {}, ['component', 'Button'], io)).toBe(0);
+    expect(io.writes).toEqual([componentMarkdown(MD_BUNDLE.components[0].artifact)]);
+  });
+
+  it('falls back to the last pull when speclayer.json names no format', async () => {
+    await runPull(cwd, { 'component-format': 'md' }, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
+    const io = makeIo();
+    expect(runShow(cwd, {}, ['component', 'Button'], io)).toBe(0);
+    expect(io.writes).toEqual([componentMarkdown(MD_BUNDLE.components[0].artifact)]);
+  });
+
+  it('prints the published yaml by default, and --component-format overrides the config', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
+    const plain = makeIo();
+    expect(runShow(cwd, {}, ['component', 'Button'], plain)).toBe(0);
+    expect(plain.writes).toEqual([MD_BUNDLE.components[0].ai]);
+
+    const flagged = makeIo();
+    expect(runShow(cwd, { 'component-format': 'md' }, ['component', 'Button'], flagged)).toBe(0);
+    expect(flagged.writes).toEqual([componentMarkdown(MD_BUNDLE.components[0].artifact)]);
+  });
+
+  it('--canonical wins over --component-format', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
+    const io = makeIo();
+    expect(runShow(cwd, { canonical: true, 'component-format': 'md' }, ['component', 'Button'], io)).toBe(0);
+    expect(io.writes).toEqual([`${JSON.stringify(MD_BUNDLE.components[0].artifact, null, 2)}\n`]);
+  });
+
+  it('refuses --component-format for the foundation', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stubThree());
+    const io = makeIo();
+    expect(runShow(cwd, { 'component-format': 'md' }, ['foundation'], io)).toBe(1);
+    expect(io.errLines).toEqual(['--component-format applies to components. The Foundation prints as its DTCG document.']);
+    expect(io.writes).toEqual([]);
+  });
+
+  it('refuses an unknown --component-format', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stubThree());
+    const io = makeIo();
+    expect(runShow(cwd, { 'component-format': 'txt' }, ['component', 'Button'], io)).toBe(1);
+    expect(io.errLines).toEqual(['--component-format takes yaml or md, not "txt".']);
+  });
+
+  it('prints the render sentence, not a stack trace, when a component cannot be rendered', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stubThree());
+    const io = makeIo();
+    expect(runShow(cwd, { 'component-format': 'md' }, ['component', 'Card'], io)).toBe(1);
+    expect(io.errLines).toEqual([
+      'The published component context for Card could not be rendered as Markdown. Republish from the plugin, then pull again.',
+    ]);
+    expect(io.writes).toEqual([]);
+  });
 });
 
 describe('runPull safety and freshness', () => {
