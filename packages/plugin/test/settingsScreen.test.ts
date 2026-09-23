@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import { THEME_PRESETS } from '../src/brandColors';
@@ -341,6 +342,44 @@ describe('settings tabs', () => {
     for (const { id } of SETTINGS_TABS) expect(isSettingsTab(id)).toBe(true);
     expect(isSettingsTab('Frames')).toBe(false);
     expect(isSettingsTab('')).toBe(false);
+  });
+
+  /**
+   * A tab moves between panels; a segmented pill picks a value. The Export
+   * tab's format choice is a pill, so tabs drawn as one too read as a second
+   * setting stacked above the first. Tabs are underline tabs instead.
+   */
+  it('draws the tabs as underline tabs, not the pill a setting uses', () => {
+    const header = settingsHeaderMarkup();
+    expect(header).toContain('<div class="sl-tabs sl-settings-tabs" role="tablist" aria-label="Settings">');
+    expect(header).not.toContain('sl-segmented');
+    expect(settingsScrollMarkup({ ...state, tab: 'export' }))
+      .toContain('<div class="sl-segmented" role="radiogroup"');
+  });
+
+  it('marks the selected tab with an accent underline, and no pill surface', () => {
+    const components = readFileSync(
+      new URL('../src/ui/design-system/components.css', import.meta.url), 'utf-8',
+    );
+    const selected = components.match(/\n\.sl-tabs > \[role="tab"\]\[aria-selected="true"\] \{([^}]*)\}/);
+    expect(selected?.[1]).toMatch(/border-bottom-color:\s*var\(--sl-color-accent\)/);
+    expect(selected?.[1]).not.toMatch(/box-shadow|background/);
+    expect(components).toMatch(/\n\.sl-tabs \{[^}]*border-bottom:\s*1px solid var\(--sl-color-border\)/);
+  });
+
+  /**
+   * The strip's hairline is a divider, so the panel under it keeps the room
+   * every section divider on this screen keeps under its line: 14px, which
+   * is the header's own 6px bottom padding plus the panel's 8px. With no
+   * panel padding the first heading sat 6px under the line.
+   */
+  it('leaves the same room under the tab strip as under a section divider', () => {
+    const patterns = readFileSync(
+      new URL('../src/ui/design-system/patterns.css', import.meta.url), 'utf-8',
+    );
+    expect(patterns).toMatch(/\n\.sl-settings-panel \{[^}]*padding-top:\s*var\(--sl-space-8\)/);
+    expect(patterns).toMatch(/\n\.sl-page-header \{[^}]*padding:\s*var\(--sl-space-10\) var\(--sl-space-12\) var\(--sl-space-6\)/);
+    expect(patterns).toMatch(/\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)|\n\.sl-logo-setting,\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)/);
   });
 });
 

@@ -315,6 +315,10 @@ function aboutSection(state: SettingsScreenState): string {
  * place while the panel scrolls. One panel serves every tab and only the
  * selected tab's content is drawn into it. The roving tabindex keeps the
  * strip a single Tab stop; ui-vnext.ts moves between tabs with the arrow keys.
+ *
+ * Underline tabs (`.sl-tabs`), not the `.sl-segmented` pill: the pill picks a
+ * value, and the Export tab's format choice is one, so tabs drawn the same
+ * way read as a second setting stacked above it.
  */
 function settingsTabsMarkup(selected: SettingsTab): string {
   const tabs = SETTINGS_TABS.map(({ id, label }) => {
@@ -325,7 +329,7 @@ function settingsTabsMarkup(selected: SettingsTab): string {
       `${label}</button>`
     );
   }).join('');
-  return `<div class="sl-segmented sl-settings-tabs" role="tablist" aria-label="Settings">${tabs}</div>`;
+  return `<div class="sl-tabs sl-settings-tabs" role="tablist" aria-label="Settings">${tabs}</div>`;
 }
 
 export function settingsHeaderMarkup(tab: SettingsTab = 'frames'): string {

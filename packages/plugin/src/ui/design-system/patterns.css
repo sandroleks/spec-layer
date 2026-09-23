@@ -1989,9 +1989,21 @@
   min-width: 0;
 }
 
-/* The tab strip sits under the title and stays put while the panel scrolls. */
+/* The tab strip sits under the title and stays put while the panel scrolls.
+   The header copy takes the header's width so the strip's hairline spans it. */
+.sl-settings-screen .sl-page-header-copy {
+  flex: 1 1 auto;
+}
+
 .sl-settings-tabs {
   margin-top: var(--sl-space-10);
+}
+
+/* The strip's hairline is a divider, so the panel keeps the 14px every
+   section divider below keeps under its line (.sl-logo-setting): the
+   header's own 6px bottom padding plus this 8px. */
+.sl-settings-panel {
+  padding-top: var(--sl-space-8);
 }
 
 /*
