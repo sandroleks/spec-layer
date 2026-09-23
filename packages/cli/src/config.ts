@@ -11,8 +11,17 @@ export const DEFAULT_OUT_DIR = '.speclayer';
 export const DEFAULT_COMPONENT_SPECS_DIR = 'component-specs';
 const CONFIG_NAME = 'speclayer.json';
 
+/** How component-specs/ is written: the published AI YAML, or a Markdown page projected from the artifact. */
+export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
+export type ComponentFormat = typeof COMPONENT_FORMATS[number];
+export const DEFAULT_COMPONENT_FORMAT: ComponentFormat = 'yaml';
+
+export function isComponentFormat(value: unknown): value is ComponentFormat {
+  return typeof value === 'string' && (COMPONENT_FORMATS as readonly string[]).includes(value);
+}
+
 export interface CliConfig {
-  libraryId?: string; outDir?: string; componentSpecsDir?: string; include?: Selection; dtcg?: DtcgOptions;
+  libraryId?: string; outDir?: string; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat; include?: Selection; dtcg?: DtcgOptions;
   platforms?: Platform[]; outputs?: OutputConfig[];
 }
 
@@ -68,6 +77,12 @@ function parseComponentSpecsDir(value: unknown): string {
   return dir;
 }
 
+/** `componentSpecsFormat` chooses how component-specs/ is written. Absent means yaml. */
+function parseComponentSpecsFormat(value: unknown): ComponentFormat {
+  if (!isComponentFormat(value)) throw new Error('speclayer.json "componentSpecsFormat" must be "yaml" or "md".');
+  return value;
+}
+
 /** `platforms` names the targets this repository builds for; pull and skill read it before detecting. */
 function parsePlatforms(value: unknown): Platform[] {
   if (!Array.isArray(value) || !value.every((p) => typeof p === 'string' && isPlatform(p))) {
@@ -105,6 +120,7 @@ export function readConfig(cwd: string): CliConfig | null {
     ...(typeof record.libraryId === 'string' ? { libraryId: record.libraryId } : {}),
     ...(typeof record.outDir === 'string' ? { outDir: record.outDir } : {}),
     ...(record.componentSpecsDir !== undefined ? { componentSpecsDir: parseComponentSpecsDir(record.componentSpecsDir) } : {}),
+    ...(record.componentSpecsFormat !== undefined ? { componentSpecsFormat: parseComponentSpecsFormat(record.componentSpecsFormat) } : {}),
     ...(record.include !== undefined ? { include: parseInclude(record.include) } : {}),
     ...(record.dtcg !== undefined ? { dtcg: parseDtcg(record.dtcg) } : {}),
     ...(record.platforms !== undefined ? { platforms: parsePlatforms(record.platforms) } : {}),
@@ -115,7 +131,7 @@ export function readConfig(cwd: string): CliConfig | null {
 export function writeConfig(
   cwd: string,
   config: {
-    libraryId: string; outDir: string; componentSpecsDir?: string; include?: Selection; dtcg?: DtcgOptions;
+    libraryId: string; outDir: string; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat; include?: Selection; dtcg?: DtcgOptions;
     platforms?: Platform[]; outputs?: OutputConfig[];
   },
 ): void {
@@ -123,6 +139,7 @@ export function writeConfig(
     libraryId: config.libraryId,
     outDir: config.outDir,
     ...(config.componentSpecsDir ? { componentSpecsDir: config.componentSpecsDir } : {}),
+    ...(config.componentSpecsFormat ? { componentSpecsFormat: config.componentSpecsFormat } : {}),
     ...(config.include ? { include: config.include } : {}),
     ...(config.dtcg ? { dtcg: config.dtcg } : {}),
     ...(config.platforms && config.platforms.length > 0 ? { platforms: config.platforms } : {}),
@@ -135,6 +152,8 @@ export interface ResolvedOptions {
   libraryId: string | null; outDir: string; api: string; key: string | null;
   /** Where component briefs are written; the config's value or the default. */
   componentSpecsDir: string;
+  /** The config's componentSpecsFormat, when it has one; pull applies the flag first and the default last. */
+  componentSpecsFormat?: ComponentFormat;
   /** The config's include block, when it has one, for pull to fall back on. */
   include?: Selection;
   /** The config's dtcg block, when it has one, for pull to pass through to writeBundleFiles. */
@@ -187,6 +206,7 @@ export function resolveOptions(
     // A trailing slash would build "//v1/..." paths the proxy router 404s on.
     api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
     key: supplied ?? storedKey,
+    ...(config?.componentSpecsFormat ? { componentSpecsFormat: config.componentSpecsFormat } : {}),
     ...(config?.include ? { include: config.include } : {}),
     ...(config?.dtcg ? { dtcg: config.dtcg } : {}),
     ...(config?.platforms ? { platforms: config.platforms } : {}),
