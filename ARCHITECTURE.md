@@ -48,7 +48,8 @@ italic line stating the prose came from AI rather than Figma. It reuses
 `componentEnvelope` for the shared envelope rather than re-implementing
 either. Like the DTCG projection, it never feeds a hash, is never stored in a
 bundle, and nothing parses it back. `spec-layer pull` and `show` call it when
-`componentSpecsFormat` is `md`; the plugin follows as separate work.
+`componentSpecsFormat` is `md`, and the plugin's Copy for AI and snapshot
+download call it when the Component format setting is Markdown.
 
 `unitContent(spec, scope)` returns everything one foundation document renders and nothing it does not: its collection name, group, mode columns, rows, the names of any modes left out, and the part numbering of a split unit. Every renderer consumes it, and `foundationContentHash` hashes its entire output rather than a chosen subset of fields. That is what makes "the hash covers exactly what is rendered" structural instead of a matter of discipline, and the property has to hold in both directions to be worth anything.
 
