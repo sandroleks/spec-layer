@@ -33,7 +33,7 @@ const PULL_EXITS = {
 export const TOOLS: readonly Tool[] = [
   {
     name: 'setup',
-    usage: 'spec-layer setup --id lib_... --key sl_... [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
+    usage: 'spec-layer setup --id lib_... --key sl_... [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]...',
     summary: 'Records the library id, stores the pull key in a gitignored speclayer.local.json, then pulls.',
     when: 'Once, with the command the plugin\'s Publish screen hands out. Re-run it after the key is rotated.',
     network: true, needsKey: true,
@@ -46,7 +46,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'init',
-    usage: 'spec-layer init --id lib_... [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]...',
+    usage: 'spec-layer init --id lib_... [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]...',
     summary: 'Writes speclayer.json, with the platforms and default outputs, so later commands need no flags. Stores no key and reaches no server.',
     when: 'A repo that supplies the key from SPEC_LAYER_KEY instead of a stored file.',
     network: false, needsKey: false,
@@ -55,9 +55,9 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'pull',
-    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--only foundation|components] [--component NAME]... [--strict]',
-    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir, and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning.',
-    when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, or componentSpecsDir blocks. Add --strict in CI to fail the build on an error-severity report entry.',
+    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]... [--strict]',
+    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir (YAML, or Markdown when componentSpecsFormat or --component-format says md), and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning.',
+    when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, componentSpecsDir, or componentSpecsFormat settings. Add --strict in CI to fail the build on an error-severity report entry.',
     network: true, needsKey: true,
     writes: [
       '<outDir>/',
@@ -86,8 +86,8 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'show',
-    usage: 'spec-layer show foundation | component NAME [--canonical] [--out DIR]',
-    summary: 'Prints one artifact to stdout: the Foundation DTCG document, or one component\'s AI YAML; --canonical prints the v5 JSON.',
+    usage: 'spec-layer show foundation | component NAME [--component-format yaml|md] [--canonical] [--out DIR]',
+    summary: 'Prints one artifact to stdout: the Foundation DTCG document, or one component\'s AI YAML or Markdown (by --component-format, then componentSpecsFormat, then the last pull); --canonical prints the v5 JSON.',
     when: 'To read one component or the token document without opening files; it pipes cleanly.',
     network: false, needsKey: false,
     writes: [],

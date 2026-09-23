@@ -6,17 +6,17 @@ import {
 const USAGE = `spec-layer <command>
 
 Commands:
-  setup   --id lib_... --key sl_... [--out DIR] [selection] [--platform P]...
+  setup   --id lib_... --key sl_... [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  store the key, then pull
-  init    --id lib_... [--out DIR] [selection] [--platform P]...
+  init    --id lib_... [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  write speclayer.json
-  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]... [--strict]
+  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]... [--component-format F] [--strict]
                                                  fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/;
                                                  --strict exits 1 when tokens/report.json or an outputs/*.report.json holds an error-severity entry, even on a cached pull (default exit stays 0)
   status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
   list                                           list every artifact in the last pull
-  show    foundation | component NAME [--canonical]
-                                                 print one artifact (foundation: the DTCG document; component: its AI YAML; --canonical for JSON)
+  show    foundation | component NAME [--component-format F] [--canonical]
+                                                 print one artifact (foundation: the DTCG document; component: its AI YAML or Markdown; --canonical for JSON)
   tools   [--json]                               list every command with what it reaches and writes
   skill   [--install] [--agent HOST]... [--platform P]... [--json]
                                                  print a guide for a coding agent, adapted to this repo and the last pull;
@@ -29,6 +29,7 @@ Selection (setup, pull and init; flags replace the include block in speclayer.js
 Options:
   --api URL   override the API origin (default https://api.spec-layer.com)
   --platform web|ios|android|flutter   the target this repo builds for (repeatable); applies to setup, init, pull, and skill; setup and init store it, pull uses it for the run
+  --component-format yaml|md   how component-specs/ is written and show prints a component (default yaml); setup and init store it, pull and show use it for the run
 The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
 
 const io: Io = {
@@ -56,6 +57,7 @@ async function main(): Promise<number> {
         strict: { type: 'boolean' },
         agent: { type: 'string', multiple: true },
         platform: { type: 'string', multiple: true },
+        'component-format': { type: 'string' },
       },
     }));
   } catch {

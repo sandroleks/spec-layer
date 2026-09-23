@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, type CliConfig, type ResolvedOptions,
+  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR,
+  COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
 import { readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
@@ -26,6 +27,8 @@ export type Flags = {
   id?: string; out?: string; key?: string; api?: string;
   only?: string; component?: string[]; canonical?: boolean;
   json?: boolean; install?: boolean; agent?: string[]; platform?: string[];
+  /** setup, init, pull, show: how component-specs/ is written or printed. */
+  'component-format'?: string;
   /** pull only: exit 1 when the output report holds an error-severity entry. Default exit codes are otherwise unchanged. */
   strict?: boolean;
 };
@@ -76,6 +79,15 @@ function platformsFromFlags(flags: Flags, io: Io): Platform[] | null | undefined
     if (!out.includes(value)) out.push(value);
   }
   return out;
+}
+
+/** --component-format as a format, undefined when absent, or null after printing the usage error. */
+function componentFormatFromFlags(flags: Flags, io: Io): ComponentFormat | null | undefined {
+  const value = flags['component-format'];
+  if (value === undefined) return undefined;
+  if (isComponentFormat(value)) return value;
+  io.err(`--component-format takes ${COMPONENT_FORMATS.join(' or ')}, not "${value}".`);
+  return null;
 }
 
 type PlatformSource = 'flag' | 'config' | 'detected' | 'none';
@@ -132,11 +144,15 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const format = componentFormatFromFlags(flags, io);
+  if (format === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
   const outputs = defaultOutputs(platforms);
   const outDir = flags.out ?? DEFAULT_OUT_DIR;
   writeConfig(cwd, {
-    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR, ...(include ? { include } : {}),
+    libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR,
+    ...(format ? { componentSpecsFormat: format } : {}),
+    ...(include ? { include } : {}),
     ...(platforms.length > 0 ? { platforms } : {}), ...(outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
@@ -254,10 +270,14 @@ export async function runSetup(
   try { existing = readConfig(cwd); } catch { existing = null; }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
+  const format = componentFormatFromFlags(flags, io);
+  if (format === null) return 1;
   const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
   const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
+  // The same rule as include: a flag wins, else what the committed config says.
+  const keptFormat = format ?? existing?.componentSpecsFormat ?? null;
   // Platforms follow the same rule as include: a flag wins, else what the
   // committed config says, else detection. Outputs keep every entry the config
   // already has and gain a default for any platform that has none.
@@ -265,6 +285,7 @@ export async function runSetup(
   const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
     libraryId: flags.id, outDir, componentSpecsDir,
+    ...(keptFormat ? { componentSpecsFormat: keptFormat } : {}),
     ...(keptInclude ? { include: keptInclude } : {}),
     ...(keptDtcg ? { dtcg: keptDtcg } : {}),
     ...(platforms.length > 0 ? { platforms } : {}),

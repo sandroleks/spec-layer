@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildFoundation, buildFoundationArtifactV5, type SerializedFoundation,
 } from '@spec-layer/extractor';
+import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/componentV5';
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
 } from '../src/commands';
@@ -135,6 +136,12 @@ const PATH_COLLISION_BUNDLE = {
   ...GOOD_BUNDLE, foundation: { ai: 'foundation: yes\n', artifact: foundationArtifactWithPathCollision() },
 };
 
+/** GOOD_BUNDLE with a real Component Context v5 artifact, so a Markdown pull can render it. */
+const MD_BUNDLE = {
+  ...GOOD_BUNDLE,
+  components: [{ name: 'Button', ai: brief('button: yes\n'), artifact: buildComponentV5GoldenArtifact() }],
+};
+
 function stub200(body = JSON.stringify(GOOD_BUNDLE), publishedAt = '2026-09-01T00:00:00.000Z', version: string | null = null) {
   return vi.fn(async () => new Response(body, {
     status: 200,
@@ -233,6 +240,26 @@ describe('runInit', () => {
     expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
     expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
+  });
+
+  it('--component-format md writes componentSpecsFormat', () => {
+    const code = runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    expect(code).toBe(0);
+    expect(readConfig(cwd)).toEqual({
+      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
+    });
+  });
+
+  it('--component-format yaml is written too, because it was asked for', () => {
+    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'yaml' }, makeIo())).toBe(0);
+    expect(readConfig(cwd)?.componentSpecsFormat).toBe('yaml');
+  });
+
+  it('refuses an unknown --component-format before writing anything', () => {
+    const io = makeIo();
+    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'markdown' }, io)).toBe(1);
+    expect(io.errLines).toEqual(['--component-format takes yaml or md, not "markdown".']);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
 });
 
@@ -1478,6 +1505,27 @@ describe('runSetup', () => {
     expect(runList(cwd, {}, list)).toBe(0);
     const text = list.outLines.join('\n');
     expect(text).toMatch(/output\s+web\/css\s+not written/);
+  });
+
+  it('--component-format md stores the format', async () => {
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'md' }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(readConfig(cwd)?.componentSpecsFormat).toBe('md');
+  });
+
+  it('keeps a committed componentSpecsFormat on a re-run with no flag, and a flag replaces it', async () => {
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'md' }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(readConfig(cwd)?.componentSpecsFormat).toBe('md');
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'yaml' }, {}, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
+    expect(readConfig(cwd)?.componentSpecsFormat).toBe('yaml');
+  });
+
+  it('refuses an unknown --component-format before writing anything', async () => {
+    const io = makeIo();
+    expect(await runSetup(cwd, { id: LIB, key: KEY, 'component-format': 'txt' }, {}, io, stub200())).toBe(1);
+    expect(io.errLines).toEqual(['--component-format takes yaml or md, not "txt".']);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });
 });
 

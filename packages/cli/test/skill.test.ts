@@ -271,7 +271,7 @@ describe('buildSkillGuide', () => {
 
   it('carries the command table with every pipe escaped, and no em dash', () => {
     const guide = buildSkillGuide(input({ pull: PULL, platforms: ['web'], platformSource: 'detected' }));
-    expect(guide).toContain('| `spec-layer show foundation \\| component NAME [--canonical] [--out DIR]` |');
+    expect(guide).toContain('| `spec-layer show foundation \\| component NAME [--component-format yaml\\|md] [--canonical] [--out DIR]` |');
     expect(guide).toContain('--only foundation\\|components');
     expect(guide).not.toContain('—');
     expect(guide).toContain('npx --yes spec-layer <command>');
