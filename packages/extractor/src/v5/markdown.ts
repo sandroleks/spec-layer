@@ -763,6 +763,9 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   // up for a nameless one would state a fact the artifact does not.
   const name = str(component.name);
   if (name === undefined) throw new Error('componentMarkdown needs component.name; the artifact has none.');
+  if (!Array.isArray(artifact.anatomy)) {
+    throw new Error('componentMarkdown needs anatomy as an array; the artifact has none.');
+  }
   blocks.push(`# ${escapeHeading(name)}`);
 
   const description = str(component.description);

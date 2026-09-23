@@ -966,6 +966,14 @@ describe('componentMarkdown hostile input', () => {
     }
   });
 
+  it('throws rather than inventing anatomy bullets when anatomy is not a list', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    for (const anatomy of [undefined, 'abc', {}]) {
+      expect(() => componentMarkdown({ ...artifact, anatomy } as unknown as typeof artifact))
+        .toThrow('componentMarkdown needs anatomy as an array; the artifact has none.');
+    }
+  });
+
   // Carried forward from Task 5's review as an explicit gap: no test proved
   // the guard around `code('')`, which returns a bare `` `` `` pair -- not a
   // valid CommonMark code span. `anatomyBullets` only calls `code(path)`
