@@ -192,6 +192,19 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Changed
 
+- **The Foundations and Library empty states teach the next move.** Each gets
+  an animated drawing in the same family as the component screen's (a file
+  whose color, text, and effect slots fill after a refresh; a doc dropping
+  into a folder and marked in sync), stilled under reduced motion. Their
+  actions now match what can happen: an empty Foundations footer keeps only
+  Refresh sources, since Copy all for AI would copy an empty document and
+  Create docs could never run, and it adds a line sending a designer whose
+  tokens live in a linked library to that library's file, because only local
+  collections and styles are read. An empty Library drops its three
+  zero-count filters and its "Up to date" button, which claimed a check that
+  never ran, and offers Document a component and Document foundations
+  instead. Publish stays, because it ships the file's foundations with or
+  without docs.
 - **The plugin's copy follows one style sheet.** Every customer-facing
   string was reviewed in context (974 of them, across the plugin window,
   toasts, canvas docs, layer names, and exported files), and about 390
@@ -398,6 +411,20 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **Publish and the snapshot download refuse a file with nothing in it.** The
+  proxy accepts an empty bundle, so a file with no local variables or styles
+  and no component docs used to publish anyway: a first publish created a
+  library and a pull key and spent the free plan's one library, and a
+  republish replaced what developers pull with nothing. The plugin now stops
+  before any network call and says why. A failed variable read, which also
+  arrives empty, gets its own message instead of being told to add
+  variables. Foundation docs are still not required: publish reads the
+  file's variables and styles directly.
+- **Publish errors show above the Publish button.** They were the last line
+  of the scrolling body, so on a library with setup blocks every error sat
+  below the fold, out of sight of the button that caused it. They now float
+  in the footer's progress slot as a danger banner, announced as an alert,
+  and the body gains room to scroll its last control clear of it.
 - **"Update all docs" now rebuilds docs made by an earlier version.** The
   button counted "Rebuild needed" rows toward the Updates filter and stayed
   enabled for them, but only queued "Update available" rows, so a Library

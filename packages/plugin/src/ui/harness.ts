@@ -408,7 +408,11 @@ if (view === 'foundations') {
       }
     : FOUNDATION_SELECTION;
   const refreshing = param('refreshing', '0') === '1';
-  renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
+  // `?empty=1` is a file with no local collections or styles.
+  const foundationSpec = param('empty', '0') === '1'
+    ? { ...FOUNDATION_SPEC, collections: [], textStyles: [], effectStyles: [] }
+    : FOUNDATION_SPEC;
+  renderFoundationScreen(refs, state, foundationSpec, foundationSelection, refreshing);
 
   document.addEventListener('click', (event) => {
     const target = event.target;
@@ -418,7 +422,7 @@ if (view === 'foundations') {
       const all = foundationSelection.collections.length === FOUNDATION_SPEC.collections.length
         && foundationSelection.textStyles;
       foundationSelection = all ? clearAll() : selectAll(FOUNDATION_SPEC);
-      renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
+      renderFoundationScreen(refs, state, foundationSpec, foundationSelection, refreshing);
       return;
     }
 
@@ -433,7 +437,7 @@ if (view === 'foundations') {
           source.dataset.foundationSource,
           checked,
         );
-    renderFoundationScreen(refs, state, FOUNDATION_SPEC, foundationSelection, refreshing);
+    renderFoundationScreen(refs, state, foundationSpec, foundationSelection, refreshing);
   });
 }
 
@@ -592,6 +596,14 @@ if (view === 'library') {
       status: 'error',
       message: 'Couldn’t reach Spec Layer. Check your connection and try again.',
     },
+    // A failed republish on a library with setup blocks: the tall body the
+    // error used to sit under.
+    publishedError: {
+      ...PUBLISHED_BASE,
+      status: 'error',
+      message: 'Nothing was published. This file has no local variables or styles and no component docs yet. '
+        + 'Add a variable or style, or create a doc, then try again.',
+    },
     // The dry run answered: current, next, reason, raise control, note.
     proposal: {
       ...PUBLISHED_BASE,
@@ -684,7 +696,8 @@ if (view === 'library') {
       renderPublishScreen(refs, publishFixture, publishAllowanceFixture, storedComponentFormat(param('format', 'yaml')));
       return;
     }
-    const model = buildLibraryModel(LIBRARY_ENTRIES, {
+    // `?empty=1` is a file with no docs yet.
+    const model = buildLibraryModel(param('empty', '0') === '1' ? [] : LIBRARY_ENTRIES, {
       drift,
       changes,
       filter: libraryFilter,

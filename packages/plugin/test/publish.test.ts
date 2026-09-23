@@ -740,6 +740,51 @@ describe('publish controller', () => {
     expect(state.pullKey).toBeNull();
   });
 
+  const EMPTY_FOUNDATION = {
+    fileKey: 'F1', collections: [], textStyles: [], effectStyles: [], externals: [],
+    extractedAt: '2026-09-01T00:00:00.000Z',
+  };
+
+  it('blocks a publish that would carry nothing, before any network call', async () => {
+    // The proxy accepts an empty bundle, so this is the only thing standing
+    // between an empty file and a spent library slot.
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn();
+    await publish.onPublishSources(
+      sourcesMsg({ components: [], foundation: EMPTY_FOUNDATION }),
+      AUTH,
+      fetcher,
+    );
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Nothing was published. This file has no local variables or styles and no component docs yet. '
+      + 'Add a variable or style, or create a doc, then try again.',
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(state.libraryId).toBeNull();
+  });
+
+  it('names a failed variable read rather than an empty file', () => {
+    expect(publish.emptyBundleMessage(
+      { components: [], foundation: { ...EMPTY_FOUNDATION, unavailable: ['variables'] } as never },
+      'download',
+    )).toBe(
+      'Nothing was downloaded. Couldn’t read this file’s variables and styles, and it has no component docs. Try again.',
+    );
+    expect(publish.emptyBundleMessage({ components: [], foundation: null }, 'publish'))
+      .toContain('Couldn’t read this file’s variables and styles');
+  });
+
+  it('lets tokens alone, or docs alone, publish', () => {
+    // No foundation docs are needed: publish reads variables live.
+    const tokens = { ...EMPTY_FOUNDATION, textStyles: [{} as never] };
+    expect(publish.emptyBundleMessage({ components: [], foundation: tokens }, 'publish')).toBeNull();
+    expect(publish.emptyBundleMessage(
+      { components: sourcesMsg().components, foundation: null }, 'publish',
+    )).toBeNull();
+  });
+
   it('publishes fresh sources and stores the new key', async () => {
     publish.onPublishClick(AUTH);
     const fetcher = vi.fn(async (_url, init) => {

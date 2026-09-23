@@ -1695,7 +1695,7 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  // The component empty state's shortcuts. Their own attribute, not
+  // The empty states' shortcuts, on any screen. Their own attribute, not
   // data-view: setRailBadge finds the rail button by [data-view], and a second
   // match in the screen would make that lookup depend on DOM order.
   const emptyNav = target.closest<HTMLButtonElement>('[data-empty-nav]');

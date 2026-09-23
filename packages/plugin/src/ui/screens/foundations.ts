@@ -73,10 +73,60 @@ function hasSources(spec: FoundationSpec): boolean {
   return spec.collections.length > 0 || spec.textStyles.length > 0 || spec.effectStyles.length > 0;
 }
 
+/**
+ * An empty file panel whose three slots, a color, a text style, and an effect,
+ * fill in after a refresh: the move this screen is waiting for. Decorative,
+ * so hidden from assistive tech; the heading carries the message.
+ */
+const EMPTY_ILLUSTRATION =
+  '<svg class="sl-empty-illustration sl-found-illustration" viewBox="0 0 160 112" width="160" height="112" ' +
+  'fill="none" aria-hidden="true" focusable="false">' +
+  '<rect x="18" y="16" width="112" height="80" rx="8" class="sl-empty-sheet"/>' +
+  '<rect x="30" y="27" width="30" height="4" rx="2" class="sl-empty-line is-strong"/>' +
+  '<rect x="30" y="40" width="26" height="26" rx="6" class="sl-found-slot"/>' +
+  '<rect x="61" y="40" width="26" height="26" rx="6" class="sl-found-slot"/>' +
+  '<rect x="92" y="40" width="26" height="26" rx="6" class="sl-found-slot"/>' +
+  '<g class="sl-found-fill is-color">' +
+  '<rect x="30" y="40" width="26" height="26" rx="6" class="sl-found-swatch"/>' +
+  '<circle cx="43" cy="53" r="6.5" class="sl-found-dot"/>' +
+  '</g>' +
+  '<g class="sl-found-fill is-type">' +
+  '<rect x="61" y="40" width="26" height="26" rx="6" class="sl-empty-tile"/>' +
+  '<text x="74" y="57.5" text-anchor="middle" class="sl-found-type">Aa</text>' +
+  '</g>' +
+  '<g class="sl-found-fill is-effect">' +
+  '<rect x="92" y="40" width="26" height="26" rx="6" class="sl-empty-tile"/>' +
+  '<rect x="100" y="50" width="13" height="10" rx="2" class="sl-found-shadow"/>' +
+  '<rect x="97" y="47" width="13" height="10" rx="2" class="sl-found-card"/>' +
+  '</g>' +
+  '<rect x="30" y="76" width="50" height="3" rx="1.5" class="sl-empty-line"/>' +
+  '<rect x="30" y="83" width="34" height="3" rx="1.5" class="sl-empty-line"/>' +
+  '<circle cx="130" cy="90" r="12" class="sl-found-badge"/>' +
+  '<g transform="translate(121 81) scale(0.75)">' +
+  '<g class="sl-found-refresh">' +
+  '<path d="M20 11a8.1 8.1 0 0 0-15.5-2m-.5-5v5h5"/>' +
+  '<path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 5v-5h-5"/>' +
+  '</g></g>' +
+  '</svg>';
+
+/**
+ * Shown for a file with no local collections, text styles, or effect styles.
+ * The reader only sees local ones (foundationReader.ts), so the second line
+ * sends a designer whose tokens come from a linked library to the file that
+ * owns them rather than letting "no variables" read as a bug.
+ */
 const EMPTY_STATE =
-  '<div class="sl-empty-state"><strong>No local variables or styles</strong>' +
-  '<p>Spec Layer documents local variable collections, text styles, and effect styles. ' +
-  'Add one to this file, then select Refresh sources.</p></div>';
+  '<div class="sl-empty-state sl-empty-illustrated">' +
+  EMPTY_ILLUSTRATION +
+  '<strong>No local variables or styles</strong>' +
+  '<p>Foundations documents the variable collections, text styles, and effect styles ' +
+  'made in this file.</p>' +
+  '<p class="sl-empty-hint">Using a linked library? Open its source file to document it.</p>' +
+  '<div class="sl-empty-actions">' +
+  '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="component">' +
+  `${icon('puzzle', 15)}<span>Document a component</span></button>` +
+  '</div>' +
+  '</div>';
 
 function sourceRow(options: {
   id: string;
@@ -230,7 +280,10 @@ export function foundationFooterMarkup(
   // The whole file, named as such now that every row copies its own
   // collection. Kept one click away: the CLI writes the same document as
   // files, and some agents want the complete vocabulary.
-  const copy = spec
+  // An empty file keeps only Refresh sources: copying would hand an agent an
+  // empty document, and create has nothing it could ever build.
+  const empty = spec !== null && !hasSources(spec);
+  const copy = spec && !empty
     ? '<button class="sl-button" data-tone="secondary" id="sl-copy-foundation" type="button">' +
       `${icon('copy', 15)}<span>Copy all for AI</span></button>`
     : '';
@@ -246,9 +299,11 @@ export function foundationFooterMarkup(
     `type="button" data-foundation-refresh${busy || refreshing ? ' disabled' : ''}>` +
     `${icon('refresh', 15)}<span>${refreshLabel}</span></button>` +
     copy +
-    '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
-    `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
-    `${icon('filePlus', 15)}<span>${esc(label)}</span></button>` +
+    (empty
+      ? ''
+      : '<button class="sl-button sl-foundation-create" data-tone="primary" ' +
+        `id="sl-foundation-create" type="button"${busy || !spec || !canGenerate(selection) ? ' disabled' : ''}>` +
+        `${icon('filePlus', 15)}<span>${esc(label)}</span></button>`) +
     '</div>'
   );
 }

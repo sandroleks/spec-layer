@@ -1554,6 +1554,15 @@
   font-size: var(--sl-font-size-support);
 }
 
+.sl-publish-body.has-error {
+  padding-bottom: 120px;
+}
+
+.sl-publish-error {
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-body);
+}
+
 .sl-publish-status.is-error {
   color: var(--sl-color-danger);
 }
@@ -3083,6 +3092,175 @@
   .sl-select-doc,
   .sl-select-cursor {
     animation: none;
+  }
+}
+
+/*
+ * The Foundations and Library empty states. Same scale, palette, and 4.8s
+ * loop as the component one above, so the three read as one family.
+ */
+.sl-empty-illustrated,
+.sl-library-screen .sl-empty-illustrated {
+  min-height: 100%;
+  padding-bottom: var(--sl-space-32);
+  gap: var(--sl-space-10);
+}
+
+.sl-empty-illustration {
+  margin-bottom: var(--sl-space-8);
+  overflow: visible;
+}
+
+.sl-empty-state > p.sl-empty-hint {
+  color: var(--sl-color-text-quiet);
+  font-size: var(--sl-font-size-caption);
+}
+
+.sl-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sl-space-8);
+  margin-top: var(--sl-space-12);
+}
+
+.sl-empty-sheet,
+.sl-empty-tile {
+  fill: var(--sl-color-surface-raised);
+  stroke: var(--sl-color-border-strong);
+}
+
+.sl-empty-line {
+  fill: var(--sl-color-border-strong);
+}
+
+.sl-empty-line.is-strong {
+  fill: var(--sl-color-text-quiet);
+}
+
+.sl-found-slot {
+  stroke: var(--sl-color-border-strong);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 3;
+}
+
+.sl-found-swatch {
+  fill: var(--sl-color-accent-soft);
+  stroke: var(--sl-color-accent-border);
+}
+
+.sl-found-dot {
+  fill: var(--sl-color-accent);
+}
+
+.sl-found-type {
+  fill: var(--sl-color-text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-found-shadow {
+  fill: var(--sl-color-border-strong);
+}
+
+.sl-found-card {
+  fill: var(--sl-color-canvas);
+  stroke: var(--sl-color-text-quiet);
+}
+
+.sl-found-fill {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sl-found-fill 4.8s var(--sl-ease-out) infinite;
+}
+
+.sl-found-fill.is-type { animation-delay: 0.36s; }
+.sl-found-fill.is-effect { animation-delay: 0.72s; }
+
+.sl-found-badge {
+  fill: var(--sl-color-canvas);
+  stroke: var(--sl-color-accent);
+  stroke-width: 1.5;
+}
+
+.sl-found-refresh {
+  stroke: var(--sl-color-accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sl-found-refresh 4.8s var(--sl-ease-standard) infinite;
+}
+
+.sl-lib-folder-back {
+  fill: var(--sl-color-surface);
+  stroke: var(--sl-color-border-strong);
+}
+
+.sl-lib-doc {
+  animation: sl-lib-doc 4.8s var(--sl-ease-out) infinite;
+}
+
+.sl-lib-badge {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sl-lib-badge 4.8s var(--sl-ease-out) infinite;
+}
+
+.sl-lib-badge-dot {
+  fill: var(--sl-color-success);
+  stroke: var(--sl-color-canvas);
+  stroke-width: 2;
+}
+
+.sl-lib-badge-check {
+  stroke: var(--sl-color-canvas);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Refresh turns once, then the three slots fill one after another, hold, and
+   clear before the loop restarts. */
+@keyframes sl-found-refresh {
+  0%, 4% { transform: rotate(0deg); }
+  22%, 100% { transform: rotate(360deg); }
+}
+
+@keyframes sl-found-fill {
+  0%, 22% { opacity: 0; transform: scale(0.7); }
+  32% { opacity: 1; transform: scale(1.06); }
+  38%, 84% { opacity: 1; transform: scale(1); }
+  96%, 100% { opacity: 0; transform: scale(1); }
+}
+
+/* The doc drops into the folder, the in-sync mark lands, both clear. */
+@keyframes sl-lib-doc {
+  0%, 8% { opacity: 0; transform: translateY(-22px); }
+  18% { opacity: 1; }
+  34%, 86% { opacity: 1; transform: translateY(8px); }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+
+@keyframes sl-lib-badge {
+  0%, 38% { opacity: 0; transform: scale(0.4); }
+  46% { opacity: 1; transform: scale(1.12); }
+  52%, 86% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-found-fill,
+  .sl-found-refresh,
+  .sl-lib-badge {
+    animation: none;
+  }
+
+  .sl-lib-doc {
+    animation: none;
+    transform: translateY(8px);
   }
 }
 

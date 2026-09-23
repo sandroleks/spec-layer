@@ -64,11 +64,24 @@ describe('foundation screen', () => {
     const markup = foundationScrollMarkup({ kind: 'ready' }, EMPTY_SPEC, { collections: [], textStyles: false, effectStyles: false });
     expect(markup).toContain('No local variables or styles');
     expect(markup).toContain(
-      'Spec Layer documents local variable collections, text styles, and effect styles. '
-      + 'Add one to this file, then select Refresh sources.',
+      'Foundations documents the variable collections, text styles, and effect styles '
+      + 'made in this file.',
     );
+    expect(markup).toContain('Using a linked library? Open its source file to document it.');
+    expect(markup).toContain('data-empty-nav="component"');
+    expect(markup).toContain('aria-hidden="true" focusable="false"');
     expect(markup).not.toContain('0 of 0 included');
     expect(markup).not.toContain('data-foundation-bulk');
+  });
+
+  it('offers only Refresh sources in the footer of an empty file', () => {
+    // Copy would hand an agent an empty document; create could never run.
+    const footer = foundationFooterMarkup({ kind: 'ready' }, EMPTY_SPEC, {
+      collections: [], textStyles: false, effectStyles: false,
+    });
+    expect(footer).toContain('data-foundation-refresh');
+    expect(footer).not.toContain('sl-copy-foundation');
+    expect(footer).not.toContain('sl-foundation-create');
   });
 
   it('keeps one accessible name per source row, whether it is included or not', () => {
@@ -159,8 +172,6 @@ describe('foundation screen', () => {
     const wrongToAsk: Array<[string, FoundationScreenState, FoundationSpec | null]> = [
       ['page load, list is still skeletons', { kind: 'loading' }, null],
       ['file has no variables or text styles', { kind: 'ready' }, null],
-      // What buildFoundation really returns for an empty file: a spec, not null.
-      ['file has no variables or styles, as read', { kind: 'ready' }, EMPTY_SPEC],
       ['read failed, remedy is Refresh sources', { kind: 'error', message: 'x' }, null],
     ];
     for (const [why, state, spec] of wrongToAsk) {
