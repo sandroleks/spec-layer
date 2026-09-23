@@ -192,6 +192,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Changed
 
+- **The repository gates cover what they claimed to.** `npm run typecheck`
+  now compiles `packages/proxy/test` and `packages/cli/test`; both had type
+  errors that vitest's type stripping hid, all in test code.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping
