@@ -185,7 +185,7 @@ descriptions, and diagnostics before it can be committed.
 
 ## Where things stand (2026-09-23)
 
-`npm run check` passes at `d9b04a0` and `npm audit` reports no
+`npm run check` passes at `5985255` and `npm audit` reports no
 vulnerabilities. Suite size lives in the test output, not here.
 
 Both surfaces are tagged. `v5.1.0` is an annotated tag (0b84a9c, 2026-09-16)
