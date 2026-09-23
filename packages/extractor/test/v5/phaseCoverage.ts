@@ -21,12 +21,12 @@ export const ACCEPTANCE_COVERAGE = {
     implementedBy: 'plan-2', gradedBy: 'manual-real-v5-review',
   },
   6: {
-    criterion: 'every v4 value shape normalizes to one canonical shape',
-    implementedBy: 'plan-1', gradedBy: 'plan-1',
+    criterion: 'every source value shape projects to one canonical shape',
+    implementedBy: 'plan-1', gradedBy: 'synthetic-direct-v5',
   },
   '7a': {
     criterion: 'dimensional floats keep their numeric value',
-    implementedBy: 'plan-1', gradedBy: 'plan-1',
+    implementedBy: 'plan-1', gradedBy: 'synthetic-direct-v5',
   },
   '7b': {
     criterion: 'Company DS dimensional floats receive explicit units',
@@ -34,7 +34,7 @@ export const ACCEPTANCE_COVERAGE = {
   },
   8: {
     criterion: 'the Cyrillic С is preserved and flagged',
-    implementedBy: 'plan-1', gradedBy: 'plan-1',
+    implementedBy: 'plan-1', gradedBy: 'synthetic-direct-v5',
   },
   9: {
     criterion: 'archived text styles retain source lifecycle evidence',

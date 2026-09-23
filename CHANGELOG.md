@@ -908,6 +908,17 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   it. The CLI-side half of that pairing is the `skill --install` entry above:
   it is what actually notices the collision and reports it.
 
+### Removed
+
+- **The v4 brief to v5 normalizer.** `normalizeV4` (931 lines) had no caller
+  outside its own tests since the direct `buildFoundationArtifactV5` path
+  shipped, and the synthetic v4 fixture it consumed stated
+  `library_enabled: false` for a source that never said so, which the direct
+  path never does (unknown is `null`). The Foundation Context v5 artifact is
+  built from the serialized Figma read only. The `V4*` types, `syntheticId`
+  and `parseV4Path` leave the extractor's barrel with it; nothing in the
+  plugin or the CLI imported them.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed

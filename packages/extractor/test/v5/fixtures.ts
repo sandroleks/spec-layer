@@ -713,10 +713,10 @@ export function artifactWithDanglingCollectionId(): FoundationArtifactV5 {
   return root;
 }
 
-/** A collection whose `default_mode_id` names none of its declared modes —
- *  §7's "The default mode MUST reference a declared mode ID". This is the
- *  shape `normalizeV4` now deliberately emits when v4 states no usable
- *  default, so validation MUST reject it. */
+/** A collection whose `default_mode_id` names none of its declared modes:
+ *  §7's "The default mode MUST reference a declared mode ID". A hand-edited
+ *  artifact, or one from an older extractor, can carry this shape, so
+ *  validation MUST reject it. */
 export function artifactWithUndeclaredDefaultMode(): FoundationArtifactV5 {
   const root = structuredClone(OK_ARTIFACT);
   root.collections[0].default_mode_id = '1:2/there-is-no-such-mode';
