@@ -10,6 +10,7 @@
 import { toYaml } from '../yaml';
 import type { YamlValue } from '../yaml';
 import { valueText } from './aiContext';
+import type { FoundationValidationRow } from './aiContext';
 import { componentEnvelope, componentFoundationAiSlice } from './componentContext';
 import type { ComponentArtifactV5 } from './componentContext';
 
@@ -515,15 +516,70 @@ function issuesSection(artifact: ComponentArtifactV5): string | undefined {
   for (const raw of validation) {
     const row = asRecord(raw);
     if (str(row.id) === 'unbound-value') continue;
-    const severity = escapeInline(str(row.severity) ?? 'info');
-    const message = escapeInline(str(row.message) ?? '');
-    const where = [
-      str(row.path) ? code(str(row.path)!) : undefined,
-      str(row.property) ? escapeInline(str(row.property)!) : undefined,
-    ].filter((v): v is string => v !== undefined);
-    lines.push(`- ${severity}: ${message}${where.length > 0 ? ` (${where.join(', ')})` : ''}`);
+    lines.push(issueLine(row));
   }
   return lines.length === 0 ? undefined : `## Issues\n\n${lines.join('\n')}`;
+}
+
+/** @internal One finding as a bullet, `- severity: message (path, property)`.
+ * Shared by the component's `## Issues` and the Foundation's own issues under
+ * `## Tokens used`, so the two lists cannot format a finding differently. */
+function issueLine(row: Record<string, unknown>): string {
+  const severity = escapeInline(str(row.severity) ?? 'info');
+  const message = escapeInline(str(row.message) ?? '');
+  const where = [
+    str(row.path) ? code(str(row.path)!) : undefined,
+    str(row.property) ? escapeInline(str(row.property)!) : undefined,
+  ].filter((v): v is string => v !== undefined);
+  return `- ${severity}: ${message}${where.length > 0 ? ` (${where.join(', ')})` : ''}`;
+}
+
+/** @internal The Foundation's own actionable findings, as the slice's
+ * `validation` rows carry them: a style whose value disagrees with the token
+ * it is bound to, a number whose unit no scope states. The YAML hands these
+ * over; without them a page shows the disagreeing values side by side with
+ * nothing saying they disagree. Omitted when there are none. Codes the
+ * projection only counts never become rows, so they stay out of the page. */
+function foundationIssuesSection(
+  rows: readonly FoundationValidationRow[] | undefined,
+): string | undefined {
+  if (!rows || rows.length === 0) return undefined;
+  return `### Foundation issues\n\n${rows.map((row) => issueLine(asRecord(row))).join('\n')}`;
+}
+
+/** @internal Renders one token value as `compactCanonicalValue`
+ * (`aiContext.ts:243`) shapes it. A literal is a plain value `valueText`
+ * already knows. The other two shapes are records it does not know, and would
+ * print as `[object Object]`:
+ *
+ * - missing: `{ missing: reason }` -> `missing: <reason>`
+ * - alias:   `{ alias, resolved | unresolved, chain? }` ->
+ *   `<alias> (resolved: <value>)` or `<alias> (unresolved: <reason>)`, with
+ *   every step of a longer chain joined by `→` in place of the bare alias.
+ *
+ * The same wording `styleValueText` uses for a bound style property, so a
+ * page says "points at X, resolves to Y" one way. Kept apart from it because
+ * the shapes differ: a style's `resolved` wraps its value in `{ type, value }`,
+ * a token's `resolved` is the value itself. The caller escapes the result. */
+function tokenValueText(value: unknown): string {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.missing === 'string') return `missing: ${record.missing}`;
+    if (typeof record.alias === 'string') {
+      const chain = Array.isArray(record.chain)
+        ? record.chain.filter((step): step is string => typeof step === 'string')
+        : [];
+      const steps = chain.length === 0
+        ? [record.alias]
+        : chain[0] === record.alias ? chain : [record.alias, ...chain];
+      const target = steps.join(' → ');
+      if (record.resolved !== undefined) return `${target} (resolved: ${valueText(record.resolved)})`;
+      if (typeof record.unresolved === 'string') return `${target} (unresolved: ${record.unresolved})`;
+      // Neither outcome stated: say what it points at and nothing more.
+      return target;
+    }
+  }
+  return valueText(value);
 }
 
 /**
@@ -555,7 +611,7 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
     const rows = collection.tokens.map((token) => [
       escapeCell(token.name),
       escapeCell(token.type),
-      ...collection.modes.map((mode) => escapeCell(valueText(token.values[mode]))),
+      ...collection.modes.map((mode) => escapeCell(tokenValueText(token.values[mode]))),
       token.code_syntax
         ? Object.entries(token.code_syntax)
           .map(([platform, id]) => (id ? `${escapeCell(platform)} ${codeCell(id)}` : escapeCell(platform)))
@@ -571,6 +627,8 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
   if (typography) parts.push(typography);
   const effects = effectsSection(compact.styles.effects);
   if (effects) parts.push(effects);
+  const issues = foundationIssuesSection(compact.validation);
+  if (issues) parts.push(issues);
   return parts.join('\n\n');
 }
 
