@@ -438,7 +438,7 @@ captured for the review record.
     same YAML brief as before this build.
 15. With Markdown chosen, run **Copy for AI** on a Foundation row and on the
     Foundations screen. Both still copy the DTCG JSON document, and the toast
-    still reads "Copied.".
+    still begins "Copied." and names no format.
 
 ## AI-writing allowance (free plan)
 
@@ -514,9 +514,12 @@ action. The rows below start there.
 - [ ] Markdown setup: with Markdown chosen in Settings > Export, both setup
       blocks end their setup line with `--component-format md`, and each
       **Copy** puts exactly that on the clipboard. With YAML chosen the line
-      carries no flag. Run the Markdown command with `spec-layer@0.10.0` in an
-      empty directory: `speclayer.json` carries `"componentSpecsFormat": "md"`
-      and `component-specs/` holds one `.md` page per component.
+      carries no flag. Run the Markdown command in an empty directory once
+      `spec-layer@0.10.0` or later is `latest` on npm (check with `npm view
+      spec-layer version`); before that, run `npx spec-layer@0.10.0 setup ...`
+      in place of `npx spec-layer setup ...`. `speclayer.json` carries
+      `"componentSpecsFormat": "md"` and `component-specs/` holds one `.md`
+      page per component.
 - [ ] Format switch: in that repository a plain `npx spec-layer pull` reports
       up to date; `npx spec-layer pull --component-format yaml` removes the
       `.md` pages and writes `.yaml`; `npx spec-layer show component Button
@@ -687,12 +690,14 @@ all.
    visible in light and dark Figma themes.
 6. Reduced-motion mode avoids nonessential animation. Errors remain visible
    and retryable.
-7. Settings opens on **Frames**, with **Export** and **About** beside it. Each
-   tab shows only its own content, the strip stays in place while the panel
-   scrolls, and About shows both versions and the Documentation link. With
-   focus on a tab, Left and Right move and select, wrapping at the ends, and
-   Home and End go to the first and last; Tab moves into the panel, not to the
-   next tab. Open a font list on Frames, then choose Export: the list closes.
+7. On a fresh launch of the plugin, Settings opens on **Frames**, with
+   **Export** and **About** beside it; within a session it reopens on the last
+   tab chosen. Each tab shows only its own content, the strip stays in place
+   while the panel scrolls, and About shows both versions and the Documentation
+   link. With focus on a tab, Left and Right move and select, wrapping at the
+   ends, and Home and End go to the first and last; Tab moves into the panel,
+   not to the next tab. Open a font list on Frames, then choose Export: the
+   list closes.
 8. **Export** shows **Component format** on YAML. Choose Markdown, close the
    plugin and reopen it: Markdown is still chosen. The arrow keys move the
    choice.
@@ -719,10 +724,10 @@ Repository builds target `https://api.spec-layer.com` in both
 public production build, verify those locations remain aligned, build again,
 and rerun this checklist.
 
-Use only synthetic or publishable Figma files in screenshots, fixtures, and
-bug reports.
-
 `spec-layer@0.10.0` or later must be the `latest` on npm (`npm view
 spec-layer version`) before a plugin build whose setup command can carry
 `--component-format md` reaches the Figma listing. CLI 0.9.0 does not know the
 flag: it prints its usage and exits 1.
+
+Use only synthetic or publishable Figma files in screenshots, fixtures, and
+bug reports.

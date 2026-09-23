@@ -14,8 +14,8 @@ re-projects on its first pull with 0.9.0 and picks all of this up. A release
 that changes what a pull writes has to bump the CLI, or a repository with a
 current pull is told it is already up to date and keeps the old files. The
 plugin portion adds a download feature to the Publish screen and ships in the
-plugin's own release, on its own schedule; it needs no CLI version and moves
-none of the reasoning above.
+plugin's own release, on its own schedule; its snapshot download needs no CLI
+version, but its Markdown setup command does, per the 0.10.0 paragraph below.
 
 The CLI's Markdown support below ships as 0.10.0, a minor release because it
 adds an option. The manifest records the component format, so switching

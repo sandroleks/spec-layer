@@ -173,7 +173,10 @@ let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
 let settingsCustomMode = false;
-/** The Settings tab on show. Session only; Settings opens on Frames. */
+/**
+ * The Settings tab on show. On a fresh launch of the plugin Settings opens
+ * on Frames; within a session it reopens on the last tab chosen.
+ */
 let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';

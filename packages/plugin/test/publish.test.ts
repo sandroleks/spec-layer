@@ -1349,6 +1349,15 @@ describe('publish controller', () => {
       expect(paths).toContain('spec-layer/components/button.yaml');
       expect(paths.filter((path) => path.endsWith('.md'))).toEqual(['spec-layer/SKILL.md']);
     });
+
+    it('the format stashed at the download click wins over a second click made mid-collect', async () => {
+      publish.onDownloadSkillClick('md');
+      publish.onDownloadSkillClick('yaml');
+      await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn() as unknown as typeof fetch);
+      const paths = Object.keys(unzipSync(vi.mocked(downloadBytes).mock.calls[0][0]));
+      expect(paths).toContain('spec-layer/components/button.md');
+      expect(paths.some((path) => path.endsWith('.yaml'))).toBe(false);
+    });
   });
 });
 
