@@ -468,14 +468,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   foundation diff already reports. Bindings are now compared by the token's
   source id and rendered by name, so a rename is one major change and a real
   rebinding reads exactly as before.
-- **A first version with a leading zero or an oversized number is refused
-  before it can wedge a library.** `isSemver` accepted `01.0.0` and any run
-  of digits, and a 22-digit number came back from the next bump as
-  `1e+21.0.0`, which no later check accepted, so that library could never
-  publish again. Each of the three numbers must now be written without a
-  leading zero and fit a safe integer, and a bump that would leave that range
-  is refused rather than written. The proxy and the plugin's first-version
-  field already call the same check, so both refuse the same strings.
+- **An oversized first version is refused before it can wedge a library.**
+  `isSemver` accepted any run of digits, and a 22-digit number came back from
+  the next bump as `1e+21.0.0`, which no later check accepted, so that
+  library could never publish again. Each of the three numbers must now fit a
+  safe integer, and a bump that would leave that range is refused rather than
+  written. A new version with a leading zero, such as `01.0.0`, is refused
+  too, as semver requires. A library already stored at such a version still
+  publishes: its next bump drops the zero, so `01.0.0` plus a patch becomes
+  `1.0.1`. The proxy and the plugin's first-version field already call the
+  same check, so both refuse the same strings.
 - **The Tokens table keeps a hardcoded value on each of two same-named
   layers.** Unbound values were deduplicated by layer name and property, so
   when two layers in different branches shared a name (two `Label` texts,

@@ -177,9 +177,19 @@ describe('nextVersion', () => {
     // A 22-digit major passed the old `\d+` and came back as `1e+21.0.0`,
     // which no later isSemver accepted, so the library could never publish again.
     expect(() => nextVersion('1000000000000000000000.0.0', 'major')).toThrow(RangeError);
-    expect(() => nextVersion('01.0.0', 'patch')).toThrow(RangeError);
     // The one step past the safe range is refused too, not written.
     expect(() => nextVersion('9007199254740991.0.0', 'major')).toThrow(RangeError);
+  });
+
+  it.each([
+    ['01.0.0', 'patch', '1.0.1'],
+    ['1.00.0', 'minor', '1.1.0'],
+    ['1.0.007', 'patch', '1.0.8'],
+    ['00.0.0', 'major', '1.0.0'],
+  ] as const)('reads a stored leading-zero version and emits it canonical: %s + %s = %s', (current, bump, expected) => {
+    // An older proxy could store a leading-zero version, and it bumped fine
+    // then. Refusing it now would fail every later publish for that library.
+    expect(nextVersion(current, bump)).toBe(expected);
   });
 });
 

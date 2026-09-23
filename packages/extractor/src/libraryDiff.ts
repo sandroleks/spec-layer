@@ -104,13 +104,24 @@ export function isSemver(value: unknown): value is string {
   return match !== null && match.slice(1).every((n) => Number.isSafeInteger(Number(n)));
 }
 
-/** `null` means no version yet, and the first version is always 1.0.0. Throws
- *  rather than returning a string `isSemver` would refuse, so a version can
- *  never be stored that the next publish cannot read. */
+/** Reads the stored version, where leading zeros are allowed: an older proxy
+ *  could store `01.0.0`, and it bumped then. Each part must still be a safe
+ *  integer, so the arithmetic below never rounds. */
+const STORED_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/** `null` means no version yet, and the first version is always 1.0.0. The
+ *  current version is read leniently (leading zeros allowed, so `01.0.0` plus
+ *  a patch gives `1.0.1`), but the version it returns always passes the strict
+ *  `isSemver`. Throws rather than returning a string `isSemver` would refuse,
+ *  so a version can never be stored that the next publish cannot read. */
 export function nextVersion(current: string | null, bump: Bump): string {
   if (current === null) return '1.0.0';
-  if (!isSemver(current)) throw new RangeError(`Not a semantic version: ${current}`);
-  const [major, minor, patch] = current.split('.').map(Number);
+  const match = STORED_VERSION_RE.exec(current);
+  const parts = match === null ? [] : match.slice(1).map(Number);
+  if (parts.length !== 3 || !parts.every((n) => Number.isSafeInteger(n))) {
+    throw new RangeError(`Not a semantic version: ${current}`);
+  }
+  const [major, minor, patch] = parts;
   const next = bump === 'major' ? `${major + 1}.0.0`
     : bump === 'minor' ? `${major}.${minor + 1}.0`
       : `${major}.${minor}.${patch + 1}`;
