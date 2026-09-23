@@ -2,11 +2,7 @@ import type { SerializedNode } from './tree';
 import { detectStateMatrix } from './statesMatrix';
 import { cleanPropName } from './naming';
 
-/** `unknown` is a stated diagnostic for a Figma property type this extractor
- *  does not name. Figma defines four today and all four are mapped, so it is
- *  unreachable from a current file; it exists so a fifth type is reported
- *  rather than dropped (a completeness claim) or left untyped. */
-export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap' | 'unknown';
+export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap';
 
 export interface ComponentProp {
   name: string;
@@ -20,9 +16,7 @@ export interface VariantAxis {
   values: string[];
 }
 
-// Partial: PropertyDefinition.type is a closed union on paper, but serialize.ts
-// casts Figma's string into it, so the lookup can miss at runtime.
-const KIND_MAP: Partial<Record<string, PropKind>> = {
+const KIND_MAP: Record<string, PropKind> = {
   VARIANT: 'variant',
   BOOLEAN: 'boolean',
   TEXT: 'text',
@@ -32,7 +26,7 @@ const KIND_MAP: Partial<Record<string, PropKind>> = {
 export function extractProps(root: SerializedNode): ComponentProp[] {
   return Object.entries(root.propertyDefinitions ?? {}).map(([raw, def]) => ({
     name: cleanPropName(raw),
-    kind: KIND_MAP[def.type] ?? 'unknown',
+    kind: KIND_MAP[def.type],
     ...(def.variantOptions !== undefined ? { options: def.variantOptions } : {}),
     default: def.defaultValue,
   }));

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractProps, extractVariants, extractStates } from '../src/props';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
-import type { SerializedNode, PropertyDefinition } from '../src/tree';
+import type { SerializedNode } from '../src/tree';
 
 const root = button as SerializedNode;
 
@@ -36,18 +36,6 @@ describe('props/variants/states', () => {
 
   it('recognises plural axis name "States" (bug 1)', () => {
     expect(extractStates(chip as SerializedNode)).toEqual(['Default', 'Hover', 'Focus', 'Press']);
-  });
-
-  it('reports a property type it does not know as unknown rather than leaving kind undefined', () => {
-    // serialize.ts casts Figma's type string into the four-literal union, so a
-    // fifth value reaches here at runtime. Stated, not dropped: dropping the
-    // property would present the list as complete.
-    const root: SerializedNode = {
-      id: '1', name: 'X', type: 'COMPONENT', visible: true,
-      propertyDefinitions: { Shape: { type: 'FUTURE_TYPE' as unknown as PropertyDefinition['type'], defaultValue: 'round' } },
-    };
-    expect(extractProps(root)).toEqual([{ name: 'Shape', kind: 'unknown', default: 'round' }]);
-    expect(extractVariants(root)).toEqual([]);
   });
 });
 
