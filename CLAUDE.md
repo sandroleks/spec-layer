@@ -215,11 +215,12 @@ Open, in rough priority order:
    remains under `packages/plugin/src/ui`, and `TESTING.md` step 10 already
    exercises the in-shell dialog.
 2. **Component Frame Quality Round 1**, planned; the plan and design are in
-   the private repository. Two of its items landed with `EXTRACTOR_VERSION`
-   `'3'` in #66: `hash.ts` sorts by code unit, and the radius gap check
-   honours every per-corner binding. What remains (the Properties table in
-   place of the Configuration section, the trimmed Anatomy legend, the anatomy
-   wrapper descent) takes `'4'` if it changes extraction output.
+   the private repository. #66 (97bfed1, 2026-09-18) landed four of its items
+   with `EXTRACTOR_VERSION` `'3'`: `hash.ts` sorts by code unit, the radius
+   gap check honours every per-corner binding, the Properties table replaces
+   the Configuration section, and the Anatomy legend is trimmed. Only the
+   single-wrapper anatomy descent remains, and it takes `'4'` if it changes
+   extraction output.
 3. **Patterns and nested components**, design only, in the private repository.
 4. **Real design-system grading** for v5 criteria 3, 10, and 11. The synthetic
    golden passes; a reviewed real artifact does not exist in-repo, and cannot be
