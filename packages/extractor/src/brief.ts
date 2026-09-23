@@ -1,5 +1,5 @@
 /**
- * brief.ts — the component YAML brief projection.
+ * brief.ts: the component YAML brief projection.
  *
  * Component Context v5 (`v5/componentContext.ts`) takes `component`, `api` and
  * `unbound` from `componentBrief` and builds the rest of its artifact itself.
@@ -70,8 +70,7 @@ function envelope(kind: 'component', generatedAt: string): YamlValue {
  * `resolveFileKey` (plugin `fileKey.ts`) returns the literal string 'unknown'
  * when Figma exposes no file key and the user set no override. A consumer
  * cannot tell that apart from a real key, so an unavailable key is emitted as
- * an ABSENT key rather than as a placeholder value. Shared by both briefs so
- * the two source blocks cannot drift apart on what "unavailable" means.
+ * an ABSENT key rather than as a placeholder value.
  */
 function fileKeyOf(fileKey: string): { file_key?: string } {
   return fileKey && fileKey !== 'unknown' ? { file_key: fileKey } : {};

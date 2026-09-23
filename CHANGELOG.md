@@ -437,17 +437,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Removed
 
-- **The legacy foundation YAML brief and the component brief's `foundation`
-  option.** Neither had a caller outside the tests: a Foundation copies and
-  downloads as a DTCG resolver document, and the Component Context v5 builder
-  takes `component`, `api` and `unbound` from the component brief and
-  resolves references itself. The `foundation` option was the only way a
-  brief could carry a resolved value, a text style's metrics or an effect
-  style's layers, and no shipping path passed one, so every brief already
-  stated `resolution: no-foundation` for its local references; that is now
-  the only shape, and the output of every shipping path is unchanged byte for
-  byte. Removing the option also removes a lookup that matched a token by
-  name across every collection and ignored its collection id.
+- **The legacy foundation YAML brief and the component brief's unused
+  foundation option.** Neither had a shipping caller, and no shipped output
+  changes.
 
 ### Fixed
 
@@ -541,12 +533,6 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   on another corner was reported as unbound while the raw-value table
   correctly showed no raw value. Both now share one binding set. Gaps are in
   the canvas hash, so this rides the version 3 rebuild.
-
-- **`contentHash` treats an `undefined` array member as `null`, as
-  `JSON.stringify` does.** It used to emit an empty slot (`[,1]`), so two
-  values `JSON.stringify` writes identically could hash differently. No
-  extracted value carries one, so no hash moves; the pinned baselines in
-  `specHash.test.ts` and `foundationHash.test.ts` prove it.
 
 - **A dimension token that aliases a number token no longer projects an
   invalid CSS value.** DTCG requires a referencing token's `$type` to equal
