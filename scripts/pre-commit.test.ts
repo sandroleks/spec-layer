@@ -21,7 +21,11 @@ function runHook(name: string, content: string): { status: number | null; output
   }
 }
 
-describe('.githooks/pre-commit', () => {
+// Each case spawns three processes (git init, git add, the bash hook), so a
+// loaded runner can push a case past vitest's default 5000 ms timeout with
+// no change in the hook's own behaviour. A longer timeout absorbs that load
+// sensitivity; it never hides a real regression the way a retry would.
+describe('.githooks/pre-commit', { timeout: 20000 }, () => {
   // Fake values are assembled at runtime from repeated characters, so this
   // file never holds a string the hook itself would reject.
   it.each([
