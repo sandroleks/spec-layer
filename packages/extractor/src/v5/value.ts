@@ -40,15 +40,47 @@ export const SUPPORTED_DURATION_UNITS: readonly ('ms' | 's')[] = ['ms', 's'] as 
 
 /** Runtime mirrors of `UnresolvedReason` and `MissingReason`, for the same
  *  reason as the arrays above: the published schema lists them as enums, and
- *  only a runtime array lets the parity test hold the two together. */
-export const SUPPORTED_UNRESOLVED_REASONS: readonly UnresolvedReason[] = [
+ *  only a runtime array lets the parity test hold the two together.
+ *
+ *  Declared with `satisfies` rather than a `: readonly X[]` annotation so
+ *  each array keeps its own literal-tuple type instead of widening to the
+ *  full union -- that is what lets the `Exclude<...>` checks below see
+ *  exactly which members are present and fail typecheck on the ones that are
+ *  not, rather than silently accepting an array that merely happens to be a
+ *  subset. */
+export const SUPPORTED_UNRESOLVED_REASONS = [
   'source_library_unavailable', 'target_not_found', 'cycle', 'type_mismatch',
   'depth_exceeded', 'ambiguous_target', 'target_mode_unresolvable',
   'target_mode_value_missing',
-] as const;
-export const SUPPORTED_MISSING_REASONS: readonly MissingReason[] = [
+] as const satisfies readonly UnresolvedReason[];
+export const SUPPORTED_MISSING_REASONS = [
   'no_value_for_mode', 'unsupported_value_type', 'invalid_source_value', 'source_unavailable',
-] as const;
+] as const satisfies readonly MissingReason[];
+
+/**
+ * Compile-time exhaustiveness over `UnresolvedReason` and `MissingReason`.
+ *
+ * `satisfies` above only proves each array is a SUBSET of its union -- it
+ * does not stop a future member being added to `UnresolvedReason` or
+ * `MissingReason` without a matching entry here, which is exactly the drift
+ * `schemaParity.test.ts` exists to catch at runtime. This catches the same
+ * mistake at typecheck instead: `Exclude<Union, ArrayMember>` is `never` only
+ * when the array already covers the whole union, so a member left out turns
+ * the assigned literal `true` into a type error naming the missing member.
+ */
+type _UnresolvedReasonsExhaustive =
+  Exclude<UnresolvedReason, (typeof SUPPORTED_UNRESOLVED_REASONS)[number]> extends never
+    ? true
+    : ['UnresolvedReason member(s) missing from SUPPORTED_UNRESOLVED_REASONS:',
+       Exclude<UnresolvedReason, (typeof SUPPORTED_UNRESOLVED_REASONS)[number]>];
+const _unresolvedReasonsExhaustive: _UnresolvedReasonsExhaustive = true;
+
+type _MissingReasonsExhaustive =
+  Exclude<MissingReason, (typeof SUPPORTED_MISSING_REASONS)[number]> extends never
+    ? true
+    : ['MissingReason member(s) missing from SUPPORTED_MISSING_REASONS:',
+       Exclude<MissingReason, (typeof SUPPORTED_MISSING_REASONS)[number]>];
+const _missingReasonsExhaustive: _MissingReasonsExhaustive = true;
 
 export interface ColorValue {
   type: 'color';

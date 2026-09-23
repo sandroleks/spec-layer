@@ -50,6 +50,14 @@ const isStringArray = (v: unknown): v is string[] =>
 
 const HEX_RE = /^#[0-9a-f]{6}$/;
 
+/** `JSON.stringify(undefined)` is `undefined`, not a string, so splicing it
+ *  into a template literal for an absent reason prints the bare word
+ *  "undefined" with no quotes -- indistinguishable from a reason that is
+ *  literally the string `"undefined"`. Named here instead. */
+function describeReason(value: unknown): string {
+  return value === undefined ? 'no reason at all' : JSON.stringify(value);
+}
+
 function shape(
   entityId: string, message: string, modeId?: string,
 ): Diagnostic {
@@ -211,7 +219,7 @@ function validateAliasResolution(
   } else if (status === 'unresolved') {
     if (!isNonEmptyString(resolved.reason)
       || !SUPPORTED_UNRESOLVED_REASONS.includes(resolved.reason as UnresolvedReason)) {
-      out.push(shape(entityId, `An unresolved alias must carry a reason from the v5 vocabulary, not ${JSON.stringify(resolved.reason)}.`, modeId));
+      out.push(shape(entityId, `An unresolved alias must carry a reason from the v5 vocabulary, not ${describeReason(resolved.reason)}.`, modeId));
     }
     if (resolved.value !== null) {
       out.push(shape(entityId, 'An unresolved alias must carry a null value.', modeId));
@@ -257,7 +265,7 @@ function validateValue(
   } else if (kind === 'missing') {
     if (!isNonEmptyString(value.reason)
       || !SUPPORTED_MISSING_REASONS.includes(value.reason as MissingReason)) {
-      out.push(shape(entityId, `A missing value must carry a reason from the v5 vocabulary, not ${JSON.stringify(value.reason)}.`, modeId));
+      out.push(shape(entityId, `A missing value must carry a reason from the v5 vocabulary, not ${describeReason(value.reason)}.`, modeId));
     }
   }
 }

@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { validateLevel1 } from '../../src/v5/validate';
 import { SCHEMA_URI } from '../../src/v5/canonical';
 import { DEFAULT_SEVERITY, compareCodeUnits } from '../../src/v5/diagnostics';
-import { computeFoundationStatistics } from '../../src/v5/statistics';
+import { buildFoundation } from '../../src/foundation';
+import type { SerializedFoundation } from '../../src/foundation';
+import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
+import type { FoundationExportV5Meta } from '../../src/v5/fromFoundation';
 import {
   SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
   SUPPORTED_UNRESOLVED_REASONS,
@@ -164,9 +168,60 @@ describe('schema-only envelope rules', () => {
     rejects('an unknown statistic', (r) => { (r.statistics as Record<string, unknown>).luck = 7; });
   });
 
-  it('accepts exactly the statistics the extractor computes', () => {
-    const root = structuredClone(OK_ARTIFACT);
-    root.statistics = computeFoundationStatistics({ ...root, diagnostics: root.diagnostics });
-    expect(compiled(root), ajv.errorsText(compiled.errors)).toBe(true);
+});
+
+// `OK_ARTIFACT` (and every VALID_CASES entry above) has `diagnostics: []`
+// and no styles, so a `diagnostic`, `statistics`, or `envelope` def that
+// rejected every diagnostic, or that only happened to work for an empty
+// `styles.typography`/`styles.effects`, would still ship green through every
+// fixture-based test in this file. These three variants of one real
+// synthetic golden -- built through the actual production extractor
+// (`buildFoundationArtifactV5`), not a hand-mutated fixture -- are what
+// exercises those defs against non-empty diagnostics and both style kinds.
+const REAL_FIXTURE_PATH = fileURLToPath(
+  new URL('../fixtures/v5/synthetic-foundation-serialized.json', import.meta.url),
+);
+const REAL_META: FoundationExportV5Meta = {
+  exportId: 'synthetic-direct-v5-acceptance',
+  generatedAt: '2026-08-28T00:00:00.000Z',
+  build: null,
+};
+
+function realArtifact(scope?: FoundationExportV5Meta['scope']) {
+  const serialized = JSON.parse(readFileSync(REAL_FIXTURE_PATH, 'utf8')) as SerializedFoundation;
+  const meta: FoundationExportV5Meta = scope ? { ...REAL_META, scope } : REAL_META;
+  return buildFoundationArtifactV5(buildFoundation(serialized), meta).artifact;
+}
+
+/** A real artifact reaches a consumer as JSON, never as the live JS object
+ *  `buildFoundationArtifactV5` returns, so it is round-tripped before
+ *  validation here too -- the same transform every consumer's `JSON.parse`
+ *  already applies. */
+const roundTrip = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
+
+describe('validates real synthetic foundation artifacts', () => {
+  it('accepts the whole-file real artifact, which is not a vacuous check', () => {
+    const artifact = realArtifact();
+    // If any of these read zero, the schema check below would pass for the
+    // wrong reason: the empty-diagnostics, no-styles case OK_ARTIFACT already
+    // covers, not the non-empty case this test exists to cover.
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(artifact.styles.typography.length).toBeGreaterThan(0);
+    expect(artifact.styles.effects.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
+  });
+
+  it('accepts a styles-only real artifact, scoped to effect styles', () => {
+    const artifact = realArtifact({ target: 'effectStyles' });
+    expect(artifact.styles.effects.length).toBeGreaterThan(0);
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
+  });
+
+  it('accepts a real artifact scoped to typography styles', () => {
+    const artifact = realArtifact({ target: 'textStyles' });
+    expect(artifact.styles.typography.length).toBeGreaterThan(0);
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
   });
 });

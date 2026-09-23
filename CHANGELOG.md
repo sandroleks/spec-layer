@@ -200,8 +200,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   diagnostic codes and severities, types every statistic as a count, and
   lists both reason vocabularies; `validateLevel1` learns the two reason
   lists so the plugin's own check and the published schema keep agreeing.
-  `completeness.styles` documents why it is `partial` for any file with a
-  style. Every committed golden validates. The live schema at
+  `completeness.styles` documents why it is `partial` or `unavailable` for
+  any file with a style, a partial read, or a scoped export. Every committed
+  golden validates, including a real synthetic artifact carrying diagnostics
+  and both style kinds. The schema is tightened in place with no version
+  bump: no artifact any released plugin has ever emitted changes or stops
+  validating. The live schema at
   `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
   until the private site redeploys, so `npm run check:site-live` fails from
   this change until that deploy; it is not part of `npm run check`.

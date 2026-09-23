@@ -120,11 +120,18 @@ export interface EffectStyleV5 extends EntityIdentity {
 }
 
 /** `styles` is `complete` only for a file with no typography or effect
- *  styles: Figma exposes no publication state, lifecycle or consuming mode
- *  for a style, so any exported style leaves it `partial`, and the
- *  METADATA_UNAVAILABLE diagnostic on the artifact root names the absent
- *  fields (`fromFoundation.ts`, `completenessOf`). The published schema
- *  carries the same sentence on `completeness.styles`. */
+ *  styles at all. Otherwise `partial` or `unavailable`, for any of three
+ *  distinct causes (`fromFoundation.ts`, `completenessOf`), each named by its
+ *  own diagnostic on the artifact root: styles exist but Figma exposes no
+ *  publication state, lifecycle or consuming mode for them
+ *  (METADATA_UNAVAILABLE, always `partial`); one style kind failed to read
+ *  while the artifact still carries the other (SOURCE_PARTIALLY_UNAVAILABLE,
+ *  `partial`, or `unavailable` when both failed); or the export was
+ *  deliberately scoped to one collection or one style family, which excludes
+ *  the other style kind outright (EXPORT_SCOPED, `unavailable` for a
+ *  collection scope, `partial` or `unavailable` for a style-family scope
+ *  depending on whether that family's own read succeeded). The published
+ *  schema carries the same sentence on `completeness.styles`. */
 export type Completeness = 'complete' | 'partial' | 'unavailable';
 
 /**
