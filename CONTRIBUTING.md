@@ -13,6 +13,11 @@ npm run check
 
 Build the Figma plugin with `npm run build:plugin`, then import `packages/plugin/manifest.json` as a development plugin.
 
+`npm ci` also runs the `prepare` script, which sets `core.hooksPath` to
+`.githooks` so the pre-commit hook that rejects known secret shapes runs in
+your clone. If you installed with `--ignore-scripts`, run
+`node scripts/install-hooks.mjs` once.
+
 ## Development rules
 
 - Add or update automated tests for behavior changes. Bug fixes should include a regression test.

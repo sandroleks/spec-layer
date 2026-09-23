@@ -211,6 +211,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   `crypto`, `performance`, `globalThis`, `self` and the scheduler calls,
   catches a global used as a value, and runs from a checkout path with a
   space in it, which it had not.
+  The pre-commit hook recognises Spec Layer pull keys, npm tokens and
+  Cloudflare token assignments, and `npm ci` now wires it into the clone.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping

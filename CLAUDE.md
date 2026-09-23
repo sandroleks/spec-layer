@@ -255,8 +255,10 @@ rejected; the bet is deterministic extraction depth.
   `feat(v5): group repeated component bindings`, `fix(proxy): ...`,
   `docs: ...`, `chore(plugin): ...`. Add a body when the change needs
   explaining. Commits carry a `Co-Authored-By` trailer.
-- A pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) rejects
-  known secret patterns.
+- A pre-commit hook (`.githooks/pre-commit`) rejects known secret patterns,
+  including this product's own `sl_` pull keys. `npm ci` runs `prepare`,
+  which points `core.hooksPath` at it; `scripts/pre-commit.test.ts` pins
+  the shapes.
 - Update `CHANGELOG.md` alongside behavior changes and the JSON Schema
   alongside contract changes, in the same commit. `CHANGELOG.md` is the only
   place shipped work is described; do not mirror it into this file.
