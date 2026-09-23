@@ -9,6 +9,7 @@
  *   ui-harness.html?view=library&pane=publish&publish=published
  *   ui-harness.html?view=library&pane=publish&publish=proposal
  *   ui-harness.html?view=library&pane=history&history=ready
+ *   ui-harness.html?view=settings&tab=about
  *
  * It feeds the same shapes the real UI receives. It must never gain behavior
  * of its own: anything it can do that the plugin cannot is a lie about the
@@ -34,7 +35,7 @@ import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
 import { createComponentSelection, renderComponentScreen } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
-import { renderSettingsScreen, type SettingsScreenState } from './screens/settings';
+import { isSettingsTab, renderSettingsScreen, type SettingsScreenState } from './screens/settings';
 import { renderLibraryScreen, revealLibraryRow } from './screens/library';
 import { renderPublishScreen } from './screens/publish';
 import { createPublishState, firstPublishProposal, type PublishState } from './publish';
@@ -843,6 +844,7 @@ if (view === 'settings') {
     ? THEME_PRESETS[0].theme
     : THEME_PRESETS.find((item) => item.name.toLowerCase() === frameTheme)?.theme
       ?? THEME_PRESETS[2].theme;
+  const tabParam = param('tab', 'frames');
   let settingsState: SettingsScreenState = {
     theme: { ...fixtureTheme },
     customMode: frameTheme === 'custom',
@@ -850,6 +852,7 @@ if (view === 'settings') {
     // Fixture, not a real build: `?version=` with no value shows the
     // unstamped branch, the way `?logo=` flips the logo one.
     pluginVersion: param('version', '5.0.0') || null,
+    tab: isSettingsTab(tabParam) ? tabParam : 'frames',
   };
   let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
   const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);
@@ -858,6 +861,14 @@ if (view === 'settings') {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const tabButton = target.closest<HTMLElement>('[data-settings-tab]');
+    const tabId = tabButton?.dataset.settingsTab;
+    if (tabId && isSettingsTab(tabId)) {
+      settingsState = { ...settingsState, tab: tabId };
+      renderSettingsFixture();
+      document.querySelector<HTMLElement>(`[data-settings-tab="${tabId}"]`)?.focus();
+      return;
+    }
     if (target.closest('[data-theme-preset="__custom__"]')) {
       settingsState = {
         ...settingsState,

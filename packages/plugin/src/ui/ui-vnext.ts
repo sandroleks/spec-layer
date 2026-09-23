@@ -36,11 +36,15 @@ import {
 } from './screens/component';
 import { renderFoundationScreen } from './screens/foundations';
 import {
+  SETTINGS_TABS,
   fontMenuMarkup,
+  isSettingsTab,
   renderSettingsScreen,
   type ColorField,
   type FontField,
+  type SettingsTab,
 } from './screens/settings';
+import { rovingIndex } from './viewModel/roving';
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
@@ -167,6 +171,8 @@ let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
 let settingsCustomMode = false;
+/** The Settings tab on show. Session only; Settings opens on Frames. */
+let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
@@ -403,6 +409,7 @@ function paint(): void {
         customMode: settingsCustomMode,
         logoAttached: Boolean(state.logoBase64),
         pluginVersion: pluginBuild(),
+        tab: settingsTab,
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
@@ -1480,6 +1487,19 @@ function paintAndFocus(selector: string): void {
   document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
 }
 
+/**
+ * Show one Settings tab and leave focus on it, where the click or the arrow
+ * key already was. The panel starts at its top. Leaving Frames closes an open
+ * font list, whose field is no longer drawn.
+ */
+function selectSettingsTab(next: SettingsTab): void {
+  if (next !== 'frames') closeFontMenu();
+  settingsTab = next;
+  paint();
+  refs.scroll.scrollTop = 0;
+  document.querySelector<HTMLElement>(`[data-settings-tab="${next}"]`)?.focus({ preventScroll: true });
+}
+
 function syncVariantPicker(): void {
   const inputs = [
     ...refs.scroll.querySelectorAll<HTMLInputElement>('[data-variant]'),
@@ -1854,6 +1874,13 @@ document.addEventListener('click', (event) => {
   // Anything else outside the open list dismisses it, then falls through so the
   // click still does whatever it was for.
   if (fontMenu) closeFontMenu();
+
+  const settingsTabButton = target.closest<HTMLButtonElement>('[data-settings-tab]');
+  const settingsTabId = settingsTabButton?.dataset.settingsTab;
+  if (settingsTabId && isSettingsTab(settingsTabId)) {
+    selectSettingsTab(settingsTabId);
+    return;
+  }
 
   if (target.closest('[data-theme-preset="__custom__"]')) {
     settingsColorError = '';
@@ -2268,6 +2295,19 @@ document.addEventListener('keydown', (event) => {
       }
     }
     if (event.key === 'Tab' && fontMenu) closeFontMenu();
+  }
+
+  // Settings tab strip: the arrow keys move and select, Home and End jump to
+  // the ends. Tab is left alone, so it leaves the strip for the panel.
+  if (event.target instanceof HTMLElement && event.target.dataset.settingsTab) {
+    const ids = SETTINGS_TABS.map((tab) => tab.id);
+    const current = ids.indexOf(event.target.dataset.settingsTab as SettingsTab);
+    const next = rovingIndex(current, ids.length, event.key, 'horizontal');
+    if (next !== null) {
+      event.preventDefault();
+      selectSettingsTab(ids[next]);
+      return;
+    }
   }
 
   if (libraryMenuDocId) {

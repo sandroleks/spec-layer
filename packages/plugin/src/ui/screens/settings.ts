@@ -20,6 +20,18 @@ import type { ShellRefs } from '../shell/shell';
 export type FontField = 'headingFont' | 'bodyFont';
 export type ColorField = 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg';
 
+/** The Settings tabs, in strip order. */
+export type SettingsTab = 'frames' | 'about';
+
+export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
+  { id: 'frames', label: 'Frames' },
+  { id: 'about', label: 'About' },
+];
+
+export function isSettingsTab(value: string): value is SettingsTab {
+  return SETTINGS_TABS.some((tab) => tab.id === value);
+}
+
 export interface SettingsScreenState {
   theme: BrandTheme;
   customMode: boolean;
@@ -36,6 +48,8 @@ export interface SettingsScreenState {
    * pluginBuild().
    */
   pluginVersion: string | null;
+  /** The tab on show. Absent means Frames, where Settings opens. */
+  tab?: SettingsTab;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -234,6 +248,8 @@ function logoControls(state: SettingsScreenState): string {
  *
  * Plain text, no copy button. It is a dozen characters and the iframe already
  * lets you select them.
+ *
+ * The tab names the panel, so the section carries no heading of its own.
  */
 function aboutSection(state: SettingsScreenState): string {
   // Never fabricate. An unstamped build knows no version, so the row is
@@ -243,7 +259,6 @@ function aboutSection(state: SettingsScreenState): string {
     : '';
   return (
     '<section class="sl-settings-section sl-about-section">' +
-    '<div class="sl-settings-section-heading"><h2>About</h2></div>' +
     '<dl class="sl-about-versions">' +
     plugin +
     `<div><dt>Extractor version</dt><dd>${esc(EXTRACTOR_VERSION)}</dd></div>` +
@@ -256,13 +271,31 @@ function aboutSection(state: SettingsScreenState): string {
   );
 }
 
-export function settingsHeaderMarkup(): string {
-  // No subtitle. It said "Generated frame appearance", which the Frame theme
-  // heading directly below already says, and which About makes untrue.
-  return '<div class="sl-page-header-copy"><h1>Settings</h1></div>';
+/**
+ * The tab strip. It sits in the page header under the title, so it stays in
+ * place while the panel scrolls. One panel serves every tab and only the
+ * selected tab's content is drawn into it. The roving tabindex keeps the
+ * strip a single Tab stop; ui-vnext.ts moves between tabs with the arrow keys.
+ */
+function settingsTabsMarkup(selected: SettingsTab): string {
+  const tabs = SETTINGS_TABS.map(({ id, label }) => {
+    const on = id === selected;
+    return (
+      `<button type="button" role="tab" id="sl-settings-tab-${id}" data-settings-tab="${id}" ` +
+      `aria-selected="${on}" aria-controls="sl-settings-panel" tabindex="${on ? '0' : '-1'}">` +
+      `${label}</button>`
+    );
+  }).join('');
+  return `<div class="sl-segmented sl-settings-tabs" role="tablist" aria-label="Settings">${tabs}</div>`;
 }
 
-export function settingsScrollMarkup(state: SettingsScreenState): string {
+export function settingsHeaderMarkup(tab: SettingsTab = 'frames'): string {
+  // No subtitle. It said "Generated frame appearance", which the Frame theme
+  // heading directly below already says, and which About makes untrue.
+  return `<div class="sl-page-header-copy"><h1>Settings</h1>${settingsTabsMarkup(tab)}</div>`;
+}
+
+function framesPanel(state: SettingsScreenState): string {
   const preset = matchPreset(state.theme);
   return (
     '<section class="sl-settings-section sl-frame-theme-section">' +
@@ -281,8 +314,16 @@ export function settingsScrollMarkup(state: SettingsScreenState): string {
     '</div>' +
     customControls(state) +
     '</section>' +
-    logoControls(state) +
-    aboutSection(state)
+    logoControls(state)
+  );
+}
+
+export function settingsScrollMarkup(state: SettingsScreenState): string {
+  const tab = state.tab ?? 'frames';
+  const body = tab === 'about' ? aboutSection(state) : framesPanel(state);
+  return (
+    `<div class="sl-settings-panel" role="tabpanel" id="sl-settings-panel" ` +
+    `aria-labelledby="sl-settings-tab-${tab}">${body}</div>`
   );
 }
 
@@ -291,7 +332,7 @@ export function renderSettingsScreen(
   state: SettingsScreenState,
 ): void {
   refs.screen.className = 'sl-screen sl-settings-screen';
-  refs.pageHeader.innerHTML = settingsHeaderMarkup();
+  refs.pageHeader.innerHTML = settingsHeaderMarkup(state.tab ?? 'frames');
   refs.pageHeader.hidden = false;
   refs.scroll.innerHTML = settingsScrollMarkup(state);
   refs.footer.hidden = true;

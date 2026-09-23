@@ -5,7 +5,9 @@ import { DOCS_URL } from '../src/ui/proxy';
 import {
   FONT_DEFAULT_LABEL,
   FONT_DEFAULT_VALUE,
+  SETTINGS_TABS,
   fontMenuMarkup,
+  isSettingsTab,
   settingsHeaderMarkup,
   settingsScrollMarkup,
 } from '../src/ui/screens/settings';
@@ -75,9 +77,8 @@ describe('logo section', () => {
     const markup = settingsScrollMarkup(state);
     const theme = markup.indexOf('sl-frame-theme-section');
     const logo = markup.indexOf('sl-logo-setting');
-    const about = markup.indexOf('sl-about-section');
+    expect(theme).toBeGreaterThan(-1);
     expect(theme).toBeLessThan(logo);
-    expect(logo).toBeLessThan(about);
     // The frame-theme section closes before Logo opens.
     expect(markup.slice(theme, logo)).toContain('</section>');
   });
@@ -240,29 +241,27 @@ describe('about section', () => {
     theme: { ...THEME_PRESETS[0].theme },
     customMode: false,
     logoAttached: false,
+    tab: 'about' as const,
   };
 
   it('labels each version, so a bare number cannot read as something else', () => {
     // "Spec Layer 5.0.0" over "Extractor 2" said neither what the numbers
     // were nor what the second one counted.
     const markup = settingsScrollMarkup({ ...state, pluginVersion: '5.0.0' });
-    expect(markup).toContain('<h2>About</h2>');
+    // The tab names the panel, so the section carries no heading of its own.
+    expect(markup).not.toContain('<h2>About</h2>');
     expect(markup).toContain('<dt>Plugin version</dt><dd>5.0.0</dd>');
     expect(markup).toContain(`<dt>Extractor version</dt><dd>${EXTRACTOR_VERSION}</dd>`);
-    // A sibling section, not a child of the frame-theme one: About is not
-    // frame appearance, and nesting it there would say that it is.
-    const theme = markup.indexOf('sl-frame-theme-section');
-    const about = markup.indexOf('sl-about-section');
-    expect(theme).toBeGreaterThan(-1);
-    expect(about).toBeGreaterThan(theme);
-    expect(markup.slice(theme, about)).toContain('</section>');
+    // Its own panel: About is not frame appearance.
+    expect(markup).toContain('sl-about-section');
+    expect(markup).not.toContain('sl-frame-theme-section');
   });
 
   it('drops the whole plugin row rather than guessing at an unstamped build', () => {
     // pluginBuild() is null whenever the esbuild define is absent. Never
     // fabricate: no 0.0.0, no runtime read of package.json.
     const markup = settingsScrollMarkup({ ...state, pluginVersion: null });
-    expect(markup).toContain('<h2>About</h2>');
+    expect(markup).toContain('sl-about-section');
     expect(markup).not.toContain('Plugin version');
     expect(markup).toContain(`<dt>Extractor version</dt><dd>${EXTRACTOR_VERSION}</dd>`);
   });
@@ -280,5 +279,67 @@ describe('about section', () => {
     expect(start).toBeGreaterThan(-1);
     const about = markup.slice(start);
     expect(about).not.toContain('<button');
+  });
+});
+
+/**
+ * Settings was one long page, and the Custom theme alone adds six fields
+ * above everything else. Tabs keep each group on a short panel. One panel
+ * serves every tab and only the selected tab's content is drawn; the strip
+ * lives in the page header so it stays put while the panel scrolls.
+ */
+describe('settings tabs', () => {
+  const state = {
+    theme: { ...THEME_PRESETS[0].theme },
+    customMode: false,
+    logoAttached: false,
+    pluginVersion: '5.0.0',
+  };
+
+  it('draws a tab strip under the title, Frames first and selected by default', () => {
+    const markup = settingsHeaderMarkup();
+    expect(markup).toContain('role="tablist" aria-label="Settings"');
+    const ids = [...markup.matchAll(/data-settings-tab="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual(SETTINGS_TABS.map((tab) => tab.id));
+    expect(ids[0]).toBe('frames');
+    expect(markup.indexOf('<h1>Settings</h1>')).toBeLessThan(markup.indexOf('role="tablist"'));
+    expect(markup).toContain(
+      'id="sl-settings-tab-frames" data-settings-tab="frames" aria-selected="true" ' +
+      'aria-controls="sl-settings-panel" tabindex="0"',
+    );
+  });
+
+  it('marks exactly one tab selected and gives only that one a tab stop', () => {
+    const markup = settingsHeaderMarkup('about');
+    expect(markup.match(/aria-selected="true"/g)).toHaveLength(1);
+    expect(markup).toContain('data-settings-tab="about" aria-selected="true"');
+    expect(markup.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(markup.match(/tabindex="-1"/g)).toHaveLength(SETTINGS_TABS.length - 1);
+  });
+
+  it('labels the one panel with the selected tab', () => {
+    expect(settingsScrollMarkup(state)).toContain(
+      'role="tabpanel" id="sl-settings-panel" aria-labelledby="sl-settings-tab-frames"',
+    );
+    expect(settingsScrollMarkup({ ...state, tab: 'about' })).toContain(
+      'aria-labelledby="sl-settings-tab-about"',
+    );
+  });
+
+  it('draws only the selected tab: Frames holds theme and logo, About the versions', () => {
+    const frames = settingsScrollMarkup(state);
+    expect(frames).toContain('sl-frame-theme-section');
+    expect(frames).toContain('sl-logo-setting');
+    expect(frames).not.toContain('sl-about-section');
+    const about = settingsScrollMarkup({ ...state, tab: 'about' });
+    expect(about).toContain('sl-about-section');
+    expect(about).not.toContain('sl-frame-theme-section');
+    expect(about).not.toContain('sl-logo-setting');
+  });
+
+  it('knows its own tab ids and nothing else', () => {
+    for (const { id } of SETTINGS_TABS) expect(isSettingsTab(id)).toBe(true);
+    expect(isSettingsTab('Frames')).toBe(false);
+    expect(isSettingsTab('')).toBe(false);
   });
 });
