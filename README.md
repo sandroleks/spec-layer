@@ -18,7 +18,8 @@ into your repository as structured context for an AI coding agent.
   states, variants, tokens, and theming in a connected canvas frame.
 - **Foundation documentation.** Turn variable collections and text styles into
   readable token tables and colour references.
-- **Copy for AI.** Copy a component or Foundation as compact YAML with the facts
+- **Copy for AI.** Copy a component as a compact YAML brief or a readable
+  Markdown page, or a Foundation as a DTCG resolver document, with the facts
   an implementation agent needs. Foundation and component copies retain their
   canonical v5 content hashes; component copies include only the exact token
   and style dependency closure they use.
@@ -60,8 +61,8 @@ policy for automated, shared, or exceptionally high-volume use.
 
 ## Privacy
 
-Deterministic work stays inside Figma. Canvas documentation and clipboard YAML
-are produced locally.
+Deterministic work stays inside Figma. Canvas documentation and clipboard
+context (YAML, Markdown, or DTCG JSON) are produced locally.
 
 When you request AI writing, the plugin sends a structured component summary
 and, when it fits the export limits, a rendered image through the Spec Layer
@@ -167,7 +168,7 @@ Figma node
   → plugin serializer
   → plain IntermediateSpec data
   ├─→ canvas documentation + connected Library entry
-  ├─→ compact YAML on the clipboard
+  ├─→ compact YAML or a Markdown page on the clipboard
   ├─→ published library bundle → proxy → spec-layer CLI → your repository
   └─→ optional AI-writing proxy → Anthropic
 ```
@@ -186,7 +187,7 @@ trust boundaries.
 
 ```text
 packages/plugin/       Figma serializer, canvas renderer, and plugin UI
-packages/extractor/    deterministic extraction and YAML context generation
+packages/extractor/    deterministic extraction; YAML, Markdown, and DTCG context
 packages/proxy/        Cloudflare Worker for AI writing, quotas, licensing, libraries
 packages/cli/          spec-layer CLI: pulls a published library into a repo
 packages/brand/        shared design tokens, identity assets, and the contrast gate

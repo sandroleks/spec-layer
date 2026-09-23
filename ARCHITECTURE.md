@@ -10,7 +10,7 @@ Figma node
   → IntermediateSpec
   ├─→ deterministic canvas documentation + connected Library entry
   ├─→ compact YAML context on the clipboard (Copy for AI)
-  ├─→ readable Markdown projection of the same artifact (spec-layer pull and show)
+  ├─→ readable Markdown projection of the same artifact (Copy for AI, the snapshot, spec-layer pull and show)
   └─→ optional AI-writing proxy → Anthropic
 ```
 
@@ -70,6 +70,12 @@ Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It
 supports selected-component extraction, canvas documentation, Copy for AI,
 Foundation documents, connected-document maintenance, frame themes, and license
 management. There is one UI and one bundle.
+
+Copy for AI and the snapshot download write components as YAML or Markdown,
+per the Component format setting on the Settings Export tab; the Publish
+screen's setup command carries `--component-format md` when it is Markdown.
+Foundations always leave as DTCG. Both renderings come from the one artifact
+a copy or download builds.
 
 A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
 

@@ -8,8 +8,9 @@ document it points you at for the area you are touching.
 Spec Layer is a **Figma plugin** that turns components, variables, and styles
 into design-system documentation: connected canvas Sections, and context on the
 clipboard for an AI coding agent ("Copy for AI"). A component copies as a
-compact YAML brief; a Foundation copies as a DTCG resolver document (JSON). A
-Pro user can publish a library and a developer pulls it into a repository with
+compact YAML brief or, when Settings is set to Markdown, a readable Markdown
+page; a Foundation copies as a DTCG resolver document (JSON). A Pro user can
+publish a library and a developer pulls it into a repository with
 the `spec-layer` CLI. It ships as a published Community plugin with a free tier
 and a $7.99/mo Pro tier.
 
