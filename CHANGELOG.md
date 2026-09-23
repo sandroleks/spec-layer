@@ -47,7 +47,7 @@ existing repository re-project on its first pull with the new release.
   never feeds a hash, is never stored in a bundle, and nothing parses it back.
   An artifact with no component name is refused with an error rather than
   given a placeholder heading.
-  No surface produces it yet; the CLI and the plugin follow.
+  The CLI produces it with `--component-format md`; the plugin follows.
 
 - **Foundation rows carry what the new frames draw.** A variable row now
   projects the code syntax Figma's variable settings define and the scale
