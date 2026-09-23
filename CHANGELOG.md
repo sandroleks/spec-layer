@@ -207,6 +207,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 - **The repository gates cover what they claimed to.** `npm run typecheck`
   now compiles `packages/proxy/test` and `packages/cli/test`; both had type
   errors that vitest's type stripping hid, all in test code.
+  The main-thread sandbox scan now knows the URL, fetch and abort classes,
+  `crypto`, `performance`, `globalThis`, `self` and the scheduler calls,
+  catches a global used as a value, and runs from a checkout path with a
+  space in it, which it had not.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping

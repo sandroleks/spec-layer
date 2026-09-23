@@ -27,8 +27,15 @@
  * than `new X(`.
  *
  * Portable: plain Node, no shell pipeline, no `grep -P`.
+ *
+ * Since 2026-09-23 the lists also carry the WHATWG URL, fetch and abort
+ * classes, `crypto`, `performance`, `globalThis` and `self`, the two extra
+ * scheduler calls, and a bare-identifier pass for a global used as a value.
+ * The shapes that pass are pinned in scripts/check-main-sandbox.test.ts.
  */
 import { readFileSync, existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 
 const DEFAULT_BUNDLE = 'packages/plugin/dist/main.js';
 
@@ -36,12 +43,28 @@ const DEFAULT_BUNDLE = 'packages/plugin/dist/main.js';
 const CONSTRUCTORS = [
   'TextEncoder', 'TextDecoder', 'Blob', 'File', 'FileReader',
   'DOMParser', 'XMLHttpRequest', 'WebSocket', 'Worker', 'Image',
+  'URL', 'URLSearchParams', 'AbortController', 'Headers', 'Request', 'Response',
 ];
 const NAMESPACES = [
   'document', 'window', 'navigator', 'localStorage', 'sessionStorage',
   'indexedDB', 'location', 'history',
+  'crypto', 'performance', 'globalThis', 'self',
 ];
-const CALLS = ['fetch', 'atob', 'btoa', 'structuredClone', 'requestAnimationFrame'];
+const CALLS = [
+  'fetch', 'atob', 'btoa', 'structuredClone', 'requestAnimationFrame',
+  'setImmediate', 'queueMicrotask',
+];
+
+/**
+ * A global used as a value rather than called or constructed: aliased
+ * (`const f = fetch;`), passed along (`parts.map(atob)`), returned
+ * (`return fetch`). The identifier has to sit in an expression position, so a
+ * property (`obj.fetch`), an object key (`{ fetch: 1 }`), a `typeof` guard and
+ * a longer identifier (`fetchAll`) do not match. A string literal could still
+ * match if the word sits between these delimiters; the bundle test in
+ * scripts/check-main-sandbox.test.ts is what keeps that honest.
+ */
+const bare = (name) => new RegExp(`(?<=(?:[=(,\\[?:!&|]|\\breturn)\\s*)${name}(?=\\s*[,;)\\]}])`, 'g');
 
 function record(offenders, src, name, pattern) {
   const hits = src.match(pattern);
@@ -55,9 +78,10 @@ function record(offenders, src, name, pattern) {
 export function scanSandboxBundle(src) {
   const offenders = [];
   for (const name of CONSTRUCTORS) record(offenders, src, name, new RegExp(`\\bnew\\s+${name}\\b`, 'g'));
-  // A leading (?<![.\w]) keeps `foo.document` and `myWindow` from matching.
-  for (const name of NAMESPACES) record(offenders, src, name, new RegExp(`(?<![.\\w])${name}\\s*[.(]`, 'g'));
-  for (const name of CALLS) record(offenders, src, name, new RegExp(`(?<![.\\w])${name}\\s*\\(`, 'g'));
+  // A leading (?<![.\w$]) keeps `foo.document`, `myWindow` and `$self` from matching.
+  for (const name of NAMESPACES) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*[.(]`, 'g'));
+  for (const name of CALLS) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*\\(`, 'g'));
+  for (const name of [...CONSTRUCTORS, ...CALLS]) record(offenders, src, name, bare(name));
   return offenders;
 }
 
@@ -86,6 +110,10 @@ function main(bundlePath = DEFAULT_BUNDLE) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare URL to URL. The previous string form (`file://` + argv[1]) never
+// matched on a checkout whose path has a space, because import.meta.url is
+// percent-encoded, so the gate exited 0 without scanning. Same form as
+// packages/brand/build.mjs.
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   main(process.argv[2]);
 }
