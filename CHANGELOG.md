@@ -27,6 +27,18 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
+- **A self-describing DTCG output** (CLI 0.8.2, on npm since 2026-09-10; the
+  plugin's clipboard side of it landed after the `v5.1.0` tag in #59 and #60
+  and has not been in a tagged plugin release). The document extension now
+  carries a `census` of what each emitted file holds and a `config_hash` of the
+  projection options that produced it, and `resolver.json` carries that
+  extension instead of only the clipboard document doing so. The sidecar
+  records the `transform` behind each token's value in each mode, and the value
+  each alias resolves to. Every field is descriptive: no canvas hash and no
+  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
+  needs regenerating. A repository pulling with an earlier CLI gets the same
+  files without these fields. The census reports what the projection produced;
+  `report.json` keeps its own job of naming what it could not express.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and
@@ -968,16 +980,6 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   is on, the Measurements diagram measures its size rails, padding bands, and
   spacing from the revealed instance rather than the source component, so the
   overlay matches what is drawn.
-- **A self-describing DTCG output** (CLI 0.8.2). The document extension now
-  carries a `census` of what each emitted file holds and a `config_hash` of the
-  projection options that produced it, and `resolver.json` carries that
-  extension instead of only the clipboard document doing so. The sidecar
-  records the `transform` behind each token's value in each mode, and the value
-  each alias resolves to. Every field is descriptive: no canvas hash and no
-  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
-  needs regenerating. A repository pulling with an earlier CLI gets the same
-  files without these fields. The census reports what the projection produced;
-  `report.json` keeps its own job of naming what it could not express.
 
 ### Removed
 
