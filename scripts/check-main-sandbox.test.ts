@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -63,13 +65,48 @@ describe('scanSandboxBundle', () => {
 });
 
 describe('the script entry point', () => {
-  // The old guard compared import.meta.url to `file://` + argv[1], which
-  // fails on any path with a space (the URL form is percent-encoded), so the
-  // gate exited 0 without scanning anything on such a checkout.
-  it('runs main() when invoked directly, even from a path with a space in it', () => {
-    const run = spawnSync(process.execPath, [script, '/nonexistent/main.js'], { encoding: 'utf8' });
+  // The entry guard once compared import.meta.url to `file://` + argv[1],
+  // which fails on a path with a space (the URL form is percent-encoded), and
+  // then to pathToFileURL(resolve(argv[1])), which fails when the script is
+  // reached through a symlink (Node sets import.meta.url to the real path).
+  // Either way the gate exited 0 without scanning. The script is copied into
+  // a directory whose name has a space and also reached through an explicit
+  // symlink, so a regression fails on Linux CI as well as on macOS, where
+  // tmpdir() itself sits behind a symlink. It imports only node: modules, so
+  // the copy runs on its own.
+  let dir: string;
+  let copy: string;
+  let link: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sl sandbox '));
+    mkdirSync(join(dir, 'real dir'));
+    copy = join(dir, 'real dir', 'check-main-sandbox.mjs');
+    copyFileSync(script, copy);
+    link = join(dir, 'linked check.mjs');
+    symlinkSync(copy, link);
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it.each([
+    ['a copy in a path with a space', () => copy],
+    ['a symlink to that copy', () => link],
+  ])('exits non-zero on a missing bundle when run as %s', (_label, entry) => {
+    const run = spawnSync(process.execPath, [entry(), '/nonexistent/main.js'], { encoding: 'utf8' });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('/nonexistent/main.js not found');
+  });
+
+  it('prints one success line for a clean bundle, so a skipped scan cannot look clean', () => {
+    const bundle = join(dir, 'clean main.js');
+    writeFileSync(bundle, 'console.log(1);\n');
+    const run = spawnSync(process.execPath, [link, bundle], { encoding: 'utf8' });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe(`Sandbox scan: ${bundle} clean (16 bytes).\n`);
+    expect(run.stderr).toBe('');
   });
 });
 

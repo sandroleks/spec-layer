@@ -28,9 +28,8 @@
  * Node reading each tracked file's bytes directly.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 
 const TEXT_EXTENSIONS = new Set([
   '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs',
@@ -103,6 +102,7 @@ function trackedFiles() {
 
 function main() {
   const offenders = [];
+  let scanned = 0;
   for (const file of trackedFiles()) {
     if (!isScannedPath(file)) continue;
     let buf;
@@ -113,6 +113,7 @@ function main() {
       // Not this script's concern.
       continue;
     }
+    scanned += 1;
     const offence = controlOffence(file, buf);
     if (offence !== null) offenders.push(`${file} (${offence})`);
   }
@@ -127,9 +128,28 @@ function main() {
     );
     process.exit(1);
   }
+
+  // One line on success, so a scan that never ran cannot pass for a clean one.
+  console.log(`NUL scan: ${scanned} tracked text file${scanned === 1 ? '' : 's'} clean.`);
 }
 
-// URL compared to URL, so a checkout path with a space still runs main().
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+/**
+ * The real path of the invoked script, or null when there is none. Node sets
+ * import.meta.url to the real path of the entry module, so argv[1] has to be
+ * resolved through any symlink before the two can be compared.
+ */
+function invokedRealPath() {
+  if (!process.argv[1]) return null;
+  try {
+    return realpathSync(process.argv[1]);
+  } catch {
+    return null;
+  }
+}
+
+// URL compared to URL, real path to real path, so a checkout path with a
+// space or a symlinked script still runs main() instead of exiting 0 silently.
+const invoked = invokedRealPath();
+if (invoked && pathToFileURL(invoked).href === import.meta.url) {
   main();
 }

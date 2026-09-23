@@ -37,9 +37,8 @@
  * is standard ES2020 and is not an offence.
  * The shapes that pass are pinned in scripts/check-main-sandbox.test.ts.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 
 const DEFAULT_BUNDLE = 'packages/plugin/dist/main.js';
 
@@ -104,12 +103,12 @@ function main(bundlePath = DEFAULT_BUNDLE) {
     process.exit(1);
   }
 
-  const src = readFileSync(bundlePath, 'utf8');
-  const offenders = scanSandboxBundle(src);
+  const bytes = readFileSync(bundlePath);
+  const offenders = scanSandboxBundle(bytes.toString('utf8'));
 
   if (offenders.length > 0) {
     console.error(`The plugin main-thread bundle (${bundlePath}) references globals the`);
-    console.error('Figma sandbox does not provide:\n');
+    console.error('Figma main thread does not allow:\n');
     for (const { name, count } of offenders) {
       console.error(`  ${name}  (${count} reference${count === 1 ? '' : 's'})`);
     }
@@ -122,12 +121,30 @@ function main(bundlePath = DEFAULT_BUNDLE) {
     );
     process.exit(1);
   }
+
+  // One line on success, so a scan that never ran cannot pass for a clean one.
+  console.log(`Sandbox scan: ${bundlePath} clean (${bytes.length} bytes).`);
 }
 
-// Compare URL to URL. The previous string form (`file://` + argv[1]) never
-// matched on a checkout whose path has a space, because import.meta.url is
-// percent-encoded, so the gate exited 0 without scanning. Same form as
-// packages/brand/build.mjs.
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+/**
+ * The real path of the invoked script, or null when there is none. Node sets
+ * import.meta.url to the real path of the entry module, so argv[1] has to be
+ * resolved through any symlink before the two can be compared.
+ */
+function invokedRealPath() {
+  if (!process.argv[1]) return null;
+  try {
+    return realpathSync(process.argv[1]);
+  } catch {
+    return null;
+  }
+}
+
+// Compare URL to URL, real path to real path. The string form (`file://` +
+// argv[1]) never matched on a checkout whose path has a space, because
+// import.meta.url is percent-encoded, and resolve() alone never matched when
+// the script was reached through a symlink. Both exited 0 without scanning.
+const invoked = invokedRealPath();
+if (invoked && pathToFileURL(invoked).href === import.meta.url) {
   main(process.argv[2]);
 }

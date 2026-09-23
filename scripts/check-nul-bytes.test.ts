@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -56,23 +56,45 @@ describe('controlOffence', () => {
 });
 
 describe('the script entry point', () => {
-  // check-main-sandbox.mjs once guarded its main() with a string comparison
-  // (`import.meta.url === 'file://' + process.argv[1]`), which never matches
-  // on a checkout path with a space (the URL form is percent-encoded), so the
-  // gate exited 0 without scanning anything. This script's guard uses
-  // pathToFileURL(resolve(...)) instead, which normalizes both sides before
-  // comparing. Prove it actually runs main(), even from a directory whose
-  // path contains a space, by pointing it at a scratch git repo that tracks
-  // one offending file and checking it is reported, not silently passed.
-  it('runs main() and reports an offence, even from a path with a space in it', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sl nul scan '));
+  // The entry guard once compared import.meta.url to `file://` + argv[1],
+  // which fails on a path with a space (the URL form is percent-encoded), and
+  // then to pathToFileURL(resolve(argv[1])), which fails when the script is
+  // reached through a symlink (Node sets import.meta.url to the real path).
+  // Either way the gate exited 0 without scanning. The script is copied into
+  // a directory whose name has a space and run through an explicit symlink,
+  // so a regression fails on Linux CI as well as on macOS, where tmpdir()
+  // itself sits behind a symlink. It imports only node: modules, so the copy
+  // runs on its own; the scratch git repo it scans is the working directory.
+  let toolDir: string;
+  let link: string;
+
+  beforeAll(() => {
+    toolDir = mkdtempSync(join(tmpdir(), 'sl nul tool '));
+    mkdirSync(join(toolDir, 'real dir'));
+    const copy = join(toolDir, 'real dir', 'check-nul-bytes.mjs');
+    copyFileSync(script, copy);
+    link = join(toolDir, 'linked check.mjs');
+    symlinkSync(copy, link);
+  });
+
+  afterAll(() => {
+    rmSync(toolDir, { recursive: true, force: true });
+  });
+
+  function scratchRepo(prefix: string, file: string, contents: Buffer | string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+    writeFileSync(join(dir, file), contents);
+    execFileSync('git', ['add', file], { cwd: dir });
+    return dir;
+  }
+
+  it('runs main() and reports an offence when reached through a symlink in a path with a space', () => {
+    const dir = scratchRepo('sl nul scan ', 'bad.md', Buffer.from([0x61, 0x0a, 0x00, 0x62]));
     try {
-      execFileSync('git', ['init', '-q'], { cwd: dir });
-      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
-      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
-      writeFileSync(join(dir, 'bad.md'), Buffer.from([0x61, 0x0a, 0x00, 0x62]));
-      execFileSync('git', ['add', 'bad.md'], { cwd: dir });
-      const run = spawnSync(process.execPath, [script], { cwd: dir, encoding: 'utf8' });
+      const run = spawnSync(process.execPath, [link], { cwd: dir, encoding: 'utf8' });
       expect(run.status).toBe(1);
       expect(run.stderr).toContain('bad.md (raw control byte 0x00)');
     } finally {
@@ -80,16 +102,12 @@ describe('the script entry point', () => {
     }
   });
 
-  it('exits 0 with no output on a clean scratch repo', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sl nul scan clean '));
+  it('prints one success line on a clean scratch repo, so a skipped scan cannot look clean', () => {
+    const dir = scratchRepo('sl nul scan clean ', 'good.md', 'hello\n');
     try {
-      execFileSync('git', ['init', '-q'], { cwd: dir });
-      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
-      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
-      writeFileSync(join(dir, 'good.md'), 'hello\n');
-      execFileSync('git', ['add', 'good.md'], { cwd: dir });
-      const run = spawnSync(process.execPath, [script], { cwd: dir, encoding: 'utf8' });
+      const run = spawnSync(process.execPath, [link], { cwd: dir, encoding: 'utf8' });
       expect(run.status).toBe(0);
+      expect(run.stdout).toBe('NUL scan: 1 tracked text file clean.\n');
       expect(run.stderr).toBe('');
     } finally {
       rmSync(dir, { recursive: true, force: true });

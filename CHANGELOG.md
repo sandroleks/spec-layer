@@ -211,7 +211,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   `crypto`, `performance`, `self` and the scheduler calls, catches a global
   used as a value or reached through `globalThis`, `self` or `window`
   (`globalThis` itself exists in the sandbox and passes), and runs from a
-  checkout path with a space in it, which it had not.
+  checkout path with a space in it or through a symlink, which it had not.
+  The sandbox and NUL scans each print one line when they pass, so a scan
+  that never ran can no longer look like a clean one.
   The pre-commit hook recognises Spec Layer pull keys, npm tokens and
   Cloudflare token assignments, and `npm ci` now wires it into the clone.
   The NUL scan reads every tracked text file, including `.github/`, the root
