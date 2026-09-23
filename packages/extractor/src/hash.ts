@@ -8,7 +8,9 @@ import { compareCodeUnits } from './v5/diagnostics';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  // An undefined member becomes `null`, exactly as JSON.stringify writes it;
+  // `JSON.stringify(undefined)` is undefined and would leave an empty slot.
+  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonical(v))).join(',')}]`;
   if (value && typeof value === 'object') {
     // Mirror JSON.stringify's own dropping of undefined-valued keys, keeping
     // canonical output consistent regardless of whether a caller passes them.

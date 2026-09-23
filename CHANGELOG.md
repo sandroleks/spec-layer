@@ -540,6 +540,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   correctly showed no raw value. Both now share one binding set. Gaps are in
   the canvas hash, so this rides the version 3 rebuild.
 
+- **`contentHash` treats an `undefined` array member as `null`, as
+  `JSON.stringify` does.** It used to emit an empty slot (`[,1]`), so two
+  values `JSON.stringify` writes identically could hash differently. No
+  extracted value carries one, so no hash moves; the pinned baselines in
+  `specHash.test.ts` and `foundationHash.test.ts` prove it.
+
 - **A dimension token that aliases a number token no longer projects an
   invalid CSS value.** DTCG requires a referencing token's `$type` to equal
   its alias target's, but the DTCG projection decided each token's type from
