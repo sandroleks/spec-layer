@@ -65,19 +65,21 @@ Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 need 0.7.0 or later. The `census` and `config_hash` blocks inside
 `resolver.json`, and the `transform` and `resolved` fields in
 `spec-layer.meta.json`, need 0.8.2 or later; an earlier version pulls the same
-files without those fields.
+files without those fields. Markdown component pages (`componentSpecsFormat`
+and `--component-format`) need 0.10.0 or later; an earlier version ignores the
+key and writes YAML.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
-| `init --id lib_... [--out DIR] [--platform P]... [selection]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection] [--component-format yaml|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
+| `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
+| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection] [--component-format yaml|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
 | `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
-| `show component NAME [--canonical]` | Prints one component's AI YAML to stdout. |
+| `show component NAME [--component-format yaml|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. |
 | `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
@@ -186,12 +188,39 @@ The selection only decides which `component-specs/` files are written. `bundle.j
 always holds the whole library, so `list` and `show` can answer for any
 artifact, written or not, and `status` compares one hash.
 
+## Component format
+
+`component-specs/` holds YAML by default: the same compact brief the plugin's
+**Copy for AI** copies. Set `componentSpecsFormat` to `md` to write one
+Markdown page per component instead:
+
+```json
+{
+  "libraryId": "lib_...",
+  "outDir": ".speclayer",
+  "componentSpecsDir": "component-specs",
+  "componentSpecsFormat": "md"
+}
+```
+
+`setup` and `init` store `--component-format yaml|md`; `pull` and `show` use
+the flag for one run. The page is rendered from the published canonical
+artifact at pull time, so every library already published gets it without a
+republish. It opens with front matter carrying the same `spec_layer` envelope
+the YAML does, with `profile: markdown`, and marks any AI-written section as
+AI written. Switching formats removes the other format's files on the next
+pull. Foundations are unaffected: `tokens/` stays DTCG in either format.
+
+A page pulled here and the same component copied from the plugin match byte
+for byte when both carry the same extractor build.
+
 ## Reading one artifact
 
 `show` prints exactly one artifact and nothing else, so it pipes cleanly:
 
 ```bash
 npx spec-layer show component Button            # the compact AI YAML
+npx spec-layer show component Button --component-format md   # the Markdown page
 npx spec-layer show foundation --canonical      # the canonical v5 JSON artifact
 ```
 
@@ -249,7 +278,7 @@ matter what the ignore rules say.
 ```text
 .speclayer/
   bundle.json                the published bundle, verbatim
-  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, componentSpecsDir, and the library version when one was reported
+  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, componentSpecsDir, componentSpecsFormat, and the library version when one was reported
   tokens/                    the Foundation as Design Tokens Format Module 2025.10 files
     <collection>.<mode>.json one file per collection and mode, rooted at the collection name
     styles.typography.json   text styles as typography composites (when present)
@@ -261,7 +290,7 @@ matter what the ignore rules say.
     web-css.map.json         DTCG path -> CSS custom property, where the name came from, and which file declares it
     web-css.report.json      what the CSS files could not express
 component-specs/
-  <name>.yaml                one brief per selected component, byte-identical to Copy for AI
+  <name>.yaml | <name>.md     one brief per selected component: the Copy for AI YAML, or a Markdown page
 tokens/
   index.css                  imports every file below, in resolver order
   <collection>.css           one file per single-mode collection, at :root
@@ -269,10 +298,10 @@ tokens/
 ```
 
 Point your agent at `component-specs/` and `.speclayer/tokens/`, and import
-`tokens/index.css` from the platform's root stylesheet. The component YAML is
-the same compact form the plugin's **Copy for AI** puts on your clipboard;
-`bundle.json` additionally holds the full canonical artifacts if you need
-them.
+`tokens/index.css` from the platform's root stylesheet. In the default format,
+the component YAML is the same compact form the plugin's **Copy for AI** puts
+on your clipboard; `bundle.json` additionally holds the full canonical
+artifacts if you need them.
 
 In `manifest.json`, an artifact the selection left unwritten has `"path":
 null`. A manifest from CLI 0.1.0 has no `selection` field and means
@@ -285,10 +314,10 @@ non-empty directory it did not write, since the swap replaces that directory.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`
 owns exactly the files there that begin with its marker (the CSS header, or
-the brief's opening `spec_layer:` lines): it replaces or removes those,
-ignores dotfiles, and refuses to run when anything else is present. A
-repository that already uses a path can set `componentSpecsDir` or
-`outputs[].path`.
+a brief's opening `spec_layer:` lines, after `---` for a Markdown page): it
+replaces or removes those, ignores dotfiles, and refuses to run when anything
+else is present. A repository that already uses a path can set
+`componentSpecsDir` or `outputs[].path`.
 
 When nothing changed since the last pull with the same selection, `pull`
 prints `Already up to date` and writes nothing. Every republish stamps a new

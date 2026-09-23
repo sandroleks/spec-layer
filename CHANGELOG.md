@@ -17,7 +17,27 @@ plugin portion adds a download feature to the Publish screen and ships in the
 plugin's own release, on its own schedule; it needs no CLI version and moves
 none of the reasoning above.
 
+The CLI's Markdown support below ships as 0.10.0, for the same reason 0.9.0
+did: it changes what a pull writes, so the version bump is what makes an
+existing repository re-project on its first pull with the new release.
+
 ### Added
+
+- **`spec-layer pull` can write components as Markdown.** Set
+  `componentSpecsFormat: "md"` in `speclayer.json`, or pass
+  `--component-format md` to `setup`, `init`, `pull`, or `show`, and
+  `component-specs/<slug>.md` is written in place of `<slug>.yaml`, rendered
+  from the published artifact by `componentMarkdown`. YAML stays the default
+  and is unchanged byte for byte. Every library already published renders
+  without a republish; the bundle and the proxy are untouched. Switching
+  formats removes the other format's files, and the manifest records the
+  format so a switch re-projects instead of reporting "Already up to date".
+  `show component` follows the flag, then the config, then the last pull;
+  `show foundation` refuses the flag. A component artifact that cannot be
+  rendered fails the pull with one sentence before anything is written. The
+  pull summary now names the format: "(3 YAML files)" or
+  "(3 Markdown files)". The agent guide from `spec-layer skill` describes the
+  page's headings when the pull wrote Markdown.
 
 - **A component artifact can be rendered as Markdown.** `componentMarkdown` in
   `packages/extractor/src/v5/markdown.ts` projects a validated Component

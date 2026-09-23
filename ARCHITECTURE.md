@@ -10,7 +10,7 @@ Figma node
   → IntermediateSpec
   ├─→ deterministic canvas documentation + connected Library entry
   ├─→ compact YAML context on the clipboard (Copy for AI)
-  ├─→ readable Markdown projection of the same artifact (no surface yet)
+  ├─→ readable Markdown projection of the same artifact (spec-layer pull and show)
   └─→ optional AI-writing proxy → Anthropic
 ```
 
@@ -203,6 +203,13 @@ and refuses a bundle whose major version it does not know. Eight commands:
   `component-specs/` at the repository root, configurable via
   `componentSpecsDir` in `speclayer.json`, default `component-specs`.
 
+  With `componentSpecsFormat: "md"` (or `--component-format md`) each brief is
+  instead `<slug>.md`, rendered at pull time by the extractor's
+  `componentMarkdown` from the component's canonical artifact in
+  `bundle.json`, the way `tokens/` is rendered by `foundationDtcg`; the CLI
+  still never reads source data. The manifest records the format, so a switch
+  re-projects rather than taking a 304.
+
   `pull` also writes platform outputs: a directory the team's build compiles,
   one per `outputs` entry in `speclayer.json`, written in place at the
   declared path rather than inside the swapped `<outDir>/`. Each is a pure
@@ -214,9 +221,10 @@ and refuses a bundle whose major version it does not know. Eight commands:
   Two visible directories are written in place and owned by marker;
   the record under `.speclayer/` is swapped. `component-specs/` and the
   platform output directory each hold only files that begin with a fixed
-  marker (the brief's opening `spec_layer:` lines, or the CSS header); `pull`
-  replaces or removes those files, ignores dotfiles, and refuses to run when
-  the directory holds anything else.
+  marker (a brief's opening `spec_layer:` lines, bare for YAML or after `---`
+  for Markdown, or the CSS header); `pull` replaces or removes those files,
+  ignores dotfiles, and refuses to run when the directory holds anything
+  else.
 
   A `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
   and declares unit overrides for numbers whose scopes state no unit.
@@ -241,8 +249,8 @@ and refuses a bundle whose major version it does not know. Eight commands:
   `not written`, and `show foundation` / `show component NAME` print one
   entry's `ai` field from the local `bundle.json` to stdout (or its canonical
   JSON with `--canonical`): the DTCG resolver document for `show foundation`,
-  component AI YAML for `show component NAME`. Both are local only and need no
-  key.
+  component AI YAML, or its Markdown page by the configured format, for
+  `show component NAME`. Both are local only and need no key.
 - `tools` prints the command catalogue in `packages/cli/src/tools.ts`, the one
   list the usage banner, the agent guide, and the README are checked against:
   for each command its usage, purpose, whether it reaches the network, whether

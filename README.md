@@ -121,7 +121,7 @@ never talks to Figma, re-derives nothing, and has no runtime dependencies.
 | `pull` | Fetches the library and writes it into the output directory, default `.speclayer/`. | yes |
 | `status` | Checks freshness without writing. Exits `2` when the local copy is behind. | yes |
 | `list` | Lists every artifact in the last pull, with its file path. | no |
-| `show foundation` / `show component NAME` | Prints the Foundation's DTCG resolver document or one component's AI YAML, or the canonical JSON with `--canonical`. | no |
+| `show foundation` / `show component NAME` | Prints the Foundation's DTCG resolver document or one component's AI YAML or Markdown page, or the canonical JSON with `--canonical`. | no |
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. | no |
 | `skill [--install] [--agent HOST] [--platform P]` | Prints a guide for a coding agent, adapted to the repository's stack and the last pull; `--install` writes it for Claude Code, Cursor, Copilot, Windsurf, Gemini, or `AGENTS.md`. Needs 0.5.0 or later. | no |
 
